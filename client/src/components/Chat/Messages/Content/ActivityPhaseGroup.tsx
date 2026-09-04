@@ -1,7 +1,7 @@
 import { useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@librechat/client';
-import { ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
+import { Check, ChevronDown, TriangleAlert } from 'lucide-react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -16,10 +16,17 @@ import { AttachmentGroup, EmptyText } from './Parts';
 import Container from './Container';
 import { cn } from '~/utils';
 
-/** Matches `EXPAND_TRANSITION` so the header, the panel, and the card chrome
- *  all resolve on the same curve — three properties animating on two different
- *  easings is what makes a fold read as two separate movements. */
-const FOLD_EASING = 'duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none';
+/** Matches `EXPAND_TRANSITION` so the panel and the label ticker resolve on
+ *  the same curve — two properties animating on two different easings is what
+ *  makes a fold read as two separate movements.
+ *
+ *  Written as an arbitrary PROPERTY, not `ease-[…]`: `tailwindcss-animate`
+ *  registers its own `ease` utility for `animation-timing-function` alongside
+ *  Tailwind's `transition-timing-function` one, so an arbitrary value matches
+ *  both, and Tailwind resolves that ambiguity by emitting NOTHING. The class
+ *  this replaces had been inert since the plugin landed — the curve it names
+ *  never reached the fold. */
+const FOLD_EASING = 'duration-300 [animation-timing-function:cubic-bezier(0.16,1,0.3,1)]';
 
 type ActivityPhasePart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
@@ -49,6 +56,100 @@ function schedulePostPaint(callback: () => void): () => void {
   };
 }
 
+/** The header's icon slot. Its only job is geometric: every other row in the
+ *  transcript opens with a 16px glyph and an 8px gap, so a summary rendered
+ *  without one sits 24px to the left of the rows it replaces — the fold then
+ *  moves its own text sideways at the moment the reader is trying to follow
+ *  it. */
+function PhaseGlyph({ failed }: { failed: boolean }) {
+  const Icon = failed ? TriangleAlert : Check;
+  return (
+    <span
+      className={cn(
+        'flex size-4 shrink-0 items-center justify-center',
+        failed ? 'text-text-warning' : 'text-text-secondary',
+      )}
+      aria-hidden="true"
+    >
+      <Icon size={14} />
+    </span>
+  );
+}
+
+/**
+ * The phase header is a ticker, not a title. A client-synthesized card
+ * re-titles itself every time it absorbs another finished block, and swapping
+ * that text instantly is what makes the absorbed row look like it simply
+ * vanished from under the reader. The retired line rises out of the clipped
+ * row while the new summary comes up from below, so the work visibly moves
+ * into the line that now stands for it.
+ */
+function PhaseLabel({
+  text,
+  animate,
+  failed,
+}: {
+  text: string;
+  animate: boolean;
+  failed: boolean;
+}) {
+  const [lines, setLines] = useState<{ current: string; retired: string | null; entered: boolean }>(
+    { current: text, retired: null, entered: false },
+  );
+
+  /** Adjusted during render rather than in an effect. A passive effect runs
+   *  after paint, so a swap with no animation would leave the previous summary
+   *  on screen for a frame while the button's `aria-label` already carried the
+   *  new one. React re-renders this component immediately instead. */
+  if (lines.current !== text) {
+    const swaps = animate && lines.current.length > 0;
+    setLines({ current: text, retired: swaps ? lines.current : null, entered: swaps });
+  }
+
+  /** Clears only the retired line. `entered` outlives it on purpose: dropping
+   *  the incoming line's animation class the moment its partner's
+   *  `animationend` fires would snap a still-running slide back to its resting
+   *  position. The class is inert once the animation has finished, and the
+   *  element is keyed by its text, so it cannot replay. */
+  const clearRetired = useCallback(() => {
+    setLines((previous) => (previous.retired == null ? previous : { ...previous, retired: null }));
+  }, []);
+
+  return (
+    <span
+      className="tool-status-text relative block min-w-0 flex-1 overflow-hidden text-left"
+      role="status"
+      title={text}
+    >
+      {lines.retired != null && (
+        <span
+          key={`retired-${lines.retired}`}
+          className={cn(
+            'absolute inset-x-0 top-0 block truncate',
+            'animate-out fade-out-0 slide-out-to-top-5 fill-mode-forwards',
+            FOLD_EASING,
+            failed && 'text-text-warning',
+          )}
+          onAnimationEnd={clearRetired}
+          aria-hidden="true"
+        >
+          {lines.retired}
+        </span>
+      )}
+      <span
+        key={`current-${lines.current}`}
+        className={cn(
+          'block truncate',
+          lines.entered && `animate-in fade-in-0 slide-in-from-bottom-5 ${FOLD_EASING}`,
+          failed && 'text-text-warning',
+        )}
+      >
+        {lines.current}
+      </span>
+    </span>
+  );
+}
+
 export default function ActivityPhaseGroup({
   labelPart,
   children,
@@ -74,18 +175,24 @@ export default function ActivityPhaseGroup({
 }) {
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
+  /** Already `smoothStreaming && !reducedMotion` — it owns the media query, so
+   *  a second subscription here would install one `matchMedia` listener per
+   *  phase card without changing the answer. */
   const smoothStreaming = useSmoothStreaming();
   /** Capture the marker's arrival state. The parent renderer records the new
    *  marker after this commit; a later sibling update must not cancel the
    *  already-scheduled fold before its first animation frame. */
   const [shouldAnimateEntrance] = useState(smoothStreaming && animateEntrance && label.length > 0);
   /** A filled phase marker lands on top of activity the reader is already
-   *  looking at. The card therefore mounts in the shape of what was there
-   *  BEFORE it — header at zero height, panel open, chrome transparent — and
-   *  folds into the summary on the next painted frame. Growing the header
-   *  while the panel collapses keeps the block's height strictly decreasing,
-   *  so the content compresses upward instead of being shoved down by a
-   *  header that appeared underneath it and then yanked back up. */
+   *  looking at. The header therefore mounts at zero height with the panel
+   *  open — the shape of what was there BEFORE it — and trades one for the
+   *  other on the next painted frame. Growing the header while the panel
+   *  collapses keeps the block's height strictly decreasing, so the content
+   *  compresses upward instead of being shoved down by a header that appeared
+   *  underneath it and then yanked back up. Those two grid rows are the ONLY
+   *  properties in flight: the card chrome that used to fade in alongside
+   *  them (border, background, padding, divider) is gone, and with it the
+   *  sideways step its inset used to impose on every folded row. */
   const foldsIn = shouldAnimateEntrance && hasContent;
   const [isExpanded, setIsExpanded] = useState(foldsIn);
   const [isSettled, setIsSettled] = useState(!foldsIn);
@@ -182,13 +289,15 @@ export default function ActivityPhaseGroup({
   const group = !hasContent ? (
     <div
       className={cn(
-        'my-2 flex min-h-10 w-full items-center rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2 text-text-secondary',
+        'mb-2 mt-1 flex min-h-7 w-full items-center gap-2 py-1 text-text-secondary',
         shouldAnimateEntrance && `animate-in fade-in-0 motion-reduce:animate-none ${FOLD_EASING}`,
       )}
+      data-testid="activity-phase-card"
     >
+      <PhaseGlyph failed={hasFailure} />
       <span
         className={cn(
-          'min-w-0 flex-1 truncate text-left text-sm font-medium',
+          'tool-status-text min-w-0 flex-1 truncate text-left font-medium',
           hasFailure && 'text-text-warning',
         )}
         role="status"
@@ -198,35 +307,30 @@ export default function ActivityPhaseGroup({
       </span>
     </div>
   ) : (
-    <div
-      className={cn(
-        'my-2 w-full rounded-lg border transition-colors',
-        FOLD_EASING,
-        isSettled ? 'border-border-light bg-surface-secondary/40' : 'border-transparent',
-      )}
-      ref={rootRef}
-    >
+    /** No chrome. A phase summary is another row in the same list as the tool
+     *  groups it stands for, so it carries the same geometry: 16px glyph, 8px
+     *  gap, no inset. Boxing it was what put its text on a third left edge and
+     *  forced every folded row 13px sideways as the box materialized. */
+    <div className="mb-2 mt-1 w-full" ref={rootRef} data-testid="activity-phase-card">
       <div style={headerStyle}>
         <div className="overflow-hidden">
           <Button
             variant="ghost"
             type="button"
-            className="flex h-auto min-h-10 w-full items-center justify-start gap-2 rounded-lg bg-transparent px-3 py-2 text-left text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary focus-visible:ring-offset-0"
+            /** `ring-inset` is not decoration: the clip above is permanent (the
+             *  grid rows need it), so an outset ring would be drawn entirely
+             *  outside the button's border box and clipped away, leaving
+             *  keyboard users with no focus indicator. The ghost variant
+             *  supplies it today; stating it here keeps the requirement with
+             *  the element that depends on it. */
+            className="inline-flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}
             aria-label={label}
-            title={label}
           >
-            <span
-              className={cn(
-                'min-w-0 flex-1 truncate text-left text-sm font-medium',
-                hasFailure && 'text-text-warning',
-              )}
-              role="status"
-            >
-              {label}
-            </span>
+            <PhaseGlyph failed={hasFailure} />
+            <PhaseLabel text={label} failed={hasFailure} animate={smoothStreaming} />
             <ChevronDown
               className={cn(
                 'size-4 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none',
@@ -246,19 +350,7 @@ export default function ActivityPhaseGroup({
       >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
-            {/** Padding and the divider ride the same curve as the fold: the
-             *   children occupy the exact position they held before the marker
-             *   arrived and settle into the card as it materializes, instead of
-             *   stepping sideways by the card's inset on the first frame. */}
-            <div
-              className={cn(
-                'border-t transition-[border-color,padding]',
-                FOLD_EASING,
-                isSettled ? 'border-border-light px-3 py-2' : 'border-transparent px-0 py-0',
-              )}
-            >
-              {children}
-            </div>
+            {children}
           </div>
         )}
       </div>
