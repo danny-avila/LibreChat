@@ -198,7 +198,11 @@ function SharedView() {
           isContinuing={forkShare.isLoading}
         />
         <ShareMessagesProvider messages={data.messages}>
-          <MessagesView messagesTree={messagesTree} conversationId={SHARED_CONVO_KEY} />
+          <MessagesView
+            messagesTree={messagesTree}
+            conversationId={SHARED_CONVO_KEY}
+            modelLabel={data.modelLabel}
+          />
         </ShareMessagesProvider>
       </>
     );

@@ -6,9 +6,12 @@ import { useLocalize } from '~/hooks';
 export default function MessagesView({
   messagesTree: _messagesTree,
   conversationId,
+  modelLabel,
 }: {
   messagesTree?: TMessage[] | null;
   conversationId: string;
+  /** Configured sender label of the shared conversation, forwarded to each header. */
+  modelLabel?: string | null;
 }) {
   const localize = useLocalize();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
@@ -34,6 +37,7 @@ export default function MessagesView({
                     key={conversationId} // avoid internal state mixture
                     messagesTree={_messagesTree}
                     messageId={conversationId ?? null}
+                    modelLabel={modelLabel}
                     setCurrentEditId={setCurrentEditId}
                     currentEditId={currentEditId ?? null}
                   />

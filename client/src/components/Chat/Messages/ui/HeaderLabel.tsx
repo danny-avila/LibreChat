@@ -1,3 +1,4 @@
+import type { TConversation } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -21,6 +22,23 @@ export function getHeaderModelName(
       value !== '' &&
       !DOCUMENT_ID_PREFIXES.some((prefix) => value.startsWith(prefix)),
   );
+}
+
+/** A preset or model spec that sets `modelLabel` (or the deprecated
+ *  `chatGptLabel`, which `getResponseSender` still honours) has chosen what the
+ *  header says, and `message.sender` already honours it. Revealing the model on
+ *  hover would undo that choice, so no hover label is produced at all; the
+ *  sr-only "Model:" text carries the same value and goes with it. Callers pass
+ *  the labels first, then the candidates `getHeaderModelName` takes. */
+export function getHeaderHoverLabel(
+  labels: Pick<TConversation, 'modelLabel' | 'chatGptLabel'> | null | undefined,
+  ...candidates: Array<string | null | undefined>
+): string | undefined {
+  const label = labels?.modelLabel || labels?.chatGptLabel;
+  if (label) {
+    return undefined;
+  }
+  return getHeaderModelName(...candidates);
 }
 
 /** Both names occupy one grid cell so the slot is sized by the longer of the

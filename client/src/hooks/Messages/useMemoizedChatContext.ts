@@ -36,6 +36,9 @@ export default function useMemoizedChatContext(
       chatCtx.conversation?.model,
       chatCtx.conversation?.agent_id,
       chatCtx.conversation?.assistant_id,
+      // The header hover reads these, so a label change must reach memo'd rows.
+      chatCtx.conversation?.modelLabel,
+      chatCtx.conversation?.chatGptLabel,
     ],
   );
 
