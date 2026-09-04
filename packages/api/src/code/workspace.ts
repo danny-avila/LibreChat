@@ -108,6 +108,7 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string
 async function readBoundedJson(response: Response, signal?: AbortSignal): Promise<unknown> {
   const declaredLength = Number(response.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel().catch(() => undefined);
     throw new WorkspaceToolHttpError('invalid');
   }
 
@@ -163,6 +164,9 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
         isPositiveInteger(request.startLine, Number.MAX_SAFE_INTEGER)) &&
       (request.maxLines == null || isPositiveInteger(request.maxLines, MAX_READ_LINES))
     );
+  }
+  if (request.operation !== 'search_text') {
+    return false;
   }
   return (
     typeof request.query === 'string' &&
