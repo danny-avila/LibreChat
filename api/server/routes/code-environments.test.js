@@ -35,7 +35,6 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   createCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
   createCodeEnvironmentHttpHandlers: jest.fn(() => mockHandlers),
-  startCodeEnvironmentLifecycleReconciler: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({

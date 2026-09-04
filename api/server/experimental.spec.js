@@ -45,6 +45,19 @@ describe('Experimental server configuration', () => {
     expect(source.match(/initializeScheduleErasureSweep\(\);/g)).toHaveLength(1);
   });
 
+  it('starts code-environment lifecycle reconciliation after Mongo connects in each worker', () => {
+    const connectIndex = source.indexOf('await connectDb();');
+    const reconcileIndex = source.indexOf('startCodeEnvironmentLifecycleReconciler({ mongoose });');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(reconcileIndex).toBeGreaterThan(connectIndex);
+    expect(listenIndex).toBeGreaterThan(reconcileIndex);
+    expect(
+      source.match(/startCodeEnvironmentLifecycleReconciler\(\{ mongoose \}\);/g),
+    ).toHaveLength(1);
+  });
+
   it('never arms the full schedule engine in a clustered worker', () => {
     // The clustered entrypoint runs erasure-only maintenance: arming the engine here
     // would claim/fire/absence-reconcile runs whose peer generations it cannot see.
