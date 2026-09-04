@@ -27,8 +27,9 @@ export type EncodedImageMetadata = Pick<Metadata, 'format' | 'compression'>;
  * bytes leaves a file whose `type` misdescribes its own contents, and that type is later handed
  * to providers verbatim as `media_type`/`mimeType`, so it has to describe the bytes on disk.
  *
- * Returns `undefined` when sharp reports a format with no media type of its own, leaving the
- * caller to decide what to record rather than guessing here.
+ * Returns `undefined` when the bytes cannot be named confidently — a format with no media type of
+ * its own, or a heif container whose compression sharp did not report — leaving the caller to fall
+ * back to what it already knows. Naming one of those anyway would be the guess this exists to stop.
  */
 export function resolveImageMimeType(metadata: EncodedImageMetadata): string | undefined {
   const { format } = metadata;
@@ -36,7 +37,10 @@ export function resolveImageMimeType(metadata: EncodedImageMetadata): string | u
     return undefined;
   }
   if (format === 'heif') {
-    return metadata.compression === 'av1' ? 'image/avif' : 'image/heic';
+    if (metadata.compression === 'av1') {
+      return 'image/avif';
+    }
+    return metadata.compression === 'hevc' ? 'image/heic' : undefined;
   }
   return SHARP_FORMAT_MIME_TYPES[format];
 }
