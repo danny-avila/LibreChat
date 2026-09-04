@@ -90,4 +90,41 @@ describe('buildFilter', () => {
       "Unknown query criterion: 'toString'",
     );
   });
+
+  it('refuses a Mongo operator object smuggled in as a criterion value', () => {
+    const query = { agentId: { $ne: null } } as unknown as SampleQuery;
+    expect(() => buildFilter<SampleQuery, Record<string, unknown>>(query, FIELDS)).toThrow(
+      "Invalid value for query criterion 'agentId'",
+    );
+  });
+
+  it('refuses an operator object hidden inside a list criterion', () => {
+    const query = { agentId: ['a', { $ne: null }] } as unknown as SampleQuery;
+    expect(() => buildFilter<SampleQuery, Record<string, unknown>>(query, FIELDS)).toThrow(
+      "Invalid value for query criterion 'agentId'",
+    );
+  });
+
+  it('refuses null, which would match documents missing the field', () => {
+    const query = { user: null } as unknown as SampleQuery;
+    expect(() => buildFilter<SampleQuery, Record<string, unknown>>(query, FIELDS)).toThrow(
+      "Invalid value for query criterion 'user'",
+    );
+  });
+
+  it('accepts the scalar shapes a domain criterion may carry', () => {
+    type Mixed = { actionId?: string; count?: number; active?: boolean; since?: Date };
+    const fields: FieldMap<Mixed> = {
+      actionId: 'action_id',
+      count: 'count',
+      active: 'active',
+      since: 'since',
+    };
+    const since = new Date('2026-01-01T00:00:00.000Z');
+    const filter = buildFilter<Mixed, Record<string, unknown>>(
+      { actionId: 'a1', count: 2, active: true, since },
+      fields,
+    );
+    expect(filter).toEqual({ action_id: 'a1', count: 2, active: true, since });
+  });
 });

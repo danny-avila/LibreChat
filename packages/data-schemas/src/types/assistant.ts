@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import type { OneOrMany } from '~/utils/criteria';
+import type { OneOrMany } from './query';
 
 export interface IAssistant extends Document {
   user: Types.ObjectId;

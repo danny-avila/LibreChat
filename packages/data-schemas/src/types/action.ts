@@ -1,5 +1,5 @@
 import mongoose, { Document } from 'mongoose';
-import type { OneOrMany } from '~/utils/criteria';
+import type { OneOrMany } from './query';
 
 export interface IAction extends Document {
   user: mongoose.Types.ObjectId;

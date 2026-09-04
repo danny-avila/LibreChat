@@ -8,4 +8,3 @@ export * from './objectId';
 export * from './yaml';
 export * from './stripUIResourceMarkers';
 export * from './fading';
-export * from './criteria';

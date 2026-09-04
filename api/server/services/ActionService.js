@@ -157,7 +157,7 @@ async function domainParser(domain, inverse = false) {
 /**
  * Loads action sets based on the user and assistant ID.
  *
- * @param {ActionQuery} query - The criteria for loading action sets.
+ * @param {import('@librechat/data-schemas').ActionQuery} query - The criteria for loading action sets.
  * @returns {Promise<Action[] | null>} A promise that resolves to an array of actions or `null` if no match.
  */
 async function loadActionSets(query) {
