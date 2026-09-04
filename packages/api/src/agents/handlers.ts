@@ -5,6 +5,7 @@ import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
 import type {
   LCTool,
+  FileRefs,
   EventHandler,
   LCToolRegistry,
   InjectedMessage,
@@ -453,7 +454,7 @@ export interface ToolExecuteOptions {
   readSandboxFile?: (params: {
     file_path: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    files?: SandboxFileRef[];
     /** Per-conversation stateful runtime-session hint (thread_id); forwarded so a
      *  host file op that is the first sandbox call joins the same runtime session
      *  as bash_tool instead of the Code API's default session. */
@@ -477,7 +478,7 @@ export interface ToolExecuteOptions {
   readSandboxImage?: (params: {
     file_path: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    files?: SandboxFileRef[];
     /** @see readSandboxFile.runtime_session_hint */
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
@@ -505,7 +506,7 @@ export interface ToolExecuteOptions {
     file_path: string;
     content: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    files?: SandboxFileRef[];
     /** @see readSandboxFile.runtime_session_hint */
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
@@ -515,7 +516,7 @@ export interface ToolExecuteOptions {
     stdout?: string;
     stderr?: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; storage_session_id?: string; session_id?: string }>;
+    files?: SandboxFileRef[];
   } | null>;
 }
 
@@ -793,9 +794,21 @@ type ExistingSkillFile =
 
 type LoadedSandboxText = LoadedSkillText;
 
+/**
+ * A code-session file ref as it crosses the host boundary: the SDK's wire
+ * shape (`kind` / `resource_id` / `version` / `inherited`) plus the legacy
+ * per-file `session_id` older Code API responses carry, which
+ * `getPreparedCodeOutputBuffer` still reads as a storage-session fallback.
+ * Every field is load-bearing on the wire — `version` is required for
+ * `kind: 'skill'` refs and `resource_id` names the resource that owns the
+ * file's storage session — so refs must be carried whole, never rebuilt
+ * from a subset.
+ */
+type SandboxFileRef = FileRefs[number] & { session_id?: string };
+
 type SandboxSessionContext = {
   session_id?: string;
-  files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+  files?: SandboxFileRef[];
 };
 
 const MIME_MAP: Readonly<Record<string, string>> = Object.freeze({
@@ -2146,6 +2159,24 @@ function cloneSandboxSessionContext(
   };
 }
 
+/** Storage identity of a mounted ref, matching the code session's own key. */
+function sandboxFileIdentity(file: SandboxFileRef): string {
+  return `${file.storage_session_id ?? ''}\0${file.id}`;
+}
+
+/**
+ * Folds a host file-authoring result's `session_id` / `files` into the
+ * batch-local sandbox context that the next authoring call on the same path
+ * reuses, matching how the graph's own code session folds the same artifact:
+ * incoming refs win field by field, an existing ref superseded by storage
+ * identity or by name is dropped, and every other mounted ref survives.
+ *
+ * Both halves are load-bearing. Rebuilding refs from a field subset dropped
+ * `kind`, `resource_id`, `version` and `inherited`, and a primed skill file
+ * stripped of its `version` is an invalid input ref — the Code API requires
+ * it whenever `kind === 'skill'`. Replacing the list wholesale unmounted
+ * every file the run had primed but this particular write did not return.
+ */
 function mergeSandboxSessionArtifact(
   context: SandboxSessionContext,
   artifact: ToolExecuteResult['artifact'],
@@ -2164,32 +2195,57 @@ function mergeSandboxSessionArtifact(
     return;
   }
 
-  const files: SandboxSessionContext['files'] = [];
+  const execSessionId = context.session_id;
+  const incoming: SandboxFileRef[] = [];
+  const incomingByIdentity = new Map<string, number>();
+  const incomingNames = new Set<string>();
   for (const file of value.files) {
     if (!file || typeof file !== 'object') {
       continue;
     }
-    const ref = file as {
-      id?: unknown;
-      name?: unknown;
-      session_id?: unknown;
-      storage_session_id?: unknown;
-    };
+    const ref = file as SandboxFileRef;
     if (typeof ref.id !== 'string' || typeof ref.name !== 'string') {
       continue;
     }
-    files.push({
-      id: ref.id,
-      name: ref.name,
-      ...(typeof ref.session_id === 'string' ? { session_id: ref.session_id } : {}),
-      ...(typeof ref.storage_session_id === 'string'
-        ? { storage_session_id: ref.storage_session_id }
-        : {}),
-    });
+    /* Carry the ref whole: the Code API reads fields this host never
+     * inspects, so a copy is a downgrade. Only the storage session is
+     * defaulted, and it resolves exactly as `getPreparedCodeOutputBuffer`
+     * resolves it — the legacy per-file `session_id` outranks the execution
+     * session, or an older Code API response would be remounted against the
+     * bucket that merely produced it. */
+    const merged: SandboxFileRef = { ...ref };
+    merged.storage_session_id ??= ref.session_id ?? execSessionId;
+
+    /* One artifact can name the same stored file twice. Fold the repeat into
+     * the entry already collected rather than mounting it again: codeapi
+     * rejects an `/exec` whose files collide on a destination, taking the
+     * whole call down with it. */
+    const identity = sandboxFileIdentity(merged);
+    const seen = incomingByIdentity.get(identity);
+    if (seen !== undefined) {
+      incoming[seen] = { ...incoming[seen], ...merged };
+      continue;
+    }
+    incomingByIdentity.set(identity, incoming.length);
+    incomingNames.add(merged.name);
+    incoming.push(merged);
   }
-  if (files.length > 0) {
-    context.files = files;
+  if (incoming.length === 0) {
+    return;
   }
+
+  const retained: SandboxFileRef[] = [];
+  for (const existing of context.files ?? []) {
+    const index = incomingByIdentity.get(sandboxFileIdentity(existing));
+    if (index !== undefined) {
+      incoming[index] = { ...existing, ...incoming[index] };
+      continue;
+    }
+    if (!incomingNames.has(existing.name)) {
+      retained.push(existing);
+    }
+  }
+  context.files = [...retained, ...incoming];
 }
 
 /**

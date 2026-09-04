@@ -3852,6 +3852,9 @@ describe('createToolExecuteHandler', () => {
       config: {},
     } as never;
 
+    /** The subset of the sandbox IO params these assertions read. */
+    type SandboxIoParams = { session_id?: string; files?: unknown };
+
     function makeSandboxAuthoringHandler(
       params: Partial<ToolExecuteOptions>,
       configurable?: Record<string, unknown>,
@@ -3917,6 +3920,148 @@ describe('createToolExecuteHandler', () => {
         files: [{ id: 'f1', name: 'input.csv', session_id: 'sess-prev' }],
         req,
       });
+    });
+
+    it('carries whole file refs into the next authoring call on the same path', async () => {
+      /**
+       * Regression: the batch-local sandbox context rebuilt each ref from
+       * `{ id, name, session_id, storage_session_id }` and replaced the
+       * mounted list wholesale. A second authoring call on the same path
+       * therefore sent the Code API a skill ref stripped of the `version`
+       * it requires, and unmounted every primed file this write did not
+       * itself return.
+       */
+      const skillRef = {
+        id: 'skill-file-1',
+        resource_id: 'skill-1',
+        name: 'SKILL.md',
+        kind: 'skill' as const,
+        version: 7,
+        storage_session_id: 'store-skill',
+      };
+      let reads = 0;
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        reads += 1;
+        if (reads === 1) {
+          throw new Error('cat: /mnt/data/note.md: No such file or directory');
+        }
+        return { content: 'hello world' };
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/note.md\n',
+        session_id: 'sess-write',
+        files: [{ id: 'file-note', name: 'note.md', kind: 'user' as const }],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      const codeSessionContext = {
+        session_id: 'sess-prev',
+        files: [skillRef],
+      };
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_create_note',
+          name: 'create_file',
+          args: { path: '/mnt/data/note.md', content: 'hello world' },
+          codeSessionContext,
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_edit_note',
+          name: 'edit_file',
+          args: { path: '/mnt/data/note.md', old_text: 'hello', new_text: 'goodbye' },
+          codeSessionContext,
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(results.every((result) => result.status === 'success')).toBe(true);
+      /* The follow-up read/write mount the primed skill ref whole — version
+       * included — alongside the file the create just produced. */
+      const followUpFiles = readSandboxFile.mock.calls[1][0].files;
+      expect(followUpFiles).toEqual([
+        skillRef,
+        { id: 'file-note', name: 'note.md', kind: 'user', storage_session_id: 'sess-write' },
+      ]);
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual(followUpFiles);
+      expect(writeSandboxFile.mock.calls[1][0].session_id).toBe('sess-write');
+    });
+
+    it('keeps a legacy per-file session over the execution session', async () => {
+      /**
+       * `getPreparedCodeOutputBuffer` resolves storage as
+       * `storage_session_id ?? session_id ?? session_id`, so defaulting an
+       * absent `storage_session_id` straight to the execution session masks
+       * the legacy value and remounts the file against the bucket that
+       * merely produced it.
+       */
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        throw new Error('cat: /mnt/data/legacy.md: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 2 bytes to /mnt/data/legacy.md\n',
+        session_id: 'sess-exec',
+        files: [
+          { id: 'file-legacy', name: 'legacy.md', session_id: 'store-legacy' },
+          { id: 'file-fresh', name: 'fresh.md' },
+        ],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_legacy_1',
+          name: 'create_file',
+          args: { path: '/mnt/data/legacy.md', content: 'hi' },
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_legacy_2',
+          name: 'create_file',
+          args: { path: '/mnt/data/legacy.md', content: 'hi again', overwrite: true },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual([
+        {
+          id: 'file-legacy',
+          name: 'legacy.md',
+          session_id: 'store-legacy',
+          storage_session_id: 'store-legacy',
+        },
+        { id: 'file-fresh', name: 'fresh.md', storage_session_id: 'sess-exec' },
+      ]);
+    });
+
+    it('mounts a file named twice by one artifact only once', async () => {
+      /* codeapi rejects an `/exec` whose files collide on a destination and
+       * takes the whole call down, so a repeated ref must fold, not stack. */
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        throw new Error('cat: /mnt/data/dup.md: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 2 bytes to /mnt/data/dup.md\n',
+        session_id: 'sess-exec',
+        files: [
+          { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1' },
+          { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1', kind: 'user' as const },
+        ],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_dup_1',
+          name: 'create_file',
+          args: { path: '/mnt/data/dup.md', content: 'hi' },
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_dup_2',
+          name: 'create_file',
+          args: { path: '/mnt/data/dup.md', content: 'hi again', overwrite: true },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual([
+        { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1', kind: 'user' },
+      ]);
     });
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {
