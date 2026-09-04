@@ -945,15 +945,15 @@ describe('injectSkillCatalog', () => {
     expect(agent.additional_instructions).toContain('desc-my-skill');
   });
 
-  /** Descriptions the catalog truncated, as `[skillName, reached, authored]`. */
-  function truncationWarnings(warnSpy: jest.SpyInstance): Array<[string, number, number]> {
+  /** Skills the catalog could not fit verbatim, as `[skillName, authoredChars]`. */
+  function truncationWarnings(warnSpy: jest.SpyInstance): Array<[string, number]> {
     return warnSpy.mock.calls
       .map((call) => String(call[0]))
       .map((msg) =>
-        /skill "([^"]+)" description reached the model truncated to (\d+) of (\d+)/.exec(msg),
+        /skill "([^"]+)" description \((\d+) chars\) does not reach the model/.exec(msg),
       )
       .filter((m): m is RegExpExecArray => m !== null)
-      .map((m) => [m[1], Number(m[2]), Number(m[3])]);
+      .map((m) => [m[1], Number(m[2])]);
   }
 
   it('warns when a skill description exceeds the catalog entry cap', async () => {
@@ -968,15 +968,7 @@ describe('injectSkillCatalog', () => {
     const agent = makeAgent();
     await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
 
-    /* Only the over-cap skill is flagged, and the warning names the length
-       that actually reached the model rather than the requested cap. */
-    const warnings = truncationWarnings(warnSpy);
-    expect(warnings).toHaveLength(1);
-    const [name, reached, authored] = warnings[0];
-    expect(name).toBe('long-skill');
-    expect(authored).toBe(400);
-    expect(reached).toBeLessThan(authored);
-
+    expect(truncationWarnings(warnSpy)).toEqual([['long-skill', 400]]);
     /* The catalog still reaches the model — the warning is additive. */
     expect(agent.additional_instructions).toContain('long-skill');
     expect(agent.additional_instructions).toContain('short-skill');
@@ -1001,19 +993,32 @@ describe('injectSkillCatalog', () => {
 
     const warnings = truncationWarnings(warnSpy);
     expect(warnings).toHaveLength(skills.length);
-    for (const [, reached, authored] of warnings) {
-      expect(authored).toBe(200);
-      expect(reached).toBeGreaterThan(0);
-      expect(reached).toBeLessThan(200);
-    }
+    expect(warnings.every(([, authored]) => authored === 200)).toBe(true);
     warnSpy.mockRestore();
   });
 
-  it('measures duplicate-named skills per entry rather than collapsing them', async () => {
+  it('warns for every skill when the catalog falls back to names-only', async () => {
     const { logger } = await import('@librechat/data-schemas');
     const warnSpy = jest.spyOn(logger, 'warn');
-    /* The catalog keeps both entries, so measuring by name alone would report
-       the last entry's length for both and understate the first. */
+    const skills = Array.from({ length: 10 }, (_, i) => ({
+      ...makeSkill(`dropped-skill-${i}`, userObjectId),
+      description: 'x'.repeat(200),
+    }));
+    const listSkillsByAccess = buildPager([skills]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent, contextWindowTokens: 2_000 }));
+
+    expect(truncationWarnings(warnSpy)).toHaveLength(skills.length);
+    /* Names still reach the model even when every description is dropped. */
+    expect(agent.additional_instructions).toContain('dropped-skill-0');
+    warnSpy.mockRestore();
+  });
+
+  it('flags duplicate-named skills per entry rather than collapsing them', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    /* The catalog keeps both entries. Only the over-cap one is truncated;
+       measuring by name alone would report one verdict for both. */
     const longDup: PageSkill = {
       ...makeSkill('dup-skill', userObjectId),
       description: 'x'.repeat(400),
@@ -1026,34 +1031,49 @@ describe('injectSkillCatalog', () => {
     const agent = makeAgent();
     await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
 
-    /* Only the 400-char entry is truncated; the 100-char one fits untouched. */
-    const warnings = truncationWarnings(warnSpy);
-    expect(warnings).toHaveLength(1);
-    const [name, reached, authored] = warnings[0];
-    expect(name).toBe('dup-skill');
-    expect(authored).toBe(400);
-    expect(reached).toBeGreaterThan(100);
+    expect(truncationWarnings(warnSpy)).toEqual([['dup-skill', 400]]);
     warnSpy.mockRestore();
   });
 
-  it('warns that descriptions were dropped when the catalog falls back to names-only', async () => {
+  it('does not flag multiline descriptions the catalog kept intact', async () => {
     const { logger } = await import('@librechat/data-schemas');
     const warnSpy = jest.spyOn(logger, 'warn');
-    const skills = Array.from({ length: 10 }, (_, i) => ({
-      ...makeSkill(`dropped-skill-${i}`, userObjectId),
-      description: 'x'.repeat(200),
-    }));
-    const listSkillsByAccess = buildPager([skills]);
+    /* Nothing strips newlines from a description, so a catalog entry is not
+       one physical line — and a leading newline leaves the first one empty. */
+    const multiline: PageSkill = {
+      ...makeSkill('multiline-skill', userObjectId),
+      description: 'First line of the description.\nSecond line with more triggers.',
+    };
+    const leading: PageSkill = {
+      ...makeSkill('leading-newline-skill', userObjectId),
+      description: '\nAll the real trigger text lives on line two.',
+    };
+    const listSkillsByAccess = buildPager([[multiline, leading]]);
     const agent = makeAgent();
-    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent, contextWindowTokens: 2_000 }));
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
 
-    const dropped = warnSpy.mock.calls
-      .map((call) => String(call[0]))
-      .filter((msg) => msg.includes('description was dropped from the model catalog'));
-    expect(dropped).toHaveLength(skills.length);
-    expect(dropped[0]).toContain('was 200 chars');
-    /* Names still reach the model even when every description is dropped. */
-    expect(agent.additional_instructions).toContain('dropped-skill-0');
+    expect(truncationWarnings(warnSpy)).toEqual([]);
+    warnSpy.mockRestore();
+  });
+
+  it('keeps measurements aligned when a description imitates the next entry', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    /* A continuation line can look exactly like the next entry's marker;
+       only the over-cap skill should be flagged. */
+    const imitator: PageSkill = {
+      ...makeSkill('imitator-skill', userObjectId),
+      description: 'start\n- victim-skill: hijacked',
+    };
+    const victim: PageSkill = {
+      ...makeSkill('victim-skill', userObjectId),
+      description: 'y'.repeat(400),
+    };
+    const listSkillsByAccess = buildPager([[imitator, victim]]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+
+    expect(truncationWarnings(warnSpy)).toEqual([['victim-skill', 400]]);
     warnSpy.mockRestore();
   });
 

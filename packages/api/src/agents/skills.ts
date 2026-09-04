@@ -586,42 +586,6 @@ export async function resolveSkillCatalog(
 }
 
 /**
- * Description length that survived into `catalog`, positionally aligned to
- * `names` — index `i` is how much of skill `i`'s description the model got.
- *
- * `formatSkillCatalog` truncates on a ladder — the per-entry cap, then a
- * proportional cut sized to its context budget, then names-only — so the
- * requested cap is an upper bound and not the delivered length. Reading the
- * emitted text back is the only accurate source.
- *
- * Matching is positional rather than keyed by name because the catalog
- * deliberately keeps duplicate-named skills as separate entries; keying by
- * name would collapse them and misreport every occurrence but the last.
- * Entry order is the order passed to the formatter, and the names-only
- * fallback drops from the tail, so a skill the catalog never reached keeps
- * its `0` and reads as dropped.
- */
-function measureCatalogDescriptions(catalog: string, names: string[]): number[] {
-  const delivered = new Array<number>(names.length).fill(0);
-  let index = 0;
-  for (const line of catalog.split('\n')) {
-    if (index >= names.length) {
-      break;
-    }
-    const prefix = `- ${names[index]}`;
-    if (line === prefix) {
-      index++;
-      continue;
-    }
-    if (line.startsWith(`${prefix}: `)) {
-      delivered[index] = line.length - prefix.length - 2;
-      index++;
-    }
-  }
-  return delivered;
-}
-
-/**
  * Queries accessible skills, formats a budget-aware catalog, appends it to the
  * agent's additional_instructions, and registers the SkillTool definition.
  * Returns updated toolDefinitions and the skill count.
@@ -741,20 +705,19 @@ export async function injectSkillCatalog(
       },
     );
     if (catalog) {
-      const delivered = measureCatalogDescriptions(
-        catalog,
-        catalogVisibleSkills.map((s) => s.name),
-      );
-      for (let i = 0; i < catalogVisibleSkills.length; i++) {
-        const s = catalogVisibleSkills[i];
-        const reached = delivered[i];
-        if (reached >= s.description.length) {
+      /**
+       * A description the catalog kept intact appears in it verbatim, so
+       * containment detects truncation from any rung of the ladder without
+       * needing entry boundaries. Boundaries are not recoverable anyway:
+       * descriptions may contain newlines, so an entry is not one physical
+       * line, and a continuation line can imitate the next entry's marker.
+       */
+      for (const s of catalogVisibleSkills) {
+        if (catalog.includes(s.description)) {
           continue;
         }
         logger.warn(
-          reached === 0
-            ? `[injectSkillCatalog] skill "${s.name}" description was dropped from the model catalog (was ${s.description.length} chars) — the catalog exceeded its context budget`
-            : `[injectSkillCatalog] skill "${s.name}" description reached the model truncated to ${reached} of ${s.description.length} chars`,
+          `[injectSkillCatalog] skill "${s.name}" description (${s.description.length} chars) does not reach the model verbatim — the catalog caps entries at ${SKILL_CATALOG_MAX_ENTRY_CHARS} and cuts further to fit its context budget`,
         );
       }
       agent.additional_instructions = agent.additional_instructions
