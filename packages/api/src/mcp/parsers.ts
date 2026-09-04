@@ -101,8 +101,10 @@ const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
  * either as `text` or, under the very same schema, as a base64 `blob`, so both halves are unwrapped
  * here — reading only `text` leaves a blob-delivered file as bare URI and MIME type metadata.
  *
- * Image blobs become artifacts, matching standalone image content. Blobs whose bytes are not valid
- * UTF-8 are summarized rather than emitted, so binary payloads never reach the model as base64.
+ * Image blobs become artifacts, matching standalone image content. Binary blobs are summarized
+ * rather than emitted, so they never reach the model as base64. A NUL byte marks a payload binary
+ * on its own, the way git classifies a file: NUL is valid UTF-8, so decoding alone would pass a
+ * compiled binary through as text.
  */
 function readResourceBody(resource: t.ResourceContents): t.ResourceBody {
   if ('text' in resource && typeof resource.text === 'string' && resource.text) {
@@ -113,11 +115,14 @@ function readResourceBody(resource: t.ResourceContents): t.ResourceBody {
   }
 
   const mimeType = resource.mimeType;
-  if (mimeType != null && mimeType.startsWith('image/')) {
+  if (mimeType != null && mimeType.toLowerCase().startsWith('image/')) {
     return { image: { type: 'image', data: resource.blob, mimeType } };
   }
 
   const bytes = Buffer.from(resource.blob, 'base64');
+  if (bytes.includes(0)) {
+    return { binaryBytes: bytes.byteLength };
+  }
   try {
     const text = utf8Decoder.decode(bytes);
     return text ? { text } : {};
@@ -147,6 +152,9 @@ function describeResourceLink(item: t.ResourceLink): string[] {
   if (item.name) {
     lines.push(`Resource Name: ${flattenMetadata(item.name)}`);
   }
+  if (item.title) {
+    lines.push(`Resource Title: ${flattenMetadata(item.title)}`);
+  }
   if (item.description) {
     lines.push(`Resource Description: ${flattenMetadata(item.description)}`);
   }
@@ -155,6 +163,9 @@ function describeResourceLink(item: t.ResourceLink): string[] {
   }
   if (item.mimeType) {
     lines.push(`Resource MIME Type: ${flattenMetadata(item.mimeType)}`);
+  }
+  if (typeof item.size === 'number') {
+    lines.push(`Resource Size: ${item.size} bytes`);
   }
   return lines;
 }
