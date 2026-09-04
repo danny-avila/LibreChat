@@ -5277,7 +5277,9 @@ describe('createToolExecuteHandler', () => {
       const content = result.content as string;
       const [listedPaths] = content.split('\n\n');
       const completePaths = listedPaths.split('\n');
-      const lastContinuationPath = completePaths.at(-1)?.slice('workspace/'.length);
+      const lastContinuationPath = completePaths[completePaths.length - 1]?.slice(
+        'workspace/'.length,
+      );
       expect(result.status).toBe('success');
       expect(content).toContain('[results truncated; continue with after_path:');
       expect(Buffer.byteLength(content, 'utf8')).toBeLessThanOrEqual(262_144);

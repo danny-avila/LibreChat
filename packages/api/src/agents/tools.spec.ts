@@ -524,9 +524,7 @@ describe('registerCodeExecutionTools', () => {
       });
       expect(listWorkspaceFiles?.description).toContain('empty directory');
       expect(listWorkspaceFiles?.description).toContain('after_path');
-      expect(listWorkspaceFiles?.parameters.properties.path.description).toContain(
-        'canonical relative',
-      );
+      expect(filePathDescription(listWorkspaceFiles)).toContain('canonical relative');
     });
 
     it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
