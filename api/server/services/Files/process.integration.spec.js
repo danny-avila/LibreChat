@@ -33,6 +33,16 @@ jest.mock('@librechat/api', () => ({
   sanitizeFilename: jest.fn((n) => n),
   parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
   processAudioFile: jest.fn(),
+  /* Vector sharing is orthogonal to the agent-reference cleanup under test
+   * here; `process.vectors.spec.js` exercises the real reuse and
+   * reference-counting behavior. */
+  fileExtension: jest.fn((filename) => (filename ?? '').replace(/^.*(?=\.)/, '').toLowerCase()),
+  resolveVectorId: jest.fn((file) => file.vectorId || file.file_id),
+  hashFileContent: jest.fn().mockResolvedValue('stub-content-hash'),
+  pickVectorReuseSource: jest.fn(() => undefined),
+  suppressSharedVectorDeletes: jest.fn(async (files) => ({ files, deferredVectorIds: [] })),
+  reclaimOrphanedVectors: jest.fn(async () => []),
+  USER_OWNED_EMBEDDING_CONTEXT: 'message_attachment',
 }));
 
 jest.mock('~/server/controllers/assistants/v2', () => ({

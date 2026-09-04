@@ -54,6 +54,41 @@ const file: Schema<IMongoFile> = new Schema(
     embedded: {
       type: Boolean,
     },
+    hash: {
+      /* Hex SHA-256 of the uploaded bytes. Stamped on `file_search`
+       * uploads so a later upload of identical content can reuse the
+       * embeddings already in the vector store instead of paying to
+       * embed the same document twice. Absent on every other upload
+       * path and on records predating content addressing. */
+      type: String,
+    },
+    vectorId: {
+      /* Set only when this record borrows another file's embeddings:
+       * the `file_id` the RAG API actually holds the chunks under.
+       * Absent means the file owns its own vectors under its own
+       * `file_id` — resolve with `resolveVectorId` rather than reading
+       * this directly. */
+      type: String,
+    },
+    vectorExtension: {
+      /* Lowercased extension of the filename the RAG API was given, dot
+       * included. It picks its document loader from that before falling back
+       * to the content type, so the same bytes as `.csv` and as `.txt` are
+       * chunked differently and are not interchangeable. Part of the reuse
+       * key rather than a filter applied afterwards, so a match can never
+       * fall outside the query's window. */
+      type: String,
+    },
+    vectorOwner: {
+      /* Who the RAG API stamped as the owner of those chunks: the agent id
+       * for knowledge files, the user id for chat attachments. Reads from a
+       * different owner are refused, so content may only be reused between
+       * records sharing this value — membership in an agent's resource list
+       * does not prove it, since a file uploaded to one agent can be
+       * attached to another. Absent on records predating the field, which
+       * therefore never qualify for reuse. */
+      type: String,
+    },
     type: {
       type: String,
       required: true,
@@ -160,6 +195,22 @@ const file: Schema<IMongoFile> = new Schema(
 
 file.index({ expiredAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
+/* Serves `findVectorReuseCandidates`: equality on the hash and the owner that
+ * scopes it, then `createdAt` so the oldest-first sort and its limit come off
+ * the index instead of a scan. The remaining predicates match a handful of
+ * documents at most — files with identical bytes under one owner — so they are
+ * cheaper to filter than to index.
+ *
+ * Both partial filters below use `$exists` rather than `$type`: only the
+ * uploads that carry these fields need indexing, but the planner will only
+ * reach for a partial index when the query provably implies its filter, and it
+ * does not infer a type from an equality. A `$type` filter leaves the index
+ * built, eligible-looking and never used. */
+file.index(
+  { hash: 1, vectorOwner: 1, createdAt: 1 },
+  { partialFilterExpression: { hash: { $exists: true } } },
+);
+file.index({ vectorId: 1 }, { partialFilterExpression: { vectorId: { $exists: true } } });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
   { unique: true, partialFilterExpression: { context: FileContext.execute_code } },

@@ -113,6 +113,13 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   'embedded',
   'usage',
   'metadata',
+  /* Content addressing for vector reuse. `vectorOwner` is a raw user id for
+   * chat attachments — the very thing dropping `user` is for — `vectorId` is
+   * an un-anonymized internal file id, and `hash` fingerprints the uploaded
+   * bytes well enough to confirm a viewer holds the same document. */
+  'hash',
+  'vectorId',
+  'vectorOwner',
 ]);
 
 /**

@@ -55,6 +55,32 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   storageRegion?: string;
   object: 'file';
   embedded?: boolean;
+  /**
+   * Hex SHA-256 of the uploaded bytes, stamped on `file_search` uploads
+   * so identical content can be recognized on a later upload. Absent on
+   * other upload paths and on records predating content addressing.
+   */
+  hash?: string;
+  /**
+   * The `file_id` the RAG API holds this file's chunks under, set only
+   * when the record borrows another file's embeddings. Absent means the
+   * file owns its vectors under its own `file_id`; read it through
+   * `resolveVectorId` so both cases are handled.
+   */
+  vectorId?: string;
+  /**
+   * Lowercased extension of the filename the RAG API was given. Its loader
+   * keys on that before the content type, so identical bytes under different
+   * extensions are chunked differently and cannot share embeddings.
+   */
+  vectorExtension?: string;
+  /**
+   * Who the RAG API stamped as the owner of this file's chunks — the agent
+   * id for knowledge files, the user id for chat attachments. Reads from a
+   * different owner are refused, so it is the only proof that two records
+   * may share embeddings. Absent on records predating the field.
+   */
+  vectorOwner?: string;
   type: string;
   context?: string;
   usage: number;

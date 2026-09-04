@@ -1,7 +1,12 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { generateShortLivedToken, logAxiosError } = require('@librechat/api');
+const {
+  generateShortLivedToken,
+  logAxiosError,
+  resolveVectorId,
+  dedupeByVectorId,
+} = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
@@ -71,6 +76,8 @@ const primeFiles = async (options) => {
     }`;
     files.push({
       file_id: file.file_id,
+      vectorId: file.vectorId,
+      vectorOwner: file.vectorOwner,
       filename: file.filename,
       fromAgent: agentResourceIds.has(file.file_id),
     });
@@ -100,23 +107,29 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       }
 
       /**
+       * Whether the chunks are the entity's, which is what the RAG API's
+       * filter matches on. `vectorOwner` records that directly, so prefer it:
+       * an agent's resource list can hold a user-owned attachment, and asking
+       * for it under the agent returns nothing. Records predating the field
+       * fall back to membership, which was right for the agent knowledge
+       * files of that era.
+       *
+       * @param {import('librechat-data-provider').TFile & { fromAgent?: boolean }} file
+       */
+      const isEntityOwned = (file) =>
+        file.vectorOwner != null ? file.vectorOwner === entity_id : file.fromAgent === true;
+
+      /**
        * @param {import('librechat-data-provider').TFile & { fromAgent?: boolean }} file
        * @returns {{ file_id: string, query: string, k: number, entity_id?: string }}
        */
       const createQueryBody = (file) => {
         const body = {
-          file_id: file.file_id,
+          file_id: resolveVectorId(file),
           query,
           k: 5,
         };
-        // User-attached files are embedded under the user id (no entity);
-        // only agent knowledge-base files carry the agent's entity_id.
-        // Sending entity_id for user attachments makes the RAG API's entity
-        // filter return no results for them. When files are provided by
-        // primeFiles, fromAgent is always set; for callers that pass files
-        // directly without the flag, the safe default is unscoped (no
-        // entity_id).
-        if (!entity_id || file.fromAgent !== true) {
+        if (!entity_id || !isEntityOwned(file)) {
           return body;
         }
         body.entity_id = entity_id;
@@ -124,7 +137,11 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         return body;
       };
 
-      const queryPromises = files.map((file) =>
+      /* Files sharing a vector-store document return identical hits, so one
+       * query per document is enough. Safe to collapse on the id alone
+       * because reuse requires a matching `vectorOwner`, so records sharing a
+       * document always resolve to the same query scope above. */
+      const queryPromises = dedupeByVectorId(files).map((file) =>
         axios
           .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file), {
             headers: {
@@ -132,6 +149,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
               'Content-Type': 'application/json',
             },
           })
+          .then((result) => ({ file, result }))
           .catch((error) => {
             logAxiosError({
               message: 'Error encountered in `file_search` while querying file',
@@ -148,13 +166,17 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         return ['No results found or errors occurred while searching the files.', undefined];
       }
 
+      /* Name hits after the record being searched, not after the RAG
+       * metadata: a file borrowing another upload's embeddings carries that
+       * upload's filename in `metadata.source`, so citing it would point the
+       * model at a name the user never attached. */
       const formattedResults = validResults
-        .flatMap((result, fileIndex) =>
+        .flatMap(({ file, result }) =>
           result.data.map(([docInfo, distance]) => ({
-            filename: docInfo.metadata.source.split('/').pop(),
+            filename: file.filename || docInfo.metadata.source.split('/').pop(),
             content: docInfo.page_content,
             distance,
-            file_id: files[fileIndex]?.file_id,
+            file_id: file.file_id,
             page: docInfo.metadata.page || null,
           })),
         )

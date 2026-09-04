@@ -1,5 +1,10 @@
 const axios = require('axios');
-const { isEnabled, generateShortLivedToken, logAxiosError } = require('@librechat/api');
+const {
+  isEnabled,
+  logAxiosError,
+  resolveVectorId,
+  generateShortLivedToken,
+} = require('@librechat/api');
 
 const footer = `Use the context as your learned knowledge to better answer the user.
 
@@ -21,8 +26,9 @@ function createContextHandlers(req, userMessageContent) {
   const useFullContext = isEnabled(process.env.RAG_USE_FULL_CONTEXT);
 
   const query = async (file) => {
+    const vectorId = resolveVectorId(file);
     if (useFullContext) {
-      return axios.get(`${process.env.RAG_API_URL}/documents/${file.file_id}/context`, {
+      return axios.get(`${process.env.RAG_API_URL}/documents/${vectorId}/context`, {
         headers: {
           Authorization: `Bearer ${jwtToken}`,
         },
@@ -32,7 +38,7 @@ function createContextHandlers(req, userMessageContent) {
     return axios.post(
       `${process.env.RAG_API_URL}/query`,
       {
-        file_id: file.file_id,
+        file_id: vectorId,
         query: userMessageContent,
         k: 4,
       },
@@ -46,12 +52,13 @@ function createContextHandlers(req, userMessageContent) {
   };
 
   const processFile = async (file) => {
-    if (file.embedded && !processedIds.has(file.file_id)) {
+    const vectorId = resolveVectorId(file);
+    if (file.embedded && !processedIds.has(vectorId)) {
       try {
         const promise = query(file);
         queryPromises.push(promise);
         processedFiles.push(file);
-        processedIds.add(file.file_id);
+        processedIds.add(vectorId);
       } catch (error) {
         logAxiosError({ message: `Error processing file ${file.filename}`, error });
       }

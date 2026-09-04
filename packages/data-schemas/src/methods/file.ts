@@ -9,6 +9,30 @@ export type FileOwnerScope = {
   tenantId?: string | null;
 };
 
+export type VectorReuseQuery = {
+  /** Hex SHA-256 of the newly uploaded bytes. */
+  hash: string;
+  /** Upload context the candidate must share, which pins the vector-store owner. */
+  context: FileContext;
+  /** Mime type the candidate must share, since it steers the RAG API's loader. */
+  type: string;
+  /**
+   * Filename extension the candidate must share. Matched here rather than
+   * after the fact so the limit below cannot hide a compatible record behind
+   * a run of same-hash uploads under other extensions.
+   */
+  extension: string;
+  /**
+   * Who the RAG API must have stamped as the owner of the candidate's chunks —
+   * an agent id or a user id. Both the proof that two records may share
+   * embeddings, since reads from a different owner are refused, and the scope
+   * of the search, since nothing else can carry the same value.
+   */
+  vectorOwner: string;
+  tenantId?: string | null;
+  limit?: number;
+};
+
 function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   filter: T,
   ownerScope?: FileOwnerScope,
@@ -55,6 +79,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     tenantId?: string | null;
     sourceDispatchedAt?: number;
   }) => Promise<IMongoFile>;
+  findVectorReuseCandidates: (params: VectorReuseQuery) => Promise<IMongoFile[]>;
+  countVectorReferences: (params: {
+    vectorIds: string[];
+    excludeFileIds?: string[];
+  }) => Promise<Map<string, number>>;
   createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
   updateFile: (
     data: Partial<IMongoFile> & { file_id: string },
@@ -353,6 +382,109 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       );
     }
     return result;
+  }
+
+  /**
+   * Finds already-embedded files whose content hash matches, so a new
+   * upload of identical bytes can point at existing vectors instead of
+   * re-embedding. Candidates are returned oldest-first; the caller picks
+   * one with `pickVectorReuseSource`.
+   *
+   * Records carrying an expiry (retention or the upload TTL) are excluded
+   * because their vectors are on a deletion clock the new upload does not
+   * share.
+   *
+   * Every returned record is a usable source, so `limit` only bounds the work,
+   * never the outcome: the caller prefers one owning its vectors to keep
+   * references from chaining, and a borrower resolves to the same document
+   * anyway.
+   */
+  async function findVectorReuseCandidates({
+    hash,
+    context,
+    type,
+    extension,
+    vectorOwner,
+    tenantId,
+    limit = 20,
+  }: VectorReuseQuery): Promise<IMongoFile[]> {
+    /* `vectorOwner` is what keeps this from reaching across owners, so an
+     * absent one has to stop the search rather than widen it. */
+    if (!hash || !type || !vectorOwner) {
+      return [];
+    }
+
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const filter: FilterQuery<IMongoFile> = {
+      hash,
+      context,
+      type,
+      vectorOwner,
+      vectorExtension: extension,
+      embedded: true,
+      expiredAt: null,
+      expiresAt: null,
+    };
+
+    if (tenantId) {
+      filter.tenantId = tenantId;
+    }
+
+    return await File.find(filter)
+      .select({ text: 0 })
+      .sort({ createdAt: 1 })
+      .limit(limit)
+      .lean<IMongoFile[]>();
+  }
+
+  /**
+   * Counts, per vector-store document, the files that still rely on it
+   * once `excludeFileIds` (the records being deleted) are set aside. A
+   * file relies on a document either by borrowing it through `vectorId`
+   * or by being the original owner, which stores no `vectorId` of its own.
+   *
+   * Deliberately unscoped by owner: reuse only ever happens within one
+   * user or one agent, and counting too broadly leaves vectors in place,
+   * whereas counting too narrowly destroys embeddings another record is
+   * using.
+   *
+   * Grouped in the database rather than in memory: a popular document can
+   * accumulate a borrower per upload, and a delete only needs one number
+   * per vector id, not every matching record.
+   *
+   * @returns Counts keyed by vector id; ids with no remaining references are absent.
+   */
+  async function countVectorReferences({
+    vectorIds,
+    excludeFileIds,
+  }: {
+    vectorIds: string[];
+    excludeFileIds?: string[];
+  }): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (!vectorIds?.length) {
+      return counts;
+    }
+
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const match: FilterQuery<IMongoFile> = {
+      $or: [{ vectorId: { $in: vectorIds } }, { vectorId: null, file_id: { $in: vectorIds } }],
+    };
+
+    if (excludeFileIds?.length) {
+      match.file_id = { $nin: excludeFileIds };
+    }
+
+    const grouped = await File.aggregate<{ _id: string; count: number }>([
+      { $match: match },
+      { $group: { _id: { $ifNull: ['$vectorId', '$file_id'] }, count: { $sum: 1 } } },
+    ]);
+
+    for (const { _id, count } of grouped) {
+      counts.set(_id, count);
+    }
+
+    return counts;
   }
 
   /**
@@ -683,6 +815,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     getCodeGeneratedFiles,
     getUserCodeFiles,
     claimCodeFile,
+    findVectorReuseCandidates,
+    countVectorReferences,
     createFile,
     updateFile,
     updateFileUsage,

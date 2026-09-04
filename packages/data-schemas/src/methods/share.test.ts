@@ -840,6 +840,9 @@ describe('Share Methods', () => {
             tenantId: 'tenant-a',
             storageKey: 'private/upload.png',
             source: 's3',
+            hash: 'a'.repeat(64),
+            vectorId: 'internal-vector-id',
+            vectorOwner: userId,
           },
         ],
         attachments: [
@@ -894,6 +897,12 @@ describe('Share Methods', () => {
       expect(file).not.toHaveProperty('user');
       expect(file).not.toHaveProperty('tenantId');
       expect(file).not.toHaveProperty('source');
+      // Content addressing is storage-internal: `vectorOwner` is a raw user id
+      // for attachments, `vectorId` an un-anonymized file id, and `hash`
+      // fingerprints the uploaded bytes.
+      expect(file).not.toHaveProperty('hash');
+      expect(file).not.toHaveProperty('vectorId');
+      expect(file).not.toHaveProperty('vectorOwner');
       // The file's conversation id is rewritten to the anonymized id, not the original.
       expect(file?.conversationId).toBe(shared?.conversationId);
       expect(file?.conversationId).not.toBe(conversationId);

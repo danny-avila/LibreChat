@@ -1,14 +1,21 @@
 import axios from 'axios';
 import { logger } from '@librechat/data-schemas';
 import { generateShortLivedToken } from '~/crypto/jwt';
+import { resolveVectorId } from '~/files/vectors';
 
 interface DeleteRagFileParams {
   /** The user ID. Required for authentication. If not provided, the function returns false and logs an error. */
   userId: string;
-  /** The file object. Must have `embedded` and `file_id` properties. */
+  /**
+   * The file object. Must have `embedded` and `file_id` properties, plus
+   * `vectorId` when the record borrows another file's embeddings. Callers
+   * reach this through `processDeleteRequest`, which clears `embedded` on
+   * records whose vectors another file still needs.
+   */
   file: {
     file_id: string;
     embedded?: boolean;
+    vectorId?: string;
   };
 }
 
@@ -33,6 +40,7 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
   }
 
   const jwtToken = generateShortLivedToken(userId);
+  const vectorId = resolveVectorId(file);
 
   try {
     await axios.delete(`${process.env.RAG_API_URL}/documents`, {
@@ -41,15 +49,15 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
-      data: [file.file_id],
+      data: [vectorId],
     });
-    logger.debug(`[deleteRagFile] Successfully deleted document ${file.file_id} from RAG API`);
+    logger.debug(`[deleteRagFile] Successfully deleted document ${vectorId} from RAG API`);
     return true;
   } catch (error) {
     const axiosError = error as { response?: { status?: number }; message?: string };
     if (axiosError.response?.status === 404) {
       logger.warn(
-        `[deleteRagFile] Document ${file.file_id} not found in RAG API, may have been deleted already`,
+        `[deleteRagFile] Document ${vectorId} not found in RAG API, may have been deleted already`,
       );
       return true;
     } else {
