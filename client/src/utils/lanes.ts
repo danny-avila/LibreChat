@@ -33,13 +33,12 @@ export function laneAgentsByGroup(
 ): Map<number, Set<string>> {
   const lanes = new Map<number, Set<string>>();
   content?.forEach((part) => {
-    const groupId = part?.groupId;
-    if (groupId == null) {
+    if (part?.groupId == null) {
       return;
     }
-    const agents = lanes.get(groupId) ?? new Set<string>();
-    agents.add((part as { agentId?: string }).agentId ?? UNATTRIBUTED_LANE);
-    lanes.set(groupId, agents);
+    const agents = lanes.get(part.groupId) ?? new Set<string>();
+    agents.add(part.agentId ?? UNATTRIBUTED_LANE);
+    lanes.set(part.groupId, agents);
   });
   return lanes;
 }
