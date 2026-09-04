@@ -541,7 +541,9 @@ export class MCPConnectionFactory {
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
-    if (this.useOAuth && !this.usesObo) {
+    if (this.usesObo) {
+      cleanupOAuthHandlers = this.handleOboEvents(connection);
+    } else if (this.useOAuth) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
     } else {
       const nonOAuthHandler = () => {
@@ -577,6 +579,57 @@ export class MCPConnectionFactory {
       }
       throw error;
     }
+  }
+
+  /** Re-resolves OBO tokens when a cached connection receives a 401/403 response. */
+  protected handleOboEvents(connection: MCPConnection): () => void {
+    let eventHandling: Promise<void> | null = null;
+
+    const handleOboEvent = async (): Promise<void> => {
+      logger.info(`${this.logPrefix} OBO authentication failure received; refreshing token`);
+
+      try {
+        const refreshedTokens = await this.getOboTokens();
+        if (!refreshedTokens) {
+          throw new Error(`OBO token exchange failed for "${this.serverName}".`);
+        }
+
+        connection.setOAuthTokens(refreshedTokens);
+        logger.info(`${this.logPrefix} OBO token refresh succeeded`);
+        connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
+      } catch (error) {
+        let connectionError: Error;
+        if (error instanceof OboTokenResolutionError) {
+          connectionError = this.createOboConnectionError(error);
+        } else if (error instanceof Error) {
+          connectionError = error;
+        } else {
+          connectionError = new Error('OBO token refresh failed');
+        }
+        logger.warn(`${this.logPrefix} OBO token refresh failed`);
+        connection.emit('oauthFailed', connectionError);
+      }
+    };
+
+    const oboHandler = (): Promise<void> => {
+      if (eventHandling) {
+        return eventHandling;
+      }
+
+      const handling = handleOboEvent().finally(() => {
+        if (eventHandling === handling) {
+          eventHandling = null;
+        }
+      });
+      eventHandling = handling;
+      return handling;
+    };
+
+    connection.on('oauthRequired', oboHandler);
+
+    return () => {
+      connection.removeListener('oauthRequired', oboHandler);
+    };
   }
 
   private shouldInitiateOAuthBeforeConnect(oauthTokens: MCPOAuthTokens | null): boolean {

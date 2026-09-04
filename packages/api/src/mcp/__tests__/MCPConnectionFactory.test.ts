@@ -4817,6 +4817,10 @@ describe('MCPConnectionFactory', () => {
     } as unknown as t.MCPOptions;
 
     beforeEach(() => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      resolveOboToken.mockReset();
       mockProcessMCPEnv.mockReturnValue(oboServerConfig);
       mockConnectionInstance.connect.mockResolvedValue(undefined);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
@@ -4859,6 +4863,172 @@ describe('MCPConnectionFactory', () => {
         oboTokenResolver,
         upstreamTokenProvider,
         undefined,
+      );
+    });
+
+    it('refreshes the OBO token when a cached connection receives an authentication failure', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      const initialTokens: MCPOAuthTokens = {
+        access_token: 'initial-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      };
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      };
+      resolveOboToken.mockResolvedValueOnce(initialTokens).mockResolvedValueOnce(refreshedTokens);
+
+      const upstreamTokenProvider = jest.fn();
+      const oboTokenResolver = jest.fn();
+
+      await MCPConnectionFactory.create(
+        { serverName: 'obo-srv', serverConfig: oboServerConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          oboTokenResolver,
+          upstreamTokenProvider,
+        },
+      );
+
+      const onCall = (mockConnectionInstance.on as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      const handler = onCall![1] as () => Promise<void>;
+      await handler();
+
+      expect(resolveOboToken).toHaveBeenCalledTimes(2);
+      expect(resolveOboToken).toHaveBeenLastCalledWith(
+        mockUser,
+        oboServerConfig.obo,
+        oboTokenResolver,
+        upstreamTokenProvider,
+        undefined,
+      );
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
+      expect(mockConnectionInstance.emit).not.toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.any(Error),
+      );
+    });
+
+    it('coalesces concurrent OBO refresh attempts after authentication failures', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      const initialTokens: MCPOAuthTokens = {
+        access_token: 'initial-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const refreshedTokens: MCPOAuthTokens = {
+        access_token: 'refreshed-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
+      const refreshPromise = new Promise<MCPOAuthTokens>((resolve) => {
+        resolveRefresh = resolve;
+      });
+      resolveOboToken.mockResolvedValueOnce(initialTokens).mockReturnValueOnce(refreshPromise);
+
+      await MCPConnectionFactory.create(
+        { serverName: 'obo-srv', serverConfig: oboServerConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          oboTokenResolver: jest.fn(),
+          upstreamTokenProvider: jest.fn(),
+        },
+      );
+
+      const onCall = (mockConnectionInstance.on as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      const handler = onCall![1] as () => Promise<void>;
+      const firstRefresh = handler();
+      const secondRefresh = handler();
+
+      expect(resolveOboToken).toHaveBeenCalledTimes(2);
+      resolveRefresh(refreshedTokens);
+      await Promise.all([firstRefresh, secondRefresh]);
+
+      expect(resolveOboToken).toHaveBeenCalledTimes(2);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledTimes(1);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledTimes(1);
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
+    });
+
+    it('reports an OBO refresh failure without reusing the rejected token', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      const initialTokens: MCPOAuthTokens = {
+        access_token: 'initial-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      };
+      const refreshError = new OboTokenResolutionError(
+        'session_refresh_failed',
+        'Your sign-in session expired and could not be refreshed. Please sign in again.',
+      );
+      resolveOboToken.mockResolvedValueOnce(initialTokens).mockRejectedValueOnce(refreshError);
+
+      await MCPConnectionFactory.create(
+        { serverName: 'obo-srv', serverConfig: oboServerConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          oboTokenResolver: jest.fn(),
+          upstreamTokenProvider: jest.fn(),
+        },
+      );
+
+      const onCall = (mockConnectionInstance.on as jest.Mock).mock.calls.find(
+        ([event]: [string]) => event === 'oauthRequired',
+      );
+      const handler = onCall![1] as () => Promise<void>;
+      await handler();
+
+      expect(mockConnectionInstance.setOAuthTokens).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({
+          message: expect.stringContaining('Unable to connect to OBO server "obo-srv"'),
+        }),
+      );
+      expect(mockConnectionInstance.emit).not.toHaveBeenCalledWith(
+        'oauthHandled',
+        expect.anything(),
       );
     });
 
