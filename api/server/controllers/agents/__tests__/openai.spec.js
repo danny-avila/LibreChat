@@ -1648,4 +1648,211 @@ describe('OpenAIChatCompletionController', () => {
       });
     });
   });
+
+  describe('tool call streaming index (#13987)', () => {
+    const {
+      createRun,
+      createChunk,
+      validateRequest,
+      createOpenAIStreamTracker,
+    } = require('@librechat/api');
+
+    /** Drive the streamed tool call events the way a provider like Bedrock does:
+     * id/name land on the first delta (empty args), then arguments stream on the
+     * following deltas — all under the tool call's own index. */
+    const driveToolCallStream = async () => {
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [{ role: 'user', content: 'What time is it in Madrid?' }],
+          stream: true,
+        },
+      });
+      const tracker = {
+        addText: jest.fn(),
+        addReasoning: jest.fn(),
+        toolCalls: new Map(),
+        usage: { promptTokens: 0, completionTokens: 0, reasoningTokens: 0 },
+      };
+      createOpenAIStreamTracker.mockReturnValueOnce(tracker);
+
+      req.body.stream = true;
+      await OpenAIChatCompletionController(req, res);
+
+      const { customHandlers } = createRun.mock.calls[0][0];
+      customHandlers.on_run_step.handle('on_run_step', {
+        index: 2,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'tooluse_1', name: 'get_time' }],
+        },
+      });
+      customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ index: 1, id: 'tooluse_1', name: 'get_time', args: '' }],
+        },
+      });
+      customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+        delta: { type: 'tool_calls', tool_calls: [{ index: 1, args: '{"city":"' }] },
+      });
+      customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+        delta: { type: 'tool_calls', tool_calls: [{ index: 1, args: 'Madrid"}' }] },
+      });
+
+      return {
+        tracker,
+        toolCallDeltas: createChunk.mock.calls
+          .map((call) => call[1])
+          .filter((delta) => delta && Array.isArray(delta.tool_calls))
+          .map((delta) => delta.tool_calls[0]),
+      };
+    };
+
+    it('keeps one index across the id chunk and the argument chunks', async () => {
+      const { toolCallDeltas } = await driveToolCallStream();
+
+      expect(toolCallDeltas.length).toBeGreaterThan(0);
+      expect([...new Set(toolCallDeltas.map((tc) => tc.index))]).toEqual([1]);
+
+      const idChunks = toolCallDeltas.filter((tc) => tc.id);
+      expect(idChunks).toHaveLength(1);
+      expect(idChunks[0]).toMatchObject({ index: 1, id: 'tooluse_1' });
+
+      const argChunks = toolCallDeltas.filter((tc) => tc.function?.arguments);
+      expect(argChunks.every((tc) => tc.index === 1)).toBe(true);
+      expect(argChunks.map((tc) => tc.function.arguments).join('')).toBe('{"city":"Madrid"}');
+    });
+
+    it('records the tool call so the final chunk can report tool_calls', async () => {
+      const { tracker } = await driveToolCallStream();
+
+      expect(tracker.toolCalls.size).toBe(1);
+      expect(tracker.toolCalls.get(1)).toMatchObject({
+        id: 'tooluse_1',
+        function: { name: 'get_time', arguments: '{"city":"Madrid"}' },
+      });
+    });
+
+    /** Fire handlers manually after the controller has attached them, the way
+     * OpenAI-compatible providers stream (on_run_step seeds, deltas follow). */
+    const driveHandlers = async (drive) => {
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: true,
+        },
+      });
+      const tracker = {
+        addText: jest.fn(),
+        addReasoning: jest.fn(),
+        toolCalls: new Map(),
+        usage: { promptTokens: 0, completionTokens: 0, reasoningTokens: 0 },
+      };
+      createOpenAIStreamTracker.mockReturnValueOnce(tracker);
+
+      req.body.stream = true;
+      await OpenAIChatCompletionController(req, res);
+
+      const { customHandlers } = createRun.mock.calls[0][0];
+      drive(customHandlers);
+
+      return {
+        tracker,
+        toolCallDeltas: createChunk.mock.calls
+          .map((call) => call[1])
+          .filter((delta) => delta && Array.isArray(delta.tool_calls))
+          .map((delta) => delta.tool_calls[0]),
+      };
+    };
+
+    it('streams a tool call that arrives whole from on_run_step with no deltas', async () => {
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [{ role: 'user', content: 'weather in Paris?' }],
+          stream: true,
+        },
+      });
+      const tracker = {
+        addText: jest.fn(),
+        addReasoning: jest.fn(),
+        toolCalls: new Map(),
+        usage: { promptTokens: 0, completionTokens: 0, reasoningTokens: 0 },
+      };
+      createOpenAIStreamTracker.mockReturnValueOnce(tracker);
+
+      // Providers like Google/Vertex never stream tool_call deltas — the whole
+      // call (args included) lands on on_run_step and is flushed when the run ends.
+      mockProcessStream.mockImplementationOnce(async () => {
+        const { customHandlers } = createRun.mock.calls[0][0];
+        customHandlers.on_run_step.handle('on_run_step', {
+          index: 0,
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call_g', name: 'get_weather', args: { city: 'Paris' } }],
+          },
+        });
+      });
+
+      req.body.stream = true;
+      await OpenAIChatCompletionController(req, res);
+
+      expect(tracker.toolCalls.size).toBe(1);
+      expect([...tracker.toolCalls.values()][0]).toMatchObject({
+        id: 'call_g',
+        function: { name: 'get_weather', arguments: '{"city":"Paris"}' },
+      });
+
+      const toolChunks = createChunk.mock.calls
+        .map((call) => call[1])
+        .filter((delta) => delta && Array.isArray(delta.tool_calls))
+        .map((delta) => delta.tool_calls[0]);
+      expect(toolChunks).toHaveLength(1);
+      expect(toolChunks[0]).toMatchObject({
+        index: 0,
+        id: 'call_g',
+        function: { name: 'get_weather', arguments: '{"city":"Paris"}' },
+      });
+    });
+
+    it('does not concatenate a tool name that repeats on every delta', async () => {
+      const { tracker, toolCallDeltas } = await driveHandlers((customHandlers) => {
+        customHandlers.on_run_step.handle('on_run_step', {
+          index: 0,
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call_1', name: 'get_time' }],
+          },
+        });
+        // Some gateways resend `name` on each delta.
+        customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+          delta: {
+            type: 'tool_calls',
+            tool_calls: [{ index: 0, id: 'call_1', name: 'get_time', args: '{"c":' }],
+          },
+        });
+        customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+          delta: {
+            type: 'tool_calls',
+            tool_calls: [{ index: 0, name: 'get_time', args: '"NYC"}' }],
+          },
+        });
+      });
+
+      expect(tracker.toolCalls.get(0).function.name).toBe('get_time');
+      expect(toolCallDeltas.filter((tc) => tc.function?.name)).toHaveLength(1);
+    });
+
+    it('keeps arguments from an args-only delta with no id or name', async () => {
+      const { tracker } = await driveHandlers((customHandlers) => {
+        customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+          delta: { type: 'tool_calls', tool_calls: [{ index: 0, args: '{"a":1}' }] },
+        });
+      });
+
+      expect(tracker.toolCalls.get(0).function.arguments).toBe('{"a":1}');
+    });
+  });
 });
