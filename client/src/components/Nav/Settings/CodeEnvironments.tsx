@@ -14,7 +14,7 @@ import {
   Spinner,
   useToastContext,
 } from '@librechat/client';
-import { createCodeWorkerSetupCommand } from 'librechat-data-provider';
+import { createCodeWorkerSetupCommand, isCodeWorkerShell } from 'librechat-data-provider';
 import type {
   CodeEnvironmentPermissionDecision,
   TCodeEnvironmentSummary,
@@ -33,14 +33,24 @@ function WorkerCommand({ pairing }: { pairing: CodeEnvironmentPairingResponse['p
   const { showToast } = useToastContext();
   const localize = useLocalize();
   const [shell, setShell] = useState<CodeWorkerShell>('posix');
-  const command = createCodeWorkerSetupCommand(pairing, shell);
+  const command = createCodeWorkerSetupCommand(pairing, shell, {
+    allowWorkspaceWrites: true,
+    allowWorkspaceCommands: true,
+  });
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border-medium bg-surface-secondary p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-text-primary">
           {localize('com_ui_code_environment_pairing_ready')}
         </p>
-        <Select value={shell} onValueChange={(value) => setShell(value as CodeWorkerShell)}>
+        <Select
+          value={shell}
+          onValueChange={(value) => {
+            if (isCodeWorkerShell(value)) {
+              setShell(value);
+            }
+          }}
+        >
           <SelectTrigger
             className="w-auto min-w-36"
             aria-label={localize('com_ui_code_environment_shell')}
