@@ -115,6 +115,37 @@ describe('groupParallelContent — lane demotion', () => {
     expect(grouped.sequentialParts.map(({ idx }) => idx)).toEqual([0, 1]);
   });
 
+  it('demotes a group whose second column is only a handoff marker', () => {
+    const output = lanePart('agent_a', 'primary answer');
+    const handoff = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_b' },
+      agentId: 'agent_b',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupParallelContent([output, handoff]);
+
+    expect(grouped.parallelSections).toEqual([]);
+    expect(grouped.sequentialParts.map(({ idx }) => idx)).toEqual([0, 1]);
+  });
+
+  it('keeps columns when a real dual run also carries a handoff marker', () => {
+    const primary = lanePart('agent_a', 'primary answer');
+    const added = lanePart('agent_b____1', 'added answer');
+    const handoff = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_c' },
+      agentId: 'agent_c',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupParallelContent([primary, added, handoff]);
+
+    expect(grouped.parallelSections).toHaveLength(1);
+    expect(grouped.sequentialParts).toEqual([]);
+  });
+
   it('keeps a slice column when the message says the group has two agents', () => {
     /** A phase marker can hand this slice one agent of a real two-agent group.
      *  Counting the slice alone would demote it and strip the attribution the

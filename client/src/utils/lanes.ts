@@ -1,3 +1,4 @@
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 
 /** Column key for a lane part that carries no agent id of its own. */
@@ -12,6 +13,16 @@ export const UNATTRIBUTED_LANE = 'unknown';
  */
 export function attributedLaneCount(agents: ReadonlySet<string>): number {
   return agents.has(UNATTRIBUTED_LANE) ? agents.size - 1 : agents.size;
+}
+
+/**
+ * An agent update is a transition marker, not lane content: it names the agent
+ * the run hands off TO. `useStepHandler` stamps it with the current group id
+ * even when the destination's own steps carry none, so counting it would read
+ * a sequential handoff as a second lane and split one run into columns.
+ */
+export function isLaneMarkerPart(part: TMessageContentParts | undefined): boolean {
+  return part?.type === ContentTypes.AGENT_UPDATE;
 }
 
 /**
@@ -39,18 +50,34 @@ export const MIN_PARALLEL_LANES = 2;
  * column without contributing content, and a part with no agent id of its own
  * shares the single unattributed column.
  */
+const laneAgentsCache = new WeakMap<object, ReadonlyMap<number, ReadonlySet<string>>>();
+
 export function laneAgentsByGroup(
   content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
-): Map<number, Set<string>> {
+): ReadonlyMap<number, ReadonlySet<string>> {
+  if (content == null) {
+    return new Map();
+  }
+  /** One message is scanned by `MultiMessage`, `useContentMetadata` and
+   *  `ContentParts` in a single render pass. Keying on the array itself
+   *  collapses those to one traversal and is exactly as fresh as the render:
+   *  every streamed delta rebuilds `content` (`[...(message.content || [])]`
+   *  in `useStepHandler`), and an update that kept the identity would not
+   *  re-render either. Entries die with the array they key. */
+  const cached = laneAgentsCache.get(content);
+  if (cached != null) {
+    return cached;
+  }
   const lanes = new Map<number, Set<string>>();
-  content?.forEach((part) => {
-    if (part?.groupId == null) {
+  content.forEach((part) => {
+    if (part?.groupId == null || isLaneMarkerPart(part)) {
       return;
     }
     const agents = lanes.get(part.groupId) ?? new Set<string>();
     agents.add(part.agentId ?? UNATTRIBUTED_LANE);
     lanes.set(part.groupId, agents);
   });
+  laneAgentsCache.set(content, lanes);
   return lanes;
 }
 

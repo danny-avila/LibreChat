@@ -76,6 +76,32 @@ describe('hasParallelLanes', () => {
     expect(laneAgentsByGroup(content).get(1)?.size).toBe(2);
   });
 
+  it('does not let a sequential handoff marker claim a lane', () => {
+    /** `useStepHandler` stamps an agent update with the CURRENT group id even
+     *  when the destination's own run steps carry none, so the marker names a
+     *  second agent inside a single-lane group. Counting it split one run into
+     *  columns at the handoff. */
+    const handoff = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_b' },
+      agentId: 'agent_b',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+    const content = [lanePart('agent_a', 1), handoff];
+
+    expect(hasParallelLanes(content)).toBe(false);
+    expect(laneAgentsByGroup(content).get(1)?.size).toBe(1);
+  });
+
+  it('scans a content array once, and a new array afresh', () => {
+    /** One message is scanned by `MultiMessage`, `useContentMetadata` and
+     *  `ContentParts` in a single render pass. */
+    const content = [lanePart('agent_a', 1), lanePart('agent_b', 1)];
+
+    expect(laneAgentsByGroup(content)).toBe(laneAgentsByGroup(content));
+    expect(laneAgentsByGroup([...content])).not.toBe(laneAgentsByGroup(content));
+  });
+
   it('answers for a slice from the message-level groups it is given', () => {
     /** The slice holds one agent of group 1; the message knows better. */
     const slice = [lanePart('agent_a', 1)];

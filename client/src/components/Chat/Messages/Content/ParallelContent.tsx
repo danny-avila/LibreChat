@@ -6,7 +6,7 @@ import {
   getActivityLabelText,
   lastCursorContentIdx,
 } from '~/utils/activityLabels';
-import { MIN_PARALLEL_LANES, UNATTRIBUTED_LANE } from '~/utils/lanes';
+import { MIN_PARALLEL_LANES, UNATTRIBUTED_LANE, isLaneMarkerPart } from '~/utils/lanes';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { cn, getPartKeyIndex } from '~/utils';
@@ -129,6 +129,17 @@ export function groupParallelContent(
       parts: columnMap.get(agentId)!,
     }));
 
+    /** Which columns are an agent's own output, mirroring `laneAgentsByGroup`:
+     *  the sentinel column belongs to no agent, and a column holding only a
+     *  handoff marker is nothing to compare against. A placeholder column has
+     *  no parts at all and still claims its lane — that is how a dual run
+     *  shows both agents from the first render. */
+    const claimedColumns = columns.filter(
+      ({ agentId, parts }) =>
+        agentId !== UNATTRIBUTED_LANE &&
+        (parts.length === 0 || parts.some(({ part }) => !isLaneMarkerPart(part))),
+    ).length;
+
     /** One column is not a comparison. Its parts rejoin the sequential flow,
      *  where tool grouping, activity-label headers and phase folds apply and
      *  the message's own author header is the only attribution shown.
@@ -136,7 +147,6 @@ export function groupParallelContent(
      *  `laneGroups` is the message-level verdict: a phase slice holding one
      *  agent of a real two-agent group keeps its columns, because the group
      *  is a comparison even where this slice cannot show it. */
-    const claimedColumns = columns.filter(({ agentId }) => agentId !== UNATTRIBUTED_LANE).length;
     if (claimedColumns < MIN_PARALLEL_LANES && laneGroups?.has(groupId) !== true) {
       for (const column of columns) {
         noGroup.push(...column.parts);
