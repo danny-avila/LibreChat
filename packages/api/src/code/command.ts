@@ -31,17 +31,18 @@ const attachedCommandSchema: NonNullable<LCTool['parameters']> = {
 };
 
 /**
- * LangChain's JSON Schema dereferencer annotates schemas during validation, so
- * this object must remain extensible while it is owned by the tool runtime.
+ * This definition is shared with agent metadata. LangChain's JSON Schema
+ * dereferencer annotates schemas during validation, so each tool receives an
+ * isolated mutable clone instead of mutating this shared definition.
  */
-export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> = {
+export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> = Object.freeze({
   type: 'object',
   properties: {
     ...bashSchema.properties,
     command: attachedCommandSchema,
   },
   required: ['command'],
-};
+});
 
 export function buildAttachedWorkspaceBashDescription(enableToolOutputReferences: boolean): string {
   return enableToolOutputReferences
@@ -108,7 +109,7 @@ export function createAttachedWorkspaceBashTool({
     {
       name: BashExecutionToolDefinition.name,
       description: ATTACHED_WORKSPACE_BASH_DESCRIPTION,
-      schema: ATTACHED_WORKSPACE_BASH_SCHEMA,
+      schema: structuredClone(ATTACHED_WORKSPACE_BASH_SCHEMA),
       responseFormat: 'content_and_artifact',
     },
   ) as unknown as DynamicStructuredTool;
