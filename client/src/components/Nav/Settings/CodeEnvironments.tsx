@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createCodeWorkerSetupCommand, isCodeWorkerShell } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -14,7 +15,6 @@ import {
   Spinner,
   useToastContext,
 } from '@librechat/client';
-import { createCodeWorkerSetupCommand, isCodeWorkerShell } from 'librechat-data-provider';
 import type {
   CodeEnvironmentPermissionDecision,
   TCodeEnvironmentSummary,

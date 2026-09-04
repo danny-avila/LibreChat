@@ -4,6 +4,7 @@ const pairing = {
   endpoint: 'https://code.example.com/v1',
   code: "one-time'code",
   workerId: "worker'one",
+  expiresAt: '2026-09-04T15:00:00.000Z',
 };
 
 describe('createCodeWorkerSetupCommand', () => {
