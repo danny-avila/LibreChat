@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import { hasParallelLanes, laneAgentsByGroup } from '../lanes';
+import { hasParallelLanes, laneAgentsByGroup, parallelLaneGroups } from '../lanes';
 
 const lanePart = (agentId?: string, groupId?: number, text = 'output'): TMessageContentParts =>
   ({
@@ -55,5 +55,22 @@ describe('hasParallelLanes', () => {
     ]);
     expect(lanes.get(1)?.size).toBe(2);
     expect(lanes.get(2)?.size).toBe(1);
+  });
+
+  it('collects only the group ids that render as columns', () => {
+    const groups = parallelLaneGroups([
+      lanePart('agent_a', 1),
+      lanePart('agent_b', 1),
+      lanePart('agent_c', 2),
+    ]);
+    expect([...groups]).toEqual([1]);
+  });
+
+  it('answers for a slice from the message-level groups it is given', () => {
+    /** The slice holds one agent of group 1; the message knows better. */
+    const slice = [lanePart('agent_a', 1)];
+    expect(hasParallelLanes(slice)).toBe(false);
+    expect(hasParallelLanes(slice, new Set([1]))).toBe(true);
+    expect(hasParallelLanes(slice, new Set([2]))).toBe(false);
   });
 });

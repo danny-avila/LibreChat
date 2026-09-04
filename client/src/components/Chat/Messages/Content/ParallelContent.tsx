@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, Fragment } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
 import {
@@ -38,6 +38,7 @@ export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
   contentIndexOffset = 0,
   contentIndices?: ReadonlyArray<number>,
+  laneGroups?: ReadonlySet<number>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -130,8 +131,12 @@ export function groupParallelContent(
 
     /** One column is not a comparison. Its parts rejoin the sequential flow,
      *  where tool grouping, activity-label headers and phase folds apply and
-     *  the message's own author header is the only attribution shown. */
-    if (columns.length < MIN_PARALLEL_LANES) {
+     *  the message's own author header is the only attribution shown.
+     *
+     *  `laneGroups` is the message-level verdict: a phase slice holding one
+     *  agent of a real two-agent group keeps its columns, because the group
+     *  is a comparison even where this slice cannot show it. */
+    if (columns.length < MIN_PARALLEL_LANES && laneGroups?.has(groupId) !== true) {
       for (const column of columns) {
         noGroup.push(...column.parts);
       }
@@ -256,6 +261,8 @@ type ParallelContentRendererProps = {
   contentIndexOffset?: number;
   /** Absolute transcript index for each compacted sparse segment entry. */
   contentIndices?: ReadonlyArray<number>;
+  /** Message-level lane cardinality, so a phase slice does not recount. */
+  laneGroups?: ReadonlySet<number>;
 };
 
 /**
@@ -275,10 +282,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   showDecorations = true,
   contentIndexOffset = 0,
   contentIndices,
+  laneGroups,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content, contentIndexOffset, contentIndices),
-    [content, contentIndexOffset, contentIndices],
+    () => groupParallelContent(content, contentIndexOffset, contentIndices, laneGroups),
+    [content, contentIndexOffset, contentIndices, laneGroups],
   );
 
   /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
@@ -290,26 +298,36 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       ? -1
       : (contentIndices?.[relativeLastContentIdx] ?? relativeLastContentIdx + contentIndexOffset);
 
-  // Split sequential parts into before/after parallel sections
-  const { before, after } = useMemo(() => {
-    if (parallelSections.length === 0) {
-      return { before: sequentialParts, after: [] };
+  /** Sequential parts are laid out AROUND each section rather than split once
+   *  around all of them: two groups with ordinary content between them would
+   *  otherwise render both groups first and the intervening part last.
+   *
+   *  A part landing between a section's own first and last index has no column
+   *  and no slot inside one, so it falls to the next block — after the lanes it
+   *  interleaves with. Bounding it by the last lane index instead dropped it
+   *  from the message entirely, and a placeholder-only section made
+   *  `Math.min(...[])` Infinity, which rendered every part twice. */
+  const { blocks, trailing } = useMemo(() => {
+    const laid: Array<{ leading: PartWithIndex[]; section: ParallelSection }> = [];
+    let cursor = 0;
+    for (const section of parallelSections) {
+      const indices = section.columns.flatMap((column) => column.parts.map((part) => part.idx));
+      const sectionStart = indices.length > 0 ? Math.min(...indices) : Infinity;
+      const leading: PartWithIndex[] = [];
+      while (cursor < sequentialParts.length && sequentialParts[cursor].idx < sectionStart) {
+        leading.push(sequentialParts[cursor]);
+        cursor += 1;
+      }
+      laid.push({ leading, section });
     }
-
-    const allParallelIndices = parallelSections.flatMap((s) =>
-      s.columns.flatMap((c) => c.parts.map((p) => p.idx)),
-    );
-    const minParallelIdx = Math.min(...allParallelIndices);
-
-    /** Everything that is not before the columns renders after them. A part
-     *  landing BETWEEN the lanes' first and last index has no column of its
-     *  own and no slot between them either, so bounding `after` by the last
-     *  lane index dropped it from the message entirely. */
-    return {
-      before: sequentialParts.filter(({ idx }) => idx < minParallelIdx),
-      after: sequentialParts.filter(({ idx }) => idx >= minParallelIdx),
-    };
+    return { blocks: laid, trailing: sequentialParts.slice(cursor) };
   }, [parallelSections, sequentialParts]);
+
+  const renderSequential = ({ part, idx }: PartWithIndex) => {
+    const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
+    const rendered = renderPart(part, idx, idx === lastContentIdx);
+    return attribution != null ? [attribution, rendered] : [rendered];
+  };
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
@@ -318,34 +336,25 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
         <Sources messageId={messageId} conversationId={conversationId || undefined} />
       )}
 
-      {/* Sequential content BEFORE parallel sections */}
-      {before.flatMap(({ part, idx }) => {
-        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
-        const rendered = renderPart(part, idx, false);
-        return attribution != null ? [attribution, rendered] : [rendered];
-      })}
-
-      {/* Parallel sections - each group renders as columns */}
-      {parallelSections.map(({ groupId, columns }) => (
-        <ParallelColumns
-          key={`parallel-group-${messageId}-${groupId}`}
-          columns={columns}
-          groupId={groupId}
-          messageId={messageId}
-          createdAt={createdAt}
-          renderPart={renderPart}
-          isSubmitting={isSubmitting}
-          conversationId={conversationId}
-          lastContentIdx={lastContentIdx}
-        />
+      {/* Each section preceded by the sequential content that runs up to it */}
+      {blocks.map(({ leading, section: { groupId, columns } }) => (
+        <Fragment key={`parallel-block-${messageId}-${groupId}`}>
+          {leading.flatMap(renderSequential)}
+          <ParallelColumns
+            columns={columns}
+            groupId={groupId}
+            messageId={messageId}
+            createdAt={createdAt}
+            renderPart={renderPart}
+            isSubmitting={isSubmitting}
+            conversationId={conversationId}
+            lastContentIdx={lastContentIdx}
+          />
+        </Fragment>
       ))}
 
-      {/* Sequential content AFTER parallel sections */}
-      {after.flatMap(({ part, idx }) => {
-        const attribution = renderResumeAttribution?.(idx, getPartKeyIndex(part, idx));
-        const rendered = renderPart(part, idx, idx === lastContentIdx);
-        return attribution != null ? [attribution, rendered] : [rendered];
-      })}
+      {/* Sequential content after the last section */}
+      {trailing.flatMap(renderSequential)}
     </SearchContext.Provider>
   );
 });

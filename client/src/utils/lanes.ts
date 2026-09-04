@@ -44,14 +44,42 @@ export function laneAgentsByGroup(
 }
 
 /**
+ * The group ids that render as columns, resolved over WHOLE message content.
+ *
+ * Lane cardinality is a property of the message, not of the slice in front of
+ * you: a phase marker can partition a real two-agent group so that one slice
+ * holds a single agent's parts. Counting that slice on its own would demote it
+ * and drop the per-agent attribution its sibling slice still shows, so every
+ * slice asks this set instead of recounting.
+ */
+export function parallelLaneGroups(
+  content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
+): Set<number> {
+  const groups = new Set<number>();
+  for (const [groupId, agents] of laneAgentsByGroup(content)) {
+    if (agents.size >= MIN_PARALLEL_LANES) {
+      groups.add(groupId);
+    }
+  }
+  return groups;
+}
+
+/**
  * True when some group is backed by enough distinct agents to render as
  * columns. The predicate every consumer of "does this message have parallel
  * content" asks, so a lone group renders exactly like content with no group
  * id at all.
+ *
+ * `laneGroups` carries the message-level answer into a phase slice; without it
+ * the content passed in is counted on its own.
  */
 export function hasParallelLanes(
   content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
+  laneGroups?: ReadonlySet<number>,
 ): boolean {
+  if (laneGroups != null) {
+    return content?.some((part) => part?.groupId != null && laneGroups.has(part.groupId)) === true;
+  }
   for (const agents of laneAgentsByGroup(content).values()) {
     if (agents.size >= MIN_PARALLEL_LANES) {
       return true;

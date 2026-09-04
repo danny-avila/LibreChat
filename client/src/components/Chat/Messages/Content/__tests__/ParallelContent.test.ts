@@ -100,6 +100,21 @@ describe('groupParallelContent — lane demotion', () => {
     expect(grouped.parallelSections[0]?.groupId).toBe(1);
     expect(grouped.sequentialParts).toEqual([{ part: lone, idx: 1 }]);
   });
+
+  it('keeps a slice column when the message says the group has two agents', () => {
+    /** A phase marker can hand this slice one agent of a real two-agent group.
+     *  Counting the slice alone would demote it and strip the attribution the
+     *  sibling slice still shows, so the message-level verdict wins. */
+    const primaryOnly = lanePart('agent_a', 'primary answer');
+
+    const grouped = groupParallelContent([primaryOnly], 0, undefined, new Set([1]));
+
+    expect(grouped.parallelSections).toHaveLength(1);
+    expect(grouped.parallelSections[0]?.columns.map((column) => column.agentId)).toEqual([
+      'agent_a',
+    ]);
+    expect(grouped.sequentialParts).toEqual([]);
+  });
 });
 
 describe('lastParallelColumnCursorIdx', () => {

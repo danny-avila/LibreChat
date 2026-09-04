@@ -26,11 +26,11 @@ import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceCh
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
+import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
 import EditContentParts from './EditContentParts';
-import { hasParallelLanes } from '~/utils/lanes';
 import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import Sources from '~/components/Web/Sources';
@@ -235,6 +235,9 @@ type ContentPartsProps = {
   contentIndexOffset?: number;
   /** Absolute transcript index for each compacted sparse segment entry. */
   contentIndices?: ReadonlyArray<number>;
+  /** Message-wide lane cardinality retained across nested phase segments, so a
+   *  slice holding one agent of a real two-agent group keeps its columns. */
+  laneGroups?: ReadonlySet<number>;
   /** Message-wide steer attribution retained across nested phase segments. */
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
   /** Message-wide tool-group expansion overrides retained across phase slices. */
@@ -275,6 +278,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   workspaceAttachmentsPartitioned = false,
   contentIndexOffset = 0,
   contentIndices,
+  laneGroups,
   resumeAuthors,
   toolGroupExpansionState,
   toolGroupOccurrenceByIndex,
@@ -347,6 +351,12 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const phaseSegments = useMemo(
     () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
     [nestedActivityPhase, content],
+  );
+
+  /** Resolved once over the whole message and handed to every slice below. */
+  const messageLaneGroups = useMemo(
+    () => laneGroups ?? parallelLaneGroups(content),
+    [laneGroups, content],
   );
   /** Every file a phase's parts produced, in transcript order, deduplicated
    *  across parts that share a tool call. */
@@ -805,6 +815,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           workspaceAttachmentsPartitioned
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
+          laneGroups={messageLaneGroups}
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
           toolGroupOccurrenceByIndex={resolvedToolGroupOccurrences}
@@ -812,7 +823,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
         />
       );
     };
-    const hasParallelContent = hasParallelLanes(content);
+    const hasParallelContent = hasParallelLanes(content, messageLaneGroups);
     return (
       <ApprovalProvider>
         <SearchContext.Provider value={{ searchResults }}>
@@ -963,7 +974,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
 
   /** Columns only when at least two agents share a group — a lone group
    *  renders here, where tool grouping and activity labels apply. */
-  const hasParallelContent = hasParallelLanes(safeContent);
+  const hasParallelContent = hasParallelLanes(safeContent, messageLaneGroups);
   if (hasParallelContent) {
     const parallelContent = (
       <>
@@ -981,6 +992,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           showDecorations={!nestedActivityPhase}
           contentIndexOffset={contentIndexOffset}
           contentIndices={contentIndices}
+          laneGroups={messageLaneGroups}
         />
         {!nestedActivityPhase && <WorkspaceChanges attachments={workspaceChanges} />}
       </>

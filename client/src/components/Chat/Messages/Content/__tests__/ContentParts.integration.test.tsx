@@ -982,4 +982,45 @@ describe('ContentParts integration: lane groups backed by one agent', () => {
       'agent_b____1',
     ]);
   });
+
+  it('keeps lane attribution when a phase marker leaves one agent per slice', () => {
+    /** Lane cardinality belongs to the MESSAGE. A marker that puts each agent
+     *  of a real two-agent group in a different slice would otherwise demote
+     *  both, and the added agent's answer would read as the primary's. */
+    const content = [
+      inLane(makeTextPart('primary answer'), 'agent_a'),
+      inLane(makeTextPart('added answer'), 'agent_b____1'),
+      makePhasePart(0, 1, 'Ran both agents'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+    fireEvent.click(screen.getByRole('button', { name: 'Ran both agents' }));
+
+    const agentIds = screen
+      .getAllByTestId('sibling-header')
+      .map((header) => header.getAttribute('data-agent-id'));
+    expect(agentIds).toContain('agent_a');
+    expect(agentIds).toContain('agent_b____1');
+  });
+
+  it('keeps content that runs between two lane groups in transcript order', () => {
+    const content = [
+      inLane(makeTextPart('first wave primary'), 'agent_a', 1),
+      inLane(makeTextPart('first wave added'), 'agent_b____1', 1),
+      makeTextPart('handover note between the waves'),
+      inLane(makeTextPart('second wave primary'), 'agent_a', 2),
+      inLane(makeTextPart('second wave added'), 'agent_b____1', 2),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    const transcript = document.body.textContent ?? '';
+    expect(transcript).toContain('handover note between the waves');
+    expect(transcript.indexOf('handover note between the waves')).toBeGreaterThan(
+      transcript.indexOf('first wave primary'),
+    );
+    expect(transcript.indexOf('handover note between the waves')).toBeLessThan(
+      transcript.indexOf('second wave primary'),
+    );
+  });
 });
