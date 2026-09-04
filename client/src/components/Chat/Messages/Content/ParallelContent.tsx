@@ -6,6 +6,7 @@ import {
   getActivityLabelText,
   lastCursorContentIdx,
 } from '~/utils/activityLabels';
+import { MIN_PARALLEL_LANES } from '~/utils/lanes';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { cn, getPartKeyIndex } from '~/utils';
@@ -127,6 +128,16 @@ export function groupParallelContent(
       parts: columnMap.get(agentId)!,
     }));
 
+    /** One column is not a comparison. Its parts rejoin the sequential flow,
+     *  where tool grouping, activity-label headers and phase folds apply and
+     *  the message's own author header is the only attribution shown. */
+    if (columns.length < MIN_PARALLEL_LANES) {
+      for (const column of columns) {
+        noGroup.push(...column.parts);
+      }
+      continue;
+    }
+
     sections.push({ groupId, columns });
   }
 
@@ -138,6 +149,10 @@ export function groupParallelContent(
     const bMin = bParts.length > 0 ? Math.min(...bParts) : Infinity;
     return aMin - bMin;
   });
+
+  /** Demoted lane parts are appended after the parts that preceded them, so
+   *  restore transcript order before the before/after split reads indexes. */
+  noGroup.sort((a, b) => a.idx - b.idx);
 
   return { parallelSections: sections, sequentialParts: noGroup };
 }
@@ -285,11 +300,14 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       s.columns.flatMap((c) => c.parts.map((p) => p.idx)),
     );
     const minParallelIdx = Math.min(...allParallelIndices);
-    const maxParallelIdx = Math.max(...allParallelIndices);
 
+    /** Everything that is not before the columns renders after them. A part
+     *  landing BETWEEN the lanes' first and last index has no column of its
+     *  own and no slot between them either, so bounding `after` by the last
+     *  lane index dropped it from the message entirely. */
     return {
       before: sequentialParts.filter(({ idx }) => idx < minParallelIdx),
-      after: sequentialParts.filter(({ idx }) => idx > maxParallelIdx),
+      after: sequentialParts.filter(({ idx }) => idx >= minParallelIdx),
     };
   }, [parallelSections, sequentialParts]);
 

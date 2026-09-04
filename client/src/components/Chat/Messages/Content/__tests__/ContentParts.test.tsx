@@ -265,11 +265,19 @@ describe('ContentParts — interim skill cards', () => {
   });
 
   it('renders pending skill cards above parallel content', () => {
+    /** Two agents, so the group renders as columns at all. */
     const parallelContent: TMessageContentParts[] = [
       {
         type: ContentTypes.TEXT,
-        text: 'parallel',
-        groupId: 'group-1',
+        text: 'primary',
+        agentId: 'agent_a',
+        groupId: 1,
+      } as unknown as TMessageContentParts,
+      {
+        type: ContentTypes.TEXT,
+        text: 'added',
+        agentId: 'agent_b____1',
+        groupId: 1,
       } as unknown as TMessageContentParts,
     ];
     render(<ContentParts {...baseProps} content={parallelContent} manualSkills={['pptx']} />);
@@ -421,15 +429,17 @@ describe('ContentParts — post-steer author re-attribution', () => {
   });
 
   it('provides resume attribution to the parallel renderer for its sequential stretches', () => {
-    const parallelText = {
-      type: ContentTypes.TEXT,
-      text: 'column',
-      groupId: 1,
-    } as unknown as TMessageContentParts;
+    const laneText = (agentId: string) =>
+      ({
+        type: ContentTypes.TEXT,
+        text: `column ${agentId}`,
+        agentId,
+        groupId: 1,
+      }) as unknown as TMessageContentParts;
     render(
       <ContentParts
         {...baseProps}
-        content={[parallelText, steerPart, textPart('resumed')]}
+        content={[laneText('agent_a'), laneText('agent_b____1'), steerPart, textPart('resumed')]}
         authorHeader={header}
       />,
     );
@@ -563,18 +573,21 @@ describe('ContentParts — activity phase state', () => {
       activity_count: 2,
       pending: false,
     } as unknown as TMessageContentParts;
-    const parallel = {
-      type: ContentTypes.TEXT,
-      text: 'lane result',
-      groupId: 1,
-    } as unknown as TMessageContentParts;
+    const lane = (agentId: string) =>
+      ({
+        type: ContentTypes.TEXT,
+        text: `lane result ${agentId}`,
+        agentId,
+        groupId: 1,
+      }) as unknown as TMessageContentParts;
 
     render(
       <ContentParts
         {...baseProps}
         content={[
           { type: ContentTypes.TEXT, text: 'before' } as unknown as TMessageContentParts,
-          parallel,
+          lane('agent_a'),
+          lane('agent_b____1'),
           phase,
         ]}
       />,

@@ -653,20 +653,32 @@ describe('groupActivityPhases — synthesized folds', () => {
     expect(foldOf(failed)?.labelPart.status).toBe('failed');
   });
 
-  it('stands down when the message carries parallel content', () => {
-    const parallel = {
-      ...(toolPart('t2') as object),
-      groupId: 'g1',
-    } as unknown as TMessageContentParts;
+  const inLane = (part: TMessageContentParts, agentId: string): TMessageContentParts =>
+    ({ ...(part as object), agentId, groupId: 1 }) as unknown as TMessageContentParts;
 
+  it('stands down when the message carries parallel content', () => {
     expect(
       groupActivityPhases([
-        toolPart('t1'),
-        childLabel('Read the config'),
-        parallel,
-        childLabel('Checked the callers'),
+        inLane(toolPart('t1'), 'agent_a'),
+        inLane(childLabel('Read the config'), 'agent_a'),
+        inLane(toolPart('t2'), 'agent_b'),
+        inLane(childLabel('Checked the callers'), 'agent_b'),
       ]),
     ).toBeUndefined();
+  });
+
+  it('folds a labeled run whose group id is backed by one agent', () => {
+    /** A multi-agent graph stamps a group id on every starting node, so an
+     *  agent that merely has subagents available carries one on its own
+     *  output. It renders sequentially, so it folds like any other run. */
+    const segments = groupActivityPhases([
+      inLane(toolPart('t1'), 'agent_a'),
+      inLane(childLabel('Read the config'), 'agent_a'),
+      inLane(toolPart('t2'), 'agent_a'),
+      inLane(childLabel('Checked the callers'), 'agent_a'),
+    ]);
+
+    expect(foldOf(segments)).toMatchObject({ synthesized: true, contentIndices: [0, 1, 2, 3] });
   });
 
   it('never folds a span a server marker already claims', () => {

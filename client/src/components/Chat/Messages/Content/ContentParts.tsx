@@ -30,6 +30,7 @@ import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
 import EditContentParts from './EditContentParts';
+import { hasParallelLanes } from '~/utils/lanes';
 import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import Sources from '~/components/Web/Sources';
@@ -811,7 +812,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
         />
       );
     };
-    const hasParallelContent = content?.some((part) => part?.groupId != null) === true;
+    const hasParallelContent = hasParallelLanes(content);
     return (
       <ApprovalProvider>
         <SearchContext.Provider value={{ searchResults }}>
@@ -960,8 +961,9 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const relativeLastContentIdx = lastCursorContentIdx(safeContent);
   const lastContentIdx = relativeLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeLastContentIdx);
 
-  // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
-  const hasParallelContent = safeContent.some((part) => part?.groupId != null);
+  /** Columns only when at least two agents share a group — a lone group
+   *  renders here, where tool grouping and activity labels apply. */
+  const hasParallelContent = hasParallelLanes(safeContent);
   if (hasParallelContent) {
     const parallelContent = (
       <>

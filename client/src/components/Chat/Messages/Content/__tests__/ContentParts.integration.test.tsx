@@ -121,6 +121,13 @@ jest.mock('../Container', () => ({
   default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
+jest.mock('../SiblingHeader', () => ({
+  __esModule: true,
+  default: ({ agentId }: { agentId?: string }) => (
+    <div data-testid="sibling-header" data-agent-id={agentId} />
+  ),
+}));
+
 jest.mock('~/utils', () => {
   const actual = jest.requireActual('~/utils');
   return {
@@ -912,5 +919,67 @@ describe('ContentParts integration: phase media row', () => {
     renderContentParts({ ...baseProps, content: phaseContent() });
 
     expect(screen.queryByTestId('attachment-group')).toBeNull();
+  });
+});
+
+describe('ContentParts integration: lane groups backed by one agent', () => {
+  const baseProps = {
+    messageId: 'msg-lane',
+    isCreatedByUser: false,
+    isLast: true,
+    isSubmitting: false,
+    isLatestMessage: true,
+  };
+
+  const inLane = (part: TMessageContentParts, agentId: string, groupId = 1): TMessageContentParts =>
+    ({ ...(part as object), agentId, groupId }) as unknown as TMessageContentParts;
+
+  it('renders no lane header when a phase marker splits a single-agent group', () => {
+    /** The reported shape: a multi-agent graph stamped a group id on the
+     *  primary agent's own output, and a phase marker ending mid-group split
+     *  it — so one lane rendered as TWO bordered cards, each repeating the
+     *  message's own author, and the answer read as a separate message. */
+    const answer = 'Monitoring the pull requests for the next hour.';
+    const content = [
+      makeMcpToolCall('t1'),
+      makeMcpToolCall('t2'),
+      inLane(makeMcpToolCall('t3'), 'agent_a'),
+      inLane(makeTextPart(answer), 'agent_a'),
+      makePhasePart(0, 3, 'Planned the monitoring run'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+    /** The card mounts collapsed and its body is lazy, so open it — the split
+     *  drew one header inside the card and one after it. */
+    fireEvent.click(screen.getByRole('button', { name: 'Planned the monitoring run' }));
+
+    expect(screen.queryAllByTestId('sibling-header')).toHaveLength(0);
+    expect(screen.getAllByText(answer)).toHaveLength(1);
+  });
+
+  it('groups the tool calls of a single-agent group, which lanes never do', () => {
+    const content = [
+      inLane(makeMcpToolCall('t1'), 'agent_a'),
+      inLane(makeMcpToolCall('t2'), 'agent_a'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+  });
+
+  it('still renders columns once a second agent shares the group', () => {
+    const content = [
+      inLane(makeTextPart('primary answer'), 'agent_a'),
+      inLane(makeTextPart('added answer'), 'agent_b____1'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    const headers = screen.getAllByTestId('sibling-header');
+    expect(headers.map((header) => header.getAttribute('data-agent-id'))).toEqual([
+      'agent_a',
+      'agent_b____1',
+    ]);
   });
 });
