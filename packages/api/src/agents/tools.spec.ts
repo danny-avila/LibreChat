@@ -23,8 +23,16 @@ jest.mock('@librechat/agents', () => ({
   BashExecutionToolDefinition: {
     name: 'bash_tool',
     description: 'bash',
-    schema: { type: 'object', properties: {} },
+    schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string' },
+        args: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['command'],
+    },
   },
+  BashToolOutputReferencesGuide: '{{tool<idx>turn<turn>}}',
   /**
    * Deterministic stub mirroring the SDK's `buildBashExecutionToolDescription`:
    * appends an LLM-facing reference-syntax marker only when
@@ -486,6 +494,7 @@ describe('registerCodeExecutionTools', () => {
       });
 
       const readFile = result.toolDefinitions.find((definition) => definition.name === 'read_file');
+      const bashTool = result.toolDefinitions.find((definition) => definition.name === 'bash_tool');
       const searchWorkspace = result.toolDefinitions.find(
         (definition) => definition.name === 'search_workspace',
       );
@@ -499,6 +508,17 @@ describe('registerCodeExecutionTools', () => {
           start_line: { type: 'integer' },
           max_lines: { type: 'integer', maximum: 500 },
         },
+      });
+      expect(bashTool?.description).toContain('selected attached environment');
+      expect(bashTool?.description).toContain('empty directory');
+      expect(bashTool?.description).toContain('Network access follows the sandbox policy');
+      expect(bashTool?.description).not.toContain('/mnt/data');
+      expect(bashTool?.parameters).toMatchObject({
+        properties: {
+          command: { type: 'string' },
+          args: { type: 'array' },
+        },
+        required: ['command'],
       });
       expect(searchWorkspace).toMatchObject({
         name: 'search_workspace',
@@ -850,6 +870,25 @@ describe('registerFileAuthoringTools', () => {
     expect(filePathDescription(editFile)).not.toContain('rename skills');
   });
 
+  it('registers attached-workspace paths and atomic edit semantics', () => {
+    const result = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+      workspaceTools: true,
+    });
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+    const editFile = result.toolDefinitions.find((d) => d.name === 'edit_file');
+
+    expect(createFile?.description).toContain('workspace/{relativePath}');
+    expect(createFile?.description).not.toContain('/mnt/data/');
+    expect(editFile?.description).toContain('entire batch commits atomically');
+    expect(filePathDescription(createFile)).toContain('workspace/{relativePath}');
+    expect(filePathDescription(editFile)).toContain('workspace/{relativePath}');
+    expect(isFileAuthoringToolDefinition(createFile)).toBe(true);
+    expect(isFileAuthoringToolDefinition(editFile)).toBe(true);
+  });
+
   it('is idempotent across repeated registration calls', () => {
     const toolRegistry = makeRegistry();
     const first = registerFileAuthoringTools({
@@ -877,7 +916,6 @@ describe('registerFileAuthoringTools', () => {
       toolDefinitions: codeOnly.toolDefinitions,
       includeSkillFileInstructions: true,
     });
-
     expect(upgraded.registered).toEqual([]);
     expect(upgraded.toolDefinitions.find((d) => d.name === 'create_file')?.description).toContain(
       'skills/',
@@ -902,12 +940,19 @@ describe('registerFileAuthoringTools', () => {
       toolDefinitions: codeOnly.toolDefinitions,
       includeSkillFileInstructions: true,
     });
+    const attached = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+      workspaceTools: true,
+    });
 
     expect(
       maxToolDescriptionLength([
         ...skillAware.toolDefinitions,
         ...codeOnly.toolDefinitions,
         ...upgraded.toolDefinitions,
+        ...attached.toolDefinitions,
       ]),
     ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
   });
