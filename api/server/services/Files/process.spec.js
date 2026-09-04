@@ -84,18 +84,22 @@ jest.mock('@librechat/api', () => {
       if (ocrConfigured && checkType(mimeType, fileConfig.ocr?.supportedMimeTypes ?? [])) {
         return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
       }
-      const isDocumentParserEligible = actualDataProvider.documentParserMimeTypes.some((pattern) =>
+      const isRagTextEligible = actualDataProvider.ragTextMimeTypes.some((pattern) =>
         pattern.test(mimeType),
       );
-      if (!isDocumentParserEligible) {
-        return null;
-      }
       if (
+        isRagTextEligible &&
         ragConfigured &&
         !actualDataProvider.isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
         checkType(mimeType, fileConfig.text?.supportedMimeTypes ?? [])
       ) {
         return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+      }
+      const isDocumentParserEligible = actualDataProvider.documentParserMimeTypes.some((pattern) =>
+        pattern.test(mimeType),
+      );
+      if (!isDocumentParserEligible) {
+        return null;
       }
       return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
     },
@@ -799,6 +803,26 @@ describe('processAgentFileUpload', () => {
       const { parseText } = require('@librechat/api');
       parseText.mockResolvedValueOnce({ text: 'rag extracted', bytes: 13 });
       const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(parseText).toHaveBeenCalledWith(
+        expect.objectContaining({ allowNativeFallback: false }),
+      );
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.document_parser);
+    });
+
+    test('routes a non-parser OCR type (pptx) to RAG /text when admin narrows text config', async () => {
+      // pptx isn't in documentParserMimeTypes but is in ragTextMimeTypes → should route to RAG /text.
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      const PPTX_TEXT_REGEX = [
+        /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/,
+      ];
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: PPTX_TEXT_REGEX }));
+      const { parseText } = require('@librechat/api');
+      parseText.mockResolvedValueOnce({ text: 'rag extracted pptx', bytes: 18 });
+      const req = makeReq({ mimetype: PPTX_MIME, ocrConfig: null });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 

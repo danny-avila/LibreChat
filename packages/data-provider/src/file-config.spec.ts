@@ -11,6 +11,7 @@ import {
   convertStringsToRegex,
   setFileConfigRegexCompiler,
   documentParserMimeTypes,
+  ragTextMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
   defaultOCRMimeTypes,
@@ -151,6 +152,7 @@ describe('applicationMimeTypes', () => {
     'application/json',
     'application/csv',
     'application/msword',
+    'application/vnd.ms-powerpoint',
     'application/xml',
     'application/zip',
     'application/x-zip-compressed',
@@ -201,6 +203,54 @@ describe('defaultOCRMimeTypes', () => {
   ])('matches configured OCR type: %s', (mimeType) => {
     expect(checkOCRType(mimeType)).toBe(true);
   });
+
+  it.each([
+    'application/msword', // legacy .doc
+    'application/vnd.ms-powerpoint', // legacy .ppt
+  ])('matches legacy Office type for OCR: %s', (mimeType) => {
+    expect(checkOCRType(mimeType)).toBe(true);
+  });
+});
+
+describe('ragTextMimeTypes', () => {
+  const check = (mimeType: string): boolean =>
+    ragTextMimeTypes.some((regex) => regex.test(mimeType));
+
+  it.each([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation',
+    'application/vnd.oasis.opendocument.graphics',
+  ])('is eligible to route to RAG /text: %s', (mimeType) => {
+    expect(check(mimeType)).toBe(true);
+  });
+
+  it('is a superset of documentParserMimeTypes for the shared document set', () => {
+    for (const mimeType of [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.oasis.opendocument.spreadsheet',
+      'application/vnd.oasis.opendocument.text',
+    ]) {
+      expect(documentParserMimeTypes.some((regex) => regex.test(mimeType))).toBe(true);
+      expect(check(mimeType)).toBe(true);
+    }
+  });
+
+  it.each(['image/png', 'image/jpeg', 'application/epub+zip'])(
+    'excludes non-document / image type: %s',
+    (mimeType) => {
+      expect(check(mimeType)).toBe(false);
+    },
+  );
 });
 
 describe('supportedMimeTypes', () => {
