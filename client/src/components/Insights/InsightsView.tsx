@@ -238,7 +238,7 @@ function KpiCard({ card, locale }: { card: KpiCardData; locale: string }) {
   const localize = useLocalize();
   return (
     <Panel>
-      <h2 className="text-lg font-normal text-text-secondary">{card.title}</h2>
+      <h2 className="text-sm font-normal text-text-muted">{card.title}</h2>
       <div className="mt-3 text-4xl font-semibold tabular-nums leading-none text-text-primary">
         {formatValue(card.value, locale)}
       </div>
@@ -706,7 +706,7 @@ export default function InsightsView() {
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="flex w-full min-w-0 flex-col gap-5 px-4 py-4 sm:px-5 md:px-6 lg:px-8">
+        <div className="flex w-full min-w-0 flex-col gap-3 px-8 pb-4 pt-8">
           {insights.isLoading && <LoadingState message={localize('com_insights_loading')} />}
           {insights.isError && (
             <Panel className="flex items-center gap-2">
