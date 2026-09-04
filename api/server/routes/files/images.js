@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getSafeErrorMetadata,
   shouldUseUploadSse,
@@ -17,14 +17,20 @@ const {
   isAssistantsEndpoint,
   hasActivePiiPatterns,
   mergeFileConfig,
+  isMessageFileUpload,
 } = require('librechat-data-provider');
 const {
   processAgentFileUpload,
   processImageFile,
   filterFile,
 } = require('~/server/services/Files/process');
+const {
+  resolveEffectiveToolResource,
+  resolveUploadEndpoint,
+  resolveUploadAgent,
+} = require('~/server/services/Files/routing');
 const { checkPermission } = require('~/server/services/PermissionService');
-const db = require('~/models');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
 
@@ -43,13 +49,56 @@ router.post('/', async (req, res) => {
 
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
-    filterFile({ req, image: true });
+    const isAssistants = isAssistantsEndpoint(metadata.endpoint);
+
+    /* Authorization runs before anything reads the target agent, matching the file
+     * route. Validating against a record the caller cannot access answers with that
+     * agent's provider limits and content policy, so the rejection reports its
+     * configuration. Message attachments and requests naming no agent pass straight
+     * through without a read. */
+    if (!isAssistants) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
+        checkPermission,
+        hasUploadBypass: () => hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS),
+      });
+      if (denied) {
+        return;
+      }
+    }
+
+    /* Agent uploads arrive as `agents` but route by the agent's own provider, so the
+     * provider's configuration has to govern acceptance too. Resolved once here and
+     * reused by routing, authorization and processing below. */
+    const effectiveEndpoint = await resolveUploadEndpoint({
+      endpoint: metadata.endpoint,
+      agent_id: metadata.agent_id,
+      req,
+    });
+    /* Carried so processing routes under the same configuration validation used, and so
+     * it can tell whether any enabled tool could consume a file kept off the model path,
+     * both from the one agent read this request already made. */
+    metadata.effectiveEndpoint = effectiveEndpoint;
+    /* Left undefined when no agent record backs this upload, as for an ephemeral agent
+     * that exists only for the request. Processing then cannot judge what tools could
+     * consume the file and does not try. */
+    metadata.agentTools = (await resolveUploadAgent(req, metadata.agent_id))?.tools;
+    filterFile({ req, image: true, endpoint: effectiveEndpoint });
+
+    /* A unified upload the config routes to text is processed as a context resource, so
+     * the preflight has to judge that destination. Told only the request's empty tool
+     * resource, it cannot see the extraction step and fail-closes on a derived field it
+     * would in fact be able to inspect. */
+    const effectiveToolResource = await resolveEffectiveToolResource({ req, metadata });
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,
       file: req.file,
       endpoint: metadata.endpoint,
-      toolResource: metadata.tool_resource,
+      toolResource: effectiveToolResource,
       fileConfig: mergeFileConfig(req.config?.fileConfig),
       ocrConfigured: req.config?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
@@ -59,17 +108,20 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
-      const denied = await verifyAgentUploadPermission({
-        req,
-        res,
-        metadata,
-        getAgent: db.getAgent,
-        checkPermission,
-      });
-      if (denied) {
-        return;
-      }
+    /* An image the config routes to text delivery has to go through the agent upload
+     * path, which extracts and stores the text. The image pipeline would persist the
+     * routing without any text, leaving the file out of provider delivery and out of
+     * the text context both.
+     *
+     * A permanent upload against an agent takes that path regardless of what the routing
+     * inferred, because the image pipeline always stores a message attachment and never
+     * files anything against the agent. Sent here it would report success while leaving
+     * an orphan, so it goes where that is decided rather than assumed. */
+    const isPermanentAgentUpload =
+      metadata.agent_id != null && !isMessageFileUpload(metadata.message_file);
+    const takesAgentUploadPath = effectiveToolResource != null || isPermanentAgentUpload;
+
+    if (!isAssistants && takesAgentUploadPath) {
       openSseStreamIfRequested();
       return await processAgentFileUpload({ req, res, metadata, sseStream });
     }

@@ -17,6 +17,13 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  resolveUploadLLMDeliveryPath,
+  isNativelyReadableText,
+  resolveUploadDestination,
+  canToolResourceConsume,
+  isMessageFileUpload,
+  isResponsesApiUpload,
+  isSpeechProviderConfigured,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -456,7 +463,7 @@ const processFileURL = async ({
  * @param {ServerRequest} params.req - The Express request object.
  * @param {Express.Response} [params.res] - The Express response object.
  * @param {ImageMetadata} params.metadata - Additional metadata for the file.
- * @param {boolean} params.returnFile - Whether to return the file metadata or return response as normal.
+ * @param {boolean} params.returnFile - Return the converted file's metadata without persisting it, for a caller that creates its own record.
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
@@ -466,6 +473,19 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const source = getFileStrategy(appConfig, { isImage: true });
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  /* The route resolved the agent's provider before validating, so the same endpoint
+   * governs delivery routing here. */
+  const configEndpoint = metadata.effectiveEndpoint ?? endpoint;
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint: configEndpoint });
+  const llmDeliveryPath = resolveUploadLLMDeliveryPath({
+    mimeType: file.mimetype,
+    endpointConfig,
+    fileConfig,
+    endpoint: configEndpoint,
+    useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
+    sttConfigured: isSpeechProviderConfigured(appConfig?.speech?.stt),
+  });
 
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
@@ -475,29 +495,41 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
 
-  const result = await db.createFile(
-    {
-      user: req.user.id,
-      file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      ...storageMetadata,
-      filename: file.originalname,
-      context: FileContext.message_attachment,
-      source,
-      type: `image/${appConfig.imageOutputType}`,
-      ...(await getRetentionExpiry(req)),
-      width,
-      height,
-      tenantId: req.user.tenantId,
+  const fileInfo = {
+    user: req.user.id,
+    file_id,
+    temp_file_id,
+    bytes,
+    filepath,
+    ...storageMetadata,
+    filename: file.originalname,
+    context: FileContext.message_attachment,
+    source,
+    type: `image/${appConfig.imageOutputType}`,
+    ...(await getRetentionExpiry(req)),
+    width,
+    height,
+    tenantId: req.user.tenantId,
+    llmDeliveryPath,
+    /* The image route persists through here directly, so the choice has to be recorded
+     * on this path too. Absent, a later turn substitutes its own endpoint's mode. */
+    metadata: {
+      destinationChosen:
+        endpointConfig?.legacyFileUploadUX === true || metadata.tool_resource != null,
+      ...(`image/${appConfig.imageOutputType}` !== file.mimetype
+        ? { routingMimeType: file.mimetype }
+        : {}),
     },
-    true,
-  );
+  };
 
+  /* Callers asking for the file are converting an image for a record of their own, under
+   * a different id. Persisting here would leave that row referenced by nothing while the
+   * converted object it points at is the one they go on to use. */
   if (returnFile) {
-    return result;
+    return fileInfo;
   }
+
+  const result = await db.createFile(fileInfo, true);
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
@@ -676,19 +708,123 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
+/** Reader-facing names for the destinations an upload can be rejected against. */
+const TOOL_RESOURCE_LABELS = {
+  [EToolResources.execute_code]: 'the code interpreter',
+  [EToolResources.code_interpreter]: 'the code interpreter',
+  [EToolResources.file_search]: 'file search',
+  [EToolResources.context]: 'text context',
+  [EToolResources.image_edit]: 'image editing',
+  [EToolResources.ocr]: 'OCR',
+};
+
+/** Capability gate for each tool that can consume a file kept off the model path. */
+const CONSUMER_CAPABILITIES = [
+  [EToolResources.execute_code, AgentCapabilities.execute_code],
+  [EToolResources.file_search, AgentCapabilities.file_search],
+];
+
+/**
+ * Narrows an agent's tools to those this deployment will actually honor. Filing a file
+ * under a disabled capability fails the upload on a rule the agent's tool order picked.
+ */
+const filterEnabledConsumers = async (req, agentTools) => {
+  if (!agentTools?.length) {
+    return agentTools;
+  }
+  const candidates = CONSUMER_CAPABILITIES.filter(([resource]) => agentTools.includes(resource));
+  if (candidates.length === 0) {
+    return agentTools;
+  }
+  const enabled = await Promise.all(
+    candidates.map(([, capability]) => checkCapability(req, capability)),
+  );
+  const disabled = new Set(
+    candidates.filter((_, index) => !enabled[index]).map(([resource]) => resource),
+  );
+  return disabled.size > 0 ? agentTools.filter((tool) => !disabled.has(tool)) : agentTools;
+};
+
 const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
+  // TODO: check and potentially fix — deferred/provider files may be orphaned if effectiveToolResource is undefined
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
 
-  let messageAttachment = !!metadata.message_file;
+  let messageAttachment = isMessageFileUpload(metadata.message_file);
+
+  let effectiveToolResource;
+
+  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+  const endpoint = metadata.effectiveEndpoint ?? req.body?.endpoint;
+  const endpointConfig = getEndpointFileConfig({ fileConfig, endpoint });
+
+  /* Recorded on the file below, both ways: the endpoint setting can differ on a later
+   * turn, but the user's decision about this file does not change with it. An absent
+   * marker means a record written before this was tracked, not an inferred destination.
+   *
+   * A destination is the user's whenever they named one, which the chooser always does
+   * and a request naming a tool resource does too. Recording the endpoint mode instead
+   * would treat an explicitly sandbox-only upload in unified mode as inferred. */
+  const legacyUploadUX = endpointConfig?.legacyFileUploadUX === true;
+  const uploadChoiceMetadata = { destinationChosen: legacyUploadUX || tool_resource != null };
 
   if (agent_id && !tool_resource && !messageAttachment) {
-    throw new Error('No tool resource provided for agent file upload');
+    if (legacyUploadUX) {
+      throw new Error('No tool resource provided for agent file upload');
+    }
   }
 
-  if (tool_resource === EToolResources.file_search && file.mimetype.startsWith('image')) {
-    throw new Error('Image uploads are not supported for file search tool resources');
+  const llmDeliveryPath = resolveUploadLLMDeliveryPath({
+    toolResource: tool_resource,
+    mimeType: file.mimetype,
+    endpointConfig,
+    fileConfig,
+    endpoint,
+    useResponsesApi: isResponsesApiUpload(metadata.useResponsesApi ?? req.body?.useResponsesApi),
+    sttConfigured: isSpeechProviderConfigured(appConfig?.speech?.stt),
+  });
+
+  /* Destination and acceptability are one decision, made by shared policy rather than
+   * rebuilt here. `agentTools` is undefined when no agent record backs the upload. */
+  /* Only a permanent agent upload can land on a context resource, so the capability is
+   * looked up only there and the common attachment path pays nothing for it. */
+  const contextEnabled =
+    messageAttachment || agent_id == null
+      ? undefined
+      : await checkCapability(req, AgentCapabilities.context);
+
+  const destination = resolveUploadDestination({
+    toolResource: tool_resource,
+    deliveryPath: llmDeliveryPath,
+    mimeType: file.mimetype,
+    agentTools: await filterEnabledConsumers(req, metadata.agentTools),
+    hasAgent: agent_id != null,
+    isMessageAttachment: messageAttachment,
+    contextEnabled,
+  });
+
+  if (destination.rejection === 'no-consumer') {
+    throw new Error(
+      `Files of type ${file.mimetype} are not sent to the model here, and this conversation has no agent whose tools could read them. Attach it to an agent with the code interpreter or file search enabled, or upload a supported file type.`,
+    );
+  }
+  if (destination.rejection === 'context-disabled') {
+    throw new Error(
+      `Files of type ${file.mimetype} are saved to an agent as extracted text, and the context capability is disabled. Enable it for Agents, or attach the file to a message instead.`,
+    );
+  }
+  if (destination.rejection === 'no-agent-resource') {
+    throw new Error(
+      `Files of type ${file.mimetype} cannot be saved to an agent on their own. Attach the file to a message, or enable the code interpreter or file search so the agent has somewhere to keep it.`,
+    );
+  }
+  effectiveToolResource = destination.toolResource;
+
+  if (effectiveToolResource && !canToolResourceConsume(effectiveToolResource, file.mimetype)) {
+    throw new Error(
+      `Files of type ${file.mimetype} cannot be read by ${TOOL_RESOURCE_LABELS[effectiveToolResource] ?? effectiveToolResource}.`,
+    );
   }
 
   if (!messageAttachment && !agent_id) {
@@ -699,11 +835,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   let fileInfoMetadata;
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
-  if (tool_resource === EToolResources.execute_code) {
+  let shouldUploadToCodeEnv = effectiveToolResource === EToolResources.execute_code;
+  if (effectiveToolResource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
+    /* Only an explicit choice uploads here. A promoted destination has no user decision
+     * behind it and the agent's code deployment is resolved per turn, so uploading now
+     * would name the default route and be uploaded again at execution, or fail outright
+     * where only a stateful deployment exists. Deferred provisioning does it with the
+     * route the turn actually runs on. */
+    if (tool_resource == null) {
+      shouldUploadToCodeEnv = false;
+    }
+  }
+
+  if (shouldUploadToCodeEnv) {
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     const stream = fs.createReadStream(file.path);
     /* Resource identity for codeapi's sessionKey:
@@ -742,14 +890,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       storage_session_id: uploaded.storage_session_id,
       file_id: uploaded.file_id,
       executionProfile: 'default',
+      provisionedAt: Date.now(),
     });
-  } else if (tool_resource === EToolResources.file_search) {
+  } else if (effectiveToolResource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
     // Note: File search processing continues to dual storage logic below
-  } else if (tool_resource === EToolResources.context) {
+  } else if (effectiveToolResource === EToolResources.context) {
     const { file_id, temp_file_id = null } = metadata;
     const getExtractionLogDetails = (error) =>
       getFileExtractionLogDetails({
@@ -763,19 +912,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     /**
      * @param {object} params
      * @param {string} params.text
-     * @param {number} params.bytes
-     * @param {string} params.filepath
-     * @param {string} params.type
      * @param {boolean} params.isTranscript
      * @return {Promise<void>}
      */
-    const createTextFile = async ({
-      text,
-      bytes,
-      filepath,
-      type = 'text/plain',
-      isTranscript = false,
-    }) => {
+    const createTextFile = async ({ text, isTranscript = false }) => {
       if (!isTranscript) {
         assertExtractedTextInspectable({
           filters: appConfig?.filters,
@@ -813,11 +953,25 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           return;
         }
       }
+      const isImageFile = file.mimetype.startsWith('image');
+      const source = getFileStrategy(appConfig, { isImage: isImageFile });
+      const { handleFileUpload } = getStrategyFunctions(source);
+      const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+      const storageResult = await sanitizedUploadFn({
+        req,
+        file,
+        file_id,
+        basePath,
+        entity_id,
+      });
+      const { bytes, filename, filepath, embedded, height, width } = storageResult;
+
       const retentionExpiry = await getAgentFileRetentionExpiry({
         req,
         messageAttachment,
-        tool_resource,
+        tool_resource: effectiveToolResource,
       });
+
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -825,22 +979,27 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           file_id,
           temp_file_id,
           user: req.user.id,
-          type,
-          filepath: filepath ?? file.path,
-          source: FileSources.text,
-          filename: file.originalname,
+          type: file.mimetype,
+          filepath,
+          source,
+          filename: filename ?? sanitizeFilename(file.originalname),
           model: messageAttachment ? undefined : req.body.model,
           context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
           tenantId: req.user.tenantId,
+          embedded,
+          height,
+          width,
+          llmDeliveryPath: 'text',
         }),
+        metadata: uploadChoiceMetadata,
         ...retentionExpiry,
       };
 
-      if (!messageAttachment && tool_resource) {
+      if (!messageAttachment && effectiveToolResource) {
         await db.addAgentResourceFile({
           file_id,
           agent_id,
-          tool_resource,
+          tool_resource: effectiveToolResource,
           updatingUserId: req?.user?.id,
         });
       }
@@ -851,7 +1010,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
     const extractedTextPlan = getUploadExtractedTextPlan({
       endpoint: metadata.endpoint,
-      toolResource: tool_resource,
+      toolResource: effectiveToolResource,
       mimeType: file.mimetype,
       fileConfig,
       ocrConfigured: appConfig?.ocr != null,
@@ -900,8 +1059,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         extract: resolveDocumentText,
       });
       if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL } = ocrResult;
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+        const { text } = ocrResult;
+        return await createTextFile({ text });
       }
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
@@ -915,8 +1074,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
-      const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes, type: file.mimetype, isTranscript: true });
+      const { text } = await processAudioFile({ req, file, sttService });
+      return await createTextFile({ text, isTranscript: true });
     }
 
     const shouldUseText = fileConfig.checkType(
@@ -954,29 +1113,37 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
           );
         }
-        const { text, bytes, filepath: docFileURL } = documentText;
-        return await createTextFile({ text, bytes, filepath: docFileURL });
+        const { text } = documentText;
+        return await createTextFile({ text });
       }
-      return await createTextFile({
-        text: configuredText.text,
-        bytes: configuredText.bytes,
-        type: file.mimetype,
-      });
+      return await createTextFile({ text: configuredText.text });
     }
 
-    const { text, bytes } = await extractInspectableFileText({
+    /* The native reader decodes whatever bytes it is given as UTF-8, which is meaningful
+     * only for types that are already text. For anything else, a raster image on a
+     * deployment without OCR being the case in point, it would store mojibake as the
+     * file's text, so a real extractor is required and its absence surfaces as an error
+     * rather than as nonsense content. */
+    const { text } = await extractInspectableFileText({
       filters: appConfig?.filters,
-      extract: () => parseText({ req, file, file_id }),
+      extract: () =>
+        parseText({
+          req,
+          file,
+          file_id,
+          allowNativeFallback: isNativelyReadableText(file.mimetype),
+        }),
     });
-    return await createTextFile({ text, bytes, type: file.mimetype });
+    return await createTextFile({ text });
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
+  let storedType = file.mimetype;
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
-  if (tool_resource === EToolResources.file_search) {
+  if (effectiveToolResource === EToolResources.file_search) {
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
     const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
@@ -998,8 +1165,30 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       entity_id,
     });
 
-    // Vector status will be stored at root level, no need for metadata
-    fileInfoMetadata = {};
+    /* Vectors live under the entity that embedded them, and priming asks which namespaces
+     * hold them rather than reading the root flag. Omitting it here re-embeds the file on
+     * the first search, and aborts that search if RAG is briefly unavailable. */
+    fileInfoMetadata = entity_id != null ? { embeddedEntities: [entity_id] } : {};
+  } else if (isImage) {
+    /* The conversion is this file's storage step. Uploading the original first left a
+     * second object nothing references, and the record's size and dimensions describing
+     * bytes that were replaced. Only the storage fields are kept: the record below is
+     * built here, and its filename goes through the sanitizer. */
+    const converted = await processImageFile({
+      req,
+      file,
+      metadata: { file_id },
+      returnFile: true,
+    });
+    storedType = converted.type ?? storedType;
+    storageResult = {
+      bytes: converted.bytes,
+      filepath: converted.filepath,
+      storageKey: converted.storageKey,
+      storageRegion: converted.storageRegion,
+      height: converted.height,
+      width: converted.width,
+    };
   } else {
     // Standard single storage for non-RAG files
     const { handleFileUpload } = getStrategyFunctions(source);
@@ -1024,7 +1213,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
   let embedded = storageResult.embedded;
-  if (tool_resource === EToolResources.file_search) {
+  if (effectiveToolResource === EToolResources.file_search) {
     embedded = embeddingResult?.embedded;
     filename = embeddingResult?.filename || filename;
   }
@@ -1037,35 +1226,19 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     storageRegion: _storageRegion,
   });
 
-  if (!messageAttachment && tool_resource) {
+  if (!messageAttachment && effectiveToolResource) {
     await db.addAgentResourceFile({
       file_id,
       agent_id,
-      tool_resource,
+      tool_resource: effectiveToolResource,
       updatingUserId: req?.user?.id,
-    });
-  }
-
-  if (isImage) {
-    const result = await processImageFile({
-      req,
-      file,
-      metadata: { file_id: v4() },
-      returnFile: true,
-    });
-    filepath = result.filepath;
-    storageMetadata = getStorageMetadata({
-      filepath,
-      source: result.source,
-      storageKey: result.storageKey,
-      storageRegion: result.storageRegion,
     });
   }
 
   const retentionExpiry = await getAgentFileRetentionExpiry({
     req,
     messageAttachment,
-    tool_resource,
+    tool_resource: effectiveToolResource,
   });
   const fileInfo = {
     ...removeNullishValues({
@@ -1078,13 +1251,21 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       filename: filename ?? sanitizeFilename(file.originalname),
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,
-      metadata: fileInfoMetadata,
-      type: file.mimetype,
+      metadata: {
+        ...(fileInfoMetadata ?? {}),
+        ...uploadChoiceMetadata,
+        /* The route was resolved against the upload's own type, and delivery re-resolves
+         * it later. Conversion changes `type`, so without this the second answer is drawn
+         * from a format the administrator never configured a route for. */
+        ...(storedType !== file.mimetype ? { routingMimeType: file.mimetype } : {}),
+      },
+      type: storedType,
       embedded,
       source,
       height,
       width,
       tenantId: req.user.tenantId,
+      llmDeliveryPath,
     }),
     ...retentionExpiry,
   };
@@ -1370,9 +1551,30 @@ async function saveBase64Image(
  *
  * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
  */
-function filterFile({ req, image, isAvatar }) {
+/**
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {boolean} [params.image]
+ * @param {boolean} [params.isAvatar]
+ * @param {string} [params.endpoint] Effective endpoint for this upload. Agent uploads
+ *   arrive as `agents` but route by the agent's own provider, so validation has to be
+ *   told which configuration governs, or it admits files the provider rejects and
+ *   rejects files the provider allows.
+ */
+function filterFile({ req, image, isAvatar, endpoint: endpointOverride }) {
   const { file } = req;
-  const { endpoint, endpointType, file_id, width, height } = req.body;
+  const {
+    endpoint: requestEndpoint,
+    endpointType: requestEndpointType,
+    file_id,
+    width,
+    height,
+  } = req.body;
+  const endpoint = endpointOverride ?? requestEndpoint;
+  /* getEndpointFileConfig consults endpointType ahead of endpoint, so a composer upload
+   * carrying `agents` would keep the Agents policy and shadow the provider the override
+   * names. The override replaces both or neither. */
+  const endpointType = endpointOverride != null ? undefined : requestEndpointType;
 
   if (!file_id && !isAvatar) {
     throw new Error('No file_id provided');

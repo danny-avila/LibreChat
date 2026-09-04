@@ -97,6 +97,7 @@ jest.mock('~/endpoints', () => ({
 jest.mock('~/files', () => ({
   filterFilesByEndpointConfig: jest.fn(() => []),
   filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
+  isLegacyFileUploadUX: jest.fn(() => false),
 }));
 
 jest.mock('~/prompts', () => ({
@@ -109,6 +110,20 @@ jest.mock('../resources', () => ({
     tool_resources: undefined,
   }),
 }));
+
+jest.mock('../../middleware/modelBoundContent', () => {
+  const actual = jest.requireActual('../../middleware/modelBoundContent');
+  /* Real by default; a single test overrides it to stand in for a policy that started
+   * refusing a file after it was attached. */
+  return {
+    ...actual,
+    assertModelBoundContent: jest.fn((...args: unknown[]) =>
+      (actual as { assertModelBoundContent: (...a: unknown[]) => void }).assertModelBoundContent(
+        ...args,
+      ),
+    ),
+  };
+});
 
 import { initializeAgent } from '../initialize';
 import { isFatalAgentInitializationError } from '../errors';
@@ -2810,6 +2825,52 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     return { agent, req, res, loadTools, db };
   }
 
+  it('provisions code files for a skill tool that never names execute_code', async () => {
+    /**
+     * `bash_tool` reads the code environment but is not an `EToolResources` key, so an
+     * agent that gets it only through a skill built no provisioning state and invoked
+     * the tool against an empty sandbox. Execution-time eligibility already counted it.
+     */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'sandbox-skill',
+      body: 'body of sandbox-skill',
+      author: { toString: () => req.user!.id } as unknown as import('mongoose').Types.ObjectId,
+      allowedTools: ['bash_tool'],
+    });
+    mockGetThreadData.mockReturnValue({ messageIds: ['msgN'], fileIds: ['file-1'] });
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['sandbox-skill'],
+      },
+      {
+        ...db,
+        getCodeGeneratedFiles,
+        getSkillByName,
+        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      },
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
+  });
+
   it('passes threadFileIds (not threadMessageIds) to getCodeGeneratedFiles', async () => {
     const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
 
@@ -2957,6 +3018,243 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+
+  it('charges a file appearing in both sets against the allowance once', async () => {
+    /* An embedded attachment still missing the active code route is hydrated for delivery
+     * and returned as a provisioning candidate. Charging its bytes twice would spend an
+     * allowance the request never uses and drop a different candidate that fits. */
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const shared = { file_id: 'shared', filename: 'a.csv', bytes: 400 };
+    const deferredOnly = { file_id: 'deferred', filename: 'b.csv', bytes: 100 };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    /* Delivery keeps the shared file; the deferred pass keeps both. */
+    filterFilesByEndpointRuntimeConfig
+      .mockReturnValueOnce([shared])
+      .mockReturnValueOnce([shared, deferredOnly]);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([shared, deferredOnly]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['shared', 'deferred']);
+    const getToolFilesByIds = jest.fn().mockResolvedValue([shared]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      {
+        ...db,
+        getDeferredProvisionFiles,
+        getConvoFiles,
+        getToolFilesByIds,
+        getFiles: jest.fn().mockResolvedValue([shared, deferredOnly]),
+      },
+    );
+
+    const chargedToDeferred = filterFilesByEndpointRuntimeConfig.mock.calls
+      .map(([, params]) => (params as { consumedBytes?: number }).consumedBytes)
+      .find((bytes) => bytes !== undefined);
+    /* The only delivered file is also the shared one, and the deferred pass charges its
+     * own list as it walks it, so nothing is carried in. */
+    expect(chargedToDeferred).toBe(0);
+
+    /* The persistent screening runs inside the callback, and must see the two unique
+     * files rather than three. */
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const lastCall = primeResources.mock.calls[primeResources.mock.calls.length - 1];
+    const screen = lastCall?.[0].screenPersistentFiles as (files: unknown[]) => unknown[];
+    filterFilesByEndpointRuntimeConfig.mockClear();
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce([]);
+    screen([]);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ consumedBytes: 500 }),
+    );
+  });
+
+  it('screens persistent agent files under the remaining size allowance and content policy', async () => {
+    /* These are read inside primeResources, so the caller never sees them. Both checks it
+     * applied to this turn's other files have to reach them through the callback. */
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const screen = primeResources.mock.calls[0][0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    expect(typeof screen).toBe('function');
+
+    filterFilesByEndpointRuntimeConfig.mockClear();
+    const persistent = [{ file_id: 'persistent-1', filename: 'notes.csv', bytes: 10 }];
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce(persistent);
+
+    expect(screen(persistent)).toEqual(persistent);
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ consumedBytes: expect.any(Number) }),
+    );
+  });
+
+  it('drops a persistent agent file the content policy now refuses', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const { primeResources } = jest.requireMock('../resources') as { primeResources: jest.Mock };
+    const { assertModelBoundContent } = jest.requireMock('../../middleware/modelBoundContent') as {
+      assertModelBoundContent: jest.Mock;
+    };
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const screen = primeResources.mock.calls[0][0].screenPersistentFiles as (
+      files: unknown[],
+    ) => unknown[];
+    const persistent = [
+      {
+        file_id: 'blocked-1',
+        filename: 'secrets.bin',
+        bytes: 10,
+        type: 'application/octet-stream',
+      },
+    ];
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce(persistent);
+    assertModelBoundContent.mockImplementationOnce(() => {
+      throw new Error('content policy');
+    });
+
+    expect(screen(persistent)).toEqual([]);
+  });
+
+  it('finds deferred files from the conversation when no anchor is supplied', async () => {
+    /* The Responses API always continues via `previous_response_id` and passes a null
+     * parentMessageId, and chat completions may omit it. Without an anchor there is no
+     * thread walk, so the conversation's own file refs are the only available scope. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['convo-file-1']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: null,
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(getDeferredProvisionFiles).toHaveBeenCalledWith(
+      ['convo-file-1'],
+      expect.anything(),
+      expect.objectContaining({ code: true }),
+    );
+  });
+
+  it('keeps an anchored branch scoped to itself when it references no files', async () => {
+    /* Widening an empty branch to the conversation would provision a sibling branch's
+     * attachments, sending files this branch never mentioned to the Code API or RAG. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([{ messageId: 'm1' }]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['sibling-branch-file']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    mockGetThreadData.mockReturnValueOnce({ fileIds: [] });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'parent-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getDeferredProvisionFiles).not.toHaveBeenCalled();
+  });
+
+  it('prefers the thread scope for deferred files when an anchor is supplied', async () => {
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([{ messageId: 'm1' }]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['convo-file-1']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    mockGetThreadData.mockReturnValueOnce({ fileIds: ['thread-file-1'] });
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'parent-1',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles },
+    );
+
+    expect(getDeferredProvisionFiles).toHaveBeenCalledWith(
+      ['thread-file-1'],
+      expect.anything(),
+      expect.objectContaining({ code: true }),
+    );
   });
 
   it('skips the thread walk when parentMessageId is an empty string', async () => {

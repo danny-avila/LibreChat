@@ -172,6 +172,7 @@ jest.mock('~/models', () => ({
   findFileById: jest.fn(),
   getConvo: jest.fn(),
   getExpiredFiles: jest.fn(),
+  getAgent: jest.fn().mockResolvedValue(null),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
@@ -211,6 +212,10 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
   STTService: { getInstance: jest.fn() },
 }));
 
+jest.mock('./VectorDB/crud', () => ({
+  uploadVectors: jest.fn().mockResolvedValue({ embedded: true, filename: 'embedded-upload.bin' }),
+}));
+
 const {
   getRetentionExpiry,
   getAgentFileRetentionExpiry,
@@ -218,6 +223,7 @@ const {
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
 const {
+  EModelEndpoint,
   EToolResources,
   FileSources,
   FileContext,
@@ -226,16 +232,19 @@ const {
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
+const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadVectors } = require('./VectorDB/crud');
 const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
 const {
   processAgentFileUpload,
+  processImageFile,
   processDeleteRequest,
   processFileURL,
   sweepExpiredFiles,
   startExpiredFileSweep,
+  filterFile,
 } = require('./process');
 const {
   inspectContent,
@@ -272,6 +281,7 @@ const makeReq = ({
   ocrConfig = null,
   interfaceConfig,
   filters,
+  speech,
   body,
 } = {}) => ({
   user: { id: 'user-123', tenantId: 'tenant-a' },
@@ -285,7 +295,9 @@ const makeReq = ({
   config: {
     fileConfig: {},
     fileStrategy: 'local',
+    imageOutputType: 'webp',
     ocr: ocrConfig,
+    ...(speech ? { speech } : {}),
     ...(filters ? { filters } : {}),
     ...(interfaceConfig ? { interfaceConfig } : {}),
   },
@@ -331,6 +343,8 @@ describe('processAgentFileUpload', () => {
     mockRes.status.mockReturnThis();
     mockRes.json.mockReturnValue({});
     checkCapability.mockResolvedValue(true);
+    loadAuthValues.mockResolvedValue({ CODE_API_KEY: 'code-key' });
+    uploadVectors.mockResolvedValue({ embedded: true, filename: 'embedded-upload.bin' });
     getStrategyFunctions.mockReturnValue({
       handleFileUpload: jest
         .fn()
@@ -436,7 +450,7 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'audio/webm',
-          source: FileSources.text,
+          llmDeliveryPath: 'text',
           text: 'submitted transcript',
         }),
         true,
@@ -549,7 +563,11 @@ describe('processAgentFileUpload', () => {
 
     test('throws when configured OCR capability is not enabled for the agent', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
-      checkCapability.mockResolvedValue(false);
+      /* Only OCR is under test here; disabling every capability would trip the
+       * separate context guard first. */
+      checkCapability.mockImplementation(
+        async (_req, capability) => capability !== AgentCapabilities.ocr,
+      );
       const req = makeReq({
         mimetype: PDF_MIME,
         ocrConfig: { strategy: FileSources.mistral_ocr },
@@ -561,7 +579,11 @@ describe('processAgentFileUpload', () => {
     });
 
     test('uses document_parser (no capability check) when OCR capability returns false but no OCR config', async () => {
-      checkCapability.mockResolvedValue(false);
+      /* Only OCR is under test here; disabling every capability would trip the
+       * separate context guard first. */
+      checkCapability.mockImplementation(
+        async (_req, capability) => capability !== AgentCapabilities.ocr,
+      );
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
@@ -1179,6 +1201,53 @@ describe('processAgentFileUpload', () => {
       return codeEnvUpload;
     };
 
+    const agentsZipReq = () => {
+      const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });
+      req.body.endpoint = EModelEndpoint.agents;
+      return req;
+    };
+
+    it('leaves a promoted code destination for deferred provisioning', async () => {
+      /* No explicit choice stands behind a promotion, and the agent's code deployment is
+       * resolved per turn, so uploading now names the default route and has to be
+       * uploaded again where the turn actually runs. */
+      const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-x', file_id: 'fid-x' });
+
+      await processAgentFileUpload({
+        req: agentsZipReq(),
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          file_id: 'file-promoted',
+          agentTools: [EToolResources.execute_code],
+        },
+      }).catch(() => {});
+
+      expect(codeEnvUpload).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.not.objectContaining({ codeEnvRef: expect.anything() }),
+        }),
+        true,
+      );
+    });
+
+    it('still uploads eagerly when the user chose the code destination', async () => {
+      const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-y', file_id: 'fid-y' });
+
+      await processAgentFileUpload({
+        req: agentsZipReq(),
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-chosen',
+        },
+      }).catch(() => {});
+
+      expect(codeEnvUpload).toHaveBeenCalled();
+    });
+
     it('persists kind:user codeEnvRef for chat attachments (messageAttachment=true)', async () => {
       setupCodeEnvUpload({ storage_session_id: 'sess-1', file_id: 'fid-1' });
       const req = makeReq();
@@ -1195,13 +1264,14 @@ describe('processAgentFileUpload', () => {
 
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'user',
               id: 'user-123',
               storage_session_id: 'sess-1',
               file_id: 'fid-1',
               executionProfile: 'default',
+              provisionedAt: expect.any(Number),
             },
             codeEnvRefs: {
               default: {
@@ -1210,9 +1280,10 @@ describe('processAgentFileUpload', () => {
                 storage_session_id: 'sess-1',
                 file_id: 'fid-1',
                 executionProfile: 'default',
+                provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
         }),
         true,
       );
@@ -1233,13 +1304,14 @@ describe('processAgentFileUpload', () => {
 
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'agent',
               id: 'agent-abc',
               storage_session_id: 'sess-2',
               file_id: 'fid-2',
               executionProfile: 'default',
+              provisionedAt: expect.any(Number),
             },
             codeEnvRefs: {
               default: {
@@ -1248,9 +1320,10 @@ describe('processAgentFileUpload', () => {
                 storage_session_id: 'sess-2',
                 file_id: 'fid-2',
                 executionProfile: 'default',
+                provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
         }),
         true,
       );
@@ -1303,13 +1376,14 @@ describe('processAgentFileUpload', () => {
         expect.objectContaining({
           expiredAt,
           context: FileContext.agents,
-          metadata: {
+          metadata: expect.objectContaining({
             codeEnvRef: {
               kind: 'agent',
               id: 'agent-abc',
               storage_session_id: 'sess-5',
               file_id: 'fid-5',
               executionProfile: 'default',
+              provisionedAt: expect.any(Number),
             },
             codeEnvRefs: {
               default: {
@@ -1318,9 +1392,10 @@ describe('processAgentFileUpload', () => {
                 storage_session_id: 'sess-5',
                 file_id: 'fid-5',
                 executionProfile: 'default',
+                provisionedAt: expect.any(Number),
               },
             },
-          },
+          }),
         }),
         true,
       );
@@ -1349,6 +1424,555 @@ describe('processAgentFileUpload', () => {
       const persisted = db.createFile.mock.calls[0][0];
       expect(persisted.metadata).not.toHaveProperty('fileIdentifier');
     });
+  });
+
+  describe('text delivery storage', () => {
+    test('stores the original file durably for plain text delivery records', async () => {
+      const { parseText } = require('@librechat/api');
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: ['text/plain'] }));
+      parseText.mockResolvedValueOnce({ text: 'plain extracted text', bytes: 20 });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(storageUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'file-uuid-123',
+          file: expect.objectContaining({ originalname: 'upload.bin' }),
+        }),
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'plain extracted text',
+          bytes: 128,
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          filename: 'upload.bin',
+          type: 'text/plain',
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+
+    test('stores the original file durably for OCR delivery records', async () => {
+      const { createFile } = require('~/models');
+      const documentUpload = jest.fn().mockResolvedValue({
+        text: 'ocr extracted text',
+        bytes: 42,
+        filepath: 'document_parser',
+      });
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 4096,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === FileSources.document_parser) {
+          return { handleFileUpload: documentUpload };
+        }
+        return { handleFileUpload: storageUpload };
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(documentUpload).toHaveBeenCalled();
+      expect(storageUpload).toHaveBeenCalled();
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'ocr extracted text',
+          bytes: 4096,
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          filename: 'upload.bin',
+          type: PDF_MIME,
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+  });
+
+  describe('explicit legacy tool delivery path', () => {
+    test('persists llmDeliveryPath none for explicit file_search uploads', async () => {
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        defaultLLMDeliveryPath: {
+          fallback: 'text',
+        },
+      });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.file_search,
+        },
+      });
+
+      expect(checkCapability).toHaveBeenCalledWith(
+        expect.anything(),
+        AgentCapabilities.file_search,
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/markdown',
+          embedded: true,
+          llmDeliveryPath: 'none',
+        }),
+        true,
+      );
+    });
+
+    test('persists llmDeliveryPath provider for legacy provider uploads without tool_resource', async () => {
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        endpoints: {
+          [EModelEndpoint.agents]: { legacyFileUploadUX: true },
+        },
+        defaultLLMDeliveryPath: {
+          fallback: 'none',
+        },
+      });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.body.endpoint = EModelEndpoint.agents;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          message_file: 'true',
+          file_id: 'file-uuid-123',
+        },
+      });
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/markdown',
+          llmDeliveryPath: 'provider',
+        }),
+        true,
+      );
+    });
+
+    test('keeps audio off the text path when no speech provider is usable', async () => {
+      /* Transcription needs exactly one non-empty provider block. A schema holding only
+       * allowedAddresses reports STT present while the service refuses it, so routing
+       * audio to text there sends the upload to a transcription that cannot run. */
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(makeFileConfig());
+      const req = makeReq({
+        mimetype: 'audio/mpeg',
+        ocrConfig: null,
+        speech: { stt: { allowedAddresses: ['127.0.0.1'] } },
+      });
+      req.body.endpoint = EModelEndpoint.openAI;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', message_file: 'true', file_id: 'file-uuid-123' },
+      }).catch(() => {});
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'audio/mpeg', llmDeliveryPath: 'none' }),
+        true,
+      );
+    });
+
+    test('retains an auto-routed context upload as an agent resource', async () => {
+      const { getAgentFileRetentionExpiry } = require('@librechat/api');
+      mergeFileConfig.mockReturnValue(makeFileConfig());
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', file_id: 'file-uuid-123' },
+      }).catch(() => {});
+
+      expect(getAgentFileRetentionExpiry).toHaveBeenCalledWith(
+        expect.objectContaining({ toolResource: EToolResources.context }),
+        expect.any(Object),
+      );
+    });
+
+    test('plans extraction with the promoted context resource for auto-routed text uploads', async () => {
+      const { getUploadExtractedTextPlan } = require('@librechat/api');
+      mergeFileConfig.mockReturnValue(makeFileConfig());
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
+
+      /** The planner runs before extraction; downstream extraction is covered by the
+       *  OCR strategy tests, so failures past this point must not mask the argument. */
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', file_id: 'file-uuid-123' },
+      }).catch(() => {});
+
+      expect(getUploadExtractedTextPlan).toHaveBeenCalledWith(
+        expect.objectContaining({ toolResource: EToolResources.context }),
+      );
+    });
+
+    test('routes under the provider endpoint the caller resolved', async () => {
+      /* The route resolves the agent's provider once, before validation, and hands it
+       * down so acceptance and routing use one configuration. */
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        endpoints: {
+          'Custom Provider': { defaultLLMDeliveryPath: { fallback: 'none' } },
+        },
+      });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.body.endpoint = EModelEndpoint.agents;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          message_file: 'true',
+          file_id: 'file-uuid-123',
+          effectiveEndpoint: 'Custom Provider',
+        },
+      });
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ llmDeliveryPath: 'none' }),
+        true,
+      );
+    });
+
+    test('persists llmDeliveryPath none for explicit execute_code uploads', async () => {
+      const { createFile } = require('~/models');
+      const codeUpload = jest
+        .fn()
+        .mockResolvedValue({ storage_session_id: 'sess-csv', file_id: 'fid-csv' });
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockImplementation((source) => {
+        if (source === FileSources.execute_code) {
+          return { handleFileUpload: codeUpload };
+        }
+        return { handleFileUpload: storageUpload };
+      });
+      mergeFileConfig.mockReturnValue({
+        ...makeFileConfig(),
+        defaultLLMDeliveryPath: {
+          fallback: 'text',
+        },
+      });
+      const req = makeReq({ mimetype: 'text/csv', ocrConfig: null });
+      req.file.path = __filename;
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.execute_code,
+        },
+      });
+
+      expect(checkCapability).toHaveBeenCalledWith(
+        expect.anything(),
+        AgentCapabilities.execute_code,
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/csv',
+          metadata: expect.objectContaining({
+            codeEnvRef: {
+              kind: 'agent',
+              id: 'agent-abc',
+              storage_session_id: 'sess-csv',
+              file_id: 'fid-csv',
+              executionProfile: 'default',
+              provisionedAt: expect.any(Number),
+            },
+            codeEnvRefs: {
+              default: {
+                kind: 'agent',
+                id: 'agent-abc',
+                storage_session_id: 'sess-csv',
+                file_id: 'fid-csv',
+                executionProfile: 'default',
+                provisionedAt: expect.any(Number),
+              },
+            },
+          }),
+          llmDeliveryPath: 'none',
+        }),
+        true,
+      );
+    });
+
+    test('persists llmDeliveryPath text for explicit context uploads', async () => {
+      const { parseText } = require('@librechat/api');
+      const { createFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
+      );
+      parseText.mockResolvedValueOnce({ text: 'markdown text', bytes: 13 });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.context,
+        },
+      });
+
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'markdown text',
+          filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+          source: FileSources.local,
+          type: 'text/markdown',
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+
+    test('normalizes explicit ocr uploads to context text delivery', async () => {
+      const { parseText } = require('@librechat/api');
+      const { createFile, addAgentResourceFile } = require('~/models');
+      const storageUpload = jest.fn().mockResolvedValue({
+        filepath: '/uploads/user-123/file-uuid-123__upload.bin',
+        bytes: 128,
+        filename: 'upload.bin',
+        embedded: false,
+      });
+      getStrategyFunctions.mockReturnValue({ handleFileUpload: storageUpload });
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
+      );
+      parseText.mockResolvedValueOnce({ text: 'markdown text', bytes: 13 });
+      const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.ocr,
+        },
+      });
+
+      expect(addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'file-uuid-123',
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.context,
+        }),
+      );
+      expect(createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'markdown text',
+          source: FileSources.local,
+          type: 'text/markdown',
+          llmDeliveryPath: 'text',
+        }),
+        true,
+      );
+    });
+  });
+});
+
+describe('processImageFile', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+    mergeFileConfig.mockReturnValue(makeFileConfig());
+  });
+
+  test('persists resolved llmDeliveryPath for image uploads', async () => {
+    const { createFile } = require('~/models');
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      defaultLLMDeliveryPath: {
+        overrides: { 'image/*': 'none' },
+      },
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: {
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        endpoint: EModelEndpoint.agents,
+      },
+    });
+
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        filepath: '/images/user-123/image.webp',
+        source: FileSources.local,
+        type: 'image/webp',
+        llmDeliveryPath: 'none',
+      }),
+      true,
+    );
+  });
+
+  test('persists provider llmDeliveryPath for legacy image provider uploads', async () => {
+    const { createFile } = require('~/models');
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      endpoints: {
+        [EModelEndpoint.agents]: { legacyFileUploadUX: true },
+      },
+      defaultLLMDeliveryPath: {
+        overrides: { 'image/*': 'none' },
+      },
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: {
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        endpoint: EModelEndpoint.agents,
+      },
+    });
+
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'image-file-id',
+        temp_file_id: 'temp-image-file-id',
+        filepath: '/images/user-123/image.webp',
+        source: FileSources.local,
+        type: 'image/webp',
+        llmDeliveryPath: 'provider',
+      }),
+      true,
+    );
+  });
+
+  test('routes an agent image under the provider endpoint the caller resolved', async () => {
+    const { createFile } = require('~/models');
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      endpoints: {
+        'Custom Provider': { defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } } },
+      },
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: {
+        file_id: 'image-file-id',
+        agent_id: 'agent-abc',
+        endpoint: EModelEndpoint.agents,
+        effectiveEndpoint: 'Custom Provider',
+      },
+    });
+
+    /* Storage still keys off the request endpoint; only delivery routing follows the
+     * resolved provider. */
+    expect(handleImageUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: EModelEndpoint.agents }),
+    );
+    expect(createFile).toHaveBeenCalledWith(
+      expect.objectContaining({ llmDeliveryPath: 'none' }),
+      true,
+    );
   });
 });
 
@@ -1876,5 +2500,365 @@ describe('startExpiredFileSweep', () => {
       }),
     );
     expect(interval).toBe('sweep-interval');
+  });
+});
+
+describe('uploads with no consumer on the agent record', () => {
+  test('accepts a type the record shows no tool for', async () => {
+    /* Skills contribute file search and code execution for a turn without being written
+     * to agent.tools, so an empty list is not evidence that nothing will read the file.
+     * Reaching storage, which this suite leaves unwired, proves it was not refused. */
+    const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+    getStrategyFunctions.mockClear();
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'true',
+        file_id: 'file-uuid-zip',
+        agentTools: [],
+      },
+    }).catch(() => {});
+
+    expect(getStrategyFunctions).toHaveBeenCalled();
+  });
+});
+
+describe('native text fallback', () => {
+  /* The text matcher has to admit the type, or processing refuses before reaching the
+   * reader at all. This mirrors a deployment whose text config accepts these types. */
+  beforeEach(() => {
+    mergeFileConfig.mockReturnValue(
+      makeFileConfig({ textSupportedMimeTypes: [/^image\/png$/, /^text\/plain$/] }),
+    );
+    setupStoredFileUpload();
+  });
+
+  test('does not read a raster image as text when no extractor handles it', async () => {
+    /* An administrator can route images to text; without OCR nothing parses them, and
+     * reading the bytes directly would store mojibake as the file's text. */
+    const { parseText } = require('@librechat/api');
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'true',
+        file_id: 'f-png',
+        tool_resource: 'context',
+      },
+    }).catch(() => {});
+
+    const call = parseText.mock.calls.at(-1)?.[0];
+    expect(call?.allowNativeFallback).toBe(false);
+  });
+
+  test('still reads a text file directly', async () => {
+    const { parseText } = require('@librechat/api');
+    const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'true',
+        file_id: 'f-txt',
+        tool_resource: 'context',
+      },
+    }).catch(() => {});
+
+    const call = parseText.mock.calls.at(-1)?.[0];
+    expect(call?.allowNativeFallback).toBe(true);
+  });
+});
+
+describe('permanent unified uploads and unknown tool sets', () => {
+  const zipReq = () => {
+    const req = makeReq({ mimetype: 'application/zip', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+    return req;
+  };
+
+  test('does not refuse when the agent tools are unknown', async () => {
+    /* An ephemeral agent has no record to read, so the route reports no tool set and
+     * processing must not conclude that nothing can consume the file. */
+    const error = await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: { agent_id: 'agent-abc', message_file: 'true', file_id: 'f-eph' },
+    }).catch((thrown) => thrown);
+
+    expect(String(error?.message ?? '')).not.toMatch(/code interpreter or file search/i);
+  });
+
+  test('files a permanent upload under the tool that will consume it', async () => {
+    const { addAgentResourceFile } = require('~/models');
+    setupStoredFileUpload();
+    /* The code-env branch streams the upload from disk after this assertion resolves, and
+     * an unhandled stream error would take down the worker. Left in place rather than
+     * cleaned up, since the read happens later than the test body. */
+    jest.requireActual('fs').writeFileSync('/tmp/upload.bin', 'zip');
+
+    await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        file_id: 'f-perm',
+        agentTools: [EToolResources.execute_code],
+      },
+    }).catch(() => {});
+
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_resource: EToolResources.execute_code }),
+    );
+  });
+
+  test('records the converted image format rather than the upload type', async () => {
+    /* The stored bytes are the converted image. Keeping the upload's type leaves a later
+     * reprovision handing the sandbox webp bytes under a .jpg name, which the rename
+     * cannot catch because the extension already matches the stale type. */
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: '/uploads/photo.webp',
+      bytes: 64,
+      width: 10,
+      height: 10,
+    });
+    const storedFileUpload = jest.fn().mockResolvedValue({
+      bytes: 4096,
+      filename: 'photo.jpg',
+      filepath: '/uploads/photo.jpg',
+    });
+    getStrategyFunctions.mockReturnValue({
+      handleImageUpload,
+      handleFileUpload: storedFileUpload,
+    });
+    const req = makeReq({ mimetype: 'image/jpeg', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: { agent_id: 'agent-abc', message_file: 'true', file_id: 'f-image' },
+    }).catch(() => {});
+
+    expect(db.createFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ file_id: 'f-image', type: 'image/webp' }),
+      true,
+    );
+    /* The conversion runs under an id of its own, so persisting it too would leave a
+     * message-attachment row referenced by nothing beside the record above. */
+    expect(db.createFile).toHaveBeenCalledTimes(1);
+    /* And the conversion is the only storage write: uploading the original first left a
+     * second object nothing references. */
+    expect(handleImageUpload).toHaveBeenCalledTimes(1);
+    expect(storedFileUpload).not.toHaveBeenCalled();
+    /* Size and dimensions describe the bytes actually stored, which the persistent-file
+     * screening later charges against the agent's allowance. */
+    expect(db.createFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bytes: 64, width: 10, height: 10 }),
+      true,
+    );
+  });
+
+  test('treats an explicit message_file of "false" as a permanent upload', async () => {
+    /* Multipart form values arrive as strings, so the truthy reading made "false" mean
+     * message attachment while the route had already classified it as permanent. The
+     * upload reported success and filed nothing against the agent. */
+    const { addAgentResourceFile } = require('~/models');
+    setupStoredFileUpload();
+
+    await processAgentFileUpload({
+      req: zipReq(),
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        message_file: 'false',
+        file_id: 'f-explicit-false',
+        agentTools: [EToolResources.execute_code],
+      },
+    }).catch(() => {});
+
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_resource: EToolResources.execute_code }),
+    );
+  });
+
+  test('skips a consumer whose capability is disabled', async () => {
+    /* Otherwise the choice depends on the persisted tool order: code execution listed
+     * first would be selected and then rejected, while file search could have kept it. */
+    const { addAgentResourceFile } = require('~/models');
+    setupStoredFileUpload();
+    checkCapability.mockImplementation(
+      async (_req, capability) => capability !== AgentCapabilities.execute_code,
+    );
+
+    /* A searchable type routed off the model path, since a consumer is only chosen for a
+     * file kept off it, and only one that can read the file. */
+    mergeFileConfig.mockReturnValue({
+      ...makeFileConfig(),
+      defaultLLMDeliveryPath: { overrides: { [PDF_MIME]: 'none' } },
+    });
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        file_id: 'f-disabled',
+        agentTools: [EToolResources.execute_code, EToolResources.file_search],
+      },
+    }).catch(() => {});
+
+    expect(addAgentResourceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_resource: EToolResources.file_search }),
+    );
+    checkCapability.mockResolvedValue(true);
+  });
+
+  test('records a named destination as chosen in unified mode', async () => {
+    /* The marker asks whether the user named a destination, not which endpoint mode was
+     * on. Recording the mode treats an explicitly sandbox-only upload as inferred, and
+     * delivery then re-resolves it onto the model path. */
+    setupStoredFileUpload();
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        tool_resource: EToolResources.file_search,
+        file_id: 'f-named',
+      },
+    }).catch(() => {});
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ destinationChosen: true }),
+      }),
+      true,
+    );
+  });
+
+  test('records the agent namespace on an eagerly embedded file', async () => {
+    /* Vectors go in under entity_id, and priming asks which namespaces hold them rather
+     * than reading the root flag, so omitting this re-embeds on the first search and
+     * aborts that search when RAG is briefly unavailable. */
+    setupStoredFileUpload();
+    const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await processAgentFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        agent_id: 'agent-abc',
+        tool_resource: EToolResources.file_search,
+        file_id: 'f-embedded',
+      },
+    }).catch(() => {});
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ embeddedEntities: ['agent-abc'] }),
+      }),
+      true,
+    );
+  });
+
+  test('names the destination that refused the file, not file search', async () => {
+    /* The message is the only thing telling the reader which tool rejected the upload,
+     * and reporting an image sent to file search for an audio file sent to the code
+     * interpreter describes neither the file nor the destination. */
+    const req = makeReq({ mimetype: 'audio/mpeg', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'f-audio',
+        },
+      }),
+    ).rejects.toThrow(/audio\/mpeg.*code interpreter/i);
+  });
+
+  test('refuses a permanent upload that would land on no agent resource', async () => {
+    /* Delivered straight to the model, with no agent resource to hold it, storing it
+     * would report success while leaving the agent without a reference. */
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+    req.body.endpoint = EModelEndpoint.agents;
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { agent_id: 'agent-abc', file_id: 'f-orphan', agentTools: [] },
+      }),
+    ).rejects.toThrow(/cannot be saved to an agent on their own/i);
+  });
+});
+
+describe('filterFile endpoint resolution', () => {
+  /* getEndpointFileConfig consults endpointType ahead of endpoint, so a composer upload
+   * carrying `agents` would keep the Agents policy and shadow the provider the caller
+   * resolved. */
+  /* mergeFileConfig is mocked here, so these are raw byte values rather than the
+   * megabytes an admin would write. The agents policy refuses the file on size and the
+   * provider policy accepts it, which makes the assertions read as which one governed. */
+  const policyConfig = {
+    ...makeFileConfig(),
+    endpoints: {
+      default: {
+        disabled: false,
+        fileLimit: 10,
+        fileSizeLimit: 1_000_000,
+        totalSizeLimit: 1_000_000,
+        supportedMimeTypes: [/^image\/png$/],
+      },
+      agents: { fileSizeLimit: 1 },
+      'Custom Provider': { fileSizeLimit: 1_000_000 },
+    },
+  };
+
+  const makeFilterReq = (endpointType) => ({
+    body: {
+      endpoint: EModelEndpoint.agents,
+      ...(endpointType ? { endpointType } : {}),
+      file_id: '00000000-0000-4000-8000-000000000000',
+      width: 1,
+      height: 1,
+    },
+    file: { size: 10, mimetype: 'image/png', originalname: 'a.png' },
+    config: {},
+  });
+
+  beforeEach(() => {
+    mergeFileConfig.mockReturnValue(policyConfig);
+  });
+
+  test('applies the resolved provider policy even when the request names an endpoint type', () => {
+    expect(() =>
+      filterFile({ req: makeFilterReq('agents'), image: true, endpoint: 'Custom Provider' }),
+    ).not.toThrow();
+  });
+
+  test('keeps the request endpoint type when no override is given', () => {
+    expect(() => filterFile({ req: makeFilterReq('agents'), image: true })).toThrow(/size limit/i);
   });
 });

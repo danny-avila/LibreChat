@@ -1,4 +1,4 @@
-const { Constants, ContentTypes } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const BaseClientClass = require('../BaseClient');
 const { ContentFilterError } = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
@@ -2954,6 +2954,374 @@ describe('BaseClient', () => {
         existing[0],
         completion[0],
       ]);
+    });
+  });
+
+  describe('processAttachments llmDeliveryPath handling', () => {
+    beforeEach(() => {
+      TestClient.options = {
+        endpoint: EModelEndpoint.openAI,
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      TestClient.addImageURLs = jest.fn(async (message, files) => {
+        message.image_urls = ['encoded-image'];
+        return files;
+      });
+      TestClient.addDocuments = jest.fn(async (message, files) => {
+        message.documents = [{ type: 'file' }];
+        return files;
+      });
+      TestClient.addVideos = jest.fn(async (_message, files) => files);
+      TestClient.modelOptions = undefined;
+      TestClient.addAudios = jest.fn(async (_message, files) => files);
+    });
+
+    /* The stored path is an upload-time inference, so delivery re-resolves it for the
+     * endpoint running the turn. A test asserting a route has to configure that route
+     * rather than rely on the stored value alone. */
+    const routeTo = (path, ...mimeTypes) => {
+      TestClient.options.req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [EModelEndpoint.openAI]: {
+                defaultLLMDeliveryPath: {
+                  overrides: Object.fromEntries(mimeTypes.map((mime) => [mime, path])),
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+    };
+
+    test('keeps a none image in returned files without adding image URLs', async () => {
+      routeTo('none', 'image/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'none-image',
+        filename: 'image.png',
+        filepath: '/uploads/image.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.image_urls).toBeUndefined();
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('re-resolves a path stored under a different provider', async () => {
+      /* Audio uploaded under Google stores `provider`, and the OpenAI encoder emits no
+       * audio payload for it, so the inference is not this endpoint's to honor.
+       *
+       * What this does not do is produce a transcript: the record holds raw media and no
+       * extracted text, and extraction at delivery is Phase 2 work. So the model receives
+       * nothing here either way, which the assertions state rather than imply, and the
+       * change is limited to not downloading and encoding a file to no purpose. */
+      routeTo('text', 'audio/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'foreign-audio',
+        filename: 'note.mp3',
+        filepath: '/uploads/note.mp3',
+        type: 'audio/mpeg',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addAudios).not.toHaveBeenCalled();
+      expect(message.audios).toBeUndefined();
+      expect(file.text).toBeUndefined();
+    });
+
+    test('re-resolves a converted image against the type it was routed on', async () => {
+      /* Conversion rewrote the stored type, so resolving against that asks about a format
+       * the administrator never configured a route for and delivers what they excluded. */
+      routeTo('none', 'image/png');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'converted-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.webp',
+        type: 'image/webp',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+        metadata: { routingMimeType: 'image/png' },
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('reads the Responses setting from a plain conversation too', async () => {
+      /* A non-agent Azure chat carries it in model options, and reading only the agent
+       * parameters re-resolves a natively supported PDF to text, which the record has
+       * none of, so the model receives nothing. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.azureOpenAI,
+        req: { config: { fileConfig: undefined } },
+      };
+      TestClient.modelOptions = { useResponsesApi: true };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'azure-pdf',
+        filename: 'doc.pdf',
+        filepath: '/uploads/doc.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addDocuments).toHaveBeenCalled();
+      TestClient.modelOptions = undefined;
+    });
+
+    test('resolves a custom endpoint policy by the name the admin configured', async () => {
+      /* `initializeAgent` rewrites `agent.provider` to the client family a custom endpoint
+       * runs on, so resolving by it looks up `openAI` and silently loses every override
+       * written against the endpoint's own name. Upload routed under that name, and
+       * delivery has to agree or the file is stored and never sent. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent: { provider: EModelEndpoint.openAI, endpoint: 'Mock Provider B' },
+        req: {
+          config: {
+            fileConfig: {
+              endpoints: {
+                'Mock Provider B': {
+                  defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } },
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'custom-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('resolves an agent policy by its own endpoint, not the agents container', async () => {
+      /* getEndpointFileConfig prefers endpointType, and an agents chat carries `agents`,
+       * so supplying it answers with the generic entry rather than the agent's.
+       * `initializeAgent` sets `agent.endpoint` from the agent's provider, so it names a
+       * configurable entry and never the container. */
+      TestClient.options = {
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent: { provider: EModelEndpoint.openAI, endpoint: EModelEndpoint.openAI },
+        req: {
+          config: {
+            fileConfig: {
+              endpoints: {
+                [EModelEndpoint.openAI]: {
+                  defaultLLMDeliveryPath: { overrides: { 'image/*': 'none' } },
+                },
+              },
+            },
+          },
+        },
+      };
+      TestClient._mergedFileConfig = undefined;
+      TestClient._endpointFileConfig = undefined;
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'agent-image',
+        filename: 'photo.png',
+        filepath: '/uploads/photo.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+    });
+
+    test('keeps an explicitly named destination even under a different provider', async () => {
+      /* The user named this one, through the chooser or by requesting a tool resource,
+       * and that decision is not this endpoint's to re-derive. */
+      routeTo('text', 'audio/*');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'chosen-audio',
+        filename: 'note.mp3',
+        filepath: '/uploads/note.mp3',
+        type: 'audio/mpeg',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        metadata: { destinationChosen: true },
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addAudios).toHaveBeenCalled();
+    });
+
+    test('keeps a none PDF in returned files without adding documents', async () => {
+      routeTo('none', 'application/pdf');
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'none-pdf',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'none',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toBeUndefined();
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('keeps a text-delivery markdown file in returned files without adding documents', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'text-markdown',
+        filename: 'notes.md',
+        filepath: '/uploads/notes.md',
+        type: 'text/markdown',
+        bytes: 100,
+        source: 'local',
+        text: 'extracted markdown',
+        llmDeliveryPath: 'text',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toBeUndefined();
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('still delivers a provider PDF that lazy provisioning marked embedded', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'provisioned-pdf',
+        filename: 'report.pdf',
+        filepath: '/uploads/report.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        embedded: true,
+        llmDeliveryPath: 'provider',
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addDocuments).toHaveBeenCalled();
+      expect(message.documents).toEqual([{ type: 'file' }]);
+    });
+
+    test('still delivers a provider image that carries a codeEnvRef', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'provisioned-image',
+        filename: 'chart.png',
+        filepath: '/uploads/chart.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        llmDeliveryPath: 'provider',
+        metadata: { codeEnvRef: { kind: 'user', id: 'u1' } },
+      };
+
+      await TestClient.processAttachments(message, [file]);
+
+      expect(TestClient.addImageURLs).toHaveBeenCalled();
+      expect(message.image_urls).toEqual(['encoded-image']);
+    });
+
+    test('keeps excluding embedded legacy files that have no delivery path', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'legacy-embedded',
+        filename: 'legacy.pdf',
+        filepath: '/uploads/legacy.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+        embedded: true,
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addDocuments).not.toHaveBeenCalled();
+    });
+
+    test('routes legacy files without llmDeliveryPath normally', async () => {
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'legacy-pdf',
+        filename: 'document.pdf',
+        filepath: '/uploads/document.pdf',
+        type: 'application/pdf',
+        bytes: 100,
+        source: 'local',
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(message.documents).toEqual([{ type: 'file' }]);
+      expect(TestClient.addDocuments).toHaveBeenCalledWith(message, [file]);
     });
   });
 });

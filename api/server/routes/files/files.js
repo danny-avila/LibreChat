@@ -39,6 +39,11 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const {
+  resolveEffectiveToolResource,
+  resolveUploadEndpoint,
+  resolveUploadAgent,
+} = require('~/server/services/Files/routing');
 const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
@@ -740,13 +745,52 @@ router.post('/', async (req, res) => {
 
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
-    filterFile({ req });
+    const isAssistants = isAssistantsEndpoint(metadata.endpoint);
+
+    /* Authorization runs before anything reads the target agent. Validating against a
+     * record the caller cannot access answers with that agent's provider limits and
+     * content policy, so the rejection itself reports its configuration. */
+    if (!isAssistants) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
+        checkPermission,
+        hasUploadBypass: () => hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS),
+      });
+      if (denied) {
+        return;
+      }
+    }
+
+    /* Same configuration for validation and routing: an agent upload arrives as
+     * `agents` but is processed under the agent's own provider. */
+    const effectiveEndpoint = await resolveUploadEndpoint({
+      endpoint: metadata.endpoint,
+      agent_id: metadata.agent_id,
+      req,
+    });
+    /* Carried so processing routes under the same configuration validation used, and so
+     * it can tell whether any enabled tool could consume a file kept off the model path,
+     * both from the one agent read this request already made. */
+    metadata.effectiveEndpoint = effectiveEndpoint;
+    /* Left undefined when no agent record backs this upload, as for an ephemeral agent
+     * that exists only for the request. Processing then cannot judge what tools could
+     * consume the file and does not try. */
+    metadata.agentTools = (await resolveUploadAgent(req, metadata.agent_id))?.tools;
+    filterFile({ req, endpoint: effectiveEndpoint });
+
+    /* Same destination the processing path will use: a unified upload routed to text
+     * becomes a context resource, and the preflight must account for that extraction
+     * before fail-closing on an uninspectable derived field. */
+    const effectiveToolResource = await resolveEffectiveToolResource({ req, metadata });
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,
       file: req.file,
       endpoint: metadata.endpoint,
-      toolResource: metadata.tool_resource,
+      toolResource: effectiveToolResource,
       fileConfig: mergeFileConfig(req.config?.fileConfig),
       ocrConfigured: req.config?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
@@ -756,29 +800,9 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAssistantsEndpoint(metadata.endpoint)) {
+    if (isAssistants) {
       openSseStreamIfRequested();
       return await processFileUpload({ req, res, metadata, sseStream });
-    }
-
-    let skipUploadAuth = false;
-    try {
-      skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
-    } catch (err) {
-      logger.warn('[/files] capability check failed, denying bypass:', getSafeErrorMetadata(err));
-    }
-
-    if (!skipUploadAuth) {
-      const denied = await verifyAgentUploadPermission({
-        req,
-        res,
-        metadata,
-        getAgent: db.getAgent,
-        checkPermission,
-      });
-      if (denied) {
-        return;
-      }
     }
 
     openSseStreamIfRequested();

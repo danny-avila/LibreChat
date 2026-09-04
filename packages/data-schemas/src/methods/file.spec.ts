@@ -705,6 +705,491 @@ describe('File Methods', () => {
     });
   });
 
+  describe('getDeferredProvisionFiles', () => {
+    const makeFile = (
+      fileId: string,
+      ownerId: mongoose.Types.ObjectId,
+      overrides: Record<string, unknown> = {},
+    ) =>
+      runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: fileId,
+          user: ownerId,
+          tenantId: 'tenant-a',
+          conversationId: 'conversation-a',
+          filename: `${fileId}.csv`,
+          filepath: `/uploads/${fileId}.csv`,
+          source: 'local',
+          type: 'text/csv',
+          bytes: 100,
+          context: FileContext.message_attachment,
+          ...overrides,
+        }),
+      );
+
+    it('returns attachments that carry neither an embedding nor a code reference', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const deferredId = uuidv4();
+      await makeFile(deferredId, ownerId);
+
+      const results = await fileMethods.getDeferredProvisionFiles([deferredId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(results.map((file) => file.file_id)).toEqual([deferredId]);
+    });
+
+    it('returns an agent file embedded only in another agent namespace', async () => {
+      /* Its vectors are under the other agent's entity, so the namespace this turn
+       * searches has none of them. The record-wide flag cannot say that, and skipping
+       * hydration here means nothing downstream ever notices. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const foreignId = uuidv4();
+      await makeFile(foreignId, ownerId, {
+        context: FileContext.agents,
+        embedded: true,
+        metadata: { embeddedEntities: ['other-agent'] },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [foreignId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        {
+          search: true,
+          searchNamespaces: ['this-agent', ownerId.toString()],
+        },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([foreignId]);
+    });
+
+    it('leaves an agent file embedded in every candidate namespace alone', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const settledId = uuidv4();
+      await makeFile(settledId, ownerId, {
+        context: FileContext.agents,
+        embedded: true,
+        metadata: { embeddedEntities: ['this-agent', ownerId.toString()] },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [settledId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        {
+          search: true,
+          searchNamespaces: ['this-agent', ownerId.toString()],
+        },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('returns a default-route reference so liveness can screen it', async () => {
+      /* A usable reference is not a live one. With resendFiles off this is the only query
+       * that runs, so excluding it leaves an expired session unnoticed and the code tool
+       * running without the file. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const refId = uuidv4();
+      await makeFile(refId, ownerId, {
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          codeEnvRefs: {
+            default: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [refId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'default', hydrateProvisioned: true },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([refId]);
+    });
+
+    it('leaves a default reference alone when another query already hydrates it', async () => {
+      /* With resendFiles on, getToolFilesByIds loads provisioned files and the probe sees
+       * them there, so widening this query would only duplicate the read. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const refId = uuidv4();
+      await makeFile(refId, ownerId, {
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          codeEnvRefs: {
+            default: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [refId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'default', hydrateProvisioned: false },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('returns a usable stateful reference so priming can add it to the tool resources', async () => {
+      /* Being provisioned already is not a reason to skip it: with no other query running,
+       * this is what puts the record into tool_resources. Omitting it drops the file the
+       * previous turn provisioned successfully while retrying the one that failed. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const refId = uuidv4();
+      const statefulRef = {
+        kind: 'user',
+        id: 'u1',
+        storage_session_id: 's2',
+        file_id: 'r2',
+        executionRouteKey: 'stateful:a',
+      };
+      await makeFile(refId, ownerId, {
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'r1' },
+          codeEnvRefs: { 'stateful:a': statefulRef },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [refId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'stateful:a', hydrateProvisioned: true },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([refId]);
+    });
+
+    it('returns an embedded attachment to a search-only agent when nothing else hydrates', async () => {
+      /* With resendFiles off, getToolFilesByIds does not run, so this is the only query
+       * that can put an already-embedded attachment into tool_resources.file_search.
+       * Excluding it on the embedded flag leaves the next search with no reference to a
+       * file the previous turn embedded successfully. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeFile(fileId, ownerId, { embedded: true });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [fileId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true, searchNamespaces: [ownerId.toString()], hydrateProvisioned: true },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([fileId]);
+    });
+
+    it('leaves an embedded attachment alone when another query already hydrates it', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeFile(fileId, ownerId, { embedded: true });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [fileId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true, searchNamespaces: [ownerId.toString()], hydrateProvisioned: false },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('surfaces a read failure rather than reporting nothing to provision', async () => {
+      /* An empty list is indistinguishable from nothing needing provisioning, so a
+       * swallowed error would let the tool run without the attachment. */
+      const ownerId = new mongoose.Types.ObjectId();
+      const failing = createFileMethods({
+        ...mongoose,
+        models: {
+          ...mongoose.models,
+          File: {
+            find: () => {
+              throw new Error('mongo unavailable');
+            },
+          },
+        },
+      } as unknown as typeof mongoose);
+
+      await expect(
+        failing.getDeferredProvisionFiles([uuidv4()], { userId: ownerId.toString() }),
+      ).rejects.toThrow(/mongo unavailable/);
+    });
+
+    it('still queues a file whose only code reference is for another route', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const otherRouteId = uuidv4();
+      await makeFile(otherRouteId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRefs: {
+            'stateful:a': {
+              kind: 'user',
+              id: ownerId.toString(),
+              storage_session_id: 'session-a',
+              file_id: otherRouteId,
+              executionRouteKey: 'stateful:a',
+            },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [otherRouteId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'stateful:b' },
+      );
+
+      expect(results.map((file) => file.file_id)).toEqual([otherRouteId]);
+    });
+
+    it('omits a file already provisioned for the active route', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const sameRouteId = uuidv4();
+      await makeFile(sameRouteId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRefs: {
+            'stateful:b': {
+              kind: 'user',
+              id: ownerId.toString(),
+              storage_session_id: 'session-b',
+              file_id: sameRouteId,
+              executionRouteKey: 'stateful:b',
+            },
+          },
+        },
+      });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [sameRouteId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true, codeRouteKey: 'stateful:b' },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('treats a legacy pointer without a route key as the default deployment', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const legacyId = uuidv4();
+      await makeFile(legacyId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: legacyId,
+          },
+        },
+      });
+      const ownerScope = { userId: ownerId.toString(), tenantId: 'tenant-a' };
+
+      const onDefault = await fileMethods.getDeferredProvisionFiles([legacyId], ownerScope, {
+        code: true,
+        codeRouteKey: 'default',
+      });
+      const onStateful = await fileMethods.getDeferredProvisionFiles([legacyId], ownerScope, {
+        code: true,
+        codeRouteKey: 'stateful:b',
+      });
+
+      expect(onDefault).toEqual([]);
+      expect(onStateful.map((file) => file.file_id)).toEqual([legacyId]);
+    });
+
+    it('omits a file that already carries every requested result', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const embeddedId = uuidv4();
+      const provisionedId = uuidv4();
+      const generatedId = uuidv4();
+      await makeFile(embeddedId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: embeddedId,
+          },
+        },
+      });
+      await makeFile(provisionedId, ownerId, {
+        embedded: true,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: provisionedId,
+          },
+        },
+      });
+      await makeFile(generatedId, ownerId, { context: FileContext.execute_code });
+
+      const results = await fileMethods.getDeferredProvisionFiles(
+        [embeddedId, provisionedId, generatedId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('returns a search-embedded file when the agent needs code provisioning', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const embeddedOnlyId = uuidv4();
+      await makeFile(embeddedOnlyId, ownerId, { embedded: true });
+
+      const forCode = await fileMethods.getDeferredProvisionFiles(
+        [embeddedOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true },
+      );
+      const forSearch = await fileMethods.getDeferredProvisionFiles(
+        [embeddedOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true },
+      );
+
+      expect(forCode.map((file) => file.file_id)).toEqual([embeddedOnlyId]);
+      expect(forSearch).toEqual([]);
+    });
+
+    it('returns a code-provisioned file when the agent needs search provisioning', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const codeOnlyId = uuidv4();
+      await makeFile(codeOnlyId, ownerId, {
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'session',
+            file_id: codeOnlyId,
+          },
+        },
+      });
+
+      const forSearch = await fileMethods.getDeferredProvisionFiles(
+        [codeOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { search: true },
+      );
+      const forCode = await fileMethods.getDeferredProvisionFiles(
+        [codeOnlyId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+        { code: true },
+      );
+
+      expect(forSearch.map((file) => file.file_id)).toEqual([codeOnlyId]);
+      expect(forCode).toEqual([]);
+    });
+
+    it('does not cross the authenticated owner scope', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const victimId = new mongoose.Types.ObjectId();
+      const victimFileId = uuidv4();
+      await makeFile(victimFileId, victimId);
+
+      const results = await fileMethods.getDeferredProvisionFiles([victimFileId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe('updateFileCodeEnvRef', () => {
+    const makeRefFile = (fileId: string, ownerId: mongoose.Types.ObjectId) =>
+      runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: fileId,
+          user: ownerId,
+          tenantId: 'tenant-a',
+          conversationId: 'conversation-a',
+          filename: `${fileId}.csv`,
+          filepath: `/uploads/${fileId}.csv`,
+          source: 'local',
+          type: 'text/csv',
+          bytes: 100,
+          context: FileContext.message_attachment,
+          metadata: { sourceDispatchedAt: 42 },
+        }),
+      );
+
+    const ref = (routeKey: string, remoteId: string) => ({
+      kind: 'user' as const,
+      id: 'u1',
+      storage_session_id: `session-${routeKey}`,
+      file_id: remoteId,
+      executionRouteKey: routeKey,
+    });
+
+    it('keeps concurrently written sibling routes', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeRefFile(fileId, ownerId);
+
+      await Promise.all([
+        runAsSystem(() =>
+          fileMethods.updateFileCodeEnvRef({
+            file_id: fileId,
+            routeKey: 'default',
+            ref: ref('default', 'remote-default'),
+          }),
+        ),
+        runAsSystem(() =>
+          fileMethods.updateFileCodeEnvRef({
+            file_id: fileId,
+            routeKey: 'stateful:a',
+            ref: ref('stateful:a', 'remote-stateful'),
+          }),
+        ),
+      ]);
+
+      const stored = await runAsSystem(() => fileMethods.findFileById(fileId));
+      const refs = stored?.metadata?.codeEnvRefs as Record<string, { file_id: string }> | undefined;
+      expect(refs?.default?.file_id).toBe('remote-default');
+      expect(refs?.['stateful:a']?.file_id).toBe('remote-stateful');
+    });
+
+    it('leaves sibling metadata fields in place', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeRefFile(fileId, ownerId);
+
+      await runAsSystem(() =>
+        fileMethods.updateFileCodeEnvRef({
+          file_id: fileId,
+          routeKey: 'default',
+          ref: ref('default', 'remote-default'),
+          legacyRef: ref('default', 'remote-default'),
+        }),
+      );
+
+      const stored = await runAsSystem(() => fileMethods.findFileById(fileId));
+      expect(stored?.metadata?.sourceDispatchedAt).toBe(42);
+      expect((stored?.metadata?.codeEnvRef as { file_id: string } | undefined)?.file_id).toBe(
+        'remote-default',
+      );
+    });
+
+    it('rejects a route key that would write outside its entry', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+      await makeRefFile(fileId, ownerId);
+
+      await expect(
+        runAsSystem(() =>
+          fileMethods.updateFileCodeEnvRef({
+            file_id: fileId,
+            routeKey: 'a.b',
+            ref: ref('a.b', 'remote'),
+          }),
+        ),
+      ).rejects.toThrow(/Invalid code environment route key/);
+    });
+  });
+
   describe('getUserCodeFiles', () => {
     it('returns only authenticated owner code-env uploads', async () => {
       const ownerId = new mongoose.Types.ObjectId();

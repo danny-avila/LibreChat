@@ -63,6 +63,13 @@ const {
   resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
+const {
+  loadCodeApiKey,
+  provisionToCodeEnv,
+  provisionToVectorDB,
+  checkSessionsAlive,
+} = require('~/server/services/Files/provision');
+const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -465,6 +472,11 @@ const initializeClient = async ({
       }
     },
     ...getSkillToolDeps(),
+    provisionFiles: createProvisionFilesCallback({
+      req,
+      agentToolContexts,
+      resolvePrimaryAgentId: () => primaryConfig?.id,
+    }),
   };
 
   const summarizationOptions =
@@ -621,12 +633,18 @@ const initializeClient = async ({
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
+      getDeferredProvisionFiles: db.getDeferredProvisionFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
       getSkillByName: skillDbMethods.getSkillByName,
+      provisionToCodeEnv,
+      provisionToVectorDB,
+      checkSessionsAlive,
+      loadCodeApiKey,
+      updateFile: db.updateFile,
     },
   );
 
@@ -704,12 +722,18 @@ const initializeClient = async ({
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
+        getDeferredProvisionFiles: db.getDeferredProvisionFiles,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        provisionToCodeEnv,
+        provisionToVectorDB,
+        checkSessionsAlive,
+        loadCodeApiKey,
+        updateFile: db.updateFile,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -1148,12 +1172,18 @@ const initializeClient = async ({
           updateFilesUsage: db.updateFilesUsage,
           getUserKeyValues: db.getUserKeyValues,
           getUserCodeFiles: db.getUserCodeFiles,
+          getDeferredProvisionFiles: db.getDeferredProvisionFiles,
           getToolFilesByIds: db.getToolFilesByIds,
           getCodeGeneratedFiles: db.getCodeGeneratedFiles,
           filterFilesByAgentAccess,
           listSkillsByAccess: skillDbMethods.listSkillsByAccess,
           listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
           getSkillByName: skillDbMethods.getSkillByName,
+          provisionToCodeEnv,
+          provisionToVectorDB,
+          checkSessionsAlive,
+          loadCodeApiKey,
+          updateFile: db.updateFile,
         },
       ),
       context.signal,

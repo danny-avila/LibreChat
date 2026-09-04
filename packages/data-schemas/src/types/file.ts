@@ -73,7 +73,15 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     codeEnvRefs?: CodeEnvRefMap;
     /** Dispatch-order stamp for the current source artifact generation. */
     sourceDispatchedAt?: number;
+    /** Vector namespaces this file has been embedded into. */
+    embeddedEntities?: string[];
+    /** The user named this destination, so absent ones were declined. */
+    destinationChosen?: boolean;
+    /** The type the delivery route was resolved against, when conversion changed it. */
+    routingMimeType?: string;
   };
+  /** Upload-time inference, not a durable contract. See the schema field for why. */
+  llmDeliveryPath?: string;
   expiresAt?: Date;
   expiredAt?: Date | null;
   createdAt?: Date;

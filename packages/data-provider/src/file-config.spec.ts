@@ -19,6 +19,7 @@ import {
   inferMimeType,
   textMimeTypes,
 } from './file-config';
+import { resolveDefaultLLMDeliveryPath } from './resolve-llm-delivery-path';
 import { EModelEndpoint } from './schemas';
 
 describe('inferMimeType', () => {
@@ -1734,5 +1735,244 @@ describe('fileConfigSchema clientImageResize', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('defaultLLMDeliveryPath config merging', () => {
+  it('should include defaultLLMDeliveryPath and legacyFileUploadUX in merged endpoint config', () => {
+    const merged = mergeFileConfig({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          defaultLLMDeliveryPath: {
+            fallback: 'none',
+            overrides: { 'image/*': 'text' },
+          },
+          legacyFileUploadUX: true,
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.agents,
+    });
+    expect(endpointConfig.defaultLLMDeliveryPath).toEqual({
+      fallback: 'none',
+      overrides: { 'image/*': 'text' },
+    });
+    expect(endpointConfig.legacyFileUploadUX).toBe(true);
+  });
+
+  it('inherits the global fallback when an endpoint supplies only overrides', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: { fallback: 'none' },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'image/*': 'provider' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath).toEqual({
+      fallback: 'none',
+      overrides: { 'image/*': 'provider' },
+    });
+  });
+
+  it('lets an endpoint wildcard outrank a global exact override', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: {
+        fallback: 'text',
+        overrides: { 'image/png': 'text', 'audio/mpeg': 'none' },
+      },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'image/*': 'provider' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(
+      resolveDefaultLLMDeliveryPath(
+        'image/png',
+        endpointConfig.defaultLLMDeliveryPath,
+        merged.defaultLLMDeliveryPath,
+        EModelEndpoint.openAI,
+      ),
+    ).toBe('provider');
+    expect(
+      resolveDefaultLLMDeliveryPath(
+        'audio/mpeg',
+        endpointConfig.defaultLLMDeliveryPath,
+        merged.defaultLLMDeliveryPath,
+        EModelEndpoint.openAI,
+      ),
+    ).toBe('none');
+  });
+
+  it('keeps a global exact override the endpoint wildcard does not cover', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: { overrides: { 'image/png': 'text' } },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'audio/*': 'none' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath?.overrides?.['image/png']).toBe('text');
+  });
+
+  it('lets an endpoint exact override win inside its own wildcard family', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: { overrides: { 'image/png': 'none' } },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'image/*': 'provider', 'image/png': 'text' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(
+      resolveDefaultLLMDeliveryPath(
+        'image/png',
+        endpointConfig.defaultLLMDeliveryPath,
+        merged.defaultLLMDeliveryPath,
+        EModelEndpoint.openAI,
+      ),
+    ).toBe('text');
+  });
+
+  it('merges override maps with the endpoint winning per key', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: {
+        fallback: 'text',
+        overrides: { 'image/*': 'provider', 'audio/*': 'none' },
+      },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'audio/*': 'text' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath).toEqual({
+      fallback: 'text',
+      overrides: { 'image/*': 'provider', 'audio/*': 'text' },
+    });
+  });
+
+  it('keeps an endpoint fallback ahead of inherited default overrides', () => {
+    const merged = mergeFileConfig({
+      endpoints: {
+        default: { defaultLLMDeliveryPath: { overrides: { 'image/*': 'text' } } },
+        [EModelEndpoint.openAI]: { defaultLLMDeliveryPath: { fallback: 'provider' } },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath?.overrides?.['image/*']).toBeUndefined();
+    expect(endpointConfig.defaultLLMDeliveryPath?.fallback).toBe('provider');
+  });
+
+  it('lets an endpoint fallback override the global fallback', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: { fallback: 'none' },
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { fallback: 'text' },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+
+    expect(endpointConfig.defaultLLMDeliveryPath?.fallback).toBe('text');
+  });
+
+  it('should merge global defaultLLMDeliveryPath into mergedConfig', () => {
+    const merged = mergeFileConfig({
+      defaultLLMDeliveryPath: {
+        fallback: 'provider',
+        overrides: { 'audio/*': 'none' },
+      },
+      legacyFileUploadUX: true,
+    });
+    expect(merged.defaultLLMDeliveryPath).toEqual({
+      fallback: 'provider',
+      overrides: { 'audio/*': 'none' },
+    });
+    expect(merged.legacyFileUploadUX).toBe(true);
+  });
+
+  it('should inherit global legacyFileUploadUX into endpoint config', () => {
+    const merged = mergeFileConfig({
+      legacyFileUploadUX: true,
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(endpointConfig.legacyFileUploadUX).toBe(true);
+  });
+
+  it('should allow endpoint legacyFileUploadUX to override global legacyFileUploadUX', () => {
+    const merged = mergeFileConfig({
+      legacyFileUploadUX: true,
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          legacyFileUploadUX: false,
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(endpointConfig.legacyFileUploadUX).toBe(false);
+  });
+
+  it('should pass through endpoint defaultLLMDeliveryPath in mergeWithDefault', () => {
+    const merged = mergeFileConfig({
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          defaultLLMDeliveryPath: { overrides: { 'application/pdf': 'text' } },
+        },
+      },
+    });
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: merged,
+      endpoint: EModelEndpoint.openAI,
+    });
+    expect(endpointConfig.defaultLLMDeliveryPath?.overrides?.['application/pdf']).toBe('text');
+  });
+
+  it('should default legacyFileUploadUX to undefined when not set', () => {
+    const merged = mergeFileConfig(undefined);
+    expect(merged.legacyFileUploadUX).toBeUndefined();
   });
 });

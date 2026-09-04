@@ -35,6 +35,9 @@ const {
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
+  resolveUploadLLMDeliveryPath,
+  isSpeechProviderConfigured,
+  resolveUseResponsesApi,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1638,6 +1641,16 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  /** Whether this turn talks to the Responses API, which is what lets Azure carry a
+   *  document natively. A saved agent holds it in its parameters and a plain conversation
+   *  in its model options, and both readers of it have been wrong by consulting one. */
+  usesResponsesApi() {
+    return resolveUseResponsesApi(
+      this.options.agent?.model_parameters?.useResponsesApi,
+      this.modelOptions?.useResponsesApi,
+    );
+  }
+
   async addDocuments(message, attachments) {
     const documentResult = await encodeAndFormatDocuments(
       this.options.req,
@@ -1645,7 +1658,7 @@ class BaseClient {
       {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
-        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+        useResponsesApi: this.usesResponsesApi(),
         model: this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
@@ -1721,13 +1734,38 @@ class BaseClient {
 
     if (!this._mergedFileConfig) {
       this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
+      /* An agent's file policy is configured under the endpoint it names, not the client
+       * family it runs on: initialization rewrites `provider` to openAI or anthropic for a
+       * custom endpoint, so resolving by it answers with the wrong entry and drops every
+       * override the admin wrote. `endpoint` keeps the configured identity, and is never
+       * the `agents` container, which would answer with the generic entry. */
+      const agentEndpoint = this.options.agent?.endpoint ?? this.options.agent?.provider;
+      this._deliveryEndpoint = agentEndpoint ?? this.options.endpoint;
       this._endpointFileConfig = getEndpointFileConfig({
         fileConfig: this._mergedFileConfig,
-        endpoint,
-        endpointType: this.options.endpointType,
+        endpoint: this._deliveryEndpoint,
+        endpointType: agentEndpoint != null ? undefined : this.options.endpointType,
       });
     }
+
+    /* The stored path records what upload time inferred from the endpoint it saw, and this
+     * turn may be running somewhere else: audio stored as `provider` under Google reaches
+     * an encoder that emits nothing for OpenAI, delivering neither media nor text. An
+     * explicit chooser decision is the user's and survives, and a record predating the
+     * field keeps its legacy handling. */
+    const deliveryPathFor = (file) =>
+      file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
+        ? file.llmDeliveryPath
+        : resolveUploadLLMDeliveryPath({
+            /* Conversion changes the stored type, so re-resolution asks against the type
+             * the route was decided on rather than the format it was written in. */
+            mimeType: file.metadata?.routingMimeType ?? file.type,
+            endpointConfig: this._endpointFileConfig,
+            fileConfig: this._mergedFileConfig,
+            endpoint: this._deliveryEndpoint,
+            useResponsesApi: this.usesResponsesApi(),
+            sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
+          });
 
     for (const file of attachments) {
       /** @type {FileSources} */
@@ -1736,11 +1774,20 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
+      const deliveryPath = deliveryPathFor(file);
+      if (deliveryPath === 'text' || deliveryPath === 'none') {
+        allFiles.push(file);
+        continue;
+      }
+      /* An explicit `provider` path is authoritative: lazy provisioning stamps
+       * `embedded`/`codeEnvRef` on files that are still meant for the model, so the
+       * legacy tool-provisioning exclusion only applies to records without one. */
       if (
-        file.embedded === true ||
-        file.metadata?.codeEnvRef != null ||
-        file.metadata?.codeEnvRefs != null ||
-        file.metadata?.fileIdentifier != null
+        deliveryPath !== 'provider' &&
+        (file.embedded === true ||
+          file.metadata?.codeEnvRef != null ||
+          file.metadata?.codeEnvRefs != null ||
+          file.metadata?.fileIdentifier != null)
       ) {
         allFiles.push(file);
         continue;

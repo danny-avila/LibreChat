@@ -5,6 +5,7 @@ import {
   splitMCPToolKey,
 } from 'librechat-data-provider';
 import {
+  Constants as AgentConstants,
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
   ReadFileToolDefinition,
@@ -25,6 +26,23 @@ export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
 ]);
+
+/**
+ * Every tool that reads or writes the code environment. Eligibility and provisioning both
+ * consult this: a turn starting with any of them needs its files in the sandbox already,
+ * and an agent that has any of them wants code-file provisioning built even when it never
+ * names the `execute_code` marker itself.
+ */
+export const CODE_FILE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...CODE_EXECUTION_TOOLS,
+  ...FILE_AUTHORING_TOOL_NAMES,
+  AgentConstants.READ_FILE,
+  AgentConstants.WRITE_FILE,
+]);
+
+export function isCodeFileToolName(name: string): boolean {
+  return CODE_FILE_TOOL_NAMES.has(name);
+}
 
 export function isCodeSessionToolName(
   name: string,

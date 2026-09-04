@@ -2887,6 +2887,28 @@ describe('Code Process', () => {
       ]);
     });
 
+    it('mounts a converted image under the name the sandbox actually holds', async () => {
+      /* Image uploads are converted to the configured output type while the record keeps
+       * the original filename. Provisioning uploaded the converted name, so rebuilding
+       * the mount path from the record advertises a file the sandbox does not have. */
+      setupSessionInfoOk();
+      getFiles.mockResolvedValue([
+        makeFile({
+          file_id: 'fid-ready',
+          filename: 'photo.png',
+          type: 'image/webp',
+        }),
+      ]);
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['fid-ready'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(result.files?.[0]?.name).toBe('photo.webp');
+    });
+
     it('annotates a pending file with "(preview not yet generated)"', async () => {
       setupSessionInfoOk();
       getFiles.mockResolvedValue([makeFile({ status: 'pending' })]);
