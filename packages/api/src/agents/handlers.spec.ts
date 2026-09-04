@@ -3852,6 +3852,9 @@ describe('createToolExecuteHandler', () => {
       config: {},
     } as never;
 
+    /** The subset of the sandbox IO params these assertions read. */
+    type SandboxIoParams = { session_id?: string; files?: unknown };
+
     function makeSandboxAuthoringHandler(
       params: Partial<ToolExecuteOptions>,
       configurable?: Record<string, unknown>,
@@ -3917,6 +3920,69 @@ describe('createToolExecuteHandler', () => {
         files: [{ id: 'f1', name: 'input.csv', session_id: 'sess-prev' }],
         req,
       });
+    });
+
+    it('carries whole file refs into the next authoring call on the same path', async () => {
+      /**
+       * Regression: the batch-local sandbox context rebuilt each ref from
+       * `{ id, name, session_id, storage_session_id }` and replaced the
+       * mounted list wholesale. A second authoring call on the same path
+       * therefore sent the Code API a skill ref stripped of the `version`
+       * it requires, and unmounted every primed file this write did not
+       * itself return.
+       */
+      const skillRef = {
+        id: 'skill-file-1',
+        resource_id: 'skill-1',
+        name: 'SKILL.md',
+        kind: 'skill' as const,
+        version: 7,
+        storage_session_id: 'store-skill',
+      };
+      let reads = 0;
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        reads += 1;
+        if (reads === 1) {
+          throw new Error('cat: /mnt/data/note.md: No such file or directory');
+        }
+        return { content: 'hello world' };
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/note.md\n',
+        session_id: 'sess-write',
+        files: [{ id: 'file-note', name: 'note.md', kind: 'user' as const }],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      const codeSessionContext = {
+        session_id: 'sess-prev',
+        files: [skillRef],
+      };
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_create_note',
+          name: 'create_file',
+          args: { path: '/mnt/data/note.md', content: 'hello world' },
+          codeSessionContext,
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_edit_note',
+          name: 'edit_file',
+          args: { path: '/mnt/data/note.md', old_text: 'hello', new_text: 'goodbye' },
+          codeSessionContext,
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(results.every((result) => result.status === 'success')).toBe(true);
+      /* The follow-up read/write mount the primed skill ref whole — version
+       * included — alongside the file the create just produced. */
+      const followUpFiles = readSandboxFile.mock.calls[1][0].files;
+      expect(followUpFiles).toEqual([
+        skillRef,
+        { id: 'file-note', name: 'note.md', kind: 'user', storage_session_id: 'sess-write' },
+      ]);
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual(followUpFiles);
+      expect(writeSandboxFile.mock.calls[1][0].session_id).toBe('sess-write');
     });
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {
