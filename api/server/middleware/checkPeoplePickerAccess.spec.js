@@ -1,5 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
+const {
+  PrincipalType,
+  PermissionTypes,
+  Permissions,
+  SystemRoles,
+} = require('librechat-data-provider');
 const { checkPeoplePickerAccess } = require('./checkPeoplePickerAccess');
 const { getRoleByName } = require('~/models');
 
@@ -51,6 +56,16 @@ describe('checkPeoplePickerAccess', () => {
       message: 'No permissions configured for user role',
     });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('allows a literal admin regardless of configured people picker permissions', async () => {
+    req.user.role = SystemRoles.ADMIN;
+
+    await checkPeoplePickerAccess(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(getRoleByName).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it('should allow access when searching for users with VIEW_USERS permission', async () => {

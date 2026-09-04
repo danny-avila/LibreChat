@@ -63,9 +63,10 @@ export default function GenericGrantAccessDialog({
   const canEditAgentInsights =
     resourceType === ResourceType.AGENT && user?.role === SystemRoles.ADMIN;
   const { hasPeoplePickerAccess, peoplePickerTypeFilter } = usePeoplePickerPermissions();
+  const canManagePrincipals = hasPeoplePickerAccess || canEditAgentInsights;
 
-  /** User can use the share dialog if they have people picker access OR can share publicly */
-  const canUseShareDialog = hasPeoplePickerAccess || canSharePublic;
+  /** User can use the dialog if they can manage principals or share publicly. */
+  const canUseShareDialog = canManagePrincipals || canSharePublic;
 
   const {
     config,
@@ -334,7 +335,7 @@ export default function GenericGrantAccessDialog({
           className="min-h-0 flex-1 overflow-y-auto px-5 py-3 sm:px-6 sm:py-4"
           aria-busy={isLoadingPermissions}
         >
-          {hasPeoplePickerAccess && (
+          {canManagePrincipals && (
             <section aria-labelledby={peopleSectionId} className="w-full min-w-0">
               <div className="flex items-center justify-between gap-3 px-1 pb-3">
                 <h3
@@ -413,7 +414,7 @@ export default function GenericGrantAccessDialog({
             </section>
           )}
 
-          {canSharePublic && !hasPeoplePickerAccess && (
+          {canSharePublic && !canManagePrincipals && (
             <section className="w-full">
               <PublicSharingToggle
                 isPublic={isPublic}
