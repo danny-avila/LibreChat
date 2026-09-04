@@ -317,7 +317,13 @@ export default function ActivityPhaseGroup({
           <Button
             variant="ghost"
             type="button"
-            className="inline-flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+            /** `ring-inset` is not decoration: the clip above is permanent (the
+             *  grid rows need it), so an outset ring would be drawn entirely
+             *  outside the button's border box and clipped away, leaving
+             *  keyboard users with no focus indicator. The ghost variant
+             *  supplies it today; stating it here keeps the requirement with
+             *  the element that depends on it. */
+            className="inline-flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}

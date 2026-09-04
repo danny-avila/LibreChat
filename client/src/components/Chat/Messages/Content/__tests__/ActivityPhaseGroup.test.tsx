@@ -115,6 +115,20 @@ describe('ActivityPhaseGroup', () => {
     expect(screen.getByText(LABEL).parentElement).toHaveClass('flex-1', 'text-left');
   });
 
+  test('keeps the focus ring inside the clipped header', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const trigger = screen.getByRole('button', { name: LABEL });
+    /** The header's wrapper clips permanently — the 0fr/1fr grid needs it — so
+     *  an outset ring would be drawn outside the border box and clipped away. */
+    expect(trigger.parentElement).toHaveClass('overflow-hidden');
+    expect(trigger).toHaveClass('focus-visible:ring-inset', 'focus-visible:ring-2');
+  });
+
   test('mounts in the pre-marker shape, then folds the activity into the summary', () => {
     const { container } = render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent animateEntrance>
