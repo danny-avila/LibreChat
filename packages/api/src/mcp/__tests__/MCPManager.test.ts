@@ -2659,6 +2659,7 @@ describe('MCPManager', () => {
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       setRequestHeaders: jest.fn(),
+      setOAuthTokens: jest.fn(),
       timeout: 30000,
       client: {
         request: jest.fn().mockResolvedValue({
@@ -2695,6 +2696,7 @@ describe('MCPManager', () => {
       const sharedAppConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
+        setOAuthTokens: jest.fn(),
         timeout: 30000,
         client: {
           request: jest.fn().mockResolvedValue({
@@ -2707,6 +2709,7 @@ describe('MCPManager', () => {
       const userConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
+        setOAuthTokens: jest.fn(),
         timeout: 30000,
         client: {
           request: jest.fn().mockResolvedValue({
@@ -2941,6 +2944,7 @@ describe('MCPManager', () => {
       const rejectingConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
+        setOAuthTokens: jest.fn(),
         isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
         timeout: 30000,
         client: {
@@ -2999,6 +3003,14 @@ describe('MCPManager', () => {
       expect(rejectingConnection.setRequestHeaders as jest.Mock).toHaveBeenLastCalledWith(
         expect.objectContaining({ Authorization: 'Bearer reminted-obo-token' }),
       );
+      /**
+       * A legacy SSE event stream reads its bearer from `oauthTokens` at transport
+       * construction and never sees runtime request headers, so leaving the rejected
+       * credential there would 401 the next rebuild and retire a recovered connection.
+       */
+      expect(rejectingConnection.setOAuthTokens as jest.Mock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ access_token: 'reminted-obo-token' }),
+      );
       expect((rejectingConnection.client.request as jest.Mock).mock.calls).toHaveLength(2);
     });
 
@@ -3007,6 +3019,7 @@ describe('MCPManager', () => {
       const failingConnection = {
         isConnected: jest.fn().mockResolvedValue(true),
         setRequestHeaders: jest.fn(),
+        setOAuthTokens: jest.fn(),
         isOAuthAuthenticationError: jest.fn().mockReturnValue(false),
         timeout: 30000,
         client: { request: jest.fn().mockRejectedValue(toolError) },

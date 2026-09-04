@@ -1064,6 +1064,14 @@ Please follow these instructions when using tools from the respective MCP server
             );
           }
           resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+          /**
+           * Runtime request headers do not reach a legacy SSE connection's event
+           * stream — `eventSourceInit.fetch` bypasses `createFetchFunction` and sends
+           * the headers `constructTransport` captured from `oauthTokens`. Without
+           * this the next transport rebuild re-bakes the rejected bearer, 401s, and
+           * retires a connection that had already recovered.
+           */
+          connection!.setOAuthTokens(oboTokens);
         };
 
         /** Resolve the current OBO token for this tool call; the resolver may serve cached tokens. */
