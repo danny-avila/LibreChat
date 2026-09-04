@@ -786,6 +786,27 @@ const bulkUpdateResourcePermissions = async ({
     const bulkWrites = [];
     const insightsChangesByBulkWriteIndex = new Map();
 
+    const updatedPrincipalKey = (principal) => {
+      if (!principal?.type) {
+        return null;
+      }
+      if (principal.type === PrincipalType.PUBLIC) {
+        return `${PrincipalType.PUBLIC}:null`;
+      }
+      return principal.id == null ? null : `${principal.type}:${principal.id}`;
+    };
+    const lastUpdateIndexByPrincipal = new Map();
+    updatedPrincipals.forEach((principal, index) => {
+      const key = updatedPrincipalKey(principal);
+      if (key != null) {
+        lastUpdateIndexByPrincipal.set(key, index);
+      }
+    });
+    const effectiveUpdatedPrincipals = updatedPrincipals.filter((principal, index) => {
+      const key = updatedPrincipalKey(principal);
+      return key == null || lastUpdateIndexByPrincipal.get(key) === index;
+    });
+
     /**
      * Tracks non-public principals granted in this same request so their revoke is skipped below.
      * Grants are flushed before deletes, so a principal present in both `updatedPrincipals` and
@@ -806,7 +827,7 @@ const bulkUpdateResourcePermissions = async ({
       ]),
     );
 
-    for (const principal of updatedPrincipals) {
+    for (const principal of effectiveUpdatedPrincipals) {
       try {
         if (!principal.accessRoleId) {
           results.errors.push({

@@ -958,6 +958,44 @@ describe('PermissionService', () => {
 
     test.each([
       {
+        updates: [true, false],
+        expectedInsights: 0,
+        expectedChanges: [],
+      },
+      {
+        updates: [false, true],
+        expectedInsights: PermissionBits.VIEW_INSIGHTS,
+        expectedChanges: [expect.objectContaining({ action: 'assigned' })],
+      },
+    ])(
+      'uses the last Insights value for duplicate principal updates',
+      async ({ updates, expectedInsights, expectedChanges }) => {
+        const results = await bulkUpdateResourcePermissions({
+          resourceType: ResourceType.AGENT,
+          resourceId,
+          updatedPrincipals: updates.map((viewInsights) => ({
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+            viewInsights,
+          })),
+          grantedBy: grantedById,
+        });
+
+        const entry = await AclEntry.findOne({
+          principalType: PrincipalType.USER,
+          principalId: userId,
+          resourceType: ResourceType.AGENT,
+          resourceId,
+        });
+        expect(entry.permBits & PermissionBits.VIEW_INSIGHTS).toBe(expectedInsights);
+        expect(results.granted).toHaveLength(1);
+        expect(results.insightsChanges).toEqual(expectedChanges);
+      },
+    );
+
+    test.each([
+      {
         concurrentChange: 'grant',
         initialInsights: false,
         concurrentBitUpdate: { or: PermissionBits.VIEW_INSIGHTS },
