@@ -784,6 +784,7 @@ const bulkUpdateResourcePermissions = async ({
     };
 
     const bulkWrites = [];
+    const insightsChangesByBulkWriteIndex = new Map();
 
     /**
      * Tracks non-public principals granted in this same request so their revoke is skipped below.
@@ -859,6 +860,7 @@ const bulkUpdateResourcePermissions = async ({
         const permBits = wantsInsights
           ? role.permBits | PermissionBits.VIEW_INSIGHTS
           : role.permBits & ~PermissionBits.VIEW_INSIGHTS;
+        const grantedAt = new Date();
 
         const principalModelMap = {
           [PrincipalType.USER]: PrincipalModel.USER,
@@ -871,7 +873,7 @@ const bulkUpdateResourcePermissions = async ({
             ...(!preserveInsights && { permBits }),
             roleId: role._id,
             grantedBy,
-            grantedAt: new Date(),
+            grantedAt,
           },
           ...(preserveInsights && {
             $bit: {
@@ -896,6 +898,7 @@ const bulkUpdateResourcePermissions = async ({
           },
         };
 
+        const bulkWriteIndex = bulkWrites.length;
         bulkWrites.push({
           updateOne: {
             filter: query,
@@ -919,15 +922,23 @@ const bulkUpdateResourcePermissions = async ({
           ...(resourceType === ResourceType.AGENT ? { viewInsights: wantsInsights } : {}),
         });
         if (hadInsights !== wantsInsights) {
-          results.insightsChanges.push({
+          const change = {
             action: wantsInsights ? 'assigned' : 'removed',
             previousEntry: existingEntry ?? null,
+            writtenEntry: {
+              permBits,
+              roleId: role._id,
+              grantedBy,
+              grantedAt,
+            },
             principal: {
               type: principal.type,
               id: principal.id,
               name: principal.name,
             },
-          });
+          };
+          results.insightsChanges.push(change);
+          insightsChangesByBulkWriteIndex.set(bulkWriteIndex, change);
         }
         if (principal.type !== PrincipalType.PUBLIC) {
           grantedPrincipalKeys.add(principalKey(principal));
@@ -941,7 +952,12 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (bulkWrites.length > 0) {
-      await db.bulkWriteAclEntries(bulkWrites, sessionOptions);
+      const bulkWriteResult = await db.bulkWriteAclEntries(bulkWrites, sessionOptions);
+      for (const [writeIndex, change] of insightsChangesByBulkWriteIndex) {
+        if (bulkWriteResult.upsertedIds?.[writeIndex] && change.previousEntry) {
+          change.previousEntry = null;
+        }
+      }
     }
 
     const deleteQueries = [];
@@ -992,6 +1008,7 @@ const bulkUpdateResourcePermissions = async ({
           results.insightsChanges.push({
             action: 'removed',
             previousEntry: existingEntry,
+            writtenEntry: null,
             principal: {
               type: principal.type,
               id: principal.id,
@@ -1045,16 +1062,6 @@ const bulkUpdateResourcePermissions = async ({
 /** Restore ACL documents for Insights transitions that could not be audited. */
 const restoreInsightsPermissionChanges = async ({ resourceType, resourceId, changes = [] }) => {
   const operations = changes.map((change) => {
-    if (change.previousEntry) {
-      return {
-        replaceOne: {
-          filter: { _id: change.previousEntry._id },
-          replacement: change.previousEntry,
-          upsert: true,
-        },
-      };
-    }
-
     const filter = {
       principalType: change.principal.type,
       resourceType,
@@ -1066,7 +1073,39 @@ const restoreInsightsPermissionChanges = async ({ resourceType, resourceId, chan
           ? change.principal.id
           : new mongoose.Types.ObjectId(change.principal.id);
     }
-    return { deleteOne: { filter } };
+
+    if (change.previousEntry && change.writtenEntry) {
+      return {
+        replaceOne: {
+          filter: {
+            _id: change.previousEntry._id,
+            ...change.writtenEntry,
+          },
+          replacement: change.previousEntry,
+          timestamps: false,
+        },
+      };
+    }
+
+    if (change.previousEntry) {
+      return {
+        updateOne: {
+          filter,
+          update: { $setOnInsert: change.previousEntry },
+          upsert: true,
+          timestamps: false,
+        },
+      };
+    }
+
+    return {
+      deleteOne: {
+        filter: {
+          ...filter,
+          ...change.writtenEntry,
+        },
+      },
+    };
   });
 
   if (operations.length > 0) {
