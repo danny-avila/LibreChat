@@ -16,7 +16,16 @@ export type AgentManagementCreate = Omit<z.output<typeof agentCreateSchema>, 'mo
 type AgentManagementCreateInput = Omit<z.input<typeof agentCreateSchema>, 'model'> & {
   model: string;
 };
-export type AgentManagementUpdate = z.output<typeof agentUpdateSchema>;
+export type AgentManagementUpdate = Omit<
+  z.output<typeof agentUpdateSchema>,
+  'name' | 'description' | 'instructions' | 'model' | 'avatar'
+> & {
+  name?: string;
+  description?: string;
+  instructions?: string;
+  model?: string;
+  avatar?: null;
+};
 export type AgentManagementList = {
   limit: number;
   cursor?: string;
@@ -82,8 +91,15 @@ export const agentManagementCreateSchema: z.ZodType<
   z.ZodTypeDef,
   AgentManagementCreateInput
 > = agentCreateSchema.extend({ model: z.string() }).strict();
-export const agentManagementUpdateSchema: z.ZodType<AgentManagementUpdate> =
-  agentUpdateSchema.strict();
+export const agentManagementUpdateSchema: z.ZodType<AgentManagementUpdate> = agentUpdateSchema
+  .extend({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    instructions: z.string().optional(),
+    model: z.string().optional(),
+    avatar: z.null().optional(),
+  })
+  .strict();
 
 const agentManagementCursorSchema = z
   .string()

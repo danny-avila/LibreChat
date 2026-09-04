@@ -83,6 +83,22 @@ describe('Agent Management contract', () => {
         agentManagementCreateSchema.safeParse({ provider: 'openAI', model: null }).success,
       ).toBe(false);
     });
+
+    it.each([
+      { name: null },
+      { description: null },
+      { instructions: null },
+      { model: null },
+      { avatar: { filepath: 'avatars/replacement.png', source: 'local' } },
+    ])('rejects update values the browser update flow cannot apply: %p', (update) => {
+      expect(agentManagementUpdateSchema.safeParse(update).success).toBe(false);
+    });
+
+    it('accepts the explicitly supported update clears', () => {
+      expect(
+        agentManagementUpdateSchema.parse({ avatar: null, code_environment_id: null }),
+      ).toEqual({ avatar: null, code_environment_id: null });
+    });
   });
 
   describe('pagination', () => {

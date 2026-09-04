@@ -95,8 +95,10 @@ const FileContainer = ({
                  * subtitle it would otherwise read as a description rather than a control. The
                  * hit area is the label and nothing more: `inline-block` keeps it off the rest
                  * of the row, and `leading-4` keeps it inside its 20px line so the chip's own
-                 * center still opens the editor. */
-                'pointer-events-auto relative z-10 inline-block max-w-full truncate rounded text-left align-middle leading-4 text-text-secondary underline underline-offset-2 hover:text-text-primary',
+                 * center still opens the editor. The colour shift answers focus as well as
+                 * hover: the ring already announces focus, but leaving the two input modes
+                 * with different feedback is a difference with no reason behind it. */
+                'pointer-events-auto relative z-10 inline-block max-w-full truncate rounded text-left align-middle leading-4 text-text-secondary underline underline-offset-2 hover:text-text-primary focus-visible:text-text-primary',
                 focusRing,
               )}
             >

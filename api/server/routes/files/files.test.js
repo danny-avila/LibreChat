@@ -694,6 +694,83 @@ describe('File Routes - Delete with Agent Access', () => {
     });
   });
 
+  /* Mirrors api/db/connect.js, which sets strictQuery for the running server. Under it
+     Mongoose DROPS filter keys absent from the schema, so a lookup on a misspelled path
+     degrades to findOne({}) — the first document in the collection, whoever owns it. */
+  describe('DELETE /files - assistant tool resource unlinking', () => {
+    let previousStrictQuery;
+
+    beforeAll(() => {
+      previousStrictQuery = mongoose.get('strictQuery');
+      mongoose.set('strictQuery', true);
+    });
+
+    afterAll(async () => {
+      mongoose.set('strictQuery', previousStrictQuery);
+      await mongoose.connection.collection('assistants').deleteMany({});
+    });
+
+    beforeEach(async () => {
+      await mongoose.connection.collection('assistants').deleteMany({});
+    });
+
+    it("does not unlink another user's assistant files when the requested assistant is missing", async () => {
+      const strangerFileId = uuidv4();
+      /* Written straight to the collection: `tool_resources` predates the current schema. */
+      await mongoose.connection.collection('assistants').insertOne({
+        user: new mongoose.Types.ObjectId(),
+        assistant_id: 'asst_belonging_to_someone_else',
+        tool_resources: { file_search: { file_ids: [strangerFileId] } },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          assistant_id: 'asst_that_does_not_exist',
+          tool_resource: 'file_search',
+          files: [{ file_id: strangerFileId, filepath: '/uploads/stranger.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(processDeleteRequest).toHaveBeenCalledWith(expect.objectContaining({ files: [] }));
+    });
+
+    it('unlinks the requested assistant own files', async () => {
+      const ownFileId = uuidv4();
+      await mongoose.connection.collection('assistants').insertOne({
+        user: new mongoose.Types.ObjectId(),
+        assistant_id: 'asst_requested',
+        tool_resources: { file_search: { file_ids: [ownFileId] } },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          assistant_id: 'asst_requested',
+          tool_resource: 'file_search',
+          files: [{ file_id: ownFileId, filepath: '/uploads/own.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(processDeleteRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ files: [expect.objectContaining({ file_id: ownFileId })] }),
+      );
+    });
+
+    it('answers instead of throwing when no assistants exist at all', async () => {
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          assistant_id: 'asst_that_does_not_exist',
+          tool_resource: 'file_search',
+          files: [{ file_id: uuidv4(), filepath: '/uploads/ghost.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(processDeleteRequest).toHaveBeenCalledWith(expect.objectContaining({ files: [] }));
+    });
+  });
+
   describe('GET /files/download-url/:userId/:file_id', () => {
     it('returns a direct signed download URL when the strategy supports it', async () => {
       const userFileId = uuidv4();

@@ -77,12 +77,17 @@ describe('FileContainer subtitle action', () => {
 
     /** The affordance used to live behind a `group-hover` swap, which left the chip reading as
      * an inert "Plain Text" until pointed at — so nobody found it, and touch had no pointer to
-     * find it with. Nothing about the label may be conditional on hover or focus again. */
+     * find it with. Nothing about the label may be conditional on hover or focus again.
+     *
+     * Asserted on class tokens deliberately, brittle as that is. jsdom loads no stylesheet, so
+     * a hover gate has no effect on the DOM here and a presence check cannot see one: the swap
+     * this replaced kept BOTH labels mounted, which is why the spec it replaced asserted they
+     * were both in the document at once. Only the tokens distinguish the two markups. */
     const control = screen.getByRole('button', { name: 'Move back into message' });
     expect(control.className).not.toContain('group-hover');
     expect(control.className).not.toContain('group-focus-within');
     expect(control.className).not.toContain('hover:none');
-    expect(control.textContent).toBe('Move back into message');
+    expect(control).toHaveTextContent('Move back into message');
   });
 
   it('names the subtitle control from its own visible label', () => {
@@ -162,6 +167,18 @@ describe('FileContainer subtitle action', () => {
     expect(control.className).toContain('text-text-secondary');
     expect(control.className).toContain('underline');
     expect(control.className).not.toContain('hover:underline');
+  });
+
+  it('gives keyboard focus the same feedback the pointer gets', () => {
+    render(
+      <FileContainer file={baseFile()} onClick={jest.fn()} subtitleAction={subtitleAction()} />,
+    );
+
+    /** The focus ring already announces focus, so this is parity rather than a missing
+     * indicator: whatever the colour shift signals to a pointer, it signals to a keyboard. */
+    const control = screen.getByRole('button', { name: 'Move back into message' });
+    expect(control.className).toContain('hover:text-text-primary');
+    expect(control.className).toContain('focus-visible:text-text-primary');
   });
 
   it('leaves the plain subtitle alone when no action is offered', () => {
