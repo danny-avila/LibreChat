@@ -165,4 +165,40 @@ describe('configureSocialLogins OpenID session expiry', () => {
     expect(mockOpenIdJwtLogin).toHaveBeenCalledWith(config);
     expect(mockPassportUse).toHaveBeenCalledWith('openidJwt', 'openid-jwt-strategy');
   });
+
+  it('allows startup retries to be disabled', async () => {
+    jest.useFakeTimers();
+    process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS = '0';
+    process.env.OPENID_DISCOVERY_RETRY_DELAY_MS = '1000';
+    const app = { use: jest.fn() };
+
+    await configureSocialLogins(app);
+
+    expect(mockSetupOpenId).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1000);
+
+    expect(mockSetupOpenId).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues background retries when strategy registration throws', async () => {
+    jest.useFakeTimers();
+    process.env.OPENID_REUSE_TOKENS = 'true';
+    process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS = '1';
+    process.env.OPENID_DISCOVERY_RETRY_DELAY_MS = '1000';
+    mockOpenIdJwtLogin.mockImplementationOnce(() => {
+      throw new Error('strategy registration failed');
+    });
+    const app = { use: jest.fn() };
+
+    await configureSocialLogins(app);
+
+    expect(mockSetupOpenId).toHaveBeenCalledTimes(1);
+    expect(mockPassportUse).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1000);
+
+    expect(mockSetupOpenId).toHaveBeenCalledTimes(2);
+    expect(mockPassportUse).toHaveBeenCalledWith('openidJwt', 'openid-jwt-strategy');
+  });
 });
