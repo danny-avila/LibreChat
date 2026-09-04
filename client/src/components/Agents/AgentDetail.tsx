@@ -1,10 +1,12 @@
 import React, { useRef } from 'react';
-import { Link, Pin, PinOff } from 'lucide-react';
+import { Link } from 'lucide-react';
+import { Pin, PinOff } from 'lucide';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   OGDialog,
   OGDialogContent,
   Button,
+  MorphIcon,
   TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
@@ -181,7 +183,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
                 onClick={handleFavoriteClick}
                 aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
               >
-                {isFavorite ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                <MorphIcon icon={isFavorite ? PinOff : Pin} className="h-4 w-4" />
               </Button>
             }
           />

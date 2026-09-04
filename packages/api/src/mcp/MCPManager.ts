@@ -1083,9 +1083,19 @@ Please follow these instructions when using tools from the respective MCP server
         const resolvedHeaders: Record<string, string> =
           'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
 
-        /** Resolve the current OBO token for this tool call; the resolver may serve cached tokens. */
         const oboConfig = rawConfig.obo;
-        if (oboConfig && oboTokenResolver && user) {
+        const usesObo = Boolean(oboConfig && oboTokenResolver && user);
+
+        /**
+         * Resolves the downstream token for this call and installs it as the request
+         * bearer. `forceRefresh` bypasses the resolver's cache, which is what a
+         * rejected credential needs: a revoked or scope-invalidated token is still
+         * inside its cached lifetime, so a cached read returns the same dead bearer.
+         */
+        const applyOboAuthorization = async (forceRefresh: boolean): Promise<void> => {
+          if (!oboConfig || !oboTokenResolver || !user) {
+            return;
+          }
           if (!upstreamTokenProvider) {
             throw new McpError(
               ErrorCode.InternalError,
@@ -1118,6 +1128,7 @@ Please follow these instructions when using tools from the respective MCP server
               oboTokenResolver,
               upstreamTokenProvider,
               oboIdentityContext,
+              forceRefresh,
             );
           } catch (error) {
             if (error instanceof OboTokenResolutionError) {
@@ -1136,7 +1147,18 @@ Please follow these instructions when using tools from the respective MCP server
             );
           }
           resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
-        }
+          /**
+           * Runtime request headers do not reach a legacy SSE connection's event
+           * stream — `eventSourceInit.fetch` bypasses `createFetchFunction` and sends
+           * the headers `constructTransport` captured from `oauthTokens`. Without
+           * this the next transport rebuild re-bakes the rejected bearer, 401s, and
+           * retires a connection that had already recovered.
+           */
+          connection!.setOAuthTokens(oboTokens);
+        };
+
+        /** Resolve the current OBO token for this tool call; the resolver may serve cached tokens. */
+        await applyOboAuthorization(false);
         if (
           userId &&
           user &&
@@ -1242,50 +1264,68 @@ Please follow these instructions when using tools from the respective MCP server
           try {
             result = await requestTool();
           } catch (error) {
-            const requestOAuthHandler = attachSharedOAuthHandler;
-            if (!requestOAuthHandler || !userId) {
-              throw error;
-            }
-
             /** A gateway may return the -32042 body under HTTP 401/403, and
              *  `isOAuthAuthenticationError` matches on status alone. Let the
-             *  elicitation layer below claim the error first, or OAuth recovery
-             *  reads a "please authorize this tool" response as a bad token and
-             *  can replace the original error with a recovery failure. */
+             *  elicitation layer below claim the error before either recovery path
+             *  treats it as a bad token and retries or re-exchanges for nothing. */
             if (elicitationStart && extractUrlElicitation(error)) {
               throw error;
             }
-
-            if (!connection.isOAuthAuthenticationError(error)) {
-              throw error;
-            }
-
-            try {
-              await waitForRecoveryWithoutLease(() =>
-                this.recoverOAuthConnection(
-                  connection!,
-                  error,
-                  serverName,
-                  userId,
-                  requestOAuthHandler,
-                  oauthStart,
-                  oauthEnd,
-                  flowManager,
-                  options?.signal,
-                  !recoveryTakeoverConsumed,
-                ),
+            /**
+             * An OBO server rejecting the bearer mid-session is recoverable here and
+             * nowhere else: the downstream token is minted from the upstream session
+             * this request still holds, and `attachSharedOAuthHandler` is never set for
+             * an OBO-only config, so the OAuth recovery below would rethrow untouched.
+             * Without this the rejected token is re-served from cache on every later
+             * call until it expires.
+             */
+            if (usesObo && connection.isOAuthAuthenticationError(error)) {
+              logger.info(
+                `${logPrefix}[${toolName}] OBO token rejected by server; re-exchanging and retrying once`,
               );
-            } catch (recoveryError) {
-              if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
-                throw recoveryError;
+              await applyOboAuthorization(true);
+              connection.setRequestHeaders(resolvedHeaders);
+              result = await requestTool();
+            } else {
+              const requestOAuthHandler = attachSharedOAuthHandler;
+              if (!requestOAuthHandler || !userId) {
+                throw error;
               }
-              if (options?.signal?.aborted) {
-                throw recoveryError;
+
+              if (!connection.isOAuthAuthenticationError(error)) {
+                throw error;
               }
-              logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
-              throw error;
+
+              try {
+                await waitForRecoveryWithoutLease(() =>
+                  this.recoverOAuthConnection(
+                    connection!,
+                    error,
+                    serverName,
+                    userId,
+                    requestOAuthHandler,
+                    oauthStart,
+                    oauthEnd,
+                    flowManager,
+                    options?.signal,
+                    !recoveryTakeoverConsumed,
+                  ),
+                );
+              } catch (recoveryError) {
+                if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+                  throw recoveryError;
+                }
+                if (options?.signal?.aborted) {
+                  throw recoveryError;
+                }
+                logger.warn(
+                  `${logPrefix}[${toolName}] Runtime OAuth recovery failed`,
+                  recoveryError,
+                );
+                throw error;
+              }
+              result = await requestTool();
             }
-            result = await requestTool();
           }
         } catch (error) {
           /**

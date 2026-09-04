@@ -627,6 +627,21 @@ endpoints:
   #   checkpointer:
   #     type: mongo # mongo (default) or memory (single-process development only)
   #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
+  #   # (optional) Authenticate machine clients for the Agent Management API.
+  #   # Each verified OAuth client is bound server-side to one existing LibreChat
+  #   # user and tenant; that user's normal role and Agent ACLs still apply.
+  #   managementApi:
+  #     auth:
+  #       oidc:
+  #         enabled: true
+  #         issuer: 'https://identity.example.com/'
+  #         audience: 'https://librechat.example.com/agents'
+  #         # jwksUri: 'https://identity.example.com/.well-known/jwks.json'
+  #       clients:
+  #         - clientId: 'machine-client-id'
+  #           # subject: 'provider-specific-service-principal-subject'
+  #           userId: '507f1f77bcf86cd799439011'
+  #           tenantId: 'tenant-id'
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy

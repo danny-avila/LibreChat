@@ -54,6 +54,9 @@ const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
 /** MeiliSearch's default `pagination.maxTotalHits` ceiling. */
 const MEILI_SEARCH_LIMIT = 1000;
+/** Ceiling for a single conversation page; the sidebar's largest request is 100. */
+const MAX_CONVO_PAGE_SIZE = 100;
+const DEFAULT_CONVO_PAGE_SIZE = 25;
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
@@ -2596,7 +2599,7 @@ export function createConversationMethods(
     user: string,
     {
       cursor,
-      limit = 25,
+      limit = DEFAULT_CONVO_PAGE_SIZE,
       isArchived = false,
       pinned = false,
       tags,
@@ -2618,6 +2621,11 @@ export function createConversationMethods(
   ) {
     const Conversation = mongoose.models.Conversation as Model<IConversation> &
       Pick<SchemaWithMeiliMethods, 'meiliSearch'>;
+    /* `.limit(0)` is "no limit" to MongoDB and a negative one caps to a single batch, so an
+       unclamped page size hands the caller the whole collection rather than a page of it. */
+    const pageSize = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.trunc(limit), 1), MAX_CONVO_PAGE_SIZE)
+      : DEFAULT_CONVO_PAGE_SIZE;
     const filters: FilterQuery<IConversation>[] = [{ user } as FilterQuery<IConversation>];
     if (isArchived) {
       filters.push({ isArchived: true } as FilterQuery<IConversation>);
@@ -2792,11 +2800,11 @@ export function createConversationMethods(
           'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
         )
         .sort(sortObj)
-        .limit(limit + 1)
+        .limit(pageSize + 1)
         .lean<IConversation[]>();
 
       let nextCursor: string | null = null;
-      if (convos.length > limit) {
+      if (convos.length > pageSize) {
         convos.pop();
         const lastReturned = convos[convos.length - 1];
         const sortValues: Record<string, string | Date | null | undefined> = {

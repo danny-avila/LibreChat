@@ -532,6 +532,22 @@ export function createAgentMethods(
     has_more: boolean;
     after: string | null;
   }>;
+  getAgentManagementListByAccess: ({
+    accessibleIds,
+    tenantId,
+    limit,
+    after,
+  }: {
+    /** `null` means the caller already passed the unrestricted management-capability check. */
+    accessibleIds: Types.ObjectId[] | null;
+    tenantId: string;
+    limit: number;
+    after?: string | null;
+  }) => Promise<{
+    data: Array<IAgent & { version: number; createdAt: Date; updatedAt: Date }>;
+    has_more: boolean;
+    after: string | null;
+  }>;
   removeAgentResourceFiles: ({
     agent_id,
     files,
@@ -1274,6 +1290,72 @@ export function createAgentMethods(
   }
 
   /**
+   * Returns the full Agent configuration required by the management response projector.
+   * Unlike the browser list path, this query performs no avatar refresh or persistence write.
+   */
+  async function getAgentManagementListByAccess({
+    accessibleIds,
+    tenantId,
+    limit,
+    after = null,
+  }: {
+    /** `null` means the caller already passed the unrestricted management-capability check. */
+    accessibleIds: Types.ObjectId[] | null;
+    tenantId: string;
+    limit: number;
+    after?: string | null;
+  }): Promise<{
+    data: Array<IAgent & { version: number; createdAt: Date; updatedAt: Date }>;
+    has_more: boolean;
+    after: string | null;
+  }> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const match: FilterQuery<IAgent> = {
+      tenantId,
+      ...(accessibleIds != null ? { _id: { $in: accessibleIds } } : {}),
+    };
+
+    if (after) {
+      const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8')) as {
+        updatedAt: string;
+        _id: string;
+      };
+      match.$or = [
+        { updatedAt: { $lt: new Date(cursor.updatedAt) } },
+        {
+          updatedAt: new Date(cursor.updatedAt),
+          _id: { $gt: new mongoose.Types.ObjectId(cursor._id) },
+        },
+      ];
+    }
+
+    const agents = await Agent.aggregate<
+      IAgent & { version: number; createdAt: Date; updatedAt: Date }
+    >([
+      { $match: match },
+      { $sort: { updatedAt: -1, _id: 1 } },
+      { $limit: limit + 1 },
+      { $addFields: { version: { $size: { $ifNull: ['$versions', []] } } } },
+      { $project: { versions: 0 } },
+    ]);
+
+    const hasMore = agents.length > limit;
+    const data = hasMore ? agents.slice(0, limit) : agents;
+    const lastAgent = data[data.length - 1];
+    const nextCursor =
+      hasMore && lastAgent
+        ? Buffer.from(
+            JSON.stringify({
+              updatedAt: lastAgent.updatedAt.toISOString(),
+              _id: lastAgent._id.toString(),
+            }),
+          ).toString('base64')
+        : null;
+
+    return { data, has_more: hasMore, after: nextCursor };
+  }
+
+  /**
    * Reverts an agent to a specific version in its version history.
    */
   async function revertAgentVersion(
@@ -1396,6 +1478,7 @@ export function createAgentMethods(
     countPromotedAgents,
     addAgentResourceFile,
     getListAgentsByAccess,
+    getAgentManagementListByAccess,
     removeAgentResourceFiles,
     generateActionMetadataHash,
     removeAgentFromUserFavorites,

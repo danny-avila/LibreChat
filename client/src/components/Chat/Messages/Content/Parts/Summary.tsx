@@ -1,7 +1,8 @@
 import { memo, useMemo, useState, useCallback, useRef, useId, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
+import { Copy, Check } from 'lucide';
 import { ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Button, MorphIcon, TooltipAnchor } from '@librechat/client';
 import type { SummaryContentPart } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -120,11 +121,7 @@ const SummaryButton = memo(
             <span className="sr-only">
               {isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_summary')}
             </span>
-            {isCopied ? (
-              <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-            ) : (
-              <Clipboard size="19" aria-hidden="true" />
-            )}
+            <MorphIcon icon={isCopied ? Check : Copy} size={18} />
           </Button>
         )}
       </div>
@@ -196,11 +193,7 @@ const FloatingSummaryBar = memo(
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
                 )}
               >
-                {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
-                ) : (
-                  <Clipboard size="18" aria-hidden="true" />
-                )}
+                <MorphIcon icon={isCopied ? Check : Copy} size={18} />
               </button>
             }
           />

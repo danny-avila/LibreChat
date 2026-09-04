@@ -77,17 +77,93 @@ export async function retryWithBackoff<T>(
   }
 }
 
+interface IndexedModel {
+  createIndexes: () => Promise<unknown>;
+  init?: () => Promise<unknown>;
+  modelName: string;
+}
+
+export interface IndexBuildOptions extends RetryOptions {
+  /** Interval between attempts while another build holds the collection. */
+  peerBuildPollMs?: number;
+  /** Longest wait for another build to finish; unbounded when omitted. */
+  peerBuildDeadlineMs?: number;
+}
+
+/** Amazon DocumentDB rejects a createIndex that arrives while another build on the
+ * same collection is running (code 40333), where MongoDB would serialize it. */
+const INDEX_BUILD_ALREADY_IN_PROGRESS = 40333;
+const INDEX_BUILD_IN_PROGRESS_MESSAGE = 'index build in progress';
+const DEFAULT_PEER_BUILD_POLL_MS = 5_000;
+
+function isIndexBuildInProgress(error: unknown): boolean {
+  const candidate = error as { code?: number; message?: string } | null;
+  if (candidate?.code === INDEX_BUILD_ALREADY_IN_PROGRESS) {
+    return true;
+  }
+  return (candidate?.message ?? '').toLowerCase().includes(INDEX_BUILD_IN_PROGRESS_MESSAGE);
+}
+
+/**
+ * Mongoose starts every compiled model's automatic index build in the background
+ * as soon as its connection opens. An explicit build issued while that one is
+ * still running is a second concurrent build of the same collection, which
+ * single-build engines reject outright. Letting the automatic build settle first
+ * keeps the two from overlapping; if it failed, the explicit build below is the
+ * retry, so its outcome is deliberately ignored here.
+ */
+async function settleAutomaticIndexBuild(model: IndexedModel): Promise<void> {
+  if (model.init == null) {
+    return;
+  }
+  await model.init().catch(() => undefined);
+}
+
+/**
+ * Builds the model's indexes, waiting while another process (a peer replica
+ * booting the same release) holds the collection's single index build slot.
+ * A peer's build time is data-dependent, so the wait polls rather than backs
+ * off: the process cannot become ready without these indexes, and giving up
+ * only restarts it into the same wait. Every other error propagates at once.
+ */
+async function buildIndexesWhenCollectionFree(
+  model: IndexedModel,
+  label: string,
+  options: IndexBuildOptions,
+): Promise<unknown> {
+  const pollMs = options.peerBuildPollMs ?? DEFAULT_PEER_BUILD_POLL_MS;
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      return await model.createIndexes();
+    } catch (error: unknown) {
+      const elapsedMs = Date.now() - startedAt;
+      const deadlineReached =
+        options.peerBuildDeadlineMs != null && elapsedMs >= options.peerBuildDeadlineMs;
+      if (!isIndexBuildInProgress(error) || deadlineReached) {
+        throw error;
+      }
+      logger.warn(
+        `[createIndexesWithRetry] ${label} is waiting for another index build on the collection to finish (${Math.round(elapsedMs / 1000)}s elapsed, next attempt in ${pollMs}ms)`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  }
+}
+
 /**
  * Creates all indexes for a Mongoose model with deadlock retry.
- * Use this instead of raw `model.createIndexes()` on FerretDB.
+ * Use this instead of raw `model.createIndexes()` on FerretDB or DocumentDB.
  */
 export async function createIndexesWithRetry(
-  model: { createIndexes: () => Promise<unknown>; modelName: string },
-  options: RetryOptions = {},
+  model: IndexedModel,
+  options: IndexBuildOptions = {},
 ): Promise<void> {
+  await settleAutomaticIndexBuild(model);
+  const label = `createIndexes(${model.modelName})`;
   await retryWithBackoff(
-    () => model.createIndexes() as Promise<unknown>,
-    `createIndexes(${model.modelName})`,
+    () => buildIndexesWhenCollectionFree(model, label, options),
+    label,
     options,
   );
 }
@@ -98,15 +174,8 @@ export async function createIndexesWithRetry(
  * contention on the DocumentDB catalog.
  */
 export async function initializeOrgCollections(
-  models: Record<
-    string,
-    {
-      createCollection: () => Promise<unknown>;
-      createIndexes: () => Promise<unknown>;
-      modelName: string;
-    }
-  >,
-  options: RetryOptions = {},
+  models: Record<string, IndexedModel & { createCollection: () => Promise<unknown> }>,
+  options: IndexBuildOptions = {},
 ): Promise<{ totalMs: number; perModel: Array<{ name: string; ms: number }> }> {
   const perModel: Array<{ name: string; ms: number }> = [];
   const t0 = Date.now();
