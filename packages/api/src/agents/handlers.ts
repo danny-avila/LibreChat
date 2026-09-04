@@ -24,6 +24,7 @@ import type {
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { WorkspaceReadResult } from '~/code/workspace';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
@@ -442,6 +443,18 @@ export interface ToolExecuteOptions {
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
   ) => Promise<void>;
+  /** Reads a bounded text range from an attached worker's logical workspace. */
+  readWorkspaceFile?: (params: {
+    file_path: string;
+    workspace_id: string;
+    start_line: number;
+    max_lines: number;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceReadResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
    * sandbox `/exec` endpoint. The host implementation supplies the
@@ -522,6 +535,19 @@ export interface ToolExecuteOptions {
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.byteLength <= maxBytes) {
+    return value;
+  }
+  let end = maxBytes;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return bytes.subarray(0, end).toString('utf8');
+}
+
 /**
  * Inline ceiling for images pulled out of the code-execution sandbox —
  * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
@@ -754,10 +780,12 @@ function getValueShape(value: unknown): string {
   return typeof value;
 }
 
-function addLineNumbers(content: string): string {
+function addLineNumbers(content: string, startLine = 1): string {
   const lines = content.split('\n');
-  const w = String(lines.length).length;
-  return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
+  const w = String(startLine + lines.length - 1).length;
+  return lines
+    .map((line, index) => `${String(startLine + index).padStart(w, ' ')} | ${line}`)
+    .join('\n');
 }
 
 type AuthoringSkill = NonNullable<
@@ -2139,6 +2167,120 @@ async function handleSandboxFileFallback(
       status: 'error',
       content: '',
       errorMessage: `Error reading "${filePath}" from the code-execution sandbox: ${message}. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
+    };
+  }
+}
+
+async function handleWorkspaceFileRead(
+  tc: ToolCallRequest,
+  filePath: string,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  codeExecutionContext: CodeExecutionContext,
+  signal?: AbortSignal,
+): Promise<ToolExecuteResult> {
+  const { readWorkspaceFile } = options;
+  if (!readWorkspaceFile) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Attached workspace reading is not configured.',
+    };
+  }
+  const args = tc.args as { start_line?: number; max_lines?: number };
+  const startLine = args.start_line ?? 1;
+  const maxLines = args.max_lines ?? 200;
+  if (filePath.length === 0) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'A relative path after workspace/ is required.',
+    };
+  }
+  if (
+    !Number.isSafeInteger(startLine) ||
+    startLine < 1 ||
+    !Number.isSafeInteger(maxLines) ||
+    maxLines < 1 ||
+    maxLines > 500
+  ) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'start_line must be positive and max_lines must be between 1 and 500.',
+    };
+  }
+  const filteredName = filteredFileNameResult(tc, req, filePath);
+  if (filteredName != null) {
+    return filteredName;
+  }
+
+  try {
+    const result = await readWorkspaceFile({
+      file_path: filePath,
+      workspace_id: 'primary',
+      start_line: startLine,
+      max_lines: maxLines,
+      codeApiBaseUrl: codeExecutionContext.baseUrl,
+      executionProfile: codeExecutionContext.executionProfile,
+      ...(codeExecutionContext.bridgeWorkerId
+        ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+        : {}),
+      ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
+    });
+    const filtered = filteredFileResult(tc, req, filePath, result.content);
+    if (filtered != null) {
+      return filtered;
+    }
+    if (looksBinary(result.content)) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `"${filePath}" appears to be a binary file and cannot be read as text.`,
+      };
+    }
+    let payload = result.content;
+    let locallyTruncated = false;
+    let localNextStartLine: number | undefined;
+    if (Buffer.byteLength(payload, 'utf8') > MAX_READABLE_BYTES) {
+      payload = truncateUtf8(payload, MAX_READABLE_BYTES);
+      locallyTruncated = true;
+      const lastCompleteLine = payload.lastIndexOf('\n');
+      if (lastCompleteLine >= 0) {
+        payload = payload.slice(0, lastCompleteLine);
+        localNextStartLine = result.startLine + payload.split('\n').length;
+      }
+    }
+    let numbered = addLineNumbers(payload, result.startLine);
+    if (locallyTruncated) {
+      numbered +=
+        localNextStartLine != null
+          ? `\n\n[truncated at ${MAX_READABLE_BYTES} bytes; more content is available; call read_file again with path "workspace/${filePath}" and start_line ${localNextStartLine}]`
+          : `\n\n[the line was truncated at ${MAX_READABLE_BYTES} bytes and cannot be paged by line]`;
+    } else if (result.truncated && result.nextStartLine != null) {
+      numbered += `\n\n[more content is available; call read_file again with path "workspace/${filePath}" and start_line ${result.nextStartLine}]`;
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: numbered,
+    };
+  } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn(
+      '[handleWorkspaceFileRead] Attached workspace read failed',
+      getSafeErrorMetadata(error),
+    );
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `"${filePath}" could not be read from the attached workspace.`,
     };
   }
 }
@@ -3580,6 +3722,7 @@ async function handleReadFileCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   onSandboxReadSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
@@ -3596,6 +3739,25 @@ async function handleReadFileCall(
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
   const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   let accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+
+  if (args.path.startsWith('workspace/')) {
+    if (!codeEnvAvailable || codeExecutionContext?.environmentType !== 'attached') {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: 'workspace/ paths require an attached code environment.',
+      };
+    }
+    return handleWorkspaceFileRead(
+      tc,
+      args.path.slice('workspace/'.length),
+      options,
+      req,
+      codeExecutionContext,
+      signal,
+    );
+  }
 
   /**
    * Short-circuit absolute code-env paths: the path can never be a skill
@@ -5633,6 +5795,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           () => {
                             sandboxReadSucceeded = true;
                           },
+                          runSignal,
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
@@ -5673,10 +5836,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         });
                         return filteredError;
                       }
-                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      const context = {
                         ...logContext,
                         toolCallArgsShape: getValueShape(tc.args),
-                      });
+                      };
+                      if (runSignal?.aborted === true && isAbortError(toolError)) {
+                        logger.debug(
+                          `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
+                          context,
+                        );
+                      } else {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, context);
+                      }
                       return {
                         toolCallId: tc.id,
                         status: 'error' as const,
