@@ -6,7 +6,7 @@ import {
   getActivityLabelText,
   lastCursorContentIdx,
 } from '~/utils/activityLabels';
-import { MIN_PARALLEL_LANES } from '~/utils/lanes';
+import { MIN_PARALLEL_LANES, UNATTRIBUTED_LANE } from '~/utils/lanes';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { cn, getPartKeyIndex } from '~/utils';
@@ -91,7 +91,7 @@ export function groupParallelContent(
 
     for (const { part, idx } of parts) {
       // Read agentId directly from content part (TMessageContentParts includes ContentMetadata)
-      const agentId = part.agentId ?? 'unknown';
+      const agentId = part.agentId ?? UNATTRIBUTED_LANE;
 
       if (!columnMap.has(agentId)) {
         columnMap.set(agentId, []);
@@ -136,7 +136,8 @@ export function groupParallelContent(
      *  `laneGroups` is the message-level verdict: a phase slice holding one
      *  agent of a real two-agent group keeps its columns, because the group
      *  is a comparison even where this slice cannot show it. */
-    if (columns.length < MIN_PARALLEL_LANES && laneGroups?.has(groupId) !== true) {
+    const claimedColumns = columns.filter(({ agentId }) => agentId !== UNATTRIBUTED_LANE).length;
+    if (claimedColumns < MIN_PARALLEL_LANES && laneGroups?.has(groupId) !== true) {
       for (const column of columns) {
         noGroup.push(...column.parts);
       }

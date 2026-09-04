@@ -66,6 +66,16 @@ describe('hasParallelLanes', () => {
     expect([...groups]).toEqual([1]);
   });
 
+  it('does not count a part with no agent id as a second lane', () => {
+    /** `agentId` and `groupId` are independently optional on a run step, so a
+     *  group can hold a part the server never attributed. It shares the
+     *  unattributed column, but it is not another agent to compare against. */
+    const content = [lanePart('agent_a', 1), lanePart(undefined, 1)];
+    expect(hasParallelLanes(content)).toBe(false);
+    expect([...parallelLaneGroups(content)]).toEqual([]);
+    expect(laneAgentsByGroup(content).get(1)?.size).toBe(2);
+  });
+
   it('answers for a slice from the message-level groups it is given', () => {
     /** The slice holds one agent of group 1; the message knows better. */
     const slice = [lanePart('agent_a', 1)];

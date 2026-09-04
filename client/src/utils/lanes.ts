@@ -1,7 +1,18 @@
 import type { TMessageContentParts } from 'librechat-data-provider';
 
 /** Column key for a lane part that carries no agent id of its own. */
-const UNATTRIBUTED_LANE = 'unknown';
+export const UNATTRIBUTED_LANE = 'unknown';
+
+/**
+ * Lanes an agent actually claims. `agentId` and `groupId` are independently
+ * optional on a run step, so a group can hold a part with no agent of its
+ * own; it shares the unattributed column, but it is NOT a second agent —
+ * counting the sentinel would let one agent plus one metadata-less part
+ * masquerade as a comparison.
+ */
+export function attributedLaneCount(agents: ReadonlySet<string>): number {
+  return agents.has(UNATTRIBUTED_LANE) ? agents.size - 1 : agents.size;
+}
 
 /**
  * Columns a lane group needs before it renders as columns.
@@ -57,7 +68,7 @@ export function parallelLaneGroups(
 ): Set<number> {
   const groups = new Set<number>();
   for (const [groupId, agents] of laneAgentsByGroup(content)) {
-    if (agents.size >= MIN_PARALLEL_LANES) {
+    if (attributedLaneCount(agents) >= MIN_PARALLEL_LANES) {
       groups.add(groupId);
     }
   }
@@ -81,7 +92,7 @@ export function hasParallelLanes(
     return content?.some((part) => part?.groupId != null && laneGroups.has(part.groupId)) === true;
   }
   for (const agents of laneAgentsByGroup(content).values()) {
-    if (agents.size >= MIN_PARALLEL_LANES) {
+    if (attributedLaneCount(agents) >= MIN_PARALLEL_LANES) {
       return true;
     }
   }

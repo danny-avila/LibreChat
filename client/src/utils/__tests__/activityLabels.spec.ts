@@ -681,6 +681,20 @@ describe('groupActivityPhases — synthesized folds', () => {
     expect(foldOf(segments)).toMatchObject({ synthesized: true, contentIndices: [0, 1, 2, 3] });
   });
 
+  it("takes the caller's lane scan instead of repeating it", () => {
+    /** `ContentParts` already scans the message for lanes; passing the answer
+     *  keeps a streamed delta to one pass, and must decide identically. */
+    const run = [
+      inLane(toolPart('t1'), 'agent_a'),
+      inLane(childLabel('Read the config'), 'agent_a'),
+      inLane(toolPart('t2'), 'agent_a'),
+      inLane(childLabel('Checked the callers'), 'agent_a'),
+    ];
+
+    expect(foldOf(groupActivityPhases(run, new Set()))).toMatchObject({ synthesized: true });
+    expect(groupActivityPhases(run, new Set([1]))).toBeUndefined();
+  });
+
   it('never folds a span a server marker already claims', () => {
     const phase = labelPart({ activity_label: 'Reviewed the release paths', pending: false });
     Object.assign(phase, {

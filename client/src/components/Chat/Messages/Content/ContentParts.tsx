@@ -348,15 +348,16 @@ const ContentPartsBody = memo(function ContentPartsBody({
   /** Hoisted above the early returns to feed the entrance-detection hook
    *  below, so it is memoized rather than re-walked on every unrelated
    *  re-render of a message that has no phases at all. */
-  const phaseSegments = useMemo(
-    () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
-    [nestedActivityPhase, content],
-  );
-
-  /** Resolved once over the whole message and handed to every slice below. */
+  /** Resolved once over the whole message and handed to every slice below —
+   *  and to `groupActivityPhases`, so a streamed delta scans content once. */
   const messageLaneGroups = useMemo(
     () => laneGroups ?? parallelLaneGroups(content),
     [laneGroups, content],
+  );
+
+  const phaseSegments = useMemo(
+    () => (nestedActivityPhase ? undefined : groupActivityPhases(content, messageLaneGroups)),
+    [nestedActivityPhase, content, messageLaneGroups],
   );
   /** Every file a phase's parts produced, in transcript order, deduplicated
    *  across parts that share a tool call. */

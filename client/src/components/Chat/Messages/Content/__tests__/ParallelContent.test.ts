@@ -101,6 +101,20 @@ describe('groupParallelContent — lane demotion', () => {
     expect(grouped.sequentialParts).toEqual([{ part: lone, idx: 1 }]);
   });
 
+  it('demotes a group whose only second column is unattributed', () => {
+    const attributed = lanePart('agent_a', 'primary answer');
+    const unattributed = {
+      type: ContentTypes.TEXT,
+      text: 'server sent no agent id',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupParallelContent([attributed, unattributed]);
+
+    expect(grouped.parallelSections).toEqual([]);
+    expect(grouped.sequentialParts.map(({ idx }) => idx)).toEqual([0, 1]);
+  });
+
   it('keeps a slice column when the message says the group has two agents', () => {
     /** A phase marker can hand this slice one agent of a real two-agent group.
      *  Counting the slice alone would demote it and strip the attribution the

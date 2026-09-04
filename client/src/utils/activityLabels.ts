@@ -413,6 +413,7 @@ function synthesizeActivityFolds(
  */
 export function groupActivityPhases(
   content: Array<TMessageContentParts | undefined> | undefined,
+  laneGroups?: ReadonlySet<number>,
 ): ActivityPhaseSegment[] | undefined {
   if (!content) {
     return undefined;
@@ -423,8 +424,12 @@ export function groupActivityPhases(
    *  phase path. Server markers may still claim parallel spans; only the
    *  client-built folds stand down. A group id alone is not enough: one that
    *  resolves to a single agent renders sequentially, so it folds like any
-   *  other run. */
-  const foldable = !hasParallelLanes(content);
+   *  other run.
+   *
+   *  `laneGroups` is the caller's own lane scan over this same content, and
+   *  content is rewritten on every streamed delta — taking the answer rather
+   *  than repeating the scan keeps a render to one pass. */
+  const foldable = laneGroups != null ? laneGroups.size === 0 : !hasParallelLanes(content);
   const completed = definedIndices
     .map((index) => ({ part: getActivityLabelPart(content[index]), index }))
     .filter(
