@@ -738,6 +738,17 @@ describe('getOpenAILLMConfig', () => {
       expect(kwargs.max_output_tokens ?? result.llmConfig.maxTokens).toBeDefined();
     });
 
+    it('keeps routing when a drop rule only clears reasoning_effort', () => {
+      /**
+       * Unlike the GPT-5.6 default, Astra's routing is not reasoning-driven, so
+       * a rule clearing an unsupported stored effort must not disable it.
+       */
+      expect(astraConfig({ dropParams: ['reasoning_effort'] }).llmConfig).toHaveProperty(
+        'useResponsesApi',
+        true,
+      );
+    });
+
     it('respects an explicit opt-out', () => {
       expect(astraConfig({ dropParams: ['useResponsesApi'] }).llmConfig).not.toHaveProperty(
         'useResponsesApi',

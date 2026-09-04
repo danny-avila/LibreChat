@@ -866,6 +866,14 @@ export function getOpenAILLMConfig({
   const responsesApiOptedOut =
     dropParams != null &&
     (dropParams.includes('reasoning_effort') || dropParams.includes('useResponsesApi'));
+  /**
+   * The GPT-5.6 default above is reasoning-driven, so dropping `reasoning_effort`
+   * removes its reason to route. Astra's is not: it takes Responses for every
+   * turn, and a drop rule clearing an unsupported stored effort must not also
+   * disable its routing. Only an explicit `useResponsesApi` drop does that.
+   */
+  const responsesApiExplicitlyOptedOut =
+    dropParams != null && dropParams.includes('useResponsesApi');
   if (
     !useOpenRouter &&
     endpoint === EModelEndpoint.openAI &&
@@ -888,7 +896,7 @@ export function getOpenAILLMConfig({
     isOpenAIEndpoint(endpoint) &&
     isCanonicalOpenAIBaseURL(baseURL) &&
     llmConfig.useResponsesApi == null &&
-    !responsesApiOptedOut &&
+    !responsesApiExplicitlyOptedOut &&
     prefersResponsesApi(llmConfig.model)
   ) {
     llmConfig.useResponsesApi = true;
