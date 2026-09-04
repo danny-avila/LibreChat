@@ -66,6 +66,12 @@ jest.mock('@librechat/api', () => {
   const https = require('https');
   return {
     logAxiosError: jest.fn(),
+    /* Behaviourally identical to the real predicate in
+     * `packages/api/src/files/code/errors.ts`, which owns the contract and
+     * its own spec. Inlined because this factory replaces the whole module
+     * and `requireActual` here would load the entire package. */
+    isMissingSandboxPathError: (reason) =>
+      /no such file or directory|cannot access|cannot find the path|enoent/i.test(reason),
     getBasePath: jest.fn(() => ''),
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
@@ -2070,6 +2076,43 @@ describe('Code Process', () => {
             error: transportError,
           }),
         );
+      });
+
+      /* `create_file` reads its target before writing so it can tell a create
+       * from an overwrite, so an absent path is the ordinary case. Reported at
+       * error level it made every file creation look like a lost file — and
+       * `logAxiosError` rendered the sandbox's own stderr as "An error occurred
+       * while setting up the request", which reads as a transport fault. */
+      it('logs an absent path at debug, not through the error-level axios logger', async () => {
+        const { logAxiosError } = require('@librechat/api');
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: '', stderr: 'cat: /mnt/data/SKILL.md: No such file or directory\n' },
+        });
+
+        await expect(readSandboxFile({ file_path: '/mnt/data/SKILL.md' })).rejects.toThrow(
+          'No such file or directory',
+        );
+
+        expect(logAxiosError).not.toHaveBeenCalled();
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('/mnt/data/SKILL.md'));
+      });
+
+      it('still reports a non-missing sandbox read failure at error level', async () => {
+        const { logAxiosError } = require('@librechat/api');
+        mockAxios.mockResolvedValueOnce({
+          data: { stdout: '', stderr: 'cat: /mnt/data/x.txt: Permission denied\n' },
+        });
+
+        await expect(readSandboxFile({ file_path: '/mnt/data/x.txt' })).rejects.toThrow(
+          'Permission denied',
+        );
+
+        expect(logger.debug).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Permission denied'));
+        /* The sandbox answered; nothing about the request failed, so the
+         * axios-shaped logger would misattribute this to the transport. */
+        expect(logAxiosError).not.toHaveBeenCalled();
       });
     });
 

@@ -13,6 +13,7 @@ const {
   getCodeApiAuthHeaders,
   withCodeApiRateLimit,
   classifyCodeArtifact,
+  isMissingSandboxPathError,
   parseSandboxImageChunk,
   readWindowedSandboxImage,
   createCodeApiRateLimitBudget,
@@ -1617,9 +1618,10 @@ async function readSandboxFile({
     postData.files = files;
   }
 
+  let response;
   try {
     const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
-    const response = await axios({
+    response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
       data: postData,
@@ -1633,14 +1635,6 @@ async function readSandboxFile({
       httpsAgent: codeServerHttpsAgent,
       timeout: 15000,
     });
-    const result = response?.data ?? {};
-    if (result.stderr && (result.stdout == null || result.stdout === '')) {
-      throw new Error(String(result.stderr).trim());
-    }
-    if (result.stdout == null) {
-      return null;
-    }
-    return { content: String(result.stdout) };
   } catch (error) {
     logAxiosError({
       message: `Error reading sandbox file "${file_path}"`,
@@ -1648,6 +1642,25 @@ async function readSandboxFile({
     });
     throw error;
   }
+
+  const result = response?.data ?? {};
+  if (result.stderr && (result.stdout == null || result.stdout === '')) {
+    const reason = String(result.stderr).trim();
+    /** An absent path is the ordinary outcome, not a fault: `create_file`
+     *  reads its target before writing so it can tell a create from an
+     *  overwrite. Logging that at error level with a stack made every
+     *  file creation look like a file that had gone missing. */
+    if (isMissingSandboxPathError(reason)) {
+      logger.debug(`[readSandboxFile] "${file_path}" is not present in the sandbox: ${reason}`);
+    } else {
+      logger.error(`[readSandboxFile] Error reading sandbox file "${file_path}": ${reason}`);
+    }
+    throw new Error(reason);
+  }
+  if (result.stdout == null) {
+    return null;
+  }
+  return { content: String(result.stdout) };
 }
 
 /**
