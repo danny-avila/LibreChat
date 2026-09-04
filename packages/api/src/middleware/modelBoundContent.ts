@@ -26,6 +26,7 @@ import type {
 } from '../protection/adapters/nested';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
+import type { ConfiguredContentInspector } from '../protection/runtime';
 import type { CanonicalFileInspectionFile } from '../protection/files';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
@@ -68,6 +69,7 @@ import { extractMessageContent, snapshotExternalMessages } from '../protection/a
 import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { ContentFilterError, isContentFilterError } from './contentFilter';
 import { createConfiguredContentInspector } from '../protection/runtime';
+import { aggregateAuditFindingsSync } from '../protection/audit';
 
 export type ModelBoundProviderAttribution = 'user' | 'model' | 'tool' | 'synthetic';
 
@@ -3393,6 +3395,17 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     filters: input.filters,
     legacyPii: input.legacyPii,
   });
+  if (inspector?.hasAuditRules !== true) {
+    inspectModelBoundContent(input, inspector);
+    return;
+  }
+  aggregateAuditFindingsSync(() => inspectModelBoundContent(input, inspector));
+}
+
+function inspectModelBoundContent(
+  input: ModelBoundContentInput,
+  inspector: ConfiguredContentInspector | null,
+): void {
   const hasFileFailClose =
     getBlockedUninspectableFileField(input.filters, FILE_FILTER_FIELDS) != null;
   if (inspector == null && !hasFileFailClose) {

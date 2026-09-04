@@ -36,6 +36,7 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { getUserSubmittedPathState } from '../protection/provenance';
 import { assertConversationImportContentAllowed } from '../imports';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { aggregateAuditFindings } from '../protection/audit';
 import { inspectContent } from '../protection/runtime';
 
 export interface SerializedSharedFile extends FileContentInput {
@@ -139,7 +140,11 @@ export function createShareContentPreflight(
     return undefined;
   }
 
-  return async ({ title, messages, shareId }) => {
+  const inspectSharedContent = async ({
+    title,
+    messages,
+    shareId,
+  }: ShareContentPreflightInput): Promise<void> => {
     const inspectSharedFileMetadata = options.sharedFileMetadata === true;
     const inspectSharedFiles =
       inspectSharedFileMetadata && options.sharedFileMetadataFiles !== false;
@@ -169,6 +174,8 @@ export function createShareContentPreflight(
       ...(options.sharedFileMetadataFiles === false && { includeFiles: false }),
     });
   };
+
+  return (input) => aggregateAuditFindings(() => inspectSharedContent(input));
 }
 
 const SERIALIZED_LOCATOR_KEYS = [
