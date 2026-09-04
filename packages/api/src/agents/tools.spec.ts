@@ -313,6 +313,7 @@ describe('buildHistoricalToolNames', () => {
         'read_file',
         'create_file',
         'edit_file',
+        'search_workspace',
         'set_memory',
         'delete_memory',
         'skill',
@@ -474,6 +475,41 @@ describe('registerCodeExecutionTools', () => {
       expect(JSON.stringify(readFile?.parameters)).not.toContain('{skillName}');
     });
 
+    it('advertises explicit workspace paths and pagination for attached environments', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        workspaceTools: true,
+      });
+
+      const readFile = result.toolDefinitions.find((definition) => definition.name === 'read_file');
+      const searchWorkspace = result.toolDefinitions.find(
+        (definition) => definition.name === 'search_workspace',
+      );
+      expect(readFile?.description).toContain('workspace/');
+      expect(readFile?.description).toContain('attached');
+      expect(readFile?.parameters).toMatchObject({
+        properties: {
+          start_line: { type: 'integer' },
+          max_lines: { type: 'integer', maximum: 500 },
+        },
+      });
+      expect(searchWorkspace).toMatchObject({
+        name: 'search_workspace',
+        parameters: {
+          properties: {
+            query: { type: 'string' },
+            path: { type: 'string' },
+            max_results: { type: 'integer', maximum: 200 },
+          },
+          required: ['query'],
+        },
+      });
+      expect(searchWorkspace?.description).toContain('literal text');
+    });
+
     it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
       const toolRegistry = makeRegistry();
       const codeOnly = registerCodeExecutionTools({
@@ -495,6 +531,33 @@ describe('registerCodeExecutionTools', () => {
       expect(readFile?.description).toContain('skills/{skillName}/');
       expect(readFile?.description).toContain('SKILL.md');
       expect(toolRegistry.get('read_file')?.description).toBe(readFile?.description);
+    });
+
+    it('preserves attached workspace instructions when skills upgrade read_file', () => {
+      const toolRegistry = makeRegistry();
+      const codeOnly = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        workspaceTools: true,
+      });
+      const upgraded = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: codeOnly.toolDefinitions,
+        includeBash: false,
+        includeSkillFileInstructions: true,
+        workspaceTools: true,
+      });
+
+      const readFile = upgraded.toolDefinitions.find(
+        (definition) => definition.name === 'read_file',
+      );
+      expect(readFile?.description).toContain('skills/{skillName}/');
+      expect(readFile?.description).toContain('workspace/');
+      expect(readFile?.parameters).toMatchObject({
+        properties: { max_lines: { maximum: 500 } },
+      });
     });
 
     it('preserves pre-existing unrelated tool definitions', () => {
@@ -706,6 +769,7 @@ describe('registerFileAuthoringTools', () => {
 
   it('recognizes host-side file authoring tools as code-session-aware without mutating the shared set', () => {
     expect(isCodeSessionToolName('bash_tool')).toBe(true);
+    expect(isCodeSessionToolName('search_workspace')).toBe(true);
     expect(isCodeSessionToolName('create_file')).toBe(false);
     expect(isCodeSessionToolName('edit_file')).toBe(false);
     expect(isCodeSessionToolName('create_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);

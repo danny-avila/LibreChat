@@ -4,6 +4,8 @@ const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud')
 const {
   getSessionInfo,
   checkIfActive,
+  readWorkspaceFile,
+  searchWorkspace,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
@@ -380,6 +382,8 @@ const skillToolDeps = {
   updateSkillFileCodeEnvIds: deploymentSkillMethods.updateSkillFileCodeEnvIds,
   getSkillFileByPath: deploymentSkillMethods.getSkillFileByPath,
   updateSkillFileContent: deploymentSkillMethods.updateSkillFileContent,
+  readWorkspaceFile,
+  searchWorkspace,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known

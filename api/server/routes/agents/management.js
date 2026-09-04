@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   createAgentManagementCreateHandler,
+  createAgentManagementDeleteHandler,
   createAgentManagementReadHandlers,
   createAgentManagementUpdateHandler,
   mapAgentManagementError,
@@ -32,6 +33,13 @@ const updateHandler = createAgentManagementUpdateHandler({
   hasCapability,
   updateAgent: v1.updateAgent,
 });
+const deleteHandler = createAgentManagementDeleteHandler({
+  getRoleByName: db.getRoleByName,
+  getAgentWithVersionCount: db.getAgentWithVersionCount,
+  checkPermission,
+  hasCapability,
+  deleteAgent: db.deleteAgent,
+});
 
 router.use(requireAgentManagementAuth);
 router.use(checkBan);
@@ -40,6 +48,7 @@ router.post('/', configMiddleware, createHandler);
 router.get('/', readHandlers.list);
 router.get('/:id', readHandlers.get);
 router.patch('/:id', configMiddleware, updateHandler);
+router.delete('/:id', deleteHandler);
 
 router.use((_req, res) => {
   const { status, body } = mapAgentManagementError('not_found');
