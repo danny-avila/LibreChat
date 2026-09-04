@@ -7,6 +7,7 @@ import type { TMessageProps } from '~/common';
 import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import MessageContent from '~/components/Messages/MessageContent';
 import { useRowMountWindow } from '~/hooks/Messages';
+import { hasParallelLanes } from '~/utils/lanes';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -199,8 +200,7 @@ function MultiMessage({
   }
   const isEditingActivityAnchor =
     typeof currentEditId === 'string' && activityParentMessageIds.includes(currentEditId);
-  const hasParallelContent =
-    !message.isCreatedByUser && message.content?.some((part) => part?.groupId != null) === true;
+  const hasParallelContent = !message.isCreatedByUser && hasParallelLanes(message.content);
 
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a

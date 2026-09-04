@@ -77,6 +77,12 @@ describe('Agent Management contract', () => {
         expect(schema.safeParse({ ...base, versions: [] }).success).toBe(false);
       },
     );
+
+    it('rejects a null model before Agent creation reaches persistence', () => {
+      expect(
+        agentManagementCreateSchema.safeParse({ provider: 'openAI', model: null }).success,
+      ).toBe(false);
+    });
   });
 
   describe('pagination', () => {
