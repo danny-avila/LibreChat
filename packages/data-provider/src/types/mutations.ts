@@ -491,6 +491,23 @@ export type EditArtifactOptions = MutationOptions<
   Error
 >;
 
+/**
+ * The conversation's own fields, exactly as a normal chat submission sends
+ * them, so the route's shared `buildEndpointOption` middleware reconstructs the
+ * same agent AND the same generation parameters (temperature, output caps,
+ * reasoning options, custom endpoint params) the conversation runs on.
+ */
+export type TCompactConversationRequest = Partial<types.TConversation> & {
+  conversationId: string;
+  /** Leaf of the branch to compact; everything up to it is summarized. */
+  parentMessageId?: string | null;
+  ephemeralAgent?: types.TEphemeralAgent | null;
+  isTemporary?: boolean;
+};
+
+/** The persisted compaction message, whose only content part is the summary. */
+export type TCompactConversationResponse = types.TMessage;
+
 export type TBranchMessageRequest = {
   messageId: string;
   agentId: string;

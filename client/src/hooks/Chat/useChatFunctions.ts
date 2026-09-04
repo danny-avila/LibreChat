@@ -37,6 +37,7 @@ import {
   stripStreamedIndexStamps,
 } from '~/utils';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
+import { useIsConversationCompacting } from './useCompactConversation';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
@@ -219,6 +220,7 @@ export default function useChatFunctions({
   const setFilesToDelete = useSetFilesToDelete();
   const getEphemeralAgent = useGetEphemeralAgent();
   const isTemporary = useRecoilValue(store.isTemporary);
+  const isCompacting = useIsConversationCompacting(immutableConversation?.conversationId);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
@@ -306,6 +308,10 @@ export default function useChatFunctions({
     const replayFileCount = overrideFiles?.length ?? 0;
     if (
       !!isSubmitting ||
+      /** A pending compaction is about to insert the branch's new boundary;
+       *  a turn starting now would either strand it on a sibling or get the
+       *  summary discarded after the provider call was already paid for. */
+      isCompacting ||
       (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
     ) {
       return false;

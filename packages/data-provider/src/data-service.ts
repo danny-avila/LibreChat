@@ -1028,6 +1028,12 @@ export const editArtifact = async ({
   return request.post(endpoints.messagesArtifacts(messageId), params);
 };
 
+export const compactConversation = async (
+  payload: m.TCompactConversationRequest,
+): Promise<m.TCompactConversationResponse> => {
+  return request.post(endpoints.compactConversation(), payload);
+};
+
 export const branchMessage = async (
   payload: m.TBranchMessageRequest,
 ): Promise<m.TBranchMessageResponse> => {

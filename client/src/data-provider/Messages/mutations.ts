@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, QueryKeys, Constants } from 'librechat-data-provider';
+import { dataService, QueryKeys, MutationKeys, Constants } from 'librechat-data-provider';
 import type { UseMutationResult, UseMutationOptions } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 
@@ -171,4 +171,32 @@ export const useBranchMessageMutation = (
   };
 
   return useMutation(mutationOptions);
+};
+
+/**
+ * Compacts the active branch into a summary that replaces the history on every
+ * later turn. The persisted compaction message is appended to the cached
+ * transcript so the "conversation summarized" marker appears without a refetch.
+ */
+export const useCompactConversationMutation = (): UseMutationResult<
+  t.TCompactConversationResponse,
+  Error,
+  t.TCompactConversationRequest
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: [MutationKeys.compactConversation],
+    mutationFn: (variables: t.TCompactConversationRequest) =>
+      dataService.compactConversation(variables),
+    onSuccess: (data) => {
+      const conversationId = data.conversationId;
+      if (!conversationId || conversationId === Constants.NEW_CONVO) {
+        return;
+      }
+      queryClient.setQueryData<t.TMessage[]>([QueryKeys.messages, conversationId], (prev) =>
+        prev ? [...prev, data] : [data],
+      );
+    },
+  });
 };

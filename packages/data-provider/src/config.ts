@@ -2010,6 +2010,9 @@ export type TStartupConfig = {
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
   insightsEnabled?: boolean;
+  /** Manual context compaction, gated by the same `summarization.enabled`
+   *  switch that governs the automatic detour. */
+  compactionEnabled?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

@@ -23,6 +23,13 @@ jest.mock('@tanstack/react-query', () => ({
     getQueryData: mockGetQueryData,
     getQueryState: jest.fn(() => undefined),
   }),
+  useIsMutating: () => false,
+  useQuery: () => ({ data: undefined }),
+  useMutation: () => ({
+    mutate: jest.fn(),
+    mutateAsync: jest.fn(),
+    isLoading: false,
+  }),
 }));
 
 jest.mock('recoil', () => ({
@@ -44,6 +51,9 @@ jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: null }),
+}));
+jest.mock('~/hooks/Chat/useCompactConversation', () => ({
+  useIsConversationCompacting: () => false,
 }));
 jest.mock('~/store', () => ({
   __esModule: true,
