@@ -104,7 +104,7 @@ const createAssistant = async (req, res) => {
       createData.append_current_datetime = append_current_datetime;
     }
 
-    const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
+    const document = await updateAssistantDoc({ assistantId: assistant.id }, createData);
 
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
@@ -220,14 +220,14 @@ const patchAssistant = async (req, res) => {
 
     if (conversation_starters !== undefined) {
       const conversationStartersUpdate = await updateAssistantDoc(
-        { assistant_id },
+        { assistantId: assistant_id },
         { conversation_starters },
       );
       updatedAssistant.conversation_starters = conversationStartersUpdate.conversation_starters;
     }
 
     if (append_current_datetime !== undefined) {
-      await updateAssistantDoc({ assistant_id }, { append_current_datetime });
+      await updateAssistantDoc({ assistantId: assistant_id }, { append_current_datetime });
       updatedAssistant.append_current_datetime = append_current_datetime;
     }
 
@@ -418,7 +418,7 @@ const uploadAssistantAvatar = async (req, res) => {
     const promises = [];
     promises.push(
       updateAssistantDoc(
-        { assistant_id },
+        { assistantId: assistant_id },
         {
           avatar: {
             filepath: image.filepath,

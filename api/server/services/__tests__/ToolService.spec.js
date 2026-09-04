@@ -2330,7 +2330,7 @@ describe('ToolService - Action Capability Gating', () => {
         definitionsOnly: false,
       });
 
-      expect(mockLoadActionSets).toHaveBeenCalledWith({ agent_id: 'agent_123' });
+      expect(mockLoadActionSets).toHaveBeenCalledWith({ agentId: 'agent_123' });
     });
 
     it('blocks persisted action metadata before generic tool initialization', async () => {
@@ -3013,7 +3013,7 @@ describe('ToolService - Action Capability Gating', () => {
         actionsEnabled: true,
       });
 
-      expect(mockLoadActionSets).toHaveBeenCalledWith({ agent_id: 'agent_123' });
+      expect(mockLoadActionSets).toHaveBeenCalledWith({ agentId: 'agent_123' });
     });
 
     it('blocks decrypted persisted action secrets before execution-time domain work', async () => {

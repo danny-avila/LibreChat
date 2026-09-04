@@ -199,7 +199,7 @@ const prepareActionSnapshotForTools = async ({ agentId, toolNames, filters, decr
   if (!toolNames.some((toolName) => isActionTool(toolName))) {
     return null;
   }
-  const storedActions = (await loadActionSets({ agent_id: agentId })) ?? [];
+  const storedActions = (await loadActionSets({ agentId })) ?? [];
   if (storedActions.length === 0) {
     return { storedActions, actionSets: [] };
   }
@@ -518,7 +518,7 @@ async function processRequiredActions(client, requiredActions) {
         /** @type {Action[]} */
         const storedActions =
           (await loadActionSets({
-            assistant_id: client.req.body.assistant_id,
+            assistantId: client.req.body.assistant_id,
           })) ?? [];
         const actionSets = await prepareStoredActionsForUse({
           actions: storedActions,
