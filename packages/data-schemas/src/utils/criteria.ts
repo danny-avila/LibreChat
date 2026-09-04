@@ -19,7 +19,13 @@ export function matchAny<T>(value: OneOrMany<T>): T | { $in: T[] } {
  * Throws on any criterion the field map does not cover. Callers in `api/` are
  * JavaScript and get no compile-time checking, and a silently dropped criterion
  * would widen the filter — an unscoped `findOne` returns an arbitrary document
- * rather than none, so this fails closed instead.
+ * rather than none, and an unscoped `deleteMany` removes every document — so
+ * this fails closed instead.
+ *
+ * Every key is validated before the undefined-omission rule is applied: a
+ * misspelled criterion that happens to carry `undefined` must still be rejected,
+ * not quietly skipped. The lookup is an own-property check so that inherited
+ * names like `toString` cannot resolve through the field map's prototype.
  */
 export function buildFilter<TQuery extends object, TFilter>(
   query: TQuery,
@@ -27,15 +33,14 @@ export function buildFilter<TQuery extends object, TFilter>(
 ): TFilter {
   const filter: Record<string, unknown> = {};
   for (const key of Object.keys(query) as Array<keyof TQuery & string>) {
+    if (!Object.prototype.hasOwnProperty.call(fields, key)) {
+      throw new Error(`Unknown query criterion: '${key}'`);
+    }
     const value = query[key];
     if (value === undefined) {
       continue;
     }
-    const field = fields[key];
-    if (field === undefined) {
-      throw new Error(`Unknown query criterion: '${key}'`);
-    }
-    filter[field] = matchAny(value);
+    filter[fields[key]] = matchAny(value);
   }
   return filter as TFilter;
 }

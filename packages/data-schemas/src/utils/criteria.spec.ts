@@ -74,4 +74,20 @@ describe('buildFilter', () => {
       "Unknown query criterion: 'id'",
     );
   });
+
+  it('throws on an unrecognized criterion whose value is undefined', () => {
+    /* A JS caller misspelling a criterion whose value is absent must not slip
+       through the undefined-omission rule and produce a filter matching everything. */
+    const query = { agent_id: undefined } as unknown as SampleQuery;
+    expect(() => buildFilter<SampleQuery, Record<string, unknown>>(query, FIELDS)).toThrow(
+      "Unknown query criterion: 'agent_id'",
+    );
+  });
+
+  it('throws on a criterion that only resolves through the field map prototype', () => {
+    const query = { toString: 'x' } as unknown as SampleQuery;
+    expect(() => buildFilter<SampleQuery, Record<string, unknown>>(query, FIELDS)).toThrow(
+      "Unknown query criterion: 'toString'",
+    );
+  });
 });

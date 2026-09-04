@@ -102,4 +102,24 @@ describe('action criteria', () => {
     ).rejects.toThrow("Unknown query criterion: 'agent_id'");
     await expect(Action.countDocuments({})).resolves.toBe(2);
   });
+
+  it('does not delete every action when a misspelled criterion carries undefined', async () => {
+    await seed({ action_id: 'act-1', agent_id: 'agent-1' });
+    await seed({ action_id: 'act-2', agent_id: 'agent-2' });
+
+    const absent: string | undefined = undefined;
+    await expect(
+      methods.deleteActions({ agent_id: absent } as unknown as { agentId?: string }),
+    ).rejects.toThrow("Unknown query criterion: 'agent_id'");
+    await expect(Action.countDocuments({})).resolves.toBe(2);
+  });
+
+  it('still omits a recognized criterion the caller left undefined', async () => {
+    await seed({ action_id: 'act-1', agent_id: 'agent-1' });
+    await seed({ action_id: 'act-2', agent_id: 'agent-2' });
+
+    const found = await methods.getActions({ actionId: 'act-1', agentId: undefined }, true);
+
+    expect(found.map((a) => a.action_id)).toEqual(['act-1']);
+  });
 });
