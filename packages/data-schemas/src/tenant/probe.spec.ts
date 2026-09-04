@@ -294,6 +294,51 @@ describe('the probe itself', () => {
     expect(records[0].predicate).toContain('tenantId');
   });
 
+  /**
+   * Dropping a collection destroys every tenant's rows. It carries no predicate
+   * to inspect, so the only safe report is an unscoped one — silence would be a
+   * green result for the most destructive escape hatch there is.
+   */
+  it('reports a collection drop as unscoped', async () => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .drop()
+          .catch(() => undefined);
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(1);
+    expect(records[0].commandName).toBe('drop');
+  });
+
+  /** `update` and `delete` carry collation per batched operation, not on the envelope. */
+  it.each([
+    [
+      'updateOne',
+      async () =>
+        mongoose.connection.db!.collection(Widget.collection.collectionName).updateOne(
+          { tenantId: TENANT },
+          { $set: { name: 'x' } },
+          {
+            collation: { locale: 'en', strength: 2 },
+          },
+        ),
+    ],
+    [
+      'deleteOne',
+      async () =>
+        mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .deleteOne({ tenantId: TENANT }, { collation: { locale: 'en', strength: 2 } }),
+    ],
+  ])('does not accept a per-operation collation on %s', async (_label, operation) => {
+    const records = await probe.record(() => asTenant(async () => void (await operation())));
+
+    expect(unscoped(records)).toHaveLength(1);
+  });
+
   it('reports nothing for collections it does not watch', async () => {
     const records = await probe.record(() =>
       asTenant(async () => {

@@ -67,6 +67,10 @@ const PREDICATE_PATHS: ReadonlyMap<string, { readonly key: string; readonly list
  * outside this list and `PREDICATE_PATHS` is reported unscoped rather than
  * dropped, so a command shape the probe does not understand fails closed
  * instead of passing unseen.
+ *
+ * `drop` is deliberately absent: unlike index inspection, dropping a collection
+ * destroys every tenant's rows, and a leak detector must never be silent about
+ * that.
  */
 const UNJUDGED_COMMANDS: ReadonlySet<string> = new Set([
   'createIndexes',
@@ -75,7 +79,6 @@ const UNJUDGED_COMMANDS: ReadonlySet<string> = new Set([
   'listCollections',
   'collMod',
   'create',
-  'drop',
 ]);
 
 /**
@@ -211,6 +214,28 @@ function describePredicates(command: CommandDocument, commandName: string): stri
   return safeStringify(predicatesOf(command, commandName));
 }
 
+/**
+ * Whether a collation applies, checking the batched operations as well as the
+ * envelope: `update` and `delete` carry collation inside each `updates[]` /
+ * `deletes[]` entry, where a command-level check never sees it.
+ */
+function carriesCollation(command: CommandDocument, commandName: string): boolean {
+  if ('collation' in command) {
+    return true;
+  }
+  const path = PREDICATE_PATHS.get(commandName);
+  if (path?.list == null) {
+    return false;
+  }
+  const operations = command[path.list];
+  if (!Array.isArray(operations)) {
+    return false;
+  }
+  return operations.some(
+    (operation) => operation != null && typeof operation === 'object' && 'collation' in operation,
+  );
+}
+
 /** Whether this command is one the probe can judge at all. */
 function carriesPredicate(command: CommandDocument, commandName: string): boolean {
   if (UNJUDGED_COMMANDS.has(commandName)) {
@@ -233,7 +258,7 @@ function isScoped(command: CommandDocument, commandName: string, tenantId: strin
   // A collation can broaden equality — under a case-insensitive one,
   // `tenantId: 'tenant-a'` also matches `TENANT-A` — so literal equality no
   // longer proves isolation and the command cannot be called scoped.
-  if ('collation' in command) {
+  if (carriesCollation(command, commandName)) {
     return false;
   }
   if (commandName === 'aggregate') {
