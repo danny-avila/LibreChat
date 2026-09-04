@@ -1,9 +1,9 @@
 import React from 'react';
 import { render, act } from '@testing-library/react';
-import type { Monaco } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
 import { ThemeContext, highContrastDarkTheme, highContrastLightTheme } from '@librechat/client';
+import type { Monaco } from '@monaco-editor/react';
 import type { IThemeRGB } from '@librechat/client';
+import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 

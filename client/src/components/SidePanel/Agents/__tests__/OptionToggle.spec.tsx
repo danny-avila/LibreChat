@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/extend-expect';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { Circle } from 'lucide-react';
+import { render, screen } from '@testing-library/react';
 import OptionToggle from '../OptionToggle';
 
 jest.mock('@librechat/client', () => ({

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { bindingHash } from '~/utils/shortcuts';
 import { RecorderInfo, RecorderPill, useShortcutRecorder } from '../ShortcutRecorder';
+import { bindingHash } from '~/utils/shortcuts';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
