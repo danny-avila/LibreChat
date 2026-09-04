@@ -77,17 +77,31 @@ describe('FileContainer subtitle action', () => {
 
     /** The affordance used to live behind a `group-hover` swap, which left the chip reading as
      * an inert "Plain Text" until pointed at — so nobody found it, and touch had no pointer to
-     * find it with. Nothing about the label may be conditional on hover or focus again.
+     * find it with. What the label SAYS, and whether it is there at all, may never be
+     * conditional on hover or focus again. Its colour still is, deliberately, which is why
+     * only the visibility-gating variants are named here and `hover:`/`focus-visible:` at
+     * large are not.
      *
-     * Asserted on class tokens deliberately, brittle as that is. jsdom loads no stylesheet, so
-     * a hover gate has no effect on the DOM here and a presence check cannot see one: the swap
-     * this replaced kept BOTH labels mounted, which is why the spec it replaced asserted they
-     * were both in the document at once. Only the tokens distinguish the two markups. */
+     * The anchored text is what actually catches the swap, and it has to be anchored: the gate
+     * kept BOTH labels mounted and hid one in CSS, so the control's text content read
+     * "PlainMove back into message" — which a substring match accepts. jsdom loads no
+     * stylesheet, so nothing about visibility is observable here beyond what is mounted.
+     *
+     * The token sweep covers the control's whole subtree, not its own `className`. The gate
+     * lived on child `<span>`s and never on the button, so a check scoped to the button alone
+     * passes against the exact markup this test exists to reject. */
     const control = screen.getByRole('button', { name: 'Move back into message' });
-    expect(control.className).not.toContain('group-hover');
-    expect(control.className).not.toContain('group-focus-within');
-    expect(control.className).not.toContain('hover:none');
-    expect(control).toHaveTextContent('Move back into message');
+    expect(control).toHaveTextContent(/^Move back into message$/);
+
+    const gatedTokens = ['group-hover', 'group-focus-within', 'hover:none'];
+    const classNames = [control, ...Array.from(control.querySelectorAll('[class]'))].map(
+      (element) => element.className,
+    );
+    for (const className of classNames) {
+      for (const token of gatedTokens) {
+        expect(className).not.toContain(token);
+      }
+    }
   });
 
   it('names the subtitle control from its own visible label', () => {
