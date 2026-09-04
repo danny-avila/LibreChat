@@ -756,17 +756,8 @@ router.post('/', async (req, res) => {
     req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req });
 
-    await assertUploadContentAllowed({
-      filters: req.config?.filters,
-      file: req.file,
-      endpoint: metadata.endpoint,
-      toolResource: metadata.tool_resource,
-      fileConfig: mergeFileConfig(req.config?.fileConfig),
-      ocrConfigured: req.config?.ocr != null,
-      ragConfigured: !!process.env.RAG_API_URL,
-      readFile: fs.readFile,
-    });
-
+    /** Check the role permission before any content inspection: a forbidden upload
+     * must be rejected without reading or embedding the file. */
     const requiredPermission = toolResourcePermType[metadata.tool_resource];
     if (requiredPermission != null) {
       const hasAccess = await checkAccess({
@@ -782,6 +773,17 @@ router.post('/', async (req, res) => {
         return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
       }
     }
+
+    await assertUploadContentAllowed({
+      filters: req.config?.filters,
+      file: req.file,
+      endpoint: metadata.endpoint,
+      toolResource: metadata.tool_resource,
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      ocrConfigured: req.config?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+      readFile: fs.readFile,
+    });
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
