@@ -471,15 +471,11 @@ describe('File Methods', () => {
   });
 
   describe('deferExpiredFile', () => {
-    it('increments the attempt count and stamps the next retry', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const fileId = uuidv4();
-      const retryAt = new Date('2030-02-01T00:00:00.000Z');
-
+    const createDeferrableFile = async (file_id: string) => {
       await fileMethods.createFile(
         {
-          file_id: fileId,
-          user: userId,
+          file_id,
+          user: new mongoose.Types.ObjectId(),
           filename: 'deferred.txt',
           filepath: '/uploads/deferred.txt',
           type: 'text/plain',
@@ -488,13 +484,48 @@ describe('File Methods', () => {
         },
         true,
       );
+    };
 
-      await fileMethods.deferExpiredFile(fileId, retryAt);
+    it('stamps the next retry and counts the attempt', async () => {
+      const fileId = uuidv4();
+      const retryAt = new Date('2030-02-01T00:00:00.000Z');
+      await createDeferrableFile(fileId);
+
+      expect(await fileMethods.incrementFileDeletionAttempts(fileId)).toBe(1);
       await fileMethods.deferExpiredFile(fileId, retryAt);
 
       const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
-      expect(file.deletionAttempts).toBe(2);
+      expect(file.deletionAttempts).toBe(1);
       expect(file.deletionRetryAt).toEqual(retryAt);
+    });
+
+    it('hands concurrent sweeps distinct attempt numbers', async () => {
+      const fileId = uuidv4();
+      await createDeferrableFile(fileId);
+
+      /* Two nodes recording a failure for the same file in the same pass.
+       * Deriving the attempt from the queried snapshot would give both the
+       * same number and neither would see the cap being reached. */
+      const attempts = await Promise.all([
+        fileMethods.incrementFileDeletionAttempts(fileId),
+        fileMethods.incrementFileDeletionAttempts(fileId),
+        fileMethods.incrementFileDeletionAttempts(fileId),
+      ]);
+
+      expect([...attempts].sort()).toEqual([1, 2, 3]);
+    });
+
+    it('never pulls a deferral earlier than one already committed', async () => {
+      const fileId = uuidv4();
+      const later = new Date('2030-02-01T00:00:00.000Z');
+      const earlier = new Date('2030-01-01T00:00:00.000Z');
+      await createDeferrableFile(fileId);
+
+      await fileMethods.deferExpiredFile(fileId, later);
+      await fileMethods.deferExpiredFile(fileId, earlier);
+
+      const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(file.deletionRetryAt).toEqual(later);
     });
   });
 

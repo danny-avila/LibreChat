@@ -8,7 +8,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 
 const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_FILE_RETENTION_MAX_ATTEMPTS = 10;
-const FILE_RETENTION_RETRY_BASE_MS = 60 * 60 * 1000;
+const MIN_FILE_RETENTION_RETRY_BASE_MS = 60 * 1000;
 const FILE_RETENTION_RETRY_MAX_MS = 24 * 60 * 60 * 1000;
 
 type ExpiredFile = {
@@ -16,7 +16,6 @@ type ExpiredFile = {
   source?: string;
   user?: string | { toString?: () => string };
   tenantId?: string;
-  deletionAttempts?: number;
 };
 
 type SweepRequest = {
@@ -58,6 +57,7 @@ type SweepDependencies = {
     req: SweepRequest;
     files: ExpiredFile[];
   }) => Promise<{ deletedFileIds: string[]; failedFileIds: string[] }>;
+  incrementFileDeletionAttempts: (file_id: string) => Promise<number>;
   deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
   logger: SweepLogger;
 };
@@ -119,10 +119,21 @@ export function getFileRetentionMaxAttempts(
  * Backoff before the next attempt, doubling from one sweep interval up to a
  * day. `attempts` is the file's failure count including the one just
  * recorded, so the first retry lands on the following sweep.
+ *
+ * The base tracks the configured interval so the schedule stays meaningful
+ * at any cadence — a fixed hour would be inert for the first three attempts
+ * of a six-hour sweep, and would skip twelve passes of a five-minute one.
+ * The floor keeps a pathologically short interval from spending the whole
+ * give-up budget on a transient outage.
  */
 export function getExpiredFileRetryDelay(attempts: number): number {
+  const interval = getFileRetentionSweepInterval();
+  const base = Math.max(
+    interval > 0 ? interval : DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS,
+    MIN_FILE_RETENTION_RETRY_BASE_MS,
+  );
   const exponent = Math.max(0, attempts - 1);
-  return Math.min(FILE_RETENTION_RETRY_BASE_MS * 2 ** exponent, FILE_RETENTION_RETRY_MAX_MS);
+  return Math.min(base * 2 ** exponent, FILE_RETENTION_RETRY_MAX_MS);
 }
 
 export function getExpiredFileEndpoint(source?: string): string {
@@ -244,7 +255,13 @@ export async function resolveExpiredFileSweepConfig({
 
 export async function sweepExpiredFiles(
   { appConfig, limit = 100, loadAppConfig }: ExpiredFileSweepOptions | undefined = {},
-  { getExpiredFiles, processDeleteRequest, deferExpiredFile, logger }: SweepDependencies,
+  {
+    getExpiredFiles,
+    processDeleteRequest,
+    incrementFileDeletionAttempts,
+    deferExpiredFile,
+    logger,
+  }: SweepDependencies,
 ): Promise<ExpiredFileSweepResult> {
   const maxAttempts = getFileRetentionMaxAttempts();
   const files = (await getExpiredFiles(limit, { maxAttempts })) ?? [];
@@ -258,10 +275,17 @@ export async function sweepExpiredFiles(
    * expired after it for the life of the deployment. */
   const recordFailure = async (file: ExpiredFile): Promise<void> => {
     failed++;
-    const attempts = (file.deletionAttempts ?? 0) + 1;
-    const retryAt = new Date(Date.now() + getExpiredFileRetryDelay(attempts));
+    let attempts: number;
     try {
-      await deferExpiredFile(file.file_id, retryAt);
+      /* The attempt number comes from the increment rather than from the
+       * snapshot this batch queried, so two nodes sweeping the same file
+       * each get a distinct one and exactly one of them observes the cap
+       * being reached. */
+      attempts = await incrementFileDeletionAttempts(file.file_id);
+      await deferExpiredFile(
+        file.file_id,
+        new Date(Date.now() + getExpiredFileRetryDelay(attempts)),
+      );
     } catch (error) {
       logger.error(
         `[sweepExpiredFiles] Error recording failed deletion of expired file ${file.file_id}:`,

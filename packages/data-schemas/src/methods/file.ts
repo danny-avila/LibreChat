@@ -42,6 +42,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     selectFields?: Record<string, 0 | 1> | string | null,
   ) => Promise<IMongoFile[] | null>;
   getExpiredFiles: (limit?: number, options?: ExpiredFileQueryOptions) => Promise<IMongoFile[]>;
+  incrementFileDeletionAttempts: (file_id: string) => Promise<number>;
   deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
   getToolFilesByIds: (
     fileIds: string[],
@@ -169,17 +170,37 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Records a failed sweep deletion and holds the file back until
-   * `deletionRetryAt`. The counter is incremented server-side so
-   * concurrent sweeps on separate nodes cannot overwrite each other's
-   * progress toward the give-up cap.
+   * Records one failed sweep deletion and returns the file's resulting
+   * consecutive-failure count.
+   *
+   * The count comes back from the increment itself rather than being
+   * re-derived from the caller's snapshot. Two nodes sweeping the same file
+   * would otherwise each read the same value and each believe itself to be
+   * the same attempt, pushing the stored count past the give-up cap while
+   * both still think it is below — so the give-up would never be reported.
+   * Returning it here gives every caller a distinct attempt number.
+   */
+  async function incrementFileDeletionAttempts(file_id: string): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const file = await File.findOneAndUpdate(
+      { file_id },
+      { $inc: { deletionAttempts: 1 } },
+      { new: true, projection: { deletionAttempts: 1 } },
+    ).lean<Pick<IMongoFile, 'deletionAttempts'> | null>();
+
+    return file?.deletionAttempts ?? 0;
+  }
+
+  /**
+   * Holds a file back from the sweep until `deletionRetryAt`.
+   *
+   * Written with `$max` so a deferral can only ever move later. A node that
+   * computed a shorter backoff from a lower attempt count cannot pull the
+   * file forward past a longer one another node already committed.
    */
   async function deferExpiredFile(file_id: string, deletionRetryAt: Date): Promise<void> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    await File.updateOne(
-      { file_id },
-      { $inc: { deletionAttempts: 1 }, $set: { deletionRetryAt } },
-    ).exec();
+    await File.updateOne({ file_id }, { $max: { deletionRetryAt } }).exec();
   }
 
   /**
@@ -723,6 +744,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     findFileById,
     getFiles,
     getExpiredFiles,
+    incrementFileDeletionAttempts,
     deferExpiredFile,
     getToolFilesByIds,
     getCodeGeneratedFiles,
