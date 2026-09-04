@@ -1,23 +1,10 @@
 import { useEffect, useState } from 'react';
 import { isSvgIcon, detectMonochrome, isSameOriginOrDataIcon } from '~/utils';
 
-/** Resolved monochrome verdicts, keyed by icon source, shared across instances. */
 const monochromeCache = new Map<string, boolean>();
-/** In-flight resolutions, so concurrent instances of the same icon sample once. */
 const inFlight = new Map<string, Promise<boolean>>();
-/** Bound the verdict cache so a session that cycles many distinct data-URI
- *  icons (each a large, unique key) can't grow it without limit. */
+/** Bounds the cache so a session cycling many unique data-URI icons cannot grow it forever. */
 const MAX_MONOCHROME_CACHE = 256;
-
-function rememberVerdict(src: string, monochrome: boolean): void {
-  if (monochromeCache.size >= MAX_MONOCHROME_CACHE) {
-    const oldest = monochromeCache.keys().next().value;
-    if (oldest !== undefined) {
-      monochromeCache.delete(oldest);
-    }
-  }
-  monochromeCache.set(src, monochrome);
-}
 
 function resolveMonochrome(src: string): Promise<boolean> {
   const cached = monochromeCache.get(src);
@@ -28,29 +15,25 @@ function resolveMonochrome(src: string): Promise<boolean> {
   if (existing) {
     return existing;
   }
-  const promise = detectMonochrome(src)
-    .catch(() => false)
-    .then((monochrome) => {
-      rememberVerdict(src, monochrome);
-      inFlight.delete(src);
-      return monochrome;
-    });
+  const promise = detectMonochrome(src).then((monochrome) => {
+    if (monochromeCache.size >= MAX_MONOCHROME_CACHE) {
+      const oldest = monochromeCache.keys().next().value;
+      if (oldest !== undefined) {
+        monochromeCache.delete(oldest);
+      }
+    }
+    monochromeCache.set(src, monochrome);
+    inFlight.delete(src);
+    return monochrome;
+  });
   inFlight.set(src, promise);
   return promise;
 }
 
-function cachedVerdict(key: string | null): boolean {
-  return key != null ? (monochromeCache.get(key) ?? false) : false;
-}
-
 /**
- * Determines whether a custom icon should be tinted to `currentColor` so it
- * adapts to the active theme. An explicit `monochrome` flag wins when provided;
- * otherwise a monochrome SVG glyph is detected by drawing it to an offscreen
- * canvas and sampling its pixels, while raster images and multi-color SVG logos
- * keep their original colors. The verdict is sampled once per source and cached;
- * a load failure or a canvas tainted by a non-CORS cross-origin icon leaves it
- * untinted.
+ * Whether a custom icon should be tinted to `currentColor`. An explicit
+ * `monochrome` flag wins; otherwise same-origin and data-URI SVGs are sampled
+ * once per source (see `detectMonochrome`) and the verdict cached.
  */
 export default function useAdaptiveIcon(
   src?: string | null,
@@ -60,15 +43,8 @@ export default function useAdaptiveIcon(
     typeof monochrome !== 'boolean' && isSvgIcon(src) && isSameOriginOrDataIcon(src) ? src : null;
   const [state, setState] = useState<{ key: string | null; monochrome: boolean }>(() => ({
     key,
-    monochrome: cachedVerdict(key),
+    monochrome: key != null && (monochromeCache.get(key) ?? false),
   }));
-
-  useEffect(() => {
-    setState((prev) => {
-      const monochrome = cachedVerdict(key);
-      return prev.key === key && prev.monochrome === monochrome ? prev : { key, monochrome };
-    });
-  }, [key]);
 
   useEffect(() => {
     if (key == null) {
@@ -78,7 +54,7 @@ export default function useAdaptiveIcon(
     resolveMonochrome(key).then((resolved) => {
       if (active) {
         setState((prev) =>
-          prev.key === key && prev.monochrome !== resolved ? { key, monochrome: resolved } : prev,
+          prev.key === key && prev.monochrome === resolved ? prev : { key, monochrome: resolved },
         );
       }
     });

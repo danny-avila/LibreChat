@@ -1,4 +1,5 @@
 import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
+import type * as Icons from './icons';
 import { sanitizeMcpIconPath } from './icons';
 
 /** Decode the SVG body `sanitizeMcpIconPath` re-emits (base64 or percent-form). */
@@ -232,9 +233,7 @@ describe('sanitizeMcpIconPath', () => {
   });
 
   it('never stores an icon over the length cap even when sanitizing grows it', () => {
-    // A base64 input under the cap whose many self-closing tags expand under
-    // sanitization (explicit close tags) past the cap; it must be dropped rather
-    // than stored over-limit.
+    // self-closing tags expand to explicit close tags under sanitization
     const cell = '<rect x="1" y="1" width="2" height="2" fill="#abc"/>';
     const raw = `<svg>${cell.repeat(3400)}</svg>`;
     const input = `data:image/svg+xml;base64,${Buffer.from(raw, 'utf-8').toString('base64')}`;
@@ -307,9 +306,7 @@ describe('sanitizeMcpIconPath', () => {
   });
 
   it('drops an oversized SVG before building a DOM for it', () => {
-    /* The payload sanitizes away to an empty `<svg>`, so only a size check that
-     * runs before parsing can reject it; reaching the sanitizer would store a
-     * short, valid icon and leave the jsdom parse cost unbounded. */
+    // the payload sanitizes to an empty <svg>, so only a pre-parse size check can reject it
     const raw = `<svg><script>${'a'.repeat(MAX_MCP_ICON_PATH_LENGTH + 1)}</script></svg>`;
     const input = `data:image/svg+xml;base64,${Buffer.from(raw, 'utf-8').toString('base64')}`;
     expect(sanitizeMcpIconPath(input)).toBe('');
@@ -336,8 +333,8 @@ describe('sanitizeMcpIconPath dependency loading', () => {
       return jest.requireActual('dompurify');
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- doMock only applies to a fresh require
-    const { sanitizeMcpIconPath: sanitize } = require('./icons') as typeof import('./icons');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { sanitizeMcpIconPath: sanitize } = require('./icons') as typeof Icons;
 
     expect(loadJsdom).not.toHaveBeenCalled();
     expect(loadDompurify).not.toHaveBeenCalled();

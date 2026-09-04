@@ -6,9 +6,9 @@ import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { cn, sanitizeSvg, svgToDataUri } from '~/utils';
 import { useLocalize } from '~/hooks';
 
-/** File size that still fits `MAX_MCP_ICON_PATH_LENGTH` once base64 inflates it by
- *  4/3, in whole KB, so the error can name a limit the user can act on. */
-const MAX_ICON_FILE_KB = Math.floor((MAX_MCP_ICON_PATH_LENGTH * 3) / 4 / 1024);
+/** Largest file whose base64 data URI can still fit `MAX_MCP_ICON_PATH_LENGTH`. */
+const MAX_ICON_FILE_BYTES = Math.floor((MAX_MCP_ICON_PATH_LENGTH * 3) / 4);
+const MAX_ICON_FILE_KB = Math.floor(MAX_ICON_FILE_BYTES / 1024);
 
 export default function BasicInfoSection() {
   const localize = useLocalize();
@@ -23,14 +23,17 @@ export default function BasicInfoSection() {
 
   const iconValue = watch('icon');
 
-  /* The server drops any icon past the cap, so refuse it here rather than preview
-   * an icon that disappears on a save the user is told succeeded. */
+  const rejectIcon = () =>
+    setError('icon', {
+      type: 'validate',
+      message: localize('com_ui_icon_too_large', { 0: MAX_ICON_FILE_KB }),
+    });
+
+  /* The server drops any icon over the cap, so refuse it here instead of previewing
+   * an icon that vanishes on save. */
   const applyIcon = (dataUri: string) => {
     if (dataUri.length > MAX_MCP_ICON_PATH_LENGTH) {
-      setError('icon', {
-        type: 'validate',
-        message: localize('com_ui_icon_too_large', { 0: MAX_ICON_FILE_KB }),
-      });
+      rejectIcon();
       return;
     }
     clearErrors('icon');
@@ -42,27 +45,24 @@ export default function BasicInfoSection() {
     if (!file) {
       return;
     }
-
-    const reader = new FileReader();
-    const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
-    if (isSvg) {
-      reader.onloadend = () => {
-        if (typeof reader.result !== 'string') {
-          return;
-        }
-        applyIcon(svgToDataUri(sanitizeSvg(reader.result)));
-      };
-      reader.readAsText(file);
+    if (file.size > MAX_ICON_FILE_BYTES) {
+      rejectIcon();
       return;
     }
 
+    const reader = new FileReader();
+    const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
     reader.onloadend = () => {
       if (typeof reader.result !== 'string') {
         return;
       }
-      applyIcon(reader.result);
+      applyIcon(isSvg ? svgToDataUri(sanitizeSvg(reader.result)) : reader.result);
     };
-    reader.readAsDataURL(file);
+    if (isSvg) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsDataURL(file);
+    }
   };
 
   return (

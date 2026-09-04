@@ -59,8 +59,7 @@ describe('scanMonochrome', () => {
   });
 
   it('is not monochrome when a semi-transparent fill covers every pixel', () => {
-    // grayscale and partly transparent, but no empty pixel: masking it would
-    // paint a full-canvas currentColor wash rather than reveal a glyph.
+    // grayscale but no empty pixel: a mask would paint a full-canvas wash
     expect(scanMonochrome(rgba(128, 128, 128, 128, 90, 90, 90, 200))).toBe(false);
   });
 
@@ -76,8 +75,12 @@ describe('scanMonochrome', () => {
     expect(scanMonochrome(rgba(34, 34, 34, 255, 85, 85, 85, 255, 0, 0, 0, 0))).toBe(true);
   });
 
-  it('ignores tone spread carried by translucent edge samples', () => {
-    expect(scanMonochrome(rgba(0, 0, 0, 255, 255, 255, 255, 200, 0, 0, 0, 0))).toBe(true);
+  it('rejects two tones painted at the same partial opacity', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 128, 255, 255, 255, 128, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('tolerates the unpremultiply rounding of a low-alpha edge sample', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 255, 28, 28, 28, 9, 0, 0, 0, 0))).toBe(true);
   });
 });
 

@@ -32,14 +32,9 @@ export function isSvgIcon(iconURL?: string | null): iconURL is string {
 }
 
 /**
- * True when an icon can be pixel-sampled without a cross-origin fetch: a
- * `data:` URI (self-contained) or a same-origin URL. Cross-origin URLs are
- * excluded so theme detection never silently fetches a remote icon from every
- * viewer's browser, which would both taint the sampling canvas and act as a
- * tracking beacon. Every non-`data:` value is resolved with `new URL` rather
- * than trusted for looking root-relative: URL parsing treats a backslash as a
- * separator in http(s) URLs, so `/\attacker.example/icon.svg` starts with a
- * single slash yet loads from `attacker.example`.
+ * True for a `data:` URI or same-origin URL, so theme detection never fetches a
+ * remote icon from every viewer's browser. `new URL` resolves every non-`data:`
+ * value: `/\attacker.example/icon.svg` looks root-relative but loads cross-origin.
  */
 export function isSameOriginOrDataIcon(iconURL?: string | null): iconURL is string {
   if (!iconURL) {

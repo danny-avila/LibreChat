@@ -11,19 +11,11 @@ interface CustomIconProps {
 }
 
 /**
- * Renders a user-provided custom icon (e.g. an MCP server `iconPath` or a model
- * group `groupIcon`). Monochrome SVG glyphs are masked with `currentColor` so
- * they follow the active theme, while raster images and multi-color SVG logos
- * keep their original colors. Pass an explicit `monochrome` flag to skip
- * detection when the icon's config already declares it. The tint color is
- * inherited from the element's text color, so set a `text-*` class on `className`.
- * An `object-cover` class carries over to the masked branch as `mask-size: cover`
- * so a non-square glyph fills its slot the same way the `<img>` branch does;
- * anything else letterboxes with `contain`.
- *
- * In forced-colors mode (Windows High Contrast) the UA overrides
- * `background-color`, which would blank a masked glyph, so `custom-icon-tint`
- * repaints it with the `CanvasText` system color (see `style.css`).
+ * Renders a user-provided icon (MCP `iconPath`, group `groupIcon`). Monochrome
+ * SVG glyphs are masked with `currentColor` so they follow the theme; set a
+ * `text-*` class to pick the tint. `object-cover` carries over as `mask-size:
+ * cover`; anything else letterboxes with `contain`. `custom-icon-tint` repaints
+ * the glyph under forced-colors mode (see `style.css`).
  */
 export default function CustomIcon({
   src,

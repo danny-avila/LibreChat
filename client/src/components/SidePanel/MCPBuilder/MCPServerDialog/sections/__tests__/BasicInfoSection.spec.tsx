@@ -25,7 +25,7 @@ jest.mock('@librechat/client', () => {
   return {
     Button: ({ children, ...props }: { children: ReactNode }) =>
       React.createElement('button', { type: 'button', ...props }, children),
-    /* `register(...)` hands each field a ref, so the stand-ins must forward it. */
+    /* `register` hands each field a ref */
     Input: React.forwardRef<HTMLInputElement, Record<string, unknown>>((props, ref) =>
       React.createElement('input', { ...props, ref }),
     ),
@@ -66,7 +66,6 @@ function renderSection() {
   return { ...view, input };
 }
 
-/** A raster file whose base64 data URI lands either side of the stored-icon cap. */
 function rasterFile(bytes: number): File {
   return new File([new Uint8Array(bytes)], 'icon.png', { type: 'image/png' });
 }
@@ -80,6 +79,41 @@ describe('BasicInfoSection icon upload', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('com_ui_icon_too_large:192');
     expect(screen.queryByTestId('icon-preview')).not.toBeInTheDocument();
+  });
+
+  it('refuses an oversized SVG before reading or sanitizing it', async () => {
+    const readAsText = jest.spyOn(FileReader.prototype, 'readAsText');
+    const { input } = renderSection();
+    const svg = new File([new Uint8Array(MAX_MCP_ICON_PATH_LENGTH)], 'icon.svg', {
+      type: 'image/svg+xml',
+    });
+
+    fireEvent.change(input, { target: { files: [svg] } });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('com_ui_icon_too_large:192');
+    expect(readAsText).not.toHaveBeenCalled();
+    readAsText.mockRestore();
+  });
+
+  it('sanitizes and previews an SVG that fits', async () => {
+    const { input } = renderSection();
+    const svg = new File(
+      ['<svg><script>alert(1)</script><path d="M0 0h1v1z"/></svg>'],
+      'icon.svg',
+      {
+        type: 'image/svg+xml',
+      },
+    );
+
+    fireEvent.change(input, { target: { files: [svg] } });
+
+    await waitFor(() => {
+      const src = screen.getByTestId('icon-preview').getAttribute('src') ?? '';
+      expect(src.startsWith('data:image/svg+xml;base64,')).toBe(true);
+      const markup = atob(src.slice('data:image/svg+xml;base64,'.length));
+      expect(markup).not.toContain('script');
+      expect(markup).toContain('path');
+    });
   });
 
   it('describes the upload control with the rejection so it is announced', async () => {

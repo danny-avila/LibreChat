@@ -6,7 +6,7 @@ import { useLocalize } from '~/hooks';
 interface MCPIconProps {
   icon?: string;
   onIconChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  /** Id of the alert describing why the last pick was rejected, if any. */
+  /** Id of the alert explaining a rejected pick. */
   errorId?: string;
 }
 

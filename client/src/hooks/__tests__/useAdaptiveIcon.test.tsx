@@ -7,12 +7,10 @@ import {
 } from 'test/canvasMock';
 import useAdaptiveIcon from '../useAdaptiveIcon';
 
-/** A grayscale glyph (opaque tone + transparent area) that the detector tints. */
 const BLACK = { width: 24, height: 24, pixels: [0, 0, 0, 0, 0, 0, 0, 255] };
 const RED = { width: 24, height: 24, pixels: [255, 0, 0, 255, 0, 0, 0, 0] };
 
-/** Flush the detector's microtask + the settle timer inside act, so the
- *  resolved-to-false state update does not warn. */
+/** Flushes the detector's microtask and settle timer inside `act`. */
 const flush = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 
 describe('useAdaptiveIcon', () => {

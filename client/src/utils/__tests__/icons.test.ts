@@ -70,8 +70,7 @@ describe('isSameOriginOrDataIcon', () => {
     'https://evil.example.com/icon.svg',
     '//cdn.example.com/icon.svg',
     'http://other.example/icon.svg',
-    /* URL parsing treats a backslash as a separator in http(s) URLs, so these
-     * load cross-origin despite starting with a single slash. */
+    /* a backslash is a separator in http(s) URLs, so these load cross-origin */
     '/\\attacker.example/icon.svg',
     '/\\/attacker.example/icon.svg',
     '',

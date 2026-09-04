@@ -4,52 +4,28 @@ import {
   restrictSvgReferences,
   restoreSvgTagCase,
 } from 'librechat-data-provider';
+import type { DOMPurify as SvgPurifier } from 'dompurify';
 
-/**
- * Decides whether a custom icon is a monochrome glyph that should be tinted to
- * `currentColor` (so it follows the active theme) or a multi-color logo / raster
- * that must keep its original colors. Instead of parsing SVG source, the icon is
- * drawn to an offscreen canvas and its rendered pixels are sampled, letting the
- * browser resolve fills, strokes, `<use>`, filters, and CSS exactly as it paints.
- */
-
-/** Largest canvas dimension used when sampling. Icons at ordinary sizes are read
- *  1:1 and only a larger canvas is scaled down; 128 keeps a small chromatic accent
- *  from averaging away into its grayscale neighbours while the pixel read stays a
- *  single 64 KiB buffer. */
+/** Largest canvas edge when sampling; keeps the pixel read to one 64 KiB buffer. */
 const SAMPLE_SIZE = 128;
-
 /** Per-channel spread (0-255) a pixel may have and still count as grayscale. */
 const GRAYSCALE_TOLERANCE = 16;
-
 /** Pixels at or below this alpha paint nothing visible and are skipped. */
 const ALPHA_THRESHOLD = 8;
-
-/** Alpha at which a pixel is solid enough to read its tone directly. Below it the
- *  canvas byte is an unpremultiplied edge sample whose rounding error grows as
- *  alpha falls, which would read as tonal variation that was never painted. */
-const SOLID_ALPHA = 250;
-
-/** Widest gray-level gap between solid pixels that still reads as one tone.
- *  Shading within a single glyph stays under it; a second deliberate tone, such as
- *  a white knockout inside a black mark (255) or a mid-gray secondary shape (153),
- *  does not. */
+/**
+ * Widest gray-level gap between painted pixels that still reads as one tone.
+ * Shading within a glyph stays under it; a second deliberate tone (a white
+ * knockout at 255, a mid-gray shape at 153) does not. Unpremultiplied rounding
+ * at the lowest sampled alpha is under 16 levels, so it never crosses this.
+ */
 const TONE_SPREAD_LIMIT = 96;
-
-/** How long a sample waits for the icon to load before giving up. */
 const LOAD_TIMEOUT_MS = 10_000;
 
 /**
- * True when the icon can be safely tinted to a single theme color. In one pass it
- * requires that every sufficiently opaque pixel is grayscale (its red, green, and
- * blue channels differ by no more than the tolerance), that at least one pixel is
- * genuinely empty (at or below the paint threshold), and that the solid pixels
- * carry a single tone. A fully transparent image paints no tone; one whose every
- * pixel is painted, even at partial opacity, has no glyph-shaped hole for a CSS
- * mask to reveal and would flatten to a solid currentColor wash; and a mask keys
- * on alpha alone, so two deliberate grayscale tones would collapse into the same
- * currentColor and lose the artwork's internal contrast. None of the three counts
- * as monochrome.
+ * True when every painted pixel is grayscale, at least one pixel is empty, and
+ * the painted pixels carry a single tone. A CSS mask keys on alpha alone, so a
+ * fully painted image would flatten to a solid wash and two grayscale tones
+ * would collapse into one color.
  */
 export function scanMonochrome(data: Uint8ClampedArray): boolean {
   let painted = false;
@@ -57,8 +33,7 @@ export function scanMonochrome(data: Uint8ClampedArray): boolean {
   let minTone = 255;
   let maxTone = 0;
   for (let i = 0; i < data.length; i += 4) {
-    const alpha = data[i + 3];
-    if (alpha <= ALPHA_THRESHOLD) {
+    if (data[i + 3] <= ALPHA_THRESHOLD) {
       hasEmptyArea = true;
       continue;
     }
@@ -73,70 +48,43 @@ export function scanMonochrome(data: Uint8ClampedArray): boolean {
     ) {
       return false;
     }
-    if (alpha >= SOLID_ALPHA) {
-      const tone = (r + g + b) / 3;
-      minTone = Math.min(minTone, tone);
-      maxTone = Math.max(maxTone, tone);
-    }
+    const tone = (r + g + b) / 3;
+    minTone = Math.min(minTone, tone);
+    maxTone = Math.max(maxTone, tone);
   }
   return painted && hasEmptyArea && maxTone - minTone <= TONE_SPREAD_LIMIT;
 }
 
-/** The dimensions to sample the image at, scaled down to `SAMPLE_SIZE`, or null
- *  when the image reports no intrinsic size. */
-function sampleSize(image: HTMLImageElement): { width: number; height: number } | null {
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
-  if (!width || !height) {
-    return null;
-  }
-  const scale = Math.min(1, SAMPLE_SIZE / Math.max(width, height));
-  return {
-    width: Math.max(1, Math.round(width * scale)),
-    height: Math.max(1, Math.round(height * scale)),
-  };
-}
-
-/**
- * Draws the image to an offscreen canvas and returns its pixel data, or null when
- * the canvas is unavailable or reading it throws because a non-CORS cross-origin
- * image tainted the canvas.
- */
+/** Draws the image to an offscreen canvas and reads it back; throws on a tainted canvas. */
 function samplePixels(image: HTMLImageElement): Uint8ClampedArray | null {
-  const size = sampleSize(image);
-  if (!size || typeof document === 'undefined') {
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  if (!naturalWidth || !naturalHeight) {
     return null;
   }
+  const scale = Math.min(1, SAMPLE_SIZE / Math.max(naturalWidth, naturalHeight));
+  const width = Math.max(1, Math.round(naturalWidth * scale));
+  const height = Math.max(1, Math.round(naturalHeight * scale));
   const canvas = document.createElement('canvas');
-  canvas.width = size.width;
-  canvas.height = size.height;
+  canvas.width = width;
+  canvas.height = height;
   const context = canvas.getContext('2d');
   if (!context) {
     return null;
   }
-  context.drawImage(image, 0, 0, size.width, size.height);
-  try {
-    return context.getImageData(0, 0, size.width, size.height).data;
-  } catch {
-    return null;
-  }
+  context.drawImage(image, 0, 0, width, height);
+  return context.getImageData(0, 0, width, height).data;
 }
 
 /**
- * Loads an icon and resolves whether it is monochrome by sampling its rendered
- * pixels. Any failure (load error, missing canvas support, or a canvas tainted by
- * a non-CORS cross-origin image) resolves to false so the icon renders untinted
- * rather than throwing. A request that neither completes nor errors is abandoned
- * after `LOAD_TIMEOUT_MS`, so the promise always settles and a caller keying an
- * in-flight map on it can drop the entry instead of holding the source, the
- * promise, and the image closure for the rest of the session.
+ * Loads an icon and resolves whether its rendered pixels are monochrome. Load
+ * errors, a tainted canvas, and a load that never settles all resolve to false.
  */
 export function detectMonochrome(src: string): Promise<boolean> {
   if (typeof Image === 'undefined') {
     return Promise.resolve(false);
   }
-  /* Executor form rather than `Promise.withResolvers`: the build target is
-   * Vite's baseline, which includes Safari 16, and `withResolvers` needs 17.4. */
+  /* Executor form: Vite's baseline target includes Safari 16; `withResolvers` needs 17.4. */
   return new Promise((resolve) => {
     const image = new Image();
     let timer = 0;
@@ -149,21 +97,22 @@ export function detectMonochrome(src: string): Promise<boolean> {
     timer = window.setTimeout(() => settle(false), LOAD_TIMEOUT_MS);
     image.crossOrigin = 'anonymous';
     image.onload = () => {
-      const data = samplePixels(image);
-      settle(data != null && scanMonochrome(data));
+      try {
+        const data = samplePixels(image);
+        settle(data != null && scanMonochrome(data));
+      } catch {
+        settle(false);
+      }
     };
     image.onerror = () => settle(false);
     image.src = src;
   });
 }
 
-let svgPurifier: ReturnType<typeof DOMPurify> | null = null;
+let svgPurifier: SvgPurifier | null = null;
 
-/**
- * Dedicated DOMPurify instance for SVG icons, so the reference hook never leaks
- * into the app's shared default instance.
- */
-function getSvgPurifier(): ReturnType<typeof DOMPurify> {
+/** Dedicated instance so the reference hook never reaches the app's default DOMPurify. */
+function getSvgPurifier(): SvgPurifier {
   if (svgPurifier) {
     return svgPurifier;
   }
@@ -172,23 +121,12 @@ function getSvgPurifier(): ReturnType<typeof DOMPurify> {
   return svgPurifier;
 }
 
-/**
- * Strips active content from user-provided SVG markup, leaving safe drawing
- * elements and presentation attributes. The policy is shared with the server
- * sanitizer that re-checks the stored icon, so the preview rendered here matches
- * what is persisted.
- */
+/** Strips active content from SVG markup with the policy the server re-applies. */
 export function sanitizeSvg(svg: string): string {
   return restoreSvgTagCase(getSvgPurifier().sanitize(svg, SVG_SANITIZE_CONFIG));
 }
 
-/**
- * Encodes SVG markup as a base64 `image/svg+xml` data URI. Base64 keeps the
- * payload at a flat ~1.33x of the source, versus the ~1.5x+ of percent-encoding
- * for the angle-bracket-heavy SVG that ships in every server/group listing. The
- * `encodeURIComponent` round-trip converts UTF-8 to a binary string first so
- * `btoa` handles non-ASCII glyphs without throwing.
- */
+/** Encodes SVG markup as a base64 data URI; the escape round-trip keeps `btoa` UTF-8 safe. */
 export function svgToDataUri(svg: string): string {
   const binary = encodeURIComponent(svg).replace(/%([0-9A-F]{2})/g, (_, hex) =>
     String.fromCharCode(parseInt(hex, 16)),
