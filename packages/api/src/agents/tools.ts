@@ -508,7 +508,7 @@ const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
 const LIST_WORKSPACE_FILES_TOOL_DEF: LCTool = Object.freeze({
   name: LIST_WORKSPACE_FILES_TOOL_NAME,
   description:
-    'List relative file paths in the attached worker workspace directory. Use this to discover files in an existing project, Git repository, or empty directory before reading or searching them. Respects normal ignore files, does not follow symlinks, and returns a bounded deterministic listing.',
+    'List relative file paths in the attached worker workspace directory. Use this to discover files in an existing project, Git repository, or empty directory before reading or searching them. Respects normal ignore files, does not follow symlinks, and returns a bounded deterministic listing. When a result supplies an after_path continuation, pass it unchanged with the same path to fetch the next page.',
   parameters: Object.freeze({
     type: 'object',
     properties: {
@@ -521,6 +521,11 @@ const LIST_WORKSPACE_FILES_TOOL_DEF: LCTool = Object.freeze({
         minimum: 1,
         maximum: 500,
         description: 'Optional maximum number of relative file paths to return. Defaults to 100.',
+      },
+      after_path: {
+        type: 'string',
+        description:
+          'Optional canonical continuation path from the preceding truncated result. Pass it back unchanged with the same path.',
       },
     },
   }) as LCTool['parameters'],

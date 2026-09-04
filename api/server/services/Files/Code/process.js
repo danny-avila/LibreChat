@@ -1760,6 +1760,7 @@ async function searchWorkspace({
  * @param {Object} params
  * @param {string} params.workspace_id
  * @param {string} [params.path]
+ * @param {string} [params.after_path]
  * @param {number} params.max_results
  * @param {string} params.codeApiBaseUrl
  * @param {'default' | 'stateful'} params.executionProfile
@@ -1770,6 +1771,7 @@ async function searchWorkspace({
 async function listWorkspaceFiles({
   workspace_id,
   path,
+  after_path,
   max_results,
   codeApiBaseUrl,
   executionProfile,
@@ -1789,6 +1791,7 @@ async function listWorkspaceFiles({
       operation: 'list_files',
       workspaceId: workspace_id,
       ...(path ? { path } : {}),
+      ...(after_path ? { afterPath: after_path } : {}),
       maxResults: max_results,
     },
     ...(signal ? { signal } : {}),

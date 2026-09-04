@@ -477,6 +477,7 @@ export interface ToolExecuteOptions {
   listWorkspaceFiles?: (params: {
     workspace_id: string;
     path?: string;
+    after_path?: string;
     max_results: number;
     codeApiBaseUrl: string;
     executionProfile: CodeExecutionContext['executionProfile'];
@@ -2413,21 +2414,28 @@ async function handleWorkspaceListCall(
     return errorResult(tc, 'Attached workspace file listing is not configured.');
   }
 
-  const args = tc.args as { path?: unknown; max_results?: unknown };
+  const args = tc.args as { path?: unknown; after_path?: unknown; max_results?: unknown };
   const maxResults = args.max_results ?? 100;
   if (
     (args.path != null && typeof args.path !== 'string') ||
+    (args.after_path != null && typeof args.after_path !== 'string') ||
     !Number.isSafeInteger(maxResults) ||
     Number(maxResults) < 1 ||
     Number(maxResults) > 500
   ) {
-    return errorResult(tc, 'path or max_results is invalid for workspace file listing.');
+    return errorResult(
+      tc,
+      'path, after_path, or max_results is invalid for workspace file listing.',
+    );
   }
 
   try {
     const result = await options.listWorkspaceFiles({
       workspace_id: 'primary',
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
+      ...(typeof args.after_path === 'string' && args.after_path.length > 0
+        ? { after_path: args.after_path }
+        : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
       executionProfile: codeExecutionContext.executionProfile,
@@ -2442,29 +2450,43 @@ async function handleWorkspaceListCall(
       const filtered = filteredFileNameResult(tc, req, path);
       if (filtered != null) return filtered;
     }
-    const unboundedContent =
-      result.paths.length === 0
-        ? 'The attached workspace contains no discoverable files in that path.'
-        : result.paths.map((path) => `workspace/${path}`).join('\n');
-    const truncationNotice = '\n\n[results truncated; narrow path and list again]';
-    const locallyTruncated = Buffer.byteLength(unboundedContent, 'utf8') > MAX_READABLE_BYTES;
-    const truncated = locallyTruncated || result.truncated;
-    let content = truncated
-      ? truncateUtf8(
-          unboundedContent,
-          MAX_READABLE_BYTES - Buffer.byteLength(truncationNotice, 'utf8'),
-        )
-      : unboundedContent;
-    if (locallyTruncated) {
-      const lastCompletePath = content.lastIndexOf('\n');
-      if (lastCompletePath >= 0) {
-        content = content.slice(0, lastCompletePath);
-      }
+    if (result.paths.length === 0) {
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: 'The attached workspace contains no discoverable files in that path.',
+      };
     }
+    const renderedPaths: string[] = [];
+    let content = '';
+    let contentBytes = 0;
+    for (const [index, path] of result.paths.entries()) {
+      const entry = `workspace/${path}`;
+      const separator = renderedPaths.length > 0 ? '\n' : '';
+      const hasMore = index < result.paths.length - 1 || result.truncated;
+      const notice = hasMore
+        ? `\n\n[results truncated; continue with after_path: ${JSON.stringify(path)}]`
+        : '';
+      const entryBytes = Buffer.byteLength(`${separator}${entry}`, 'utf8');
+      if (contentBytes + entryBytes + Buffer.byteLength(notice, 'utf8') > MAX_READABLE_BYTES) {
+        break;
+      }
+      renderedPaths.push(entry);
+      content += `${separator}${entry}`;
+      contentBytes += entryBytes;
+    }
+    const locallyTruncated = renderedPaths.length < result.paths.length;
+    const continuationPath = locallyTruncated
+      ? result.paths[renderedPaths.length - 1]
+      : result.nextAfterPath;
+    const truncated = locallyTruncated || result.truncated;
+    const truncationNotice = truncated
+      ? `\n\n[results truncated; continue with after_path: ${JSON.stringify(continuationPath)}]`
+      : '';
     return {
       toolCallId: tc.id,
       status: 'success',
-      content: truncated ? `${content}${truncationNotice}` : content,
+      content: `${content}${truncationNotice}`,
     };
   } catch (error) {
     if (signal?.aborted === true && isAbortError(error)) throw error;

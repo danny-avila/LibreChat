@@ -518,10 +518,15 @@ describe('registerCodeExecutionTools', () => {
           properties: {
             path: { type: 'string' },
             max_results: { type: 'integer', maximum: 500 },
+            after_path: { type: 'string' },
           },
         },
       });
       expect(listWorkspaceFiles?.description).toContain('empty directory');
+      expect(listWorkspaceFiles?.description).toContain('after_path');
+      expect(listWorkspaceFiles?.parameters.properties.path.description).toContain(
+        'canonical relative',
+      );
     });
 
     it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
