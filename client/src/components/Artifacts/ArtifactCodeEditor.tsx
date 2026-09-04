@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import debounce from 'lodash/debounce';
 import MonacoEditor from '@monaco-editor/react';
-import type { Monaco } from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
 import { ThemeContext, highContrastDarkTheme, highContrastLightTheme } from '@librechat/client';
+import type { Monaco } from '@monaco-editor/react';
 import type { IThemeRGB } from '@librechat/client';
+import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
 import { useMutationState, useCodeState } from '~/Providers/EditorContext';
 import { getResponseStatus } from '~/utils/errors';
@@ -54,6 +54,14 @@ const TYPE_MAP: Record<string, string> = {
 
 const HIGH_CONTRAST_LIGHT_EDITOR_THEME = 'librechat-high-contrast-light';
 const HIGH_CONTRAST_DARK_EDITOR_THEME = 'librechat-high-contrast-dark';
+
+/** Monaco's stock `vs-dark` canvas. `@monaco-editor/react` renders its loading
+ *  view transparent, so the wrapper has to paint whatever the active Monaco
+ *  theme paints or the Code tab flashes the wrong color before the editor
+ *  mounts. The contrast themes take their canvas from the semantic palettes
+ *  below; this one belongs to a Monaco built-in, so no LibreChat role names it
+ *  and no theme can move it. */
+const STANDARD_EDITOR_BACKGROUND = '#1e1e1e';
 
 const toHexColor = (palette: IThemeRGB, token: keyof IThemeRGB): string => {
   const value = palette[token];
@@ -138,6 +146,23 @@ const highContrastDarkEditorTheme = createHighContrastEditorTheme(
   'vs-dark',
   'rgb-presentation',
 );
+
+/** Theme name paired with the canvas it paints, so the wrapper behind the
+ *  editor and the editor itself can never disagree. */
+type EditorAppearance = { theme: string; background: string };
+
+const standardEditorAppearance: EditorAppearance = {
+  theme: 'vs-dark',
+  background: STANDARD_EDITOR_BACKGROUND,
+};
+const highContrastLightEditorAppearance: EditorAppearance = {
+  theme: HIGH_CONTRAST_LIGHT_EDITOR_THEME,
+  background: highContrastLightEditorTheme.colors['editor.background'],
+};
+const highContrastDarkEditorAppearance: EditorAppearance = {
+  theme: HIGH_CONTRAST_DARK_EDITOR_THEME,
+  background: highContrastDarkEditorTheme.colors['editor.background'],
+};
 
 type ArtifactEditTarget = {
   artifactId: string;
@@ -481,10 +506,12 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   );
 
   const language = getMonacoLanguage(artifact.type, artifact.language);
-  let editorTheme = 'vs-dark';
+  let editorAppearance = standardEditorAppearance;
   if (highContrast) {
-    editorTheme =
-      resolvedMode === 'dark' ? HIGH_CONTRAST_DARK_EDITOR_THEME : HIGH_CONTRAST_LIGHT_EDITOR_THEME;
+    editorAppearance =
+      resolvedMode === 'dark'
+        ? highContrastDarkEditorAppearance
+        : highContrastLightEditorAppearance;
   }
 
   const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
@@ -531,11 +558,11 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   }
 
   return (
-    <div className="h-full w-full bg-surface-code">
+    <div className="h-full w-full" style={{ backgroundColor: editorAppearance.background }}>
       <MonacoEditor
         height="100%"
         language={readOnly ? 'plaintext' : language}
-        theme={editorTheme}
+        theme={editorAppearance.theme}
         defaultValue={artifact.content}
         onChange={handleChange}
         beforeMount={handleBeforeMount}

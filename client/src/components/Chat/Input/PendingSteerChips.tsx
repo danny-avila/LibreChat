@@ -27,6 +27,7 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
 import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -211,7 +212,7 @@ function QueuedRow({
       {isRejected || isUnconfirmed || isIndeterminate ? (
         <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />
       ) : (
-        <Clock className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+        <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />
       )}
       <span className="min-w-0 flex-1 truncate" title={message.text}>
         {message.text}
@@ -238,7 +239,7 @@ function QueuedRow({
         >
           {canSteerNow ? (
             <>
-              <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
+              <Zap className={cn('h-4 w-4', STEER_ICON)} aria-hidden="true" />
               {localize('com_ui_steer')}
             </>
           ) : (
@@ -338,7 +339,7 @@ function FailedSteerRow({
         {
           key: 'queue',
           label: localize('com_ui_convert_to_queue'),
-          icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+          icon: <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />,
           onClick: () =>
             steering.convertSteerToQueue(
               steer.steerId,

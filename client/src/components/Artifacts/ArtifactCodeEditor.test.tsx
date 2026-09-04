@@ -174,24 +174,30 @@ describe('ArtifactCodeEditor', () => {
     jest.useRealTimers();
   });
 
-  it('preserves the standard Monaco theme outside high contrast mode', () => {
+  it('paints the loading canvas with the standard Monaco canvas outside high contrast', () => {
     const { container } = renderEditor();
 
     expect(mockEditorProps.theme).toBe('vs-dark');
-    expect(container.firstElementChild).toHaveClass('bg-surface-code');
+    expect(container.firstElementChild).toHaveStyle({ backgroundColor: '#1e1e1e' });
   });
 
-  it('updates the Monaco theme when the resolved contrast appearance changes', () => {
-    const { rerenderAppearance } = renderEditor(artifact, {
+  it('moves the Monaco theme and its loading canvas together across contrast appearances', () => {
+    const { rerenderAppearance, container } = renderEditor(artifact, {
       resolvedMode: 'light',
       highContrast: true,
     });
 
     expect(mockEditorProps.theme).toBe('librechat-high-contrast-light');
+    expect(container.firstElementChild).toHaveStyle({
+      backgroundColor: toHexColor(highContrastLightTheme, 'rgb-surface-primary-alt'),
+    });
 
     rerenderAppearance({ resolvedMode: 'dark', highContrast: true });
 
     expect(mockEditorProps.theme).toBe('librechat-high-contrast-dark');
+    expect(container.firstElementChild).toHaveStyle({
+      backgroundColor: toHexColor(highContrastDarkTheme, 'rgb-presentation'),
+    });
   });
 
   it('defines both contrast themes from the semantic syntax palettes', () => {
