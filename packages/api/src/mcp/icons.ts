@@ -26,21 +26,21 @@ function getSvgPurifier(): DOMPurify {
   return purifier;
 }
 
+/** Decodes like the `data:` URL processor: percent-decode, then base64 if flagged. */
 function decodeSvgDataUri(iconPath: string): string | null {
   const comma = iconPath.indexOf(',');
   if (comma === -1) {
     return null;
   }
-  const meta = iconPath.slice(0, comma);
-  const body = iconPath.slice(comma + 1);
+  let body: string;
   try {
-    if (/;base64/i.test(meta)) {
-      return Buffer.from(body, 'base64').toString('utf-8');
-    }
-    return decodeURIComponent(body);
+    body = decodeURIComponent(iconPath.slice(comma + 1));
   } catch {
     return null;
   }
+  return /;base64/i.test(iconPath.slice(0, comma))
+    ? Buffer.from(body, 'base64').toString('utf-8')
+    : body;
 }
 
 /**

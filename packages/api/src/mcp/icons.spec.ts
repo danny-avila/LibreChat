@@ -42,6 +42,18 @@ describe('sanitizeMcpIconPath', () => {
     expect(clean).toContain('circle');
   });
 
+  it('percent-decodes a base64 body before decoding it, as browsers do', () => {
+    const raw = '<svg><path d="M0 0h1v1z"/></svg>';
+    const escaped = encodeURIComponent(Buffer.from(raw, 'utf-8').toString('base64'));
+    expect(escaped).toContain('%3D');
+    const clean = decode(sanitizeMcpIconPath(`data:image/svg+xml;base64,${escaped}`));
+    expect(clean).toBe('<svg><path d="M0 0h1v1z"></path></svg>');
+  });
+
+  it('drops a base64 body with a malformed percent escape', () => {
+    expect(sanitizeMcpIconPath('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4%zz')).toBe('');
+  });
+
   it('drops external references that would let an SVG phone home', () => {
     const raw =
       '<svg><image href="https://evil.example/track.png"/><use href="https://evil.example/x.svg#a"/><path d="M0 0h1v1H0z"/></svg>';
