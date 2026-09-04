@@ -109,6 +109,8 @@ jest.mock('~/utils', () => ({
   createProviderOption: jest.fn((provider: string) => ({ value: provider, label: provider })),
   getAvailableAgentSelection: jest.requireActual('~/utils/agentModelSelection')
     .getAvailableAgentSelection,
+  getApiErrorAgentIds: jest.requireActual('~/utils/errors').getApiErrorAgentIds,
+  getApiErrorMessage: jest.requireActual('~/utils/errors').getApiErrorMessage,
   getDefaultAgentFormValues: jest.fn(() => ({
     id: '',
     name: '',
