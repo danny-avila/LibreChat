@@ -61,6 +61,12 @@ export default function SelectedPrincipalsList({
           const isSharedLink = resourceType === ResourceType.SHARED_LINK;
           const lockOwner = isSharedLink && isOwner;
           const shareKey = principalKey(share);
+          const hasAutomaticInsightsAccess = share.isAdmin === true;
+          const insightsDescription = localize(
+            hasAutomaticInsightsAccess
+              ? 'com_ui_view_agent_insights_admin_description'
+              : 'com_ui_view_agent_insights_description',
+          );
           return (
             <div
               key={`${shareKey}-principalList`}
@@ -87,7 +93,8 @@ export default function SelectedPrincipalsList({
                 {showInsightsAccess && onInsightsAccessChange && (
                   <div className="mr-auto flex items-center gap-2 sm:mr-1">
                     <Checkbox
-                      checked={share.viewInsights === true}
+                      checked={hasAutomaticInsightsAccess || share.viewInsights === true}
+                      disabled={hasAutomaticInsightsAccess}
                       onCheckedChange={(checked) =>
                         onInsightsAccessChange(shareKey, checked === true)
                       }
@@ -97,11 +104,11 @@ export default function SelectedPrincipalsList({
                       {localize('com_ui_view_agent_insights')}
                     </span>
                     <TooltipAnchor
-                      description={localize('com_ui_view_agent_insights_description')}
+                      description={insightsDescription}
                       render={
                         <button
                           type="button"
-                          aria-label={localize('com_ui_view_agent_insights_description')}
+                          aria-label={insightsDescription}
                           className="text-text-secondary hover:text-text-primary"
                         >
                           <Info className="size-4" aria-hidden="true" />

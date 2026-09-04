@@ -1712,6 +1712,7 @@
   "com_ui_permissions_updated_success": "Permissions updated successfully",
   "com_ui_view_agent_insights": "View insights",
   "com_ui_view_agent_insights_description": "Allows this principal to view usage and conversation content for this agent.",
+  "com_ui_view_agent_insights_admin_description": "Administrators always have access to insights.",
   "com_ui_pin": "Pin",
   "com_ui_pin_error": "Failed to pin conversation",
   "com_ui_pinned": "Pinned",

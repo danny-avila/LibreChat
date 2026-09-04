@@ -411,6 +411,7 @@ const getResourcePermissions = async (req, res) => {
           source: !result.userInfo._id ? 'entra' : 'local',
           idOnTheSource: result.userInfo.idOnTheSource || result.userInfo._id.toString(),
           accessRoleId: result.accessRoleId,
+          isAdmin: result.userInfo.role === SystemRoles.ADMIN,
           ...(req.user.role === SystemRoles.ADMIN
             ? {
                 viewInsights:
@@ -449,6 +450,7 @@ const getResourcePermissions = async (req, res) => {
           name: result.principalId,
           description: `System role: ${result.principalId}`,
           accessRoleId: result.accessRoleId,
+          isAdmin: result.principalId === SystemRoles.ADMIN,
           ...(req.user.role === SystemRoles.ADMIN
             ? {
                 viewInsights:

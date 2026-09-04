@@ -227,6 +227,7 @@ describe('PermissionsController', () => {
             name: 'Current User',
             email: 'current-user@example.com',
             avatar: 'current-user.png',
+            role: SystemRoles.ADMIN,
           },
         },
         {
@@ -253,6 +254,7 @@ describe('PermissionsController', () => {
           type: PrincipalType.USER,
           id: userId.toString(),
           email: 'current-user@example.com',
+          isAdmin: true,
         }),
         expect.objectContaining({
           type: PrincipalType.GROUP,

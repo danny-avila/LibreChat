@@ -56,4 +56,35 @@ describe('SelectedPrincipalsList', () => {
     expect(onInsightsAccessChange).toHaveBeenCalledTimes(1);
     expect(onInsightsAccessChange).toHaveBeenCalledWith('role-role-two', true);
   });
+
+  it('shows administrator Insights access as checked and read-only', () => {
+    const onInsightsAccessChange = jest.fn();
+    const admin: TPrincipal = {
+      type: PrincipalType.USER,
+      id: 'admin-user',
+      name: 'Admin User',
+      accessRoleId: AccessRoleIds.AGENT_OWNER,
+      viewInsights: false,
+      isAdmin: true,
+    };
+
+    render(
+      <SelectedPrincipalsList
+        principles={[admin]}
+        onRemoveHandler={jest.fn()}
+        onInsightsAccessChange={onInsightsAccessChange}
+        showInsightsAccess
+      />,
+    );
+
+    const checkbox = screen.getByRole('checkbox', { name: 'com_ui_view_agent_insights' });
+    expect(checkbox).toBeChecked();
+    expect(checkbox).toBeDisabled();
+
+    fireEvent.click(checkbox);
+    expect(onInsightsAccessChange).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'com_ui_view_agent_insights_admin_description' }),
+    ).toBeInTheDocument();
+  });
 });

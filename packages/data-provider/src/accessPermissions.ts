@@ -110,6 +110,7 @@ export const principalSchema = z.object({
   idOnTheSource: z.string().optional(), // Entra ID for users/groups
   accessRoleId: z.nativeEnum(AccessRoleIds).optional(), // Access role ID for permissions
   viewInsights: z.boolean().optional(),
+  isAdmin: z.boolean().optional(),
   memberCount: z.number().optional(), // for group type
 });
 
@@ -234,6 +235,7 @@ export type TPrincipalSearchResult = {
   memberCount?: number; // for groups
   description?: string; // for groups
   idOnTheSource?: string; // Entra ID for users (maps to openidId) and groups (maps to idOnTheSource)
+  isAdmin?: boolean;
 };
 
 /**
