@@ -28,11 +28,15 @@ export type AgentManagementResponse = Omit<
   updatedAt: string;
 };
 export type AgentManagementProjectionSource = Partial<
-  Omit<AgentManagementResponse, 'id' | 'provider' | 'model' | 'version' | 'createdAt' | 'updatedAt'>
+  Omit<
+    AgentManagementResponse,
+    'id' | 'provider' | 'model' | 'version' | 'createdAt' | 'updatedAt' | 'avatar'
+  >
 > & {
   id?: string;
   provider?: string;
   model?: string | null;
+  avatar?: AgentManagementResponse['avatar'] | string;
   version?: number;
   versions?: readonly object[];
   createdAt?: string | Date;
@@ -225,7 +229,7 @@ export function projectAgentManagementResponse(
     name: source.name,
     description: source.description,
     instructions: source.instructions,
-    avatar: source.avatar,
+    avatar: typeof source.avatar === 'string' ? undefined : source.avatar,
     model_parameters: source.model_parameters,
     tools: source.tools,
     skills: source.skills,

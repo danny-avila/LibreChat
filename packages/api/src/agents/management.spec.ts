@@ -167,6 +167,16 @@ describe('Agent Management contract', () => {
       expect(response).not.toHaveProperty('is_promoted');
     });
 
+    it('omits legacy string avatars that are not part of the management contract', () => {
+      const response = projectAgentManagementResponse({
+        ...persistedAgent,
+        avatar: 'https://example.com/legacy-avatar.png',
+      });
+
+      expect(JSON.parse(JSON.stringify(response))).not.toHaveProperty('avatar');
+      expect(agentManagementResponseSchema.parse(response)).toEqual(response);
+    });
+
     it('does not apply the current request admission limit to persisted subagents', () => {
       const subagents = {
         enabled: true,

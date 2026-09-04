@@ -5,6 +5,12 @@ const mockMapAgentManagementError = jest.fn(() => ({
   status: 404,
   body: { error: { code: 'not_found', message: 'Agent not found' } },
 }));
+const mockList = jest.fn((_req, res) => res.status(200).json({ object: 'list', data: [] }));
+const mockGet = jest.fn((_req, res) => res.status(200).json({ id: 'agent-one' }));
+const mockCreateAgentManagementReadHandlers = jest.fn(() => ({
+  list: mockList,
+  get: mockGet,
+}));
 const mockCheckBan = jest.fn((_req, _res, next) => next());
 const mockUaParser = jest.fn((_req, _res, next) => next());
 
@@ -21,10 +27,21 @@ jest.mock('../middleware', () => ({
 }));
 jest.mock('@librechat/api', () => ({
   mapAgentManagementError: mockMapAgentManagementError,
+  createAgentManagementReadHandlers: mockCreateAgentManagementReadHandlers,
 }));
 jest.mock('~/server/middleware', () => ({
   checkBan: mockCheckBan,
   uaParser: mockUaParser,
+}));
+jest.mock('~/server/middleware/roles/capabilities', () => ({ hasCapability: jest.fn() }));
+jest.mock('~/server/services/PermissionService', () => ({
+  checkPermission: jest.fn(),
+  findAccessibleResources: jest.fn(),
+}));
+jest.mock('~/models', () => ({
+  getRoleByName: jest.fn(),
+  getAgentWithVersionCount: jest.fn(),
+  getAgentManagementListByAccess: jest.fn(),
 }));
 
 const router = require('../management');
@@ -51,7 +68,7 @@ describe('Agent Management route boundary', () => {
 
   it('allows an authenticated non-browser client into the management router', async () => {
     const response = await request(app)
-      .get('/api/agents/v1/agents/not-a-management-operation')
+      .post('/api/agents/v1/agents/not-a-management-operation')
       .set('Authorization', 'Bearer valid-token')
       .set('User-Agent', 'curl/8.0.0');
 
@@ -61,5 +78,19 @@ describe('Agent Management route boundary', () => {
     expect(mockUaParser).not.toHaveBeenCalled();
     expect(mockMapAgentManagementError).toHaveBeenCalledWith('not_found');
     expect(mockRequireAgentManagementAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches authenticated list and retrieve requests to the management read handlers', async () => {
+    const listResponse = await request(app)
+      .get('/api/agents/v1/agents')
+      .set('Authorization', 'Bearer valid-token');
+    const getResponse = await request(app)
+      .get('/api/agents/v1/agents/agent-one')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(listResponse.status).toBe(200);
+    expect(getResponse.status).toBe(200);
+    expect(mockList).toHaveBeenCalledTimes(1);
+    expect(mockGet).toHaveBeenCalledTimes(1);
   });
 });
