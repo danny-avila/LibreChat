@@ -45,7 +45,6 @@ const PREDICATE_PATHS: ReadonlyMap<string, { readonly key: string; readonly list
     ['count', { key: 'query' }],
     ['distinct', { key: 'query' }],
     ['findAndModify', { key: 'query' }],
-    ['aggregate', { key: 'pipeline' }],
     ['update', { key: 'q', list: 'updates' }],
     ['delete', { key: 'q', list: 'deletes' }],
     ['insert', { key: '', list: 'documents' }],
@@ -53,18 +52,50 @@ const PREDICATE_PATHS: ReadonlyMap<string, { readonly key: string; readonly list
 
 type CommandDocument = Record<string, unknown>;
 
-function constrainsTenant(value: unknown): boolean {
-  if (value == null || typeof value !== 'object') {
+/**
+ * Whether a filter genuinely restricts the query to one tenant.
+ *
+ * Deliberately conservative — a probe that over-reports scoping is worse than
+ * useless, because it turns a leak into a green test. So `tenantId` counts only
+ * where it actually constrains the match: at the top level of the filter, in
+ * any `$and` branch, or in *every* `$or` branch. A `tenantId` nested under an
+ * unrelated field constrains nothing, and `$nor` negates its branches, so it
+ * never contributes a constraint.
+ */
+function constrainsTenant(filter: unknown): boolean {
+  if (filter == null || typeof filter !== 'object' || Array.isArray(filter)) {
     return false;
   }
-  if (Array.isArray(value)) {
-    return value.some(constrainsTenant);
-  }
-  const record = value as CommandDocument;
+
+  const record = filter as CommandDocument;
   if ('tenantId' in record) {
     return true;
   }
-  return Object.values(record).some(constrainsTenant);
+
+  const and = record.$and;
+  if (Array.isArray(and) && and.some(constrainsTenant)) {
+    return true;
+  }
+
+  const or = record.$or;
+  if (Array.isArray(or) && or.length > 0 && or.every(constrainsTenant)) {
+    return true;
+  }
+
+  return false;
+}
+
+/** A pipeline is scoped when some `$match` stage constrains the tenant. */
+function pipelineConstrainsTenant(pipeline: unknown): boolean {
+  if (!Array.isArray(pipeline)) {
+    return false;
+  }
+  return pipeline.some((stage) => {
+    if (stage == null || typeof stage !== 'object') {
+      return false;
+    }
+    return constrainsTenant((stage as CommandDocument).$match);
+  });
 }
 
 /** Every predicate a command carries, so a partially-scoped batch still fails. */
@@ -83,6 +114,27 @@ function predicatesOf(command: CommandDocument, commandName: string): unknown[] 
   return path.key ? operations.map((operation) => operation?.[path.key]) : operations;
 }
 
+/**
+ * Whether every predicate this command carries is tenant-scoped.
+ * Returns null for commands that carry no predicate at all.
+ */
+function isScoped(command: CommandDocument, commandName: string): boolean | null {
+  if (commandName === 'aggregate') {
+    return pipelineConstrainsTenant(command.pipeline);
+  }
+  const predicates = predicatesOf(command, commandName);
+  if (predicates.length === 0) {
+    return null;
+  }
+  return predicates.every(constrainsTenant);
+}
+
+/** The predicates a command carries, for test failure output. */
+function describePredicates(command: CommandDocument, commandName: string): string {
+  const value = commandName === 'aggregate' ? command.pipeline : predicatesOf(command, commandName);
+  return JSON.stringify(value);
+}
+
 export function attachTenantProbe(
   connection: Connection,
   collections: Iterable<string>,
@@ -98,15 +150,15 @@ export function attachTenantProbe(
     if (typeof collection !== 'string' || !watched.has(collection)) {
       return;
     }
-    const predicates = predicatesOf(event.command, event.commandName);
-    if (predicates.length === 0) {
+    const scoped = isScoped(event.command, event.commandName);
+    if (scoped == null) {
       return;
     }
     recording.push({
       commandName: event.commandName,
       collection,
-      scoped: predicates.every(constrainsTenant),
-      predicate: JSON.stringify(predicates),
+      scoped,
+      predicate: describePredicates(event.command, event.commandName),
     });
   };
 

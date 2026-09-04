@@ -95,6 +95,71 @@ describe('the probe itself', () => {
     expect(records[0].commandName).toBe('find');
   });
 
+  /**
+   * The probe must never over-report scoping: a filter it wrongly calls scoped
+   * turns a leak into a green test, which is worse than having no probe.
+   */
+  it.each([
+    ['a permissive $or branch', { $or: [{ tenantId: TENANT }, {}] }],
+    ['tenantId nested under an unrelated field', { meta: { tenantId: TENANT } }],
+    ['$nor, which negates its branches', { $nor: [{ tenantId: TENANT }] }],
+    ['an $or branch that matches other tenants', { $or: [{ tenantId: TENANT }, { name: 'x' }] }],
+  ])('does not accept %s as scoping', async (_label, filter) => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .find(filter)
+          .toArray();
+      }),
+    );
+
+    expect(unscoped(records)).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'every $or branch constrained',
+      { $or: [{ tenantId: TENANT }, { tenantId: TENANT, name: 'x' }] },
+    ],
+    ['one $and branch constrained', { $and: [{ tenantId: TENANT }, { name: 'x' }] }],
+    ['an explicitly unset tenant', { tenantId: { $exists: false } }],
+  ])('accepts %s as scoping', async (_label, filter) => {
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .find(filter)
+          .toArray();
+      }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(unscoped(records)).toHaveLength(0);
+  });
+
+  it('judges an aggregate by its $match stages, not by any mention', async () => {
+    const unmatched = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .aggregate([{ $group: { _id: '$tenantId' } }])
+          .toArray();
+      }),
+    );
+    expect(unscoped(unmatched)).toHaveLength(1);
+
+    const matched = await probe.record(() =>
+      asTenant(async () => {
+        await mongoose.connection
+          .db!.collection(Widget.collection.collectionName)
+          .aggregate([{ $match: { tenantId: TENANT } }])
+          .toArray();
+      }),
+    );
+    expect(unscoped(matched)).toHaveLength(0);
+  });
+
   it('reports nothing for collections it does not watch', async () => {
     const records = await probe.record(() =>
       asTenant(async () => {
@@ -119,6 +184,7 @@ describe('query paths reach the wire scoped', () => {
     ['findOneAndUpdate', () => Widget.findOneAndUpdate({ name: 'x' }, { $set: { name: 'y' } })],
     ['findOneAndDelete', () => Widget.findOneAndDelete({ name: 'x' })],
     ['replaceOne', () => Widget.replaceOne({ name: 'x' }, { name: 'y' })],
+    ['findOneAndReplace', () => Widget.findOneAndReplace({ name: 'x' }, { name: 'y' })],
     ['aggregate', () => Widget.aggregate([{ $group: { _id: '$name' } }])],
   ])('%s', async (_label, operation) => {
     const records = await probe.record(() => asTenant(async () => void (await operation())));
@@ -222,6 +288,43 @@ describe('document-level paths reach the wire scoped', () => {
 
     expect(records.length).toBeGreaterThan(0);
     expect(describeLeaks(records)).toBe('');
+  });
+
+  /**
+   * `Document.prototype.deleteOne()` is called out in `schema/auditLog.ts` as an
+   * escape hatch around *document* middleware. It is not one for tenant
+   * filtering — it builds a Query, so the query-level hook still fires — but
+   * nothing pinned that, so a future change could silently make it one.
+   */
+  it('doc.deleteOne() reaches the wire scoped', async () => {
+    await asTenant(async () => void (await Widget.create({ name: 'doomed', parts: [] })));
+
+    const records = await probe.record(() =>
+      asTenant(async () => {
+        const widget = await Widget.findOne({ name: 'doomed' });
+        await widget!.deleteOne();
+      }),
+    );
+
+    const deletes = records.filter((record) => record.commandName === 'delete');
+    expect(deletes).toHaveLength(1);
+    expect(describeLeaks(records)).toBe('');
+  });
+
+  it('doc.deleteOne() cannot remove another tenant document', async () => {
+    const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      Widget.create({ name: 'foreign-doomed', parts: [] }),
+    );
+    const smuggled = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id),
+    );
+
+    await asTenant(async () => void (await smuggled!.deleteOne()));
+
+    const survivor = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(survivor).not.toBeNull();
   });
 
   it('populate() issues its own query', async () => {
