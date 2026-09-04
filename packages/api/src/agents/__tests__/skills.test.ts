@@ -1056,6 +1056,29 @@ describe('injectSkillCatalog', () => {
     warnSpy.mockRestore();
   });
 
+  it('still flags a dropped description that collides with another skill name', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    /* Names-only drops every description, but a one-word description can occur
+       verbatim in the catalog as another skill's name — matching the whole
+       `- name: description` rendering is what keeps that a warning. */
+    const named = makeSkill('research', userObjectId);
+    const collider: PageSkill = {
+      ...makeSkill('other-skill', userObjectId),
+      description: 'research',
+    };
+    const filler = Array.from({ length: 20 }, (_, i) => ({
+      ...makeSkill(`filler-skill-${i}`, userObjectId),
+      description: 'y'.repeat(200),
+    }));
+    const listSkillsByAccess = buildPager([[named, collider, ...filler]]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent, contextWindowTokens: 2_000 }));
+
+    expect(truncationWarnings(warnSpy).map(([name]) => name)).toContain('other-skill');
+    warnSpy.mockRestore();
+  });
+
   it('keeps measurements aligned when a description imitates the next entry', async () => {
     const { logger } = await import('@librechat/data-schemas');
     const warnSpy = jest.spyOn(logger, 'warn');

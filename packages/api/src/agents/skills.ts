@@ -586,6 +586,25 @@ export async function resolveSkillCatalog(
 }
 
 /**
+ * Whether `catalog` carries this skill's description in full.
+ *
+ * An entry the formatter kept renders as `- name: description` on a line of
+ * its own, so the whole rendering is what gets matched. Matching the
+ * description alone would miss a drop whenever its text happens to appear
+ * elsewhere in the catalog — a one-word description is enough to collide with
+ * another skill's name once the catalog falls back to names-only.
+ *
+ * Matching the rendering rather than parsing entries also keeps this correct
+ * where boundaries are not recoverable: descriptions may contain newlines, so
+ * an entry is not one physical line, and a continuation line can imitate the
+ * next entry's marker.
+ */
+function catalogKeptDescription(catalog: string, name: string, description: string): boolean {
+  const entry = `\n- ${name}: ${description}`;
+  return catalog.includes(`${entry}\n`) || catalog.endsWith(entry);
+}
+
+/**
  * Queries accessible skills, formats a budget-aware catalog, appends it to the
  * agent's additional_instructions, and registers the SkillTool definition.
  * Returns updated toolDefinitions and the skill count.
@@ -705,15 +724,8 @@ export async function injectSkillCatalog(
       },
     );
     if (catalog) {
-      /**
-       * A description the catalog kept intact appears in it verbatim, so
-       * containment detects truncation from any rung of the ladder without
-       * needing entry boundaries. Boundaries are not recoverable anyway:
-       * descriptions may contain newlines, so an entry is not one physical
-       * line, and a continuation line can imitate the next entry's marker.
-       */
       for (const s of catalogVisibleSkills) {
-        if (catalog.includes(s.description)) {
+        if (!s.description || catalogKeptDescription(catalog, s.name, s.description)) {
           continue;
         }
         logger.warn(
