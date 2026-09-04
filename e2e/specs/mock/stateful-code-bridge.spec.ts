@@ -237,10 +237,23 @@ test.describe('attached stateful code environment', () => {
         expect.objectContaining(registration.environment),
       );
 
-      const workerStatus = await requestJson<EnvironmentStatus>(page, {
-        path: `/api/code-environments/${registration.environment.id}/status`,
-        token,
-      });
+      let workerStatus: EnvironmentStatus | undefined;
+      await expect
+        .poll(
+          async () => {
+            workerStatus = await requestJson<EnvironmentStatus>(page, {
+              path: `/api/code-environments/${registration.environment.id}/status`,
+              token,
+            });
+            return workerStatus.status;
+          },
+          {
+            message: 'BYOM worker should become ready before workspace commands run',
+            timeout: 30_000,
+            intervals: [250, 500, 1_000],
+          },
+        )
+        .toBe('ready');
       expect(workerStatus).toMatchObject({
         environmentId: registration.environment.id,
         status: 'ready',
