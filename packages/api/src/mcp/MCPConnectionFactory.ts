@@ -451,8 +451,13 @@ export class MCPConnectionFactory {
     }
   }
 
-  /** Resolves OBO tokens when the server config specifies obo, returns null otherwise */
-  protected async getOboTokens(): Promise<MCPOAuthTokens | null> {
+  /**
+   * Resolves OBO tokens when the server config specifies obo, returns null otherwise.
+   *
+   * @param forceRefresh Bypasses the OBO token cache; used when the downstream server
+   * has rejected the credential we currently hold.
+   */
+  protected async getOboTokens(forceRefresh = false): Promise<MCPOAuthTokens | null> {
     const oboConfig = this.serverConfig.obo;
     if (!oboConfig || !this.oboTokenResolver || !this.user) {
       return null;
@@ -488,6 +493,7 @@ export class MCPConnectionFactory {
       this.oboTokenResolver,
       this.upstreamTokenProvider,
       this.oboIdentityContext,
+      forceRefresh,
     );
   }
 
@@ -543,6 +549,8 @@ export class MCPConnectionFactory {
     let cleanupOAuthHandlers: (() => void) | null = null;
     if (this.useOAuth && !this.usesObo) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    } else if (this.usesObo) {
+      cleanupOAuthHandlers = this.handleOboEvents(connection);
     } else {
       const nonOAuthHandler = () => {
         logger.info(
@@ -1107,6 +1115,81 @@ export class MCPConnectionFactory {
 
     const expiresAt = createdAt + PENDING_STALE_MS;
     return expiresAt > Date.now() ? expiresAt : undefined;
+  }
+
+  /**
+   * Sets up the authentication handler for an OBO connection.
+   *
+   * An OBO server rejecting our bearer is recoverable in a way the non-OAuth
+   * fallback cannot express: the downstream credential is minted from the user's
+   * live upstream session, so a fresh exchange produces a working token without
+   * any interactive step. What it needs is that live session, which only exists
+   * while the request that created this connection is still running. Past that
+   * point `upstreamTokenProvider` closes over a finished request, so a cached
+   * connection stops reconnecting instead and its next borrower rebuilds it
+   * against a live provider.
+   */
+  protected handleOboEvents(connection: MCPConnection): () => void {
+    let refreshAttempted = false;
+
+    const oboHandler = async (): Promise<void> => {
+      if (this.connectionReady) {
+        logger.info(
+          `${this.logPrefix} Cached OBO connection was rejected; deferring to a live request for re-exchange`,
+        );
+        this.abandonOboConnection(connection, new Error('OBO re-exchange requires a live request'));
+        return;
+      }
+
+      if (refreshAttempted) {
+        logger.warn(`${this.logPrefix} Refreshed OBO token was rejected as well`);
+        this.abandonOboConnection(connection, new Error('Refreshed OBO token was rejected'));
+        return;
+      }
+      refreshAttempted = true;
+
+      logger.info(`${this.logPrefix} OBO token rejected by server; re-running token exchange`);
+      try {
+        const tokens = await this.getOboTokens(true);
+        if (!tokens?.access_token) {
+          throw new Error(`OBO token exchange returned no token for "${this.serverName}".`);
+        }
+        connection.setOAuthTokens(tokens);
+        connection.setAuthorizationHeader(tokens.access_token);
+        logger.info(`${this.logPrefix} OBO token re-exchanged; retrying connection`);
+        connection.emit('oauthHandled');
+      } catch (error) {
+        logger.error(`${this.logPrefix} OBO token re-exchange failed`, error);
+        this.abandonOboConnection(connection, this.toOboRefreshError(error));
+      }
+    };
+
+    connection.on('oauthRequired', oboHandler);
+
+    return () => {
+      connection.removeListener('oauthRequired', oboHandler);
+    };
+  }
+
+  private toOboRefreshError(error: unknown): Error {
+    if (error instanceof OboTokenResolutionError) {
+      return this.createOboConnectionError(error);
+    }
+    if (error instanceof Error) {
+      return error;
+    }
+    return new Error(`OBO token re-exchange failed for "${this.serverName}".`);
+  }
+
+  /**
+   * Ends recovery for an OBO connection holding a credential nothing can replace.
+   * Reconnect attempts would replay the rejected bearer through every backoff step
+   * and spend the circuit breaker's cycle budget, so the connection is retired and
+   * left for its next borrower to dispose and rebuild.
+   */
+  private abandonOboConnection(connection: MCPConnection, error: Error): void {
+    connection.stopReconnecting();
+    connection.emit('oauthFailed', error);
   }
 
   /** Sets up OAuth event handlers for the connection */
