@@ -95,10 +95,12 @@ const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
 /**
- * Per-entry description cap applied by `formatSkillCatalog` before the
- * catalog is injected into agent context. `@librechat/agents` truncates
- * silently, so this mirrors the default so we can warn when authors' skill
- * descriptions will not reach the model verbatim.
+ * Per-entry description cap requested of `formatSkillCatalog`, mirroring the
+ * SDK default. It is a ceiling, not a guarantee: `@librechat/agents` applies
+ * it first, then truncates further — proportionally against its own context
+ * budget, and finally to names-only — so a description well under this cap
+ * can still be cut. Delivered length is measured from the emitted catalog
+ * rather than assumed from this value.
  */
 const SKILL_CATALOG_MAX_ENTRY_CHARS = 250;
 /** Hard ceiling on skill names a model spec can request by config. */
@@ -584,6 +586,33 @@ export async function resolveSkillCatalog(
 }
 
 /**
+ * Description length that survived into `catalog`, per skill name.
+ *
+ * `formatSkillCatalog` truncates on a ladder — the per-entry cap, then a
+ * proportional cut sized to its context budget, then names-only — so the
+ * requested cap is an upper bound and not the delivered length. Reading the
+ * emitted text back is the only accurate source. A skill missing from the
+ * returned map had its description dropped entirely.
+ */
+function measureCatalogDescriptions(catalog: string, names: Set<string>): Map<string, number> {
+  const delivered = new Map<string, number>();
+  for (const line of catalog.split('\n')) {
+    if (!line.startsWith('- ')) {
+      continue;
+    }
+    const separator = line.indexOf(': ');
+    if (separator === -1) {
+      continue;
+    }
+    const name = line.slice(2, separator);
+    if (names.has(name)) {
+      delivered.set(name, line.length - separator - 2);
+    }
+  }
+  return delivered;
+}
+
+/**
  * Queries accessible skills, formats a budget-aware catalog, appends it to the
  * agent's additional_instructions, and registers the SkillTool definition.
  * Returns updated toolDefinitions and the skill count.
@@ -695,13 +724,6 @@ export async function injectSkillCatalog(
    * and those reads would otherwise be impossible.
    */
   if (catalogVisibleSkills.length > 0) {
-    for (const s of catalogVisibleSkills) {
-      if (s.description.length > SKILL_CATALOG_MAX_ENTRY_CHARS) {
-        logger.warn(
-          `[injectSkillCatalog] skill "${s.name}" description truncated to ${SKILL_CATALOG_MAX_ENTRY_CHARS} chars for the model catalog (was ${s.description.length})`,
-        );
-      }
-    }
     const catalog = formatSkillCatalog(
       catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
       {
@@ -710,6 +732,21 @@ export async function injectSkillCatalog(
       },
     );
     if (catalog) {
+      const delivered = measureCatalogDescriptions(
+        catalog,
+        new Set(catalogVisibleSkills.map((s) => s.name)),
+      );
+      for (const s of catalogVisibleSkills) {
+        const reached = delivered.get(s.name) ?? 0;
+        if (reached >= s.description.length) {
+          continue;
+        }
+        logger.warn(
+          reached === 0
+            ? `[injectSkillCatalog] skill "${s.name}" description was dropped from the model catalog (was ${s.description.length} chars) — the catalog exceeded its context budget`
+            : `[injectSkillCatalog] skill "${s.name}" description reached the model truncated to ${reached} of ${s.description.length} chars`,
+        );
+      }
       agent.additional_instructions = agent.additional_instructions
         ? `${agent.additional_instructions}\n\n${catalog}`
         : catalog;
