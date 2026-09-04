@@ -198,18 +198,16 @@ export function codeExecutionHeaders(
  * value passed as metadata is merged onto the log record, so a rejection
  * carrying `tenantId`, `userId` or `event_name` would overwrite the request
  * identity this log exists to provide; and any metadata makes `format.splat()`
- * treat a `%s` in the cause as a substitution token. Conversion is guarded
- * because `String()` throws on a null-prototype object, which would otherwise
- * replace the rejection with a formatting error and log nothing.
+ * treat a `%s` in the cause as a substitution token. Every read is guarded:
+ * `String()` throws on a null-prototype object and a proxy can throw from a
+ * `name` or `message` accessor, either of which would otherwise replace the
+ * rejection with a formatting error and log nothing.
  */
 function describeAuthFailure(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
-  }
   try {
-    return String(error);
+    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   } catch {
-    return 'unstringifiable rejection';
+    return 'undescribable rejection';
   }
 }
 

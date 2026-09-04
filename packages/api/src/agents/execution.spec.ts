@@ -373,7 +373,25 @@ describe('codeExecutionAuthHeaders', () => {
     ).rejects.toBe(hostile);
 
     expect(errorSpy).toHaveBeenCalledWith(
-      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: unstringifiable rejection',
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: undescribable rejection',
+    );
+  });
+
+  it('describes a rejection whose accessors throw, and still rethrows it', async () => {
+    const hostile = new Proxy(new Error('boom'), {
+      get(): never {
+        throw new Error('accessor exploded');
+      },
+    });
+
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject(hostile), {
+        executionProfile: 'default',
+      }),
+    ).rejects.toBe(hostile);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: undescribable rejection',
     );
   });
 
