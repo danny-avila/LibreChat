@@ -159,7 +159,11 @@ async function trackStartedRun(queryClient: QueryClient, conversationId: string)
       }
       continue;
     }
-    if (startedFor !== undefined && cacheOwner(queryClient) !== startedFor) {
+    /** An owner that is still unknown cannot be compared, so it cannot be cleared
+     *  either — "loading" and "changed hands" are the same reading. Refuse the
+     *  write rather than risk seeding one account's chat into another's sidebar;
+     *  a signed-in session is what every caller of this actually has. */
+    if (cacheOwner(queryClient) !== startedFor || startedFor === undefined) {
       return;
     }
     /** The conversation route serves an archived chat; the list query filters one

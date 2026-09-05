@@ -143,6 +143,7 @@ describe('run-now conversation tracking', () => {
 
   it('adds the run to the sidebar once the server has the conversation', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     mockGetConversationById
       .mockRejectedValueOnce(httpError(404, 'Not Found'))
@@ -162,6 +163,7 @@ describe('run-now conversation tracking', () => {
 
   it('files the row by the server row, not by a client snapshot of the schedule', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient, { projectId: 'project-server' });
     seedList(queryClient, { projectId: 'project-stale' });
     mockGetConversationById.mockResolvedValue(serverConversation('project-server'));
@@ -180,6 +182,7 @@ describe('run-now conversation tracking', () => {
 
   it('warms the chat route cache so the new row opens without a 404', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     mockGetConversationById.mockResolvedValue(serverConversation());
 
@@ -194,6 +197,7 @@ describe('run-now conversation tracking', () => {
 
   it('re-arms the active-job poll only once a generation is known to exist', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     mockGetConversationById
       .mockRejectedValueOnce(httpError(404, 'Not Found'))
@@ -210,6 +214,7 @@ describe('run-now conversation tracking', () => {
 
   it('leaves every cache untouched when the delivery never admits', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     mockGetConversationById.mockRejectedValue(httpError(404, 'Not Found'));
 
@@ -224,6 +229,7 @@ describe('run-now conversation tracking', () => {
 
   it('keeps waiting through a probe that fails for its own reasons', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     mockGetConversationById
       .mockRejectedValueOnce(httpError(502, 'Bad Gateway'))
@@ -311,8 +317,9 @@ describe('run-now conversation tracking', () => {
     seedList(queryClient);
     mockGetConversationById.mockResolvedValue(serverConversation());
 
-    /** No user in cache at the click; run-now answering 200 already proved there
-     *  is a session, so its arrival is a load, not a change of hands. */
+    /** Deliberately signed out of the CACHE at the click, not signed in later:
+     *  run-now answering 200 already proved a session exists, so the query
+     *  resolving is a load rather than a change of hands. */
     await runNow(queryClient);
     signIn(queryClient, 'user-a');
     await settleAdmission();
@@ -321,8 +328,28 @@ describe('run-now conversation tracking', () => {
     queryClient.clear();
   });
 
+  it('refuses the write when the cache is claimed while the owner is still unknown', async () => {
+    const queryClient = createQueryClient();
+    seedList(queryClient);
+    /** Never known at the click, and someone else's session arrives while the
+     *  probe is in flight — "loading" and "changed hands" read identically here,
+     *  so the only safe answer is to write nothing. */
+    mockGetConversationById.mockImplementation(async () => {
+      signIn(queryClient, 'user-b');
+      return serverConversation();
+    });
+
+    await runNow(queryClient);
+    await settleAdmission();
+
+    expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
+    expect(queryClient.getQueryData([QueryKeys.conversation, 'run-convo-1'])).toBeUndefined();
+    queryClient.clear();
+  });
+
   it('stops on a failure that settles the matter', async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     mockGetConversationById.mockRejectedValue(httpError(403, 'Forbidden'));
 
@@ -336,6 +363,7 @@ describe('run-now conversation tracking', () => {
 
   it("outlasts the trigger engine's own retry window", async () => {
     const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
     seedList(queryClient);
     /** The engine allows eight attempts backing off from a second and doubling,
      *  so a dispatch that keeps failing can admit around two minutes in. */
