@@ -1409,7 +1409,12 @@ export function createAgentMethods(
     }
 
     const unsetOnRestore: Record<string, 1> = {};
-    for (const field of ['code_environment_id', 'skills_scope', 'skill_authoring_enabled']) {
+    for (const field of [
+      'code_environment_id',
+      'git_identity',
+      'skills_scope',
+      'skill_authoring_enabled',
+    ]) {
       if (!Object.prototype.hasOwnProperty.call(revertToVersion, field)) {
         unsetOnRestore[field] = 1;
       }
