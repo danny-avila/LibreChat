@@ -49,6 +49,7 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
+  createAzureSoraTools,
 } = require('../');
 const {
   createMCPTool,
@@ -258,6 +259,18 @@ const loadTools = async ({
         imageFiles,
         userId: user,
         fileStrategy,
+      });
+    },
+    video_gen_sora_azure: async (_toolContextMap, dynamicToolContextMap) => {
+      const authFields = getAuthFields('video_gen_sora_azure');
+      const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
+      return createAzureSoraTools({
+        ...authValues,
+        isAgent: !!agent,
+        req: options.req,
+        userId: user,
+        fileStrategy,
+        processFileURL: options.processFileURL,
       });
     },
   };
