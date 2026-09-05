@@ -1,6 +1,7 @@
 import { EModelEndpoint, ResourceType } from 'librechat-data-provider';
 import { createMethods, logger, runAsSystem } from '@librechat/data-schemas';
 import type { AppConfig, CodeEnvironmentDocument } from '@librechat/data-schemas';
+import type { Types } from 'mongoose';
 import type { CodeBridgeFetch } from './bridge';
 import { readCodeBridgeSecret, revokeCodeBridgeWorker } from './bridge';
 import { isLeader } from '~/cluster';
@@ -12,7 +13,6 @@ const REGISTRATION_RETRY_MS = 5 * 60_000;
 const REVOCATION_RETRY_MS = 5 * 60_000;
 let reconcileTimer: NodeJS.Timeout | undefined;
 let reconcileInFlight: Promise<void> | undefined;
-let reconcileInitialization: Promise<void> | undefined;
 
 function agentReferenceFilter(environmentId: string, tenantId?: string) {
   return {
@@ -38,43 +38,42 @@ export async function reconcileCodeEnvironmentLifecycle({
     if (CodeEnvironment == null || AclEntry == null) return;
     const methods = createMethods(mongoose);
     const now = new Date();
-    const expiredReferenceCandidates = await CodeEnvironment.find({
-      pendingAgentReferenceExpiry: { $lte: now },
-    })
-      .hint('pending_agent_reference_expiry')
-      .sort({ pendingAgentReferenceExpiry: 1, _id: 1 })
+    const checkpoints = mongoose.connection.db!.collection<{
+      _id: string;
+      lastId: Types.ObjectId | null;
+    }>('code_environment_reconciliation');
+    const checkpointId = 'agent-reference-cleanup';
+    await checkpoints.updateOne(
+      { _id: checkpointId },
+      { $setOnInsert: { lastId: null } },
+      { upsert: true },
+    );
+    const checkpoint = await checkpoints.findOne({ _id: checkpointId });
+    const lastId = checkpoint?.lastId ?? null;
+    // Persist progress across leader changes and include old-replica writes on each sweep.
+    const expiredReferenceCandidates = await CodeEnvironment.find(
+      lastId == null ? {} : { _id: { $gt: lastId } },
+    )
+      .hint('_id_')
+      .sort({ _id: 1 })
       .limit(limit)
       .select('_id')
       .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
     if (expiredReferenceCandidates.length > 0) {
       await CodeEnvironment.updateMany(
         { _id: { $in: expiredReferenceCandidates.map(({ _id }) => _id) } },
-        [
-          {
-            $set: {
-              pendingAgentReferences: {
-                $filter: {
-                  input: { $ifNull: ['$pendingAgentReferences', []] },
-                  as: 'reference',
-                  cond: { $gt: ['$$reference.expiresAt', now] },
-                },
-              },
-            },
-          },
-          {
-            $set: {
-              pendingAgentReferenceExpiry: {
-                $cond: [
-                  { $gt: [{ $size: '$pendingAgentReferences' }, 0] },
-                  { $min: '$pendingAgentReferences.expiresAt' },
-                  '$$REMOVE',
-                ],
-              },
-            },
-          },
-        ],
+        { $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } } },
       );
     }
+    // Advance only after cleanup succeeds; a competing sweep must not rewind progress.
+    await checkpoints.updateOne(
+      { _id: checkpointId, lastId },
+      {
+        $set: {
+          lastId: expiredReferenceCandidates[expiredReferenceCandidates.length - 1]?._id ?? null,
+        },
+      },
+    );
     const expiredRemovals = await CodeEnvironment.find({
       deletionCommittedAt: { $exists: false },
       deletionLeaseExpiresAt: { $lte: now },
@@ -360,12 +359,8 @@ export async function reconcileCodeEnvironmentLifecycle({
 
 export function startCodeEnvironmentLifecycleReconciler(
   options: Parameters<typeof reconcileCodeEnvironmentLifecycle>[0],
-  {
-    ensureIndexes = () =>
-      runAsSystem(() => createMethods(options.mongoose).ensureCodeEnvironmentIndexes()),
-  }: { ensureIndexes?: () => Promise<void> } = {},
 ): void {
-  if (reconcileTimer != null || reconcileInitialization != null) return;
+  if (reconcileTimer != null) return;
   const run = (): void => {
     if (reconcileInFlight != null) return;
     const current = isLeader()
@@ -381,22 +376,9 @@ export function startCodeEnvironmentLifecycleReconciler(
       });
     reconcileInFlight = current;
   };
-  const initialization = ensureIndexes()
-    .then(() => {
-      run();
-      reconcileTimer = setInterval(run, RECONCILE_INTERVAL_MS);
-      reconcileTimer.unref();
-    })
-    .catch((error) => {
-      logger.error(
-        '[code-environments] index creation failed — lifecycle reconciler NOT started:',
-        error,
-      );
-    })
-    .finally(() => {
-      if (reconcileInitialization === initialization) reconcileInitialization = undefined;
-    });
-  reconcileInitialization = initialization;
+  run();
+  reconcileTimer = setInterval(run, RECONCILE_INTERVAL_MS);
+  reconcileTimer.unref();
 }
 
 export async function revokeUserCodeEnvironmentWorkers({

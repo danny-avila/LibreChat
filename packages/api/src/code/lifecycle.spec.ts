@@ -13,13 +13,11 @@ describe('code environment lifecycle scheduler', () => {
   test('runs reconciliation only on the elected API replica', async () => {
     jest.useFakeTimers();
     const leader = jest.mocked(isLeader);
-    const ensureIndexes = jest.fn().mockResolvedValue(undefined);
     leader.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
-    startCodeEnvironmentLifecycleReconciler({ mongoose }, { ensureIndexes });
+    startCodeEnvironmentLifecycleReconciler({ mongoose });
     await jest.advanceTimersByTimeAsync(0);
 
-    expect(ensureIndexes).toHaveBeenCalledTimes(1);
     expect(leader).toHaveBeenCalledTimes(1);
 
     await jest.advanceTimersByTimeAsync(60_000);

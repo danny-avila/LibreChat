@@ -2634,7 +2634,6 @@ describe('Agent Methods', () => {
         environmentId,
       }).lean<CodeEnvironmentDocument>();
       expect(initialExpiry).toBeInstanceOf(Date);
-      expect(initial?.pendingAgentReferenceExpiry).toEqual(initialExpiry);
       expect(renewed?.pendingAgentReferences?.[0]?.expiresAt.getTime()).toBeGreaterThan(
         initialExpiry?.getTime() ?? 0,
       );

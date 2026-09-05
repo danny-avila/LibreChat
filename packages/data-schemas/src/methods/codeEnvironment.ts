@@ -6,7 +6,6 @@ import type { Model } from 'mongoose';
 import type { CodeEnvironmentDocument } from '~/types';
 import type { IAclEntry } from '~/types';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 const CODE_ENVIRONMENT_TOMBSTONES = 'code_environment_tombstones';
@@ -87,10 +86,7 @@ export async function reserveCodeEnvironmentReference(
       deletionCommittedAt: { $exists: false },
       deletionStartedAt: { $exists: false },
     },
-    {
-      $push: { pendingAgentReferences: { reservationId, expiresAt } },
-      $min: { pendingAgentReferenceExpiry: expiresAt },
-    },
+    { $push: { pendingAgentReferences: { reservationId, expiresAt } } },
     { new: true },
   ).lean<CodeEnvironmentDocument>();
   if (reserved != null) return { environmentId, reservationId };
@@ -197,7 +193,6 @@ type CreateCodeEnvironmentInput = Pick<
   Pick<Partial<CodeEnvironmentDocument>, 'workerId' | 'revocationTokenEnv' | 'workerPrincipal'>;
 
 export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')): {
-  ensureCodeEnvironmentIndexes: () => Promise<void>;
   createCodeEnvironment: (input: CreateCodeEnvironmentInput) => Promise<CodeEnvironmentDocument>;
   createCodeEnvironmentWithinOwnerLimit: (
     input: CreateCodeEnvironmentInput,
@@ -230,10 +225,6 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   deleteUserCodeEnvironments: (userId: string | Types.ObjectId) => Promise<number>;
 } {
   const model = () => mongoose.models.CodeEnvironment as Model<CodeEnvironmentDocument>;
-
-  async function ensureCodeEnvironmentIndexes(): Promise<void> {
-    await createIndexesWithRetry(model());
-  }
 
   async function createCodeEnvironment(
     input: CreateCodeEnvironmentInput,
@@ -426,7 +417,6 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
             deletionLeaseId: leaseId,
             deletionLeaseExpiresAt: new Date(now.getTime() + REMOVAL_LEASE_MS),
           },
-          $unset: { pendingAgentReferenceExpiry: 1 },
           $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } },
         },
         { new: true },
@@ -519,7 +509,6 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
   }
 
   return {
-    ensureCodeEnvironmentIndexes,
     createCodeEnvironment,
     createCodeEnvironmentWithinOwnerLimit,
     findCodeEnvironmentsByIds,

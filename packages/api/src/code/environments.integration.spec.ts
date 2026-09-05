@@ -35,10 +35,6 @@ describe('code environment registry', () => {
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();
-    await mongoose.models.CodeEnvironment.collection.createIndex(
-      { pendingAgentReferenceExpiry: 1, _id: 1 },
-      { name: 'pending_agent_reference_expiry' },
-    );
     await createMethods(mongoose).seedDefaultRoles();
   });
 
@@ -288,7 +284,6 @@ describe('code environment registry', () => {
     await mongoose.models.CodeEnvironment.createCollection();
     await expect(mongoose.models.CodeEnvironment.collection.indexes()).resolves.toEqual([
       expect.objectContaining({ name: '_id_' }),
-      expect.objectContaining({ name: 'pending_agent_reference_expiry' }),
     ]);
     const registry = createCodeEnvironmentRegistry(mongoose);
     const ownerId = new Types.ObjectId();
@@ -1198,7 +1193,6 @@ describe('code environment registry', () => {
                   expiresAt: expiredAt,
                 }),
               ),
-              pendingAgentReferenceExpiry: expiredAt,
             },
           },
         ),
@@ -1206,8 +1200,9 @@ describe('code environment registry', () => {
     );
 
     const cleanupPlan = await mongoose.models.CodeEnvironment.collection
-      .find({ pendingAgentReferenceExpiry: { $lte: new Date() } })
-      .hint('pending_agent_reference_expiry')
+      .find({})
+      .sort({ _id: 1 })
+      .hint('_id_')
       .limit(1)
       .explain('executionStats');
     expect(JSON.stringify(cleanupPlan.queryPlanner.winningPlan)).not.toContain('"stage":"SORT"');
@@ -1221,12 +1216,6 @@ describe('code environment registry', () => {
       'pendingAgentReferences.0': { $exists: true },
     });
     expect(afterFirstTick).toBe(1);
-    await expect(
-      mongoose.models.CodeEnvironment.countDocuments({
-        _id: { $in: environments.map(({ _id }) => _id) },
-        pendingAgentReferenceExpiry: { $exists: true },
-      }),
-    ).resolves.toBe(1);
 
     await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
 
@@ -1236,6 +1225,47 @@ describe('code environment registry', () => {
         'pendingAgentReferences.0': { $exists: true },
       }),
     ).resolves.toBe(0);
+  });
+
+  test('revisits legacy writes behind the durable cleanup cursor and preserves live leases', async () => {
+    const model = mongoose.models.CodeEnvironment;
+    const owner = await mongoose.models.User.create({
+      email: 'legacy-reference-owner@example.com',
+      provider: 'local',
+    });
+    const environment = await createMethods(mongoose).createCodeEnvironment({
+      environmentId: 'legacy-reference',
+      name: 'Legacy reference',
+      type: 'attached',
+      baseURL: 'https://code.example.com',
+      controlPlaneId: 'shared-code-api',
+      createdBy: owner._id,
+    });
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    const checkpoints = mongoose.connection.db!.collection<{
+      _id: string;
+      lastId: Types.ObjectId | null;
+    }>('code_environment_reconciliation');
+    expect((await checkpoints.findOne({ _id: 'agent-reference-cleanup' }))?.lastId).toEqual(
+      environment._id,
+    );
+    const live = { reservationId: 'live', expiresAt: new Date(Date.now() + 60_000) };
+    await model.updateOne(
+      { _id: environment._id },
+      {
+        $push: {
+          pendingAgentReferences: {
+            $each: [{ reservationId: 'abandoned', expiresAt: new Date(0) }, live],
+          },
+        },
+      },
+    );
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    const result = await model
+      .findById(environment._id)
+      .lean<{ pendingAgentReferences: (typeof live)[] }>();
+    expect(result?.pendingAgentReferences).toEqual([expect.objectContaining(live)]);
   });
 
   test('preserves persisted agent references during interrupted-removal recovery', async () => {
