@@ -101,6 +101,7 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   [ProviderId.fireworks]: { art: asset('assets/fireworks.png'), label: 'Fireworks' },
   [ProviderId.groq]: { art: asset('assets/groq.png'), label: 'Groq' },
   [ProviderId.helicone]: { art: asset('assets/helicone.svg'), label: 'Helicone' },
+  [ProviderId.thegrid]: { art: asset('assets/thegrid.svg'), label: 'The Grid' },
   [ProviderId.huggingface]: { art: asset('assets/huggingface.svg'), label: 'Hugging Face' },
   [ProviderId.mistral]: { art: asset('assets/mistral.png'), label: 'Mistral' },
   [ProviderId.mlx]: { art: asset('assets/mlx.png'), label: 'MLX' },
