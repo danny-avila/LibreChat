@@ -5,11 +5,13 @@ import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
+import { MessagesViewProvider, useChatContext, useFileMapContext } from '~/Providers';
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
-import { MessagesViewProvider, useChatContext } from '~/Providers';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import useThreadRows from '~/hooks/Messages/useThreadRows';
 import { steerOverlayHeightFamily } from '~/store/steer';
 import { autoScrollAtom } from '~/store/autoScroll';
+import { FLAT_THREAD, ThreadList } from './Thread';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
 import MessageNav from './MessageNav';
@@ -94,8 +96,10 @@ const ScrollButton = memo(function ScrollButton({
 
 function MessagesViewContent({
   messagesTree: _messagesTree,
+  messages,
 }: {
   messagesTree?: TMessage[] | null;
+  messages?: TMessage[] | null;
 }) {
   const localize = useLocalize();
   const fontSize = useAtomValue(fontSizeAtom);
@@ -115,6 +119,8 @@ function MessagesViewContent({
   useScrollbarGutter(scrollableRef);
 
   const { conversationId } = conversation ?? {};
+  const fileMap = useFileMapContext();
+  const threadRows = useThreadRows(FLAT_THREAD ? messages : null, conversationId, fileMap);
 
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
@@ -179,12 +185,20 @@ function MessagesViewContent({
                 <>
                   <div ref={screenshotTargetRef} data-testid="screenshot-target">
                     <RowMountProvider mountWindow={mountWindow}>
-                      <MultiMessage
-                        messagesTree={_messagesTree}
-                        messageId={conversationId ?? null}
-                        setCurrentEditId={setCurrentEditId}
-                        currentEditId={currentEditId ?? null}
-                      />
+                      {FLAT_THREAD && threadRows ? (
+                        <ThreadList
+                          rows={threadRows}
+                          setCurrentEditId={setCurrentEditId}
+                          currentEditId={currentEditId ?? null}
+                        />
+                      ) : (
+                        <MultiMessage
+                          messagesTree={_messagesTree}
+                          messageId={conversationId ?? null}
+                          setCurrentEditId={setCurrentEditId}
+                          currentEditId={currentEditId ?? null}
+                        />
+                      )}
                     </RowMountProvider>
                   </div>
                 </>
@@ -212,10 +226,16 @@ function MessagesViewContent({
   );
 }
 
-export default function MessagesView({ messagesTree }: { messagesTree?: TMessage[] | null }) {
+export default function MessagesView({
+  messagesTree,
+  messages,
+}: {
+  messagesTree?: TMessage[] | null;
+  messages?: TMessage[] | null;
+}) {
   return (
     <MessagesViewProvider>
-      <MessagesViewContent messagesTree={messagesTree} />
+      <MessagesViewContent messagesTree={messagesTree} messages={messages} />
     </MessagesViewProvider>
   );
 }
