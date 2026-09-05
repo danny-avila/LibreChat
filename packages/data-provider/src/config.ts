@@ -2662,6 +2662,7 @@ export enum KnownEndpoints {
   openrouter = 'openrouter',
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
+  thegrid = 'thegrid',
   'together.ai' = 'together.ai',
   unify = 'unify',
   vercel = 'vercel',
