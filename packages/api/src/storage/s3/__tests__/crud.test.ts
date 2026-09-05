@@ -1107,6 +1107,17 @@ describe('S3 CRUD', () => {
   });
 
   describe('getS3FileStream', () => {
+    it('requests the decoded key for a non-ASCII file name', async () => {
+      const { getS3FileStream } = await import('../crud');
+      await getS3FileStream(
+        {} as ServerRequest,
+        'https://test-bucket.s3.amazonaws.com/images/user123/%D0%94%D0%BE%D0%B3%D0%BE%D0%B2%D0%BE%D1%80.pdf',
+      );
+
+      const [call] = s3Mock.commandCalls(GetObjectCommand);
+      expect(call.args[0].input.Key).toBe('images/user123/Договор.pdf');
+    });
+
     it('returns a readable stream for a file', async () => {
       const { getS3FileStream } = await import('../crud');
       const result = await getS3FileStream(
@@ -1511,12 +1522,30 @@ describe('S3 CRUD', () => {
       expect(key).toBe('folder/file.txt');
     });
 
-    it('handles URLs with encoded characters', async () => {
+    // Keys are stored decoded (`getS3Key` does not encode the file name), so a
+    // key taken from a URL path has to be decoded to match the stored object.
+    it('decodes escaped characters taken from the URL path', async () => {
       const { extractKeyFromS3Url } = await import('../crud');
       const key = extractKeyFromS3Url(
         'https://bucket.s3.amazonaws.com/test-bucket/images/user123/my%20file%20name.jpg',
       );
-      expect(key).toBe('images/user123/my%20file%20name.jpg');
+      expect(key).toBe('images/user123/my file name.jpg');
+    });
+
+    it('decodes a non-ASCII file name taken from the URL path', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url(
+        'https://bucket.s3.amazonaws.com/test-bucket/images/user123/%D0%94%D0%BE%D0%B3%D0%BE%D0%B2%D0%BE%D1%80.pdf',
+      );
+      expect(key).toBe('images/user123/Договор.pdf');
+    });
+
+    // A key supplied directly is already a key: a `%` in it is part of the
+    // file name, not an escape, and decoding it would corrupt the lookup.
+    it('leaves a literal percent alone when given a key rather than a URL', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url('images/user123/100%_final.pdf');
+      expect(key).toBe('images/user123/100%_final.pdf');
     });
 
     it('handles deep nested paths', async () => {

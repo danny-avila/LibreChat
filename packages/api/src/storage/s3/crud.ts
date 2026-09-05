@@ -638,6 +638,23 @@ export async function saveURLToS3(
   return filepath;
 }
 
+/**
+ * Decodes a key taken from a URL path.
+ *
+ * `URL.pathname` is percent-encoded, but S3 object keys are stored decoded, so
+ * a key derived from a URL has to be decoded before it is used in a command —
+ * otherwise the SDK encodes the `%` again and the request asks for a key that
+ * does not exist. Only applies to keys derived from URLs: a key supplied
+ * directly may legitimately contain a literal `%`.
+ */
+function decodeKeyFromUrlPath(key: string): string {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+}
+
 export function extractKeyFromS3Url(fileUrlOrKey: string): string {
   if (!fileUrlOrKey) {
     throw new Error('Invalid input: URL or key is empty');
@@ -667,7 +684,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
       } else {
         logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
       }
-      return key;
+      return decodeKeyFromUrlPath(key);
     }
 
     if (
@@ -687,7 +704,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
             `[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`,
           );
         }
-        return key;
+        return decodeKeyFromUrlPath(key);
       }
       logger.warn(
         `[extractKeyFromS3Url] Unable to extract key from path-style URL: ${fileUrlOrKey}`,
@@ -696,7 +713,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
     }
 
     logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
-    return pathname;
+    return decodeKeyFromUrlPath(pathname);
   } catch (error) {
     if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
       logger.error(
