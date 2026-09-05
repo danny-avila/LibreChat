@@ -273,13 +273,15 @@ export default function ActivityPhaseGroup({
    *  `Container` (20px, no margins) was 12px shorter than the tool row
    *  (`my-1.5 h-5`), so everything beneath the card stepped up on every
    *  absorb and back down on every call. The cursor takes the row's exact box,
-   *  and the dot sits in the row's glyph slot — the in-flow variant, so the
-   *  slot can center it, rather than `EmptyText`'s, which hangs the dot off a
-   *  text line's baseline. */
+   *  and the dot sits in the row's glyph slot. `.result-thinking` draws the
+   *  dot as an absolutely positioned pseudo-element 11px above its line —
+   *  right for the streaming-markdown cursor, wrong here — so `after:!static`
+   *  puts that one pseudo-element back in flow for the slot to center; the
+   *  `!` is what outranks the dot rule's three-class selector. */
   const cursor = showCursor ? (
     <div className={TOOL_ROW_CLASSES} data-testid="activity-phase-cursor">
       <span className={cn(ROW_GLYPH_SLOT, 'submitting')} aria-hidden="true">
-        <span className="result-thinking result-thinking-inline block" />
+        <span className="result-thinking block after:!static" />
       </span>
     </div>
   ) : null;

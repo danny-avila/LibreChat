@@ -8,6 +8,7 @@ import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { AnimatedText } from '../animate';
+import { ROW_GLYPH_SLOT } from '../rows';
 import { cn } from '~/utils';
 
 /**
@@ -86,7 +87,7 @@ export const ThinkingButton = memo(
             fontSize,
           )}
         >
-          <span className="relative mr-2 inline-flex size-6 shrink-0 items-center justify-center">
+          <span className={cn(ROW_GLYPH_SLOT, 'relative mr-2')}>
             <Lightbulb
               className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0"
               aria-hidden="true"

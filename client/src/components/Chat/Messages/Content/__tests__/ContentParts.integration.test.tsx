@@ -834,7 +834,9 @@ describe('ContentParts — synthesized activity folds', () => {
       content: [...labeledRun(), makeTextPart('')],
     });
 
-    expect(container.querySelectorAll('.result-thinking')).toHaveLength(1);
+    const dots = container.querySelectorAll('.result-thinking');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveClass('after:!static');
     expect(screen.queryAllByTestId('empty-text')).toHaveLength(0);
   });
 

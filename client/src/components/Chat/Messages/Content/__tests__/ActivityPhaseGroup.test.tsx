@@ -121,7 +121,7 @@ describe('ActivityPhaseGroup', () => {
       expect(slot).toHaveClass(token);
     }
     expect(slot).toHaveClass('submitting');
-    expect(cursor.querySelector('.result-thinking')).toHaveClass('result-thinking-inline');
+    expect(cursor.querySelector('.result-thinking')).toHaveClass('after:!static');
   });
 
   test('opens the summary on the same glyph rail as the rows it replaces', () => {

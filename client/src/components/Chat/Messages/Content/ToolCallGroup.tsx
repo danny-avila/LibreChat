@@ -366,14 +366,14 @@ export default function ToolCallGroup({
             <CategoryIcon size={14} />
           </div>
         ) : (
-          <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+          <div className={ROW_GLYPH_SLOT} aria-hidden="true">
             <StackedToolIcons
               toolNames={iconToolNames}
               mcpIconMap={mcpIconMap}
               maxIcons={4}
               isAnimating={!allCompleted && isSubmitting}
             />
-          </span>
+          </div>
         )}
         <span
           className={cn(
