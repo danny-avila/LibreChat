@@ -12,5 +12,5 @@ export default defineConfig({
   ...treePerfConfig,
   testDir: 'specs/mock',
   testMatch: /(message-tree|thread-fold|chat|hover-actions)\.spec\.ts$/,
-  outputDir: 'specs/.test-results-parity',
+  outputDir: 'specs/.test-results',
 });
