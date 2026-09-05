@@ -39,16 +39,40 @@ export async function reconcileCodeEnvironmentLifecycle({
     const methods = createMethods(mongoose);
     const now = new Date();
     const expiredReferenceCandidates = await CodeEnvironment.find({
-      'pendingAgentReferences.expiresAt': { $lte: now },
+      pendingAgentReferenceExpiry: { $lte: now },
     })
       .hint('pending_agent_reference_expiry')
+      .sort({ pendingAgentReferenceExpiry: 1, _id: 1 })
       .limit(limit)
       .select('_id')
       .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();
     if (expiredReferenceCandidates.length > 0) {
       await CodeEnvironment.updateMany(
         { _id: { $in: expiredReferenceCandidates.map(({ _id }) => _id) } },
-        { $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } } },
+        [
+          {
+            $set: {
+              pendingAgentReferences: {
+                $filter: {
+                  input: { $ifNull: ['$pendingAgentReferences', []] },
+                  as: 'reference',
+                  cond: { $gt: ['$$reference.expiresAt', now] },
+                },
+              },
+            },
+          },
+          {
+            $set: {
+              pendingAgentReferenceExpiry: {
+                $cond: [
+                  { $gt: [{ $size: '$pendingAgentReferences' }, 0] },
+                  { $min: '$pendingAgentReferences.expiresAt' },
+                  '$$REMOVE',
+                ],
+              },
+            },
+          },
+        ],
       );
     }
     const expiredRemovals = await CodeEnvironment.find({

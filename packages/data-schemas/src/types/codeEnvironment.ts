@@ -13,6 +13,8 @@ export type CodeEnvironment = {
     reservationId: string;
     expiresAt: Date;
   }>;
+  /** Lower bound for the earliest pending reference expiry; may be stale until reconciliation. */
+  pendingAgentReferenceExpiry?: Date;
   deletionStartedAt?: Date;
   deletionLeaseId?: string;
   deletionLeaseExpiresAt?: Date;

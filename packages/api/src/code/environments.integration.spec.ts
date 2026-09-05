@@ -36,7 +36,7 @@ describe('code environment registry', () => {
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.models.CodeEnvironment.collection.createIndex(
-      { 'pendingAgentReferences.expiresAt': 1, _id: 1 },
+      { pendingAgentReferenceExpiry: 1, _id: 1 },
       { name: 'pending_agent_reference_expiry' },
     );
     await createMethods(mongoose).seedDefaultRoles();
@@ -1191,9 +1191,14 @@ describe('code environment registry', () => {
           { _id: environment._id },
           {
             $set: {
-              pendingAgentReferences: [
-                { reservationId: `reservation-${index}`, expiresAt: expiredAt },
-              ],
+              pendingAgentReferences: Array.from(
+                { length: index === 0 ? 100 : 1 },
+                (_, offset) => ({
+                  reservationId: `reservation-${index}-${offset}`,
+                  expiresAt: expiredAt,
+                }),
+              ),
+              pendingAgentReferenceExpiry: expiredAt,
             },
           },
         ),
@@ -1201,12 +1206,13 @@ describe('code environment registry', () => {
     );
 
     const cleanupPlan = await mongoose.models.CodeEnvironment.collection
-      .find({ 'pendingAgentReferences.expiresAt': { $lte: new Date() } })
+      .find({ pendingAgentReferenceExpiry: { $lte: new Date() } })
       .hint('pending_agent_reference_expiry')
       .limit(1)
       .explain('executionStats');
     expect(JSON.stringify(cleanupPlan.queryPlanner.winningPlan)).not.toContain('"stage":"SORT"');
     expect(cleanupPlan.executionStats.totalDocsExamined).toBeLessThanOrEqual(1);
+    expect(cleanupPlan.executionStats.totalKeysExamined).toBeLessThanOrEqual(1);
 
     await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
 
@@ -1215,6 +1221,12 @@ describe('code environment registry', () => {
       'pendingAgentReferences.0': { $exists: true },
     });
     expect(afterFirstTick).toBe(1);
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({
+        _id: { $in: environments.map(({ _id }) => _id) },
+        pendingAgentReferenceExpiry: { $exists: true },
+      }),
+    ).resolves.toBe(1);
 
     await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
 

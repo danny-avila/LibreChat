@@ -87,7 +87,10 @@ export async function reserveCodeEnvironmentReference(
       deletionCommittedAt: { $exists: false },
       deletionStartedAt: { $exists: false },
     },
-    { $push: { pendingAgentReferences: { reservationId, expiresAt } } },
+    {
+      $push: { pendingAgentReferences: { reservationId, expiresAt } },
+      $min: { pendingAgentReferenceExpiry: expiresAt },
+    },
     { new: true },
   ).lean<CodeEnvironmentDocument>();
   if (reserved != null) return { environmentId, reservationId };
@@ -423,6 +426,7 @@ export function createCodeEnvironmentMethods(mongoose: typeof import('mongoose')
             deletionLeaseId: leaseId,
             deletionLeaseExpiresAt: new Date(now.getTime() + REMOVAL_LEASE_MS),
           },
+          $unset: { pendingAgentReferenceExpiry: 1 },
           $pull: { pendingAgentReferences: { expiresAt: { $lte: now } } },
         },
         { new: true },
