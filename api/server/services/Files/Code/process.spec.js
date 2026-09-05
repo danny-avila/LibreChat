@@ -204,6 +204,17 @@ jest.mock('~/models', () => ({
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
 }));
 
+/* `syncMessageAttachment` (added alongside `finalizePreview`) mirrors
+ * the resolved preview status onto the message attachments collection
+ * via a raw `mongoose` write. Stub the collection handle so the
+ * deferred-preview tests can assert the mirror fires (and tolerate its
+ * failures). Arrow indirection keeps the binding call-time — jest.mock
+ * factories are hoisted above the const declarations. */
+const mockUpdateMany = jest.fn();
+jest.mock('mongoose', () => ({
+  connection: { collection: jest.fn(() => ({ updateMany: mockUpdateMany })) },
+}));
+
 // Mock permissions (must be before process.js import)
 jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn((options) => Promise.resolve(options.files)),
@@ -1539,6 +1550,7 @@ describe('Code Process', () => {
       beforeEach(() => {
         mockHasOfficeHtmlPath.mockReturnValue(true);
         updateFile.mockResolvedValue({ file_id: 'mock-uuid-1234', status: 'ready' });
+        mockUpdateMany.mockReset();
       });
 
       afterEach(() => {
@@ -1665,6 +1677,95 @@ describe('Code Process', () => {
         await expect(finalize()).resolves.toBeNull();
         expect(logger.error).toHaveBeenCalledWith(
           expect.stringContaining('failed to persist preview result'),
+        );
+      });
+
+      it('finalize() mirrors ready+text onto message attachments after a committed update', async () => {
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+        determineFileType.mockResolvedValue({
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce('<table><tr><td>1</td></tr></table>');
+        mockGetExtractedTextFormat.mockReturnValueOnce('html');
+
+        const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
+        await finalize();
+
+        /* The mirror is the whole point of this fix: the `files` record
+         * is ready, and the message attachment(s) must follow, so a
+         * re-opened conversation renders the artifact card without a
+         * stale-`pending` re-poll. */
+        expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+        expect(mockUpdateMany).toHaveBeenCalledWith(
+          { 'attachments.file_id': 'mock-uuid-1234' },
+          {
+            $set: {
+              'attachments.$[a].status': 'ready',
+              'attachments.$[a].text': '<table><tr><td>1</td></tr></table>',
+              'attachments.$[a].textFormat': 'html',
+              'attachments.$[a].previewError': null,
+            },
+          },
+          { arrayFilters: [{ 'a.file_id': 'mock-uuid-1234' }] },
+        );
+      });
+
+      it('finalize() mirrors failed+previewError onto message attachments on a failed render', async () => {
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+        determineFileType.mockResolvedValue({
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce(null);
+
+        const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
+        await finalize();
+
+        expect(mockUpdateMany).toHaveBeenCalledWith(
+          { 'attachments.file_id': 'mock-uuid-1234' },
+          expect.objectContaining({
+            $set: expect.objectContaining({
+              'attachments.$[a].status': 'failed',
+              'attachments.$[a].previewError': 'parser-error',
+            }),
+          }),
+          { arrayFilters: [{ 'a.file_id': 'mock-uuid-1234' }] },
+        );
+      });
+
+      it('does NOT mirror when the stale-revision guard rejects the updateFile write', async () => {
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+        determineFileType.mockResolvedValue({
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce('<table></table>');
+        /* Newer emit rotated the revision → the conditional write returns
+         * null. The stale render is discarded and the message attachment
+         * must be left untouched (the newer render owns it). */
+        updateFile.mockResolvedValueOnce(null);
+
+        const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
+        await finalize();
+
+        expect(updateFile).toHaveBeenCalled();
+        expect(mockUpdateMany).not.toHaveBeenCalled();
+      });
+
+      it('survives a failing message sync without affecting the finalize result', async () => {
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+        determineFileType.mockResolvedValue({
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        mockExtractCodeArtifactText.mockResolvedValueOnce('<table></table>');
+        mockUpdateMany.mockRejectedValueOnce(new Error('mongo down'));
+
+        const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
+        await expect(finalize()).resolves.toMatchObject({ file_id: 'mock-uuid-1234', status: 'ready' });
+        /* Fire-and-forget: the sync failure must never affect the
+         * finalize result — flush the microtask so the caught error is
+         * observed before asserting. */
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('failed to mirror status'),
         );
       });
     });
