@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { logger, ResourceCapabilityMap } from '@librechat/data-schemas';
+import { logger, ResourceCapabilityMap, validateRelativePath } from '@librechat/data-schemas';
 import {
   PermissionBits,
   Permissions,
@@ -276,7 +276,7 @@ export function createSkillManagementHandlers(
       const parsed = fileUpdateSchema.safeParse(req.body);
       if (!parsed.success) return sendError(res, 'invalid_request', parsed.error);
       const relativePath = resolveSkillFilePathParam(req.params.relativePath);
-      if (relativePath == null || relativePath === 'SKILL.md')
+      if (relativePath == null || validateRelativePath(relativePath).length > 0)
         return sendError(res, 'invalid_request');
       const buffer = Buffer.from(parsed.data.content, 'utf8');
       if (buffer.length > 1024 * 1024 || buffer.includes(0))

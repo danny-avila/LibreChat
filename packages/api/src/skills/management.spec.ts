@@ -258,7 +258,13 @@ it('writes nested text files through existing storage and rejects unsafe paths',
     }),
   );
   saveFile.mockClear();
-  for (const path of ['SKILL.md', '..%2Fescape.md', 'bad%5Cpath.md']) {
+  for (const path of [
+    'SKILL.md',
+    'SKILL.md/child.md',
+    '..%2Fescape.md',
+    'bad%5Cpath.md',
+    'x'.repeat(1025),
+  ]) {
     await request(app).put(`/skills/${skillId}/files/${path}`).send({ content: 'x' }).expect(400);
   }
   expect(saveFile).not.toHaveBeenCalled();
