@@ -1,5 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
+import { Provider as JotaiProvider, createStore, useAtomValue } from 'jotai';
+import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
@@ -110,6 +112,7 @@ function renderUseResumeOnLoad({
   onSubmissionStart?: (submissionStart: number | null) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
+  const jotaiStore = createStore();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -158,7 +161,7 @@ function renderUseResumeOnLoad({
     return null;
   };
   const SiblingIndexProbe = () => {
-    const siblingIndex = useRecoilValue(store.messagesSiblingIdxFamily(siblingIndexParentId));
+    const siblingIndex = useAtomValue(siblingIdxFamily(siblingKey(siblingIndexParentId)));
     if (siblingIndexParentId) {
       onSiblingIndex?.(siblingIndex);
     }
@@ -167,14 +170,16 @@ function renderUseResumeOnLoad({
 
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot initializeState={initializeState}>
-        <SubmissionProbe />
-        <SubmissionStartProbe />
-        <SiblingIndexProbe />
-        <PendingSteersProbe />
-        <QueuedMessagesProbe />
-        {children}
-      </RecoilRoot>
+      <JotaiProvider store={jotaiStore}>
+        <RecoilRoot initializeState={initializeState}>
+          <SubmissionProbe />
+          <SubmissionStartProbe />
+          <SiblingIndexProbe />
+          <PendingSteersProbe />
+          <QueuedMessagesProbe />
+          {children}
+        </RecoilRoot>
+      </JotaiProvider>
     </QueryClientProvider>
   );
 

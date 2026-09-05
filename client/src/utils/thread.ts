@@ -10,19 +10,24 @@ export const ROOT_KEY = '';
  * reference check instead of a field diff.
  */
 export type ThreadIndex = {
+  /** Raw cache objects: the identity rows are reused by. */
   messages: Map<string, TMessage>;
   /** parent key -> child ids in creation (array) order */
   children: Map<string, string[]>;
   /** Parent keys with more than one child: the only levels whose selection matters. */
   branchParentKeys: string[];
+  /** Applied to `files` when a row is built, so a hydrated copy never replaces the raw identity. */
+  fileMap?: Record<string, TFile>;
 };
 
 /** One visible row of the thread: the active path from root to leaf. */
 export type ThreadRow = {
   /** Cache identity of the message, for reuse checks. */
   source: TMessage;
-  /** `source` widened with the tree fields the row components read. */
+  /** `source` with files hydrated and widened with the tree fields the row components read. */
   message: TMessage;
+  /** The file map `message` was hydrated with; a new map rebuilds the row. */
+  fileMap?: Record<string, TFile>;
   /** Sibling-selection key: parent message id, or the root key for top-level rows. */
   parentKey: string;
   depth: number;
@@ -39,6 +44,8 @@ type IndexCacheEntry = {
 };
 
 const indexCache = new WeakMap<(TMessage | undefined)[], IndexCacheEntry>();
+
+const NO_CHILDREN: TMessage[] = [];
 
 function hydrateFiles(message: TMessage, fileMap?: Record<string, TFile>): TMessage {
   if (!message.files || !fileMap) {
@@ -73,9 +80,8 @@ function indexMessages(
     if (!message) {
       continue;
     }
-    const hydrated = hydrateFiles(message, fileMap);
-    byId.set(hydrated.messageId, hydrated);
-    ordered.push(hydrated);
+    byId.set(message.messageId, message);
+    ordered.push(message);
   }
 
   const children = new Map<string, string[]>();
@@ -133,7 +139,7 @@ function indexMessages(
       branchParentKeys.push(parentKey);
     }
   }
-  return { messages: byId, children, branchParentKeys };
+  return { messages: byId, children, branchParentKeys, fileMap };
 }
 
 /** Memoized per messages-array identity, with one extra slot for the latest fileMap. */
@@ -170,6 +176,7 @@ function clampSiblingIdx(siblingIdx: number, siblingCount: number): number {
 
 function rowsEqual(
   previous: ThreadRow,
+  index: ThreadIndex,
   source: TMessage,
   depth: number,
   siblingIdx: number,
@@ -178,6 +185,7 @@ function rowsEqual(
 ): boolean {
   return (
     previous.source === source &&
+    previous.fileMap === index.fileMap &&
     previous.depth === depth &&
     previous.siblingIdx === siblingIdx &&
     previous.siblingCount === siblingCount &&
@@ -192,7 +200,7 @@ function rowsEqual(
  * row is reused, `previousRows` itself is returned.
  *
  * `rootKey` is the selection key of the top level (the conversation id), the
- * same key `messagesSiblingIdxFamily` has always used for root siblings.
+ * same key the sibling atoms have always used for root siblings.
  */
 export function resolveThreadRows(
   index: ThreadIndex,
@@ -225,16 +233,23 @@ export function resolveThreadRows(
     const childIds = index.children.get(id) ?? [];
     const childCount = childIds.length;
     const previous = previousById.get(id);
-    if (previous && rowsEqual(previous, source, depth, siblingIdx, siblingCount, childCount)) {
+    if (
+      previous &&
+      rowsEqual(previous, index, source, depth, siblingIdx, siblingCount, childCount)
+    ) {
       rows.push(previous);
     } else {
       reusedAll = false;
-      const children = childIds
-        .map((childId) => index.messages.get(childId))
-        .filter((child): child is TMessage => child != null);
+      const children =
+        childCount === 0
+          ? NO_CHILDREN
+          : childIds
+              .map((childId) => index.messages.get(childId))
+              .filter((child): child is TMessage => child != null);
       rows.push({
         source,
-        message: { ...source, depth, children },
+        message: { ...hydrateFiles(source, index.fileMap), depth, children },
+        fileMap: index.fileMap,
         parentKey,
         depth,
         siblingIdx,

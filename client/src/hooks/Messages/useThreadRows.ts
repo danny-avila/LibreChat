@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { selectorFamily, useRecoilCallback, useRecoilValue } from 'recoil';
+import { useStore } from 'jotai';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { ThreadIndex, ThreadRow } from '~/utils/thread';
+import {
+  siblingIdxFamily,
+  siblingKey,
+  useSiblingIndexes,
+} from '~/components/Chat/Messages/Thread/state';
 import {
   ROOT_KEY,
   buildThreadIndex,
@@ -9,24 +14,8 @@ import {
   reconcileSiblingIdx,
   resolveThreadRows,
 } from '~/utils/thread';
-import store from '~/store';
 
 const EMPTY_KEYS: string[] = [];
-
-/** One subscription covering the branch points' sibling atoms, keyed by the
- *  parent list so a thread with no branches subscribes to nothing. */
-const branchSiblingIndexesSelector = selectorFamily<Record<string, number>, readonly string[]>({
-  key: 'threadBranchSiblingIndexes',
-  get:
-    (parentKeys) =>
-    ({ get }) => {
-      const indexes: Record<string, number> = {};
-      for (const parentKey of parentKeys) {
-        indexes[parentKey] = get(store.messagesSiblingIdxFamily(parentKey));
-      }
-      return indexes;
-    },
-});
 
 /**
  * The visible thread as a flat list of rows, derived from the messages cache
@@ -43,7 +32,8 @@ export default function useThreadRows(
   rootKey: string | null | undefined,
   fileMap?: Record<string, TFile>,
 ): ThreadRow[] | null {
-  const atomRootKey = rootKey ?? '';
+  const jotaiStore = useStore();
+  const rootSiblingKey = siblingKey(rootKey);
   const index = useMemo(
     () => (messages ? buildThreadIndex(messages, fileMap) : null),
     [messages, fileMap],
@@ -51,11 +41,11 @@ export default function useThreadRows(
   const branchKeys = useMemo(
     () =>
       index
-        ? index.branchParentKeys.map((key) => (key === ROOT_KEY ? atomRootKey : key))
+        ? index.branchParentKeys.map((key) => (key === ROOT_KEY ? rootSiblingKey : key))
         : EMPTY_KEYS,
-    [index, atomRootKey],
+    [index, rootSiblingKey],
   );
-  const siblingIndexes = useRecoilValue(branchSiblingIndexesSelector(branchKeys));
+  const siblingIndexes = useSiblingIndexes(branchKeys);
 
   const previousRowsRef = useRef<ThreadRow[] | null>(null);
   const rows = useMemo(() => {
@@ -64,33 +54,13 @@ export default function useThreadRows(
     }
     const next = resolveThreadRows(
       index,
-      atomRootKey,
+      rootSiblingKey,
       (key) => siblingIndexes[key] ?? 0,
       previousRowsRef.current,
     );
     previousRowsRef.current = next;
     return next;
-  }, [index, atomRootKey, siblingIndexes]);
-
-  const reconcile = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (previous: ThreadIndex | null, next: ThreadIndex) => {
-        for (const key of changedParentKeys(previous, next)) {
-          const atomKey = key === ROOT_KEY ? atomRootKey : key;
-          const atom = store.messagesSiblingIdxFamily(atomKey);
-          const currentIdx = snapshot.getLoadable(atom).getValue();
-          const nextIdx = reconcileSiblingIdx(
-            previous?.children.get(key),
-            next.children.get(key) ?? [],
-            currentIdx,
-          );
-          if (nextIdx != null) {
-            set(atom, nextIdx);
-          }
-        }
-      },
-    [atomRootKey],
-  );
+  }, [index, rootSiblingKey, siblingIndexes]);
 
   const previousIndexRef = useRef<{ rootKey: string; index: ThreadIndex } | null>(null);
   useEffect(() => {
@@ -99,9 +69,20 @@ export default function useThreadRows(
       return;
     }
     const previous = previousIndexRef.current;
-    previousIndexRef.current = { rootKey: atomRootKey, index };
-    reconcile(previous && previous.rootKey === atomRootKey ? previous.index : null, index);
-  }, [index, atomRootKey, reconcile]);
+    previousIndexRef.current = { rootKey: rootSiblingKey, index };
+    const previousIndex = previous && previous.rootKey === rootSiblingKey ? previous.index : null;
+    for (const key of changedParentKeys(previousIndex, index)) {
+      const atom = siblingIdxFamily(key === ROOT_KEY ? rootSiblingKey : key);
+      const nextIdx = reconcileSiblingIdx(
+        previousIndex?.children.get(key),
+        index.children.get(key) ?? [],
+        jotaiStore.get(atom),
+      );
+      if (nextIdx != null) {
+        jotaiStore.set(atom, nextIdx);
+      }
+    }
+  }, [index, rootSiblingKey, jotaiStore]);
 
   return rows;
 }

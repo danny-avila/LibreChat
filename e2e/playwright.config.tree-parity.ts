@@ -1,4 +1,7 @@
 import { defineConfig } from '@playwright/test';
+/** The perf config snapshots `process.env` into each server's env at import
+ *  time, so the flag has to be in place before that import is evaluated. */
+import './benchmarks-tree/flatenv';
 import treePerfConfig from './playwright.config.tree-perf';
 
 /**
@@ -6,7 +9,6 @@ import treePerfConfig from './playwright.config.tree-perf';
  * flat thread renderer defaulted ON, so the prototype is checked against the
  * same scenarios the recursive renderer passes.
  */
-process.env.VITE_FLAT_THREAD = process.env.VITE_FLAT_THREAD ?? 'true';
 
 export default defineConfig({
   ...treePerfConfig,

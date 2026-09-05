@@ -79,10 +79,11 @@ export function buildTreeMessages(label: string): SeedMessage[] {
       messages.push(assistantRow(altId, userId, altHeading(label, turn), turn));
       let altParent = altId;
       for (let extra = 1; extra <= SHALLOW_BRANCH_CONTINUATION_TURNS; extra += 1) {
+        const altTurn = 1000 + extra;
         const altUser = `${label}-alt-user-${extra}`;
-        messages.push(userRow(label, altUser, altParent, 1000 + extra));
+        messages.push(userRow(label, altUser, altParent, altTurn));
         const altAssistant = `${label}-alt-assistant-${extra}`;
-        messages.push(assistantRow(altAssistant, altUser, altHeading(label, 1000 + extra), extra));
+        messages.push(assistantRow(altAssistant, altUser, altHeading(label, altTurn), altTurn));
         altParent = altAssistant;
       }
     }

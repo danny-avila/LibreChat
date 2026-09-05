@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useSetAtom } from 'jotai';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { ThreadRow } from '~/utils/thread';
 import type { TMessageProps } from '~/common';
@@ -7,8 +7,8 @@ import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagen
 import MessageContent from '~/components/Messages/MessageContent';
 import { hasParallelLanes } from '~/utils/lanes';
 import MessageParts from '../MessageParts';
+import { siblingIdxFamily } from './state';
 import Message from '../Message';
-import store from '~/store';
 
 type RowProps = {
   row: ThreadRow;
@@ -19,7 +19,7 @@ type RowProps = {
 /** One visible row of the flat thread: the message plus its activity group. */
 function Row({ row, currentEditId, setCurrentEditId }: RowProps) {
   const { message, siblingIdx, siblingCount, parentKey } = row;
-  const setSiblingIdx = useSetRecoilState(store.messagesSiblingIdxFamily(parentKey));
+  const setSiblingIdx = useSetAtom(siblingIdxFamily(parentKey));
   const setSiblingIdxRev = useCallback(
     (value: number) => {
       setSiblingIdx(siblingCount - value - 1);

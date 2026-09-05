@@ -1,4 +1,4 @@
-import type { TMessage } from 'librechat-data-provider';
+import type { TFile, TMessage } from 'librechat-data-provider';
 import {
   ROOT_KEY,
   buildThreadIndex,
@@ -99,6 +99,29 @@ describe('resolveThreadRows', () => {
     expect(next[4].message.text).toBe('u3 more');
     const again = resolveThreadRows(buildThreadIndex(streamed.slice()), 'c', () => 0, next);
     expect(again).toBe(next);
+  });
+});
+
+describe('resolveThreadRows with a file map', () => {
+  it('hydrates files on the row while reusing the raw cache identity', () => {
+    const withFile = { ...message('u1', ROOT), files: [{ file_id: 'f1' }] } as TMessage;
+    const fileMap: Record<string, TFile> = {
+      f1: { file_id: 'f1', filename: 'hydrated.txt' } as TFile,
+    };
+    const first = [withFile, message('a1', 'u1')];
+    const rows = resolveThreadRows(buildThreadIndex(first, fileMap), 'c', () => 0, null);
+    expect(rows[0].source).toBe(withFile);
+    expect(rows[0].message.files?.[0]).toMatchObject({ filename: 'hydrated.txt' });
+    const streamed = first.map((m) => (m.messageId === 'a1' ? { ...m, text: 'more' } : m));
+    const next = resolveThreadRows(buildThreadIndex(streamed, fileMap), 'c', () => 0, rows);
+    expect(next[0]).toBe(rows[0]);
+    const remapped = resolveThreadRows(
+      buildThreadIndex(streamed, { ...fileMap }),
+      'c',
+      () => 0,
+      next,
+    );
+    expect(remapped[0]).not.toBe(next[0]);
   });
 });
 
