@@ -1,8 +1,8 @@
 import { ContentTypes } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ActivityPhaseGroup from '../ActivityPhaseGroup';
-import { TOOL_ROW_CLASSES } from '../rows';
 
 const mockUseSmoothStreaming = jest.fn(() => true);
 const mockScheduleLayoutReconcile = jest.fn((_target: HTMLElement | null) => jest.fn());
@@ -114,7 +114,14 @@ describe('ActivityPhaseGroup', () => {
     for (const token of TOOL_ROW_CLASSES.split(' ')) {
       expect(cursor).toHaveClass(token);
     }
-    expect(cursor.querySelector('.result-thinking')).toBeInTheDocument();
+    /** The dot rides the same glyph slot as every row's icon, in flow, so the
+     *  slot centers it on the avatar's axis instead of a text baseline. */
+    const slot = cursor.firstElementChild;
+    for (const token of ROW_GLYPH_SLOT.split(' ')) {
+      expect(slot).toHaveClass(token);
+    }
+    expect(slot).toHaveClass('submitting');
+    expect(cursor.querySelector('.result-thinking')).toHaveClass('result-thinking-inline');
   });
 
   test('opens the summary on the same glyph rail as the rows it replaces', () => {
@@ -126,10 +133,12 @@ describe('ActivityPhaseGroup', () => {
 
     const trigger = screen.getByRole('button', { name: LABEL });
     expect(trigger).toHaveClass('justify-start', 'gap-2', 'p-0');
-    /** Leading glyph plus the chevron: a summary with no glyph slot sits 24px
-     *  left of every tool row in the same list. */
+    /** Leading glyph plus the chevron, in the slot every row shares: a
+     *  summary without it sits left of the rows it replaces. */
     expect(trigger.querySelectorAll('svg')).toHaveLength(2);
-    expect(trigger.firstElementChild).toHaveClass('size-4', 'shrink-0');
+    for (const token of ROW_GLYPH_SLOT.split(' ')) {
+      expect(trigger.firstElementChild).toHaveClass(token);
+    }
     expect(screen.getByText(LABEL).parentElement).toHaveClass('flex-1', 'text-left');
   });
 

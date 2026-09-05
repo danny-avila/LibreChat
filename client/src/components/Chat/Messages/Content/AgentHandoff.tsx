@@ -50,7 +50,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
       <button
         type="button"
         className={cn(
-          'tool-status-text flex appearance-none items-center gap-2.5 bg-transparent text-text-secondary',
+          'tool-status-text flex appearance-none items-center gap-2 bg-transparent text-text-secondary',
           hasInfo
             ? 'transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
             : 'pointer-events-none',

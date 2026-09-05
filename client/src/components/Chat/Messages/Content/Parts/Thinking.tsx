@@ -86,7 +86,7 @@ export const ThinkingButton = memo(
             fontSize,
           )}
         >
-          <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <span className="relative mr-2 inline-flex size-6 shrink-0 items-center justify-center">
             <Lightbulb
               className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0"
               aria-hidden="true"

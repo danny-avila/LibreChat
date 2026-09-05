@@ -2553,3 +2553,11 @@ html[data-input-modality='keyboard']
 .sharepoint-picker-bg {
   background-color: rgb(var(--surface-dialog));
 }
+
+/* The same dot as a row glyph: `position: static` puts it in flow so a row's
+   glyph slot can center it on the rail, instead of hanging it 11px above a
+   text line the way the streaming-markdown cursor needs. Everything else —
+   size, color, breathe, reduced motion — stays the one rule above. */
+.submitting .result-thinking-inline:empty:last-child:after {
+  position: static;
+}

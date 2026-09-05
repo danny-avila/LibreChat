@@ -6,6 +6,7 @@ import { isReportableRunStepDuration } from 'librechat-data-provider';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { cn, getRunStepDurationLabels } from '~/utils';
 import CancelledIcon from './CancelledIcon';
+import { ROW_GLYPH_SLOT } from './rows';
 import { useLocalize } from '~/hooks';
 
 const wrapperClass =
@@ -113,7 +114,11 @@ export default function ProgressText({
         onClick={hasInput ? onClick : undefined}
         aria-expanded={hasInput ? isExpanded : undefined}
       >
-        {icon}
+        {icon != null && (
+          <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+            {icon}
+          </span>
+        )}
         <span className={cn(showShimmer ? 'shimmer' : '', 'min-w-0 truncate font-medium')}>
           {text}
         </span>
