@@ -88,6 +88,7 @@ export interface OpenIDRefreshFlightService {
     ownerId?: string;
     tokens?: TokenResult | null;
     ttl?: number;
+    onWriteStart?: () => void;
   }) => Promise<RefreshFlightRecord | null>;
   createOpenIDRefreshFlightKey: (input: RefreshKeyInput) => string | null;
   failOpenIDRefreshFlight: (args: {
@@ -231,11 +232,13 @@ export function createOpenIDRefreshFlightService({
     ownerId,
     tokens,
     ttl = DEFAULT_FLIGHT_TTL_MS,
+    onWriteStart,
   }: {
     key?: string | null;
     ownerId?: string;
     tokens?: TokenResult | null;
     ttl?: number;
+    onWriteStart?: () => void;
   }): Promise<RefreshFlightRecord | null> {
     if (!key || !ownerId || !tokens) return null;
     const serializedTokens: TokenResult = { ...tokens };
@@ -255,10 +258,12 @@ export function createOpenIDRefreshFlightService({
     const usableTokenTtl = Number.isFinite(accessTokenExpiresAt)
       ? Math.max(1, accessTokenExpiresAt - Date.now() - OPENID_EXPIRY_BUFFER_SECONDS * 1000)
       : ttl;
+    const encryptedResult = await encrypt(JSON.stringify(serializedTokens));
+    onWriteStart?.();
     return db.completeOpenIDRefreshFlight({
       key,
       ownerId,
-      encryptedResult: await encrypt(JSON.stringify(serializedTokens)),
+      encryptedResult,
       expiresAt: new Date(Date.now() + Math.min(ttl, usableTokenTtl)),
     });
   }
