@@ -470,6 +470,26 @@ html.high-contrast .select-item:focus-visible {
   outline: 3px solid rgb(var(--text-primary)) !important;
   outline-offset: -3px;
 }
+/* Radix tab triggers mark selection with a `surface-tertiary` fill, which is the
+ * plain canvas in both contrast palettes — the selected settings tab computed to
+ * the same rgb(0 0 0) as its unselected siblings, so the current section was
+ * unmarked. Same remedy as `.select-item` above: a perimeter, inset so it reads
+ * inside the row's own radius. */
+html.high-contrast [role='tab'][data-state='active'] {
+  outline: 3px solid rgb(var(--text-primary));
+  outline-offset: -3px;
+}
+/* Placeholder text is real text, so it answers to WCAG 1.4.3 like any other.
+ * Tailwind's preflight paints `::placeholder` with the raw `gray-400` #999696,
+ * which is what every field that forgets a `placeholder:` utility inherits:
+ * 4.06:1 on the black canvas and 3.08:1 on the white one, both under the floor.
+ * Setting it here catches those fields rather than the handful that remembered,
+ * and matches the utilities that did, since every text role is pure ink in
+ * these palettes. */
+html.high-contrast ::placeholder {
+  color: rgb(var(--text-secondary));
+  opacity: 1;
+}
 html[data-input-modality='keyboard'].high-contrast
   :where(
     input:not([type]),
