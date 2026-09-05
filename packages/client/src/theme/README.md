@@ -355,12 +355,15 @@ Three predicates, and they answer different questions:
 - `isHighContrast(theme)` - did the user _pick_ a contrast mode. This is what the
   theme toggle preserves when it flips the scheme, so `system` is never included.
 - `resolvesToHighContrast(theme)` - will the contrast palette actually apply.
-  True for the two explicit modes, and for `system` when the OS reports
-  `prefers-contrast: more`.
+  True for the two explicit modes, and for `system` when the OS asks for more
+  contrast through any of `prefers-contrast: more`, `prefers-contrast: custom`
+  or `forced-colors: active`.
 
 Because `system` resolves contrast from the OS, a user who has switched on
 "Increase contrast" (macOS) or "Contrast themes" (Windows) gets the accessible
-palette without first finding this setting.
+palette without first finding this setting. Windows is why the list has three
+queries: a Contrast Theme surfaces as `forced-colors: active` with
+`prefers-contrast: custom`, never `more`.
 
 ## Migration Guide
 

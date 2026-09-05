@@ -57,4 +57,25 @@ describe('OptionToggle', () => {
     expect(button).toHaveClass('border-transparent', 'text-text-secondary');
     expect(button).not.toHaveClass('border-series-1', 'bg-surface-active');
   });
+
+  /** A tool switched to programmatic-only keeps its stored Intent state and
+   *  keeps reporting it through `aria-pressed`, so the disabled treatment has to
+   *  layer over the pressed one instead of replacing it. */
+  it('keeps the pressed treatment while disabled', () => {
+    render(
+      <OptionToggle
+        icon={Circle}
+        pressed={true}
+        disabled={true}
+        label="Intent"
+        activeBorderClass="border-series-1"
+        onToggle={jest.fn()}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: 'Intent' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(button).toHaveClass('border-series-1', 'bg-surface-active', 'cursor-not-allowed');
+    expect(button).not.toHaveClass('border-transparent');
+  });
 });

@@ -548,6 +548,22 @@ html.high-contrast .markdown td,
 html.high-contrast .markdown td:last-child {
   border-color: rgb(var(--border-medium));
 }
+/* `.btn-neutral` (the Builder's Knowledge, Code Files and Assistant selectors
+ * and the delete trigger) predates the token layer and hard-codes its edge,
+ * label and hover fill. On white, `rgba(0, 0, 0, 0.1)` and #ececf1 sit at 1.1:1
+ * and 1.05:1; on black, #424242 sits at 2.09:1 for both the edge and the hover
+ * fill. All four are under the 3:1 non-text floor, which leaves the control
+ * boundary and its hover state unreadable. */
+html.high-contrast .btn-neutral,
+html.high-contrast.dark .btn-neutral {
+  background-color: rgb(var(--surface-primary));
+  border-color: rgb(var(--border-medium));
+  color: rgb(var(--text-primary));
+}
+html.high-contrast .btn-neutral:hover,
+html.high-contrast.dark .btn-neutral:hover {
+  background-color: rgb(var(--surface-hover));
+}
 
 .text-token-text-primary {
   color: #171717;

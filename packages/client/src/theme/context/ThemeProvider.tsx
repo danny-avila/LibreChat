@@ -126,11 +126,24 @@ export const isHighContrast = (theme: string): boolean =>
   theme === 'high-contrast-light' || theme === 'high-contrast-dark';
 
 /**
+ * The media queries that mean "the OS asked for more contrast". Windows Contrast
+ * Themes are the reason there are three: the browser turns them into
+ * `forced-colors: active` and reports `prefers-contrast: custom` for a palette
+ * whose own ratio is neither clearly more nor less, so keying off
+ * `prefers-contrast: more` alone misses the platform the README names.
+ */
+const CONTRAST_QUERIES = [
+  '(prefers-contrast: more)',
+  '(prefers-contrast: custom)',
+  '(forced-colors: active)',
+] as const;
+
+/**
  * `system` follows the OS for contrast the same way it already follows it for
  * the colour scheme, so a user who has switched on "Increase contrast" gets the
  * accessible palette without first discovering this setting.
  */
-const prefersMoreContrast = (): boolean => matchesMedia('(prefers-contrast: more)');
+const prefersMoreContrast = (): boolean => CONTRAST_QUERIES.some(matchesMedia);
 
 /** The resolved contrast for an appearance mode, explicit choice or OS request. */
 export const resolvesToHighContrast = (theme: string): boolean =>
@@ -643,7 +656,7 @@ export function ThemeProvider({
     }
     const queries = [
       window.matchMedia('(prefers-color-scheme: dark)'),
-      window.matchMedia('(prefers-contrast: more)'),
+      ...CONTRAST_QUERIES.map((query) => window.matchMedia(query)),
     ];
     const handleChange = () => applyThemeMode('system');
     queries.forEach((query) => query.addEventListener('change', handleChange));

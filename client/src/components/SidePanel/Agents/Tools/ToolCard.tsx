@@ -226,8 +226,7 @@ function ToolCardImpl({
                 'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
                 'group-focus-within:opacity-100 group-hover:opacity-100',
                 'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
-                isFavorited &&
-                  'text-amber-600 opacity-100 hover:text-amber-500 dark:text-amber-500 dark:hover:text-amber-400',
+                isFavorited && 'text-series-4 opacity-100 hover:text-series-4',
               )}
             >
               <Star className={cn('size-4', isFavorited && 'fill-current')} aria-hidden="true" />

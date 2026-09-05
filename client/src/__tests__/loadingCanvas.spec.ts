@@ -35,6 +35,8 @@ const canvasFor = (stored: string | null, matching: string[]): string | undefine
 
 const DARK_SCHEME = '(prefers-color-scheme: dark)';
 const MORE_CONTRAST = '(prefers-contrast: more)';
+const CUSTOM_CONTRAST = '(prefers-contrast: custom)';
+const FORCED_COLORS = '(forced-colors: active)';
 
 describe('loading canvas', () => {
   it.each([
@@ -54,6 +56,14 @@ describe('loading canvas', () => {
     expect(canvasFor('system', [DARK_SCHEME])).toBe('#0d0d0d');
     expect(canvasFor('system', [MORE_CONTRAST])).toBe('#ffffff');
     expect(canvasFor('system', [])).toBe('#ffffff');
+  });
+
+  /** A Windows Contrast Theme reports `forced-colors: active` with
+   *  `prefers-contrast: custom`, never `more`, so keying the canvas off `more`
+   *  alone flashes #0d0d0d on the platform the theme README names. */
+  it('treats a forced-colors palette as a contrast request', () => {
+    expect(canvasFor('system', [DARK_SCHEME, CUSTOM_CONTRAST, FORCED_COLORS])).toBe('#000000');
+    expect(canvasFor('system', [DARK_SCHEME, FORCED_COLORS])).toBe('#000000');
   });
 
   /** An unset or unrecognised value is what `getInitialTheme` resolves as

@@ -15,12 +15,14 @@ declare global {
 
 type ThemeType = 'system' | 'dark' | 'light' | 'high-contrast-light' | 'high-contrast-dark';
 
+/** Each control shows what it controls: the scheme toggle shows the scheme it
+ *  is currently on, and the contrast toggle below owns the `Contrast` glyph. */
 const themeIcons: Record<ThemeType, IconNode> = {
   system: Monitor,
   dark: Moon,
   light: Sun,
-  'high-contrast-light': Contrast,
-  'high-contrast-dark': Contrast,
+  'high-contrast-light': Sun,
+  'high-contrast-dark': Moon,
 };
 
 const Theme = ({
@@ -69,6 +71,49 @@ const Theme = ({
   );
 };
 
+/**
+ * Contrast toggle, rendered beside the scheme toggle. On the login,
+ * registration and email-verification routes this selector is the only
+ * appearance control, and the scheme toggle above preserves a contrast choice
+ * but can never introduce one — the full appearance dropdown lives behind auth.
+ * Without this button a logged-out user who needs the high contrast palette
+ * could reach it only by editing local storage or turning on an OS-wide
+ * preference.
+ */
+const ContrastToggle = ({
+  theme,
+  highContrast,
+  onChange,
+}: {
+  theme: string;
+  highContrast: boolean;
+  onChange: (value: string) => void;
+}) => {
+  const localize = useLocalize();
+
+  const scheme = isDark(theme) ? 'dark' : 'light';
+  /** Turning contrast off lands on the plain mode for the scheme currently
+   *  rendered, so `system` under an OS contrast request becomes an explicit
+   *  opt-out rather than silently snapping back on. */
+  const nextTheme = highContrast ? scheme : `high-contrast-${scheme}`;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-auto w-auto p-2 text-text-primary"
+      aria-label={localize('com_ui_toggle_high_contrast')}
+      aria-pressed={highContrast}
+      onClick={(e) => {
+        e.preventDefault();
+        onChange(nextTheme);
+      }}
+    >
+      <MorphIcon icon={Contrast} size={24} />
+    </Button>
+  );
+};
+
 const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.Element => {
   const { theme, highContrast, setTheme } = useContext(ThemeContext);
   const [announcement, setAnnouncement] = useState('');
@@ -113,8 +158,9 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.
 
   return (
     <div className="flex flex-col items-center justify-center bg-surface-primary pt-6 sm:pt-0">
-      <div className="absolute bottom-0 left-0 m-4">
+      <div className="absolute bottom-0 left-0 m-4 flex items-center">
         <Theme theme={theme} highContrast={highContrast} onChange={changeTheme} />
+        <ContrastToggle theme={theme} highContrast={highContrast} onChange={changeTheme} />
       </div>
       <div role="alert" aria-live="assertive" aria-atomic="true" className="sr-only">
         {announcement}

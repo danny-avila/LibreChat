@@ -927,6 +927,24 @@ describe('ThemeProvider', () => {
     expect(screen.getByTestId('high-contrast')).toHaveTextContent('true');
   });
 
+  /** Windows Contrast Themes reach the browser as `forced-colors: active` with
+   *  `prefers-contrast: custom`; `more` never matches, so resolving contrast
+   *  from `more` alone left the palette off on the platform the README names. */
+  it('treats a forced-colors palette as an OS contrast request', async () => {
+    window.matchMedia = jest.fn((query: string) => matchMedia(query === '(forced-colors: active)'));
+    render(
+      <ThemeProvider initialTheme="system">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveClass('high-contrast');
+    });
+    expect(screen.getByTestId('high-contrast')).toHaveTextContent('true');
+    expect(resolvesToHighContrast('system')).toBe(true);
+  });
+
   /** The same staleness for the scheme: with contrast already on, flipping the
    *  OS colour scheme leaves `theme` at `system` and `setHighContrast` a no-op,
    *  so nothing rerendered until the resolved mode was published too. */
