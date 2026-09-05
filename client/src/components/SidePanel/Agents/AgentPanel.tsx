@@ -32,6 +32,8 @@ import {
   createProviderOption,
   getAvailableAgentSelection,
   getDefaultAgentFormValues,
+  getApiErrorAgentIds,
+  getApiErrorMessage,
 } from '~/utils';
 import { pruneAgentModelParameters, resolveAgentParameterSettings } from './parameters';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
@@ -540,10 +542,13 @@ export default function AgentPanel() {
     },
     onError: (err) => {
       const error = err as Error;
+      const agentIds = getApiErrorAgentIds(err);
       showToast({
         message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+          error.message
+            ? ` ${localize('com_ui_error')}: ${getApiErrorMessage(err, error.message)}`
+            : ''
+        }${agentIds ? ` (${agentIds.join(', ')})` : ''}`,
         status: 'error',
       });
     },
@@ -570,10 +575,13 @@ export default function AgentPanel() {
     },
     onError: (err) => {
       const error = err as Error;
+      const agentIds = getApiErrorAgentIds(err);
       showToast({
         message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
+          error.message
+            ? ` ${localize('com_ui_error')}: ${getApiErrorMessage(err, error.message)}`
+            : ''
+        }${agentIds ? ` (${agentIds.join(', ')})` : ''}`,
         status: 'error',
       });
     },
