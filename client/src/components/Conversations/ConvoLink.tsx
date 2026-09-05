@@ -15,6 +15,21 @@ interface ConvoLinkProps {
   children: React.ReactNode;
 }
 
+const TITLE_SPEED_PX_PER_SECOND = 30;
+const TITLE_START_DELAY_MS = 600;
+const TITLE_HOLD_MS = 2000;
+
+/** Legacy engines expose only `addListener` on MediaQueryList. */
+const observeMediaQuery = (query: MediaQueryList, onChange: () => void) => {
+  if (typeof query.addEventListener === 'function') {
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }
+
+  query.addListener(onChange);
+  return () => query.removeListener(onChange);
+};
+
 const ConvoLink: React.FC<ConvoLinkProps> = ({
   isActiveConvo,
   isPopoverActive,
@@ -40,11 +55,12 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     let animation: Animation | undefined;
-    let fadeAnimation: Animation | undefined;
+    let frame = 0;
 
     const start = () => {
       animation?.cancel();
-      fadeAnimation?.cancel();
+      cancelAnimationFrame(frame);
+      delete viewport.dataset.titleRevealed;
       const overflow = text.getBoundingClientRect().width - viewport.getBoundingClientRect().width;
       setIsOverflowing(overflow > 0);
       if (!isHovered || isSmallScreen || reducedMotion.matches || overflow <= 0) {
@@ -53,11 +69,10 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
 
       const style = getComputedStyle(viewport);
       const direction = style.direction === 'rtl' ? 1 : -1;
-      const fadeWidth = parseFloat(style.getPropertyValue('--convo-title-fade-width'));
-      const travelDuration = (overflow / 30) * 1000;
-      const duration = travelDuration + 2000;
+      const revealDuration = parseFloat(style.getPropertyValue('--convo-title-reveal-duration'));
+      const travelDuration = (overflow / TITLE_SPEED_PX_PER_SECOND) * 1000;
+      const duration = travelDuration + TITLE_HOLD_MS;
       const end = `translateX(${direction * overflow}px)`;
-      const timing = { duration, delay: 600, iterations: Infinity, easing: 'linear' };
 
       animation = text.animate(
         [
@@ -65,38 +80,41 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
           { transform: end, offset: travelDuration / duration },
           { transform: end },
         ],
-        timing,
+        {
+          duration,
+          delay: TITLE_START_DELAY_MS,
+          iterations: Infinity,
+          easing: 'linear',
+        },
       );
 
-      /** Reveal the final characters by moving the fade, not by overscrolling the text. */
-      const fullMask = `calc(100% + ${fadeWidth}px) 100%`;
-      fadeAnimation = viewport.animate(
-        [
-          { maskSize: '100% 100%' },
-          {
-            maskSize: '100% 100%',
-            offset: (Math.max(0, (overflow - fadeWidth) / 30) * 1000) / duration,
-          },
-          { maskSize: fullMask, offset: travelDuration / duration },
-          { maskSize: fullMask },
-        ],
-        timing,
-      );
+      /** The fade retreats as the ending arrives, so the last characters read
+       * clearly without the text overscrolling past the available width. CSS owns
+       * the mask because Web Animations cannot carry the `-webkit-` fallback that
+       * older WebKit needs. */
+      const revealFrom = Math.max(0, travelDuration - revealDuration);
+      const tick = () => {
+        const currentTime = typeof animation?.currentTime === 'number' ? animation.currentTime : 0;
+        const elapsed = currentTime - TITLE_START_DELAY_MS;
+        viewport.dataset.titleRevealed = String(elapsed > 0 && elapsed % duration >= revealFrom);
+        frame = requestAnimationFrame(tick);
+      };
+
+      tick();
     };
 
     const observer = new ResizeObserver(start);
     observer.observe(viewport);
     observer.observe(text);
-    if (isHovered) {
-      reducedMotion.addEventListener('change', start);
-    }
+    const unobserveMediaQuery = observeMediaQuery(reducedMotion, start);
     start();
 
     return () => {
       observer.disconnect();
-      reducedMotion.removeEventListener('change', start);
+      unobserveMediaQuery();
       animation?.cancel();
-      fadeAnimation?.cancel();
+      cancelAnimationFrame(frame);
+      delete viewport.dataset.titleRevealed;
     };
   }, [isHovered, isSmallScreen, displayTitle]);
 
@@ -122,9 +140,10 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
       <span
         ref={titleRef}
         className={cn(
-          'min-w-0 flex-1 overflow-hidden whitespace-nowrap [--convo-title-fade-width:24px] [mask-position:left] [mask-repeat:no-repeat] [text-align:start] [&:dir(rtl)]:[mask-position:right]',
+          'min-w-0 flex-1 overflow-hidden whitespace-nowrap [--convo-title-fade-width:24px] [--convo-title-reveal-duration:800ms] [mask-position:left] [mask-repeat:no-repeat] [mask-size:100%_100%] [text-align:start] [transition-duration:0ms] [transition-property:mask-size] [transition-timing-function:linear] [&:dir(rtl)]:[mask-position:right]',
           isOverflowing &&
             '[mask-image:linear-gradient(to_right,currentColor_calc(100%_-_var(--convo-title-fade-width)),transparent)] [&:dir(rtl)]:[mask-image:linear-gradient(to_left,currentColor_calc(100%_-_var(--convo-title-fade-width)),transparent)]',
+          'data-[title-revealed=true]:[mask-size:calc(100%_+_var(--convo-title-fade-width))_100%] data-[title-revealed=true]:[transition-duration:var(--convo-title-reveal-duration)]',
         )}
         onDoubleClick={(e) => {
           if (isSmallScreen) {
