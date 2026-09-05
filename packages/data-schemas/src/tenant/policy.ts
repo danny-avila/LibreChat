@@ -222,6 +222,25 @@ export function scopeReplacement(
 }
 
 /**
+ * The predicate an in-place write must carry to prove it is not crossing
+ * tenants — `save()` and `deleteOne()` on an already-persisted document, which
+ * would otherwise be filtered on identity alone.
+ *
+ * `carriedTenantId` is the tenant the stored document already had. A document
+ * that never carried one cannot be asserted against without refusing
+ * legitimate pre-tenancy writes, so it yields no predicate.
+ */
+export function tenantWritePredicate(
+  scope: TenantScope,
+  carriedTenantId: unknown,
+): { tenantId: string } | undefined {
+  if (scope.kind !== 'scoped' || carriedTenantId == null) {
+    return undefined;
+  }
+  return { tenantId: scope.tenantId };
+}
+
+/**
  * Stamps the active tenant onto a document being inserted.
  *
  * A document that already names a different tenant is refused in strict mode
