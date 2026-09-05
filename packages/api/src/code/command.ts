@@ -60,7 +60,10 @@ function commandWithArguments(command: string, args: string[] | undefined): stri
   return `bash -c ${quoteShellArgument(command)} -- ${args.map(quoteShellArgument).join(' ')}`;
 }
 
-function commandWithGitIdentity(command: string, identity: AgentGitIdentity | undefined): string {
+function commandWithGitIdentity(
+  command: string,
+  identity: AgentGitIdentity | null | undefined,
+): string {
   if (identity == null) return command;
   const name = identity.name.trim();
   const email = identity.email.trim();
@@ -99,7 +102,7 @@ export function createAttachedWorkspaceBashTool({
   baseUrl: string;
   authHeaders: () => Promise<Record<string, string>> | Record<string, string>;
   workspaceId?: string;
-  gitIdentity?: AgentGitIdentity;
+  gitIdentity?: AgentGitIdentity | null;
   fetchImpl?: CodeBridgeFetch;
 }): DynamicStructuredTool {
   return tool(

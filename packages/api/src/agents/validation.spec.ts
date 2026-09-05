@@ -34,6 +34,11 @@ describe('agent Git identity validation', () => {
   ])('rejects an unsafe or incomplete identity: %j', (git_identity) => {
     expect(agentCreateSchema.safeParse({ ...base, git_identity }).success).toBe(false);
   });
+
+  it('accepts null only when updating to clear a configured identity', () => {
+    expect(agentCreateSchema.safeParse({ ...base, git_identity: null }).success).toBe(false);
+    expect(agentUpdateSchema.parse({ git_identity: null })).toEqual({ git_identity: null });
+  });
 });
 
 describe('agentSubagentsSchema', () => {

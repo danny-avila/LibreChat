@@ -347,7 +347,7 @@ export type Agent = {
   /** Operator-configured managed or attached stateful execution environment. */
   code_environment_id?: string | null;
   /** Non-secret Git authorship injected into this agent's sandboxed commands. */
-  git_identity?: AgentGitIdentity;
+  git_identity?: AgentGitIdentity | null;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;

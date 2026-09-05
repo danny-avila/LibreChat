@@ -46,6 +46,9 @@ export default function StatefulSessions() {
   const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
   const executionEnvironments = agentsConfig?.statefulCodeSessions?.environments ?? [];
   const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(configuredEnvironments);
+  const effectiveExecutionEnvironment = codeEnvironmentId
+    ? executionEnvironments.find((candidate) => candidate.id === codeEnvironmentId)
+    : executionEnvironments.find((candidate) => candidate.default === true);
 
   const handleChange = (value: boolean) => {
     setValue(AgentCapabilities.stateful_code_sessions, value, { shouldDirty: true });
@@ -171,27 +174,29 @@ export default function StatefulSessions() {
           <p className="text-xs text-text-tertiary">
             {localize('com_nav_info_stateful_code_environment')}
           </p>
-          <div className="space-y-2 border-t border-border-light pt-3">
-            <div className="text-xs font-medium text-text-secondary">
-              {localize('com_ui_agent_git_identity')}
+          {effectiveExecutionEnvironment?.type === 'attached' && (
+            <div className="space-y-2 border-t border-border-light pt-3">
+              <div className="text-xs font-medium text-text-secondary">
+                {localize('com_ui_agent_git_identity')}
+              </div>
+              <Input
+                {...register('git_identity.name')}
+                maxLength={128}
+                placeholder={localize('com_ui_agent_git_name')}
+                aria-label={localize('com_ui_agent_git_name')}
+              />
+              <Input
+                {...register('git_identity.email')}
+                type="email"
+                maxLength={254}
+                placeholder={localize('com_ui_agent_git_email')}
+                aria-label={localize('com_ui_agent_git_email')}
+              />
+              <p className="text-xs text-text-tertiary">
+                {localize('com_nav_info_agent_git_identity')}
+              </p>
             </div>
-            <Input
-              {...register('git_identity.name')}
-              maxLength={128}
-              placeholder={localize('com_ui_agent_git_name')}
-              aria-label={localize('com_ui_agent_git_name')}
-            />
-            <Input
-              {...register('git_identity.email')}
-              type="email"
-              maxLength={254}
-              placeholder={localize('com_ui_agent_git_email')}
-              aria-label={localize('com_ui_agent_git_email')}
-            />
-            <p className="text-xs text-text-tertiary">
-              {localize('com_nav_info_agent_git_identity')}
-            </p>
-          </div>
+          )}
         </div>
       )}
     </div>

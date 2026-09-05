@@ -123,6 +123,15 @@ export function composeAgentUpdatePayload(
   const model_parameters = modelParameterSettings
     ? pruneAgentModelParameters(currentModelParameters, modelParameterSettings)
     : currentModelParameters;
+  let normalizedGitIdentity: AgentUpdateParams['git_identity'];
+  if (git_identity?.name?.trim() && git_identity.email?.trim()) {
+    normalizedGitIdentity = {
+      name: git_identity.name.trim(),
+      email: git_identity.email.trim(),
+    };
+  } else if (agent_id && git_identity != null) {
+    normalizedGitIdentity = null;
+  }
 
   return {
     payload: {
@@ -141,10 +150,7 @@ export function composeAgentUpdatePayload(
       stateful_code_sessions: normalizedStatefulCodeSessions,
       stateful_code_environment: normalizedStatefulCodeEnvironment,
       code_environment_id: agent_id ? code_environment_id : (code_environment_id ?? undefined),
-      git_identity:
-        git_identity?.name?.trim() && git_identity.email?.trim()
-          ? { name: git_identity.name.trim(), email: git_identity.email.trim() }
-          : undefined,
+      git_identity: normalizedGitIdentity,
       recursion_limit,
       category,
       support_contact,

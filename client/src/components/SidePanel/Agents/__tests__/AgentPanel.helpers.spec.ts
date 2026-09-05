@@ -172,11 +172,20 @@ describe('composeAgentUpdatePayload', () => {
     });
   });
 
-  it('omits an empty Git identity', () => {
+  it('clears an empty Git identity when updating an agent', () => {
     const form = createForm();
     form.git_identity = { name: '', email: '' };
 
     const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toBeNull();
+  });
+
+  it('omits an empty Git identity when creating an agent', () => {
+    const form = createForm();
+    form.git_identity = { name: '', email: '' };
+
+    const { payload } = composeAgentUpdatePayload(form);
 
     expect(payload.git_identity).toBeUndefined();
   });
