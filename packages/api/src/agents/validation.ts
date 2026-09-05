@@ -9,7 +9,12 @@ import {
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_GRAPH_SUBAGENT_MEMBERS,
 } from 'librechat-data-provider';
-import type { Agent, TModelsConfig, AgentSubagentsConfig } from 'librechat-data-provider';
+import type {
+  Agent,
+  AgentGitIdentity,
+  TModelsConfig,
+  AgentSubagentsConfig,
+} from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 
 /**
@@ -402,7 +407,7 @@ export const agentSubagentsSchema: z.ZodOptional<z.ZodType<AgentSubagentsConfig>
 
 /** Base agent schema with all common fields */
 const agentCodeEnvironmentIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
-const agentGitIdentitySchema = z
+const agentGitIdentitySchema: z.ZodType<AgentGitIdentity | undefined> = z
   .object({
     name: z
       .string()
