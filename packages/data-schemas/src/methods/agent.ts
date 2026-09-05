@@ -3,6 +3,7 @@ import {
   Constants,
   EToolResources,
   ResourceType,
+  SkillsScope,
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
@@ -14,6 +15,21 @@ import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
+
+/**
+ * Whether emptying an allowlist has to fall back to disabling skills.
+ *
+ * An explicit `all` or `selected` scope already defines what an empty
+ * allowlist means, so neither is inferred from the array: `all` is the full
+ * catalog on purpose, and `selected` with nothing selected resolves to no
+ * skills on its own. Every other shape is: a missing scope, which is the
+ * legacy form whose meaning came from the array, and an explicit `none`
+ * carrying a true master flag, which the API accepts and which `skillDeps`
+ * reads as standing permission to expose the skill-authoring tools.
+ */
+function requiresSkillsDisable(scope: unknown): boolean {
+  return scope !== SkillsScope.all && scope !== SkillsScope.selected;
+}
 
 /**
  * Mirrors `TOOL_RESOURCE_KEYS` in `@librechat/api` — the subset of
@@ -610,9 +626,10 @@ export function createAgentMethods(
         isExternalSkillId,
       );
       agentData.skills = prunedSkills;
-      /** Fail closed when pruning empties a non-empty allowlist — empty +
-       *  enabled means the full catalog, and hygiene must never widen scope. */
-      if (prunedSkills.length === 0) {
+      /** Fail closed when pruning empties a non-empty allowlist: empty +
+       *  enabled means the full catalog, and hygiene must never widen scope.
+       *  See `requiresSkillsDisable` for which scopes opt out. */
+      if (prunedSkills.length === 0 && requiresSkillsDisable(agentData.skills_scope)) {
         agentData.skills_enabled = false;
       }
     }
@@ -755,12 +772,16 @@ export function createAgentMethods(
       /** Self-heal: drop allowlist ids whose skill no longer exists in the
        *  database or the external registry.
        *  A dangling id keeps the allowlist non-empty while scoping the
-       *  runtime catalog to an empty intersection — silently disabling
+       *  runtime catalog to an empty intersection, silently disabling
        *  skills for the agent. When pruning empties a non-empty allowlist,
        *  fail closed and disable skills: empty + enabled means the full
        *  catalog, and hygiene must never widen scope. (An explicit user
        *  `skills: []` submission skips this branch and keeps the
-       *  full-catalog semantics.) */
+       *  full-catalog semantics.)
+       *
+       *  An `all` or `selected` scope opts out, from the payload or the
+       *  stored document, because it already defines what an empty allowlist
+       *  means. See `requiresSkillsDisable`. */
       if (Array.isArray(directUpdates.skills) && directUpdates.skills.length > 0) {
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
@@ -769,7 +790,9 @@ export function createAgentMethods(
         );
         directUpdates.skills = prunedSkills;
         updateData.skills = prunedSkills;
-        if (prunedSkills.length === 0) {
+        const effectiveScope =
+          (directUpdates as Record<string, unknown>).skills_scope ?? currentObject.skills_scope;
+        if (prunedSkills.length === 0 && requiresSkillsDisable(effectiveScope)) {
           directUpdates.skills_enabled = false;
           updateData.skills_enabled = false;
         }
@@ -1403,7 +1426,10 @@ export function createAgentMethods(
         isExternalSkillId,
       );
       revertToVersion.skills = prunedSkills;
-      if (prunedSkills.length === 0) {
+      /** The snapshot carries its own scope, and an All-scoped version keeps
+       *  its allowlist, so failing closed here would restore the version as
+       *  Off. See `requiresSkillsDisable`. */
+      if (prunedSkills.length === 0 && requiresSkillsDisable(revertToVersion.skills_scope)) {
         revertToVersion.skills_enabled = false;
       }
     }
