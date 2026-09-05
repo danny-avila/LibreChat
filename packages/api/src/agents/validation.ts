@@ -10,14 +10,16 @@ import {
   MAX_GRAPH_SUBAGENT_MEMBERS,
 } from 'librechat-data-provider';
 import type { Agent, TModelsConfig, AgentSubagentsConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
+import { filterManagedEndpoints } from '~/endpoints/config/availability';
 
 /**
  * Permissive Request alias used by {@link validateAgentModel}. Accepts either
  * the default Express `Request` or the project-specific `ServerRequest`
  * (see `~/types/http`), whose `params` type is widened to `unknown`.
  */
-type LooseRequest = Request<unknown, unknown, unknown>;
+type LooseRequest = Request<unknown, unknown, unknown> & { config?: AppConfig };
 
 /** Avatar schema shared between create and update */
 export const agentAvatarSchema: z.ZodObject<
@@ -940,7 +942,8 @@ export async function validateAgentModel(
     };
   }
 
-  const availableModels = modelsConfig[resolveModelCatalogKey(endpoint, modelsConfig)];
+  const catalogKey = resolveModelCatalogKey(endpoint, modelsConfig);
+  const availableModels = modelsConfig[catalogKey];
   if (!availableModels) {
     return {
       isValid: false,
@@ -954,6 +957,18 @@ export async function validateAgentModel(
 
   if (validModel) {
     return { isValid: true };
+  }
+
+  /* A filter-managed endpoint serving no models is unavailable, not being
+     asked for an illegal model — a violation would penalize the owner of a
+     stored agent naming an endpoint that no longer serves it. */
+  if (availableModels.length === 0 && filterManagedEndpoints(req.config).has(catalogKey)) {
+    return {
+      isValid: false,
+      error: {
+        message: `{ "type": "${ErrorTypes.ENDPOINT_MODELS_NOT_LOADED}", "info": "${endpoint}" }`,
+      },
+    };
   }
 
   const { ILLEGAL_MODEL_REQ_SCORE: score = 1 } = process.env ?? {};
