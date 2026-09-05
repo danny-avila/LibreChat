@@ -181,7 +181,7 @@ export const ThinkingLabel = memo(({ label, title }: { label: string; title?: st
         className={cn('flex w-full items-center justify-start leading-[18px]', fontSize)}
         title={title}
       >
-        <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+        <span className={cn(ROW_GLYPH_SLOT, 'relative mr-2')}>
           <Lightbulb className="icon-sm text-text-secondary" aria-hidden="true" />
         </span>
         <span className="min-w-0 truncate text-left text-text-secondary">{label}</span>
