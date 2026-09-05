@@ -41,7 +41,7 @@ export async function reconcileCodeEnvironmentLifecycle({
     const expiredReferenceCandidates = await CodeEnvironment.find({
       'pendingAgentReferences.expiresAt': { $lte: now },
     })
-      .sort({ 'pendingAgentReferences.expiresAt': 1, _id: 1 })
+      .hint('pending_agent_reference_expiry')
       .limit(limit)
       .select('_id')
       .lean<Array<Pick<CodeEnvironmentDocument, '_id'>>>();

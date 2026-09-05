@@ -120,7 +120,10 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
 );
 
 codeEnvironmentSchema.index({ environmentId: 1, tenantId: 1 }, { unique: true });
-codeEnvironmentSchema.index({ 'pendingAgentReferences.expiresAt': 1, _id: 1 });
+codeEnvironmentSchema.index(
+  { 'pendingAgentReferences.expiresAt': 1, _id: 1 },
+  { name: 'pending_agent_reference_expiry' },
+);
 codeEnvironmentSchema.index({ updatedAt: -1, _id: 1 });
 
 export default codeEnvironmentSchema;

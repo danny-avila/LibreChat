@@ -35,6 +35,10 @@ describe('code environment registry', () => {
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();
+    await mongoose.models.CodeEnvironment.collection.createIndex(
+      { 'pendingAgentReferences.expiresAt': 1, _id: 1 },
+      { name: 'pending_agent_reference_expiry' },
+    );
     await createMethods(mongoose).seedDefaultRoles();
   });
 
@@ -284,6 +288,7 @@ describe('code environment registry', () => {
     await mongoose.models.CodeEnvironment.createCollection();
     await expect(mongoose.models.CodeEnvironment.collection.indexes()).resolves.toEqual([
       expect.objectContaining({ name: '_id_' }),
+      expect.objectContaining({ name: 'pending_agent_reference_expiry' }),
     ]);
     const registry = createCodeEnvironmentRegistry(mongoose);
     const ownerId = new Types.ObjectId();
@@ -1194,6 +1199,14 @@ describe('code environment registry', () => {
         ),
       ),
     );
+
+    const cleanupPlan = await mongoose.models.CodeEnvironment.collection
+      .find({ 'pendingAgentReferences.expiresAt': { $lte: new Date() } })
+      .hint('pending_agent_reference_expiry')
+      .limit(1)
+      .explain('executionStats');
+    expect(JSON.stringify(cleanupPlan.queryPlanner.winningPlan)).not.toContain('"stage":"SORT"');
+    expect(cleanupPlan.executionStats.totalDocsExamined).toBeLessThanOrEqual(1);
 
     await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
 
