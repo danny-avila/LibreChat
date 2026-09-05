@@ -86,17 +86,21 @@ const ADMISSION_DELAYS_MS = [
   750, 1_500, 3_000, 6_000, 10_000, 15_000, 30_000, 45_000, 60_000, 60_000, 60_000,
 ];
 
+/** 404 is the run not having started yet, which is the whole reason for waiting.
+ *  408 and 429 ask to be retried by definition, and a proxy in front of the app
+ *  can raise either without the run being involved at all. */
+const RETRYABLE_CLIENT_STATUS = new Set([404, 408, 429]);
+
 /**
- * Whether a failed probe has answered the question for good. A 404 has not: the
- * run has not started yet, which is the whole reason for waiting. Neither has a
- * 5xx or a request that never got a response — those are the probe failing, not
- * the run, and the durable delivery is still free to admit. A different 4xx is a
- * real answer: waiting longer will not make this client able to read that
- * conversation.
+ * Whether a failed probe has answered the question for good. A 5xx, or a request
+ * that never got a response, has not — those are the probe failing rather than the
+ * run, and the durable delivery is still free to admit afterwards. Only a client
+ * error that is not asking to be retried settles it: waiting longer will not make
+ * this client able to read that conversation.
  */
 const isTerminalProbeFailure = (error: unknown): boolean => {
   const status = getResponseStatus(error);
-  return status != null && status >= 400 && status < 500 && status !== 404;
+  return status != null && status >= 400 && status < 500 && !RETRYABLE_CLIENT_STATUS.has(status);
 };
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -145,6 +149,13 @@ async function trackStartedRun(queryClient: QueryClient, conversationId: string)
       continue;
     }
     if (cacheOwner(queryClient) !== startedFor) {
+      return;
+    }
+    /** The conversation route serves an archived chat; the list query filters one
+     *  out. Another tab archiving this run between its first write and this probe
+     *  would otherwise put a row in the sidebar that no refetch agrees belongs
+     *  there — and the archive was deliberate, so there is nothing else to do. */
+    if (conversation.isArchived === true) {
       return;
     }
     /** Warms the key the chat route reads, so opening the row it just added does

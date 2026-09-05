@@ -49,6 +49,9 @@ const ADMISSION_BUDGET_MS = 600_000;
 const httpError = (status: number, message: string) =>
   Object.assign(new Error(message), { isAxiosError: true, response: { status } });
 
+const archivedConversation = (): TConversation =>
+  ({ ...serverConversation(), isArchived: true }) as TConversation;
+
 const serverConversation = (chatProjectId?: string): TConversation =>
   ({
     conversationId: 'run-convo-1',
@@ -119,7 +122,12 @@ const settleAdmission = async (ms = PAST_ADMISSION_MS) => {
 
 describe('run-now conversation tracking', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    /** `resetAllMocks`, not `clearAllMocks`: a test whose `mockRejectedValueOnce`
+     *  queue is not fully drained — which is what a failing retry assertion looks
+     *  like — leaves the remainder queued for the next test, where it silently
+     *  answers the first probe. That coupling let an assertion here pass against a
+     *  missing guard. */
+    jest.resetAllMocks();
     jest.useFakeTimers();
     resetActiveJobsGrace();
     mockRunScheduleNow.mockResolvedValue({
@@ -266,6 +274,35 @@ describe('run-now conversation tracking', () => {
 
     expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
     expect(queryClient.getQueryData([QueryKeys.conversation, 'run-convo-1'])).toBeUndefined();
+    queryClient.clear();
+  });
+
+  it('keeps waiting through a client error that asks to be retried', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById
+      .mockRejectedValueOnce(httpError(429, 'Too Many Requests'))
+      .mockRejectedValueOnce(httpError(408, 'Request Timeout'))
+      .mockResolvedValue(serverConversation());
+
+    await runNow(queryClient);
+    await settleAdmission(6_000);
+
+    expect(readList(queryClient)[0].conversationId).toBe('run-convo-1');
+    queryClient.clear();
+  });
+
+  it('does not put an archived chat in the active sidebar', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(archivedConversation());
+
+    await runNow(queryClient);
+    await settleAdmission();
+
+    expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
     queryClient.clear();
   });
 
