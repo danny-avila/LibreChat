@@ -89,8 +89,7 @@ async function raiseBaseConfigVersionEpoch(
 
 /**
  * Atomically allocates the next base-config CAS version from the epoch.
- * Prefer calling inside the same session/transaction as the Config create that
- * persists the returned value; session may be omitted on standalone MongoDB.
+ * Called in the same transaction as the Config create that persists the value.
  */
 async function allocateBaseConfigVersion(
   Config: Model<IConfig>,
@@ -113,53 +112,30 @@ function isTransactionUnsupported(err: unknown): boolean {
   );
 }
 
-/**
- * Runs `fn` in a transaction on `Config.db` when possible. Falls back to
- * session-less execution on standalone MongoDB (e.g. unit-test memory servers)
- * while still allocating/raising the epoch around the Config write.
- */
-async function withOwnedSession<T>(
-  Config: Model<IConfig>,
-  session: ClientSession | undefined,
-  fn: (session: ClientSession | undefined) => Promise<T>,
-): Promise<T> {
-  if (session) {
-    return fn(session);
+/** Base writes require caller-owned CAS and revision metadata. */
+function assertScopedConfigMutation(principalType: PrincipalType, principalId: string): void {
+  if (isBaseConfigPrincipal(principalType, principalId)) {
+    throw new Error('Base configuration writes must use mutateConfigWithRevision');
   }
-  const owned = await Config.db.startSession();
-  try {
-    let outcome!: T;
-    try {
-      await owned.withTransaction(async () => {
-        outcome = await fn(owned);
-      });
-      return outcome;
-    } catch (err) {
-      if (!isTransactionUnsupported(err)) {
-        throw err;
-      }
-    }
-  } finally {
-    await owned.endSession();
-  }
-  return fn(undefined);
 }
 
 /**
- * Removes duplicate Config docs for the same principal+tenant before the unique
- * index is built. Uses a fast path when the unique index already exists and all
+ * Refuses to initialize indexes when duplicate Config docs exist for the same
+ * logical principal+tenant. Uses a fast path when the unique index already exists and all
  * legacy empty-string aliases have been canonicalized, so repeated pod startups
  * after migration complete do not scan the whole collection.
  *
  * Uses raw collection operations to bypass tenant-isolation middleware.
  * Groups by $ifNull so null, missing, and '' are all treated as the same logical
- * tenant. Deletes only explicit loser IDs to avoid racing with concurrent inserts.
+ * tenant. Duplicate configuration documents can contain complementary settings;
+ * choosing either one automatically would irreversibly discard data, so startup
+ * fails with the exact scopes and document IDs that an operator must reconcile.
  *
  * Canonical value for "no tenant" is null. MongoDB indexes null and absent fields
  * identically, so old-pod writes (missing tenantId) and new-pod writes (null)
  * collide correctly in the unique index during rolling deployments.
  */
-async function deduplicateConfigPrincipals(Config: Model<IConfig>): Promise<void> {
+async function validateConfigPrincipals(Config: Model<IConfig>): Promise<void> {
   let indexes: Array<{
     unique?: boolean;
     key?: Record<string, unknown>;
@@ -198,13 +174,16 @@ async function deduplicateConfigPrincipals(Config: Model<IConfig>): Promise<void
     }
   }
 
-  // Full dedup: index not yet built, or legacy '' aliases still present.
-  // Dedup before canonicalization so the updateMany below cannot produce E11000
-  // when the existing index already contains both '' and null for the same principal.
+  // Full validation: index not yet built, or legacy '' aliases still present.
+  // Validate before canonicalization so an existing ''/null alias pair is
+  // reported explicitly instead of surfacing as a context-free E11000.
   // eslint-disable-next-line no-restricted-syntax -- cross-tenant migration; must bypass tenant middleware
-  const loserDocs = await Config.collection
-    .aggregate<{ loserId: Types.ObjectId }>([
-      { $sort: { configVersion: -1, createdAt: -1 } },
+  const duplicates = await Config.collection
+    .aggregate<{
+      _id: { principalType: string; principalId: string; tenantId: string };
+      documentIds: Types.ObjectId[];
+      count: number;
+    }>([
       {
         $group: {
           _id: {
@@ -212,24 +191,31 @@ async function deduplicateConfigPrincipals(Config: Model<IConfig>): Promise<void
             principalId: '$principalId',
             tenantId: { $ifNull: ['$tenantId', ''] },
           },
-          keepId: { $first: '$_id' },
-          allIds: { $push: '$_id' },
+          documentIds: { $push: '$_id' },
+          count: { $sum: 1 },
         },
       },
-      { $unwind: '$allIds' },
-      { $match: { $expr: { $ne: ['$allIds', '$keepId'] } } },
-      { $project: { loserId: '$allIds' } },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 20 },
     ])
     .toArray();
 
-  const loserIds = loserDocs.map((d) => d.loserId);
-  if (loserIds.length > 0) {
-    // eslint-disable-next-line no-restricted-syntax -- cross-tenant migration; must bypass tenant middleware
-    await Config.collection.deleteMany({ _id: { $in: loserIds } });
+  if (duplicates.length > 0) {
+    const details = duplicates
+      .map(
+        ({ _id, documentIds }) =>
+          `${_id.principalType}/${_id.principalId}/tenant:${_id.tenantId || '<default>'} ` +
+          `[${documentIds.map((id) => id.toString()).join(', ')}]`,
+      )
+      .join('; ');
+    throw new Error(
+      'Duplicate configuration principals detected; no documents were modified. ' +
+        `Reconcile these records before restart: ${details}`,
+    );
   }
 
-  // Canonicalize both missing and empty-string tenantId to null after dedup.
-  // After deletion there is at most one doc per logical principal, so this update
+  // Canonicalize both missing and empty-string tenantId to null after validation.
+  // There is at most one doc per logical principal, so this update
   // cannot collide even when the unique index already exists.
   // eslint-disable-next-line no-restricted-syntax -- cross-tenant migration; must bypass tenant middleware
   await Config.collection.updateMany(TENANT_ALIAS_FILTER, { $set: { tenantId: null } });
@@ -242,8 +228,8 @@ async function deduplicateConfigPrincipals(Config: Model<IConfig>): Promise<void
  * may never build that index and both creates can succeed. Build it once before
  * the first write so duplicate prevention never depends on a background build.
  *
- * A dedup migration runs first when the unique index is absent so that existing
- * deployments with logical duplicates do not fail startup with a build error.
+ * Validation runs first when the unique index is absent. Existing deployments
+ * with logical duplicates fail closed instead of silently deleting one config.
  */
 export function ensureConfigIndexes(mongoose: typeof import('mongoose')): Promise<unknown> {
   const Config = mongoose.models.Config as Model<IConfig> | undefined;
@@ -259,7 +245,7 @@ export function ensureConfigIndexes(mongoose: typeof import('mongoose')): Promis
     let lastErr: unknown;
     for (let attempt = 0; attempt < MAX_INDEX_BUILD_RETRIES; attempt += 1) {
       try {
-        await deduplicateConfigPrincipals(Config);
+        await validateConfigPrincipals(Config);
         await Promise.all([
           Config.createIndexes(),
           ensureRevisionCollectionIndexes(Config),
@@ -311,15 +297,61 @@ export function ensureConfigIndexes(mongoose: typeof import('mongoose')): Promis
   return promise;
 }
 
+/**
+ * `createIndex` throws (code 85/86) if an index already exists under `name`
+ * with a different key spec — expected on a rolling upgrade from a version
+ * that indexed this collection differently. Dropping and recreating makes
+ * the change idempotent instead of failing every startup after this ships.
+ * Concurrent workers can all observe the old definition before one drops it,
+ * so a later drop may legitimately find that the index is already gone.
+ */
+async function createOrReplaceIndex(
+  collection: ReturnType<Model<IConfig>['db']['collection']>,
+  keys: Record<string, 1 | -1>,
+  options: { name: string; unique?: boolean; background?: boolean },
+): Promise<void> {
+  try {
+    await collection.createIndex(keys, options);
+  } catch (err) {
+    if ((err as { code?: number }).code === 85 || (err as { code?: number }).code === 86) {
+      try {
+        await collection.dropIndex(options.name);
+      } catch (dropErr) {
+        if ((dropErr as { code?: number }).code !== 27) {
+          throw dropErr;
+        }
+      }
+      await collection.createIndex(keys, options);
+      return;
+    }
+    throw err;
+  }
+}
+
 async function ensureRevisionCollectionIndexes(Config: Model<IConfig>): Promise<void> {
   const revisions = Config.db.collection(ADMIN_CONFIG_REVISIONS_COLLECTION);
   await Promise.all([
-    revisions.createIndex(
+    createOrReplaceIndex(
+      revisions,
       { id: 1 },
       { name: 'revision_id_lookup', unique: true, background: true },
     ),
-    revisions.createIndex(
-      { tenantId: 1, principalType: 1, principalId: 1, status: 1, createdAt: -1 },
+    // configVersion is the monotonic, CAS-allocated pre-mutation version each
+    // atomic revision records — createdAt alone is clock-derived and can tie
+    // (or skew across pods), silently misordering retention/listing. Ordering
+    // on configVersion first, createdAt and _id (unindexed, compared in
+    // memory) as tiebreakers, gives a total order that doesn't depend on wall
+    // clocks agreeing.
+    createOrReplaceIndex(
+      revisions,
+      {
+        tenantId: 1,
+        principalType: 1,
+        principalId: 1,
+        status: 1,
+        configVersion: -1,
+        createdAt: -1,
+      },
       { name: 'scope_status_created', background: true },
     ),
   ]);
@@ -357,6 +389,20 @@ export class ConfigRevisionNotFoundError extends Error {
   readonly revisionId: string;
 }
 
+/**
+ * Thrown when a legacy revision's stored overrides fail the API layer's
+ * current validation policies (schema shape, process-backed MCP servers,
+ * protected Langfuse headers, ...) — see `validateRestoredOverrides`. Import
+ * and field-mode mutations already reject these at the door; restoring an
+ * older revision must not be a way to reintroduce what they'd now reject.
+ */
+export class RestoreValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RestoreValidationError';
+  }
+}
+
 export class TransactionRequiredError extends Error {
   constructor() {
     super(
@@ -374,9 +420,19 @@ export interface ConfigRevisionActor {
 }
 
 export type ConfigMutationOp =
-  | { kind: 'fields'; resetPaths: string[]; fields: Record<string, unknown>; priority: number }
+  | {
+      kind: 'fields';
+      resetPaths: string[];
+      fields: Record<string, unknown>;
+      priority: number;
+      /** Explicit isActive override (e.g. reactivating while patching fields
+       * in one atomic write). Omitted/undefined preserves the current value,
+       * matching every other mutation kind's default behavior. */
+      isActive?: boolean;
+    }
   | { kind: 'replace'; overrides: Record<string, unknown>; priority: number }
   | { kind: 'delete' }
+  | { kind: 'active'; isActive: boolean }
   | { kind: 'restore'; revisionId: string };
 
 export interface ConfigRevisionSnapshot {
@@ -397,6 +453,11 @@ export interface ConfigRevisionSnapshot {
   status: 'final';
   committed: true;
 }
+
+export type ConfigRevisionListItem = Pick<
+  ConfigRevisionSnapshot,
+  'id' | 'createdAt' | 'cause' | 'actorId' | 'actorEmail'
+>;
 
 export const MAX_FIELD_PATH_LENGTH = 512;
 export const MAX_FIELD_PATH_SEGMENTS = 32;
@@ -510,13 +571,26 @@ function isBasePrincipalSectionPath(path: string): boolean {
   return BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]);
 }
 
+/**
+ * Guards `BASE_PRINCIPAL_CONFIG_SECTIONS` (e.g. `langfuse`) against every
+ * base-config write path EXCEPT the one operation actually trusted to
+ * maintain it — every caller of `mutateConfigWithRevision` targets the base
+ * principal by construction (see the check above), so "is this a base-config
+ * write" can't distinguish the dedicated Langfuse handler's legitimate
+ * `fields` patch from a generic save/import/restore that must never be able
+ * to smuggle a `langfuse` change past its own verification/encryption.
+ * `trustedSections` is that explicit, per-call opt-in — omitted by every
+ * caller except the one section owner it was written for.
+ */
 function preserveBasePrincipalOverrides(
   next: Record<string, unknown>,
   current: unknown,
+  trustedSections: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
   const preserved = cloneOverrides(next);
   const currentOverrides = cloneOverrides(current);
   for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+    if (trustedSections.has(section)) continue;
     if (Object.prototype.hasOwnProperty.call(currentOverrides, section)) {
       preserved[section] = structuredClone(currentOverrides[section]);
     } else {
@@ -526,20 +600,14 @@ function preserveBasePrincipalOverrides(
   return preserved;
 }
 
-function preserveBasePrincipalTombstones(next: string[], current?: string[]): string[] {
-  return [
-    ...next.filter((path) => !isBasePrincipalSectionPath(path)),
-    ...(current ?? []).filter(isBasePrincipalSectionPath),
-  ];
-}
-
-function hasBasePrincipalState(config: IConfig | null): boolean {
-  const overrides = cloneOverrides(config?.overrides);
-  return (
-    [...BASE_PRINCIPAL_OVERRIDE_SECTIONS].some((section) =>
-      Object.prototype.hasOwnProperty.call(overrides, section),
-    ) || (config?.tombstones ?? []).some(isBasePrincipalSectionPath)
-  );
+function preserveBasePrincipalTombstones(
+  next: string[],
+  current?: string[],
+  trustedSections: ReadonlySet<string> = new Set(),
+): string[] {
+  const isProtected = (path: string) =>
+    isBasePrincipalSectionPath(path) && !trustedSections.has(path.split('.')[0]);
+  return [...next.filter((path) => !isProtected(path)), ...(current ?? []).filter(isProtected)];
 }
 
 function unsetPath(obj: Record<string, unknown>, fieldPath: string): void {
@@ -626,6 +694,29 @@ function nextTombstones(
   });
 }
 
+/** Pure post-mutation state shared by atomic writes and pre-write validation.
+ * In particular, a leaf write does not clear a whole-section tombstone. */
+export function applyConfigFieldsMutation(
+  current: { overrides?: Record<string, unknown>; tombstones?: string[] } | null | undefined,
+  resetPaths: string[],
+  fields: Record<string, unknown>,
+): { overrides: Record<string, unknown>; tombstones: string[] } {
+  return {
+    overrides: sanitizeAdminConfigOverrides(
+      applyFieldsMutation(
+        sanitizeAdminConfigOverrides(cloneOverrides(current?.overrides ?? {})),
+        resetPaths,
+        fields,
+      ),
+    ),
+    tombstones: nextTombstones(
+      sanitizeAdminConfigTombstones(current?.tombstones),
+      resetPaths,
+      Object.keys(fields),
+    ),
+  };
+}
+
 function tenantRevisionFilter(tenantId: string): Record<string, unknown> {
   if (tenantId.length > 0) {
     return { tenantId };
@@ -657,6 +748,32 @@ function revisionScopeFilter(
   };
 }
 
+/**
+ * Read scope for revision history. Older admin-panel revisions predate the
+ * principal metadata, but that panel only ever recorded role/__base__
+ * snapshots, so they remain valid rollback points for the matching tenant.
+ */
+function revisionReadScopeFilter(
+  tenantId: string,
+  principalType: PrincipalType,
+  principalId: string,
+): Record<string, unknown> {
+  return {
+    $and: [
+      tenantRevisionFilter(tenantId),
+      {
+        $or: [
+          { principalType, principalId },
+          {
+            principalType: { $exists: false },
+            principalId: { $exists: false },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function interpretedConfigVersion(doc: { configVersion?: number | null } | null): number | null {
   if (doc == null) return null;
   return doc.configVersion ?? 0;
@@ -680,6 +797,8 @@ function snapshotFromConfig(
     actor: ConfigRevisionActor;
     principalType: PrincipalType;
     principalId: string;
+    /** Pre-normalized stand-in for `current.overrides` (secrets encrypted at rest). */
+    overridesOverride?: Record<string, unknown> | null;
   },
 ): ConfigRevisionSnapshot {
   return {
@@ -691,7 +810,7 @@ function snapshotFromConfig(
     tenantId: params.actor.tenantId,
     principalType: params.principalType,
     principalId: params.principalId,
-    overrides: cloneOverrides(current?.overrides),
+    overrides: cloneOverrides(params.overridesOverride ?? current?.overrides),
     tombstones: [...(current?.tombstones ?? [])],
     priority: current?.priority ?? null,
     isActive: current == null ? null : current.isActive,
@@ -713,6 +832,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
+    options?: Pick<FindConfigByPrincipalOptions, 'tenantId'>,
   ) => Promise<IConfig[]>;
   upsertConfig: (
     principalType: PrincipalType,
@@ -766,7 +886,19 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     op: ConfigMutationOp;
     cause: ConfigRevisionCause;
     actor: ConfigRevisionActor;
+    normalizeSecrets?: (overrides: Record<string, unknown>) => Record<string, unknown>;
+    trustedBasePrincipalSections?: string[];
+    validateRestoredOverrides?: (
+      overrides: Record<string, unknown>,
+      tombstones: string[],
+    ) => string | null;
   }) => Promise<ConfigMutationResult>;
+  listConfigRevisions: (params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    tenantId: string;
+    limit?: number;
+  }) => Promise<ConfigRevisionListItem[]>;
 } {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
@@ -808,6 +940,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   async function getApplicableConfigs(
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
+    options?: Pick<FindConfigByPrincipalOptions, 'tenantId'>,
   ): Promise<IConfig[]> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
@@ -829,10 +962,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       }
     }
 
-    return await Config.find({
-      $or: principalsQuery,
-      isActive: true,
-    })
+    const principalFilter = { $or: principalsQuery };
+    const filter: FilterQuery<IConfig> =
+      options?.tenantId !== undefined
+        ? {
+            $and: [principalFilter, tenantRevisionFilter(options.tenantId)],
+            isActive: true,
+          }
+        : { ...principalFilter, isActive: true };
+
+    return await Config.find(filter)
       .sort({ priority: 1 })
       .session(session ?? null)
       .lean<IConfig[]>();
@@ -849,7 +988,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
     const principalIdString = principalId.toString();
-    const isBase = isBaseConfigPrincipal(principalType, principalIdString);
+    assertScopedConfigMutation(principalType, principalIdString);
 
     const query: FilterQuery<IConfig> = {
       principalType,
@@ -862,102 +1001,37 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       ];
     }
 
-    if (!isBase) {
-      const update = {
-        $set: {
-          principalModel,
-          overrides,
-          ...(options?.preservePriority ? {} : { priority }),
-          isActive: true,
-        },
-        ...(options?.preservePriority ? { $setOnInsert: { priority } } : {}),
-        $inc: { configVersion: 1 },
-      };
-      const mongoOptions = {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-        ...(session ? { session } : {}),
-      };
-      try {
-        return await Config.findOneAndUpdate(query, update, mongoOptions);
-      } catch (err: unknown) {
-        if ((err as { code?: number }).code === 11000) {
-          if (options?.expectEmpty) {
-            return null;
-          }
-          return await Config.findOneAndUpdate(
-            { principalType, principalId: principalIdString },
-            { $set: update.$set, $inc: update.$inc },
-            { new: true, ...(session ? { session } : {}) },
-          );
-        }
-        throw err;
-      }
-    }
-
-    const applyOnce = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
-      const current = await Config.findOne(query, null, { session: txn });
-      if (!current) {
-        const configVersion = await allocateBaseConfigVersion(Config, txn);
-        try {
-          const created = await Config.create(
-            [
-              {
-                principalType,
-                principalId: principalIdString,
-                principalModel,
-                overrides,
-                priority,
-                isActive: true,
-                configVersion,
-                tombstones: [],
-              },
-            ],
-            { ...(txn ? { session: txn } : {}) },
-          );
-          return created[0] ?? null;
-        } catch (err: unknown) {
-          if ((err as { code?: number }).code === 11000) {
-            if (options?.expectEmpty) {
-              return null;
-            }
-            return 'retry';
-          }
-          throw err;
-        }
-      }
-
-      const currentVersion = interpretedConfigVersion(current);
-      const nextVersion = (currentVersion ?? 0) + 1;
-      if (!txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, undefined);
-      const updated = await Config.findOneAndUpdate(
-        versionCasFilter(current._id, currentVersion),
-        {
-          $set: {
-            principalModel,
-            overrides,
-            ...(options?.preservePriority ? {} : { priority }),
-            isActive: true,
-          },
-          $inc: { configVersion: 1 },
-        },
-        { new: true, ...(txn ? { session: txn } : {}) },
-      );
-      if (!updated) {
-        return 'retry';
-      }
-      if (txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, txn);
-      return updated;
+    const update = {
+      $set: {
+        principalModel,
+        overrides,
+        ...(options?.preservePriority ? {} : { priority }),
+        isActive: true,
+      },
+      ...(options?.preservePriority ? { $setOnInsert: { priority } } : {}),
+      $inc: { configVersion: 1 },
     };
-
-    for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
-      const result = await withOwnedSession(Config, session, (txn) => applyOnce(txn));
-      if (result !== 'retry') {
-        return result;
+    const mongoOptions = {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    };
+    try {
+      return await Config.findOneAndUpdate(query, update, mongoOptions);
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code === 11000) {
+        if (options?.expectEmpty) {
+          return null;
+        }
+        return await Config.findOneAndUpdate(
+          { principalType, principalId: principalIdString },
+          { $set: update.$set, $inc: update.$inc },
+          { new: true, ...(session ? { session } : {}) },
+        );
       }
+      throw err;
     }
-    throw new Error('Failed to upsert base config after concurrent update retries');
   }
 
   async function patchConfigFields(
@@ -971,10 +1045,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     for (const fieldPath of Object.keys(fields)) {
       assertValidFieldPath(fieldPath);
     }
+    const principalIdString = principalId.toString();
+    assertScopedConfigMutation(principalType, principalIdString);
     await ensureConfigIndexes(mongoose);
     const Config = mongoose.models.Config as Model<IConfig>;
-    const principalIdString = principalId.toString();
-    const isBase = isBaseConfigPrincipal(principalType, principalIdString);
 
     const applyOnce = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
       const current = await Config.findOne(
@@ -997,7 +1071,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       );
 
       if (!current) {
-        const configVersion = isBase ? await allocateBaseConfigVersion(Config, txn) : 1;
+        const configVersion = 1;
         try {
           const created = await Config.create(
             [
@@ -1025,7 +1099,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
 
       const currentVersion = interpretedConfigVersion(current);
       const nextVersion = (currentVersion ?? 0) + 1;
-      if (isBase && !txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, undefined);
       const updated = await Config.findOneAndUpdate(
         versionCasFilter(current._id, currentVersion),
         {
@@ -1035,27 +1108,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
             overrides: nextOverrides,
             tombstones: nextTombstonesValue,
             isActive: current.isActive ?? true,
+            configVersion: nextVersion,
           },
-          $inc: { configVersion: 1 },
         },
         { new: true, ...(txn ? { session: txn } : {}) },
       );
       if (!updated) {
         return 'retry';
       }
-      if (isBase && txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, txn);
       return updated;
     };
-
-    if (isBase) {
-      for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
-        const result = await withOwnedSession(Config, session, (txn) => applyOnce(txn));
-        if (result !== 'retry') {
-          return result;
-        }
-      }
-      throw new Error('Failed to patch config fields after concurrent update retries');
-    }
 
     for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
       const result = await applyOnce(session);
@@ -1075,10 +1137,10 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     session?: ClientSession,
   ): Promise<IConfig | null> {
     assertValidFieldPath(fieldPath);
+    const principalIdString = principalId.toString();
+    assertScopedConfigMutation(principalType, principalIdString);
     await ensureConfigIndexes(mongoose);
     const Config = mongoose.models.Config as Model<IConfig>;
-    const principalIdString = principalId.toString();
-    const isBase = isBaseConfigPrincipal(principalType, principalIdString);
 
     const applyOnce = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
       const current = await Config.findOne(
@@ -1096,7 +1158,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       const nextTombstonesValue = [...nextTombstoneSet];
 
       if (!current) {
-        const configVersion = isBase ? await allocateBaseConfigVersion(Config, txn) : 1;
+        const configVersion = 1;
         try {
           const created = await Config.create(
             [
@@ -1124,7 +1186,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
 
       const currentVersion = interpretedConfigVersion(current);
       const nextVersion = (currentVersion ?? 0) + 1;
-      if (isBase && !txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, undefined);
       const updated = await Config.findOneAndUpdate(
         versionCasFilter(current._id, currentVersion),
         {
@@ -1134,27 +1195,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
             overrides: nextOverrides,
             tombstones: nextTombstonesValue,
             isActive: current.isActive ?? true,
+            configVersion: nextVersion,
           },
-          $inc: { configVersion: 1 },
         },
         { new: true, ...(txn ? { session: txn } : {}) },
       );
       if (!updated) {
         return 'retry';
       }
-      if (isBase && txn) await raiseBaseConfigVersionEpoch(Config, nextVersion, txn);
       return updated;
     };
-
-    if (isBase) {
-      for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
-        const result = await withOwnedSession(Config, session, (txn) => applyOnce(txn));
-        if (result !== 'retry') {
-          return result;
-        }
-      }
-      throw new Error('Failed to tombstone config field after concurrent update retries');
-    }
 
     for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
       const result = await applyOnce(session);
@@ -1174,50 +1224,17 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     assertValidFieldPath(fieldPath);
     const Config = mongoose.models.Config as Model<IConfig>;
     const principalIdString = principalId.toString();
-    const isBase = isBaseConfigPrincipal(principalType, principalIdString);
+    assertScopedConfigMutation(principalType, principalIdString);
 
-    const apply = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
-      if (!txn && isBase) {
-        const current = await Config.findOne({ principalType, principalId: principalIdString });
-        if (!current) return null;
-        const currentVersion = interpretedConfigVersion(current);
-        const nextVersion = (currentVersion ?? 0) + 1;
-        await raiseBaseConfigVersionEpoch(Config, nextVersion, undefined);
-        const updated = await Config.findOneAndUpdate(
-          versionCasFilter(current._id, currentVersion),
-          {
-            $unset: { [`overrides.${fieldPath}`]: '' },
-            $pull: { tombstones: { $regex: getPathAndDescendantsRegex(fieldPath) } },
-            $inc: { configVersion: 1 },
-          },
-          { new: true },
-        );
-        if (!updated) return 'retry';
-        return updated;
-      }
-      const updated = await Config.findOneAndUpdate(
-        { principalType, principalId: principalIdString },
-        {
-          $unset: { [`overrides.${fieldPath}`]: '' },
-          $pull: { tombstones: { $regex: getPathAndDescendantsRegex(fieldPath) } },
-          $inc: { configVersion: 1 },
-        },
-        { new: true, ...(txn ? { session: txn } : {}) },
-      );
-      if (updated && isBase && txn) {
-        await raiseBaseConfigVersionEpoch(Config, updated.configVersion ?? 0, txn);
-      }
-      return updated;
-    };
-
-    if (isBase) {
-      for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
-        const result = await withOwnedSession(Config, session, (txn) => apply(txn));
-        if (result !== 'retry') return result;
-      }
-      throw new Error('Failed to unset config field after concurrent update retries');
-    }
-    return apply(session) as Promise<IConfig | null>;
+    return Config.findOneAndUpdate(
+      { principalType, principalId: principalIdString },
+      {
+        $unset: { [`overrides.${fieldPath}`]: '' },
+        $pull: { tombstones: { $regex: getPathAndDescendantsRegex(fieldPath) } },
+        $inc: { configVersion: 1 },
+      },
+      { new: true, ...(session ? { session } : {}) },
+    );
   }
 
   async function deleteConfig(
@@ -1228,7 +1245,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
     const principalIdString = principalId.toString();
-    const isBase = isBaseConfigPrincipal(principalType, principalIdString);
+    assertScopedConfigMutation(principalType, principalIdString);
     const filter: FilterQuery<IConfig> = {
       principalType,
       principalId: principalIdString,
@@ -1240,42 +1257,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       ];
     }
 
-    const apply = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
-      if (!txn && isBase) {
-        const current = await Config.findOne({ principalType, principalId: principalIdString });
-        if (!current) return null;
-        if (options?.expectEmpty) {
-          const hasOverrides =
-            current.overrides != null && Object.keys(current.overrides).length > 0;
-          const hasTombstones = current.tombstones != null && current.tombstones.length > 0;
-          if (hasOverrides || hasTombstones) return null;
-        }
-        const version = interpretedConfigVersion(current);
-        if (version != null) {
-          await raiseBaseConfigVersionEpoch(Config, version, undefined);
-        }
-        const deleted = await Config.findOneAndDelete(versionCasFilter(current._id, version));
-        if (!deleted) return 'retry';
-        return deleted;
-      }
-      const deleted = await Config.findOneAndDelete(filter, txn ? { session: txn } : {});
-      if (deleted && isBase && txn) {
-        const deletedVersion = interpretedConfigVersion(deleted);
-        if (deletedVersion != null) {
-          await raiseBaseConfigVersionEpoch(Config, deletedVersion, txn);
-        }
-      }
-      return deleted;
-    };
-
-    if (isBase) {
-      for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
-        const result = await withOwnedSession(Config, session, (txn) => apply(txn));
-        if (result !== 'retry') return result;
-      }
-      throw new Error('Failed to delete base config after concurrent update retries');
-    }
-    return apply(session) as Promise<IConfig | null>;
+    return Config.findOneAndDelete(filter, session ? { session } : {});
   }
 
   async function toggleConfigActive(
@@ -1287,7 +1269,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
     const principalIdString = principalId.toString();
-    const isBase = isBaseConfigPrincipal(principalType, principalIdString);
+    assertScopedConfigMutation(principalType, principalIdString);
     const filter: FilterQuery<IConfig> = {
       principalType,
       principalId: principalIdString,
@@ -1299,46 +1281,46 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       ];
     }
 
-    const apply = async (txn?: ClientSession): Promise<IConfig | null | 'retry'> => {
-      if (!txn && isBase) {
-        const current = await Config.findOne({ principalType, principalId: principalIdString });
-        if (!current) return null;
-        if (options?.expectEmpty) {
-          const hasOverrides =
-            current.overrides != null && Object.keys(current.overrides).length > 0;
-          const hasTombstones = current.tombstones != null && current.tombstones.length > 0;
-          if (hasOverrides || hasTombstones) return null;
-        }
-        const currentVersion = interpretedConfigVersion(current);
-        const nextVersion = (currentVersion ?? 0) + 1;
-        await raiseBaseConfigVersionEpoch(Config, nextVersion, undefined);
-        const updated = await Config.findOneAndUpdate(
-          versionCasFilter(current._id, currentVersion),
-          { $set: { isActive }, $inc: { configVersion: 1 } },
-          { new: true },
-        );
-        if (!updated) return 'retry';
-        return updated;
-      }
-      const updated = await Config.findOneAndUpdate(
-        filter,
-        { $set: { isActive }, $inc: { configVersion: 1 } },
-        { new: true, ...(txn ? { session: txn } : {}) },
-      );
-      if (updated && isBase && txn) {
-        await raiseBaseConfigVersionEpoch(Config, updated.configVersion ?? 0, txn);
-      }
-      return updated;
-    };
+    return Config.findOneAndUpdate(
+      filter,
+      { $set: { isActive }, $inc: { configVersion: 1 } },
+      { new: true, ...(session ? { session } : {}) },
+    );
+  }
 
-    if (isBase) {
-      for (let attempt = 0; attempt < MAX_CONFIG_CAS_RETRIES; attempt += 1) {
-        const result = await withOwnedSession(Config, session, (txn) => apply(txn));
-        if (result !== 'retry') return result;
-      }
-      throw new Error('Failed to toggle base config after concurrent update retries');
-    }
-    return apply(session) as Promise<IConfig | null>;
+  async function listConfigRevisions(params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    tenantId: string;
+    limit?: number;
+  }): Promise<ConfigRevisionListItem[]> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+    const revisions = Config.db.collection(ADMIN_CONFIG_REVISIONS_COLLECTION);
+    const principalId = params.principalId.toString();
+    const limit = Math.max(1, Math.min(params.limit ?? MAX_CONFIG_REVISIONS, MAX_CONFIG_REVISIONS));
+
+    const docs = await revisions
+      .find(
+        {
+          ...revisionReadScopeFilter(params.tenantId, params.principalType, principalId),
+          status: { $ne: 'provisional' },
+        },
+        {
+          projection: {
+            _id: 0,
+            id: 1,
+            createdAt: 1,
+            cause: 1,
+            actorId: 1,
+            actorEmail: 1,
+          },
+        },
+      )
+      .sort({ configVersion: -1, createdAt: -1, _id: -1 })
+      .limit(limit)
+      .toArray();
+
+    return docs as unknown as ConfigRevisionListItem[];
   }
 
   async function mutateConfigWithRevision(params: {
@@ -1349,6 +1331,36 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     op: ConfigMutationOp;
     cause: ConfigRevisionCause;
     actor: ConfigRevisionActor;
+    /**
+     * Encrypts any plaintext legacy secret values in a stored overrides
+     * document before it's copied into a revision snapshot or written back
+     * from a restored revision. Must be idempotent on already-encrypted
+     * values — injected by the API layer, which owns the config-secret
+     * registry; data-schemas has no knowledge of which paths are secrets.
+     */
+    normalizeSecrets?: (overrides: Record<string, unknown>) => Record<string, unknown>;
+    /**
+     * Explicit, per-call opt-in letting this specific mutation write one or
+     * more `BASE_PRINCIPAL_CONFIG_SECTIONS` (e.g. `['langfuse']`) that would
+     * otherwise be silently preserved/stripped back to their current value —
+     * see `preserveBasePrincipalOverrides`. Only the section's own dedicated
+     * handler should ever pass this.
+     */
+    trustedBasePrincipalSections?: string[];
+    /**
+     * Validates a restore's normalized, pre-write overrides and tombstones against the API
+     * layer's current policies (schema shape, process-backed MCP servers,
+     * protected Langfuse headers, ...) — injected by the API layer, which
+     * owns those rules; data-schemas has no knowledge of them. Returning a
+     * message aborts the restore with a `RestoreValidationError` before any
+     * write, matching what a direct field/import mutation with the same
+     * content would reject. Only consulted for a non-absent restore; there's
+     * nothing to validate when the snapshot is `absent`.
+     */
+    validateRestoredOverrides?: (
+      overrides: Record<string, unknown>,
+      tombstones: string[],
+    ) => string | null;
   }): Promise<ConfigMutationResult> {
     const Config = mongoose.models.Config as Model<IConfig>;
     const principalId = params.principalId.toString();
@@ -1387,15 +1399,26 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
           throw new ConfigVersionConflictError(currentVersion);
         }
 
+        const normalizeSecrets = (
+          overrides: unknown,
+        ): Record<string, unknown> | null | undefined => {
+          if (overrides == null || typeof overrides !== 'object' || !params.normalizeSecrets) {
+            return overrides as Record<string, unknown> | null | undefined;
+          }
+          return params.normalizeSecrets(overrides as Record<string, unknown>);
+        };
+
         const { op } = params;
         const revision = snapshotFromConfig(current, {
           cause: params.cause,
           actor: params.actor,
           principalType: params.principalType,
           principalId,
+          overridesOverride: normalizeSecrets(current?.overrides),
         });
 
         let config: IConfig | null = current;
+        const trustedBasePrincipalSections = new Set(params.trustedBasePrincipalSections ?? []);
 
         const applyReplace = async (state: {
           overrides: Record<string, unknown>;
@@ -1403,10 +1426,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
           priority: number;
           isActive: boolean;
         }) => {
-          const nextOverrides = preserveBasePrincipalOverrides(state.overrides, current?.overrides);
+          const preservedOverrides = preserveBasePrincipalOverrides(
+            state.overrides,
+            current?.overrides,
+            trustedBasePrincipalSections,
+          );
+          const nextOverrides = normalizeSecrets(preservedOverrides) ?? {};
           const nextTombstones = preserveBasePrincipalTombstones(
             state.tombstones,
             current?.tombstones,
+            trustedBasePrincipalSections,
           );
           if (current == null) {
             const configVersion = await allocateCreateVersion();
@@ -1439,8 +1468,8 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
                 tombstones: nextTombstones,
                 priority: state.priority,
                 isActive: state.isActive,
+                configVersion: nextVersion,
               },
-              $inc: { configVersion: 1 },
             },
             { session, new: true },
           );
@@ -1451,41 +1480,45 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
           config = updated;
         };
 
-        const applyDelete = async (): Promise<boolean> => {
+        /**
+         * Logical absence is never represented by removing the document once
+         * one has ever existed — only by a versioned, empty replace that retains
+         * the document's active state. A true `deleteOne` would let a stale
+         * `expectedVersion: null` reader race an absent → create → delete cycle
+         * it never observed (the epoch only guards numeric version reuse, not a
+         * return to absence). Before any document has ever been created there's
+         * nothing to preserve a version for, so this is correctly still a no-op.
+         */
+        const applyAbsence = async (): Promise<boolean> => {
           if (!current) {
             config = null;
             return false;
           }
-          const deleted = await Config.deleteOne(versionCasFilter(current._id, currentVersion), {
-            session,
+          await applyReplace({
+            overrides: {},
+            tombstones: [],
+            priority: current.priority ?? DEFAULT_CONFIG_PRIORITY,
+            isActive: current.isActive ?? true,
           });
-          if (deleted.deletedCount !== 1) {
-            throw new ConfigVersionConflictError(currentVersion);
-          }
-          if (currentVersion != null) {
-            await raiseVersionEpoch(currentVersion);
-          }
-          config = null;
           return true;
         };
 
-        if (op.kind === 'restore') {
+        if (op.kind === 'active') {
+          if (!current || current.isActive === op.isActive) {
+            return { changed: false, config: null, revision: null };
+          }
+          await applyReplace({
+            overrides: sanitizeAdminConfigOverrides(cloneOverrides(current.overrides)),
+            tombstones: sanitizeAdminConfigTombstones(current.tombstones),
+            priority: current.priority ?? DEFAULT_CONFIG_PRIORITY,
+            isActive: op.isActive,
+          });
+        } else if (op.kind === 'restore') {
           const stored = (await revisions.findOne(
             {
               id: op.revisionId,
               status: { $ne: 'provisional' },
-              $and: [
-                tenantRevisionFilter(params.actor.tenantId),
-                {
-                  $or: [
-                    { principalType: params.principalType, principalId },
-                    {
-                      principalType: { $exists: false },
-                      principalId: { $exists: false },
-                    },
-                  ],
-                },
-              ],
+              ...revisionReadScopeFilter(params.actor.tenantId, params.principalType, principalId),
             },
             { session },
           )) as ConfigRevisionSnapshot | null;
@@ -1493,33 +1526,42 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
             throw new ConfigRevisionNotFoundError(op.revisionId);
           }
           if (stored.absent) {
-            if (hasBasePrincipalState(current)) {
-              await applyReplace({
-                overrides: {},
-                tombstones: [],
-                priority: current?.priority ?? 0,
-                isActive: current?.isActive ?? true,
-              });
-            } else if (!(await applyDelete())) {
+            if (!(await applyAbsence())) {
               return { changed: false, config: null, revision: null };
             }
           } else {
+            // Legacy (pre-atomic-mutate) panel revisions recorded only `overrides` —
+            // `tombstones`/`priority`/`isActive` are genuinely absent at runtime
+            // despite the type, not falsy-but-present. Falling back to a fixed
+            // default for those would silently clear current tombstones or reset
+            // priority/isActive beyond what the revision ever recorded; preserve
+            // the live document's values for anything the snapshot didn't capture.
+            const restoredOverrides = preserveBasePrincipalOverrides(
+              sanitizeAdminConfigOverrides(cloneOverrides(normalizeSecrets(stored.overrides))),
+              current?.overrides,
+              trustedBasePrincipalSections,
+            );
+            const restoredTombstones = preserveBasePrincipalTombstones(
+              sanitizeAdminConfigTombstones(stored.tombstones ?? current?.tombstones ?? []),
+              current?.tombstones,
+              trustedBasePrincipalSections,
+            );
+            const restoreValidationError = params.validateRestoredOverrides?.(
+              restoredOverrides,
+              restoredTombstones,
+            );
+            if (restoreValidationError) {
+              throw new RestoreValidationError(restoreValidationError);
+            }
             await applyReplace({
-              overrides: sanitizeAdminConfigOverrides(cloneOverrides(stored.overrides)),
-              tombstones: sanitizeAdminConfigTombstones(stored.tombstones),
-              priority: stored.priority ?? 0,
-              isActive: stored.isActive ?? true,
+              overrides: restoredOverrides,
+              tombstones: restoredTombstones,
+              priority: stored.priority ?? current?.priority ?? 0,
+              isActive: stored.isActive ?? current?.isActive ?? true,
             });
           }
         } else if (op.kind === 'delete') {
-          if (hasBasePrincipalState(current)) {
-            await applyReplace({
-              overrides: {},
-              tombstones: [],
-              priority: current?.priority ?? 0,
-              isActive: current?.isActive ?? true,
-            });
-          } else if (!(await applyDelete())) {
+          if (!(await applyAbsence())) {
             return { changed: false, config: null, revision: null };
           }
         } else if (op.kind === 'replace') {
@@ -1536,29 +1578,15 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
             return { changed: false, config: null, revision: null };
           }
           await applyReplace({
-            overrides: sanitizeAdminConfigOverrides(
-              applyFieldsMutation({}, op.resetPaths, op.fields),
-            ),
-            tombstones: nextTombstones([], op.resetPaths, Object.keys(op.fields)),
+            ...applyConfigFieldsMutation(null, op.resetPaths, op.fields),
             priority: op.priority,
-            isActive: true,
+            isActive: op.isActive ?? true,
           });
         } else {
           await applyReplace({
-            overrides: sanitizeAdminConfigOverrides(
-              applyFieldsMutation(
-                sanitizeAdminConfigOverrides(cloneOverrides(current.overrides)),
-                op.resetPaths,
-                op.fields,
-              ),
-            ),
-            tombstones: nextTombstones(
-              sanitizeAdminConfigTombstones(current.tombstones),
-              op.resetPaths,
-              Object.keys(op.fields),
-            ),
+            ...applyConfigFieldsMutation(current, op.resetPaths, op.fields),
             priority: op.priority,
-            isActive: current.isActive ?? true,
+            isActive: op.isActive ?? current.isActive ?? true,
           });
         }
 
@@ -1568,10 +1596,18 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
 
       if (outcome.changed) {
         try {
+          // configVersion (monotonic, CAS-allocated) orders revisions correctly
+          // even when createdAt ties or skews across pods — see
+          // ensureRevisionCollectionIndexes. createdAt/_id break ties among
+          // legacy revisions that predate configVersion being recorded.
           const stale = await revisions
             .find(
               { ...scope, status: { $ne: 'provisional' } },
-              { projection: { id: 1 }, sort: { createdAt: -1 }, skip: MAX_CONFIG_REVISIONS },
+              {
+                projection: { id: 1 },
+                sort: { configVersion: -1, createdAt: -1, _id: -1 },
+                skip: MAX_CONFIG_REVISIONS,
+              },
             )
             .toArray();
           if (stale.length > 0) {
@@ -1611,6 +1647,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     unsetConfigField,
     deleteConfig,
     toggleConfigActive,
+    listConfigRevisions,
     mutateConfigWithRevision,
   };
 }

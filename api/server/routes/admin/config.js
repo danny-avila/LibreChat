@@ -28,6 +28,7 @@ const handlers = createAdminConfigHandlers({
   hasAnyConfigReadAccess,
   getReadableConfigSections,
   mutateConfigWithRevision: db.mutateConfigWithRevision,
+  listConfigRevisions: db.listConfigRevisions,
   hasConfigCapability,
   hasCapability,
   getAppConfig,
@@ -38,6 +39,7 @@ router.use(requireJwtAuth, requireAdminAccess);
 
 router.get('/', handlers.listConfigs);
 router.get('/base', handlers.getBaseConfig);
+router.get('/:principalType/:principalId/revisions', handlers.listConfigRevisions);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);

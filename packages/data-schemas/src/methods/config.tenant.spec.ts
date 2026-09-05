@@ -80,3 +80,34 @@ describe('findConfigByPrincipal tenant isolation', () => {
     expect(withoutContext).toBeNull();
   });
 });
+
+describe('getApplicableConfigs tenant isolation', () => {
+  it('keeps default and named tenant base configs separate without ambient tenant context', async () => {
+    await mongoose.models.Config.create({
+      principalType: PrincipalType.ROLE,
+      principalId: '__base__',
+      principalModel: PrincipalModel.ROLE,
+      overrides: { cache: false },
+      priority: 0,
+    });
+    await runAs(TENANT_A, async () => {
+      await mongoose.models.Config.create({
+        principalType: PrincipalType.ROLE,
+        principalId: '__base__',
+        principalModel: PrincipalModel.ROLE,
+        overrides: { cache: true },
+        priority: 0,
+      });
+    });
+
+    const defaultConfigs = await methods.getApplicableConfigs([], undefined, { tenantId: '' });
+    const tenantConfigs = await methods.getApplicableConfigs([], undefined, {
+      tenantId: TENANT_A,
+    });
+
+    expect(defaultConfigs).toHaveLength(1);
+    expect(defaultConfigs[0].overrides).toEqual({ cache: false });
+    expect(tenantConfigs).toHaveLength(1);
+    expect(tenantConfigs[0].overrides).toEqual({ cache: true });
+  });
+});

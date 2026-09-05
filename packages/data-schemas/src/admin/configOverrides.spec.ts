@@ -179,6 +179,17 @@ describe('sanitizeAdminConfigTombstones', () => {
       ]),
     ).toEqual(['interface.schedules', 'interface.schedules.maxPerUser']);
   });
+
+  it('discards non-string entries instead of throwing on a malformed legacy document', () => {
+    expect(sanitizeAdminConfigTombstones([null, {}, 'cache'])).toEqual(['cache']);
+  });
+
+  it('treats non-array input as no tombstones instead of throwing', () => {
+    expect(sanitizeAdminConfigTombstones(undefined)).toEqual([]);
+    expect(sanitizeAdminConfigTombstones(null)).toEqual([]);
+    expect(sanitizeAdminConfigTombstones('cache')).toEqual([]);
+    expect(sanitizeAdminConfigTombstones({ 0: 'cache' })).toEqual([]);
+  });
 });
 
 describe('isForbiddenAdminConfigPath – localized label traversal', () => {

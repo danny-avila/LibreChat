@@ -565,6 +565,9 @@ const addParamsSchema: z.ZodType<Record<string, unknown>> = z
 
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
+  /** Masked preview of the API key, stored at write time so admin reads can
+   *  show which key is configured without returning the secret. */
+  apiKeyPreview: z.string().optional(),
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
@@ -2068,6 +2071,7 @@ export const webSearchSchema = z.object({
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiKeyPreview: apiKeyPreviewSchema,
   keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,

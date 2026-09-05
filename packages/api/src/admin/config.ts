@@ -1,25 +1,31 @@
 import {
-  logger,
-  BASE_CONFIG_PRINCIPAL_ID,
-  canonicalizeResetPaths,
-  fieldPathPolicyError,
-  indexedArrayPathError,
-  isForbiddenAdminConfigPath,
-  isValidFieldPath,
-  sanitizeAdminConfigOverrides,
-} from '@librechat/data-schemas';
-import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
+  configSchema,
   hasProcessMCPServerConfig,
   isProcessMCPServerConfig,
   isProcessMCPServerField,
 } from 'librechat-data-provider';
+import {
+  logger,
+  BASE_CONFIG_PRINCIPAL_ID,
+  SystemCapabilities,
+  applyConfigFieldsMutation,
+  canonicalizeResetPaths,
+  fieldPathPolicyError,
+  indexedArrayPathError,
+  isConfigFieldPath,
+  isForbiddenAdminConfigPath,
+  isValidFieldPath,
+  mergeConfigOverrides,
+  sanitizeAdminConfigOverrides,
+} from '@librechat/data-schemas';
 import type {
   AppConfig,
+  ConfigRevisionListItem,
   ConfigRevisionSnapshot,
   ConfigSection,
   FindConfigByPrincipalOptions,
@@ -29,11 +35,14 @@ import type {
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
+import type { ZodTypeAny } from 'zod';
 import type { CapabilityUser } from '~/middleware/capabilities';
 import type { ServerRequest } from '~/types/http';
 import {
   encryptConfigSecretFields,
   encryptConfigSecrets,
+  encryptLegacyPlaintextConfigSecrets,
+  getArrayExistingIdentityConflictError,
   getConfigSecretMutationPaths,
   getConfigSecretInputError,
   getConfigSecretSections,
@@ -42,18 +51,29 @@ import {
   isConfigSecretPreservablePatch,
   preserveConfigSecrets,
   redactConfigSecrets,
+  resolveMcpSecretHintBatch,
+  resolveMcpSecretHintBatchForWholeDocument,
 } from './secrets';
+import { getEffectiveTenantId } from '~/middleware/tenant';
 
 type ConfigRevisionCause = 'save' | 'import' | 'reset' | 'restore';
 type ConfigMutationOp =
-  | { kind: 'fields'; resetPaths: string[]; fields: Record<string, unknown>; priority: number }
+  | {
+      kind: 'fields';
+      resetPaths: string[];
+      fields: Record<string, unknown>;
+      priority: number;
+      isActive?: boolean;
+    }
   | { kind: 'replace'; overrides: Record<string, unknown>; priority: number }
   | { kind: 'delete' }
+  | { kind: 'active'; isActive: boolean }
   | { kind: 'restore'; revisionId: string };
 
 const MAX_PATCH_ENTRIES = 100;
 const MAX_PATCH_MUTATIONS = 100;
 const DEFAULT_PRIORITY = 10;
+const DEFAULT_BASE_PRIORITY = 0;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 const PROCESS_MCP_CONFIG_ERROR =
@@ -98,6 +118,10 @@ type AtomicFieldEntry = { fieldPath: string; value: unknown };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function fieldPathsOverlap(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
 }
 
 function parseAtomicFieldEntries(
@@ -174,12 +198,17 @@ function validateAtomicMutationProperties(
       return { ok: false, error: 'restoreRevisionId must be a non-empty string' };
     }
   }
+  if ('isActive' in body && body.isActive !== undefined && typeof body.isActive !== 'boolean') {
+    return { ok: false, error: 'isActive must be a boolean' };
+  }
   return { ok: true };
 }
 
 export { isValidFieldPath } from '@librechat/data-schemas';
 
-function isConfigVersionConflict(error: unknown): error is { currentVersion: number | null } {
+export function isConfigVersionConflict(
+  error: unknown,
+): error is { currentVersion: number | null } {
   return (
     typeof error === 'object' &&
     error != null &&
@@ -195,12 +224,51 @@ function isConfigRevisionNotFound(error: unknown): boolean {
   );
 }
 
-function isTransactionRequired(error: unknown): error is Error {
+function isRestoreValidationError(error: unknown): error is Error {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'RestoreValidationError'
+  );
+}
+
+export function isTransactionRequired(error: unknown): error is Error {
   return (
     typeof error === 'object' &&
     error != null &&
     (error as { name?: string }).name === 'TransactionRequiredError'
   );
+}
+
+export function rejectConfigVersionConflict(
+  res: Response,
+  expectedVersion: number | null,
+  config: { configVersion?: number } | null,
+): Response | null {
+  const currentVersion = config == null ? null : (config.configVersion ?? 0);
+  if (expectedVersion === currentVersion) {
+    return null;
+  }
+  return res.status(409).json({
+    error: 'Config version conflict',
+    currentVersion,
+  });
+}
+
+/**
+ * Legacy PUT/PATCH/DELETE base-config routes bypass CAS and revision history
+ * entirely — they never carry `expectedVersion` and never write a revision.
+ * Base-config mutations require a coordinated cutover with the admin panel
+ * (both sides deploy together and the panel exclusively uses `/atomic`); once
+ * that's in place, keeping these legacy paths open for the base principal
+ * would silently reintroduce version-conflict blindness and rollback gaps.
+ */
+function rejectLegacyBaseMutation(res: Response): Response {
+  return res.status(409).json({
+    error:
+      'Base configuration mutations must use POST /:principalType/:principalId/atomic ' +
+      '— it is the only path with optimistic concurrency (expectedVersion) and revision history.',
+  });
 }
 
 export function getTopLevelSection(fieldPath: string): string {
@@ -253,6 +321,232 @@ function sanitizeConfigOverrides(overrides: Record<string, unknown>): Partial<TC
     }
   }
   return sanitized as Partial<TCustomConfig>;
+}
+
+const CONFIG_SCHEMA_SHAPE = configSchema.shape as Record<string, ZodTypeAny>;
+
+function buildNestedPatch(segments: string[], value: unknown): Record<string, unknown> {
+  const [head, ...rest] = segments;
+  return rest.length === 0 ? { [head]: value } : { [head]: buildNestedPatch(rest, value) };
+}
+
+/** Deep-merges `source` onto `target`, mutating and returning `target`. Falls back to `source`
+ * wherever `target`'s existing value isn't a plain object (e.g. a boolean union branch). */
+function mergeNestedPatches(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(source)) {
+    const existing = target[key];
+    target[key] =
+      isPlainObject(value) && isPlainObject(existing)
+        ? mergeNestedPatches({ ...existing }, value)
+        : value;
+  }
+  return target;
+}
+
+function firstZodIssueMessage(issues: { message: string; path: (string | number)[] }[]): string {
+  const [issue] = issues;
+  if (!issue) return 'schema validation failed';
+  const path = issue.path.join('.');
+  return path ? `${path}: ${issue.message}` : issue.message;
+}
+
+/** Finds a caller-supplied key that Zod removed while parsing. Zod objects
+ * strip unknown keys by default, so a successful parse alone is not proof
+ * that every submitted override belongs to the configuration schema. */
+function firstStrippedInputPath(
+  input: unknown,
+  parsed: unknown,
+  prefix = '',
+  matchMergedArrays = false,
+): string | null {
+  if (Array.isArray(input)) {
+    if (!Array.isArray(parsed)) return prefix || '<root>';
+    for (let index = 0; index < input.length; index += 1) {
+      const path = prefix ? `${prefix}.${index}` : String(index);
+      const item = input[index];
+      // Runtime merges custom endpoints by name, retaining YAML-only entries
+      // ahead of newly appended entries. Their positions need not match the
+      // submitted array, but error paths must still refer to the submission.
+      const parsedItem =
+        matchMergedArrays && prefix === 'endpoints.custom' && isPlainObject(item)
+          ? parsed.find((entry) => isPlainObject(entry) && entry.name === item.name)
+          : parsed[index];
+      const stripped = firstStrippedInputPath(item, parsedItem, path, matchMergedArrays);
+      if (stripped) return stripped;
+    }
+    return null;
+  }
+  if (!isPlainObject(input)) return null;
+  if (!isPlainObject(parsed)) return prefix || '<root>';
+  for (const [key, value] of Object.entries(input)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (!Object.prototype.hasOwnProperty.call(parsed, key)) {
+      return path;
+    }
+    const stripped = firstStrippedInputPath(value, parsed[key], path, matchMergedArrays);
+    if (stripped) return stripped;
+  }
+  return null;
+}
+
+/**
+ * Validates the values a "fields"-mode atomic mutation would actually write against the
+ * librechat.yaml config schema, so a caller cannot persist a structurally invalid runtime
+ * value (e.g. `interface.schedules.maxPerUser: -1`) by bypassing the admin panel's own
+ * validation and calling the API directly. Each touched section (by a set value or a reset)
+ * is resolved with the transaction's field/tombstone transition and the runtime merge, so
+ * cross-field constraints see the section's real post-mutation state, not just the delta.
+ * A bare top-level entry for a section (e.g. `cloudfront`) fully replaces that section and is
+ * validated independently because ancestor/descendant field entries are rejected before this
+ * function is called; the YAML/DB baseline never applies to a whole-section replacement.
+ * `yamlBaseline` may be `null` when `getAppConfig` isn't configured for this deployment; in
+ * that case sections are validated against DB overrides alone (pre-existing behavior).
+ */
+function validateAtomicFieldValues(
+  fields: Record<string, unknown>,
+  resetPaths: string[],
+  existing: IConfig | null,
+  yamlBaseline: Record<string, unknown> | null,
+): string | null {
+  const sectionPatches = new Map<string, Record<string, unknown>>();
+  const bareSectionEntries = new Map<string, unknown>();
+  const candidate = applyConfigFieldsMutation(existing, resetPaths, fields);
+  const resolvedConfig = mergeConfigOverrides((yamlBaseline ?? {}) as unknown as AppConfig, [
+    { principalId: BASE_CONFIG_PRINCIPAL_ID, priority: 0, ...candidate },
+  ]) as unknown as Record<string, unknown>;
+
+  const touchedSection = (section: string): Record<string, unknown> => {
+    let patch = sectionPatches.get(section);
+    if (!patch) {
+      patch = {};
+      sectionPatches.set(section, patch);
+    }
+    return patch;
+  };
+
+  for (const path of resetPaths) {
+    const [section, ...rest] = path.split('.');
+    if (!CONFIG_SCHEMA_SHAPE[section]) {
+      return `Unknown config field path: "${path}"`;
+    }
+    if (rest.length === 0) {
+      // A bare reset with nothing else touching the section is pure YAML,
+      // which is presumed already valid — only worth resolving if a
+      // descendant patch (below) also lands in sectionPatches for it.
+      continue;
+    }
+    touchedSection(section);
+  }
+
+  for (const [fieldPath, value] of Object.entries(fields)) {
+    const [section, ...rest] = fieldPath.split('.');
+    const sectionSchema = CONFIG_SCHEMA_SHAPE[section];
+    if (!sectionSchema) {
+      return `Unknown config field path: "${fieldPath}"`;
+    }
+
+    if (rest.length === 0) {
+      bareSectionEntries.set(section, value);
+      continue;
+    }
+
+    mergeNestedPatches(touchedSection(section), buildNestedPatch(rest, value));
+  }
+
+  // Whole-section submissions must be valid on their own, even when YAML
+  // happens to supply a required value that the submission omitted.
+  for (const [section, value] of bareSectionEntries) {
+    const sectionSchema = CONFIG_SCHEMA_SHAPE[section];
+    sectionPatches.delete(section);
+
+    const result = sectionSchema.safeParse(value);
+    if (!result.success) {
+      return `Invalid value for "${section}": ${firstZodIssueMessage(result.error.issues)}`;
+    }
+    const stripped = firstStrippedInputPath(value, result.data, section);
+    if (stripped) {
+      return `Unknown config field path: "${stripped}"`;
+    }
+  }
+
+  for (const [section, patch] of sectionPatches) {
+    const resolved = resolvedConfig[SECTION_TO_APP_CONFIG_FIELD[section] ?? section];
+    const result = CONFIG_SCHEMA_SHAPE[section].safeParse(resolved);
+    if (!result.success) {
+      return `Invalid value for config section "${section}": ${firstZodIssueMessage(result.error.issues)}`;
+    }
+    const stripped =
+      Object.keys(patch).length > 0
+        ? firstStrippedInputPath(patch, result.data, section, true)
+        : null;
+    if (stripped) {
+      return `Unknown config field path: "${stripped}"`;
+    }
+  }
+  return null;
+}
+
+/** Validates a "replace"-mode atomic mutation's full overrides object against the librechat.yaml
+ * config schema. `.partial()` allows the sparse, section-at-a-time shape overrides always have —
+ * only sections actually present are checked. */
+function validateAtomicReplaceOverrides(overrides: Record<string, unknown>): string | null {
+  const result = configSchema.partial().strict().safeParse(overrides);
+  if (!result.success) {
+    return `Invalid config overrides: ${firstZodIssueMessage(result.error.issues)}`;
+  }
+  const stripped = firstStrippedInputPath(overrides, result.data);
+  if (stripped) {
+    return `Unknown config field path: "${stripped}"`;
+  }
+  return null;
+}
+
+/**
+ * Applies the same policies an import (`hasOverrides`) mutation enforces on
+ * its submitted overrides to a legacy revision's stored overrides before a
+ * restore is allowed to write them. Restoring an older revision must not be
+ * a side channel for reintroducing content the API would reject if it were
+ * submitted directly today — e.g. a schema constraint tightened since the
+ * revision was created, or a since-forbidden process-backed MCP server.
+ * Runs read-only against the data layer's already-sanitized overrides; it
+ * does not re-sanitize or otherwise change what gets persisted.
+ */
+function validateRestoredOverrides(
+  overrides: Record<string, unknown>,
+  tombstones: string[] = [],
+  yamlBaseline?: AppConfig,
+): string | null {
+  if (
+    hasProcessMCPServerConfig(overrides.mcpServers) ||
+    hasProcessMCPServerConfig(overrides.mcpConfig)
+  ) {
+    return PROCESS_MCP_CONFIG_ERROR;
+  }
+  if (hasLangfuseHeadersOverride(overrides)) {
+    return LANGFUSE_HEADERS_CONFIG_ERROR;
+  }
+  if (!yamlBaseline) {
+    return validateAtomicReplaceOverrides(overrides);
+  }
+  // Snapshots contain sparse DB overrides, not standalone YAML documents.
+  // Resolve only for validation; never persist inherited YAML in the snapshot.
+  const resolved = mergeConfigOverrides(yamlBaseline, [
+    { principalId: BASE_CONFIG_PRINCIPAL_ID, priority: 0, overrides, tombstones },
+  ]);
+  const sections = new Set([
+    ...Object.keys(overrides),
+    ...tombstones.map((path) => getTopLevelSection(path)),
+  ]);
+  const effectiveOverrides = Object.fromEntries(
+    [...sections].map((section) => [
+      section,
+      resolved[(SECTION_TO_APP_CONFIG_FIELD[section] ?? section) as keyof AppConfig],
+    ]),
+  );
+  return validateAtomicReplaceOverrides(effectiveOverrides);
 }
 
 /**
@@ -344,11 +638,23 @@ export interface AdminConfigDeps {
     op: ConfigMutationOp;
     cause: ConfigRevisionCause;
     actor: { actorId: string; actorEmail?: string; tenantId: string };
+    normalizeSecrets?: (overrides: Record<string, unknown>) => Record<string, unknown>;
+    trustedBasePrincipalSections?: string[];
+    validateRestoredOverrides?: (
+      overrides: Record<string, unknown>,
+      tombstones: string[],
+    ) => string | null;
   }) => Promise<{
     changed: boolean;
     config: IConfig | null;
     revision: ConfigRevisionSnapshot | null;
   }>;
+  listConfigRevisions: (params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    tenantId: string;
+    limit?: number;
+  }) => Promise<ConfigRevisionListItem[]>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
@@ -367,6 +673,8 @@ export interface AdminConfigDeps {
     userId?: string;
     tenantId?: string;
     baseOnly?: boolean;
+    refresh?: boolean;
+    failClosed?: boolean;
   }) => Promise<AppConfig>;
   /** Invalidate all config-related caches after a mutation. */
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
@@ -402,6 +710,13 @@ function principalModel(type: PrincipalType): PrincipalModel {
   }
 }
 
+/**
+ * The capability principal is built with the request's *effective* tenant —
+ * the same one the mutation, the revision insert, and the epoch update run
+ * under. Resolving grants from `req.user.tenantId` while writing under the ALS
+ * tenant would let a deployment that resolves tenants server-side
+ * (`req.tenantId`) authorize in tenant A and persist in tenant B.
+ */
 function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   if (!req.user) {
     return null;
@@ -409,7 +724,7 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   return {
     id: req.user.id ?? req.user._id?.toString() ?? '',
     role: req.user.role ?? '',
-    tenantId: (req.user as { tenantId?: string }).tenantId,
+    tenantId: getEffectiveTenantId(req),
   };
 }
 
@@ -447,6 +762,12 @@ const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
   turnstileConfig: 'turnstile',
   mcpConfig: 'mcpServers',
 };
+
+/** Inverse of `APP_CONFIG_FIELD_TO_SECTION`: canonical schema section name →
+ * the top-level key `getAppConfig`'s resolved payload actually uses. */
+const SECTION_TO_APP_CONFIG_FIELD: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(APP_CONFIG_FIELD_TO_SECTION).map(([field, section]) => [section, field]),
+);
 
 type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
 
@@ -536,6 +857,7 @@ function redactConfigForResponse(config: IConfig): IConfig {
 function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
   redactConfigSecrets(safeConfig);
+  redactConfigSecrets({ mcpServers: safeConfig.mcpConfig });
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
   }
@@ -548,14 +870,31 @@ function redactRevisionForResponse(revision: ConfigRevisionSnapshot): ConfigRevi
   return safeRevision;
 }
 
+/**
+ * Preserves omitted secrets across every fieldPath in one save's batch.
+ * `preserveConfigSecrets` is called once per fieldPath, so an mcpServers
+ * `__previousIdentity` hint on one fieldPath cannot, by itself, see whether a
+ * DIFFERENT fieldPath in this same batch collides with it (same origin
+ * claimed twice, a destination's own sub-keys disagreeing, or the claimed
+ * origin still present as itself elsewhere in the batch). `resolveMcpSecretHintBatch`
+ * scans the whole batch up front to catch exactly that, and its validated,
+ * ambiguity-free result is threaded into every per-fieldPath call below.
+ */
 function preservePatchedConfigSecretFields(
   fields: Record<string, unknown>,
   existingOverrides?: unknown,
+  resetPaths: readonly string[] = [],
 ): Record<string, unknown> {
   const result = { ...fields };
+  const validatedMcpOrigins = resolveMcpSecretHintBatch(fields, existingOverrides, resetPaths);
   for (const [fieldPath, value] of Object.entries(result)) {
     if (isConfigSecretPreservablePatch(fieldPath, value)) {
-      result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
+      result[fieldPath] = preserveConfigSecrets(
+        value,
+        existingOverrides,
+        fieldPath,
+        validatedMcpOrigins,
+      );
     }
   }
   return result;
@@ -566,6 +905,7 @@ function preservePatchedConfigSecretFields(
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
   getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  listConfigRevisions: (req: ServerRequest, res: Response) => Promise<Response>;
   getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   patchConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -585,6 +925,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfig,
     toggleConfigActive,
     mutateConfigWithRevision,
+    listConfigRevisions: readConfigRevisions,
     hasConfigCapability,
     hasAnyConfigReadAccess = async () => false,
     getReadableConfigSections = async (u, sections) => {
@@ -629,8 +970,32 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * GET /base — Return the raw AppConfig (YAML + DB base merged).
-   * This is the full config structure admins can edit, NOT the startup payload.
+   * GET /base — Return the raw AppConfig (YAML + DB base merged), and, unless
+   * `baseOnly`, the raw base document's `overrides`/`configVersion` too.
+   *
+   * Both come from this one request, and `refresh: true` bypasses
+   * `getAppConfig`'s per-tenant override-merge cache, because that cache
+   * alone can't be trusted to agree with a version read fetched independently:
+   * most mutation handlers fire off `invalidateConfigCaches` without awaiting
+   * it, and the cache itself is process-local with no cross-pod invalidation,
+   * so a merge cached on this process could still predate a write whose
+   * bumped version a fresh Mongo read would already see. Reading the raw doc
+   * *before* the (now always-fresh) merge additionally means that if a
+   * mutation still lands in the remaining gap between these two calls,
+   * `dbConfigVersion` can only end up older than what `config` reflects, never
+   * newer — the safe direction, since a CAS write built on that pairing either
+   * matches the still-current version or gets a 409, instead of silently
+   * overwriting a change `config`'s content already includes.
+   *
+   * `failClosed: true` closes the remaining gap: without it, a transient
+   * failure inside `getApplicableConfigs` makes `getAppConfig` swallow the
+   * error and fall back to the YAML-only base — `config` would then be
+   * missing every DB override while `dbConfigVersion` still reports the true,
+   * unrelated-to-this-error current version. An edit built on that response
+   * (e.g. adding one array entry to what looks like an empty list) would pass
+   * CAS and replace the real stored array. Propagating the failure into the
+   * handler's 500 instead is what keeps `config` and `dbConfigVersion`
+   * meaningfully paired on error paths too, not just on the success path.
    */
   async function getBaseConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
@@ -648,18 +1013,92 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
+      const requestTenantId = user.tenantId ?? '';
+      const rawBase = baseOnly
+        ? null
+        : await findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
+            tenantId: requestTenantId,
+            includeInactive: true,
+          });
+
       const appConfig = await getAppConfig({
-        tenantId: user.tenantId,
+        tenantId: requestTenantId,
         baseOnly,
+        refresh: !baseOnly,
+        failClosed: true,
       });
-      const sections = collectAppConfigSections(appConfig) as ConfigSection[];
-      const readable = await getReadableConfigSections(user, sections);
+
+      const sections = new Set<string>(collectAppConfigSections(appConfig));
+      if (rawBase) {
+        for (const section of collectConfigSections(rawBase)) {
+          sections.add(section);
+        }
+      }
+      const readable = await getReadableConfigSections(user, [...sections] as ConfigSection[]);
       const filteredAppConfig = filterAppConfigForReadAccess(appConfig, readable);
 
-      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
+      let dbOverrides: Partial<TCustomConfig> | undefined;
+      let dbConfigVersion: number | null = null;
+      let dbIsActive: boolean | null = null;
+      if (rawBase) {
+        const safeRawBase = redactConfigForResponse(
+          filterConfigDocForReadAccess(rawBase, readable),
+        );
+        dbOverrides = safeRawBase.overrides;
+        dbConfigVersion = safeRawBase.configVersion ?? 0;
+        dbIsActive = safeRawBase.isActive ?? true;
+      }
+
+      return res.status(200).json({
+        config: redactAppConfigForResponse(filteredAppConfig),
+        effectiveTenantId: requestTenantId,
+        ...(baseOnly ? {} : { dbOverrides, dbConfigVersion, dbIsActive }),
+      });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
       return res.status(500).json({ error: 'Failed to get base config' });
+    }
+  }
+
+  /**
+   * GET /:principalType/:principalId/revisions — List rollback points through
+   * the authenticated backend tenant context. The admin panel must not derive
+   * this scope from its independently cached session user or query MongoDB
+   * directly, because either can disagree with the tenant that a subsequent
+   * atomic mutation will use.
+   */
+  async function listConfigRevisions(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+      if (principalType !== PrincipalType.ROLE || principalId !== BASE_CONFIG_PRINCIPAL_ID) {
+        return res
+          .status(400)
+          .json({ error: 'Config revision history is only available for the base configuration' });
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      if (!(await hasCapability(user, SystemCapabilities.MANAGE_CONFIGS))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const revisions = await readConfigRevisions({
+        principalType,
+        principalId,
+        tenantId: user.tenantId ?? '',
+      });
+      return res.status(200).json({ revisions, effectiveTenantId: user.tenantId ?? '' });
+    } catch (error) {
+      logger.error('[adminConfig] listConfigRevisions error:', error);
+      return res.status(500).json({ error: 'Failed to list config revisions' });
     }
   }
 
@@ -718,6 +1157,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const { overrides, priority } = req.body as {
         overrides?: Partial<TCustomConfig>;
         priority?: number;
@@ -749,10 +1192,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       const hasAssignConfigs =
         hasBroadManage ||
@@ -805,33 +1244,40 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const needsExistingSecrets = getConfigSecretSections().some((section) =>
+      // mcpServers has no entry in the CONFIG_SECRET_FIELDS/ARRAY_SECRET_FIELDS
+      // registry `getConfigSecretSections()` is derived from — its secrets
+      // are dynamic (admin-named servers), matched by shape rather than a
+      // fixed path. Checked explicitly here so an mcpServers-only whole
+      // replacement still fetches the existing document to preserve omitted
+      // secrets, instead of silently dropping them.
+      const needsExistingSecrets =
+        getConfigSecretSections().some((section) =>
+          isConfigSecretPreservablePatch(
+            section,
+            (filteredOverrides as Record<string, unknown>)[section],
+          ),
+        ) ||
         isConfigSecretPreservablePatch(
-          section,
-          (filteredOverrides as Record<string, unknown>)[section],
-        ),
+          'mcpServers',
+          (filteredOverrides as Record<string, unknown>).mcpServers,
+        );
+      const existingConfig = needsExistingSecrets
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
+      const existingConflictError = getArrayExistingIdentityConflictError(
+        '',
+        filteredOverrides,
+        existingConfig?.overrides,
       );
-      const needsProtectedBaseSections =
-        principalId === BASE_CONFIG_PRINCIPAL_ID &&
-        (overrideSections.length > 0 || priority != null);
-      const existingConfig =
-        needsExistingSecrets || needsProtectedBaseSections
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
+      if (existingConflictError) {
+        return res.status(400).json({ error: existingConflictError });
+      }
       const preservedOverrides = preserveConfigSecrets(
         encryptedOverrides,
         existingConfig?.overrides,
+        '',
+        resolveMcpSecretHintBatchForWholeDocument(encryptedOverrides),
       );
-      if (needsProtectedBaseSections) {
-        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
-          const storedSection = (
-            existingConfig?.overrides as Record<string, unknown> | undefined
-          )?.[section];
-          if (storedSection !== undefined) {
-            (preservedOverrides as Record<string, unknown>)[section] = storedSection;
-          }
-        }
-      }
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -869,6 +1315,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!validatePrincipalType(principalType)) {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
       }
 
       const rawBody: unknown = req.body;
@@ -957,10 +1407,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-
       if (validEntries.length === 0) {
         if (!hasBroadManage) {
           return res.status(403).json({ error: 'Insufficient permissions' });
@@ -1004,6 +1450,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const existing = hasObjectValuedSecretPatch
         ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
         : null;
+      for (const [fieldPath, fieldValue] of Object.entries(fields)) {
+        const existingConflictError = getArrayExistingIdentityConflictError(
+          fieldPath,
+          fieldValue,
+          existing?.overrides,
+        );
+        if (existingConflictError) {
+          return res.status(400).json({ error: existingConflictError });
+        }
+      }
       const encryptedFields = encryptConfigSecretFields(fields);
       const preservedFields = preservePatchedConfigSecretFields(
         encryptedFields,
@@ -1042,6 +1498,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const { fieldPath, priority } = req.body as {
         fieldPath?: string;
         priority?: number;
@@ -1075,10 +1535,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const section = getTopLevelSection(fieldPath);
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       if (
         !hasBroadManage &&
@@ -1146,6 +1602,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const fieldPath = req.query.fieldPath as string | undefined;
 
       if (!fieldPath || typeof fieldPath !== 'string') {
@@ -1172,10 +1632,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const section = getTopLevelSection(fieldPath);
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       if (
         !hasBroadManage &&
@@ -1235,16 +1691,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const user = getCapabilityUser(req);
       if (!user) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       const allowed =
         hasBroadManage ||
@@ -1292,6 +1748,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const { isActive } = req.body as { isActive?: boolean };
       if (typeof isActive !== 'boolean') {
         return res.status(400).json({ error: 'isActive boolean is required' });
@@ -1303,10 +1763,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       const allowed =
         hasBroadManage ||
@@ -1364,6 +1820,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (!user) {
         return res.status(401).json({ error: 'Authentication required' });
       }
+      // `user.tenantId` is already the effective request tenant, so the
+      // capability checks above, the config write (Mongoose, ALS-scoped), and
+      // the raw revision/epoch read/write (explicit tenant filter) all resolve
+      // to the same scope by construction.
+      const requestTenantId = user.tenantId ?? '';
 
       const rawBody: unknown = req.body;
       if (!isPlainObject(rawBody)) {
@@ -1389,6 +1850,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       if (!('expectedVersion' in body)) {
         return res.status(400).json({ error: 'expectedVersion is required' });
+      }
+      const requestedVersion = (expectedVersion as number | null | undefined) ?? null;
+      if (typeof body.expectedTenantId !== 'string') {
+        return res.status(400).json({ error: 'expectedTenantId is required' });
+      }
+      if (body.expectedTenantId !== requestTenantId) {
+        return res.status(409).json({
+          error: 'Tenant context changed',
+          expectedTenantId: body.expectedTenantId,
+          currentTenantId: requestTenantId,
+        });
       }
       if (priority != null && (typeof priority !== 'number' || priority < 0)) {
         return res.status(400).json({ error: 'priority must be a non-negative number' });
@@ -1423,46 +1895,66 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         typeof body.restoreRevisionId === 'string' && body.restoreRevisionId.length > 0
           ? body.restoreRevisionId
           : undefined;
+      const hasActiveMutation = typeof body.isActive === 'boolean';
       const modeCount =
         Number(hasEntries || hasResets) +
         Number(hasOverrides) +
         Number(deleteDocument) +
-        Number(Boolean(restoreRevisionId));
-      if (
-        modeCount !== 1 &&
-        !(hasEntries && hasResets && !hasOverrides && !deleteDocument && !restoreRevisionId)
-      ) {
-        if (!hasEntries && !hasResets && !hasOverrides && !deleteDocument && !restoreRevisionId) {
+        Number(Boolean(restoreRevisionId)) +
+        Number(hasActiveMutation);
+      if (modeCount !== 1) {
+        if (
+          !hasEntries &&
+          !hasResets &&
+          !hasOverrides &&
+          !deleteDocument &&
+          !restoreRevisionId &&
+          !hasActiveMutation
+        ) {
           return res.status(400).json({
-            error: 'Provide resetPaths, entries, overrides, deleteDocument, or restoreRevisionId',
+            error:
+              'Provide resetPaths, entries, overrides, deleteDocument, restoreRevisionId, or isActive',
           });
         }
-        if (deleteDocument && (hasEntries || hasResets || hasOverrides || restoreRevisionId)) {
+        if (
+          deleteDocument &&
+          (hasEntries || hasResets || hasOverrides || restoreRevisionId || hasActiveMutation)
+        ) {
           return res
             .status(400)
             .json({ error: 'deleteDocument cannot be combined with field mutations' });
         }
-        if (hasOverrides && (hasEntries || hasResets || restoreRevisionId)) {
+        if (hasOverrides && (hasEntries || hasResets || restoreRevisionId || hasActiveMutation)) {
           return res
             .status(400)
             .json({ error: 'overrides cannot be combined with entries or resetPaths' });
         }
-        if (restoreRevisionId && (hasEntries || hasResets || hasOverrides || deleteDocument)) {
+        if (
+          restoreRevisionId &&
+          (hasEntries || hasResets || hasOverrides || deleteDocument || hasActiveMutation)
+        ) {
           return res
             .status(400)
             .json({ error: 'restoreRevisionId cannot be combined with other mutations' });
         }
+        if (hasActiveMutation && (hasEntries || hasResets || hasOverrides || deleteDocument)) {
+          return res
+            .status(400)
+            .json({ error: 'isActive cannot be combined with other mutations' });
+        }
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-      if (deleteDocument || hasOverrides || restoreRevisionId) {
+      if (deleteDocument || hasOverrides || restoreRevisionId || hasActiveMutation) {
         if (!hasBroadManage) {
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
       }
 
       let op: ConfigMutationOp;
-      if (restoreRevisionId) {
+      if (hasActiveMutation) {
+        op = { kind: 'active', isActive: body.isActive as boolean };
+      } else if (restoreRevisionId) {
         op = { kind: 'restore', revisionId: restoreRevisionId };
       } else if (deleteDocument) {
         op = { kind: 'delete' };
@@ -1489,15 +1981,43 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
         const existing = await findConfigByPrincipal(principalType, principalId, {
           includeInactive: true,
-          ...(user.tenantId !== undefined ? { tenantId: user.tenantId } : {}),
+          tenantId: requestTenantId,
         });
+        const versionConflictResponse = rejectConfigVersionConflict(
+          res,
+          requestedVersion,
+          existing,
+        );
+        if (versionConflictResponse) {
+          return versionConflictResponse;
+        }
+        const existingConflictError = getArrayExistingIdentityConflictError(
+          '',
+          sanitizedOverrides,
+          existing?.overrides,
+        );
+        if (existingConflictError) {
+          return res.status(400).json({ error: existingConflictError });
+        }
         const encryptedOverrides = encryptConfigSecrets(sanitizedOverrides);
+        const preservedOverrides = preserveConfigSecrets(
+          encryptedOverrides,
+          existing?.overrides,
+          '',
+          resolveMcpSecretHintBatchForWholeDocument(encryptedOverrides),
+        );
+        const replaceValidationError = validateAtomicReplaceOverrides(preservedOverrides);
+        if (replaceValidationError) {
+          return res.status(400).json({ error: replaceValidationError });
+        }
         op = {
           kind: 'replace',
-          overrides: preserveConfigSecrets(encryptedOverrides, existing?.overrides),
+          overrides: preservedOverrides,
           priority: hasBroadManage
-            ? ((priority as number | null | undefined) ?? existing?.priority ?? DEFAULT_PRIORITY)
-            : DEFAULT_PRIORITY,
+            ? ((priority as number | null | undefined) ??
+              existing?.priority ??
+              DEFAULT_BASE_PRIORITY)
+            : DEFAULT_BASE_PRIORITY,
         };
       } else {
         if (entries.length > MAX_PATCH_ENTRIES) {
@@ -1510,6 +2030,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             return res
               .status(400)
               .json({ error: `Invalid or unsafe field path: ${entry.fieldPath}` });
+          }
+          if (
+            !isBlockedFieldPath(entry.fieldPath) &&
+            !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath)) &&
+            !isConfigFieldPath(entry.fieldPath)
+          ) {
+            return res.status(400).json({ error: `Unknown config field path: ${entry.fieldPath}` });
           }
           if (isProcessMCPServerFieldPath(entry.fieldPath, entry.value)) {
             return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
@@ -1539,6 +2066,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         for (const path of rawResetPaths) {
           if (!isValidFieldPath(path)) {
             return res.status(400).json({ error: `Invalid or unsafe field path: ${path}` });
+          }
+          if (
+            !isBlockedFieldPath(path) &&
+            !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(path)) &&
+            !isConfigFieldPath(path)
+          ) {
+            return res.status(400).json({ error: `Unknown config field path: ${path}` });
           }
           if (isProcessMCPServerFieldPath(path, undefined)) {
             return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
@@ -1580,8 +2114,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           if (seen.has(entry.fieldPath)) {
             return res.status(400).json({ error: `Duplicate fieldPath: ${entry.fieldPath}` });
           }
+          let overlappingPath: string | null = null;
+          for (const path of seen) {
+            if (entry.fieldPath.startsWith(`${path}.`) || path.startsWith(`${entry.fieldPath}.`)) {
+              overlappingPath = path;
+              break;
+            }
+          }
+          if (overlappingPath) {
+            return res.status(400).json({
+              error: `Overlapping fieldPath entries are not allowed: ${overlappingPath} and ${entry.fieldPath}`,
+            });
+          }
           seen.add(entry.fieldPath);
           rawFields[entry.fieldPath] = entry.value;
+        }
+
+        for (const fieldPath of Object.keys(rawFields)) {
+          const overlappingReset = validResets.find((resetPath) =>
+            fieldPathsOverlap(fieldPath, resetPath),
+          );
+          if (overlappingReset) {
+            return res.status(400).json({
+              error:
+                'resetPaths and entries must not overlap: ' +
+                `${overlappingReset} and ${fieldPath}`,
+            });
+          }
         }
 
         const requestedSections = [
@@ -1604,27 +2163,55 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
               .json({ error: `Insufficient permissions for config section: ${requestedDenied}` });
           }
         }
+        if (!hasBroadManage && requestedSections.length === 0) {
+          return res.status(403).json({ error: 'Insufficient permissions' });
+        }
 
         const existing = await findConfigByPrincipal(principalType, principalId, {
           includeInactive: true,
-          ...(user.tenantId !== undefined ? { tenantId: user.tenantId } : {}),
+          tenantId: requestTenantId,
         });
+        const versionConflictResponse = rejectConfigVersionConflict(
+          res,
+          requestedVersion,
+          existing,
+        );
+        if (versionConflictResponse) {
+          return versionConflictResponse;
+        }
+        for (const [fieldPath, fieldValue] of Object.entries(rawFields)) {
+          const existingConflictError = getArrayExistingIdentityConflictError(
+            fieldPath,
+            fieldValue,
+            existing?.overrides,
+          );
+          if (existingConflictError) {
+            return res.status(400).json({ error: existingConflictError });
+          }
+        }
         const fields = preservePatchedConfigSecretFields(
           encryptConfigSecretFields(rawFields),
           existing?.overrides,
+          validResets,
         );
 
+        const yamlBaseline = getAppConfig
+          ? ((await getAppConfig({
+              tenantId: requestTenantId,
+              baseOnly: true,
+            })) as unknown as Record<string, unknown>)
+          : null;
+        const fieldsValidationError = validateAtomicFieldValues(
+          fields,
+          validResets,
+          existing,
+          yamlBaseline,
+        );
+        if (fieldsValidationError) {
+          return res.status(400).json({ error: fieldsValidationError });
+        }
+
         if (Object.keys(fields).length === 0 && validResets.length === 0) {
-          if (!hasBroadManage) {
-            return res.status(403).json({ error: 'Insufficient permissions' });
-          }
-          const liveVersion = existing == null ? null : (existing.configVersion ?? 0);
-          if (expectedVersion !== liveVersion) {
-            return res.status(409).json({
-              error: 'Config version conflict',
-              currentVersion: liveVersion,
-            });
-          }
           return res.status(200).json({ message: 'No actionable field entries provided' });
         }
 
@@ -1633,8 +2220,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           resetPaths: validResets,
           fields,
           priority: hasBroadManage
-            ? ((priority as number | null | undefined) ?? existing?.priority ?? DEFAULT_PRIORITY)
-            : (existing?.priority ?? DEFAULT_PRIORITY),
+            ? ((priority as number | null | undefined) ??
+              existing?.priority ??
+              DEFAULT_BASE_PRIORITY)
+            : // A section-scoped caller's submitted priority is untrusted and
+              // discarded above, but falling back to DEFAULT_PRIORITY (10) for a
+              // brand-new __base__ document ties it with the default role
+              // profile priority. Resolution has no tie-breaker for equal
+              // priorities, so the base config — which must apply before every
+              // more specific profile — could end up applied after one instead
+              // and overwrite it. Base config has no more-general layer beneath
+              // it, so 0 is always correct for a first-ever base document.
+              (existing?.priority ?? DEFAULT_BASE_PRIORITY),
         };
       }
 
@@ -1645,28 +2242,37 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         if (op.kind === 'delete') {
           return 'reset';
         }
+        if (op.kind === 'active') {
+          return 'save';
+        }
         if (op.kind === 'replace') {
           return 'import';
         }
         return Object.keys(op.fields).length === 0 ? 'reset' : 'save';
       })();
 
+      const restoreBaseline = restoreRevisionId
+        ? await getAppConfig?.({ tenantId: requestTenantId, baseOnly: true })
+        : undefined;
       const { config, revision, changed } = await mutateConfigWithRevision({
         principalType,
         principalId,
         principalModel: principalModel(principalType),
-        expectedVersion: (expectedVersion as number | null | undefined) ?? null,
+        expectedVersion: requestedVersion,
         op,
         cause,
         actor: {
           actorId: user.id,
           actorEmail: (req.user as { email?: string } | undefined)?.email,
-          tenantId: user.tenantId ?? '',
+          tenantId: requestTenantId,
         },
+        normalizeSecrets: encryptLegacyPlaintextConfigSecrets,
+        validateRestoredOverrides: (overrides, tombstones) =>
+          validateRestoredOverrides(overrides, tombstones, restoreBaseline),
       });
 
       try {
-        await invalidateConfigCaches?.(user.tenantId);
+        await invalidateConfigCaches?.(requestTenantId);
       } catch (err) {
         logger.error('[adminConfig] Cache invalidation failed after atomic mutate:', err);
       }
@@ -1701,6 +2307,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (isConfigRevisionNotFound(error)) {
         return res.status(404).json({ error: 'Revision not found' });
       }
+      if (isRestoreValidationError(error)) {
+        return res.status(400).json({ error: error.message });
+      }
       if (isTransactionRequired(error)) {
         return res.status(503).json({ error: (error as Error).message });
       }
@@ -1712,6 +2321,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   return {
     listConfigs,
     getBaseConfig,
+    listConfigRevisions,
     getConfig,
     upsertConfigOverrides,
     patchConfigField,

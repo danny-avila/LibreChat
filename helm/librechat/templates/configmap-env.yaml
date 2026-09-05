@@ -15,8 +15,30 @@ data:
   {{- if and (not (dig "configEnv" "MONGO_URI" "" .Values.librechat)) .Values.mongodb.enabled }}
   {{- $mongoNs := .Release.Namespace | lower }}
   {{- $mongoName := include "mongodb.fullname" .Subcharts.mongodb }}
-  {{- if eq (default "standalone" .Values.mongodb.architecture) "replicaset" }}
-  MONGO_URI: mongodb://{{ $mongoName }}-0.{{ $mongoName }}-headless.{{ $mongoNs }}.svc.cluster.local:27017/LibreChat?replicaSet={{ .Values.mongodb.replicaSetName | default "rs0" }}
+  {{- /* mongodb.architecture cannot be `required` directly: the bundled Bitnami
+         subchart's own values.yaml already defaults it to "standalone", and Helm
+         coalesces that subchart default in before any parent template renders, so
+         .Values.mongodb.architecture is never nil to fail on. librechat.mongoArchitectureAck
+         has no such shadow default (it belongs only to this chart), so it can force the
+         explicit, informed choice — cross-checked against the value actually in effect.
+         Scoped to fresh installs only (.Release.IsInstall): an existing release that
+         already has a bundled MongoDB running must keep upgrading on unrelated changes
+         without this chart version suddenly demanding a values change it never needed
+         before — it already silently inherits the standalone default (and the NOTES.txt
+         warning below, printed on every install AND upgrade, keeps surfacing that). Only
+         a fresh install is forced to make the choice explicitly before anything is created. */}}
+  {{- if .Release.IsInstall }}
+  {{- $mongoArchAck := required "librechat.mongoArchitectureAck must be set explicitly to \"standalone\" or \"replicaset\", matching mongodb.architecture — see the mongodb: comment in values.yaml" .Values.librechat.mongoArchitectureAck }}
+  {{- if ne $mongoArchAck .Values.mongodb.architecture }}
+  {{- fail (printf "librechat.mongoArchitectureAck (%q) does not match mongodb.architecture (%q) — set both to the same value" $mongoArchAck .Values.mongodb.architecture) }}
+  {{- end }}
+  {{- end }}
+  {{- if eq .Values.mongodb.architecture "replicaset" }}
+  {{- /* mongodb.service.nameOverride already resolves to "<fullname>-headless" in
+         replicaset mode by default, and to the exact override value (no suffix) when
+         mongodb.service.nameOverride is set — mirrors the subchart's own internal DNS
+         construction, so a custom service name is honored instead of a hardcoded default. */}}
+  MONGO_URI: mongodb://{{ $mongoName }}-0.{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ $mongoNs }}.svc.cluster.local:27017/LibreChat?replicaSet={{ .Values.mongodb.replicaSetName | default "rs0" }}
   {{- else }}
   MONGO_URI: mongodb://{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ $mongoNs }}.svc.cluster.local:27017/LibreChat
   {{- end }}

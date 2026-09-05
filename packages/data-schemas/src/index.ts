@@ -12,6 +12,8 @@ export {
   RoleConflictError,
   ConfigVersionConflictError,
   ConfigRevisionNotFoundError,
+  RestoreValidationError,
+  applyConfigFieldsMutation,
   canonicalizeResetPaths,
   fieldPathLimitError,
   fieldPathPolicyError,

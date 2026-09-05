@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { SystemCapabilities, expandImplications } from '@librechat/data-schemas';
+import { SystemCapabilities, expandImplications, tenantStorage } from '@librechat/data-schemas';
 import type { ISystemGrant } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -277,7 +277,7 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.getEffectiveCapabilities(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ capabilities: [] });
+      expect(json).toHaveBeenCalledWith({ capabilities: [], effectiveTenantId: '' });
     });
 
     it('queries all principals in a single batch', async () => {
@@ -319,6 +319,25 @@ describe('createAdminGrantsHandlers', () => {
       );
     });
 
+    it('uses the trusted request tenant for grants and the returned cache scope', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, json } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'tenant-from-jwt' },
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-from-header' }, () =>
+        handlers.getEffectiveCapabilities(req, res),
+      );
+
+      expect(deps.getCapabilitiesForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-from-header' }),
+      );
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ effectiveTenantId: 'tenant-from-header' }),
+      );
+    });
+
     it('skips principals without principalId', async () => {
       const principals = [
         { principalType: PrincipalType.PUBLIC },
@@ -349,7 +368,7 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.getEffectiveCapabilities(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ capabilities: [] });
+      expect(json).toHaveBeenCalledWith({ capabilities: [], effectiveTenantId: '' });
       expect(deps.getCapabilitiesForPrincipals).not.toHaveBeenCalled();
     });
 

@@ -11,6 +11,7 @@ import type { NextFunction, Response } from 'express';
 import type { Types, ClientSession } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
+import { getEffectiveTenantId } from './tenant';
 
 interface CapabilityDeps {
   getUserPrincipals: (
@@ -282,7 +283,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
         const user: CapabilityUser = {
           id,
           role: req.user.role ?? '',
-          tenantId: (req.user as CapabilityUser).tenantId,
+          tenantId: getEffectiveTenantId(req),
           idOnTheSource: req.user.idOnTheSource ?? null,
         };
 

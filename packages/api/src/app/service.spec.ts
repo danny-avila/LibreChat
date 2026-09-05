@@ -322,7 +322,7 @@ describe('createAppConfigService', () => {
 
         await getAppConfig({ tenantId: 'tenant-a' });
 
-        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([], { tenantId: 'tenant-a' });
       });
 
       it('warns once when non-empty principals proceed without tenantId', async () => {
@@ -354,7 +354,7 @@ describe('createAppConfigService', () => {
           getAppConfig(),
         );
 
-        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([], { tenantId: 'tenant-a' });
         expect((config as TestConfig).restricted).toBe(true);
       });
     });
@@ -375,6 +375,15 @@ describe('createAppConfigService', () => {
         await getAppConfig();
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      });
+
+      it('passes an explicit default-tenant scope to the database read', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await getAppConfig({ tenantId: '' });
+
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([], { tenantId: '' });
       });
 
       it('scopes the override cache key to the ALS tenant when no tenantId param is given', async () => {

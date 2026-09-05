@@ -30,6 +30,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   createAdminLangfuseHandlers: jest.fn(() => mockHandlers),
+  getEffectiveTenantId: jest.fn((req) => req.tenantId ?? req.user?.tenantId),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({

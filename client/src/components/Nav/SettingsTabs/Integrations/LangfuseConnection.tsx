@@ -27,7 +27,9 @@ import {
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
-type ConnectionTestState = 'idle' | 'unverified' | 'checking' | 'connected' | 'failed';
+type ConnectionTestState = 'idle' | 'inactive' | 'unverified' | 'checking' | 'connected' | 'failed';
+
+type VersionedTenant = Pick<TLangfuseConnectionStatus, 'configVersion' | 'effectiveTenantId'>;
 
 function getStoredConnectionTestKey(status?: TLangfuseConnectionStatus): string | undefined {
   if (status?.configured !== true || !status.destination || !status.publicKey) {
@@ -45,6 +47,8 @@ function getConnectionStatusLabelKey(state: ConnectionTestState): TranslationKey
       return 'com_ui_langfuse_status_connected';
     case 'failed':
       return 'com_ui_langfuse_status_failed';
+    case 'inactive':
+      return 'com_ui_langfuse_status_inactive';
     case 'unverified':
       return 'com_ui_langfuse_status_not_verified';
     case 'idle':
@@ -93,6 +97,23 @@ function getConnectionStatusDotClass(state: ConnectionTestState): string {
   }
 }
 
+/**
+ * A 409 body carries the server's current version, but resending it as the
+ * next `expectedVersion` without also refreshing the fields it belongs to is
+ * exactly the unsafe retry this component must avoid — so the version out of
+ * the error body is never used; only whether the status is 409 matters.
+ */
+function isVersionConflict(error: unknown): boolean {
+  return (error as { response?: { status?: number } } | undefined)?.response?.status === 409;
+}
+
+function isTenantConflict(error: unknown): boolean {
+  return (
+    (error as { response?: { data?: { error?: string } } } | undefined)?.response?.data?.error ===
+    'Tenant context changed'
+  );
+}
+
 function getDisplayPublicKey(publicKey: string): string {
   const trimmedPublicKey = publicKey.trim();
   if (trimmedPublicKey.length <= 12) {
@@ -123,10 +144,76 @@ export default function LangfuseConnection() {
   const [isEditingSecretKey, setIsEditingSecretKey] = useState(false);
   const [connectionTestState, setConnectionTestState] = useState<ConnectionTestState>('idle');
   const [connectionTestMessage, setConnectionTestMessage] = useState('');
+  /** CAS tokens for the next write. Tracked together and separately from
+   *  `connectionStatus` so a conflict can advance them without resetting the
+   *  form fields, and a tenant refresh cannot pair one tenant's ID with
+   *  another tenant's version. */
+  const [writeBaseline, setWriteBaseline] = useState<{
+    expectedVersion: number | null;
+    expectedTenantId: string;
+  }>({ expectedVersion: null, expectedTenantId: '' });
   const autoTestedConnectionRef = useRef<string>();
   const connectionTestRequestRef = useRef(0);
   const publicKeyInputRef = useRef<HTMLInputElement>(null);
   const secretKeyInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Whether this field's current value differs from `connectionStatus` right
+   * now — re-derived on every change against that moment's baseline, not
+   * "was this ever edited," so typing away and back to the original value
+   * clears it again. A background sync must not clobber a real divergence
+   * with the refetched value; only fields that still match get the fresh
+   * baseline. Reset (to false, since the local value then *is* the new
+   * baseline) once a save succeeds.
+   */
+  const destinationTouchedRef = useRef(false);
+  const publicKeyTouchedRef = useRef(false);
+  /**
+   * Mirrors of `destination`/`publicKey` state. `applyFreshRecord` must read
+   * these instead of the state variables directly: it's called from
+   * `rebaseOnConflict`'s `refetchConnection().then(...)` callback, a closure
+   * captured at the moment the conflict was handled — if the admin edits
+   * destination/publicKey while that refetch is still pending (inputs stay
+   * editable; `busy` doesn't cover the refetch), the callback's own
+   * closed-over `destination`/`publicKey` would still be the PRE-edit
+   * values. Comparing against those stale values instead of the truly-current
+   * ones can wrongly conclude the draft "already matches" the refetched
+   * baseline and clear the touched ref, letting the very next passive sync
+   * overwrite the admin's in-progress edit with the stale refetched value.
+   *
+   * Kept in sync in TWO ways, deliberately: the change handlers below write
+   * `.current` synchronously in the same tick as `setDestination`/
+   * `setPublicKey`, and the effects further down mirror the same state as a
+   * backstop for any OTHER path that changes this state (e.g. a fresh-record
+   * adoption resetting the field). The synchronous write is the one that
+   * actually matters here — a passive `useEffect` only runs after React
+   * commits the render, which leaves a window, within the same tick, where a
+   * pending `refetchConnection()` promise can resolve and read a still-stale
+   * ref: the admin's keystroke handler has already fired (and `setState`
+   * has been called) but the effect hasn't flushed yet. That is the exact
+   * one-tick-later version of the bug this ref was added to fix in the
+   * first place.
+   */
+  const destinationRef = useRef(destination);
+  const publicKeyRef = useRef(publicKey);
+  useEffect(() => {
+    destinationRef.current = destination;
+  }, [destination]);
+  useEffect(() => {
+    publicKeyRef.current = publicKey;
+  }, [publicKey]);
+  /** Same "current dirtiness" role as the refs above, but for the secret key
+   *  draft — tracked via a ref instead of reading `secretKey` state directly
+   *  inside the sync effect below, so that effect stays free of a dependency
+   *  that would otherwise fire it on every keystroke. There's no baseline to
+   *  compare against (the server never sends back a real secret), so any
+   *  non-empty draft counts as dirty. */
+  const secretKeyDraftRef = useRef(false);
+  /**
+   * The highest `configVersion` this component has adopted for the current
+   * tenant. Versions belong to tenant-specific epochs and cannot be ordered
+   * across different effective tenants.
+   */
+  const latestVersionRef = useRef<VersionedTenant | null>(null);
 
   useEffect(() => {
     if (isEditingPublicKey) {
@@ -140,22 +227,164 @@ export default function LangfuseConnection() {
     }
   }, [isEditingSecretKey]);
 
+  /**
+   * Whether `candidate` is older than the highest version this component
+   * has already adopted — i.e. it must be discarded outright rather than
+   * partially applied. A background query that started before a successful
+   * save or conflict rebase can still resolve afterward with the pre-save
+   * content: `useGetLangfuseConnectionQuery` never cancels an in-flight
+   * fetch on mutation success, so without this guard that stale response
+   * would pass through the effect below and silently revert
+   * destination/publicKey (for whichever fields the admin hasn't touched)
+   * back to the pre-save values, while `expectedVersion` stays correctly
+   * frozen at the new version if a secret-key draft is in progress — the
+   * next Save would then pass CAS on that new version while resubmitting
+   * the reverted, stale destination/publicKey.
+   *
+   * Within one tenant, a numeric latest version always outranks a `null`
+   * candidate version. A different tenant starts a separate version epoch and
+   * must be adopted even when its version is lower or absent.
+   */
+  const isStale = (candidate: TLangfuseConnectionStatus): boolean => {
+    const latest = latestVersionRef.current;
+    return (
+      latest != null &&
+      (candidate.effectiveTenantId ?? '') === latest.effectiveTenantId &&
+      latest.configVersion != null &&
+      (candidate.configVersion == null || candidate.configVersion < latest.configVersion)
+    );
+  };
+
+  const rememberVersion = (candidate: TLangfuseConnectionStatus) => {
+    latestVersionRef.current = {
+      configVersion: candidate.configVersion ?? null,
+      effectiveTenantId: candidate.effectiveTenantId ?? '',
+    };
+  };
+
   useEffect(() => {
-    if (!status) {
+    if (!status || isStale(status)) {
       return;
     }
+    rememberVersion(status);
     setConnectionStatus(status);
   }, [status]);
 
+  /**
+   * Handles *passive* syncs only — `connectionStatus` changing because
+   * `status` (the query's own data) changed, e.g. a reconnect-triggered
+   * background refetch, not because this component explicitly adopted a
+   * fresh record. Explicit actions (save success, conflict rebase) call
+   * `applyFreshRecord` directly instead of relying on this effect, precisely
+   * because they can't depend on it firing: React bails out of an identical
+   * state update (`Object.is`), and React Query's structural sharing can
+   * return the very same object reference `connectionStatus` already holds
+   * when a refetch's result is unchanged — silently skipping this effect and
+   * leaving `expectedVersion` stuck at whatever it was.
+   *
+   * For a passive sync specifically, that same bail-out is harmless: if the
+   * object didn't change, there's nothing to react to. What must not happen
+   * is advancing `expectedVersion` here while a draft survives — that would
+   * let a later Save pass CAS on a version never actually paired with this
+   * draft's content.
+   */
   useEffect(() => {
     if (!connectionStatus) {
       return;
     }
-    setDestination(connectionStatus.destination ?? '');
-    setPublicKey(connectionStatus.publicKey ?? '');
+    const effectiveTenantId = connectionStatus.effectiveTenantId ?? '';
+    const tenantChanged = effectiveTenantId !== writeBaseline.expectedTenantId;
+    if (tenantChanged) {
+      destinationTouchedRef.current = false;
+      publicKeyTouchedRef.current = false;
+      secretKeyDraftRef.current = false;
+      autoTestedConnectionRef.current = undefined;
+      connectionTestRequestRef.current += 1;
+      setSecretKey('');
+      setIsEditingPublicKey(false);
+      setIsEditingSecretKey(false);
+    }
+    if (tenantChanged || !destinationTouchedRef.current) {
+      setDestination(connectionStatus.destination ?? '');
+    } else if (destination === (connectionStatus.destination ?? '')) {
+      destinationTouchedRef.current = false;
+    }
+    if (tenantChanged || !publicKeyTouchedRef.current) {
+      setPublicKey(connectionStatus.publicKey ?? '');
+    } else if (publicKey.trim() === (connectionStatus.publicKey ?? '')) {
+      publicKeyTouchedRef.current = false;
+    }
+    const hasLocalDraft =
+      destinationTouchedRef.current || publicKeyTouchedRef.current || secretKeyDraftRef.current;
+    if (tenantChanged || !hasLocalDraft) {
+      setWriteBaseline({
+        expectedVersion: connectionStatus.configVersion ?? null,
+        expectedTenantId: effectiveTenantId,
+      });
+    }
+    // destination/publicKey are read only for the reconvergence check above,
+    // which must run when `connectionStatus` changes, not on every keystroke —
+    // adding them here would fire this effect on every edit instead of only
+    // on a genuine sync, same reasoning as secretKeyDraftRef's docstring above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionStatus]);
 
+  /**
+   * The one place an *explicit* action (save success, conflict rebase)
+   * adopts a fresh record. Sets `expectedVersion` directly and synchronously
+   * instead of going through `setConnectionStatus` + the effect above, since
+   * that effect isn't guaranteed to fire (see its docstring) and this call
+   * site's whole point is to always pair the fresh version with whatever
+   * same-tenant draft remains. A tenant change discards the old tenant's
+   * draft before adopting the new record. Guarded by the same `isStale` check
+   * as the passive sync effect above: an explicit action's own read can itself
+   * be superseded by a different action that already landed a higher version
+   * while this one was in flight (e.g. two rapid Save clicks), and adopting
+   * the loser here would be exactly the same regression, just triggered by a
+   * different path.
+   */
+  const applyFreshRecord = (fresh: TLangfuseConnectionStatus) => {
+    if (isStale(fresh)) {
+      return;
+    }
+    const effectiveTenantId = fresh.effectiveTenantId ?? '';
+    const tenantChanged = effectiveTenantId !== writeBaseline.expectedTenantId;
+    rememberVersion(fresh);
+    if (tenantChanged) {
+      destinationTouchedRef.current = false;
+      publicKeyTouchedRef.current = false;
+      secretKeyDraftRef.current = false;
+      autoTestedConnectionRef.current = undefined;
+      connectionTestRequestRef.current += 1;
+      setSecretKey('');
+      setIsEditingPublicKey(false);
+      setIsEditingSecretKey(false);
+    }
+    if (tenantChanged || !destinationTouchedRef.current) {
+      setDestination(fresh.destination ?? '');
+    } else if (destinationRef.current === (fresh.destination ?? '')) {
+      // The surviving draft happens to already match the fresh baseline
+      // (e.g. a rebase reveals another admin's change that coincides with
+      // this one) — recompute rather than leave it stuck "touched", or
+      // passive syncs would keep freezing expectedVersion for a divergence
+      // that no longer exists, causing unnecessary 409s. Reads the ref, not
+      // the closed-over `destination` — see the ref's doc comment.
+      destinationTouchedRef.current = false;
+    }
+    if (tenantChanged || !publicKeyTouchedRef.current) {
+      setPublicKey(fresh.publicKey ?? '');
+    } else if (publicKeyRef.current.trim() === (fresh.publicKey ?? '')) {
+      publicKeyTouchedRef.current = false;
+    }
+    setWriteBaseline({
+      expectedVersion: fresh.configVersion ?? null,
+      expectedTenantId: effectiveTenantId,
+    });
+    setConnectionStatus(fresh);
+  };
+
   const secretConfigured = connectionStatus?.configured === true;
+  const configActive = connectionStatus?.configActive !== false;
   const destinations = connectionStatus?.destinations ?? [];
   const connectionDestinationAvailable = destinations.some(
     ({ key }) => key === connectionStatus?.destination,
@@ -190,6 +419,7 @@ export default function LangfuseConnection() {
   const isEditing =
     !secretConfigured || isEditingPublicKey || isEditingSecretKey || hasUnsavedChanges;
   const canSubmit =
+    configActive &&
     destination !== '' &&
     trimmedPublicKey !== '' &&
     ((!connectionCredentialsChanged && secretConfigured) || trimmedSecretKey !== '');
@@ -198,6 +428,13 @@ export default function LangfuseConnection() {
   useEffect(() => {
     const storedConnectionTestKey = getStoredConnectionTestKey(connectionStatus);
     if (!connectionStatus) {
+      return;
+    }
+    if (!configActive) {
+      autoTestedConnectionRef.current = undefined;
+      connectionTestRequestRef.current += 1;
+      setConnectionTestState('inactive');
+      setConnectionTestMessage('');
       return;
     }
     if (!storedConnectionTestKey) {
@@ -242,7 +479,7 @@ export default function LangfuseConnection() {
         },
       },
     );
-  }, [connectionStatus, localize, testMutation]);
+  }, [configActive, connectionStatus, localize, testMutation]);
 
   const connectionStatusLabel =
     connectionTestState === 'failed' && connectionTestMessage !== ''
@@ -254,27 +491,78 @@ export default function LangfuseConnection() {
   const connectionStatusTitle =
     connectionTestState === 'failed' ? localize('com_ui_langfuse_status_failed_hover') : undefined;
 
+  /**
+   * A 409 means another admin's write landed since this form's baseline was
+   * read. Resending the local draft under the server's bumped version would
+   * silently reapply this form's stale `destination`/`publicKey` (and
+   * `enabled`, for the toggle path) over that concurrent change. Refetching
+   * and re-basing via `applyFreshRecord` avoids that — fields the admin
+   * hasn't touched pick up the latest server value, `expectedVersion` comes
+   * from that same read, not the error body, and it's set directly rather
+   * than left to the passive sync effect. Same-tenant drafts survive; a tenant
+   * change clears the previous tenant's draft before adopting the new record.
+   *
+   * A failed or stale refetch must not advance `expectedVersion` on its own:
+   * React Query resolves a failed refetch with `isError: true` while still
+   * holding the previous `data`, so `result.data` alone doesn't prove the
+   * read is fresh. Leaving the token at its pre-conflict (now known-stale)
+   * value means the next Save attempt safely 409s again instead of risking a
+   * pass built on fields that were never actually refreshed.
+   */
+  const rebaseOnConflict = (error: unknown) => {
+    showToast({
+      message: localize(
+        isTenantConflict(error)
+          ? 'com_ui_langfuse_tenant_changed'
+          : 'com_ui_langfuse_version_conflict',
+      ),
+      status: 'warning',
+    });
+    setConnectionTestState('unverified');
+    setConnectionTestMessage('');
+    refetchConnection().then((result) => {
+      if (result.isError || !result.data) {
+        setConnectionTestState('failed');
+        setConnectionTestMessage(localize('com_ui_langfuse_conflict_refresh_error'));
+        return;
+      }
+      applyFreshRecord(result.data);
+    });
+  };
+
   const handleSave = () => {
+    if (!configActive) {
+      return;
+    }
     const payload = {
       enabled: !secretConfigured || connectionStatus?.enabled === true,
       destination,
       publicKey: trimmedPublicKey,
       ...(trimmedSecretKey ? { secretKey: trimmedSecretKey } : {}),
+      ...writeBaseline,
     };
 
     connectionTestRequestRef.current += 1;
     updateMutation.mutate(payload, {
       onSuccess: (nextStatus) => {
-        autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
-        setConnectionStatus(nextStatus);
-        setConnectionTestState('connected');
+        autoTestedConnectionRef.current =
+          nextStatus.configActive === false ? undefined : getStoredConnectionTestKey(nextStatus);
+        destinationTouchedRef.current = false;
+        publicKeyTouchedRef.current = false;
+        secretKeyDraftRef.current = false;
+        applyFreshRecord(nextStatus);
+        setConnectionTestState(nextStatus.configActive === false ? 'inactive' : 'connected');
         setConnectionTestMessage('');
         setSecretKey('');
         setIsEditingPublicKey(false);
         setIsEditingSecretKey(false);
         showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
       },
-      onError: () => {
+      onError: (error) => {
+        if (isVersionConflict(error)) {
+          rebaseOnConflict(error);
+          return;
+        }
         setConnectionTestState('failed');
         setConnectionTestMessage(localize('com_ui_langfuse_save_error'));
         showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' });
@@ -283,6 +571,8 @@ export default function LangfuseConnection() {
   };
 
   const handleDestinationChange = (nextDestination: string) => {
+    destinationTouchedRef.current = nextDestination !== (connectionStatus?.destination ?? '');
+    destinationRef.current = nextDestination;
     setDestination(nextDestination);
     const requestId = ++connectionTestRequestRef.current;
     const credentialsChanged =
@@ -333,7 +623,12 @@ export default function LangfuseConnection() {
   };
 
   const handleEnabledChange = () => {
-    if (!secretConfigured || !connectionStatus?.destination || !connectionStatus.publicKey) {
+    if (
+      !configActive ||
+      !secretConfigured ||
+      !connectionStatus?.destination ||
+      !connectionStatus.publicKey
+    ) {
       return;
     }
 
@@ -345,6 +640,7 @@ export default function LangfuseConnection() {
           enabled: nextEnabled,
           destination: connectionStatus.destination ?? '',
           publicKey: connectionStatus.publicKey ?? '',
+          ...writeBaseline,
         },
         {
           onSuccess: (nextStatus) => {
@@ -352,11 +648,15 @@ export default function LangfuseConnection() {
               return;
             }
             autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
-            setConnectionStatus(nextStatus);
+            applyFreshRecord(nextStatus);
             showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
           },
-          onError: () => {
+          onError: (error) => {
             if (requestId !== connectionTestRequestRef.current) {
+              return;
+            }
+            if (isVersionConflict(error)) {
+              rebaseOnConflict(error);
               return;
             }
             showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' });
@@ -441,6 +741,15 @@ export default function LangfuseConnection() {
         </PopoverPortal>
       </Popover>
 
+      {!configActive && (
+        <div
+          role="status"
+          className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
+        >
+          {localize('com_ui_langfuse_config_inactive')}
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <Label id="langfuse-destination-label">{localize('com_ui_langfuse_destination')}</Label>
         <Dropdown
@@ -448,7 +757,7 @@ export default function LangfuseConnection() {
           label={destination === '' ? localize('com_ui_select') : ''}
           onChange={handleDestinationChange}
           options={destinationOptions}
-          disabled={destinations.length === 0 || busy}
+          disabled={!configActive || destinations.length === 0 || busy}
           className="w-full"
           triggerClassName="w-full"
           sizeClasses="z-50 w-[var(--popover-anchor-width)]"
@@ -464,7 +773,7 @@ export default function LangfuseConnection() {
             type="button"
             className="w-full rounded-lg border border-border-light px-3 py-2 text-left hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_public_key')}`}
-            disabled={busy}
+            disabled={!configActive || busy}
             onClick={() => setIsEditingPublicKey(true)}
           >
             <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
@@ -482,11 +791,14 @@ export default function LangfuseConnection() {
             data-bwignore="true"
             data-form-type="other"
             value={publicKey}
-            disabled={busy}
+            disabled={!configActive || busy}
             placeholder="pk-lf-..."
             onChange={(e) => {
               connectionTestRequestRef.current += 1;
               const nextPublicKey = e.target.value;
+              publicKeyTouchedRef.current =
+                nextPublicKey.trim() !== (connectionStatus?.publicKey ?? '');
+              publicKeyRef.current = nextPublicKey;
               setPublicKey(nextPublicKey);
               if (
                 secretConfigured &&
@@ -508,7 +820,7 @@ export default function LangfuseConnection() {
             type="button"
             className="w-full rounded-lg border border-border-light px-3 py-2 text-left hover:border-border-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             aria-label={`${localize('com_ui_edit')} ${localize('com_ui_langfuse_secret_key')}`}
-            disabled={busy}
+            disabled={!configActive || busy}
             onClick={() => setIsEditingSecretKey(true)}
           >
             <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
@@ -526,11 +838,13 @@ export default function LangfuseConnection() {
             data-bwignore="true"
             data-form-type="other"
             value={secretKey}
-            disabled={busy}
+            disabled={!configActive || busy}
             placeholder="sk-lf-..."
             onChange={(e) => {
               connectionTestRequestRef.current += 1;
-              setSecretKey(e.target.value);
+              const nextSecretKey = e.target.value;
+              secretKeyDraftRef.current = nextSecretKey.trim() !== '';
+              setSecretKey(nextSecretKey);
               setConnectionTestState('unverified');
               setConnectionTestMessage('');
             }}
@@ -554,7 +868,9 @@ export default function LangfuseConnection() {
           <Button
             variant={connectionStatus?.enabled === true ? 'outline' : 'submit'}
             disabled={
-              busy || (connectionStatus?.enabled !== true && !connectionDestinationAvailable)
+              !configActive ||
+              busy ||
+              (connectionStatus?.enabled !== true && !connectionDestinationAvailable)
             }
             onClick={handleEnabledChange}
           >

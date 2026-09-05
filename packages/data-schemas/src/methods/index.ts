@@ -151,8 +151,10 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import {
   createConfigMethods,
+  applyConfigFieldsMutation,
   ConfigVersionConflictError,
   ConfigRevisionNotFoundError,
+  RestoreValidationError,
   canonicalizeResetPaths,
   fieldPathLimitError,
   fieldPathPolicyError,
@@ -168,6 +170,7 @@ import {
   type ConfigMutationOp,
   type ConfigMutationResult,
   type ConfigRevisionCause,
+  type ConfigRevisionListItem,
   type ConfigRevisionSnapshot,
   type ConfigRevisionActor,
 } from './config';
@@ -195,6 +198,8 @@ export {
   MAX_MCP_AUTHORITY_TARGETS,
   ConfigVersionConflictError,
   ConfigRevisionNotFoundError,
+  RestoreValidationError,
+  applyConfigFieldsMutation,
   canonicalizeResetPaths,
   fieldPathLimitError,
   fieldPathPolicyError,
@@ -586,6 +591,7 @@ export type {
   ConfigMutationOp,
   ConfigMutationResult,
   ConfigRevisionCause,
+  ConfigRevisionListItem,
   ConfigRevisionSnapshot,
   ConfigRevisionActor,
 };

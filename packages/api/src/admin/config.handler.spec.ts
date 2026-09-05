@@ -1,3 +1,4 @@
+import { tenantStorage, RestoreValidationError } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -17,13 +18,24 @@ jest.mock('@librechat/data-schemas', () => {
 import { createAdminConfigHandlers } from './config';
 
 function mockReq(overrides = {}) {
-  return {
+  const req = {
     user: { id: 'u1', role: 'ADMIN', _id: { toString: () => 'u1' } },
     params: {},
     body: {},
     query: {},
     ...overrides,
   } as Partial<ServerRequest> as ServerRequest;
+  if (
+    req.body != null &&
+    typeof req.body === 'object' &&
+    'expectedVersion' in req.body &&
+    !('expectedTenantId' in req.body)
+  ) {
+    Object.assign(req.body, {
+      expectedTenantId: req.user?.tenantId ?? '',
+    });
+  }
+  return req;
 }
 
 interface MockRes {
@@ -47,6 +59,17 @@ function mockRes() {
     }),
   };
   return res as Partial<Response> as Response & MockRes;
+}
+
+function versionedBaseConfig(configVersion: number) {
+  return {
+    _id: 'c1',
+    principalType: 'role',
+    principalId: '__base__',
+    priority: 0,
+    overrides: {},
+    configVersion,
+  };
 }
 
 function createHandlers(overrides = {}) {
@@ -74,6 +97,7 @@ function createHandlers(overrides = {}) {
       config: { _id: 'c1', configVersion: 6, overrides: { cache: true } },
       revision: { id: 'rev-1', status: 'final', configVersion: 5 },
     }),
+    listConfigRevisions: jest.fn().mockResolvedValue([]),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
     hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
@@ -270,6 +294,26 @@ describe('createAdminConfigHandlers', () => {
       expect((body.config as Record<string, unknown>).endpoints).toBeUndefined();
       expect(body.paths).toEqual({ uploads: '/tmp' });
       expect(body.availableTools).toBeUndefined();
+    });
+
+    it('getBaseConfig: strips dbOverrides sections the caller cannot read, same as the merged config', async () => {
+      const findConfigByPrincipal = jest.fn().mockResolvedValue({
+        _id: 'c1',
+        principalType: 'role',
+        principalId: '__base__',
+        overrides: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
+        configVersion: 5,
+      });
+      const { handlers } = createHandlers(sectionOnlyDeps('memory', { findConfigByPrincipal }));
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const dbOverrides = res.body!.dbOverrides as Record<string, unknown>;
+      expect(dbOverrides.memory).toEqual({ charLimit: 500 });
+      expect(dbOverrides.endpoints).toBeUndefined();
     });
 
     it('getBaseConfig: strips availableTools when the caller holds neither of its source sections', async () => {
@@ -571,7 +615,7 @@ describe('createAdminConfigHandlers', () => {
     it('does not allow tenant-wide Langfuse settings through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
+        params: { principalType: 'role', principalId: 'admin' },
         body: {
           overrides: {
             langfuse: {
@@ -591,50 +635,11 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
-    it('preserves stored Langfuse settings during a full base-config replacement', async () => {
-      const storedLangfuse = {
-        enabled: true,
-        destination: 'eu',
-        publicKey: 'pk-stored',
-        secretKey: 'v3:test:sk-stored',
-        secretKeyPreview: 'sk-sto...ored',
-        projectId: 'project-stored',
-      };
-      const { handlers, deps } = createHandlers({
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { langfuse: storedLangfuse },
-        }),
-        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
-          _id: 'c1',
-          configVersion: 2,
-          overrides,
-        })),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
-        body: {
-          overrides: {
-            interface: { modelSelect: false },
-            langfuse: {
-              enabled: false,
-              publicKey: 'pk-caller',
-              projectId: 'project-caller',
-            },
-          },
-        },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides).toEqual({
-        interface: { modelSelect: false },
-        langfuse: storedLangfuse,
-      });
-    });
+    // Restoring a stored Langfuse section across a base-config replace is
+    // base-principal-only and now only reachable through the atomic endpoint
+    // (see config.atomic.spec.ts: "preserves dedicated base-principal
+    // sections when resetting to defaults") — this legacy route rejects
+    // __base__ before ever reaching that logic.
 
     it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
       const { handlers, deps } = createHandlers({
@@ -764,6 +769,42 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body!.message).toBeDefined();
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
+
+    it('rejects a whole-overrides replace targeting a stored identity duplicated across two existing entries', async () => {
+      // This legacy whole-document route calls the same preserveConfigSecrets
+      // machinery as the atomic endpoint and is equally exposed to silently
+      // committing a save that strips a survivor's credentials when a
+      // pre-existing stored duplicate is reduced to one entry.
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 3,
+          priority: 0,
+          overrides: {
+            endpoints: {
+              custom: [
+                { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-1' },
+                { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-2' },
+              ],
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            endpoints: { custom: [{ name: 'OpenRouter', baseURL: 'https://new' }] },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toMatch(/Ambiguous existing name in endpoints\.custom/);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteConfigField', () => {
@@ -878,7 +919,7 @@ describe('createAdminConfigHandlers', () => {
     it('ignores tenant-wide Langfuse deletes through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
+        params: { principalType: 'role', principalId: 'admin' },
         query: { fieldPath: 'langfuse.enabled' },
       });
       const res = mockRes();
@@ -956,7 +997,7 @@ describe('createAdminConfigHandlers', () => {
     it('ignores tenant-wide Langfuse tombstones through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
+        params: { principalType: 'role', principalId: 'admin' },
         body: { fieldPath: 'langfuse.enabled' },
       });
       const res = mockRes();
@@ -1272,7 +1313,7 @@ describe('createAdminConfigHandlers', () => {
     it('does not allow tenant-wide Langfuse patches through the generic config API', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
+        params: { principalType: 'role', principalId: 'admin' },
         body: {
           entries: [{ fieldPath: 'langfuse.enabled', value: false }],
         },
@@ -1443,6 +1484,45 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
+    });
+
+    it('rejects a field patch targeting a stored identity duplicated across two existing entries', async () => {
+      // This legacy dotted-field-patch route calls the same preservation
+      // machinery as the atomic endpoint's fields mode and is equally
+      // exposed to silently committing a save that strips a survivor's
+      // credentials when a pre-existing stored duplicate is reduced to one.
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 3,
+          priority: 0,
+          overrides: {
+            endpoints: {
+              custom: [
+                { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-1' },
+                { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-2' },
+              ],
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            {
+              fieldPath: 'endpoints.custom',
+              value: [{ name: 'OpenRouter', baseURL: 'https://new' }],
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toMatch(/Ambiguous existing name in endpoints\.custom/);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
   });
 
@@ -1987,11 +2067,15 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
-  describe('invariant: __base__ requires broad manage:configs', () => {
-    it('upsert against __base__ returns 403 for assign-only caller', async () => {
+  describe('invariant: __base__ is rejected on every legacy mutation route, regardless of permissions', () => {
+    // Legacy PUT/PATCH/DELETE routes never carry expectedVersion and never
+    // write a revision. Base-config mutations must go through POST .../atomic
+    // — the only path with CAS and revision history — so these routes reject
+    // __base__ unconditionally, even for a broad-manage caller.
+
+    it('upsert against __base__ is rejected for a broad-manage caller', async () => {
       const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: '__base__' },
@@ -2001,14 +2085,14 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.upsertConfigOverrides(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(409);
+      expect(res.body?.error).toMatch(/\/atomic/);
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
-    it('delete against __base__ returns 403 for assign-only caller', async () => {
+    it('delete against __base__ is rejected for a broad-manage caller', async () => {
       const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: '__base__' },
@@ -2017,14 +2101,14 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.deleteConfigOverrides(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(409);
+      expect(res.body?.error).toMatch(/\/atomic/);
       expect(deps.deleteConfig).not.toHaveBeenCalled();
     });
 
-    it('toggle against __base__ returns 403 for assign-only caller', async () => {
+    it('toggle against __base__ is rejected for a broad-manage caller', async () => {
       const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: '__base__' },
@@ -2034,29 +2118,14 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.toggleConfig(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(409);
+      expect(res.body?.error).toMatch(/\/atomic/);
       expect(deps.toggleConfigActive).not.toHaveBeenCalled();
     });
 
-    it('upsert against __base__ succeeds for broad-manage caller', async () => {
+    it('patch against __base__ is rejected for a broad-manage caller', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(true),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
-        body: { overrides: {}, priority: 5 },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(201);
-      expect(deps.upsertConfig).toHaveBeenCalled();
-    });
-
-    it('patch against __base__ returns 403 for a section-scoped manager', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: '__base__' },
@@ -2066,13 +2135,14 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.patchConfigField(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(409);
+      expect(res.body?.error).toMatch(/\/atomic/);
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
-    it('tombstone against __base__ returns 403 for a section-scoped manager', async () => {
+    it('tombstone against __base__ is rejected for a broad-manage caller', async () => {
       const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: '__base__' },
@@ -2082,13 +2152,14 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.tombstoneConfigField(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(409);
+      expect(res.body?.error).toMatch(/\/atomic/);
       expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
-    it('field delete against __base__ returns 403 for a section-scoped manager', async () => {
+    it('field delete against __base__ is rejected for a broad-manage caller', async () => {
       const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
       });
       const req = mockReq({
         params: { principalType: 'role', principalId: '__base__' },
@@ -2098,24 +2169,9 @@ describe('createAdminConfigHandlers', () => {
 
       await handlers.deleteConfigField(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(409);
+      expect(res.body?.error).toMatch(/\/atomic/);
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
-    });
-
-    it('patch against __base__ succeeds for a broad-manage caller', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(true),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: '__base__' },
-        body: { entries: [{ fieldPath: 'memory.context', value: 'updated' }] },
-      });
-      const res = mockRes();
-
-      await handlers.patchConfigField(req, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(deps.patchConfigFields).toHaveBeenCalled();
     });
   });
 
@@ -2277,6 +2333,7 @@ describe('createAdminConfigHandlers', () => {
         mutateConfigWithRevision: jest
           .fn()
           .mockResolvedValue({ config: null, revision: { id: 'rev1' } }),
+        listConfigRevisions: jest.fn().mockResolvedValue([]),
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       };
       const handlers = createAdminConfigHandlers(deps);
@@ -2385,6 +2442,66 @@ describe('createAdminConfigHandlers', () => {
     }
   });
 
+  describe('listConfigRevisions', () => {
+    it('lists only the effective request tenant through the data layer', async () => {
+      const listConfigRevisions = jest.fn().mockResolvedValue([
+        {
+          id: 'rev-b',
+          createdAt: '2026-09-04T00:00:00.000Z',
+          cause: 'save',
+          actorId: 'admin-b',
+        },
+      ]);
+      const { handlers } = createHandlers({ listConfigRevisions });
+      const req = mockReq({
+        tenantId: 'tenant-b',
+        user: { id: 'u1', role: 'ADMIN', tenantId: 'tenant-a' },
+        params: { principalType: 'role', principalId: '__base__' },
+      });
+      const res = mockRes();
+
+      await handlers.listConfigRevisions(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(listConfigRevisions).toHaveBeenCalledWith({
+        principalType: 'role',
+        principalId: '__base__',
+        tenantId: 'tenant-b',
+      });
+      expect(res.body).toMatchObject({
+        effectiveTenantId: 'tenant-b',
+        revisions: [{ id: 'rev-b' }],
+      });
+    });
+
+    it('requires broad config-management access before reading history', async () => {
+      const listConfigRevisions = jest.fn().mockResolvedValue([]);
+      const { handlers } = createHandlers({
+        listConfigRevisions,
+        hasCapability: jest.fn().mockResolvedValue(false),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: '__base__' } });
+      const res = mockRes();
+
+      await handlers.listConfigRevisions(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(listConfigRevisions).not.toHaveBeenCalled();
+    });
+
+    it('rejects revision history for non-base principals', async () => {
+      const listConfigRevisions = jest.fn().mockResolvedValue([]);
+      const { handlers } = createHandlers({ listConfigRevisions });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'ADMIN' } });
+      const res = mockRes();
+
+      await handlers.listConfigRevisions(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(listConfigRevisions).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getBaseConfig', () => {
     it('returns 403 when user lacks READ_CONFIGS', async () => {
       const { handlers } = createHandlers({
@@ -2447,6 +2564,48 @@ describe('createAdminConfigHandlers', () => {
       });
     });
 
+    it('redacts plaintext and encrypted MCP secrets from the resolved mcpConfig alias', async () => {
+      const { handlers } = createHandlers({
+        getAppConfig: jest.fn().mockResolvedValue({
+          mcpConfig: {
+            yamlServer: {
+              url: 'https://yaml.example.com/mcp',
+              oauth: {
+                token_url: 'https://yaml.example.com/oauth/token',
+                client_secret: 'yaml-client-secret',
+              },
+              headers: { Authorization: 'Bearer yaml-token' },
+            },
+            storedServer: {
+              url: 'https://stored.example.com/mcp',
+              apiKey: { authorization_type: 'Bearer', key: 'v3:test:stored-api-key' },
+              oauth_headers: { 'X-OAuth-Token': 'v3:test:stored-oauth-token' },
+            },
+          },
+        }),
+      });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.config).toEqual({
+        mcpConfig: {
+          yamlServer: {
+            url: 'https://yaml.example.com/mcp',
+            oauth: { token_url: 'https://yaml.example.com/oauth/token' },
+            headers: {},
+          },
+          storedServer: {
+            url: 'https://stored.example.com/mcp',
+            apiKey: { authorization_type: 'Bearer' },
+            oauth_headers: {},
+          },
+        },
+      });
+    });
+
     it('forwards baseOnly=true to getAppConfig when query param is the literal string "true"', async () => {
       const getAppConfig = jest.fn().mockResolvedValue({ interface: { modelSelect: true } });
       const { handlers } = createHandlers({ getAppConfig });
@@ -2481,6 +2640,89 @@ describe('createAdminConfigHandlers', () => {
         expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: false }));
       }
     });
+
+    it('returns dbOverrides/dbConfigVersion from the raw base document alongside the merged config', async () => {
+      const findConfigByPrincipal = jest.fn().mockResolvedValue({
+        _id: 'c1',
+        principalType: 'role',
+        principalId: '__base__',
+        overrides: { cache: true },
+        configVersion: 5,
+      });
+      const { handlers, deps } = createHandlers({ findConfigByPrincipal });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.dbOverrides).toEqual({ cache: true });
+      expect(res.body!.dbConfigVersion).toBe(5);
+      expect(res.body!.dbIsActive).toBe(true);
+      expect(findConfigByPrincipal).toHaveBeenCalledWith(
+        'role',
+        '__base__',
+        expect.objectContaining({ includeInactive: true, tenantId: '' }),
+      );
+      expect(deps.getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ tenantId: '' }));
+    });
+
+    it('reports a null dbConfigVersion and no dbOverrides when no base document exists yet', async () => {
+      const { handlers } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+      });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.dbConfigVersion).toBeNull();
+      expect(res.body!.dbIsActive).toBeNull();
+      expect(res.body!.dbOverrides).toBeUndefined();
+    });
+
+    it('omits dbOverrides/dbConfigVersion and skips the raw document read entirely when baseOnly', async () => {
+      const findConfigByPrincipal = jest.fn().mockResolvedValue({
+        _id: 'c1',
+        overrides: { cache: true },
+        configVersion: 5,
+      });
+      const { handlers } = createHandlers({ findConfigByPrincipal });
+      const req = mockReq({ query: { baseOnly: 'true' } });
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).not.toHaveProperty('dbOverrides');
+      expect(res.body).not.toHaveProperty('dbConfigVersion');
+      expect(res.body).not.toHaveProperty('dbIsActive');
+      expect(findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('bypasses the app-config cache when not baseOnly, but not when baseOnly', async () => {
+      const getAppConfig = jest.fn().mockResolvedValue({ interface: { modelSelect: true } });
+      const { handlers } = createHandlers({ getAppConfig });
+
+      await handlers.getBaseConfig(mockReq(), mockRes());
+      expect(getAppConfig).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: true }));
+
+      await handlers.getBaseConfig(mockReq({ query: { baseOnly: 'true' } }), mockRes());
+      expect(getAppConfig).toHaveBeenLastCalledWith(expect.objectContaining({ refresh: false }));
+    });
+
+    it('fails closed instead of silently falling back to a YAML-only merge on error', async () => {
+      const getAppConfig = jest.fn().mockRejectedValue(new Error('mongo blip'));
+      const { handlers } = createHandlers({ getAppConfig });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ failClosed: true }));
+    });
   });
 });
 
@@ -2495,6 +2737,76 @@ describe('mutateConfigAtomic', () => {
     await handlers.mutateConfigAtomic(req, res);
     expect(res.statusCode).toBe(400);
     expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('requires expectedTenantId before database access', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        expectedTenantId: undefined,
+        entries: [{ fieldPath: 'cache', value: true }],
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe('expectedTenantId is required');
+    expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale tenant fence before database access', async () => {
+    const { handlers, deps } = createHandlers();
+    const req = mockReq({
+      user: { id: 'u1', role: 'ADMIN', tenantId: 'tenant-b' },
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        expectedTenantId: 'tenant-a',
+        entries: [{ fieldPath: 'cache', value: true }],
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({
+      error: 'Tenant context changed',
+      expectedTenantId: 'tenant-a',
+      currentTenantId: 'tenant-b',
+    });
+    expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('reactivates the base config through the atomic CAS/revision path', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        ...versionedBaseConfig(4),
+        isActive: false,
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: { expectedVersion: 4, isActive: true },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedVersion: 4,
+        cause: 'save',
+        op: { kind: 'active', isActive: true },
+      }),
+    );
   });
 
   it('rejects a non-object request body', async () => {
@@ -2629,15 +2941,17 @@ describe('mutateConfigAtomic', () => {
     expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
   });
 
-  it('accepts explicit null and falsy entry values', async () => {
-    const { handlers, deps } = createHandlers();
+  it('accepts falsy entry values instead of dropping them', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
         expectedVersion: 0,
         entries: [
-          { fieldPath: 'cache', value: null },
-          { fieldPath: 'registration.enabled', value: false },
+          { fieldPath: 'cache', value: false },
+          { fieldPath: 'secureImageLinks', value: false },
         ],
         cause: 'save',
       },
@@ -2649,10 +2963,1704 @@ describe('mutateConfigAtomic', () => {
       expect.objectContaining({
         op: expect.objectContaining({
           kind: 'fields',
-          fields: { cache: null, 'registration.enabled': false },
+          fields: { cache: false, secureImageLinks: false },
         }),
       }),
     );
+  });
+
+  it('rejects an entry value that fails librechat.yaml schema validation', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'interface.schedules.maxPerUser', value: -1 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/maxPerUser/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown entry and reset paths before reading or writing configuration', async () => {
+    const { handlers, deps } = createHandlers();
+
+    for (const body of [
+      {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'definitelyUnknownAdminConfigKey.value', value: true }],
+        cause: 'save',
+      },
+      {
+        expectedVersion: 0,
+        resetPaths: ['interface.definitelyUnknownAdminConfigKey'],
+        cause: 'reset',
+      },
+    ]) {
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body,
+      });
+      const res = mockRes();
+
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toMatch(/Unknown config field path/);
+    }
+
+    expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('accepts a field patch inside a discriminated-union config object', async () => {
+    const existing = {
+      ...versionedBaseConfig(0),
+      overrides: {
+        summarization: {
+          trigger: { type: 'token_ratio', value: 0.5 },
+        },
+      },
+    };
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(existing),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'summarization.trigger.value', value: 0.75 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: { 'summarization.trigger.value': 0.75 },
+        }),
+      }),
+    );
+  });
+
+  it('rejects replace-mode overrides that fail librechat.yaml schema validation', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        overrides: { interface: { schedules: { maxPerUser: -1 } } },
+        cause: 'import',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/maxPerUser/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown root and nested keys in replace mode', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+
+    for (const overrides of [
+      { definitelyUnknownAdminConfigKey: { enabled: true } },
+      { interface: { definitelyUnknownAdminConfigKey: true } },
+    ]) {
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { expectedVersion: 0, overrides, cause: 'import' },
+      });
+      const res = mockRes();
+
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toMatch(/Invalid config overrides|Unknown config field path/);
+    }
+
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 before validating replace mode against a newer document', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 6,
+        priority: 0,
+        overrides: {},
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        overrides: { interface: { schedules: { maxPerUser: -1 } } },
+        cause: 'import',
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Config version conflict', currentVersion: 6 });
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 before validating field values against a newer document', async () => {
+    const getAppConfig = jest.fn();
+    const { handlers, deps } = createHandlers({
+      getAppConfig,
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 6,
+        priority: 0,
+        overrides: {},
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'interface.schedules.maxPerUser', value: -1 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Config version conflict', currentVersion: 6 });
+    expect(getAppConfig).not.toHaveBeenCalled();
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('accepts a schema-valid entry value at the same path a negative value would reject', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'interface.schedules.maxPerUser', value: 3 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: { 'interface.schedules.maxPerUser': 3 },
+        }),
+      }),
+    );
+  });
+
+  it('validates a sparse field patch against the resolved section, not DB overrides alone', async () => {
+    // cloudfront.domain is required by the schema whenever cloudfront is
+    // present, but it has never been set as a DB override — only YAML
+    // provides it. A patch touching just urlExpiry must resolve against the
+    // YAML baseline too, or this fails purely because the DB has no
+    // standalone `domain` override.
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        cloudfront: { domain: 'https://cdn.example.com', urlExpiry: 3600 },
+      }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'cloudfront.urlExpiry', value: 7200 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: { 'cloudfront.urlExpiry': 7200 },
+        }),
+      }),
+    );
+  });
+
+  it('still rejects an invalid sparse patch even once the YAML baseline fills in required siblings', async () => {
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        cloudfront: { domain: 'https://cdn.example.com', urlExpiry: 3600 },
+      }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'cloudfront.urlExpiry', value: -5 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/urlExpiry/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('reveals the YAML value again when resetting a DB-overridden sibling required by the section', async () => {
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        cloudfront: { domain: 'https://cdn.example.com', urlExpiry: 3600 },
+      }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        overrides: { cloudfront: { domain: 'https://old-cdn.example.com', cookieExpiry: 900 } },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        resetPaths: ['cloudfront.domain'],
+        entries: [{ fieldPath: 'cloudfront.urlExpiry', value: 7200 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    // Resetting the DB's cloudfront.domain override falls back to YAML's
+    // domain, which still satisfies the required field — must not reject.
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalled();
+  });
+
+  it('rejects a descendant patch when a same-request whole-section reset deletes a DB field required for it', async () => {
+    // resetPaths: ['cloudfront'] deletes the ENTIRE DB cloudfront override
+    // before urlExpiry is applied — the old DB domain the mutation is about
+    // to erase must not be used to satisfy the schema's required domain.
+    // YAML itself has no cloudfront section at all here, so the resolved
+    // post-mutation state is just `{ urlExpiry: 7200 }`, missing domain.
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({}),
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        overrides: { cloudfront: { domain: 'https://old-cdn.example.com', cookieExpiry: 900 } },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        resetPaths: ['cloudfront'],
+        entries: [{ fieldPath: 'cloudfront.urlExpiry', value: 7200 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe(
+      'resetPaths and entries must not overlap: cloudfront and cloudfront.urlExpiry',
+    );
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects a descendant patch after a same-request whole-section reset even when YAML satisfies the section', async () => {
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        cloudfront: { domain: 'https://cdn.example.com', urlExpiry: 3600 },
+      }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        overrides: { cloudfront: { domain: 'https://old-cdn.example.com', cookieExpiry: 900 } },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        resetPaths: ['cloudfront'],
+        entries: [{ fieldPath: 'cloudfront.urlExpiry', value: 7200 }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe(
+      'resetPaths and entries must not overlap: cloudfront and cloudfront.urlExpiry',
+    );
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlapping field entries when the ancestor appears first', async () => {
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({}),
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        overrides: {
+          cloudfront: {
+            domain: 'https://cdn.example.com',
+            imageSigning: 'cookies',
+            cookieDomain: '.example.com',
+            requireSignedAccess: true,
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        entries: [
+          {
+            fieldPath: 'cloudfront',
+            value: { domain: 'https://cdn.example.com', imageSigning: 'none' },
+          },
+          { fieldPath: 'cloudfront.requireSignedAccess', value: true },
+        ],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe(
+      'Overlapping fieldPath entries are not allowed: cloudfront and cloudfront.requireSignedAccess',
+    );
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlapping field entries when the descendant appears first', async () => {
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({}),
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [
+          { fieldPath: 'cloudfront.cookieDomain', value: '.example.com' },
+          {
+            fieldPath: 'cloudfront',
+            value: {
+              domain: 'https://cdn.example.com',
+              imageSigning: 'cookies',
+              requireSignedAccess: true,
+            },
+          },
+        ],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe(
+      'Overlapping fieldPath entries are not allowed: cloudfront.cookieDomain and cloudfront',
+    );
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('rejects a same-request reset covered by an ancestor field entry', async () => {
+    const { handlers, deps } = createHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({}),
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        overrides: {
+          cloudfront: { domain: 'https://old-cdn.example.com', cookieExpiry: 900 },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        resetPaths: ['cloudfront.cookieExpiry'],
+        entries: [
+          { fieldPath: 'cloudfront', value: { domain: 'https://cdn.example.com', urlExpiry: -5 } },
+        ],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toBe(
+      'resetPaths and entries must not overlap: cloudfront.cookieExpiry and cloudfront',
+    );
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'scalar secret',
+      resetPath: 'ocr.apiKey',
+      fieldPath: 'ocr',
+      value: { strategy: 'azure' },
+    },
+    {
+      label: 'record secret container',
+      resetPath: 'endpoints.openAI.headers',
+      fieldPath: 'endpoints.openAI',
+      value: { models: { default: ['gpt-4o'] } },
+    },
+    {
+      label: 'array secret container',
+      resetPath: 'endpoints.custom',
+      fieldPath: 'endpoints.custom',
+      value: [],
+    },
+    {
+      label: 'MCP secret container',
+      resetPath: 'mcpServers.Jira.oauth',
+      fieldPath: 'mcpServers.Jira',
+      value: { url: 'https://mcp.example.com/jira' },
+    },
+  ])(
+    'rejects overlapping reset/patch input for a $label',
+    async ({ resetPath, fieldPath, value }) => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(3)),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 3,
+          resetPaths: [resetPath],
+          entries: [{ fieldPath, value }],
+          cause: 'save',
+        },
+      });
+      const res = mockRes();
+
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.error).toBe(
+        `resetPaths and entries must not overlap: ${resetPath} and ${fieldPath}`,
+      );
+      expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves an existing encrypted custom-endpoint apiKey when the submitted array entry omits it', async () => {
+    // The panel must never resend the stored ciphertext (the API rejects
+    // submitted encrypted values) — it omits apiKey/apiKeyPreview entirely
+    // for an unchanged entry instead, and this atomic write has to restore
+    // them from the existing document by the entry's stable name identity,
+    // the same way the legacy patch endpoint already does.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              {
+                name: 'OpenRouter',
+                apiKey: 'v3:test:sk-or-secret-key',
+                apiKeyPreview: 'sk-or-...-key',
+                baseURL: 'https://openrouter.ai/api/v1',
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v2' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: {
+            'endpoints.custom': [
+              {
+                name: 'OpenRouter',
+                baseURL: 'https://openrouter.ai/api/v2',
+                apiKey: 'v3:test:sk-or-secret-key',
+                apiKeyPreview: 'sk-or-...-key',
+              },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('restores existing encrypted custom-endpoint headers by entry identity when only an unrelated property (baseURL) changes', async () => {
+    // Companion to the apiKey case above, for a record-secret container
+    // nested inside the same array entry: the panel's redacted read leaves
+    // `headers` present as `{}` rather than omitted, and ObjectEntryCard.tsx
+    // now drops it from what it submits whenever it is still plain-object
+    // shaped (never touched via its KeyValueField) — so editing only
+    // baseURL must resubmit the entry with headers omitted, and this atomic
+    // write has to restore the real ciphertext by the entry's stable name
+    // identity, the same way the apiKey scalar already does.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              {
+                name: 'OpenRouter',
+                baseURL: 'https://openrouter.ai/api/v1',
+                headers: { Authorization: 'v3:test:gateway-token' },
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v2' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: {
+            'endpoints.custom': [
+              {
+                name: 'OpenRouter',
+                baseURL: 'https://openrouter.ai/api/v2',
+                headers: { Authorization: 'v3:test:gateway-token' },
+              },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('deletes only the header explicitly removed from a partial headers map, keeping the rest by entry identity', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              {
+                name: 'OpenRouter',
+                headers: {
+                  Authorization: 'v3:test:old-token',
+                  'X-Custom': 'v3:test:old-custom-value',
+                },
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', headers: { Authorization: 'Bearer new-token' } }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    const entry = call.op.fields['endpoints.custom'][0];
+    expect(entry.headers.Authorization).toMatch(/^v3:/);
+    expect(entry.headers['X-Custom']).toBeUndefined();
+    expect(Object.keys(entry.headers)).toEqual(['Authorization']);
+  });
+
+  it('leaves a deliberately emptied headers map alone, never restoring stale ciphertext onto it', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              {
+                name: 'OpenRouter',
+                headers: { Authorization: 'v3:test:gateway-token' },
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', headers: {} }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: {
+            'endpoints.custom': [{ name: 'OpenRouter', headers: {} }],
+          },
+        }),
+      }),
+    );
+  });
+
+  it("restores a custom endpoint's encrypted apiKey and headers by __previousIdentity when its name is renamed", async () => {
+    // Renaming is a plain field edit on `name`, which also doubles as the
+    // preservation identity key. Without the panel's __previousIdentity hint,
+    // the renamed entry has no existing entry to match against by identity
+    // and silently loses its credentials — this proves the hint closes that
+    // gap through the real mutateConfigAtomic handler, not just the unit.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              {
+                name: 'OpenRouter',
+                apiKey: 'v3:test:sk-or-secret-key',
+                apiKeyPreview: 'sk-or-...-key',
+                headers: { Authorization: 'v3:test:gateway-token' },
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter EU', __previousIdentity: 'OpenRouter' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: {
+            'endpoints.custom': [
+              {
+                name: 'OpenRouter EU',
+                apiKey: 'v3:test:sk-or-secret-key',
+                apiKeyPreview: 'sk-or-...-key',
+                headers: { Authorization: 'v3:test:gateway-token' },
+              },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it("restores an Azure OpenAI group's encrypted apiKey and additionalHeaders by __previousIdentity when its group is renamed", async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 4,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            azureOpenAI: {
+              groups: [
+                {
+                  group: 'prod',
+                  apiKey: 'v3:test:sk-azure-secret',
+                  apiKeyPreview: 'sk-azu...cret',
+                  additionalHeaders: { 'X-Region': 'v3:test:us-east' },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 4,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.azureOpenAI.groups',
+            value: [{ group: 'prod-eu', models: { 'gpt-4': true }, __previousIdentity: 'prod' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: {
+            'endpoints.azureOpenAI.groups': [
+              {
+                group: 'prod-eu',
+                models: { 'gpt-4': true },
+                apiKey: 'v3:test:sk-azure-secret',
+                apiKeyPreview: 'sk-azu...cret',
+                additionalHeaders: { 'X-Region': 'v3:test:us-east' },
+              },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('encrypts a plaintext group apiKey submitted via the endpoints.azureOpenAI ancestor patch', async () => {
+    // endpoints.azureOpenAI is an ancestor of the array-secret path
+    // endpoints.azureOpenAI.groups but carries no scalar secret field of its
+    // own — a patch scoped to this exact ancestor previously bypassed both
+    // encryption and preservation, persisting apiKey as plaintext.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 2,
+        priority: 0,
+        overrides: {},
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 2,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.azureOpenAI',
+            value: {
+              groups: [{ group: 'prod', models: { 'gpt-4': true }, apiKey: 'sk-plaintext-secret' }],
+            },
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    const patched = call.op.fields['endpoints.azureOpenAI'];
+    expect(patched.groups[0].apiKey).toMatch(/^v3:test:/);
+    expect(patched.groups[0].apiKey).not.toBe('sk-plaintext-secret');
+  });
+
+  it("does not resurrect a deleted entry's credentials onto a brand-new entry reusing its freed name", async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              {
+                name: 'OpenRouter',
+                apiKey: 'v3:test:sk-or-secret-key',
+                headers: { Authorization: 'v3:test:gateway-token' },
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            // The panel deleted the old OpenRouter and created a brand-new
+            // endpoint that happens to reuse the same name, stamping the
+            // explicit __previousIdentity: null marker at creation.
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', __previousIdentity: null }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    const entry = call.op.fields['endpoints.custom'][0];
+    expect(entry.apiKey).toBeUndefined();
+    expect(entry.headers).toBeUndefined();
+    expect(entry).not.toHaveProperty('__previousIdentity');
+  });
+
+  it("strips __previousIdentity on a brand-new config document's first save, and does not strand credentials on the next save", async () => {
+    // findConfigByPrincipal resolving to null (no document has ever been
+    // saved for this principal) previously short-circuited
+    // preserveConfigSecrets before preserveArraySecrets could strip the
+    // hint, letting it persist verbatim. Reproduces the full lifecycle: a
+    // first save creating a new endpoint, then a second, unrelated edit
+    // submitting the entry exactly as a redacted read would have returned
+    // it (real apiKey omitted, whatever survived redaction resubmitted
+    // as-is) — the second save must still find and restore the apiKey the
+    // first save encrypted.
+    const firstSave = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+    });
+    const firstReq = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: null,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', apiKey: 'sk-gateway-key', __previousIdentity: null }],
+          },
+        ],
+      },
+    });
+    const firstRes = mockRes();
+    await firstSave.handlers.mutateConfigAtomic(firstReq, firstRes);
+
+    expect(firstRes.statusCode).toBe(200);
+    const firstEntry =
+      firstSave.deps.mutateConfigWithRevision.mock.calls[0][0].op.fields['endpoints.custom'][0];
+    expect(firstEntry).not.toHaveProperty('__previousIdentity');
+    expect(firstEntry.apiKey).toMatch(/^v3:/);
+
+    // Second save: the stored document now exists and holds exactly what the
+    // first save persisted. The panel submits an unrelated edit (baseURL
+    // only) with the entry shaped as a redacted read would return it.
+    const secondSave = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 1,
+        priority: 0,
+        overrides: { endpoints: { custom: [firstEntry] } },
+      }),
+    });
+    const secondReq = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 1,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', baseURL: 'https://new' }],
+          },
+        ],
+      },
+    });
+    const secondRes = mockRes();
+    await secondSave.handlers.mutateConfigAtomic(secondReq, secondRes);
+
+    expect(secondRes.statusCode).toBe(200);
+    const secondEntry =
+      secondSave.deps.mutateConfigWithRevision.mock.calls[0][0].op.fields['endpoints.custom'][0];
+    expect(secondEntry.apiKey).toBe(firstEntry.apiKey);
+    expect(secondEntry.baseURL).toBe('https://new');
+  });
+
+  it('rejects the mutation with a 400 when a submission targets a stored identity duplicated across two existing entries', async () => {
+    // The stored duplicate predates unique-identity enforcement. Deleting
+    // one of the two ambiguous "OpenRouter" entries and leaving the other
+    // untouched would otherwise succeed while silently restoring nothing —
+    // no way to tell which of the two credentials the survivor should keep.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-1' },
+              { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-2' },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter', baseURL: 'https://new' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/Ambiguous existing name in endpoints\.custom/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it('allows deleting every entry sharing a duplicated stored identity', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-1' },
+              { name: 'OpenRouter', apiKey: 'v3:test:sk-secret-2' },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [{ fieldPath: 'endpoints.custom', value: [] }],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalled();
+  });
+
+  it('rejects the mutation with a 400 when the panel submits two custom endpoints with the same name', async () => {
+    // Duplicate identities are unrecoverable ambiguity for credential
+    // preservation (preserveArraySecrets fails closed and restores nothing
+    // for either), but silently committing a save that strips an existing
+    // entry's credentials is a bad failure mode for what's normally just an
+    // admin mistake — reject before anything mutates instead.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [{ name: 'OpenRouter', apiKey: 'v3:test:sk-or-secret-key' }],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            value: [{ name: 'OpenRouter' }, { name: 'OpenRouter', baseURL: 'https://dup' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/Duplicate name in endpoints\.custom/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
+  });
+
+  it("restores the surviving renamed entry's own credentials, not the deleted entry's, on a rename-onto-a-deleted-identity", async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 3,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            custom: [
+              { name: 'A', apiKey: 'v3:test:sk-a-secret' },
+              { name: 'B', apiKey: 'v3:test:sk-b-secret' },
+            ],
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 3,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'endpoints.custom',
+            // B deleted; A renamed to B in the same save.
+            value: [{ name: 'B', __previousIdentity: 'A' }],
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    expect(call.op.fields['endpoints.custom'][0].apiKey).toBe('v3:test:sk-a-secret');
+  });
+
+  it('preserves an existing encrypted mcpServers oauth.client_secret when the panel resubmits the whole oauth object without it', async () => {
+    // Matches the admin panel's real submission shape traced by review: it
+    // never receives real ciphertext for oauth.client_secret (reads are
+    // redacted), so editing any other oauth sub-field (e.g. token_url)
+    // resubmits the whole "oauth" object at fieldPath `mcpServers.<name>.oauth`
+    // with client_secret entirely absent, not a leaf-level dotted patch.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 7,
+        priority: 0,
+        overrides: {
+          mcpServers: {
+            Jira: {
+              url: 'https://mcp.example.com/jira',
+              oauth: {
+                client_id: 'jira-client-id',
+                client_secret: 'v3:test:oauth-secret-value',
+                authorization_url: 'https://mcp.example.com/oauth/authorize',
+                token_url: 'https://old',
+              },
+            },
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 7,
+        cause: 'save',
+        entries: [
+          {
+            fieldPath: 'mcpServers.Jira.oauth',
+            value: {
+              client_id: 'jira-client-id',
+              authorization_url: 'https://mcp.example.com/oauth/authorize',
+              token_url: 'https://new',
+            },
+          },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          fields: {
+            'mcpServers.Jira.oauth': {
+              client_id: 'jira-client-id',
+              authorization_url: 'https://mcp.example.com/oauth/authorize',
+              token_url: 'https://new',
+              client_secret: 'v3:test:oauth-secret-value',
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  it('rejects a direct leaf-dotted write to mcpServers.<name>.oauth.client_secret instead of persisting it in plaintext', async () => {
+    const { handlers } = createHandlers();
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        cause: 'save',
+        entries: [{ fieldPath: 'mcpServers.Jira.oauth.client_secret', value: 'sk-new-secret' }],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({
+      error:
+        'Cannot write mcpServers secret fields by dotted leaf path: mcpServers.Jira.oauth.client_secret. Write the mcpServers.Jira.oauth object instead',
+    });
+  });
+
+  it('does not restore a header omitted from a partial headers map the panel resubmits — deleting one credential must actually delete it', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 4,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            openAI: {
+              headers: {
+                Authorization: 'v3:test:old-auth-token',
+                'X-Custom': 'v3:test:old-custom-value',
+              },
+            },
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 4,
+        cause: 'save',
+        entries: [
+          { fieldPath: 'endpoints.openAI.headers', value: { Authorization: 'new-auth-token' } },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    const submittedHeaders = call.op.fields['endpoints.openAI.headers'];
+    expect(Object.keys(submittedHeaders)).toEqual(['Authorization']);
+    expect(submittedHeaders['X-Custom']).toBeUndefined();
+  });
+
+  it('does not restore a header omitted from a partial mcpServers headers map resubmitted with no __previousIdentity hint at all', async () => {
+    // Same contract as the endpoints.openAI.headers case above, but through
+    // the mcpServers rename/create hint mechanism (resolveMcpSecretOrigins)
+    // instead of restoreOmittedRecordSecretContainers — an ordinary edit with
+    // no hint must never fall back to bare current-name matching for
+    // headers/oauth_headers, or a deleted credential comes right back.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 5,
+        priority: 0,
+        overrides: {
+          mcpServers: {
+            Jira: {
+              url: 'https://mcp.example.com/jira',
+              headers: {
+                Authorization: 'v3:test:old-auth-token',
+                'X-Custom': 'v3:test:old-custom-value',
+              },
+            },
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'save',
+        entries: [
+          { fieldPath: 'mcpServers.Jira.headers', value: { Authorization: 'new-auth-token' } },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    const submittedHeaders = call.op.fields['mcpServers.Jira.headers'];
+    expect(Object.keys(submittedHeaders)).toEqual(['Authorization']);
+    expect(submittedHeaders['X-Custom']).toBeUndefined();
+  });
+
+  it('restores an mcpServers headers secret via __previousIdentity through the real encrypt-then-preserve pipeline order (Finding 1 regression)', async () => {
+    // The real mutateConfigAtomic/patchConfigField pipeline runs
+    // encryptConfigSecretFields BEFORE preservePatchedConfigSecretFields. The
+    // generic headers/oauth_headers bulk-encryptor can't distinguish the
+    // __previousIdentity hint from a real header value by shape alone, so if
+    // it ever encrypts that sibling key, the hint is ciphertext by the time
+    // resolveMcpSecretOrigins reads it and the rename silently loses its
+    // credential. This exercises the FULL real call order (not just the
+    // secrets.ts unit), so a regression in either function's chain shows up
+    // here.
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 9,
+        priority: 0,
+        overrides: {
+          mcpServers: {
+            Jira: {
+              url: 'https://mcp.example.com/jira',
+              headers: { Authorization: 'v3:test:gateway-token' },
+            },
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 9,
+        cause: 'save',
+        // A real rename deletes the old entry in the same request (the
+        // admin panel's handleRename resets every one of its leaf paths) —
+        // that deletion is what makes "Jira" a genuine vacate rather than a
+        // still-alive origin a hint could otherwise be cloning from
+        // (Finding 2).
+        resetPaths: ['mcpServers.Jira'],
+        entries: [
+          { fieldPath: 'mcpServers.JiraEU.url', value: 'https://mcp.example.com/jira-eu' },
+          { fieldPath: 'mcpServers.JiraEU.headers', value: { __previousIdentity: 'Jira' } },
+        ],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    const headers = call.op.fields['mcpServers.JiraEU.headers'];
+    expect(headers.Authorization).toBe('v3:test:gateway-token');
+    expect(headers).not.toHaveProperty('__previousIdentity');
+  });
+
+  describe('mcpServers __previousIdentity hint batch-collision detection (Finding 7)', () => {
+    it("does not clone a still-present, unrenamed server's secret onto a new destination claiming it as origin in the same save", async () => {
+      // Repro #1: server "A" is NOT being renamed away — a separate entry in
+      // this same batch edits mcpServers.A.oauth directly (an ordinary edit,
+      // no hint) — while a brand-new/renamed destination "C" claims "A" as
+      // its __previousIdentity origin. A never vacated, so this is a clone,
+      // not a move, and must be rejected. A's own bare-current-name
+      // restoration (an unrelated, ordinary edit) must still work normally.
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 6,
+          priority: 0,
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  client_secret: 'v3:test:secret-A',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 6,
+          cause: 'save',
+          entries: [
+            { fieldPath: 'mcpServers.C.url', value: 'https://mcp.example.com/c' },
+            { fieldPath: 'mcpServers.C.oauth', value: { __previousIdentity: 'A' } },
+            {
+              fieldPath: 'mcpServers.A.oauth',
+              value: {
+                client_id: 'a-client-id',
+                authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                token_url: 'https://mcp.example.com/a/oauth/token-v2',
+              },
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+      expect(call.op.fields['mcpServers.C.oauth'].client_secret).toBeUndefined();
+      expect(call.op.fields['mcpServers.C.oauth']).not.toHaveProperty('__previousIdentity');
+      // A's own ordinary (no-hint) edit still restores A's own secret.
+      expect(call.op.fields['mcpServers.A.oauth'].client_secret).toBe('v3:test:secret-A');
+    });
+
+    it('does not let two different destination servers both restore the same origin secret in the same save', async () => {
+      // Repro #2: destinations "C" and "D" both claim __previousIdentity "A"
+      // in the same batch. A stored server's credentials can flow to at most
+      // one destination — with two claimants, neither may restore from it.
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 6,
+          priority: 0,
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  client_secret: 'v3:test:secret-A',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 6,
+          cause: 'save',
+          entries: [
+            { fieldPath: 'mcpServers.C.url', value: 'https://mcp.example.com/c' },
+            { fieldPath: 'mcpServers.C.oauth', value: { __previousIdentity: 'A' } },
+            { fieldPath: 'mcpServers.D.url', value: 'https://mcp.example.com/d' },
+            { fieldPath: 'mcpServers.D.oauth', value: { __previousIdentity: 'A' } },
+          ],
+        },
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+      expect(call.op.fields['mcpServers.C.oauth'].client_secret).toBeUndefined();
+      expect(call.op.fields['mcpServers.D.oauth'].client_secret).toBeUndefined();
+    });
+
+    it("does not assemble one destination's entry from two unrelated servers' hidden credentials when its own sub-objects disagree on origin", async () => {
+      // Repro #3: destination "C"'s oauth sub-object hints origin "A" while
+      // its headers sub-object hints origin "B" in the same save. A single
+      // destination's sub-objects must agree on one origin story — when they
+      // don't, neither claim is honored.
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 6,
+          priority: 0,
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  client_secret: 'v3:test:secret-A',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+              B: {
+                url: 'https://mcp.example.com/b',
+                headers: { Authorization: 'v3:test:token-B' },
+              },
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 6,
+          cause: 'save',
+          entries: [
+            { fieldPath: 'mcpServers.C.url', value: 'https://mcp.example.com/c' },
+            { fieldPath: 'mcpServers.C.oauth', value: { __previousIdentity: 'A' } },
+            { fieldPath: 'mcpServers.C.headers', value: { __previousIdentity: 'B' } },
+          ],
+        },
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+      expect(call.op.fields['mcpServers.C.oauth'].client_secret).toBeUndefined();
+      expect(call.op.fields['mcpServers.C.headers'].Authorization).toBeUndefined();
+    });
+
+    it("does not clone a still-present origin's secret when the batch never mentions that origin at all (Finding 2 — the untouched-origin gap)", async () => {
+      // Unlike repro #1 above (which edits mcpServers.A.oauth directly, giving
+      // the old validator an artificial signal that A is "in the batch"), this
+      // save touches ONLY C — A sits untouched in the existing document. A
+      // hint claiming A as origin must still be rejected: A never vacated,
+      // it's simply not part of this save at all.
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 6,
+          priority: 0,
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  client_secret: 'v3:test:secret-A',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 6,
+          cause: 'save',
+          entries: [
+            { fieldPath: 'mcpServers.C.url', value: 'https://mcp.example.com/c' },
+            { fieldPath: 'mcpServers.C.oauth', value: { __previousIdentity: 'A' } },
+          ],
+        },
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+      expect(call.op.fields['mcpServers.C.oauth'].client_secret).toBeUndefined();
+    });
+
+    it('lets a rename through when its claimed origin is genuinely removed via resetPaths in the same save (Finding 2 — legitimate move still works)', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 6,
+          priority: 0,
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  client_secret: 'v3:test:secret-A',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+            },
+          },
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 6,
+          cause: 'save',
+          resetPaths: ['mcpServers.A'],
+          entries: [
+            { fieldPath: 'mcpServers.C.url', value: 'https://mcp.example.com/c' },
+            {
+              fieldPath: 'mcpServers.C.oauth',
+              // Mirrors the real admin-panel rename flow: the whole
+              // sub-object moves as one write, non-secret siblings included,
+              // with only the secret leaf itself omitted/redacted.
+              value: {
+                client_id: 'a-client-id',
+                authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                token_url: 'https://mcp.example.com/a/oauth/token',
+                __previousIdentity: 'A',
+              },
+            },
+          ],
+        },
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+      expect(call.op.fields['mcpServers.C.oauth'].client_secret).toBe('v3:test:secret-A');
+    });
+  });
+
+  describe('mcpServers __previousIdentity hint batch-collision detection on whole-document routes (Finding 2)', () => {
+    it('does not clone a still-present origin secret via upsertConfigOverrides (legacy whole-document upsert)', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          configVersion: 6,
+          priority: 0,
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  client_secret: 'v3:test:secret-A',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+            },
+          },
+        }),
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 7 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            mcpServers: {
+              A: {
+                url: 'https://mcp.example.com/a',
+                oauth: {
+                  client_id: 'a-client-id',
+                  authorization_url: 'https://mcp.example.com/a/oauth/authorize',
+                  token_url: 'https://mcp.example.com/a/oauth/token',
+                },
+              },
+              C: {
+                url: 'https://mcp.example.com/c',
+                oauth: { __previousIdentity: 'A' },
+              },
+            },
+          },
+        },
+      });
+      const res = mockRes();
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3] as Record<string, unknown>;
+      const mcpServers = savedOverrides.mcpServers as Record<string, Record<string, unknown>>;
+      const cOauth = mcpServers.C.oauth as Record<string, unknown>;
+      expect(cOauth.client_secret).toBeUndefined();
+      // A's own resubmission (still present, unrenamed) keeps its own secret.
+      expect((mcpServers.A.oauth as Record<string, unknown>).client_secret).toBe(
+        'v3:test:secret-A',
+      );
+    });
+  });
+
+  it('clears every header when the panel resubmits an explicit empty headers map', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue({
+        configVersion: 4,
+        priority: 0,
+        overrides: {
+          endpoints: {
+            openAI: {
+              headers: {
+                Authorization: 'v3:test:old-auth-token',
+                'X-Custom': 'v3:test:old-custom-value',
+              },
+            },
+          },
+        },
+      }),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 4,
+        cause: 'save',
+        entries: [{ fieldPath: 'endpoints.openAI.headers', value: {} }],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const call = deps.mutateConfigWithRevision.mock.calls[0][0];
+    expect(call.op.fields['endpoints.openAI.headers']).toEqual({});
+  });
+
+  it('rejects an entry path with no corresponding librechat.yaml schema field', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(0)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 0,
+        entries: [{ fieldPath: 'notARealTopLevelSection.foo', value: 'anything' }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body?.error).toMatch(/Unknown config field path/);
+    expect(deps.mutateConfigWithRevision).not.toHaveBeenCalled();
   });
 
   it('rejects process-backed MCP fields before an atomic mutation', async () => {
@@ -2711,7 +4719,10 @@ describe('mutateConfigAtomic', () => {
         revision: { id: 'rev-1', status: 'final', configVersion: 5, overrides },
       };
     });
-    const { handlers, deps } = createHandlers({ mutateConfigWithRevision });
+    const { handlers, deps } = createHandlers({
+      mutateConfigWithRevision,
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
@@ -2745,6 +4756,53 @@ describe('mutateConfigAtomic', () => {
       expect.objectContaining({
         overrides: { ocr: { apiKeyPreview: expect.any(String) } },
       }),
+    );
+  });
+
+  it('scopes the fields-mode secret-preservation read to the default tenant instead of omitting it', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'cache', value: true }],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    // A default-tenant caller (user.tenantId undefined) must still scope the
+    // read to the default tenant — omitting the option entirely would let it
+    // match another tenant's role/__base__ document (findConfigByPrincipal
+    // treats a missing tenantId option as "no tenant filter at all").
+    expect(deps.findConfigByPrincipal).toHaveBeenCalledWith(
+      'role',
+      '__base__',
+      expect.objectContaining({ tenantId: '' }),
+    );
+  });
+
+  it('scopes the fields-mode secret-preservation read to the caller explicit tenant', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
+    const req = mockReq({
+      user: { id: 'u1', role: 'ADMIN', tenantId: 'tenant-a', _id: { toString: () => 'u1' } },
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        entries: [{ fieldPath: 'cache', value: true }],
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.findConfigByPrincipal).toHaveBeenCalledWith(
+      'role',
+      '__base__',
+      expect.objectContaining({ tenantId: 'tenant-a' }),
     );
   });
 
@@ -2789,6 +4847,7 @@ describe('mutateConfigAtomic', () => {
 
   it('returns 409 on version conflict', async () => {
     const { handlers } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
       mutateConfigWithRevision: jest.fn().mockRejectedValue(
         Object.assign(new Error('Config version conflict'), {
           name: 'ConfigVersionConflictError',
@@ -2812,12 +4871,15 @@ describe('mutateConfigAtomic', () => {
 
   it('applies fields mutation then invalidates caches', async () => {
     const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
-    const { handlers, deps } = createHandlers({ invalidateConfigCaches });
+    const { handlers, deps } = createHandlers({
+      invalidateConfigCaches,
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
         expectedVersion: 5,
-        resetPaths: ['registration.enabled'],
+        resetPaths: ['registration.allowedDomains'],
         entries: [{ fieldPath: 'cache', value: true }],
         cause: 'save',
         priority: 0,
@@ -2832,7 +4894,7 @@ describe('mutateConfigAtomic', () => {
         cause: 'save',
         op: expect.objectContaining({
           kind: 'fields',
-          resetPaths: ['registration.enabled'],
+          resetPaths: ['registration.allowedDomains'],
           fields: { cache: true },
         }),
       }),
@@ -2845,13 +4907,93 @@ describe('mutateConfigAtomic', () => {
     });
   });
 
+  it('uses the ALS-resolved request tenant, not the user claim, for pre-reads, actor, and cache invalidation', async () => {
+    const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
+    const findConfigByPrincipal = jest.fn().mockResolvedValue(versionedBaseConfig(5));
+    const { handlers, deps } = createHandlers({ invalidateConfigCaches, findConfigByPrincipal });
+    const req = mockReq({
+      user: {
+        id: 'u1',
+        role: 'ADMIN',
+        tenantId: 'user-claim-tenant',
+        _id: { toString: () => 'u1' },
+      },
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        expectedTenantId: 'als-resolved-tenant',
+        entries: [{ fieldPath: 'cache', value: true }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+
+    // The tenant middleware resolves a DIFFERENT effective tenant into ALS
+    // than the user's own tenantId claim — e.g. after normalization. Every
+    // tenant-scoped operation in this request must agree on ALS, not the claim,
+    // or the config write and its revision end up scoped to different tenants.
+    await tenantStorage.run({ tenantId: 'als-resolved-tenant' }, async () => {
+      await handlers.mutateConfigAtomic(req, res);
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.findConfigByPrincipal).toHaveBeenCalledWith(
+      'role',
+      '__base__',
+      expect.objectContaining({ tenantId: 'als-resolved-tenant' }),
+    );
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: expect.objectContaining({ tenantId: 'als-resolved-tenant' }),
+      }),
+    );
+    expect(invalidateConfigCaches).toHaveBeenCalledWith('als-resolved-tenant');
+  });
+
+  it('authorizes against the effective request tenant it writes in, not the user claim', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
+    const req = mockReq({
+      user: {
+        id: 'u1',
+        role: 'ADMIN',
+        tenantId: 'user-claim-tenant',
+        _id: { toString: () => 'u1' },
+      },
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        expectedTenantId: 'als-resolved-tenant',
+        entries: [{ fieldPath: 'cache', value: true }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+
+    await tenantStorage.run({ tenantId: 'als-resolved-tenant' }, async () => {
+      await handlers.mutateConfigAtomic(req, res);
+    });
+
+    expect(res.statusCode).toBe(200);
+    // Checking grants in `user-claim-tenant` while writing into
+    // `als-resolved-tenant` would authorize a tenant that never receives the
+    // config or its revision.
+    expect(deps.hasConfigCapability).toHaveBeenCalled();
+    for (const [capabilityUser] of deps.hasConfigCapability.mock.calls) {
+      expect(capabilityUser).toMatchObject({ tenantId: 'als-resolved-tenant' });
+    }
+  });
+
   it('strips protected ancestor and alias entries/reset paths in atomic fields mode', async () => {
-    const { handlers, deps } = createHandlers();
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
         expectedVersion: 5,
-        resetPaths: ['interface', 'interfaceConfig.prompts', 'registration.enabled'],
+        resetPaths: ['interface', 'interfaceConfig.prompts', 'registration.allowedDomains'],
         entries: [
           { fieldPath: 'interface', value: null },
           { fieldPath: 'interfaceConfig.prompts', value: false },
@@ -2867,7 +5009,7 @@ describe('mutateConfigAtomic', () => {
       expect.objectContaining({
         op: expect.objectContaining({
           kind: 'fields',
-          resetPaths: ['registration.enabled'],
+          resetPaths: ['registration.allowedDomains'],
           fields: { cache: true },
         }),
       }),
@@ -2882,13 +5024,14 @@ describe('mutateConfigAtomic', () => {
         }
         return Promise.resolve(section === 'registration');
       }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
     });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
         expectedVersion: 5,
         resetPaths: ['interface'],
-        entries: [{ fieldPath: 'registration.enabled', value: false }],
+        entries: [{ fieldPath: 'registration.allowedDomains', value: [] }],
         cause: 'save',
       },
     });
@@ -2900,13 +5043,95 @@ describe('mutateConfigAtomic', () => {
         op: expect.objectContaining({
           kind: 'fields',
           resetPaths: [],
-          fields: { 'registration.enabled': false },
+          fields: { 'registration.allowedDomains': [] },
         }),
       }),
     );
     expect(res.body).toEqual({ changed: true, configVersion: 6, revisionId: 'rev-1' });
     expect(res.body).not.toHaveProperty('config');
     expect(res.body).not.toHaveProperty('revision');
+  });
+
+  it('creates a new base config at priority 0 for a section-scoped caller, not DEFAULT_PRIORITY', async () => {
+    const { handlers, deps } = createHandlers({
+      hasConfigCapability: jest.fn().mockImplementation((_user, section: string | null) => {
+        if (section == null) {
+          return Promise.resolve(false);
+        }
+        return Promise.resolve(section === 'registration');
+      }),
+      findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        // No priority sent — a section-scoped caller's priority is discarded
+        // regardless, so this isolates the DEFAULT for a brand-new __base__
+        // document from whatever the caller happened to submit.
+        expectedVersion: null,
+        entries: [{ fieldPath: 'registration.allowedDomains', value: [] }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({
+          kind: 'fields',
+          priority: 0,
+        }),
+      }),
+    );
+  });
+
+  it('creates a new base config at priority 0 when a broad caller omits priority in fields mode', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: null,
+        entries: [{ fieldPath: 'registration.allowedDomains', value: [] }],
+        cause: 'save',
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({ kind: 'fields', priority: 0 }),
+      }),
+    );
+  });
+
+  it('creates a new base config at priority 0 when a broad caller omits priority in replace mode', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: null,
+        overrides: { registration: { allowedDomains: [] } },
+        cause: 'import',
+      },
+    });
+    const res = mockRes();
+
+    await handlers.mutateConfigAtomic(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: expect.objectContaining({ kind: 'replace', priority: 0 }),
+      }),
+    );
   });
 
   it('returns 403 for protected-only no-op atomic fields requests without section grants', async () => {
@@ -2967,7 +5192,9 @@ describe('mutateConfigAtomic', () => {
   });
 
   it('strips interface permission fields from atomic replace overrides', async () => {
-    const { handlers, deps } = createHandlers();
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
@@ -2993,7 +5220,9 @@ describe('mutateConfigAtomic', () => {
   });
 
   it('strips non-object interface and internal aliases from atomic replace overrides', async () => {
-    const { handlers, deps } = createHandlers();
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
     const req = mockReq({
       params: { principalType: 'role', principalId: '__base__' },
       body: {
@@ -3016,6 +5245,54 @@ describe('mutateConfigAtomic', () => {
           overrides: { cache: true },
         }),
       }),
+    );
+  });
+
+  it('scopes the replace-mode secret-preservation read to the default tenant instead of omitting it', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
+    const req = mockReq({
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'import',
+        overrides: { cache: true },
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    // Same scoping requirement as the fields-mode read: a default-tenant
+    // caller must not leave the tenantId option out entirely, or the
+    // secret-preservation read could match another tenant's __base__ doc.
+    expect(deps.findConfigByPrincipal).toHaveBeenCalledWith(
+      'role',
+      '__base__',
+      expect.objectContaining({ tenantId: '' }),
+    );
+  });
+
+  it('scopes the replace-mode secret-preservation read to the caller explicit tenant', async () => {
+    const { handlers, deps } = createHandlers({
+      findConfigByPrincipal: jest.fn().mockResolvedValue(versionedBaseConfig(5)),
+    });
+    const req = mockReq({
+      user: { id: 'u1', role: 'ADMIN', tenantId: 'tenant-a', _id: { toString: () => 'u1' } },
+      params: { principalType: 'role', principalId: '__base__' },
+      body: {
+        expectedVersion: 5,
+        cause: 'import',
+        overrides: { cache: true },
+      },
+    });
+    const res = mockRes();
+    await handlers.mutateConfigAtomic(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(deps.findConfigByPrincipal).toHaveBeenCalledWith(
+      'role',
+      '__base__',
+      expect.objectContaining({ tenantId: 'tenant-a' }),
     );
   });
 
@@ -3056,5 +5333,68 @@ describe('mutateConfigAtomic', () => {
     expect(deps.mutateConfigWithRevision).toHaveBeenCalledWith(
       expect.objectContaining({ cause: 'restore' }),
     );
+  });
+
+  describe('restore validation', () => {
+    async function captureValidateRestoredOverrides(): Promise<
+      (overrides: Record<string, unknown>) => string | null
+    > {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 5,
+          restoreRevisionId: '11111111-1111-4111-8111-111111111111',
+        },
+      });
+      await handlers.mutateConfigAtomic(req, mockRes());
+      const call = deps.mutateConfigWithRevision.mock.calls[0][0] as {
+        validateRestoredOverrides: (overrides: Record<string, unknown>) => string | null;
+      };
+      return call.validateRestoredOverrides;
+    }
+
+    it('passes a validateRestoredOverrides callback that rejects a legacy process-backed MCP server', async () => {
+      const validate = await captureValidateRestoredOverrides();
+      expect(validate({ mcpServers: { filesystem: { type: 'stdio' } } })).toBe(
+        'Process-backed MCP servers can only be configured in librechat.yaml',
+      );
+    });
+
+    it('passes a validateRestoredOverrides callback that rejects protected Langfuse headers', async () => {
+      const validate = await captureValidateRestoredOverrides();
+      expect(validate({ langfuse: { headers: { 'X-Token': 'secret' } } })).toBe(
+        'Langfuse request headers can only be configured in librechat.yaml',
+      );
+    });
+
+    it('passes a validateRestoredOverrides callback that rejects schema-invalid content', async () => {
+      const validate = await captureValidateRestoredOverrides();
+      expect(validate({ interface: { schedules: { maxPerUser: -1 } } })).toMatch(/maxPerUser/);
+    });
+
+    it('passes a validateRestoredOverrides callback that accepts valid content', async () => {
+      const validate = await captureValidateRestoredOverrides();
+      expect(validate({ cache: true })).toBeNull();
+    });
+
+    it('returns 400 when the atomic mutation reports a restore validation failure', async () => {
+      const { handlers } = createHandlers({
+        mutateConfigWithRevision: jest
+          .fn()
+          .mockRejectedValue(new RestoreValidationError('Invalid config overrides: bad value')),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          expectedVersion: 5,
+          restoreRevisionId: '11111111-1111-4111-8111-111111111111',
+        },
+      });
+      const res = mockRes();
+      await handlers.mutateConfigAtomic(req, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Invalid config overrides: bad value' });
+    });
   });
 });

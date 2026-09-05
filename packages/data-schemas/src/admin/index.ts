@@ -6,4 +6,4 @@ export {
   sanitizeAdminConfigOverrides,
   sanitizeAdminConfigTombstones,
 } from './configOverrides';
-export { indexedArrayPathError } from './indexedArrayPath';
+export { indexedArrayPathError, isConfigFieldPath } from './indexedArrayPath';

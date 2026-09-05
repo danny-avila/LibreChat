@@ -69,7 +69,7 @@ function schemaContainerFlags(schema: ZodLike | undefined): {
   if (typeName === 'ZodRecord') {
     return { canBeArray: false, canBeRecord: true };
   }
-  if (typeName === 'ZodUnion') {
+  if (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') {
     let canBeArray = false;
     let canBeRecord = false;
     for (const opt of unwrapped._def.options ?? []) {
@@ -94,7 +94,7 @@ function descendNonArraySegment(schema: ZodLike, segment: string): ZodLike | nul
   if (typeName === 'ZodRecord') {
     return unwrapped._def.valueType ?? null;
   }
-  if (typeName === 'ZodUnion') {
+  if (typeName === 'ZodUnion' || typeName === 'ZodDiscriminatedUnion') {
     const candidates: ZodLike[] = [];
     for (const opt of unwrapped._def.options ?? []) {
       const resolved = descendNonArraySegment(opt, segment);
@@ -145,4 +145,30 @@ export function indexedArrayPathError(fieldPath: string): string | null {
     current = next;
   }
   return null;
+}
+
+/**
+ * Returns whether a dotted path resolves through the live configuration
+ * schema. Record keys remain dynamic, while object keys must be declared by
+ * the schema. Array descendants are intentionally unsupported by the atomic
+ * API and therefore do not count as valid paths here.
+ */
+export function isConfigFieldPath(fieldPath: string): boolean {
+  const segments = fieldPath.split('.');
+  if (segments.length === 0 || segments.some((segment) => segment.length === 0)) {
+    return false;
+  }
+
+  let current: ZodLike = configSchema as unknown as ZodLike;
+  for (const segment of segments) {
+    if (schemaContainerFlags(current).canBeArray) {
+      return false;
+    }
+    const next = descendNonArraySegment(current, segment);
+    if (!next) {
+      return false;
+    }
+    current = next;
+  }
+  return true;
 }

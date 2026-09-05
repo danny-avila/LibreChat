@@ -3,6 +3,7 @@ const path = require('path');
 
 describe('Experimental server configuration', () => {
   const source = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+  const standardSource = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
   it('configures HTTP timeouts for each cluster worker server', () => {
     const listenIndex = source.indexOf('const server = app.listen');
@@ -82,9 +83,38 @@ describe('Experimental server configuration', () => {
     expect(listenIndex).toBeGreaterThan(eventRuntimeIndex);
   });
 
+  it('initializes config indexes right after connecting to Mongo, before workers accept traffic', () => {
+    const connectIndex = source.indexOf('await connectDb();');
+    const ensureIndexesIndex = source.indexOf('await ensureConfigIndexes(mongoose);');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(ensureIndexesIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(-1);
+    // Without the epoch collection's unique index and the config uniqueness
+    // index in place first, concurrent upserts from multiple cluster workers
+    // can create duplicate epochs and weaken CAS/ABA protection.
+    expect(ensureIndexesIndex).toBeGreaterThan(connectIndex);
+    expect(listenIndex).toBeGreaterThan(ensureIndexesIndex);
+  });
+
   it('matches the standard server pre-authentication tenant routes', () => {
+    const standardAdminTenantIndex = standardSource.indexOf(
+      "app.use('/api/admin', preAuthTenantMiddleware);",
+    );
+    const standardFirstAdminRouteIndex = standardSource.indexOf("app.use('/api/admin/insights'");
+    const experimentalAdminTenantIndex = source.indexOf(
+      "app.use('/api/admin', preAuthTenantMiddleware);",
+    );
+    const experimentalFirstAdminRouteIndex = source.indexOf("app.use('/api/admin/insights'");
+
+    expect(standardAdminTenantIndex).toBeGreaterThan(-1);
+    expect(standardFirstAdminRouteIndex).toBeGreaterThan(standardAdminTenantIndex);
+    expect(experimentalAdminTenantIndex).toBeGreaterThan(-1);
+    expect(experimentalFirstAdminRouteIndex).toBeGreaterThan(experimentalAdminTenantIndex);
     expect(source).toContain("app.use('/oauth', preAuthTenantMiddleware, routes.oauth);");
     expect(source).toContain("app.use('/api/auth', preAuthTenantMiddleware, routes.auth);");
+    expect(source).toContain("app.use('/api/admin', preAuthTenantMiddleware);");
     expect(source).toContain(
       "app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);",
     );

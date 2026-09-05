@@ -1,4 +1,4 @@
-import { indexedArrayPathError } from './indexedArrayPath';
+import { indexedArrayPathError, isConfigFieldPath } from './indexedArrayPath';
 
 describe('indexedArrayPathError', () => {
   describe('array-typed paths', () => {
@@ -45,5 +45,21 @@ describe('indexedArrayPathError', () => {
     it('allows a whole-array write without index (endpoints.custom)', () => {
       expect(indexedArrayPathError('endpoints.custom')).toBeNull();
     });
+  });
+});
+
+describe('isConfigFieldPath', () => {
+  it('accepts declared paths and dynamic record keys', () => {
+    expect(isConfigFieldPath('cache')).toBe(true);
+    expect(isConfigFieldPath('registration.allowedDomains')).toBe(true);
+    expect(isConfigFieldPath('mcpServers.my-server.headers.2024')).toBe(true);
+    expect(isConfigFieldPath('summarization.trigger.type')).toBe(true);
+    expect(isConfigFieldPath('summarization.trigger.value')).toBe(true);
+  });
+
+  it('rejects unknown object keys and array descendants', () => {
+    expect(isConfigFieldPath('definitelyUnknownAdminConfigKey.value')).toBe(false);
+    expect(isConfigFieldPath('registration.typo')).toBe(false);
+    expect(isConfigFieldPath('endpoints.custom.0')).toBe(false);
   });
 });

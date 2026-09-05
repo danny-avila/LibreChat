@@ -284,7 +284,10 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
  * Configs are sorted by priority ascending (lowest first, highest wins).
  * Each config's `overrides` is deep-merged into the base config in order.
  */
-export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]): AppConfig {
+export function mergeConfigOverrides(
+  baseConfig: AppConfig,
+  configs: Pick<IConfig, 'principalId' | 'priority' | 'overrides' | 'tombstones'>[],
+): AppConfig {
   if (!configs || configs.length === 0) {
     return baseConfig;
   }

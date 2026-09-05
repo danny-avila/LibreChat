@@ -260,12 +260,16 @@ export function sanitizeAdminConfigOverrides(
   return filteredOverrides;
 }
 
-export function sanitizeAdminConfigTombstones(paths: string[] | undefined): string[] {
-  if (!paths || paths.length === 0) {
+export function sanitizeAdminConfigTombstones(paths: unknown): string[] {
+  if (!Array.isArray(paths) || paths.length === 0) {
     return [];
   }
   const kept: string[] = [];
   for (const path of paths) {
+    if (typeof path !== 'string') {
+      logger.warn('[adminConfig] Discarding non-string tombstone path entry');
+      continue;
+    }
     if (!isForbiddenAdminConfigPath(path)) {
       kept.push(path);
       continue;

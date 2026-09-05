@@ -39,6 +39,22 @@ librechat:
   # Example: https://admin.example.com/admin
   adminPanelUrl: ""
 
+  # Forces an explicit, informed choice of mongodb.architecture on every
+  # FRESH install — see the mongodb: comment below for why. Must exactly
+  # match mongodb.architecture (which itself has no default here — unset
+  # falls through to the bundled Bitnami subchart's own default of
+  # "standalone", a value Helm cannot distinguish from an explicit choice at
+  # template-render time, so it cannot be `required` directly). Set both to
+  # the same value:
+  #   librechat.mongoArchitectureAck: standalone   # admin panel base-config editing 503s
+  #   librechat.mongoArchitectureAck: replicaset    # requires mongodb.architecture: replicaset too
+  # NOT enforced on `helm upgrade` of an existing release: an installation
+  # that already has a bundled MongoDB running must keep upgrading on
+  # unrelated changes without this chart version suddenly demanding a value
+  # it never needed before. Existing standalone installations keep getting
+  # the NOTES.txt warning on every install and upgrade either way.
+  mongoArchitectureAck: ""
+
   configEnv:
     # Set unique, persistent values in global.librechat.existingSecretName before production use.
     # If omitted, LibreChat generates temporary values in .env.temp when the container filesystem is persistent.
@@ -277,7 +293,12 @@ dnsConfig: {}
 #     - name: timeout
 #       value: "1"
 
-# Strategy for LibreChat deployment updates
+# Strategy for LibreChat deployment updates.
+# When upgrading from a release that predates the base-config version epoch
+# (see readme.md: "Base config atomic-mutate rollout"), set this to Recreate
+# for that one release so old and new pods never coexist, then revert to
+# RollingUpdate. The same requirement applies to the Generation protocol
+# migration documented alongside it.
 updateStrategy:
   type: RollingUpdate
 
@@ -364,22 +385,24 @@ additionalConfigMaps: {}
 
 # MongoDB Parameters
 # IMPORTANT: The admin panel routes every base-config save, import, reset,
-# delete, and restore through a transactional atomic endpoint. With the default
-# standalone architecture all base-config editing fails at runtime with a 503
-# "requires a MongoDB replica set" error. This includes ordinary saves, not
-# just rollback. To enable base-config editing with the admin panel, opt in to
-# a single-node replica set:
-#   mongodb.architecture=replicaset
-#   mongodb.replicaCount=1
-#   mongodb.replicaSetName=rs0
-#   mongodb.arbiter.enabled=false
-# Existing installations: read helm/librechat/readme.md first for migration
-# and backup requirements before switching topology.
-# Default remains standalone to preserve existing PVC/workload shape for
-# deployments that do not use the admin panel for base-config editing.
+# delete, and restore through a transactional atomic endpoint, which requires
+# a MongoDB replica set — a standalone instance 503s on every such request.
+# A fresh `helm install`/`template` fails fast until you set BOTH
+# `mongodb.architecture` and the matching `librechat.mongoArchitectureAck`
+# (see that key's comment for why a second field is needed — the bundled
+# Bitnami subchart's own default makes `mongodb.architecture` alone
+# unenforceable with `required` — and for why this never blocks `helm
+# upgrade` of an existing release):
+#   mongodb.architecture=standalone, librechat.mongoArchitectureAck=standalone
+#     -> admin panel base-config editing 503s
+#   mongodb.architecture=replicaset, librechat.mongoArchitectureAck=replicaset
+#     -> also requires: mongodb.replicaCount=1, mongodb.replicaSetName=rs0,
+#        mongodb.arbiter.enabled=false
+# Existing installations switching to replicaset: read
+# helm/librechat/readme.md first for migration and backup requirements.
 mongodb:
   enabled: true
-  architecture: standalone
+  # architecture: standalone | replicaset   # required, paired with librechat.mongoArchitectureAck — see comment above
   # Bitnami moved versioned image tags to docker.io/bitnamilegacy on 2025-08-28.
   # See https://github.com/bitnami/charts/issues/35164
   image:

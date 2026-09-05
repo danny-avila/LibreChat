@@ -912,6 +912,22 @@ describe('mergeConfigOverrides', () => {
     expect(iface.modelSelect).toBe(true);
     expect(iface.parameters).toBe(true);
   });
+
+  it('discards malformed legacy tombstone entries instead of throwing and dropping every override', () => {
+    // A crash here previously meant getAppConfig's catch-all fell back to the
+    // YAML base, silently discarding every applicable DB override — not just
+    // the malformed tombstone.
+    const configs = [
+      fakeConfig({ registration: { enabled: false } }, 10, [
+        null,
+        {},
+        'cache',
+      ] as unknown as string[]),
+    ];
+
+    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+    expect((result.registration as Record<string, unknown>).enabled).toBe(false);
+  });
 });
 
 describe('INTERFACE_PERMISSION_FIELDS', () => {

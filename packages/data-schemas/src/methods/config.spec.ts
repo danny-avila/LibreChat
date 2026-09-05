@@ -3,12 +3,26 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { IConfig } from '~/types';
 import {
+  ADMIN_CONFIG_REVISIONS_COLLECTION,
   createConfigMethods,
   ensureConfigIndexes,
   fieldPathPolicyError,
   isValidFieldPath,
 } from './config';
+import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import configSchema from '~/schema/config';
+
+function seedBaseConfig(overrides: IConfig['overrides'] = {}, priority = 0) {
+  return mongoose.models.Config.create({
+    principalType: PrincipalType.ROLE,
+    principalId: BASE_CONFIG_PRINCIPAL_ID,
+    principalModel: PrincipalModel.ROLE,
+    overrides,
+    priority,
+    isActive: true,
+    configVersion: 1,
+  });
+}
 
 async function dropNonDefaultIndexes(configModel: typeof mongoose.models.Config): Promise<void> {
   await configModel.createCollection();
@@ -229,13 +243,7 @@ describe('listAllConfigs', () => {
 
 describe('getApplicableConfigs', () => {
   it('always includes the __base__ config', async () => {
-    await methods.upsertConfig(
-      PrincipalType.ROLE,
-      '__base__',
-      PrincipalModel.ROLE,
-      { cache: true },
-      0,
-    );
+    await seedBaseConfig({ cache: true }, 0);
 
     const configs = await methods.getApplicableConfigs([]);
     expect(configs).toHaveLength(1);
@@ -243,13 +251,7 @@ describe('getApplicableConfigs', () => {
   });
 
   it('returns base + matching principals', async () => {
-    await methods.upsertConfig(
-      PrincipalType.ROLE,
-      '__base__',
-      PrincipalModel.ROLE,
-      { cache: true },
-      0,
-    );
+    await seedBaseConfig({ cache: true }, 0);
     await methods.upsertConfig(
       PrincipalType.ROLE,
       'admin',
@@ -274,7 +276,7 @@ describe('getApplicableConfigs', () => {
   });
 
   it('returns sorted by priority', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, {}, 0);
+    await seedBaseConfig({}, 0);
     await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
 
     const configs = await methods.getApplicableConfigs([
@@ -286,7 +288,7 @@ describe('getApplicableConfigs', () => {
   });
 
   it('skips principals with undefined principalId', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, {}, 0);
+    await seedBaseConfig({}, 0);
 
     const configs = await methods.getApplicableConfigs([
       { principalType: PrincipalType.GROUP, principalId: undefined },
@@ -331,6 +333,31 @@ describe('patchConfigFields', () => {
 
     expect(result).toBeTruthy();
     expect(result!.principalId).toBe('newrole');
+  });
+
+  it('patches a legacy document whose configVersion field is explicitly null', async () => {
+    await mongoose.models.Config.collection.insertOne({
+      principalType: PrincipalType.ROLE,
+      principalId: 'admin',
+      principalModel: PrincipalModel.ROLE,
+      overrides: { interface: { modelSelect: true } },
+      tombstones: [],
+      priority: 10,
+      isActive: true,
+      configVersion: null,
+    });
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'interface.modelSelect': false },
+      10,
+    );
+
+    expect(result!.configVersion).toBe(1);
+    const overrides = result!.overrides as Record<string, unknown>;
+    expect((overrides.interface as Record<string, unknown>).modelSelect).toBe(false);
   });
 
   it('rejects unsafe field paths before writing or polluting prototypes', async () => {
@@ -682,107 +709,6 @@ describe('tombstoneConfigField', () => {
 });
 
 describe('upsertConfig', () => {
-  it('retries base upserts after a CAS miss', async () => {
-    const Config = mongoose.models.Config;
-    await Config.collection.insertOne({
-      principalType: PrincipalType.ROLE,
-      principalId: '__base__',
-      principalModel: PrincipalModel.ROLE,
-      overrides: { cache: false },
-      tombstones: [],
-      priority: 10,
-      isActive: true,
-      configVersion: 1,
-      tenantId: null,
-    });
-
-    const findOneAndUpdateSpy = jest.spyOn(Config, 'findOneAndUpdate');
-    const startSessionSpy = jest.spyOn(Config.db, 'startSession');
-    startSessionSpy.mockImplementation(
-      (async () =>
-        ({
-          withTransaction: async () => {
-            throw new Error('Transaction numbers are only allowed on a replica set member');
-          },
-          endSession: async () => undefined,
-        }) as never) as never,
-    );
-    findOneAndUpdateSpy.mockImplementationOnce((async () => {
-      await Config.updateOne(
-        { principalId: '__base__' },
-        { $set: { priority: 20 }, $inc: { configVersion: 1 } },
-      );
-      return null;
-    }) as never);
-
-    try {
-      const result = await methods.upsertConfig(
-        PrincipalType.ROLE,
-        '__base__',
-        PrincipalModel.ROLE,
-        { cache: true },
-        10,
-        undefined,
-        { preservePriority: true },
-      );
-
-      expect(result!.overrides).toEqual({ cache: true });
-      expect(result!.priority).toBe(20);
-      expect(result!.configVersion).toBe(3);
-      expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(2);
-    } finally {
-      findOneAndUpdateSpy.mockRestore();
-      startSessionSpy.mockRestore();
-    }
-  });
-
-  it('retries base upserts after a concurrent create', async () => {
-    const Config = mongoose.models.Config;
-    const createSpy = jest.spyOn(Config, 'create');
-    const startSessionSpy = jest.spyOn(Config.db, 'startSession');
-    startSessionSpy.mockImplementation(
-      (async () =>
-        ({
-          withTransaction: async () => {
-            throw new Error('Transaction numbers are only allowed on a replica set member');
-          },
-          endSession: async () => undefined,
-        }) as never) as never,
-    );
-    createSpy.mockImplementationOnce((async () => {
-      await Config.collection.insertOne({
-        principalType: PrincipalType.ROLE,
-        principalId: '__base__',
-        principalModel: PrincipalModel.ROLE,
-        overrides: { cache: false },
-        tombstones: [],
-        priority: 10,
-        isActive: true,
-        configVersion: 1,
-        tenantId: null,
-      });
-      throw Object.assign(new Error('duplicate key'), { code: 11000 });
-    }) as never);
-
-    try {
-      const result = await methods.upsertConfig(
-        PrincipalType.ROLE,
-        '__base__',
-        PrincipalModel.ROLE,
-        { cache: true },
-        10,
-      );
-
-      expect(result!.overrides).toEqual({ cache: true });
-      expect(result!.configVersion).toBe(2);
-      expect(await Config.countDocuments({ principalId: '__base__' })).toBe(1);
-      expect(createSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      createSpy.mockRestore();
-      startSessionSpy.mockRestore();
-    }
-  });
-
   it('preserves tombstones when replacing overrides', async () => {
     await methods.tombstoneConfigField(
       PrincipalType.ROLE,
@@ -1083,6 +1009,48 @@ describe('ensureConfigIndexes', () => {
     }
   });
 
+  it('concurrently replaces a stale revision index across independent Config models', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const revisions = ctx.conn.collection(ADMIN_CONFIG_REVISIONS_COLLECTION);
+    await revisions.createIndex(
+      { tenantId: 1, principalType: 1, principalId: 1, status: 1, createdAt: -1 },
+      { name: 'scope_status_created', background: true },
+    );
+
+    const additionalConnections = await Promise.all(
+      Array.from({ length: 3 }, async () => {
+        const conn = mongoose.createConnection(ctx.server.getUri(), { autoIndex: false });
+        await conn.asPromise();
+        conn.model<IConfig>('Config', configSchema);
+        return conn;
+      }),
+    );
+
+    try {
+      await expect(
+        Promise.all(
+          [ctx.conn, ...additionalConnections].map((conn) =>
+            ensureConfigIndexes(conn as unknown as typeof mongoose),
+          ),
+        ),
+      ).resolves.toHaveLength(4);
+
+      const indexes = await revisions.indexes();
+      const migrated = indexes.find((index) => index.name === 'scope_status_created');
+      expect(migrated?.key).toEqual({
+        tenantId: 1,
+        principalType: 1,
+        principalId: 1,
+        status: 1,
+        configVersion: -1,
+        createdAt: -1,
+      });
+    } finally {
+      await Promise.all(additionalConnections.map((conn) => conn.close()));
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
   it('creates the unique index before concurrent patch creates when autoIndex is disabled', async () => {
     const ctx = await openIsolatedConfigContext();
     const createIndexesSpy = jest.spyOn(ctx.Config, 'createIndexes');
@@ -1196,7 +1164,7 @@ describe('ensureConfigIndexes', () => {
     }
   });
 
-  it('deduplicates principals with the same key and keeps the highest configVersion', async () => {
+  it('fails closed on duplicate principals without deleting either configuration', async () => {
     const ctx = await openIsolatedConfigContext();
     try {
       await ctx.Config.collection.insertMany([
@@ -1224,11 +1192,68 @@ describe('ensureConfigIndexes', () => {
         },
       ]);
 
-      await ensureConfigIndexes(ctx.mongooseLike);
+      await expect(ensureConfigIndexes(ctx.mongooseLike)).rejects.toThrow(
+        /Duplicate configuration principals detected.*dup-role/,
+      );
 
-      expect(await ctx.Config.countDocuments({ principalId: 'dup-role' })).toBe(1);
-      const survivor = await ctx.Config.findOne({ principalId: 'dup-role' });
-      expect((survivor?.overrides as { cache?: boolean })?.cache).toBe(true);
+      const configs = await ctx.Config.collection
+        .find({ principalId: 'dup-role' })
+        .sort({ configVersion: 1 })
+        .toArray();
+      expect(configs).toHaveLength(2);
+      expect(configs.map((config) => config.overrides)).toEqual([
+        { cache: false },
+        { cache: true },
+      ]);
+    } finally {
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('fails closed consistently when concurrent pods discover the same duplicates', async () => {
+    const ctx = await openIsolatedConfigContext();
+    try {
+      await ctx.Config.collection.insertMany([
+        {
+          principalType: PrincipalType.ROLE,
+          principalId: 'tied-role',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: { cache: false },
+          tombstones: [],
+          isActive: true,
+          tenantId: '',
+        },
+        {
+          principalType: PrincipalType.ROLE,
+          principalId: 'tied-role',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: { cache: true },
+          tombstones: [],
+          isActive: true,
+          tenantId: '',
+        },
+      ] as never);
+
+      // Simulate two pods running startup dedup concurrently against the same
+      // data: two independent connections/models (ensureConfigIndexes memoizes
+      // per Model instance, not per database) racing the same migration.
+      const secondConn = mongoose.createConnection(ctx.server.getUri(), { autoIndex: false });
+      await secondConn.asPromise();
+      secondConn.model<IConfig>('Config', configSchema);
+      try {
+        const outcomes = await Promise.allSettled([
+          ensureConfigIndexes(ctx.mongooseLike),
+          ensureConfigIndexes(secondConn as unknown as typeof mongoose),
+        ]);
+        expect(outcomes.every((outcome) => outcome.status === 'rejected')).toBe(true);
+      } finally {
+        await secondConn.close();
+      }
+
+      const survivors = await ctx.Config.find({ principalId: 'tied-role' });
+      expect(survivors).toHaveLength(2);
     } finally {
       await closeIsolatedConfigContext(ctx);
     }
@@ -1258,7 +1283,7 @@ describe('ensureConfigIndexes', () => {
     }
   });
 
-  it('deduplicates an alias pair (null and empty-string tenantId) even when the unique index already exists', async () => {
+  it('fails closed on a null/empty tenant alias pair even when the unique index exists', async () => {
     const ctx = await openIsolatedConfigContext();
     try {
       // Pre-build the unique index directly (simulates a prior deployment)
@@ -1291,53 +1316,34 @@ describe('ensureConfigIndexes', () => {
         tenantId: null,
       });
 
-      // Must not throw E11000 — dedup runs before any canonicalization
-      await ensureConfigIndexes(ctx.mongooseLike);
+      await expect(ensureConfigIndexes(ctx.mongooseLike)).rejects.toThrow(
+        /Duplicate configuration principals detected.*alias-pair/,
+      );
 
-      expect(await ctx.Config.countDocuments({ principalId: 'alias-pair' })).toBe(1);
-      const survivor = await ctx.Config.findOne({ principalId: 'alias-pair' });
-      expect((survivor?.overrides as { cache?: boolean })?.cache).toBe(true);
-      // Winner (null, v2) should stay null — no regression from canonicalization
-      expect(survivor?.tenantId).toBeNull();
+      expect(await ctx.Config.countDocuments({ principalId: 'alias-pair' })).toBe(2);
     } finally {
       await closeIsolatedConfigContext(ctx);
     }
   });
 
-  it('canonicalizes an empty-string winner to null and then rejects a missing-tenantId insert', async () => {
+  it('canonicalizes a single empty-string tenant to null and rejects a later alias insert', async () => {
     const ctx = await openIsolatedConfigContext();
     try {
-      // Empty-string doc has the higher version — it wins the dedup sort
-      await ctx.Config.collection.insertMany([
-        {
-          principalType: PrincipalType.ROLE,
-          principalId: 'empty-winner',
-          principalModel: PrincipalModel.ROLE,
-          priority: 10,
-          overrides: { cache: true },
-          tombstones: [],
-          isActive: true,
-          configVersion: 2,
-          tenantId: '',
-        },
-        {
-          principalType: PrincipalType.ROLE,
-          principalId: 'empty-winner',
-          principalModel: PrincipalModel.ROLE,
-          priority: 10,
-          overrides: { cache: false },
-          tombstones: [],
-          isActive: true,
-          configVersion: 1,
-          tenantId: null,
-        },
-      ]);
+      await ctx.Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: 'empty-winner',
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        overrides: { cache: true },
+        tombstones: [],
+        isActive: true,
+        configVersion: 2,
+        tenantId: '',
+      });
 
       await ensureConfigIndexes(ctx.mongooseLike);
 
-      expect(await ctx.Config.countDocuments({ principalId: 'empty-winner' })).toBe(1);
       const survivor = await ctx.Config.collection.findOne({ principalId: 'empty-winner' });
-      // '' winner must be canonicalized to null so it occupies the same index slot
       expect(survivor?.tenantId).toBeNull();
 
       // A subsequent missing-tenantId write for the same principal must be rejected
@@ -1358,7 +1364,7 @@ describe('ensureConfigIndexes', () => {
     }
   });
 
-  it('retries on E11000 thrown by the canonicalization step inside deduplicateConfigPrincipals', async () => {
+  it('retries on E11000 thrown by the canonicalization step inside principal validation', async () => {
     const ctx = await openIsolatedConfigContext();
     const originalUpdateMany = ctx.Config.collection.updateMany.bind(ctx.Config.collection);
     let updateManyCalls = 0;
@@ -1385,7 +1391,7 @@ describe('ensureConfigIndexes', () => {
         tenantId: null,
       });
 
-      // With deduplicateConfigPrincipals inside the retry boundary, the E11000 from
+      // With validation/canonicalization inside the retry boundary, the E11000 from
       // the canonicalization step is caught and the next attempt succeeds.
       await expect(ensureConfigIndexes(ctx.mongooseLike)).resolves.not.toThrow();
       expect(updateManyCalls).toBeGreaterThanOrEqual(2);
@@ -1394,4 +1400,52 @@ describe('ensureConfigIndexes', () => {
       await closeIsolatedConfigContext(ctx);
     }
   });
+});
+
+describe('legacy base mutation boundary', () => {
+  const writes = {
+    upsert: () =>
+      methods.upsertConfig(
+        PrincipalType.ROLE,
+        BASE_CONFIG_PRINCIPAL_ID,
+        PrincipalModel.ROLE,
+        {},
+        0,
+      ),
+    patch: () =>
+      methods.patchConfigFields(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, PrincipalModel.ROLE, {
+        cache: false,
+      }),
+    tombstone: () =>
+      methods.tombstoneConfigField(
+        PrincipalType.ROLE,
+        BASE_CONFIG_PRINCIPAL_ID,
+        PrincipalModel.ROLE,
+        'cache',
+      ),
+    unset: () => methods.unsetConfigField(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, 'cache'),
+    delete: () => methods.deleteConfig(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID),
+    toggle: () => methods.toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, false),
+  };
+
+  it.each(Object.entries(writes))(
+    'rejects %s before reads, index initialization, or writes',
+    async (_name, write) => {
+      const before = await seedBaseConfig({ cache: true });
+      const find = jest.spyOn(mongoose.models.Config, 'findOne');
+      const indexes = jest.spyOn(mongoose.models.Config, 'createIndexes');
+      const session = jest.spyOn(mongoose.models.Config.db, 'startSession');
+      try {
+        await expect(write()).rejects.toThrow('must use mutateConfigWithRevision');
+        expect(find).not.toHaveBeenCalled();
+        expect(indexes).not.toHaveBeenCalled();
+        expect(session).not.toHaveBeenCalled();
+      } finally {
+        find.mockRestore();
+        indexes.mockRestore();
+        session.mockRestore();
+      }
+      expect(await mongoose.models.Config.findById(before._id).lean()).toEqual(before.toObject());
+    },
+  );
 });

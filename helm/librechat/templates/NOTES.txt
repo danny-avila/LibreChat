@@ -20,3 +20,17 @@
   echo "Visit http://127.0.0.1:8080 to use your application"
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
 {{- end }}
+{{- if and .Values.mongodb.enabled (eq .Values.mongodb.architecture "standalone") }}
+
+WARNING: mongodb.architecture is "standalone". The admin panel's base-config
+save/import/reset/restore all require a MongoDB replica set and will fail
+with a 503 against a standalone MongoDB. If you use the admin panel, set:
+  mongodb.architecture=replicaset
+  librechat.mongoArchitectureAck=replicaset
+  mongodb.replicaCount=1
+  mongodb.replicaSetName=rs0
+  mongodb.arbiter.enabled=false
+See helm/librechat/readme.md ("MongoDB architecture: required on fresh installs (standalone vs replicaset)")
+before switching an existing release — it changes the Mongo workload shape
+and PVC name.
+{{- end }}

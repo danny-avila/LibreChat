@@ -10,6 +10,11 @@ import {
   processOpenIDPlaceholders,
   OpenIDReauthRequiredError,
 } from './oidc';
+import {
+  decryptConfigSecret,
+  isEncryptedSecretPayload,
+  isEncryptedHeaderTemplate,
+} from '~/admin/secrets';
 
 /**
  * Provenance marker for MCP servers contributed by an Agent Plugins package.
@@ -316,6 +321,19 @@ function processSingleValue({
   let value = originalValue;
 
   /**
+   * Literal encrypted credentials are final values. Only header templates
+   * explicitly tagged by the admin write path re-enter placeholder resolution;
+   * scalar secrets and ordinary encryptV3 payloads must never be expanded.
+   */
+  if (isEncryptedSecretPayload(value.trim())) {
+    const isTemplate = isHeader && isEncryptedHeaderTemplate(value);
+    value = decryptConfigSecret(value) ?? '';
+    if (!isTemplate) {
+      return value;
+    }
+  }
+
+  /**
    * SECURITY INVARIANT — ordering matters:
    * Resolve env vars on the admin-authored template BEFORE any user-controlled
    * data is substituted (customUserVars, user fields, OIDC tokens, body placeholders).
@@ -416,6 +434,7 @@ export function processMCPEnv(params: {
   const dbSourced = params.dbSourced ?? !!options.dbId;
 
   const newObj: MCPOptions = structuredClone(options);
+  let resolvedAdminHeader: string | undefined;
 
   // Apply admin-provided API key to headers at runtime
   // Note: User-provided keys use {{MCP_API_KEY}} placeholder in headers,
@@ -429,9 +448,14 @@ export function processMCPEnv(params: {
     };
 
     if (apiKeyConfig.source === 'admin' && apiKeyConfig.key) {
-      const { key, authorization_type, custom_header } = apiKeyConfig;
+      const { authorization_type, custom_header } = apiKeyConfig;
+      const isEncryptedKey = isEncryptedSecretPayload(apiKeyConfig.key.trim());
+      const key = isEncryptedKey ? (decryptConfigSecret(apiKeyConfig.key) ?? '') : apiKeyConfig.key;
       const headerName =
         authorization_type === 'custom' ? custom_header || 'X-Api-Key' : 'Authorization';
+      if (isEncryptedKey) {
+        resolvedAdminHeader = headerName;
+      }
 
       let headerValue = key;
       if (authorization_type === 'basic') {
@@ -478,6 +502,12 @@ export function processMCPEnv(params: {
   if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.headers)) {
+      if (key === resolvedAdminHeader) {
+        // This value was constructed from an already-decrypted literal key,
+        // not an admin-authored header template. Do not expand it a second time.
+        processedHeaders[key] = originalValue;
+        continue;
+      }
       processedHeaders[key] = processSingleValue({
         user,
         body,

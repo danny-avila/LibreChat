@@ -2,6 +2,7 @@ require('../config/credentials');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+const mongoose = require('mongoose');
 const cluster = require('cluster');
 const Redis = require('ioredis');
 const cors = require('cors');
@@ -10,7 +11,7 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, ensureConfigIndexes } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -353,6 +354,11 @@ if (cluster.isMaster) {
     await connectDb();
     logger.info(`Worker ${process.pid}: Connected to MongoDB`);
 
+    /** Mirrors `server/index.js`; must run before workers accept traffic so the
+     * epoch collection's unique index and config uniqueness index exist before
+     * concurrent upserts from multiple workers can race. */
+    await ensureConfigIndexes(mongoose);
+
     /** Background index sync (non-blocking) */
     indexSync().catch((err) => {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
@@ -517,6 +523,7 @@ if (cluster.isMaster) {
     /** Routes */
     app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
     app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
+    app.use('/api/admin', preAuthTenantMiddleware);
     app.use('/api/admin/insights', routes.insights);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);

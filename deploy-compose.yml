@@ -50,15 +50,12 @@ services:
     depends_on:
       api:
         condition: service_started
-      mongodb:
-        condition: service_healthy
     restart: always
     environment:
       - PORT=3000
       # Plain expansion (not :?) so `docker compose down`/`pull` still run when this is unset.
       # The panel itself refuses to start without it; set ADMIN_PANEL_SESSION_SECRET in .env.
       - SESSION_SECRET=${ADMIN_PANEL_SESSION_SECRET}
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat?replicaSet=rs0
       - API_SERVER_URL=http://api:3080
       - VITE_API_BASE_URL=${DOMAIN_CLIENT:-http://localhost}
       - SESSION_COOKIE_SECURE=${ADMIN_PANEL_SESSION_COOKIE_SECURE:-false}
