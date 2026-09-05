@@ -24,7 +24,7 @@ describe('OpenID authentication publication settlement', () => {
       setOpenIDAuthTokens: jest.fn(() => 'app-token'),
     };
     const service = createOpenIDRefreshRecoveryService(
-      deps as unknown as OpenIDRefreshRecoveryDeps,
+      deps as OpenIDRefreshRecoveryDeps,
     );
     const input = {
       tokenset: { access_token: 'access', id_token: 'id', refresh_token: 'refresh' },
