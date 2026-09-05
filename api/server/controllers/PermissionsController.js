@@ -5,9 +5,18 @@
 const mongoose = require('mongoose');
 const { logger, getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
-const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require('@librechat/api');
+const {
+  enrichRemoteAgentPrincipals,
+  backfillRemoteAgentPermissions,
+  auditInsightsPermissionChanges,
+  getInsightsPrincipalState,
+  maskAgentInsightsBit,
+  sanitizeInsightsPermissionPrincipals,
+  validateInsightsPermissionUpdates,
+} = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
+  restoreInsightsPermissionChanges,
   ensureGroupPrincipalExists,
   getResourcePermissionsMap,
   findAccessibleResources,
@@ -65,14 +74,24 @@ const updateResourcePermissions = async (req, res) => {
     /** @type {TUpdateResourcePermissionsRequest} */
     const { updated, removed, public: isPublic, publicAccessRoleId } = req.body;
     const { id: userId } = req.user;
+    const updatedList = Array.isArray(updated) ? updated : [];
+    const removedList = Array.isArray(removed) ? removed : [];
+    const insightsValidation = validateInsightsPermissionUpdates({
+      resourceType,
+      userRole: req.user.role,
+      updatedPrincipals: updatedList,
+    });
+    if (insightsValidation) {
+      return res.status(insightsValidation.status).json({ error: insightsValidation.error });
+    }
 
     // Prepare principals for the service call
     const updatedPrincipals = [];
     const revokedPrincipals = [];
 
     // Add updated principals
-    if (updated && Array.isArray(updated)) {
-      updatedPrincipals.push(...updated);
+    if (updatedList.length > 0) {
+      updatedPrincipals.push(...updatedList);
     }
 
     // Add public permission if enabled
@@ -138,8 +157,8 @@ const updateResourcePermissions = async (req, res) => {
     }
 
     // Add removed principals
-    if (removed && Array.isArray(removed)) {
-      revokedPrincipals.push(...removed);
+    if (removedList.length > 0) {
+      revokedPrincipals.push(...removedList);
     }
 
     // If public is explicitly disabled, add public to revoked list
@@ -156,6 +175,24 @@ const updateResourcePermissions = async (req, res) => {
       updatedPrincipals: validatedPrincipals,
       revokedPrincipals,
       grantedBy: userId,
+    });
+
+    await auditInsightsPermissionChanges({
+      req,
+      resourceId,
+      changes: results.insightsChanges ?? [],
+      failClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
+      deps: {
+        getAgent: db.getAgent,
+        recordAuditEntry: db.recordAuditEntry,
+        restoreInsightsPermissionChanges: (changes) =>
+          restoreInsightsPermissionChanges({
+            resourceType: ResourceType.AGENT,
+            resourceId,
+            changes,
+          }),
+        logger,
+      },
     });
 
     if (resourceType === ResourceType.CODE_ENVIRONMENT) {
@@ -179,10 +216,15 @@ const updateResourcePermissions = async (req, res) => {
     }
 
     /** @type {TUpdateResourcePermissionsResponse} */
+    const responsePrincipals = sanitizeInsightsPermissionPrincipals({
+      resourceType,
+      userRole: req.user.role,
+      principals: results.granted,
+    });
     const response = {
       message: 'Permissions updated successfully',
       results: {
-        principals: results.granted,
+        principals: responsePrincipals,
         ...(isPublic !== undefined ? { public: isPublic } : {}),
         publicAccessRoleId: isPublic ? publicAccessRoleId : undefined,
       },
@@ -191,7 +233,7 @@ const updateResourcePermissions = async (req, res) => {
     res.status(200).json(response);
   } catch (error) {
     logger.error('Error updating resource permissions:', error);
-    res.status(400).json({
+    res.status(error.statusCode ?? 400).json({
       error: 'Failed to update permissions',
       details: error.message,
     });
@@ -254,6 +296,7 @@ const getResourcePermissions = async (req, res) => {
           accessRoleId: { $arrayElemAt: ['$role.accessRoleId', 0] },
           userInfo: { $arrayElemAt: ['$userInfo', 0] },
           groupInfo: { $arrayElemAt: ['$groupInfo', 0] },
+          permBits: 1,
         },
       },
     ]);
@@ -281,6 +324,12 @@ const getResourcePermissions = async (req, res) => {
           source: !result.userInfo._id ? 'entra' : 'local',
           idOnTheSource: result.userInfo.idOnTheSource || result.userInfo._id.toString(),
           accessRoleId: result.accessRoleId,
+          ...getInsightsPrincipalState({
+            principalType: PrincipalType.USER,
+            principalRole: result.userInfo.role,
+            requesterRole: req.user.role,
+            permBits: result.permBits,
+          }),
         });
       } else if (
         result.principalType === PrincipalType.GROUP &&
@@ -297,6 +346,11 @@ const getResourcePermissions = async (req, res) => {
           source: result.groupInfo.source || 'local',
           idOnTheSource: result.groupInfo.idOnTheSource || result.groupInfo._id.toString(),
           accessRoleId: result.accessRoleId,
+          ...getInsightsPrincipalState({
+            principalType: PrincipalType.GROUP,
+            requesterRole: req.user.role,
+            permBits: result.permBits,
+          }),
         });
       } else if (result.principalType === PrincipalType.ROLE) {
         principals.push({
@@ -307,6 +361,12 @@ const getResourcePermissions = async (req, res) => {
           name: result.principalId,
           description: `System role: ${result.principalId}`,
           accessRoleId: result.accessRoleId,
+          ...getInsightsPrincipalState({
+            principalType: PrincipalType.ROLE,
+            principalRole: result.principalId,
+            requesterRole: req.user.role,
+            permBits: result.permBits,
+          }),
         });
       }
     }
@@ -391,7 +451,11 @@ const getUserEffectivePermissions = async (req, res) => {
     });
 
     res.status(200).json({
-      permissionBits,
+      permissionBits: maskAgentInsightsBit({
+        resourceType,
+        userRole: req.user.role,
+        permBits: permissionBits,
+      }),
     });
   } catch (error) {
     logger.error('Error getting user effective permissions:', error);
@@ -556,7 +620,11 @@ const getAllEffectivePermissions = async (req, res) => {
     // Convert Map to plain object for JSON response
     const result = {};
     for (const [resourceId, permBits] of permissionsMap) {
-      result[resourceId] = permBits;
+      result[resourceId] = maskAgentInsightsBit({
+        resourceType,
+        userRole: req.user.role,
+        permBits,
+      });
     }
 
     res.status(200).json(result);

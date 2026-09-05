@@ -1944,6 +1944,11 @@ describe('BaseClient', () => {
 
     test('saveMessageToDatabase uses snapshot of options, immune to mid-await disposal', async () => {
       const savedOptions = TestClient.options;
+      TestClient.options = {
+        ...savedOptions,
+        endpoint: 'agents',
+        agent: { id: 'agent_persisted' },
+      };
       saveMessage.mockClear();
       saveConvo.mockClear();
 
@@ -1957,7 +1962,7 @@ describe('BaseClient', () => {
 
       const result = await TestClient.saveMessageToDatabase(
         { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
-        { endpoint: 'openAI' },
+        { endpoint: 'agents', agent_id: 'agent_persisted' },
         null,
       );
 
@@ -1965,6 +1970,11 @@ describe('BaseClient', () => {
       expect(result).toHaveProperty('message');
       expect(result).toHaveProperty('conversation');
       expect(saveMessage).toHaveBeenCalled();
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ initialAgentId: 'agent_persisted' }),
+      );
 
       TestClient.options = savedOptions;
       saveMessage.mockReset();

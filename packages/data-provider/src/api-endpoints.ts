@@ -464,7 +464,7 @@ export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 export const skillFile = (id: string, relativePath: string) =>
   `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
 
-export const insights = () => `${BASE_URL}/api/admin/insights`;
+export const insights = () => `${BASE_URL}/api/insights`;
 export const insightsAccess = () => `${insights()}/access`;
 
 export const adminSkillsSync = () => `${BASE_URL}/api/admin/skills/sync`;
