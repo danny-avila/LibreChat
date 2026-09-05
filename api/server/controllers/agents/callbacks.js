@@ -132,8 +132,14 @@ class ModelEndHandler {
     let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
-      if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
-        const info = { ...data.output.additional_kwargs };
+      const responseMetadata = data?.output?.response_metadata;
+      const bedrockStopReason =
+        responseMetadata?.messageStop?.stopReason ?? responseMetadata?.stopReason;
+      const isBedrockContentFiltered = bedrockStopReason === 'content_filtered';
+      if (data?.output?.additional_kwargs?.stop_reason === 'refusal' || isBedrockContentFiltered) {
+        const info = isBedrockContentFiltered
+          ? { stop_reason: bedrockStopReason }
+          : { ...data.output.additional_kwargs };
         errorMessage = JSON.stringify({
           type: ErrorTypes.REFUSAL,
           info,
@@ -148,7 +154,7 @@ class ModelEndHandler {
 
       const usage = data?.output?.usage_metadata;
       if (!usage) {
-        return this.finalize(errorMessage);
+        return;
       }
       let taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
       /** Hidden intermediate sequential-agent calls are billed but never shown.
@@ -229,7 +235,8 @@ class ModelEndHandler {
       }
     } catch (error) {
       logger.error('Error handling model end event:', error);
-      return this.finalize(errorMessage);
+    } finally {
+      this.finalize(errorMessage);
     }
   }
 }
