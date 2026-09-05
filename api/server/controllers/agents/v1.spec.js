@@ -1675,6 +1675,21 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.code_environment_id).toBeUndefined();
     });
 
+    test('clears a configured Git identity', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { git_identity: { name: 'Coding Agent', email: 'agent@example.com' } },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { git_identity: null };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.git_identity).toBeUndefined();
+    });
+
     test('allows unrelated edits to an existing scope after policy is tightened', async () => {
       await Agent.updateOne(
         { id: existingAgentId },

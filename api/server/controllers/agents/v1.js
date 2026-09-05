@@ -1060,12 +1060,16 @@ const updateAgentHandler = async (req, res) => {
     const {
       avatar: avatarField,
       code_environment_id: codeEnvironmentIdField,
+      git_identity: gitIdentityField,
       _id,
       ...rest
     } = validatedData;
     const updateData = removeNullishValues(rest);
     if (codeEnvironmentIdField !== undefined) {
       updateData.code_environment_id = codeEnvironmentIdField;
+    }
+    if (gitIdentityField !== undefined) {
+      updateData.git_identity = gitIdentityField;
     }
     let existingAgent;
 
@@ -1309,6 +1313,10 @@ const updateAgentHandler = async (req, res) => {
     if (updateData.code_environment_id === null) {
       delete updateData.code_environment_id;
       updateData.$unset = { code_environment_id: 1 };
+    }
+    if (updateData.git_identity === null) {
+      delete updateData.git_identity;
+      updateData.$unset = { ...updateData.$unset, git_identity: 1 };
     }
 
     let updatedAgent =

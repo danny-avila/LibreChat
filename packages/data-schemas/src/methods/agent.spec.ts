@@ -2568,6 +2568,27 @@ describe('Agent Methods', () => {
       expect(revertedAgent.code_environment_id).toBeUndefined();
     });
 
+    test('should clear a Git identity absent from the restored version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        name: 'Legacy Git Identity Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await updateAgent(
+        { id: agentId },
+        { git_identity: { name: 'Coding Agent', email: 'agent@example.com' } },
+      );
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.git_identity).toBeUndefined();
+    });
+
     test('should clear skill fields absent from a restored legacy version', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

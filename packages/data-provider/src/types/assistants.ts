@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
@@ -307,6 +308,30 @@ export type AgentSubagentsConfig = {
   graphs?: AgentSubagentGraph[];
 };
 
+export type AgentGitIdentity = {
+  /** Commit author and committer display name. */
+  name: string;
+  /** Commit author and committer email address. */
+  email: string;
+};
+
+export const agentGitIdentitySchema: z.ZodType<AgentGitIdentity | undefined> = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .refine((value) => !/[\0\r\n]/.test(value)),
+    email: z
+      .string()
+      .trim()
+      .email()
+      .max(254)
+      .refine((value) => !/[\0\r\n]/.test(value)),
+  })
+  .optional();
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -339,6 +364,8 @@ export type Agent = {
   stateful_code_environment?: StatefulCodeEnvironment;
   /** Operator-configured managed or attached stateful execution environment. */
   code_environment_id?: string | null;
+  /** Non-secret Git authorship injected into this agent's sandboxed commands. */
+  git_identity?: AgentGitIdentity | null;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -381,6 +408,7 @@ export type Agent = {
 export type TAgentsMap = Record<string, Agent | undefined>;
 
 export type AgentCreateParams = {
+  git_identity?: AgentGitIdentity;
   name?: string | null;
   description?: string | null;
   avatar?: AgentAvatar | null;
@@ -432,6 +460,7 @@ export type AgentUpdateParams = {
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
   | 'code_environment_id'
+  | 'git_identity'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'

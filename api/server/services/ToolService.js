@@ -46,6 +46,7 @@ const {
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
   createAttachedWorkspaceBashTool,
+  createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
   LIST_WORKSPACE_FILES_TOOL_NAME,
@@ -2093,7 +2094,7 @@ async function loadToolsForExecution({
        * library so PTC calls share the same managed auth context.
        */
       for (const name of ptcToolNames) {
-        const ptcTool = createBashProgrammaticToolCallingTool({
+        const ptcOptions = {
           authHeaders: () =>
             codeExecutionAuthHeaders(
               (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
@@ -2102,7 +2103,11 @@ async function loadToolsForExecution({
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
-        });
+        };
+        const ptcTool =
+          codeExecutionContext.environmentType === 'attached'
+            ? createGitIdentityProgrammaticBashTool(ptcOptions, agent?.git_identity)
+            : createBashProgrammaticToolCallingTool(ptcOptions);
         ptcTool.name = name;
         allLoadedTools.push(ptcTool);
       }
@@ -2133,6 +2138,7 @@ async function loadToolsForExecution({
           ? createAttachedWorkspaceBashTool({
               authHeaders,
               baseUrl: codeExecutionContext.baseUrl,
+              gitIdentity: agent?.git_identity,
             })
           : createBashExecutionTool({
               authHeaders,
