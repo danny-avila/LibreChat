@@ -78,9 +78,24 @@ describe('OpenID authentication publication settlement', () => {
   it('does not fail an indeterminate completion write', async () => {
     const { deps, service, input } = setup();
     const error = new Error('completion acknowledgement lost');
-    deps.completeOpenIDRefreshFlight.mockRejectedValue(error);
+    deps.completeOpenIDRefreshFlight.mockImplementation(({ onWriteStart }) => {
+      onWriteStart?.();
+      return Promise.reject(error);
+    });
     await expect(service.sendOpenIDAuthResponse(input)).rejects.toBe(error);
     expect(deps.failOpenIDRefreshFlight).not.toHaveBeenCalled();
+  });
+
+  it('settles completion preparation failures before the write starts', async () => {
+    const { deps, service, input } = setup();
+    const error = new Error('encryption failed');
+    deps.completeOpenIDRefreshFlight.mockRejectedValue(error);
+    await expect(service.sendOpenIDAuthResponse(input)).rejects.toBe(error);
+    expect(deps.failOpenIDRefreshFlight).toHaveBeenCalledWith({
+      key: 'publication',
+      ownerId: 'owner',
+      error,
+    });
   });
 
   it('leaves successful publication completed', async () => {

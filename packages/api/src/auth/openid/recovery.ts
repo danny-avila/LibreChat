@@ -191,6 +191,7 @@ export interface OpenIDRefreshRecoveryDeps {
     key: string;
     ownerId: string;
     tokens: SharedOpenIDRefreshResult;
+    onWriteStart?: () => void;
   }) => Promise<RefreshFlightRecord | null>;
   failOpenIDRefreshFlight: (args: {
     key: string;
@@ -745,10 +746,12 @@ export function createOpenIDRefreshRecoveryService(
                   : Date.now(),
               },
               commitPublication: async (appAuthToken, publishedTokenset, metadata) => {
-                completionStarted = true;
                 const completed = await completeOpenIDRefreshFlight({
                   key,
                   ownerId: flight.ownerId,
+                  onWriteStart: () => {
+                    completionStarted = true;
+                  },
                   tokens: {
                     tokenset: publishedTokenset,
                     claims: { sub: openidSubject ?? user.openidId ?? userId },
