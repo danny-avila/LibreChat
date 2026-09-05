@@ -382,7 +382,7 @@ export default function Artifacts() {
               onPointerCancel={handleDragEnd}
               onKeyDown={handleDragKeyDown}
             >
-              <div className="h-1 w-12 rounded-full bg-border-xheavy opacity-40 transition-all duration-200 active:opacity-60 motion-reduce:transition-none" />
+              <div className="h-1 w-12 rounded-full bg-border-xheavy opacity-40 transition-all duration-200 active:opacity-60 high-contrast:opacity-100 motion-reduce:transition-none" />
             </div>
           )}
 
