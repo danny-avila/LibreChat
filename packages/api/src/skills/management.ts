@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { logger } from '@librechat/data-schemas';
+import { logger, ResourceCapabilityMap } from '@librechat/data-schemas';
 import {
   PermissionBits,
   Permissions,
@@ -12,6 +12,7 @@ import type { SkillsHandlers, SkillsHandlersDeps } from './handlers';
 import type { AgentManagementReadDeps } from '../agents/reads';
 import type { ServerRequest } from '~/types';
 import { agentManagementListSchema, mapAgentManagementError } from '../agents/management';
+import { isContentFilterError } from '../middleware/contentFilter';
 import { checkAccessWithRequestCache } from '../middleware/access';
 import { assertSkillFileContentAllowed } from './protection';
 import { getDeploymentSkillById } from './deployment';
@@ -98,7 +99,12 @@ const fileContentSchema = fileSchema.extend({
 const fileUpdateSchema = z.object({ content: z.string().max(1024 * 1024) }).strict();
 const listSchema = agentManagementListSchema;
 
-type ManagementRequest = Request & Pick<ServerRequest, 'user' | 'config'>;
+type ManagementRequest = Request &
+  Pick<ServerRequest, 'user' | 'config'> & {
+    resourceAccess?: {
+      resourceInfo: NonNullable<Awaited<ReturnType<SkillsHandlersDeps['getSkillById']>>>;
+    };
+  };
 
 type SkillHandler = (req: ServerRequest, res: Response) => Promise<Response | undefined>;
 type Projector = (body: unknown) => object;
@@ -107,6 +113,7 @@ export interface SkillManagementDeps {
   getSkillById: SkillsHandlersDeps['getSkillById'];
   getRoleByName: AgentManagementReadDeps['getRoleByName'];
   checkPermission: AgentManagementReadDeps['checkPermission'];
+  hasCapability: AgentManagementReadDeps['hasCapability'];
   saveFile: (input: {
     req: ServerRequest;
     skillId: string;
@@ -150,13 +157,7 @@ async function runHandler(
   adapter.json = (body: unknown) => {
     sent = true;
     if (status >= 200 && status < 300) return res.status(status).json(project(body));
-    if (status === 409)
-      return res.status(409).json({
-        error: {
-          code: 'conflict',
-          message: 'Skill update conflict; retrieve the latest version and retry',
-        },
-      });
+    if (status === 409) return sendError(res, 'conflict');
     if (status === 404) return sendError(res, 'not_found');
     if (status === 400) return sendError(res, 'invalid_request');
     if (status === 401 || status === 403) return sendError(res, 'permission_denied');
@@ -196,8 +197,16 @@ export function createSkillManagementHandlers(
           const deployment = getDeploymentSkillById(req.params.id);
           if (!skill || (!deployment && skill.tenantId !== req.user.tenantId))
             return sendError(res, 'not_found');
+          let canManage = false;
+          const capability = ResourceCapabilityMap[ResourceType.SKILL];
+          try {
+            canManage = capability != null && (await deps.hasCapability(req.user, capability));
+          } catch {
+            canManage = false;
+          }
           if (
             !deployment &&
+            !canManage &&
             !(await deps.checkPermission({
               userId: req.user.id,
               role: req.user.role,
@@ -209,6 +218,7 @@ export function createSkillManagementHandlers(
             return sendError(res, 'not_found');
           if (editing && (deployment || skill.source !== 'inline'))
             return sendError(res, 'permission_denied');
+          req.resourceAccess = { resourceInfo: skill };
         }
         return await operation(req, res);
       } catch (error) {
@@ -277,8 +287,9 @@ export function createSkillManagementHandlers(
           originalName: relativePath,
           relativePath,
         });
-      } catch {
-        return sendError(res, 'permission_denied');
+      } catch (error) {
+        if (!isContentFilterError(error)) throw error;
+        return sendError(res, 'invalid_request');
       }
       const result = await deps.saveFile({
         req: req as ServerRequest,

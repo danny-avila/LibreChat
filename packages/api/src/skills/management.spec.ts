@@ -6,7 +6,9 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
 import { PermissionBits, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { AllMethods, IRole, IUser } from '@librechat/data-schemas';
+import type { FiltersConfig } from 'librechat-data-provider';
 import type { SkillManagementDeps } from './management';
+import type { ServerRequest } from '~/types';
 import { createSkillManagementHandlers } from './management';
 import { createSkillsHandlers } from './handlers';
 
@@ -20,8 +22,11 @@ let skillId: string;
 let allowEdit: boolean;
 let allowView: boolean;
 let allowUse: boolean;
+let canManage: boolean;
 let authenticated: boolean;
 let saveFile: jest.MockedFunction<SkillManagementDeps['saveFile']>;
+let filters: FiltersConfig | undefined;
+let readSkill: jest.SpyInstance;
 let originalStrict: string | undefined;
 const inTenant = <T>(fn: () => T) => tenantStorage.run({ tenantId }, fn);
 
@@ -44,7 +49,10 @@ beforeEach(async () => {
   allowEdit = true;
   allowView = true;
   allowUse = true;
+  canManage = false;
   authenticated = true;
+  filters = undefined;
+  readSkill = jest.spyOn(db, 'getSkillById');
   const { skill } = await inTenant(() =>
     db.createSkill({
       name: 'test-skill',
@@ -84,11 +92,13 @@ beforeEach(async () => {
     checkPermission: async ({ requiredPermission }) =>
       requiredPermission === PermissionBits.EDIT ? allowEdit : allowView,
     saveFile,
+    hasCapability: async () => canManage,
   });
   app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     if (authenticated) req.user = user;
+    (req as ServerRequest).config = { filters } as ServerRequest['config'];
     tenantStorage.run({ tenantId }, next);
   });
   app.get('/skills', async (req, res) => {
@@ -258,4 +268,60 @@ it('rejects raw downloads and malformed pagination', async () => {
   await request(app).get('/skills?limit=0').expect(400);
   await request(app).get('/skills?cursor=garbage').expect(400);
   await request(app).get('/skills?tenantId=foreign').expect(400);
+});
+
+it('preserves the resource-management capability without bypassing tenant isolation', async () => {
+  allowEdit = false;
+  canManage = true;
+  const response = await request(app)
+    .patch(`/skills/${skillId}`)
+    .send({ expectedVersion: 1, body: 'Managed update' })
+    .expect(200);
+  expect(response.body.body).toBe('Managed update');
+  const { skill } = await tenantStorage.run({ tenantId: 'foreign' }, () =>
+    db.createSkill({
+      name: 'foreign',
+      description: 'Foreign tenant skill for capability isolation tests.',
+      body: 'secret',
+      author,
+      authorName: 'Foreign',
+      tenantId: 'foreign',
+    }),
+  );
+  await request(app)
+    .patch(`/skills/${skill._id}`)
+    .send({ expectedVersion: 1, body: 'x' })
+    .expect(404);
+});
+
+it('reuses the authorized Skill on detail reads', async () => {
+  await request(app).get(`/skills/${skillId}`).expect(200);
+  expect(readSkill).toHaveBeenCalledTimes(1);
+});
+it('classifies content-policy blocks as invalid input and never writes the file', async () => {
+  filters = {
+    skills: {
+      pii: {
+        fields: ['file_text'],
+        starterPatterns: [],
+        customPatterns: [{ id: 'private', label: 'private text', regex: 'PRIVATE-TEXT' }],
+      },
+    },
+  };
+  const result = await request(app)
+    .put(`/skills/${skillId}/files/notes.md`)
+    .send({ content: 'PRIVATE-TEXT' })
+    .expect(400);
+  expect(result.body).toMatchObject({ error: { code: 'invalid_request' } });
+  expect(saveFile).not.toHaveBeenCalled();
+});
+it('returns safe errors for storage failures', async () => {
+  saveFile.mockRejectedValueOnce(new Error('secret-storage-path'));
+  const result = await request(app)
+    .put(`/skills/${skillId}/files/notes.md`)
+    .send({ content: 'Notes' })
+    .expect(500);
+  expect(result.body).toEqual({
+    error: { code: 'internal_error', message: 'Internal server error' },
+  });
 });

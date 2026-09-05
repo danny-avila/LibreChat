@@ -77,7 +77,8 @@ export type AgentManagementErrorCode =
   | 'invalid_request'
   | 'not_found'
   | 'permission_denied'
-  | 'internal_error';
+  | 'internal_error'
+  | 'conflict';
 export type AgentManagementError = {
   error: {
     code: AgentManagementErrorCode;
@@ -213,6 +214,7 @@ export const agentManagementErrorCodeSchema: z.ZodType<AgentManagementErrorCode>
   'not_found',
   'permission_denied',
   'internal_error',
+  'conflict',
 ]);
 
 const agentManagementValidationIssueSchema = z
@@ -307,6 +309,7 @@ const ERROR_STATUS: Record<AgentManagementErrorCode, number> = {
   not_found: 404,
   permission_denied: 403,
   internal_error: 500,
+  conflict: 409,
 };
 
 const ERROR_MESSAGE: Record<AgentManagementErrorCode, string> = {
@@ -314,6 +317,7 @@ const ERROR_MESSAGE: Record<AgentManagementErrorCode, string> = {
   not_found: 'Agent not found',
   permission_denied: 'Permission denied',
   internal_error: 'Internal server error',
+  conflict: 'Resource conflict',
 };
 
 /** Map known failure classes to a stable envelope without exposing internal error messages. */

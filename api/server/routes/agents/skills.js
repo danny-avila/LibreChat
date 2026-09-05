@@ -1,6 +1,7 @@
 const express = require('express');
 const { createSkillManagementHandlers, mapAgentManagementError } = require('@librechat/api');
 const { checkBan, configMiddleware } = require('~/server/middleware');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { getSkillsHandlers } = require('~/server/services/Skills/handlers');
 const {
@@ -16,6 +17,7 @@ const handlers = createSkillManagementHandlers({
   getSkillById: getSkillDbMethods().getSkillById,
   getRoleByName,
   checkPermission,
+  hasCapability,
   saveFile: getSkillToolDeps().saveSkillFileContent,
 });
 router.use(requireAgentManagementAuth, checkBan, configMiddleware);
