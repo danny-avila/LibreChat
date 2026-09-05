@@ -38,8 +38,8 @@ type ListParams = { projectId?: string };
  *  admission opens — a test asserting that window must not advance the clock
  *  beyond it and read its own fast-forward as the poll having lapsed. */
 const PAST_ADMISSION_MS = 3_000;
-/** The whole probe budget, so a test can run the watch to exhaustion. */
-const ADMISSION_BUDGET_MS = 60_000;
+/** Past the whole probe budget, so a test can run the watch to exhaustion. */
+const ADMISSION_BUDGET_MS = 600_000;
 
 /** `isNotFoundError` reads the status off an axios error, so the marker matters:
  *  a bare `{ response: { status } }` is not one, and the watch would read a 404 as
@@ -62,7 +62,11 @@ const serverConversation = (chatProjectId?: string): TConversation =>
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
+      /** These tests run the fake clock past the whole probe budget, which is
+       *  longer than the default five-minute cacheTime — without this the list
+       *  query is garbage collected mid-test and its emptiness reads as the
+       *  watch having removed something. */
+      queries: { retry: false, cacheTime: Infinity },
       mutations: { retry: false },
     },
   });
@@ -205,7 +209,22 @@ describe('run-now conversation tracking', () => {
     queryClient.clear();
   });
 
-  it('stops on a failure that is not the conversation being absent', async () => {
+  it('keeps waiting through a probe that fails for its own reasons', async () => {
+    const queryClient = createQueryClient();
+    seedList(queryClient);
+    mockGetConversationById
+      .mockRejectedValueOnce(httpError(502, 'Bad Gateway'))
+      .mockRejectedValueOnce(new Error('Network Error'))
+      .mockResolvedValue(serverConversation());
+
+    await runNow(queryClient);
+    await settleAdmission(6_000);
+
+    expect(readList(queryClient)[0].conversationId).toBe('run-convo-1');
+    queryClient.clear();
+  });
+
+  it('stops on a failure that settles the matter', async () => {
     const queryClient = createQueryClient();
     seedList(queryClient);
     mockGetConversationById.mockRejectedValue(httpError(403, 'Forbidden'));
@@ -215,6 +234,22 @@ describe('run-now conversation tracking', () => {
 
     expect(mockGetConversationById).toHaveBeenCalledTimes(1);
     expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
+    queryClient.clear();
+  });
+
+  it("outlasts the trigger engine's own retry window", async () => {
+    const queryClient = createQueryClient();
+    seedList(queryClient);
+    /** The engine allows eight attempts backing off from a second and doubling,
+     *  so a dispatch that keeps failing can admit around two minutes in. */
+    mockGetConversationById.mockRejectedValue(httpError(404, 'Not Found'));
+
+    await runNow(queryClient);
+    await settleAdmission(150_000);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+    await settleAdmission(120_000);
+
+    expect(readList(queryClient)[0].conversationId).toBe('run-convo-1');
     queryClient.clear();
   });
 });
