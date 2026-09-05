@@ -113,14 +113,14 @@ describe('markdownToHtml', () => {
     );
   });
 
-  it('renders single-dollar math when the renderer preprocesses LaTeX', () => {
+  it('renders single-dollar math when the renderer parses LaTeX', () => {
     expect(markdownToHtml('Energy is $E=mc^2$ inline.', { variant: 'full', latex: true })).toBe(
       '<p>Energy is E=mc^2 inline.</p>',
     );
     expect(markdownToHtml('Energy is $E=mc^2$ inline.')).toBe('<p>Energy is $E=mc^2$ inline.</p>');
   });
 
-  it('still leaves currency alone with LaTeX preprocessing on', () => {
+  it('still leaves currency alone with LaTeX parsing on', () => {
     expect(markdownToHtml('Costs rose from $5 to $10.', { variant: 'full', latex: true })).toBe(
       '<p>Costs rose from $5 to $10.</p>',
     );
