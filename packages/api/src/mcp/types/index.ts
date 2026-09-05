@@ -93,6 +93,8 @@ export type MCPToolCallResponse =
       _meta?: Record<string, unknown>;
       content?: Array<ToolContentPart>;
       isError?: boolean;
+      /** Structured tool output (MCP 2025-06-18 spec); used as a fallback when `content` is empty */
+      structuredContent?: Record<string, unknown>;
     };
 
 export type Provider =
