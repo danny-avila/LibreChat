@@ -443,7 +443,7 @@ export default function ToolsSection({ agentId }: Props) {
           selection={{
             selectHandler: confirmActionRemoval,
             selectClasses:
-              'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-white',
+              'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-text-on-status',
             selectText: localize('com_ui_delete'),
           }}
         />
@@ -468,7 +468,7 @@ export default function ToolsSection({ agentId }: Props) {
           selection={{
             selectHandler: confirmMcpRemoval,
             selectClasses:
-              'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-white',
+              'bg-surface-destructive hover:bg-surface-destructive-hover transition-colors duration-200 text-text-on-status',
             selectText: localize('com_ui_delete'),
           }}
         />

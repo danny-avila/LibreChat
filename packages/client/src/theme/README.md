@@ -340,7 +340,30 @@ function ThemeToggle() {
 
 - `'light'` - Force light mode
 - `'dark'` - Force dark mode
-- `'system'` - Follow system preference
+- `'system'` - Follow system preference, for both colour scheme and contrast
+- `'high-contrast-light'` - Accessibility mode: black on white, WCAG AAA
+- `'high-contrast-dark'` - Accessibility mode: white on black, WCAG AAA
+
+High contrast applies the built-in `highContrastTheme` definition
+(`themes/highContrast.ts`), which outranks a deployment's custom theme, and adds
+a `high-contrast` class to `<html>` for the CSS-only variables the token layer
+cannot reach.
+
+Three predicates, and they answer different questions:
+
+- `isDark(theme)` - which colour scheme to render. `high-contrast-dark` is dark.
+- `isHighContrast(theme)` - did the user _pick_ a contrast mode. This is what the
+  theme toggle preserves when it flips the scheme, so `system` is never included.
+- `resolvesToHighContrast(theme)` - will the contrast palette actually apply.
+  True for the two explicit modes, and for `system` when the OS asks for more
+  contrast through any of `prefers-contrast: more`, `prefers-contrast: custom`
+  or `forced-colors: active`.
+
+Because `system` resolves contrast from the OS, a user who has switched on
+"Increase contrast" (macOS) or "Contrast themes" (Windows) gets the accessible
+palette without first finding this setting. Windows is why the list has three
+queries: a Contrast Theme surfaces as `forced-colors: active` with
+`prefers-contrast: custom`, never `more`.
 
 ## Migration Guide
 

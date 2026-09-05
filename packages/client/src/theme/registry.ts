@@ -8,6 +8,7 @@ import type {
   ThemeDefinition,
   ThemeMode,
 } from './types';
+import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
 export const THEME_VERSION = 1 as const;
@@ -91,6 +92,51 @@ export const libreChatTheme: ThemeDefinition = Object.freeze({
   brands: defaultBrands,
 });
 
+/**
+ * Built-in accessibility theme behind the `high-contrast-light` and
+ * `high-contrast-dark` appearance modes. `HIGH_CONTRAST_THEME_NAME` is what
+ * `applyResolvedTheme` stamps onto `data-theme`, and what the `high-contrast`
+ * class on `<html>` mirrors for the CSS-only variables the token layer cannot
+ * reach (see the `html.high-contrast` block in `client/src/style.css`).
+ */
+export const HIGH_CONTRAST_THEME_NAME = 'high-contrast' as const;
+
+/**
+ * A brand fill carries a glyph and has to stand out from the canvas, and both
+ * flip between the modes, so the brands are declared per mode: dark tints under
+ * a white glyph on white, bright tints under a black glyph on black. Hue is kept
+ * so a provider stays recognisable; the worst pair measures 8.76:1 for both the
+ * glyph and the silhouette, against 2.30:1 for the standard brand set.
+ */
+const highContrastLightBrands: Partial<IThemeBrands> = Object.freeze({
+  'provider-openai': '#00563d',
+  'provider-openai-gpt4': '#4d1a99',
+  'provider-openai-reasoning': '#000000',
+  'provider-anthropic': '#6b3d00',
+  'provider-azure': '#00417a',
+  'provider-bedrock': '#00504d',
+  'provider-foreground': '#ffffff',
+});
+
+const highContrastDarkBrands: Partial<IThemeBrands> = Object.freeze({
+  'provider-openai': '#7ff0b3',
+  'provider-openai-gpt4': '#c8a3ff',
+  'provider-openai-reasoning': '#ffffff',
+  'provider-anthropic': '#ffc94d',
+  'provider-azure': '#8cc8ff',
+  'provider-bedrock': '#5ce6db',
+  'provider-foreground': '#000000',
+});
+
+export const highContrastTheme: ThemeDefinition = Object.freeze({
+  version: THEME_VERSION,
+  name: HIGH_CONTRAST_THEME_NAME,
+  modes: {
+    light: { colors: highContrastLightTheme, brands: highContrastLightBrands },
+    dark: { colors: highContrastDarkTheme, brands: highContrastDarkBrands },
+  },
+});
+
 const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
@@ -159,6 +205,27 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   motionNormal: isDuration,
 };
 
+/** Shared by the theme-wide `brands` and each mode's override block. */
+function collectBrandErrors(brands: unknown): string[] {
+  if (!isPlainRecord(brands)) {
+    return [];
+  }
+
+  return Object.entries(brands).flatMap(([key, value]) => {
+    if (!themeBrandTokens.includes(key as keyof IThemeBrands)) {
+      return [`Unknown brand token: ${key}`];
+    }
+    /** Only the glyph is a flat colour; a fill may also be a gradient. */
+    const isColorOnly = key === 'provider-foreground';
+    const isValidBrand =
+      typeof value === 'string' &&
+      (isColorOnly
+        ? hexColorPattern.test(value)
+        : hexColorPattern.test(value) || isLinearGradient(value));
+    return value !== undefined && !isValidBrand ? [`Invalid brand value for ${key}: ${value}`] : [];
+  });
+}
+
 export function validateThemeDefinition(theme: ThemeDefinition): string[] {
   const errors: string[] = [];
 
@@ -201,7 +268,7 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
     }
 
     Object.keys(definition).forEach((key) => {
-      if (key !== 'colors' && key !== 'appearance') {
+      if (key !== 'colors' && key !== 'appearance' && key !== 'brands') {
         errors.push(`Unknown ${mode} theme field: ${key}`);
       }
     });
@@ -235,29 +302,37 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
         }
       });
     }
+
+    if (definition.brands !== undefined && !isPlainRecord(definition.brands)) {
+      errors.push(`Theme brands for ${mode} must be an object`);
+    } else {
+      errors.push(...collectBrandErrors(definition.brands));
+    }
   });
 
   if (theme.brands !== undefined && !isPlainRecord(theme.brands)) {
     errors.push('Theme brands must be an object');
   } else {
-    Object.entries(theme.brands ?? {}).forEach(([key, value]) => {
-      if (!themeBrandTokens.includes(key as keyof IThemeBrands)) {
-        errors.push(`Unknown brand token: ${key}`);
-        return;
-      }
-      const isColorOnly = key === 'provider-foreground';
-      const isValidBrand =
-        typeof value === 'string' &&
-        (isColorOnly
-          ? hexColorPattern.test(value)
-          : hexColorPattern.test(value) || isLinearGradient(value));
-      if (value !== undefined && !isValidBrand) {
-        errors.push(`Invalid brand value for ${key}: ${value}`);
-      }
-    });
+    errors.push(...collectBrandErrors(theme.brands));
   }
 
   return errors;
+}
+
+/**
+ * A partial theme promises that an omitted value falls back, and
+ * `Partial<IThemeBrands>` lets a key be present with `undefined`. Spreading
+ * that would overwrite the inherited brand with nothing, and unlike colors,
+ * which `mapColors` skips when undefined, every brand token is written to the
+ * DOM unconditionally, so the avatar would lose its fill entirely.
+ */
+function definedBrands(brands?: Partial<IThemeBrands>): Partial<IThemeBrands> {
+  if (!brands) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(brands).filter(([, value]) => value !== undefined),
+  ) as Partial<IThemeBrands>;
 }
 
 export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedThemeDefinition {
@@ -317,7 +392,12 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...chartWidgetStrokeFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
-    brands: { ...defaultBrands, ...theme.brands },
+    /** Mode last: a mode override is more specific than the theme-wide set. */
+    brands: {
+      ...defaultBrands,
+      ...definedBrands(theme.brands),
+      ...definedBrands(definition?.brands),
+    },
   };
 }
 

@@ -598,8 +598,16 @@ const ChatForm = memo(function ChatForm({
                 composerSurfaceClasses(),
                 isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
                 /* Temporary-chat accent is a ChatForm-only override, not part of
-                   the shared composer-surface decision. */
-                isTemporary && 'border-violet-800/60 bg-violet-950/10',
+                   the shared composer-surface decision. Semantic `series-6`, the
+                   same categorical slot the purple tool badge uses, so the accent
+                   follows the theme instead of the raw `violet-800/60` edge that
+                   composited to 1.48:1 on the high contrast dark canvas.
+                   Held at half alpha in the standard palettes, where series-6 is
+                   a saturated #7e23cd / #ab68fe and a full-strength edge reads as
+                   a warning rather than a quiet mode hint. The contrast modes take
+                   it opaque, because that is the only way it clears the 3:1
+                   non-text floor there. */
+                isTemporary && 'border-series-6/50 bg-series-6/10 high-contrast:border-series-6',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}

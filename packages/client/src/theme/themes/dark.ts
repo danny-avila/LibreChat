@@ -72,7 +72,12 @@ export const darkTheme: IThemeRGB = {
   'rgb-status-success': '110 231 183', // #6ee7b7 (green-300)
   'rgb-status-success-subtle': '2 44 34', // #022c22 (green-950)
   'rgb-status-success-border': '6 95 70', // #065f46 (green-800)
-  'rgb-status-success-strong': '6 95 70', // #065f46 (green-800)
+  /** Not `green-800` like its border twin: this fill also paints bare marks
+   *  (selection checks, the version timeline rail, prompt chips) that have to
+   *  clear 3:1 against the #212121 panel, and green-800 reached only 2.10:1
+   *  there. Balanced instead, the same way light's `#02855e` is: 4.55:1 under
+   *  the white `text-on-status` label and 3.54:1 against the panel. */
+  'rgb-status-success-strong': '8 135 89', // #088759
   'rgb-status-info': '147 197 253', // #93c5fd (blue-300)
   'rgb-status-info-subtle': '23 37 84', // #172554 (blue-950)
   'rgb-status-info-border': '30 64 175', // #1e40af (blue-800)
@@ -93,6 +98,19 @@ export const darkTheme: IThemeRGB = {
   // Brand colors
   'rgb-brand-purple': '171 104 255', // #ab68ff
 
+  /** Code syntax highlighting, measured against the `surface-code` fill. The
+   *  comment and meta values are the flattened equivalents of the alpha-blended
+   *  whites this palette used before it was tokenized: 50% and 60% white over
+   *  the #212121 code surface. */
+  'rgb-syntax-text': '255 255 255', // #fff (white)
+  'rgb-syntax-comment': '144 144 144', // #909090
+  'rgb-syntax-meta': '166 166 166', // #a6a6a6
+  'rgb-syntax-builtin': '233 149 12', // #e9950c
+  'rgb-syntax-keyword': '46 149 211', // #2e95d3
+  'rgb-syntax-string': '0 166 125', // #00a67d
+  'rgb-syntax-attr': '223 48 121', // #df3079
+  'rgb-syntax-title': '242 44 61', // #f22c3d
+
   /** Categorical series scale — the same seven hues stepped for the #212121
    *  surface: worst adjacent CVD ΔE 13.0, normal-vision ΔE 19.0, all ≥ 3:1. */
   'rgb-series-1': '9 140 238', // #098cee (cerulean)
@@ -102,6 +120,10 @@ export const darkTheme: IThemeRGB = {
   'rgb-series-5': '213 82 130', // #d55282 (magenta)
   'rgb-series-6': '171 104 254', // #ab68fe (violet)
   'rgb-series-7': '80 167 49', // #50a731 (green)
+
+  /** Unchecked switch track. 3.38:1 against the page and the `surface-primary`
+   *  thumb, 5.74:1 against the checked `surface-inverted` track. */
+  'rgb-switch-unchecked': '102 102 102', // #666666
 
   // Presentation
   'rgb-presentation': '33 33 33', // #212121 (gray-800)

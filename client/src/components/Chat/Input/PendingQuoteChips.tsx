@@ -11,6 +11,13 @@ const REMOVE_BTN_CLASS =
   '-mr-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
 const TRIGGER_CLASS =
   'inline-flex min-w-0 items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+/**
+ * Quote mark. Semantic `status-info` rather than `cyan-500`, matching the queue
+ * identity in `Chat/Steering/identity.ts`: the raw hue lands at 2.43:1 on the
+ * high contrast light composer, under the 3:1 floor for a chip whose only type
+ * cue is this icon.
+ */
+const QUOTE_ICON_CLASS = 'h-4 w-4 shrink-0 text-status-info';
 /** Grace period so moving the pointer between the chip and the popup doesn't close it. */
 const CLOSE_DELAY_MS = 120;
 
@@ -87,7 +94,7 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
     >
       {!isMulti ? (
         <span role="listitem" className={CHIP_CLASS}>
-          <TextQuote className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+          <TextQuote className={QUOTE_ICON_CLASS} aria-hidden="true" />
           <span className="max-w-[16rem] truncate" title={quotes[0]}>
             {quotes[0]}
           </span>
@@ -114,7 +121,7 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
               aria-label={localize('com_ui_quote_selections', { 0: quotes.length })}
               onClick={() => setFocusOnShow(true)}
             >
-              <TextQuote className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+              <TextQuote className={QUOTE_ICON_CLASS} aria-hidden="true" />
               <span className="truncate">
                 {localize('com_ui_quote_selections', { 0: quotes.length })}
               </span>

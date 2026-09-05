@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { IThemeRGB } from './types';
+import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 import { createTailwindColors } from './utils/createTailwindColors';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
@@ -220,6 +221,8 @@ function belowAA(
 describe.each([
   ['default', defaultTheme],
   ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
 ])('%s theme text contrast', (_name, theme: IThemeRGB) => {
   it('keeps neutral text at WCAG AA on every surface it renders on', () => {
     expect(belowAA(theme, neutralTextTokens, [...canvasSurfaces, 'rgb-surface-tertiary'])).toEqual(
@@ -244,12 +247,20 @@ describe.each([
 });
 
 /** The meter paints segments on `surface-tertiary`; the swatch and popover chrome
- *  sit on `surface-secondary`. Both have to clear the 3:1 mark-contrast floor. */
+ *  sit on `surface-secondary`; prompt categories sit on `surface-primary`;
+ *  checked capability badges sit on `surface-chat`; dialog option toggles sit
+ *  on `surface-dialog`. All have to clear the 3:1 mark-contrast floor. */
 const seriesTokens = Array.from(
   { length: 7 },
   (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
 );
-const seriesSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-tertiary', 'rgb-surface-secondary'];
+const seriesSurfaces: Array<keyof IThemeRGB> = [
+  'rgb-surface-primary',
+  'rgb-surface-tertiary',
+  'rgb-surface-secondary',
+  'rgb-surface-chat',
+  'rgb-surface-dialog',
+];
 const WCAG_MARK_MIN = 3;
 
 describe('categorical series scale', () => {
@@ -304,8 +315,10 @@ describe('categorical series scale', () => {
 describe.each([
   ['default', defaultTheme],
   ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
 ])('%s series contrast', (_name, theme: IThemeRGB) => {
-  it('keeps every series slot at the 3:1 mark floor on the track and the panel', () => {
+  it('keeps every series slot at the 3:1 mark floor on its consumer surfaces', () => {
     const failures = seriesTokens.flatMap((token) =>
       seriesSurfaces.flatMap((surface) => {
         const ratio = contrast(toRgb(theme, token), toRgb(theme, surface));
@@ -314,5 +327,178 @@ describe.each([
     );
 
     expect(failures).toEqual([]);
+  });
+
+  /** A series slot is not only a chart mark: the file-source badges fill a chip
+   *  with one and drop a glyph on top, so a slot has to carry `text-on-status`
+   *  at the same 3:1 floor. */
+  it('lets every series slot carry the status label at the 3:1 mark floor', () => {
+    const failures = seriesTokens.flatMap((token) => {
+      const ratio = contrast(toRgb(theme, token), toRgb(theme, 'rgb-text-on-status'));
+      return ratio < WCAG_MARK_MIN ? [`${token} under text-on-status: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
+  });
+});
+
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s skill indicators', (_name, theme: IThemeRGB) => {
+  it('keeps informational marks at the 3:1 floor on every skill surface', () => {
+    const indicator = toRgb(theme, 'rgb-status-info');
+    const surfaces: Array<keyof IThemeRGB> = [
+      'rgb-presentation',
+      'rgb-surface-secondary',
+      'rgb-surface-active',
+    ];
+
+    const failures = surfaces.flatMap((surface) => {
+      const ratio = contrast(indicator, toRgb(theme, surface));
+      return ratio < WCAG_MARK_MIN ? [`${surface}: ${ratio.toFixed(2)}:1`] : [];
+    });
+
+    expect(failures).toEqual([]);
+  });
+});
+
+/** `status-success-strong` is the one status fill that also paints bare marks:
+ *  the selected-tool check, the version timeline rail and its "current" dot, and
+ *  the selected prompt-version chip. It owes two ratios at once, AA under the
+ *  `text-on-status` label it carries and the 3:1 mark floor against the panel it
+ *  sits on. `surface-secondary` is that panel in every mode. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s success fill', (_name, theme: IThemeRGB) => {
+  it('carries its label at WCAG AA', () => {
+    const ratio = contrast(
+      toRgb(theme, 'rgb-status-success-strong'),
+      toRgb(theme, 'rgb-text-on-status'),
+    );
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+  });
+
+  it('keeps its silhouette at the 3:1 mark floor on the panel', () => {
+    const ratio = contrast(
+      toRgb(theme, 'rgb-status-success-strong'),
+      toRgb(theme, 'rgb-surface-secondary'),
+    );
+    expect(ratio).toBeGreaterThanOrEqual(WCAG_MARK_MIN);
+  });
+});
+
+describe('success fill defaults', () => {
+  /** Both copies have to move together: the value is a tuned hex rather than a
+   *  palette step, so the stylesheet cannot alias it to a `--green-*` step. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--status-success-strong:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    /** One declaration for `html`, one for `.dark`, and both must match. */
+    expect(declared).toEqual([
+      defaultTheme['rgb-status-success-strong'],
+      darkTheme['rgb-status-success-strong'],
+    ]);
+  });
+});
+
+/** The shared `Switch` paints this track, so it travels with the package rather
+ *  than the app stylesheet. It is a UI component boundary under WCAG 1.4.11 and
+ *  has to stay distinct from the `surface-primary` thumb on it and from the
+ *  `surface-inverted` fill it swaps with when checked. */
+describe.each([
+  ['default', defaultTheme],
+  ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
+])('%s switch track', (_name, theme: IThemeRGB) => {
+  it('keeps the unchecked track at the 3:1 mark floor against thumb and checked fill', () => {
+    const track = toRgb(theme, 'rgb-switch-unchecked');
+    (['rgb-surface-primary', 'rgb-surface-inverted'] as Array<keyof IThemeRGB>).forEach(
+      (surface) => {
+        expect({ surface, ok: contrast(track, toRgb(theme, surface)) >= WCAG_MARK_MIN }).toEqual({
+          surface,
+          ok: true,
+        });
+      },
+    );
+  });
+});
+
+describe('switch track defaults', () => {
+  /** The app stylesheet only restates the registry now: the contrast modes used
+   *  to carry their own `html.high-contrast` overrides here, which the published
+   *  package never shipped. */
+  it('keeps the app CSS in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    const declared = [...appStyles.matchAll(/--switch-unchecked:\s*([^;]+);/g)].map((match) =>
+      match[1].trim(),
+    );
+
+    expect(declared).toEqual([
+      defaultTheme['rgb-switch-unchecked'],
+      darkTheme['rgb-switch-unchecked'],
+    ]);
+  });
+});
+
+/** The syntax palette used to live as raw hex in `style.css`, which meant a
+ *  change had to be made twice and neither copy was checked. It is a registry
+ *  token map now, so the stylesheet is only allowed to restate it. */
+describe('syntax highlighting palette', () => {
+  const syntaxTokens = (
+    ['comment', 'meta', 'builtin', 'keyword', 'string', 'attr', 'title'] as const
+  ).map((role) => `rgb-syntax-${role}` as keyof IThemeRGB);
+
+  it('is declared in both bundled themes', () => {
+    syntaxTokens.forEach((token) => {
+      expect(() => toRgb(defaultTheme, token)).not.toThrow();
+      expect(() => toRgb(darkTheme, token)).not.toThrow();
+    });
+  });
+
+  it('keeps the app CSS defaults in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    syntaxTokens.forEach((token) => {
+      const property = token.slice(4);
+      const declared = [...appStyles.matchAll(new RegExp(`--${property}:\\s*([^;]+);`, 'g'))].map(
+        (match) => match[1].trim(),
+      );
+
+      /** `html` may alias a raw palette entry; `.dark` states the triplet. */
+      expect(declared).toHaveLength(2);
+      expect(declared[1]).toBe(darkTheme[token]);
+    });
+  });
+
+  it('leaves no hard-coded syntax hex behind in the stylesheet', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+    const hljsRules = [...appStyles.matchAll(/^\.hljs[^{]*\{([^}]*)\}/gm)].map((match) => match[1]);
+
+    expect(hljsRules.length).toBeGreaterThan(0);
+    expect(hljsRules.filter((body) => /#[0-9a-f]{3,8}|hsla?\(/i.test(body))).toEqual([]);
   });
 });

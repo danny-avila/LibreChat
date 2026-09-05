@@ -29,4 +29,25 @@ module.exports = {
       },
     },
   },
+  plugins: [
+    /**
+     * A bare function rather than `plugin()` from `tailwindcss/plugin`, because
+     * this preset ships as a raw file through the `./tailwind-preset` export and
+     * `tailwindcss` is a devDependency here. Requiring it would fail to resolve
+     * for an external consumer under pnpm or Yarn PnP. Tailwind accepts a plain
+     * function in `plugins`; the wrapper only adds option and config handling
+     * this variant does not need.
+     */
+    ({ addVariant }) => {
+      /**
+       * Styling that applies only in the high contrast appearance modes, the
+       * same way `dark:` applies only under the `dark` class. Distinct from
+       * Tailwind's built-in `contrast-more:`, which is the raw
+       * `prefers-contrast: more` media query: this follows the resolved app
+       * mode, so it covers an explicit `high-contrast-light` /
+       * `high-contrast-dark` choice as well as the OS preference.
+       */
+      addVariant('high-contrast', 'html.high-contrast &');
+    },
+  ],
 };
