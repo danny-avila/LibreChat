@@ -4,6 +4,23 @@ import { createOpenIDRefreshRecoveryService } from './recovery';
 describe('OpenID authentication publication settlement', () => {
   function setup() {
     const deps = {
+      jwt: { decode: jest.fn() },
+      findOpenIDUser: jest.fn(),
+      findUser: jest.fn(),
+      getOpenIdConfig: jest.fn(),
+      getOpenIdEmail: jest.fn(),
+      getOpenIdIssuer: jest.fn(),
+      createAuthIdentityContext: jest.fn(),
+      refreshOpenIDSession: jest.fn(),
+      clearOpenIDAuthTokens: jest.fn(),
+      deleteOpenIDSession: jest.fn(),
+      createOpenIDRefreshFlightKey: jest.fn(),
+      storeRefreshTokenBridge: jest.fn(),
+      deleteRefreshTokenBridges: jest.fn(),
+      waitForOpenIDRefreshFlight: jest.fn(),
+      assertOpenIDRefreshSessionGenerationAvailable: jest.fn(),
+      revokeOpenIDRefreshFlights: jest.fn(),
+      bridgeGraceMs: 1000,
       logger: { debug: jest.fn(), warn: jest.fn() },
       createRefreshTokenBridgeFlightKey: jest.fn(() => 'publication'),
       acquireOpenIDRefreshFlight: jest.fn().mockResolvedValue({
@@ -22,10 +39,8 @@ describe('OpenID authentication publication settlement', () => {
       storeOpenIDSession: jest.fn().mockResolvedValue(undefined),
       assertOpenIDRefreshFlightAvailable: jest.fn().mockResolvedValue(true),
       setOpenIDAuthTokens: jest.fn(() => 'app-token'),
-    };
-    const service = createOpenIDRefreshRecoveryService(
-      deps as OpenIDRefreshRecoveryDeps,
-    );
+    } satisfies OpenIDRefreshRecoveryDeps;
+    const service = createOpenIDRefreshRecoveryService(deps);
     const input = {
       tokenset: { access_token: 'access', id_token: 'id', refresh_token: 'refresh' },
       user: { _id: 'user' },
