@@ -18,6 +18,7 @@ import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
+import { TOOL_ROW_CLASSES } from './rows';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -274,11 +275,7 @@ export default function ToolCall({
           return getFinishedText();
         })()}
       </span>
-      <div
-        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
-        data-testid="tool-call"
-        data-tool-call-id={toolCallId}
-      >
+      <div className={TOOL_ROW_CLASSES} data-testid="tool-call" data-tool-call-id={toolCallId}>
         <ProgressText
           phase={phase}
           onClick={handleToggleInfo}

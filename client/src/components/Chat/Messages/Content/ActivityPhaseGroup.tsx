@@ -13,7 +13,7 @@ import {
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { AttachmentGroup, EmptyText } from './Parts';
-import Container from './Container';
+import { TOOL_ROW_CLASSES } from './rows';
 import { cn } from '~/utils';
 
 /** Matches `EXPAND_TRANSITION` so the panel and the label ticker resolve on
@@ -269,10 +269,18 @@ export default function ActivityPhaseGroup({
     };
   }, [foldsIn, isSettled]);
 
+  /** The live slot under a collapsed card alternates between this cursor and
+   *  the next call's row for the rest of the run: a label fills, the row it
+   *  headed folds into the card and the cursor takes its place; the next call
+   *  starts and the cursor gives way to a row again. A cursor in a bare
+   *  `Container` (20px, no margins) was 12px shorter than the tool row
+   *  (`my-1.5 h-5`), so everything beneath the card stepped up on every
+   *  absorb and back down on every call. The cursor takes the row's exact box
+   *  and a 2px inset centers the 12px dot on the 16px glyph rail. */
   const cursor = showCursor ? (
-    <Container>
+    <div className={cn(TOOL_ROW_CLASSES, 'ps-0.5')} data-testid="activity-phase-cursor">
       <EmptyText />
-    </Container>
+    </div>
   ) : null;
   const media =
     attachments != null && attachments.length > 0 ? (

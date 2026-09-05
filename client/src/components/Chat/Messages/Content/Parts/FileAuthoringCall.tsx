@@ -10,6 +10,7 @@ import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
 import { useToolCallIntent } from './intent';
+import { TOOL_ROW_CLASSES } from '../rows';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -176,7 +177,7 @@ export default function FileAuthoringCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className={TOOL_ROW_CLASSES}>
         <ProgressText
           phase={phase}
           onClick={toggleCode}

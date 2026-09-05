@@ -14,6 +14,7 @@ import useFollowScroll from './useFollowScroll';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
+import { TOOL_ROW_CLASSES } from '../rows';
 import PtcToolTrace from './PtcToolTrace';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -121,7 +122,7 @@ export default function BashCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className={TOOL_ROW_CLASSES}>
         <ProgressText
           phase={phase}
           onClick={toggleCode}

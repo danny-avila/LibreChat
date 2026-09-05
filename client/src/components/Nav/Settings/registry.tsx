@@ -370,6 +370,19 @@ export const registry: SettingEntry[] = [
     }),
   },
   {
+    id: 'copyRichText',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_copy_rich_text',
+    keywords: ['copy', 'clipboard', 'rich', 'html', 'format', 'markdown', 'paste'],
+    Component: toggleControl({
+      stateAtom: store.copyRichText,
+      localizationKey: 'com_nav_copy_rich_text',
+      switchId: 'copyRichText',
+      hoverCardText: 'com_nav_info_copy_rich_text',
+    }),
+  },
+  {
     id: 'autoExpandTools',
     tab: CHAT,
     section: 'messages',
