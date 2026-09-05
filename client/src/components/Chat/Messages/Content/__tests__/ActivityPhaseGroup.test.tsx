@@ -2,6 +2,7 @@ import { ContentTypes } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import ActivityPhaseGroup from '../ActivityPhaseGroup';
+import { TOOL_ROW_CLASSES } from '../rows';
 
 const mockUseSmoothStreaming = jest.fn(() => true);
 const mockScheduleLayoutReconcile = jest.fn((_target: HTMLElement | null) => jest.fn());
@@ -97,6 +98,23 @@ describe('ActivityPhaseGroup', () => {
     );
 
     expect(container.querySelector('.result-thinking')).toBeInTheDocument();
+  });
+
+  test('the cursor occupies exactly a tool row box', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent showCursor>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    /** The cursor and the next call's row trade places under the card for the
+     *  rest of the run. Any difference between their boxes moves everything
+     *  beneath the card on every swap. */
+    const cursor = screen.getByTestId('activity-phase-cursor');
+    for (const token of TOOL_ROW_CLASSES.split(' ')) {
+      expect(cursor).toHaveClass(token);
+    }
+    expect(cursor.querySelector('.result-thinking')).toBeInTheDocument();
   });
 
   test('opens the summary on the same glyph rail as the rows it replaces', () => {
