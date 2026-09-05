@@ -2,7 +2,11 @@
  * @jest-environment jsdom
  */
 import { Constants, EModelEndpoint, type Agent } from 'librechat-data-provider';
-import type { AgentModelParameters } from 'librechat-data-provider';
+import type {
+  AgentCreateParams,
+  AgentUpdateParams,
+  AgentModelParameters,
+} from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
@@ -12,6 +16,13 @@ import {
   hasPersistedDirtyFields,
   mayHavePersistedChange,
 } from '../AgentPanel';
+
+test('the create identity contract excludes the update-only clear sentinel', () => {
+  const createAcceptsNull: null extends AgentCreateParams['git_identity'] ? true : false = false;
+  const updateAcceptsNull: null extends AgentUpdateParams['git_identity'] ? true : false = true;
+  expect(createAcceptsNull).toBe(false);
+  expect(updateAcceptsNull).toBe(true);
+});
 
 const createForm = (): AgentForm => ({
   agent: undefined,

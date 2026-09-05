@@ -653,7 +653,13 @@ export default function AgentPanel() {
         });
       }
 
-      create.mutate({ ...basePayload, model, tools, provider });
+      create.mutate({
+        ...basePayload,
+        git_identity: basePayload.git_identity ?? undefined,
+        model,
+        tools,
+        provider,
+      });
     },
     [
       agent_id,

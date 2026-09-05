@@ -65,6 +65,7 @@ export default function StatefulSessions() {
     const empty = !identity?.name?.trim() && !identity?.email?.trim();
     unregister('git_identity', {
       keepValue: empty || agentGitIdentitySchema.safeParse(identity).success,
+      keepDefaultValue: true,
     });
   }, [getValues, unregister]);
   useEffect(() => {

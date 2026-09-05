@@ -408,6 +408,7 @@ export type Agent = {
 export type TAgentsMap = Record<string, Agent | undefined>;
 
 export type AgentCreateParams = {
+  git_identity?: AgentGitIdentity;
   name?: string | null;
   description?: string | null;
   avatar?: AgentAvatar | null;
@@ -426,7 +427,6 @@ export type AgentCreateParams = {
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
   | 'code_environment_id'
-  | 'git_identity'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'

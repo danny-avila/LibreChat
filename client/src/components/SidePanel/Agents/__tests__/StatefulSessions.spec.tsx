@@ -19,11 +19,15 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-function IdentityForm() {
+function IdentityForm({ savedIdentity }: { savedIdentity?: AgentForm['git_identity'] }) {
   const [advanced, setAdvanced] = useState(true);
   const methods = useForm<AgentForm>({
     mode: 'onChange',
-    defaultValues: { execute_code: true, stateful_code_sessions: true },
+    defaultValues: {
+      execute_code: true,
+      stateful_code_sessions: true,
+      git_identity: savedIdentity,
+    },
   });
   return (
     <FormProvider {...methods}>
@@ -42,6 +46,22 @@ function IdentityForm() {
     </FormProvider>
   );
 }
+
+test.each(['', 'not-an-email'])(
+  'restores the saved identity when reopening an invalid draft: %s',
+  async (email) => {
+    render(<IdentityForm savedIdentity={{ name: 'Saved Agent', email: 'saved@example.com' }} />);
+    fireEvent.change(screen.getByLabelText('com_ui_agent_git_email'), {
+      target: { value: email },
+    });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Toggle Advanced'));
+    fireEvent.click(screen.getByText('Toggle Advanced'));
+    expect(screen.getByLabelText('com_ui_agent_git_name')).toHaveValue('Saved Agent');
+    expect(screen.getByLabelText('com_ui_agent_git_email')).toHaveValue('saved@example.com');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  },
+);
 
 test('clears cross-field errors when completing or clearing a Git identity', async () => {
   render(<IdentityForm />);
