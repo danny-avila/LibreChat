@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const multer = require('multer');
 const express = require('express');
 const {
-  createSkillsHandlers,
   createImportHandler,
   blockFilteredSkillFile,
   generateCheckAccess,
@@ -11,7 +10,7 @@ const {
   resolveRequestTenantId,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
-const { isValidObjectIdString, logger } = require('@librechat/data-schemas');
+const { logger } = require('@librechat/data-schemas');
 const {
   PermissionBits,
   PermissionTypes,
@@ -22,30 +21,18 @@ const {
 const {
   createSkill,
   getSkillById,
-  updateSkill,
   deleteSkill,
   upsertSkillFile,
-  deleteSkillFile,
   getSkillFileByPath,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
-const {
-  findAccessibleResources,
-  findPubliclyAccessibleResources,
-  hasPublicPermission,
-  grantPermission,
-} = require('~/server/services/PermissionService');
+const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
 const { maybeRunGitHubSkillSyncForRequest } = require('~/server/services/Skills/sync');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
-const {
-  getSkillDbMethods,
-  withDeploymentSkillIds,
-  getSkillStrategyFunctions,
-} = require('~/server/services/Endpoints/agents/skillDeps');
 
 const router = express.Router();
 
@@ -104,7 +91,6 @@ const checkSkillCreate = generateCheckAccess({
 // Rate limiters (reuse existing file upload limiters)
 // ---------------------------------------------------------------------------
 const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
-const skillDbMethods = getSkillDbMethods();
 
 router.use(requireJwtAuth);
 router.use(configMiddleware);
@@ -113,33 +99,8 @@ router.use(checkSkillAccess);
 // ---------------------------------------------------------------------------
 // CRUD handlers
 // ---------------------------------------------------------------------------
-const handlers = createSkillsHandlers({
-  createSkill,
-  getSkillById: skillDbMethods.getSkillById,
-  listSkillsByAccess: skillDbMethods.listSkillsByAccess,
-  updateSkill,
-  deleteSkill,
-  listSkillFiles: skillDbMethods.listSkillFiles,
-  deleteSkillFile,
-  getSkillFileByPath: skillDbMethods.getSkillFileByPath,
-  updateSkillFileContent: skillDbMethods.updateSkillFileContent,
-  getStrategyFunctions: getSkillStrategyFunctions,
-  findAccessibleResources: async (params) =>
-    params.resourceType === 'skill' && params.requiredPermissions === PermissionBits.VIEW
-      ? withDeploymentSkillIds(await findAccessibleResources(params))
-      : findAccessibleResources(params),
-  findPubliclyAccessibleResources: async (params) =>
-    params.resourceType === 'skill' && params.requiredPermissions === PermissionBits.VIEW
-      ? withDeploymentSkillIds(await findPubliclyAccessibleResources(params))
-      : findPubliclyAccessibleResources(params),
-  hasPublicPermission: async (params) =>
-    params.resourceType === 'skill' && params.requiredPermissions === PermissionBits.VIEW
-      ? withDeploymentSkillIds([]).some((id) => id.toString() === params.resourceId.toString()) ||
-        hasPublicPermission(params)
-      : hasPublicPermission(params),
-  grantPermission,
-  isValidObjectIdString,
-});
+const { getSkillsHandlers } = require('~/server/services/Skills/handlers');
+const handlers = getSkillsHandlers();
 
 // ---------------------------------------------------------------------------
 // File storage helper: resolve the active strategy's saveBuffer
