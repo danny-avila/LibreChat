@@ -1,10 +1,12 @@
 import type { TMessageProps } from '~/common';
+import SearchContent, {
+  rendersMarkdownLite,
+} from '~/components/Chat/Messages/Content/SearchContent';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
-import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import SubRow from '~/components/Chat/Messages/SubRow';
@@ -70,7 +72,11 @@ export default function Message(props: TMessageProps) {
                   siblingCount={siblingCount}
                   setSiblingIdx={setSiblingIdx}
                 />
-                <MinimalHoverButtons message={message} searchResults={searchResults} />
+                <MinimalHoverButtons
+                  message={message}
+                  searchResults={searchResults}
+                  variant={message.content && rendersMarkdownLite(message) ? 'lite' : undefined}
+                />
               </SubRow>
             }
           >
