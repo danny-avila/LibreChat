@@ -652,6 +652,30 @@ describe('mergeConfigOverrides', () => {
     expect(iface.agents).toBeUndefined();
   });
 
+  it('ignores legacy internal aliases and malformed interface overrides', () => {
+    const base = {
+      interfaceConfig: { modelSelect: true },
+      cache: false,
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          interfaceConfig: { prompts: false },
+          interface: null,
+          cache: true,
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+    expect(iface.modelSelect).toBe(true);
+    expect(iface.prompts).toBeUndefined();
+    expect(result.cache).toBe(true);
+  });
+
   it('remaps YAML-level keys to AppConfig equivalents', () => {
     const configs = [
       fakeConfig(
@@ -775,7 +799,7 @@ describe('mergeConfigOverrides', () => {
 
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
 
-    expect(result.mcpConfig).toEqual({});
+    expect(result.mcpConfig).toBeUndefined();
   });
 
   it('applies tombstones after remapping YAML paths to AppConfig paths', () => {
@@ -877,6 +901,32 @@ describe('mergeConfigOverrides', () => {
     const mcpConfig = result.mcpConfig as Record<string, unknown>;
 
     expect(mcpConfig.github).toBeUndefined();
+  });
+
+  it('ignores forbidden legacy tombstones during resolution', () => {
+    const result = mergeConfigOverrides(baseConfig, [
+      fakeConfig({}, 10, ['interface', 'interfaceConfig.prompts']),
+    ]) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+
+    expect(iface.modelSelect).toBe(true);
+    expect(iface.parameters).toBe(true);
+  });
+
+  it('discards malformed legacy tombstone entries instead of throwing and dropping every override', () => {
+    // A crash here previously meant getAppConfig's catch-all fell back to the
+    // YAML base, silently discarding every applicable DB override — not just
+    // the malformed tombstone.
+    const configs = [
+      fakeConfig({ registration: { enabled: false } }, 10, [
+        null,
+        {},
+        'cache',
+      ] as unknown as string[]),
+    ];
+
+    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+    expect((result.registration as Record<string, unknown>).enabled).toBe(false);
   });
 });
 

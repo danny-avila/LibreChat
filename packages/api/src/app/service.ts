@@ -5,7 +5,7 @@ import {
   mergeConfigOverrides,
   BASE_CONFIG_PRINCIPAL_ID,
 } from '@librechat/data-schemas';
-import type { AppConfig, IConfig } from '@librechat/data-schemas';
+import type { AppConfig, FindConfigByPrincipalOptions, IConfig } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 
 const BASE_CONFIG_KEY = '_BASE_';
@@ -55,7 +55,10 @@ export interface AppConfigServiceDeps {
   /** The CacheKeys constants from librechat-data-provider. */
   cacheKeys: { APP_CONFIG: string };
   /** Fetch applicable DB config overrides for a set of principals. */
-  getApplicableConfigs: (principals?: AppConfigPrincipal[]) => Promise<IConfig[]>;
+  getApplicableConfigs: (
+    principals?: AppConfigPrincipal[],
+    options?: Pick<FindConfigByPrincipalOptions, 'tenantId'>,
+  ) => Promise<IConfig[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
@@ -108,7 +111,15 @@ export function getAppConfigOptionsFromUser(
     role: user?.role,
     userId,
     idOnTheSource: userId && hasSourceIdentity ? (user.idOnTheSource ?? null) : undefined,
-    tenantId: tenantId ?? user?.tenantId ?? getTenantId(),
+    /**
+     * ALS-resolved tenant takes precedence over the JWT claim, mirroring
+     * `getEffectiveTenantId` (packages/api/src/middleware/tenant.ts). A
+     * deployment that resolves the authoritative tenant server-side
+     * (`req.tenantId`, seeded into ALS) must not have this read — and its
+     * cache key — fall back to a stale/different `user.tenantId` claim while
+     * every other admin capability check and write already trusts ALS.
+     */
+    tenantId: tenantId ?? getTenantId() ?? user?.tenantId,
   };
 }
 
@@ -290,7 +301,11 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
     let merged = baseConfig;
     try {
-      const configs = await getApplicableConfigs(principals);
+      const effectiveTenantId = tenantId ?? getTenantId();
+      const configs =
+        effectiveTenantId !== undefined
+          ? await getApplicableConfigs(principals, { tenantId: effectiveTenantId })
+          : await getApplicableConfigs(principals);
       if (configs.length > 0) {
         merged = materializeConfigModelSpecs(mergeConfigOverrides(baseConfig, configs));
       }

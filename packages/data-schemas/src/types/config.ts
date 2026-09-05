@@ -24,8 +24,8 @@ export type Config = {
   isActive: boolean;
   /** Version number for cache invalidation, auto-increments on overrides change */
   configVersion: number;
-  /** Tenant identifier for multi-tenancy isolation */
-  tenantId?: string;
+  /** Tenant identifier for multi-tenancy isolation; null means default/no tenant */
+  tenantId?: string | null;
   /** When this config was created */
   createdAt?: Date;
   /** When this config was last updated */

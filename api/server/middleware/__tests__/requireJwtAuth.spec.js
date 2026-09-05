@@ -86,8 +86,12 @@ jest.mock('@librechat/api', () => {
     },
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
+      const trustedTenantId = tenantStorage.getStore()?.tenantId;
       const context = {
-        tenantId: normalizeContextValue(req.user?.tenantId),
+        tenantId:
+          normalizeContextValue(req.tenantId) ??
+          normalizeContextValue(trustedTenantId) ??
+          normalizeContextValue(req.user?.tenantId),
         userId: getUserId(req.user),
         requestId: getRequestId(req),
       };
@@ -183,6 +187,15 @@ describe('requireJwtAuth tenant context chaining', () => {
   it('sets ALS tenant context after passport auth succeeds', async () => {
     const tenantId = await runAuth({ tenantId: 'tenant-abc', role: 'user' });
     expect(tenantId).toBe('tenant-abc');
+  });
+
+  it('preserves a trusted pre-auth tenant when the JWT user belongs to another tenant', async () => {
+    const { tenantStorage } = require('@librechat/data-schemas');
+    const tenantId = await tenantStorage.run({ tenantId: 'tenant-from-header' }, () =>
+      runAuth({ tenantId: 'tenant-from-jwt', role: 'user' }),
+    );
+
+    expect(tenantId).toBe('tenant-from-header');
   });
 
   it('refreshes CloudFront auth cookies after passport auth succeeds', () => {

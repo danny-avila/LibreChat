@@ -1,25 +1,48 @@
-import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
-  INTERFACE_PERMISSION_FIELDS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
-  PERMISSION_SUB_KEYS,
+  configSchema,
   hasProcessMCPServerConfig,
   isProcessMCPServerConfig,
   isProcessMCPServerField,
 } from 'librechat-data-provider';
-import type { AppConfig, ConfigSection, IConfig, SystemCapability } from '@librechat/data-schemas';
+import {
+  logger,
+  BASE_CONFIG_PRINCIPAL_ID,
+  SystemCapabilities,
+  applyConfigFieldsMutation,
+  canonicalizeResetPaths,
+  fieldPathPolicyError,
+  indexedArrayPathError,
+  isConfigFieldPath,
+  isForbiddenAdminConfigPath,
+  isValidFieldPath,
+  mergeConfigOverrides,
+  sanitizeAdminConfigOverrides,
+} from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  ConfigRevisionListItem,
+  ConfigRevisionSnapshot,
+  ConfigSection,
+  FindConfigByPrincipalOptions,
+  IConfig,
+  SystemCapability,
+} from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
+import type { ZodTypeAny } from 'zod';
 import type { CapabilityUser } from '~/middleware/capabilities';
 import type { ServerRequest } from '~/types/http';
 import {
   encryptConfigSecretFields,
   encryptConfigSecrets,
+  encryptLegacyPlaintextConfigSecrets,
+  getArrayExistingIdentityConflictError,
   getConfigSecretMutationPaths,
   getConfigSecretInputError,
   getConfigSecretSections,
@@ -28,11 +51,29 @@ import {
   isConfigSecretPreservablePatch,
   preserveConfigSecrets,
   redactConfigSecrets,
+  resolveMcpSecretHintBatch,
+  resolveMcpSecretHintBatchForWholeDocument,
 } from './secrets';
+import { getEffectiveTenantId } from '~/middleware/tenant';
 
-const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
+type ConfigRevisionCause = 'save' | 'import' | 'reset' | 'restore';
+type ConfigMutationOp =
+  | {
+      kind: 'fields';
+      resetPaths: string[];
+      fields: Record<string, unknown>;
+      priority: number;
+      isActive?: boolean;
+    }
+  | { kind: 'replace'; overrides: Record<string, unknown>; priority: number }
+  | { kind: 'delete' }
+  | { kind: 'active'; isActive: boolean }
+  | { kind: 'restore'; revisionId: string };
+
 const MAX_PATCH_ENTRIES = 100;
+const MAX_PATCH_MUTATIONS = 100;
 const DEFAULT_PRIORITY = 10;
+const DEFAULT_BASE_PRIORITY = 0;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 const PROCESS_MCP_CONFIG_ERROR =
@@ -73,16 +114,161 @@ function hasLangfuseHeadersOverride(rawOverrides: Record<string, unknown>): bool
   return Object.keys(rawLangfuse).some((key) => key === 'headers' || key.startsWith('headers.'));
 }
 
-export function isValidFieldPath(path: string): boolean {
+type AtomicFieldEntry = { fieldPath: string; value: unknown };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function fieldPathsOverlap(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
+}
+
+function parseAtomicFieldEntries(
+  value: unknown,
+): { ok: true; entries: AtomicFieldEntry[] } | { ok: false; error: string } {
+  if (value === undefined) {
+    return { ok: true, entries: [] };
+  }
+  if (!Array.isArray(value)) {
+    return { ok: false, error: 'entries must be an array' };
+  }
+  const entries: AtomicFieldEntry[] = [];
+  for (const entry of value) {
+    if (!isPlainObject(entry)) {
+      return { ok: false, error: 'each entry must be an object with fieldPath and value' };
+    }
+    if (typeof entry.fieldPath !== 'string') {
+      return { ok: false, error: 'each entry must include a fieldPath string' };
+    }
+    const fieldPathError = fieldPathPolicyError(entry.fieldPath);
+    if (fieldPathError) {
+      return { ok: false, error: fieldPathError };
+    }
+    if (!Object.prototype.hasOwnProperty.call(entry, 'value')) {
+      return { ok: false, error: 'each entry must include a value property' };
+    }
+    entries.push({ fieldPath: entry.fieldPath, value: entry.value });
+  }
+  return { ok: true, entries };
+}
+
+function parseAtomicResetPaths(
+  value: unknown,
+): { ok: true; resetPaths: string[] } | { ok: false; error: string } {
+  if (value === undefined) {
+    return { ok: true, resetPaths: [] };
+  }
+  if (!Array.isArray(value)) {
+    return { ok: false, error: 'resetPaths must be an array' };
+  }
+  for (const path of value) {
+    if (typeof path !== 'string') {
+      return { ok: false, error: 'each resetPaths element must be a string' };
+    }
+    const fieldPathError = fieldPathPolicyError(path);
+    if (fieldPathError) {
+      return { ok: false, error: fieldPathError };
+    }
+  }
+  return { ok: true, resetPaths: value };
+}
+
+function validateAtomicMutationProperties(
+  body: Record<string, unknown>,
+): { ok: true } | { ok: false; error: string } {
+  if ('entries' in body && body.entries !== undefined && !Array.isArray(body.entries)) {
+    return { ok: false, error: 'entries must be an array' };
+  }
+  if ('resetPaths' in body && body.resetPaths !== undefined && !Array.isArray(body.resetPaths)) {
+    return { ok: false, error: 'resetPaths must be an array' };
+  }
+  if ('overrides' in body && body.overrides !== undefined && !isPlainObject(body.overrides)) {
+    return { ok: false, error: 'overrides must be an object' };
+  }
+  if (
+    'deleteDocument' in body &&
+    body.deleteDocument !== undefined &&
+    typeof body.deleteDocument !== 'boolean'
+  ) {
+    return { ok: false, error: 'deleteDocument must be a boolean' };
+  }
+  if ('restoreRevisionId' in body && body.restoreRevisionId !== undefined) {
+    if (typeof body.restoreRevisionId !== 'string' || body.restoreRevisionId.length === 0) {
+      return { ok: false, error: 'restoreRevisionId must be a non-empty string' };
+    }
+  }
+  if ('isActive' in body && body.isActive !== undefined && typeof body.isActive !== 'boolean') {
+    return { ok: false, error: 'isActive must be a boolean' };
+  }
+  return { ok: true };
+}
+
+export { isValidFieldPath } from '@librechat/data-schemas';
+
+export function isConfigVersionConflict(
+  error: unknown,
+): error is { currentVersion: number | null } {
   return (
-    typeof path === 'string' &&
-    path.length > 0 &&
-    !path.startsWith('.') &&
-    !path.endsWith('.') &&
-    !path.includes('..') &&
-    !path.includes('$') &&
-    !UNSAFE_SEGMENTS.test(path)
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'ConfigVersionConflictError'
   );
+}
+
+function isConfigRevisionNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'ConfigRevisionNotFoundError'
+  );
+}
+
+function isRestoreValidationError(error: unknown): error is Error {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'RestoreValidationError'
+  );
+}
+
+export function isTransactionRequired(error: unknown): error is Error {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    (error as { name?: string }).name === 'TransactionRequiredError'
+  );
+}
+
+export function rejectConfigVersionConflict(
+  res: Response,
+  expectedVersion: number | null,
+  config: { configVersion?: number } | null,
+): Response | null {
+  const currentVersion = config == null ? null : (config.configVersion ?? 0);
+  if (expectedVersion === currentVersion) {
+    return null;
+  }
+  return res.status(409).json({
+    error: 'Config version conflict',
+    currentVersion,
+  });
+}
+
+/**
+ * Legacy PUT/PATCH/DELETE base-config routes bypass CAS and revision history
+ * entirely — they never carry `expectedVersion` and never write a revision.
+ * Base-config mutations require a coordinated cutover with the admin panel
+ * (both sides deploy together and the panel exclusively uses `/atomic`); once
+ * that's in place, keeping these legacy paths open for the base principal
+ * would silently reintroduce version-conflict blindness and rollback gaps.
+ */
+function rejectLegacyBaseMutation(res: Response): Response {
+  return res.status(409).json({
+    error:
+      'Base configuration mutations must use POST /:principalType/:principalId/atomic ' +
+      '— it is the only path with optimistic concurrency (expectedVersion) and revision history.',
+  });
 }
 
 export function getTopLevelSection(fieldPath: string): string {
@@ -106,35 +292,261 @@ function isProcessMCPServerFieldPath(fieldPath: string, value: unknown): boolean
   return isProcessMCPServerField(field) || (field === 'type' && value === 'stdio');
 }
 
+function isBlockedFieldPath(fieldPath: string): boolean {
+  return isBaseOnlyFieldPath(fieldPath) || isForbiddenAdminConfigPath(fieldPath);
+}
+
+function sanitizeConfigOverrides(overrides: Record<string, unknown>): Partial<TCustomConfig> {
+  const normalized = { ...overrides };
+  delete normalized.interfaceConfig;
+  if (
+    'interface' in normalized &&
+    (normalized.interface == null ||
+      typeof normalized.interface !== 'object' ||
+      Array.isArray(normalized.interface))
+  ) {
+    delete normalized.interface;
+  }
+  const sanitized = sanitizeAdminConfigOverrides(normalized) as Record<string, unknown>;
+  if (
+    sanitized.interface != null &&
+    typeof sanitized.interface === 'object' &&
+    !Array.isArray(sanitized.interface)
+  ) {
+    const interfaceConfig = sanitized.interface as Record<string, unknown>;
+    for (const field of RUNTIME_CONFIG_INTERFACE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(interfaceConfig, field)) {
+        interfaceConfig[field] = normalizeRuntimeInterfaceValue(field, interfaceConfig[field]);
+      }
+    }
+  }
+  return sanitized as Partial<TCustomConfig>;
+}
+
+const CONFIG_SCHEMA_SHAPE = configSchema.shape as Record<string, ZodTypeAny>;
+
+function buildNestedPatch(segments: string[], value: unknown): Record<string, unknown> {
+  const [head, ...rest] = segments;
+  return rest.length === 0 ? { [head]: value } : { [head]: buildNestedPatch(rest, value) };
+}
+
+/** Deep-merges `source` onto `target`, mutating and returning `target`. Falls back to `source`
+ * wherever `target`'s existing value isn't a plain object (e.g. a boolean union branch). */
+function mergeNestedPatches(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(source)) {
+    const existing = target[key];
+    target[key] =
+      isPlainObject(value) && isPlainObject(existing)
+        ? mergeNestedPatches({ ...existing }, value)
+        : value;
+  }
+  return target;
+}
+
+function firstZodIssueMessage(issues: { message: string; path: (string | number)[] }[]): string {
+  const [issue] = issues;
+  if (!issue) return 'schema validation failed';
+  const path = issue.path.join('.');
+  return path ? `${path}: ${issue.message}` : issue.message;
+}
+
+/** Finds a caller-supplied key that Zod removed while parsing. Zod objects
+ * strip unknown keys by default, so a successful parse alone is not proof
+ * that every submitted override belongs to the configuration schema. */
+function firstStrippedInputPath(
+  input: unknown,
+  parsed: unknown,
+  prefix = '',
+  matchMergedArrays = false,
+): string | null {
+  if (Array.isArray(input)) {
+    if (!Array.isArray(parsed)) return prefix || '<root>';
+    for (let index = 0; index < input.length; index += 1) {
+      const path = prefix ? `${prefix}.${index}` : String(index);
+      const item = input[index];
+      // Runtime merges custom endpoints by name, retaining YAML-only entries
+      // ahead of newly appended entries. Their positions need not match the
+      // submitted array, but error paths must still refer to the submission.
+      const parsedItem =
+        matchMergedArrays && prefix === 'endpoints.custom' && isPlainObject(item)
+          ? parsed.find((entry) => isPlainObject(entry) && entry.name === item.name)
+          : parsed[index];
+      const stripped = firstStrippedInputPath(item, parsedItem, path, matchMergedArrays);
+      if (stripped) return stripped;
+    }
+    return null;
+  }
+  if (!isPlainObject(input)) return null;
+  if (!isPlainObject(parsed)) return prefix || '<root>';
+  for (const [key, value] of Object.entries(input)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (!Object.prototype.hasOwnProperty.call(parsed, key)) {
+      return path;
+    }
+    const stripped = firstStrippedInputPath(value, parsed[key], path, matchMergedArrays);
+    if (stripped) return stripped;
+  }
+  return null;
+}
+
 /**
- * Returns true if `fieldPath` targets an interface permission field or permission sub-key.
- *
- * - `"interface.prompts"` → true (boolean permission field)
- * - `"interface.agents.use"` → true (permission sub-key)
- * - `"interface.mcpServers"` → true (entire composite field)
- * - `"interface.mcpServers.use"` → true (permission sub-key)
- * - `"interface.mcpServers.placeholder"` → false (UI-only sub-key)
- * - `"interface.peoplePicker.users"` → true (all peoplePicker sub-keys are permissions)
- * - `"interface.modelSelect"` → false (UI-only field)
+ * Validates the values a "fields"-mode atomic mutation would actually write against the
+ * librechat.yaml config schema, so a caller cannot persist a structurally invalid runtime
+ * value (e.g. `interface.schedules.maxPerUser: -1`) by bypassing the admin panel's own
+ * validation and calling the API directly. Each touched section (by a set value or a reset)
+ * is resolved with the transaction's field/tombstone transition and the runtime merge, so
+ * cross-field constraints see the section's real post-mutation state, not just the delta.
+ * A bare top-level entry for a section (e.g. `cloudfront`) fully replaces that section and is
+ * validated independently because ancestor/descendant field entries are rejected before this
+ * function is called; the YAML/DB baseline never applies to a whole-section replacement.
+ * `yamlBaseline` may be `null` when `getAppConfig` isn't configured for this deployment; in
+ * that case sections are validated against DB overrides alone (pre-existing behavior).
  */
-function isInterfacePermissionPath(fieldPath: string): boolean {
-  const parts = fieldPath.split('.');
-  if (parts[0] !== 'interface' || parts.length < 2) {
-    return false;
+function validateAtomicFieldValues(
+  fields: Record<string, unknown>,
+  resetPaths: string[],
+  existing: IConfig | null,
+  yamlBaseline: Record<string, unknown> | null,
+): string | null {
+  const sectionPatches = new Map<string, Record<string, unknown>>();
+  const bareSectionEntries = new Map<string, unknown>();
+  const candidate = applyConfigFieldsMutation(existing, resetPaths, fields);
+  const resolvedConfig = mergeConfigOverrides((yamlBaseline ?? {}) as unknown as AppConfig, [
+    { principalId: BASE_CONFIG_PRINCIPAL_ID, priority: 0, ...candidate },
+  ]) as unknown as Record<string, unknown>;
+
+  const touchedSection = (section: string): Record<string, unknown> => {
+    let patch = sectionPatches.get(section);
+    if (!patch) {
+      patch = {};
+      sectionPatches.set(section, patch);
+    }
+    return patch;
+  };
+
+  for (const path of resetPaths) {
+    const [section, ...rest] = path.split('.');
+    if (!CONFIG_SCHEMA_SHAPE[section]) {
+      return `Unknown config field path: "${path}"`;
+    }
+    if (rest.length === 0) {
+      // A bare reset with nothing else touching the section is pure YAML,
+      // which is presumed already valid — only worth resolving if a
+      // descendant patch (below) also lands in sectionPatches for it.
+      continue;
+    }
+    touchedSection(section);
   }
-  if (!INTERFACE_PERMISSION_FIELDS.has(parts[1])) {
-    return false;
+
+  for (const [fieldPath, value] of Object.entries(fields)) {
+    const [section, ...rest] = fieldPath.split('.');
+    const sectionSchema = CONFIG_SCHEMA_SHAPE[section];
+    if (!sectionSchema) {
+      return `Unknown config field path: "${fieldPath}"`;
+    }
+
+    if (rest.length === 0) {
+      bareSectionEntries.set(section, value);
+      continue;
+    }
+
+    mergeNestedPatches(touchedSection(section), buildNestedPatch(rest, value));
   }
-  // "interface.<permField>" with no sub-key → permission (blocks the whole field),
-  // EXCEPT dual-purpose runtime fields (e.g. schedules) whose bare top-level value
-  // is a runtime enable toggle, not a permission — those must pass through so admin
-  // field patches/tombstones can set or clear them (their .use/.create permission
-  // sub-keys are still blocked below).
-  if (parts.length === 2) {
-    return !RUNTIME_CONFIG_INTERFACE_FIELDS.has(parts[1]);
+
+  // Whole-section submissions must be valid on their own, even when YAML
+  // happens to supply a required value that the submission omitted.
+  for (const [section, value] of bareSectionEntries) {
+    const sectionSchema = CONFIG_SCHEMA_SHAPE[section];
+    sectionPatches.delete(section);
+
+    const result = sectionSchema.safeParse(value);
+    if (!result.success) {
+      return `Invalid value for "${section}": ${firstZodIssueMessage(result.error.issues)}`;
+    }
+    const stripped = firstStrippedInputPath(value, result.data, section);
+    if (stripped) {
+      return `Unknown config field path: "${stripped}"`;
+    }
   }
-  // "interface.<permField>.<subKey>" → only block if sub-key is a permission bit
-  return PERMISSION_SUB_KEYS.has(parts[2]);
+
+  for (const [section, patch] of sectionPatches) {
+    const resolved = resolvedConfig[SECTION_TO_APP_CONFIG_FIELD[section] ?? section];
+    const result = CONFIG_SCHEMA_SHAPE[section].safeParse(resolved);
+    if (!result.success) {
+      return `Invalid value for config section "${section}": ${firstZodIssueMessage(result.error.issues)}`;
+    }
+    const stripped =
+      Object.keys(patch).length > 0
+        ? firstStrippedInputPath(patch, result.data, section, true)
+        : null;
+    if (stripped) {
+      return `Unknown config field path: "${stripped}"`;
+    }
+  }
+  return null;
+}
+
+/** Validates a "replace"-mode atomic mutation's full overrides object against the librechat.yaml
+ * config schema. `.partial()` allows the sparse, section-at-a-time shape overrides always have —
+ * only sections actually present are checked. */
+function validateAtomicReplaceOverrides(overrides: Record<string, unknown>): string | null {
+  const result = configSchema.partial().strict().safeParse(overrides);
+  if (!result.success) {
+    return `Invalid config overrides: ${firstZodIssueMessage(result.error.issues)}`;
+  }
+  const stripped = firstStrippedInputPath(overrides, result.data);
+  if (stripped) {
+    return `Unknown config field path: "${stripped}"`;
+  }
+  return null;
+}
+
+/**
+ * Applies the same policies an import (`hasOverrides`) mutation enforces on
+ * its submitted overrides to a legacy revision's stored overrides before a
+ * restore is allowed to write them. Restoring an older revision must not be
+ * a side channel for reintroducing content the API would reject if it were
+ * submitted directly today — e.g. a schema constraint tightened since the
+ * revision was created, or a since-forbidden process-backed MCP server.
+ * Runs read-only against the data layer's already-sanitized overrides; it
+ * does not re-sanitize or otherwise change what gets persisted.
+ */
+function validateRestoredOverrides(
+  overrides: Record<string, unknown>,
+  tombstones: string[] = [],
+  yamlBaseline?: AppConfig,
+): string | null {
+  if (
+    hasProcessMCPServerConfig(overrides.mcpServers) ||
+    hasProcessMCPServerConfig(overrides.mcpConfig)
+  ) {
+    return PROCESS_MCP_CONFIG_ERROR;
+  }
+  if (hasLangfuseHeadersOverride(overrides)) {
+    return LANGFUSE_HEADERS_CONFIG_ERROR;
+  }
+  if (!yamlBaseline) {
+    return validateAtomicReplaceOverrides(overrides);
+  }
+  // Snapshots contain sparse DB overrides, not standalone YAML documents.
+  // Resolve only for validation; never persist inherited YAML in the snapshot.
+  const resolved = mergeConfigOverrides(yamlBaseline, [
+    { principalId: BASE_CONFIG_PRINCIPAL_ID, priority: 0, overrides, tombstones },
+  ]);
+  const sections = new Set([
+    ...Object.keys(overrides),
+    ...tombstones.map((path) => getTopLevelSection(path)),
+  ]);
+  const effectiveOverrides = Object.fromEntries(
+    [...sections].map((section) => [
+      section,
+      resolved[(SECTION_TO_APP_CONFIG_FIELD[section] ?? section) as keyof AppConfig],
+    ]),
+  );
+  return validateAtomicReplaceOverrides(effectiveOverrides);
 }
 
 /**
@@ -171,7 +583,7 @@ export interface AdminConfigDeps {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean },
+    options?: FindConfigByPrincipalOptions,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   upsertConfig: (
@@ -188,7 +600,7 @@ export interface AdminConfigDeps {
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
     fields: Record<string, unknown>,
-    priority: number,
+    priority?: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   tombstoneConfigField: (
@@ -196,7 +608,7 @@ export interface AdminConfigDeps {
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
     fieldPath: string,
-    priority: number,
+    priority?: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
   unsetConfigField: (
@@ -218,6 +630,31 @@ export interface AdminConfigDeps {
     session?: ClientSession,
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
+  mutateConfigWithRevision: (params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    principalModel: PrincipalModel;
+    expectedVersion: number | null;
+    op: ConfigMutationOp;
+    cause: ConfigRevisionCause;
+    actor: { actorId: string; actorEmail?: string; tenantId: string };
+    normalizeSecrets?: (overrides: Record<string, unknown>) => Record<string, unknown>;
+    trustedBasePrincipalSections?: string[];
+    validateRestoredOverrides?: (
+      overrides: Record<string, unknown>,
+      tombstones: string[],
+    ) => string | null;
+  }) => Promise<{
+    changed: boolean;
+    config: IConfig | null;
+    revision: ConfigRevisionSnapshot | null;
+  }>;
+  listConfigRevisions: (params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    tenantId: string;
+    limit?: number;
+  }) => Promise<ConfigRevisionListItem[]>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
@@ -236,6 +673,8 @@ export interface AdminConfigDeps {
     userId?: string;
     tenantId?: string;
     baseOnly?: boolean;
+    refresh?: boolean;
+    failClosed?: boolean;
   }) => Promise<AppConfig>;
   /** Invalidate all config-related caches after a mutation. */
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
@@ -271,6 +710,13 @@ function principalModel(type: PrincipalType): PrincipalModel {
   }
 }
 
+/**
+ * The capability principal is built with the request's *effective* tenant —
+ * the same one the mutation, the revision insert, and the epoch update run
+ * under. Resolving grants from `req.user.tenantId` while writing under the ALS
+ * tenant would let a deployment that resolves tenants server-side
+ * (`req.tenantId`) authorize in tenant A and persist in tenant B.
+ */
 function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   if (!req.user) {
     return null;
@@ -278,7 +724,7 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
   return {
     id: req.user.id ?? req.user._id?.toString() ?? '',
     role: req.user.role ?? '',
-    tenantId: (req.user as { tenantId?: string }).tenantId,
+    tenantId: getEffectiveTenantId(req),
   };
 }
 
@@ -316,6 +762,12 @@ const APP_CONFIG_FIELD_TO_SECTION: Readonly<Record<string, string>> = {
   turnstileConfig: 'turnstile',
   mcpConfig: 'mcpServers',
 };
+
+/** Inverse of `APP_CONFIG_FIELD_TO_SECTION`: canonical schema section name →
+ * the top-level key `getAppConfig`'s resolved payload actually uses. */
+const SECTION_TO_APP_CONFIG_FIELD: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(APP_CONFIG_FIELD_TO_SECTION).map(([field, section]) => [section, field]),
+);
 
 type ReadableSections = { broad: boolean; sections: ReadonlySet<string> };
 
@@ -405,20 +857,44 @@ function redactConfigForResponse(config: IConfig): IConfig {
 function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
   redactConfigSecrets(safeConfig);
+  redactConfigSecrets({ mcpServers: safeConfig.mcpConfig });
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
   }
   return safeConfig;
 }
 
+function redactRevisionForResponse(revision: ConfigRevisionSnapshot): ConfigRevisionSnapshot {
+  const safeRevision = JSON.parse(JSON.stringify(revision)) as ConfigRevisionSnapshot;
+  redactConfigSecrets(safeRevision.overrides);
+  return safeRevision;
+}
+
+/**
+ * Preserves omitted secrets across every fieldPath in one save's batch.
+ * `preserveConfigSecrets` is called once per fieldPath, so an mcpServers
+ * `__previousIdentity` hint on one fieldPath cannot, by itself, see whether a
+ * DIFFERENT fieldPath in this same batch collides with it (same origin
+ * claimed twice, a destination's own sub-keys disagreeing, or the claimed
+ * origin still present as itself elsewhere in the batch). `resolveMcpSecretHintBatch`
+ * scans the whole batch up front to catch exactly that, and its validated,
+ * ambiguity-free result is threaded into every per-fieldPath call below.
+ */
 function preservePatchedConfigSecretFields(
   fields: Record<string, unknown>,
   existingOverrides?: unknown,
+  resetPaths: readonly string[] = [],
 ): Record<string, unknown> {
   const result = { ...fields };
+  const validatedMcpOrigins = resolveMcpSecretHintBatch(fields, existingOverrides, resetPaths);
   for (const [fieldPath, value] of Object.entries(result)) {
     if (isConfigSecretPreservablePatch(fieldPath, value)) {
-      result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
+      result[fieldPath] = preserveConfigSecrets(
+        value,
+        existingOverrides,
+        fieldPath,
+        validatedMcpOrigins,
+      );
     }
   }
   return result;
@@ -429,6 +905,7 @@ function preservePatchedConfigSecretFields(
 export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
   getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  listConfigRevisions: (req: ServerRequest, res: Response) => Promise<Response>;
   getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
   upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   patchConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -436,6 +913,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   deleteConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
   toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  mutateConfigAtomic: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     listAllConfigs,
@@ -446,6 +924,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     unsetConfigField,
     deleteConfig,
     toggleConfigActive,
+    mutateConfigWithRevision,
+    listConfigRevisions: readConfigRevisions,
     hasConfigCapability,
     hasAnyConfigReadAccess = async () => false,
     getReadableConfigSections = async (u, sections) => {
@@ -490,8 +970,32 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
   }
 
   /**
-   * GET /base — Return the raw AppConfig (YAML + DB base merged).
-   * This is the full config structure admins can edit, NOT the startup payload.
+   * GET /base — Return the raw AppConfig (YAML + DB base merged), and, unless
+   * `baseOnly`, the raw base document's `overrides`/`configVersion` too.
+   *
+   * Both come from this one request, and `refresh: true` bypasses
+   * `getAppConfig`'s per-tenant override-merge cache, because that cache
+   * alone can't be trusted to agree with a version read fetched independently:
+   * most mutation handlers fire off `invalidateConfigCaches` without awaiting
+   * it, and the cache itself is process-local with no cross-pod invalidation,
+   * so a merge cached on this process could still predate a write whose
+   * bumped version a fresh Mongo read would already see. Reading the raw doc
+   * *before* the (now always-fresh) merge additionally means that if a
+   * mutation still lands in the remaining gap between these two calls,
+   * `dbConfigVersion` can only end up older than what `config` reflects, never
+   * newer — the safe direction, since a CAS write built on that pairing either
+   * matches the still-current version or gets a 409, instead of silently
+   * overwriting a change `config`'s content already includes.
+   *
+   * `failClosed: true` closes the remaining gap: without it, a transient
+   * failure inside `getApplicableConfigs` makes `getAppConfig` swallow the
+   * error and fall back to the YAML-only base — `config` would then be
+   * missing every DB override while `dbConfigVersion` still reports the true,
+   * unrelated-to-this-error current version. An edit built on that response
+   * (e.g. adding one array entry to what looks like an empty list) would pass
+   * CAS and replace the real stored array. Propagating the failure into the
+   * handler's 500 instead is what keeps `config` and `dbConfigVersion`
+   * meaningfully paired on error paths too, not just on the success path.
    */
   async function getBaseConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
@@ -509,18 +1013,92 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
+      const requestTenantId = user.tenantId ?? '';
+      const rawBase = baseOnly
+        ? null
+        : await findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
+            tenantId: requestTenantId,
+            includeInactive: true,
+          });
+
       const appConfig = await getAppConfig({
-        tenantId: user.tenantId,
+        tenantId: requestTenantId,
         baseOnly,
+        refresh: !baseOnly,
+        failClosed: true,
       });
-      const sections = collectAppConfigSections(appConfig) as ConfigSection[];
-      const readable = await getReadableConfigSections(user, sections);
+
+      const sections = new Set<string>(collectAppConfigSections(appConfig));
+      if (rawBase) {
+        for (const section of collectConfigSections(rawBase)) {
+          sections.add(section);
+        }
+      }
+      const readable = await getReadableConfigSections(user, [...sections] as ConfigSection[]);
       const filteredAppConfig = filterAppConfigForReadAccess(appConfig, readable);
 
-      return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
+      let dbOverrides: Partial<TCustomConfig> | undefined;
+      let dbConfigVersion: number | null = null;
+      let dbIsActive: boolean | null = null;
+      if (rawBase) {
+        const safeRawBase = redactConfigForResponse(
+          filterConfigDocForReadAccess(rawBase, readable),
+        );
+        dbOverrides = safeRawBase.overrides;
+        dbConfigVersion = safeRawBase.configVersion ?? 0;
+        dbIsActive = safeRawBase.isActive ?? true;
+      }
+
+      return res.status(200).json({
+        config: redactAppConfigForResponse(filteredAppConfig),
+        effectiveTenantId: requestTenantId,
+        ...(baseOnly ? {} : { dbOverrides, dbConfigVersion, dbIsActive }),
+      });
     } catch (error) {
       logger.error('[adminConfig] getBaseConfig error:', error);
       return res.status(500).json({ error: 'Failed to get base config' });
+    }
+  }
+
+  /**
+   * GET /:principalType/:principalId/revisions — List rollback points through
+   * the authenticated backend tenant context. The admin panel must not derive
+   * this scope from its independently cached session user or query MongoDB
+   * directly, because either can disagree with the tenant that a subsequent
+   * atomic mutation will use.
+   */
+  async function listConfigRevisions(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+      if (principalType !== PrincipalType.ROLE || principalId !== BASE_CONFIG_PRINCIPAL_ID) {
+        return res
+          .status(400)
+          .json({ error: 'Config revision history is only available for the base configuration' });
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      if (!(await hasCapability(user, SystemCapabilities.MANAGE_CONFIGS))) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const revisions = await readConfigRevisions({
+        principalType,
+        principalId,
+        tenantId: user.tenantId ?? '',
+      });
+      return res.status(200).json({ revisions, effectiveTenantId: user.tenantId ?? '' });
+    } catch (error) {
+      logger.error('[adminConfig] listConfigRevisions error:', error);
+      return res.status(500).json({ error: 'Failed to list config revisions' });
     }
   }
 
@@ -579,6 +1157,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const { overrides, priority } = req.body as {
         overrides?: Partial<TCustomConfig>;
         priority?: number;
@@ -611,10 +1193,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-
       const hasAssignConfigs =
         hasBroadManage ||
         (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
@@ -623,17 +1201,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const filteredOverrides = {
-        ...(overrides as Record<string, unknown>),
-      } as Partial<TCustomConfig>;
-      for (const section of BASE_ONLY_OVERRIDE_SECTIONS) {
-        if (section in filteredOverrides) {
-          delete (filteredOverrides as Record<string, unknown>)[section];
-          logger.warn(
-            `[adminConfig] Stripping base-only config section "${section}" - configure it in librechat.yaml instead`,
-          );
-        }
-      }
+      const filteredOverrides = sanitizeConfigOverrides(rawOverrides);
       for (const key of Object.keys(filteredOverrides)) {
         const section = getTopLevelSection(key);
         if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
@@ -641,45 +1209,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           logger.warn(
             `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
           );
-        }
-      }
-      const iface = (overrides as Record<string, unknown>).interface;
-      if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
-        const filteredIface: Record<string, unknown> = {};
-        for (const [field, rawVal] of Object.entries(iface as Record<string, unknown>)) {
-          const val = normalizeRuntimeInterfaceValue(field, rawVal);
-          if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
-            filteredIface[field] = val;
-          } else if (val != null && typeof val === 'object' && !Array.isArray(val)) {
-            // Composite permission field (e.g. mcpServers): strip permission
-            // sub-keys but preserve UI-only sub-keys like placeholder/trustCheckbox.
-            const uiOnly: Record<string, unknown> = {};
-            for (const [sub, subVal] of Object.entries(val as Record<string, unknown>)) {
-              if (!PERMISSION_SUB_KEYS.has(sub)) {
-                uiOnly[sub] = subVal;
-              } else {
-                logger.warn(
-                  `[adminConfig] Stripping interface permission sub-field "${field}.${sub}" — use role permissions instead`,
-                );
-              }
-            }
-            if (Object.keys(uiOnly).length > 0) {
-              filteredIface[field] = uiOnly;
-            }
-          } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
-            // Dual-purpose field: the boolean form is a runtime disable, not a
-            // permission toggle, so preserve it (e.g. schedules: false).
-            filteredIface[field] = val;
-          } else {
-            logger.warn(
-              `[adminConfig] Stripping interface permission field "${field}" — use role permissions instead`,
-            );
-          }
-        }
-        if (Object.keys(filteredIface).length > 0) {
-          (filteredOverrides as Record<string, unknown>).interface = filteredIface;
-        } else {
-          delete (filteredOverrides as Record<string, unknown>).interface;
         }
       }
 
@@ -715,33 +1244,40 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const needsExistingSecrets = getConfigSecretSections().some((section) =>
+      // mcpServers has no entry in the CONFIG_SECRET_FIELDS/ARRAY_SECRET_FIELDS
+      // registry `getConfigSecretSections()` is derived from — its secrets
+      // are dynamic (admin-named servers), matched by shape rather than a
+      // fixed path. Checked explicitly here so an mcpServers-only whole
+      // replacement still fetches the existing document to preserve omitted
+      // secrets, instead of silently dropping them.
+      const needsExistingSecrets =
+        getConfigSecretSections().some((section) =>
+          isConfigSecretPreservablePatch(
+            section,
+            (filteredOverrides as Record<string, unknown>)[section],
+          ),
+        ) ||
         isConfigSecretPreservablePatch(
-          section,
-          (filteredOverrides as Record<string, unknown>)[section],
-        ),
+          'mcpServers',
+          (filteredOverrides as Record<string, unknown>).mcpServers,
+        );
+      const existingConfig = needsExistingSecrets
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
+      const existingConflictError = getArrayExistingIdentityConflictError(
+        '',
+        filteredOverrides,
+        existingConfig?.overrides,
       );
-      const needsProtectedBaseSections =
-        principalId === BASE_CONFIG_PRINCIPAL_ID &&
-        (overrideSections.length > 0 || priority != null);
-      const existingConfig =
-        needsExistingSecrets || needsProtectedBaseSections
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
+      if (existingConflictError) {
+        return res.status(400).json({ error: existingConflictError });
+      }
       const preservedOverrides = preserveConfigSecrets(
         encryptedOverrides,
         existingConfig?.overrides,
+        '',
+        resolveMcpSecretHintBatchForWholeDocument(encryptedOverrides),
       );
-      if (needsProtectedBaseSections) {
-        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
-          const storedSection = (
-            existingConfig?.overrides as Record<string, unknown> | undefined
-          )?.[section];
-          if (storedSection !== undefined) {
-            (preservedOverrides as Record<string, unknown>)[section] = storedSection;
-          }
-        }
-      }
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -781,16 +1317,27 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
-      const { entries, priority } = req.body as {
-        entries?: Array<{ fieldPath: string; value: unknown }>;
-        priority?: number;
-      };
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
+      const rawBody: unknown = req.body;
+      if (!isPlainObject(rawBody)) {
+        return res.status(400).json({ error: 'request body must be a JSON object' });
+      }
+
+      const { priority } = rawBody;
+      const parsedEntries = parseAtomicFieldEntries(rawBody.entries);
+      if (!parsedEntries.ok) {
+        return res.status(400).json({ error: parsedEntries.error });
+      }
+      const entries = parsedEntries.entries;
 
       if (priority != null && (typeof priority !== 'number' || priority < 0)) {
         return res.status(400).json({ error: 'priority must be a non-negative number' });
       }
 
-      if (!Array.isArray(entries) || entries.length === 0) {
+      if (entries.length === 0) {
         return res.status(400).json({ error: 'entries array is required and must not be empty' });
       }
 
@@ -826,6 +1373,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
           });
         }
+        const indexedErr = indexedArrayPathError(entry.fieldPath);
+        if (indexedErr) {
+          return res.status(400).json({ error: indexedErr });
+        }
       }
 
       const user = getCapabilityUser(req);
@@ -839,9 +1390,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           value: normalizeInterfaceFieldPatch(entry.fieldPath, entry.value),
         }))
         .filter((entry) => {
-          if (isBaseOnlyFieldPath(entry.fieldPath)) {
+          if (isBlockedFieldPath(entry.fieldPath)) {
             logger.warn(
-              `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+              `[adminConfig] Stripping protected config field "${entry.fieldPath}" — use canonical YAML UI fields only`,
             );
             return false;
           }
@@ -851,20 +1402,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             );
             return false;
           }
-          if (isInterfacePermissionPath(entry.fieldPath)) {
-            logger.warn(
-              `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
-            );
-            return false;
-          }
           return true;
         });
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       if (validEntries.length === 0) {
         if (!hasBroadManage) {
@@ -901,15 +1442,24 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           `[adminConfig] Ignoring caller-supplied priority on section-scoped patch to ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
         );
       }
-      const requestedPriority = hasBroadManage ? priority : undefined;
+      const requestedPriority = hasBroadManage ? (priority as number | undefined) : undefined;
 
       const hasObjectValuedSecretPatch = Object.entries(fields).some(([fieldPath, value]) =>
         isConfigSecretPreservablePatch(fieldPath, value),
       );
-      const existing =
-        requestedPriority == null || hasObjectValuedSecretPatch
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
+      const existing = hasObjectValuedSecretPatch
+        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+        : null;
+      for (const [fieldPath, fieldValue] of Object.entries(fields)) {
+        const existingConflictError = getArrayExistingIdentityConflictError(
+          fieldPath,
+          fieldValue,
+          existing?.overrides,
+        );
+        if (existingConflictError) {
+          return res.status(400).json({ error: existingConflictError });
+        }
+      }
       const encryptedFields = encryptConfigSecretFields(fields);
       const preservedFields = preservePatchedConfigSecretFields(
         encryptedFields,
@@ -921,7 +1471,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalId,
         principalModel(principalType),
         preservedFields,
-        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        requestedPriority,
       );
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
@@ -948,6 +1498,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const { fieldPath, priority } = req.body as {
         fieldPath?: string;
         priority?: number;
@@ -968,6 +1522,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (secretInputError) {
         return res.status(400).json({ error: secretInputError });
       }
+      const tombstoneIndexedErr = indexedArrayPathError(fieldPath);
+      if (tombstoneIndexedErr) {
+        return res.status(400).json({ error: tombstoneIndexedErr });
+      }
 
       const user = getCapabilityUser(req);
       if (!user) {
@@ -978,10 +1536,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-
       if (
         !hasBroadManage &&
         !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
@@ -991,16 +1545,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      if (isBaseOnlyFieldPath(fieldPath)) {
+      if (isBlockedFieldPath(fieldPath)) {
         logger.warn(
-          `[adminConfig] Ignoring tombstone for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
-        );
-        return res.status(200).json({ message: 'No actionable field path provided' });
-      }
-
-      if (isInterfacePermissionPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,
+          `[adminConfig] Ignoring tombstone for protected config field "${fieldPath}" — use canonical YAML UI fields only`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -1018,11 +1565,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       const requestedPriority = hasBroadManage ? priority : undefined;
 
-      const existing =
-        requestedPriority == null
-          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-          : null;
-
       let config: IConfig | null = null;
       for (const path of getConfigSecretMutationPaths(fieldPath)) {
         const fieldConfig = await writeConfigTombstone(
@@ -1030,7 +1572,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           principalId,
           principalModel(principalType),
           path,
-          requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+          requestedPriority,
         );
         if (fieldConfig) {
           config = fieldConfig;
@@ -1060,6 +1602,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const fieldPath = req.query.fieldPath as string | undefined;
 
       if (!fieldPath || typeof fieldPath !== 'string') {
@@ -1073,6 +1619,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (secretInputError) {
         return res.status(400).json({ error: secretInputError });
       }
+      const unsetIndexedErr = indexedArrayPathError(fieldPath);
+      if (unsetIndexedErr) {
+        return res.status(400).json({ error: unsetIndexedErr });
+      }
 
       const user = getCapabilityUser(req);
       if (!user) {
@@ -1083,10 +1633,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
-
       if (
         !hasBroadManage &&
         !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
@@ -1096,9 +1642,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         });
       }
 
-      if (isBaseOnlyFieldPath(fieldPath)) {
+      if (isBlockedFieldPath(fieldPath)) {
         logger.warn(
-          `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+          `[adminConfig] Ignoring delete for protected config field "${fieldPath}" — use canonical YAML UI fields only`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -1106,13 +1652,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
         logger.warn(
           `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
-        );
-        return res.status(200).json({ message: 'No actionable field path provided' });
-      }
-
-      if (isInterfacePermissionPath(fieldPath)) {
-        logger.warn(
-          `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -1152,16 +1691,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const user = getCapabilityUser(req);
       if (!user) {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       const allowed =
         hasBroadManage ||
@@ -1209,6 +1748,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
       }
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID) {
+        return rejectLegacyBaseMutation(res);
+      }
+
       const { isActive } = req.body as { isActive?: boolean };
       if (typeof isActive !== 'boolean') {
         return res.status(400).json({ error: 'isActive boolean is required' });
@@ -1220,10 +1763,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
-
-      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
-        return res.status(403).json({ error: 'Insufficient permissions' });
-      }
 
       const allowed =
         hasBroadManage ||
@@ -1257,9 +1796,532 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     }
   }
 
+  /**
+   * POST /:principalType/:principalId/atomic
+   * Compare-and-set mutation that snapshots the predecessor and inserts a finalized
+   * config revision in the same Mongo transaction, then invalidates caches.
+   */
+  async function mutateConfigAtomic(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+      if (principalType !== PrincipalType.ROLE || principalId !== BASE_CONFIG_PRINCIPAL_ID) {
+        return res.status(400).json({
+          error: 'Atomic config revisions are only supported for the base configuration',
+        });
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      // `user.tenantId` is already the effective request tenant, so the
+      // capability checks above, the config write (Mongoose, ALS-scoped), and
+      // the raw revision/epoch read/write (explicit tenant filter) all resolve
+      // to the same scope by construction.
+      const requestTenantId = user.tenantId ?? '';
+
+      const rawBody: unknown = req.body;
+      if (!isPlainObject(rawBody)) {
+        return res.status(400).json({ error: 'request body must be a JSON object' });
+      }
+      const body = rawBody;
+
+      const propertyValidation = validateAtomicMutationProperties(body);
+      if (!propertyValidation.ok) {
+        return res.status(400).json({ error: propertyValidation.error });
+      }
+
+      const { expectedVersion, priority } = body;
+      if (
+        expectedVersion != null &&
+        (typeof expectedVersion !== 'number' ||
+          !Number.isInteger(expectedVersion) ||
+          expectedVersion < 0)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'expectedVersion must be a non-negative integer or null' });
+      }
+      if (!('expectedVersion' in body)) {
+        return res.status(400).json({ error: 'expectedVersion is required' });
+      }
+      const requestedVersion = (expectedVersion as number | null | undefined) ?? null;
+      if (typeof body.expectedTenantId !== 'string') {
+        return res.status(400).json({ error: 'expectedTenantId is required' });
+      }
+      if (body.expectedTenantId !== requestTenantId) {
+        return res.status(409).json({
+          error: 'Tenant context changed',
+          expectedTenantId: body.expectedTenantId,
+          currentTenantId: requestTenantId,
+        });
+      }
+      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
+        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      }
+
+      const parsedEntries = parseAtomicFieldEntries(body.entries);
+      if (!parsedEntries.ok) {
+        return res.status(400).json({ error: parsedEntries.error });
+      }
+      const parsedResets = parseAtomicResetPaths(body.resetPaths);
+      if (!parsedResets.ok) {
+        return res.status(400).json({ error: parsedResets.error });
+      }
+      const entries = parsedEntries.entries;
+      const rawResetPaths = parsedResets.resetPaths;
+      if (entries.length + rawResetPaths.length > MAX_PATCH_MUTATIONS) {
+        return res.status(400).json({
+          error: `combined entries and resetPaths exceed maximum of ${MAX_PATCH_MUTATIONS}`,
+        });
+      }
+
+      const CAUSES = new Set(['save', 'import', 'reset', 'restore']);
+      if (body.cause != null && (typeof body.cause !== 'string' || !CAUSES.has(body.cause))) {
+        return res.status(400).json({ error: 'cause must be one of save, import, reset, restore' });
+      }
+
+      const hasEntries = entries.length > 0;
+      const hasResets = rawResetPaths.length > 0;
+      const hasOverrides = isPlainObject(body.overrides);
+      const deleteDocument = body.deleteDocument === true;
+      const restoreRevisionId =
+        typeof body.restoreRevisionId === 'string' && body.restoreRevisionId.length > 0
+          ? body.restoreRevisionId
+          : undefined;
+      const hasActiveMutation = typeof body.isActive === 'boolean';
+      const modeCount =
+        Number(hasEntries || hasResets) +
+        Number(hasOverrides) +
+        Number(deleteDocument) +
+        Number(Boolean(restoreRevisionId)) +
+        Number(hasActiveMutation);
+      if (modeCount !== 1) {
+        if (
+          !hasEntries &&
+          !hasResets &&
+          !hasOverrides &&
+          !deleteDocument &&
+          !restoreRevisionId &&
+          !hasActiveMutation
+        ) {
+          return res.status(400).json({
+            error:
+              'Provide resetPaths, entries, overrides, deleteDocument, restoreRevisionId, or isActive',
+          });
+        }
+        if (
+          deleteDocument &&
+          (hasEntries || hasResets || hasOverrides || restoreRevisionId || hasActiveMutation)
+        ) {
+          return res
+            .status(400)
+            .json({ error: 'deleteDocument cannot be combined with field mutations' });
+        }
+        if (hasOverrides && (hasEntries || hasResets || restoreRevisionId || hasActiveMutation)) {
+          return res
+            .status(400)
+            .json({ error: 'overrides cannot be combined with entries or resetPaths' });
+        }
+        if (
+          restoreRevisionId &&
+          (hasEntries || hasResets || hasOverrides || deleteDocument || hasActiveMutation)
+        ) {
+          return res
+            .status(400)
+            .json({ error: 'restoreRevisionId cannot be combined with other mutations' });
+        }
+        if (hasActiveMutation && (hasEntries || hasResets || hasOverrides || deleteDocument)) {
+          return res
+            .status(400)
+            .json({ error: 'isActive cannot be combined with other mutations' });
+        }
+      }
+
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+      if (deleteDocument || hasOverrides || restoreRevisionId || hasActiveMutation) {
+        if (!hasBroadManage) {
+          return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+      }
+
+      let op: ConfigMutationOp;
+      if (hasActiveMutation) {
+        op = { kind: 'active', isActive: body.isActive as boolean };
+      } else if (restoreRevisionId) {
+        op = { kind: 'restore', revisionId: restoreRevisionId };
+      } else if (deleteDocument) {
+        op = { kind: 'delete' };
+      } else if (hasOverrides) {
+        const rawOverrides = body.overrides as Record<string, unknown>;
+        if (
+          hasProcessMCPServerConfig(rawOverrides.mcpServers) ||
+          hasProcessMCPServerConfig(rawOverrides.mcpConfig)
+        ) {
+          return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+        }
+        if (hasLangfuseHeadersOverride(rawOverrides)) {
+          return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+        }
+        const sanitizedOverrides = sanitizeConfigOverrides(rawOverrides) as Record<string, unknown>;
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          delete sanitizedOverrides[section];
+        }
+        for (const section of getConfigSecretSections()) {
+          const secretInputError = getConfigSecretInputError(section, sanitizedOverrides[section]);
+          if (secretInputError) {
+            return res.status(400).json({ error: secretInputError });
+          }
+        }
+        const existing = await findConfigByPrincipal(principalType, principalId, {
+          includeInactive: true,
+          tenantId: requestTenantId,
+        });
+        const versionConflictResponse = rejectConfigVersionConflict(
+          res,
+          requestedVersion,
+          existing,
+        );
+        if (versionConflictResponse) {
+          return versionConflictResponse;
+        }
+        const existingConflictError = getArrayExistingIdentityConflictError(
+          '',
+          sanitizedOverrides,
+          existing?.overrides,
+        );
+        if (existingConflictError) {
+          return res.status(400).json({ error: existingConflictError });
+        }
+        const encryptedOverrides = encryptConfigSecrets(sanitizedOverrides);
+        const preservedOverrides = preserveConfigSecrets(
+          encryptedOverrides,
+          existing?.overrides,
+          '',
+          resolveMcpSecretHintBatchForWholeDocument(encryptedOverrides),
+        );
+        const replaceValidationError = validateAtomicReplaceOverrides(preservedOverrides);
+        if (replaceValidationError) {
+          return res.status(400).json({ error: replaceValidationError });
+        }
+        op = {
+          kind: 'replace',
+          overrides: preservedOverrides,
+          priority: hasBroadManage
+            ? ((priority as number | null | undefined) ??
+              existing?.priority ??
+              DEFAULT_BASE_PRIORITY)
+            : DEFAULT_BASE_PRIORITY,
+        };
+      } else {
+        if (entries.length > MAX_PATCH_ENTRIES) {
+          return res
+            .status(400)
+            .json({ error: `entries array exceeds maximum of ${MAX_PATCH_ENTRIES}` });
+        }
+        for (const entry of entries) {
+          if (!isValidFieldPath(entry.fieldPath)) {
+            return res
+              .status(400)
+              .json({ error: `Invalid or unsafe field path: ${entry.fieldPath}` });
+          }
+          if (
+            !isBlockedFieldPath(entry.fieldPath) &&
+            !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath)) &&
+            !isConfigFieldPath(entry.fieldPath)
+          ) {
+            return res.status(400).json({ error: `Unknown config field path: ${entry.fieldPath}` });
+          }
+          if (isProcessMCPServerFieldPath(entry.fieldPath, entry.value)) {
+            return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+          }
+          if (isLangfuseHeadersFieldPath(entry.fieldPath)) {
+            return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+          }
+          if (isConfigSecretDescendantPath(entry.fieldPath)) {
+            return res
+              .status(400)
+              .json({ error: `Cannot patch inside protected secret path: ${entry.fieldPath}` });
+          }
+          const secretInputError = getConfigSecretInputError(entry.fieldPath, entry.value);
+          if (secretInputError) {
+            return res.status(400).json({ error: secretInputError });
+          }
+          if (Array.isArray(entry.value) && isConfigSecretAncestorPath(entry.fieldPath)) {
+            return res.status(400).json({
+              error: `Cannot patch protected secret ancestor as an array: ${entry.fieldPath}`,
+            });
+          }
+          const indexedErr = indexedArrayPathError(entry.fieldPath);
+          if (indexedErr) {
+            return res.status(400).json({ error: indexedErr });
+          }
+        }
+        for (const path of rawResetPaths) {
+          if (!isValidFieldPath(path)) {
+            return res.status(400).json({ error: `Invalid or unsafe field path: ${path}` });
+          }
+          if (
+            !isBlockedFieldPath(path) &&
+            !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(path)) &&
+            !isConfigFieldPath(path)
+          ) {
+            return res.status(400).json({ error: `Unknown config field path: ${path}` });
+          }
+          if (isProcessMCPServerFieldPath(path, undefined)) {
+            return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+          }
+          if (isLangfuseHeadersFieldPath(path)) {
+            return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+          }
+          const secretInputError = getConfigSecretInputError(path, undefined);
+          if (secretInputError) {
+            return res.status(400).json({ error: secretInputError });
+          }
+          const indexedErr = indexedArrayPathError(path);
+          if (indexedErr) {
+            return res.status(400).json({ error: indexedErr });
+          }
+        }
+
+        const validResets = canonicalizeResetPaths(
+          rawResetPaths
+            .filter(
+              (path) =>
+                !isBlockedFieldPath(path) &&
+                !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(path)),
+            )
+            .flatMap(getConfigSecretMutationPaths),
+        );
+        const seen = new Set<string>();
+        const rawFields: Record<string, unknown> = {};
+        for (const entry of entries.map((item) => ({
+          ...item,
+          value: normalizeInterfaceFieldPatch(item.fieldPath, item.value),
+        }))) {
+          if (isBlockedFieldPath(entry.fieldPath)) {
+            continue;
+          }
+          if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
+            continue;
+          }
+          if (seen.has(entry.fieldPath)) {
+            return res.status(400).json({ error: `Duplicate fieldPath: ${entry.fieldPath}` });
+          }
+          let overlappingPath: string | null = null;
+          for (const path of seen) {
+            if (entry.fieldPath.startsWith(`${path}.`) || path.startsWith(`${entry.fieldPath}.`)) {
+              overlappingPath = path;
+              break;
+            }
+          }
+          if (overlappingPath) {
+            return res.status(400).json({
+              error: `Overlapping fieldPath entries are not allowed: ${overlappingPath} and ${entry.fieldPath}`,
+            });
+          }
+          seen.add(entry.fieldPath);
+          rawFields[entry.fieldPath] = entry.value;
+        }
+
+        for (const fieldPath of Object.keys(rawFields)) {
+          const overlappingReset = validResets.find((resetPath) =>
+            fieldPathsOverlap(fieldPath, resetPath),
+          );
+          if (overlappingReset) {
+            return res.status(400).json({
+              error:
+                'resetPaths and entries must not overlap: ' +
+                `${overlappingReset} and ${fieldPath}`,
+            });
+          }
+        }
+
+        const requestedSections = [
+          ...new Set([
+            ...Object.keys(rawFields).map((fieldPath) => getTopLevelSection(fieldPath)),
+            ...validResets.map((path) => getTopLevelSection(path)),
+          ]),
+        ];
+
+        if (!hasBroadManage && requestedSections.length > 0) {
+          const requestedAllowed = await Promise.all(
+            requestedSections.map((section) =>
+              hasConfigCapability(user, section as ConfigSection, 'manage'),
+            ),
+          );
+          const requestedDenied = requestedSections.find((_, i) => !requestedAllowed[i]);
+          if (requestedDenied) {
+            return res
+              .status(403)
+              .json({ error: `Insufficient permissions for config section: ${requestedDenied}` });
+          }
+        }
+        if (!hasBroadManage && requestedSections.length === 0) {
+          return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+
+        const existing = await findConfigByPrincipal(principalType, principalId, {
+          includeInactive: true,
+          tenantId: requestTenantId,
+        });
+        const versionConflictResponse = rejectConfigVersionConflict(
+          res,
+          requestedVersion,
+          existing,
+        );
+        if (versionConflictResponse) {
+          return versionConflictResponse;
+        }
+        for (const [fieldPath, fieldValue] of Object.entries(rawFields)) {
+          const existingConflictError = getArrayExistingIdentityConflictError(
+            fieldPath,
+            fieldValue,
+            existing?.overrides,
+          );
+          if (existingConflictError) {
+            return res.status(400).json({ error: existingConflictError });
+          }
+        }
+        const fields = preservePatchedConfigSecretFields(
+          encryptConfigSecretFields(rawFields),
+          existing?.overrides,
+          validResets,
+        );
+
+        const yamlBaseline = getAppConfig
+          ? ((await getAppConfig({
+              tenantId: requestTenantId,
+              baseOnly: true,
+            })) as unknown as Record<string, unknown>)
+          : null;
+        const fieldsValidationError = validateAtomicFieldValues(
+          fields,
+          validResets,
+          existing,
+          yamlBaseline,
+        );
+        if (fieldsValidationError) {
+          return res.status(400).json({ error: fieldsValidationError });
+        }
+
+        if (Object.keys(fields).length === 0 && validResets.length === 0) {
+          return res.status(200).json({ message: 'No actionable field entries provided' });
+        }
+
+        op = {
+          kind: 'fields',
+          resetPaths: validResets,
+          fields,
+          priority: hasBroadManage
+            ? ((priority as number | null | undefined) ??
+              existing?.priority ??
+              DEFAULT_BASE_PRIORITY)
+            : // A section-scoped caller's submitted priority is untrusted and
+              // discarded above, but falling back to DEFAULT_PRIORITY (10) for a
+              // brand-new __base__ document ties it with the default role
+              // profile priority. Resolution has no tie-breaker for equal
+              // priorities, so the base config — which must apply before every
+              // more specific profile — could end up applied after one instead
+              // and overwrite it. Base config has no more-general layer beneath
+              // it, so 0 is always correct for a first-ever base document.
+              (existing?.priority ?? DEFAULT_BASE_PRIORITY),
+        };
+      }
+
+      const cause: ConfigRevisionCause = (() => {
+        if (op.kind === 'restore') {
+          return 'restore';
+        }
+        if (op.kind === 'delete') {
+          return 'reset';
+        }
+        if (op.kind === 'active') {
+          return 'save';
+        }
+        if (op.kind === 'replace') {
+          return 'import';
+        }
+        return Object.keys(op.fields).length === 0 ? 'reset' : 'save';
+      })();
+
+      const restoreBaseline = restoreRevisionId
+        ? await getAppConfig?.({ tenantId: requestTenantId, baseOnly: true })
+        : undefined;
+      const { config, revision, changed } = await mutateConfigWithRevision({
+        principalType,
+        principalId,
+        principalModel: principalModel(principalType),
+        expectedVersion: requestedVersion,
+        op,
+        cause,
+        actor: {
+          actorId: user.id,
+          actorEmail: (req.user as { email?: string } | undefined)?.email,
+          tenantId: requestTenantId,
+        },
+        normalizeSecrets: encryptLegacyPlaintextConfigSecrets,
+        validateRestoredOverrides: (overrides, tombstones) =>
+          validateRestoredOverrides(overrides, tombstones, restoreBaseline),
+      });
+
+      try {
+        await invalidateConfigCaches?.(requestTenantId);
+      } catch (err) {
+        logger.error('[adminConfig] Cache invalidation failed after atomic mutate:', err);
+      }
+
+      if (!changed || revision == null) {
+        return res.status(200).json({
+          changed: false,
+          configVersion: null,
+          revisionId: null,
+        });
+      }
+
+      if (!hasBroadManage) {
+        return res.status(200).json({
+          changed: true,
+          configVersion: config?.configVersion ?? null,
+          revisionId: revision.id,
+        });
+      }
+      return res.status(200).json({
+        changed: true,
+        config: config ? redactConfigForResponse(config) : config,
+        revision: redactRevisionForResponse(revision),
+      });
+    } catch (error) {
+      if (isConfigVersionConflict(error)) {
+        return res.status(409).json({
+          error: 'Config version conflict',
+          currentVersion: error.currentVersion,
+        });
+      }
+      if (isConfigRevisionNotFound(error)) {
+        return res.status(404).json({ error: 'Revision not found' });
+      }
+      if (isRestoreValidationError(error)) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (isTransactionRequired(error)) {
+        return res.status(503).json({ error: (error as Error).message });
+      }
+      logger.error('[adminConfig] mutateConfigAtomic error:', error);
+      return res.status(500).json({ error: 'Failed to mutate config' });
+    }
+  }
+
   return {
     listConfigs,
     getBaseConfig,
+    listConfigRevisions,
     getConfig,
     upsertConfigOverrides,
     patchConfigField,
@@ -1267,5 +2329,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfigField,
     deleteConfigOverrides,
     toggleConfig,
+    mutateConfigAtomic,
   };
 }

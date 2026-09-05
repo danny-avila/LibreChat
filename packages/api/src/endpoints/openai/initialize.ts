@@ -12,6 +12,7 @@ import {
   checkUserKeyExpiry,
   getAzureCredentials,
 } from '~/utils';
+import { resolveConfigSecret } from '~/admin/secrets';
 import { resolveEndpointRuntime } from '~/types';
 import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
@@ -136,8 +137,10 @@ export async function initializeOpenAI(
       clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 
-    apiKey = azureOptions.azureOpenAIApiKey;
-    clientOptions.azure = !isServerless ? azureOptions : undefined;
+    apiKey = resolveConfigSecret(azureOptions.azureOpenAIApiKey) ?? '';
+    clientOptions.azure = !isServerless
+      ? { ...azureOptions, azureOpenAIApiKey: apiKey }
+      : undefined;
 
     if (isServerless) {
       clientOptions.defaultQuery = azureOptions.azureOpenAIApiVersion

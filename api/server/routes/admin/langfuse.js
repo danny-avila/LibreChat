@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminLangfuseHandlers } = require('@librechat/api');
+const { createAdminLangfuseHandlers, getEffectiveTenantId } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   hasConfigCapability,
@@ -20,10 +20,14 @@ async function requireLangfuseManage(req, res, next) {
     if (!id) {
       return res.status(401).json({ message: 'Authentication required' });
     }
+    // The effective request tenant, not the raw user claim — `updateConnection`
+    // writes the config, revision, and epoch under the same value, so checking
+    // grants against `req.user.tenantId` could authorize a different tenant
+    // than the one written.
     const user = {
       id,
       role: req.user.role ?? '',
-      tenantId: req.user.tenantId,
+      tenantId: getEffectiveTenantId(req),
       idOnTheSource: req.user.idOnTheSource ?? null,
     };
     if (await hasConfigCapability(user, 'langfuse')) {
@@ -37,8 +41,7 @@ async function requireLangfuseManage(req, res, next) {
 
 const handlers = createAdminLangfuseHandlers({
   findConfigByPrincipal: db.findConfigByPrincipal,
-  patchConfigFields: db.patchConfigFields,
-  toggleConfigActive: db.toggleConfigActive,
+  mutateConfigWithRevision: db.mutateConfigWithRevision,
   getMessages: db.getMessages,
   invalidateConfigCaches,
 });

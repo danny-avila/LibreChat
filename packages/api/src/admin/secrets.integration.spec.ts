@@ -161,6 +161,10 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
 ];
 
+const GENERIC_CONFIG_SECRET_FIELD_CASES = SECRET_FIELD_CASES.filter(
+  ({ section }) => section !== 'langfuse',
+);
+
 /** Fields whose values conventionally hold `${ENV_VAR}` placeholder references. */
 const PLACEHOLDER_CASES = [
   { path: 'ocr.apiKey', placeholder: '${OCR_API_KEY}' },
@@ -252,6 +256,8 @@ beforeAll(async () => {
     unsetConfigField: methods.unsetConfigField,
     deleteConfig: methods.deleteConfig,
     toggleConfigActive: methods.toggleConfigActive,
+    mutateConfigWithRevision: methods.mutateConfigWithRevision,
+    listConfigRevisions: methods.listConfigRevisions,
     hasConfigCapability: async () => true,
     hasAnyConfigReadAccess: async () => true,
     hasCapability: async () => true,
@@ -264,7 +270,10 @@ afterAll(async () => {
 });
 
 describe('config secret registry — real handlers against a real Config collection', () => {
-  describe.each(SECRET_FIELD_CASES)(
+  // Langfuse is managed by its dedicated tenant-wide API and is intentionally
+  // excluded from generic config mutations. It remains in SECRET_FIELD_CASES so
+  // the shared registry shape and read-redaction coverage stay explicit.
+  describe.each(GENERIC_CONFIG_SECRET_FIELD_CASES)(
     '$path',
     ({ path, previewPath, section, object, siblingPath, siblingValue }) => {
       it('encrypts dotted patch writes at rest, sets the masked preview companion, and redacts the secret from the response', async () => {
@@ -574,6 +583,12 @@ describe('config secret registry — real handlers against a real Config collect
         unsetConfigField: async () => null,
         deleteConfig: async () => null,
         toggleConfigActive: async () => null,
+        mutateConfigWithRevision: async () => ({
+          changed: false,
+          config: null,
+          revision: null,
+        }),
+        listConfigRevisions: async () => [],
         hasConfigCapability: async () => true,
         hasAnyConfigReadAccess: async () => true,
         hasCapability: async () => true,

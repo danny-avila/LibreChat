@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
 import { isMainThread } from 'worker_threads';
-import { tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { tenantStorage, logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { TenantContext } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -30,6 +30,7 @@ export type ContextRequest = {
 };
 
 const SYSTEM_TENANT_REJECTION_MESSAGE = 'System tenant is not allowed for request-scoped routes';
+const EXPECTED_TENANT_HEADER = 'x-expected-tenant-id';
 
 let _checkedThread = false;
 
@@ -49,6 +50,38 @@ function normalizeContextValue(value?: string): string | undefined {
   return trimmed || undefined;
 }
 
+/**
+ * A panel request may be built from tenant-scoped UI state that predates the
+ * request's current gateway-selected tenant. The expected-tenant header never
+ * selects a tenant; it is only a compare-and-reject fence against that state
+ * being applied in a different tenant after a live routing transition.
+ */
+function rejectExpectedTenantMismatch(
+  req: ContextRequest,
+  res: Response,
+  tenantId: string | undefined,
+): boolean {
+  const raw = req.headers[EXPECTED_TENANT_HEADER];
+  if (raw === undefined) {
+    return false;
+  }
+  if (typeof raw !== 'string') {
+    res.status(400).json({ error: 'X-Expected-Tenant-Id must be a single string header' });
+    return true;
+  }
+  const expectedTenantId = raw.trim();
+  const currentTenantId = tenantId ?? '';
+  if (expectedTenantId === currentTenantId) {
+    return false;
+  }
+  res.status(409).json({
+    error: 'Tenant context changed',
+    expectedTenantId,
+    currentTenantId,
+  });
+  return true;
+}
+
 function getUserId(user: ContextUser): string | undefined {
   return normalizeContextValue(user?.id) ?? normalizeContextValue(user?._id?.toString());
 }
@@ -65,7 +98,7 @@ function hasTenantContext(context: TenantContext): boolean {
 
 export function buildTenantContext(
   req: ContextRequest,
-  tenantId: string | undefined = req.tenantId ?? req.user?.tenantId,
+  tenantId: string | undefined = req.tenantId ?? getTenantId() ?? req.user?.tenantId,
 ): TenantContext {
   return {
     ...buildRequestContext(req),
@@ -154,6 +187,10 @@ export function tenantContextMiddleware(
     return;
   }
 
+  if (rejectExpectedTenantMismatch(req, res, tenantId)) {
+    return;
+  }
+
   if (!user) {
     runWithTenantContext(context, next);
     return;
@@ -177,7 +214,22 @@ export type RequestTenantSource = {
 };
 
 export function resolveRequestTenantId(req: RequestTenantSource): string | undefined {
-  return req.tenantId ?? req.user?.tenantId;
+  return req.tenantId ?? getTenantId() ?? req.user?.tenantId;
+}
+
+/**
+ * The tenant a request actually operates in.
+ *
+ * `tenantContextMiddleware` resolves `req.tenantId ?? trusted ALS tenant ??
+ * req.user.tenantId` into
+ * ALS, and every Mongoose query plus every explicitly tenant-filtered
+ * collection read/write runs under that value. Authorization has to be
+ * evaluated against the same tenant: resolving grants from `req.user.tenantId`
+ * alone means a deployment that resolves tenants server-side (`req.tenantId`)
+ * can check privileges in one tenant while persisting in another.
+ */
+export function getEffectiveTenantId(req: RequestTenantSource): string | undefined {
+  return normalizeContextValue(getTenantId()) ?? normalizeContextValue(resolveRequestTenantId(req));
 }
 
 type UploadFile = {

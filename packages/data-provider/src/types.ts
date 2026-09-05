@@ -980,11 +980,14 @@ export type TUpdateSkillNodeRequest = {
 export type TLangfuseConnectionStatus = {
   configured: boolean;
   enabled: boolean;
+  configActive: boolean;
   destinations: TLangfuseDestinationOption[];
   destination?: string;
   publicKey?: string;
   secretKeyPreview?: string;
   updatedAt?: string;
+  configVersion: number | null;
+  effectiveTenantId: string;
 };
 
 export type TLangfuseDestinationOption = {
@@ -997,6 +1000,8 @@ export type TUpdateLangfuseConnectionRequest = {
   destination: string;
   publicKey: string;
   secretKey?: string;
+  expectedVersion: number | null;
+  expectedTenantId: string;
 };
 
 export type TLangfuseConnectionTestRequest = {

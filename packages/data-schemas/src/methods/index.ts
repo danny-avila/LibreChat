@@ -149,7 +149,31 @@ import type {
 /* Tier 5 — Agent */
 import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
-import { createConfigMethods, type ConfigMethods } from './config';
+import {
+  createConfigMethods,
+  applyConfigFieldsMutation,
+  ConfigVersionConflictError,
+  ConfigRevisionNotFoundError,
+  RestoreValidationError,
+  canonicalizeResetPaths,
+  fieldPathLimitError,
+  fieldPathPolicyError,
+  isValidFieldPath,
+  type FindConfigByPrincipalOptions,
+  MAX_FIELD_PATH_LENGTH,
+  MAX_FIELD_PATH_SEGMENTS,
+  ensureConfigIndexes,
+  ADMIN_CONFIG_REVISIONS_COLLECTION,
+  ADMIN_CONFIG_VERSION_EPOCHS_COLLECTION,
+  MAX_CONFIG_REVISIONS,
+  type ConfigMethods,
+  type ConfigMutationOp,
+  type ConfigMutationResult,
+  type ConfigRevisionCause,
+  type ConfigRevisionListItem,
+  type ConfigRevisionSnapshot,
+  type ConfigRevisionActor,
+} from './config';
 import {
   createMCPAuthorityMethods,
   MCPAuthorityProofError,
@@ -172,6 +196,21 @@ export {
   RoleConflictError,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,
+  ConfigVersionConflictError,
+  ConfigRevisionNotFoundError,
+  RestoreValidationError,
+  applyConfigFieldsMutation,
+  canonicalizeResetPaths,
+  fieldPathLimitError,
+  fieldPathPolicyError,
+  isValidFieldPath,
+  type FindConfigByPrincipalOptions,
+  MAX_FIELD_PATH_LENGTH,
+  MAX_FIELD_PATH_SEGMENTS,
+  ensureConfigIndexes,
+  ADMIN_CONFIG_REVISIONS_COLLECTION,
+  ADMIN_CONFIG_VERSION_EPOCHS_COLLECTION,
+  MAX_CONFIG_REVISIONS,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
   createMCPAuthorityBootRevision,
@@ -549,6 +588,12 @@ export type {
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
   InsightsMethods,
+  ConfigMutationOp,
+  ConfigMutationResult,
+  ConfigRevisionCause,
+  ConfigRevisionListItem,
+  ConfigRevisionSnapshot,
+  ConfigRevisionActor,
 };
 
 export { recordAgentEventActorReceiptMetric, setAgentEventActorReceiptMetricObserver };

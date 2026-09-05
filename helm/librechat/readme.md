@@ -37,6 +37,64 @@ kind: Secret
 
 4. Fill out values.yaml and apply the Chart to the Cluster
 
+## MongoDB architecture: required on fresh installs (standalone vs replicaset)
+
+A fresh `helm install`/`template` (not an upgrade of an existing release —
+see below) fails fast until you set BOTH `mongodb.architecture` and a
+matching `librechat.mongoArchitectureAck` to `standalone` or `replicaset`.
+This is deliberate: a chart-wide default could only ever be "functional out
+of the box" (defaulting to `replicaset`, which changes the bundled Mongo
+workload shape — see below) or "safe/inert" (defaulting to `standalone`,
+which silently leaves the admin panel's base-config save/import/reset/
+delete/restore non-functional — every one of them requires a replica set and
+503s on a standalone instance). Neither is acceptable as a silent default for
+a brand-new deployment, so the chart forces the choice instead.
+
+Two fields are required, not one, because `mongodb.architecture` alone can't
+be enforced: the bundled Bitnami subchart's own `values.yaml` already
+defaults it to `standalone`, and Helm coalesces that subchart default in
+before any parent template renders — so `.Values.mongodb.architecture` is
+never unset from this chart's perspective, even if you never touch it.
+`librechat.mongoArchitectureAck` has no such shadow default, so the chart can
+require it and cross-check it matches `mongodb.architecture`, catching both
+"never chosen" and "set to the wrong value."
+
+**This check only runs on a fresh install (`.Release.IsInstall`), never on
+`helm upgrade` of an existing release.** An installation that already has a
+bundled MongoDB running must keep upgrading on unrelated changes without
+this chart version suddenly demanding a value it never needed before —
+upgrades of an existing release are unaffected either way and keep whatever
+`mongodb.architecture` they already have. The post-install/upgrade
+`NOTES.txt` warning still fires every time the effective architecture is
+`standalone`, on both installs and upgrades, so an existing standalone
+release is still reminded, just never hard-blocked.
+
+Switching an existing release from standalone to replicaset changes the Mongo
+workload shape from a Deployment to a StatefulSet and uses a differently
+named PVC (`datadir-<release>-mongodb-0`), which does not automatically reuse
+the standalone PVC (`<release>-mongodb`).
+
+Before enabling replica set mode on an existing release:
+
+1. Back up MongoDB data.
+2. Plan and validate a migration to the new StatefulSet PVC layout.
+3. Test restore/rollback in a non-production environment.
+
+For fresh installs that need transactions (for admin config rollback), use a
+single data-node replica set and explicitly disable the arbiter:
+
+```yaml
+librechat:
+  mongoArchitectureAck: replicaset
+mongodb:
+  enabled: true
+  architecture: replicaset
+  replicaCount: 1
+  replicaSetName: rs0
+  arbiter:
+    enabled: false
+```
+
 ## Admin Panel SSO
 
 Set `librechat.adminPanelUrl` to the admin panel base URL used for OAuth/SSO
@@ -65,6 +123,30 @@ required. Rolling upgrades must start from a v2-capable bridge release
 (LibreChat `v0.8.8-rc1` or newer, or Helm chart `2.0.8` or newer). When
 upgrading from an older release, stop the old replicas before starting the new
 image so pre-v2 and automatic-v2 binaries never share generation state in Redis.
+
+## Base config atomic-mutate rollout (config version epoch)
+
+Base configuration (`role/__base__`) saves are CAS-protected by a version
+epoch that survives the document being emptied out, preventing a stale
+`expectedVersion` from silently succeeding against a since-recreated document.
+The epoch is warmed from existing documents at startup, but that warmup is
+**not** a rolling-upgrade fence: a pre-epoch pod that is still writing/emptying
+the base config after a new pod has already warmed its epoch can leave the
+epoch behind, reopening the same race the epoch exists to close.
+
+Rolling upgrades must start from a release that already ships the version
+epoch. When upgrading from an older release, stop the old replicas before
+starting the new image — the same drain-before-replace requirement as the
+Generation protocol above. Set `updateStrategy.type=Recreate` for that one
+release, then you may revert to `RollingUpdate` for subsequent releases.
+
+This release also removes base-config write support from the legacy
+PUT/PATCH/DELETE `/api/admin/config/:principalType/:principalId*` routes —
+they now reject `role/__base__` requests and point callers at the atomic
+endpoint (`POST .../atomic`), which is the only path with CAS and revision
+history. Deploy this backend release and an admin panel that exclusively
+uses the atomic endpoint together; do not run an older admin panel against
+this backend version, as its base-config edits will start failing.
 
 ## Langfuse Fanout
 
