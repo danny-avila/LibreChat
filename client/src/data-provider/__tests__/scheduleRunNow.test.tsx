@@ -10,6 +10,7 @@ import {
   resetActiveJobsGrace,
   getActiveJobsRefetchInterval,
 } from '../SSE/queries';
+import * as sseQueries from '../SSE/queries';
 import { useRunScheduleNowMutation } from '../Schedules/mutations';
 
 const mockRunScheduleNow = jest.fn<Promise<TScheduleRunNowResponse>, [string]>();
@@ -76,6 +77,10 @@ const createWrapper = (queryClient: QueryClient) =>
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   };
+
+const signIn = (queryClient: QueryClient, id: string) => {
+  queryClient.setQueryData([QueryKeys.user], { id });
+};
 
 const seedList = (queryClient: QueryClient, params?: ListParams) => {
   queryClient.setQueryData<ConversationPages>(
@@ -221,6 +226,46 @@ describe('run-now conversation tracking', () => {
     await settleAdmission(6_000);
 
     expect(readList(queryClient)[0].conversationId).toBe('run-convo-1');
+    queryClient.clear();
+  });
+
+  it('hands the admitted chat to the title queue, since it lands as "New Chat"', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+    /** A spy that calls through: the queue is module state with no reader of its
+     *  own, and the point is that the tracker joins it at all. */
+    const queueTitle = jest.spyOn(sseQueries, 'queueTitleGeneration');
+
+    await runNow(queryClient);
+    await settleAdmission();
+
+    expect(queueTitle).toHaveBeenCalledWith('run-convo-1');
+    queueTitle.mockRestore();
+    queryClient.clear();
+  });
+
+  it('does not file the chat into a cache that changed hands mid-watch', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+
+    /** The switch lands while the probe is IN FLIGHT, which is the window that
+     *  matters: sign-out and sign-in both empty the cache, and the response then
+     *  arrives holding a chat that belongs to whoever was here before. */
+    mockGetConversationById.mockImplementation(async () => {
+      queryClient.removeQueries([QueryKeys.user]);
+      seedList(queryClient);
+      signIn(queryClient, 'user-b');
+      return serverConversation();
+    });
+
+    await runNow(queryClient);
+    await settleAdmission();
+
+    expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
+    expect(queryClient.getQueryData([QueryKeys.conversation, 'run-convo-1'])).toBeUndefined();
     queryClient.clear();
   });
 
