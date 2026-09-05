@@ -1603,6 +1603,10 @@ const initializeClient = async ({
     spec: endpointOption.spec,
     iconURL: endpointOption.iconURL,
     chatProjectId: endpointOption.chatProjectId,
+    /** Forwarded so `formatMessage` can set it as the assistant `name` on
+     *  outgoing messages (making it visible to the model, not just the UI)
+     *  and so it round-trips into `getSaveOptions`. */
+    modelLabel: endpointOption.model_parameters.modelLabel,
     attachments: primaryConfig.requestAttachments ?? primaryConfig.attachments,
     agentContextAttachmentsByAgentId,
     endpointType: endpointOption.endpointType,

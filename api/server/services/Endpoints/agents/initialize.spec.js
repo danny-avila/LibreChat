@@ -176,6 +176,39 @@ describe('initializeClient — processAgent ACL gate', () => {
     },
   });
 
+  it('forwards a custom endpoint model spec preset modelLabel to the AgentClient so it reaches the model-visible context', async () => {
+    const ephemeralId = 'openRouter__deepseek-v4-flash';
+    mockInitializeAgent.mockResolvedValue({
+      ...makePrimaryConfig([]),
+      id: ephemeralId,
+      endpoint: 'openRouter',
+    });
+
+    const endpointOption = {
+      ...makeEndpointOption(),
+      endpoint: 'openRouter',
+      agent: Promise.resolve({
+        id: ephemeralId,
+        provider: 'openRouter',
+        model: 'deepseek/deepseek-v4-flash',
+        tools: [],
+      }),
+      model_parameters: {
+        model: 'deepseek/deepseek-v4-flash',
+        modelLabel: 'DeepSeek V4 Flash',
+      },
+    };
+
+    await initializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption,
+    });
+
+    expect(agentClientArgs.modelLabel).toBe('DeepSeek V4 Flash');
+  });
+
   it('replaces untrusted artifact route metadata with the executing agent context', async () => {
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
 
