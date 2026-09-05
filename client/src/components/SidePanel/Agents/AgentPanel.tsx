@@ -124,10 +124,12 @@ export function composeAgentUpdatePayload(
     ? pruneAgentModelParameters(currentModelParameters, modelParameterSettings)
     : currentModelParameters;
   let normalizedGitIdentity: AgentUpdateParams['git_identity'];
-  if (git_identity?.name?.trim() && git_identity.email?.trim()) {
+  const gitIdentityName = git_identity?.name?.trim() ?? '';
+  const gitIdentityEmail = git_identity?.email?.trim() ?? '';
+  if (gitIdentityName || gitIdentityEmail) {
     normalizedGitIdentity = {
-      name: git_identity.name.trim(),
-      email: git_identity.email.trim(),
+      name: gitIdentityName,
+      email: gitIdentityEmail,
     };
   } else if (agent_id && git_identity != null) {
     normalizedGitIdentity = null;

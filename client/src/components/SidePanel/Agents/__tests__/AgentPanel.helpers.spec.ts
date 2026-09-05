@@ -181,6 +181,15 @@ describe('composeAgentUpdatePayload', () => {
     expect(payload.git_identity).toBeNull();
   });
 
+  it('does not turn a partially filled Git identity into a clear operation', () => {
+    const form = createForm();
+    form.git_identity = { name: 'Coding Agent', email: '' };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toEqual({ name: 'Coding Agent', email: '' });
+  });
+
   it('omits an empty Git identity when creating an agent', () => {
     const form = createForm();
     form.git_identity = { name: '', email: '' };

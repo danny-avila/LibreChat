@@ -37,7 +37,12 @@ export default function StatefulSessions() {
   const { user } = useAuthContext();
   const { agentsConfig } = useGetAgentsConfig();
   const methods = useFormContext<AgentForm>();
-  const { register, setValue, watch } = methods;
+  const {
+    register,
+    setValue,
+    watch,
+    formState: { errors },
+  } = methods;
 
   const enabled = watch(AgentCapabilities.stateful_code_sessions) ?? false;
   const codeEnabled = watch(AgentCapabilities.execute_code);
@@ -49,6 +54,11 @@ export default function StatefulSessions() {
   const effectiveExecutionEnvironment = codeEnvironmentId
     ? executionEnvironments.find((candidate) => candidate.id === codeEnvironmentId)
     : executionEnvironments.find((candidate) => candidate.default === true);
+  const validateGitIdentity = (_value: string | undefined, values: AgentForm) => {
+    const hasName = Boolean(values.git_identity?.name?.trim());
+    const hasEmail = Boolean(values.git_identity?.email?.trim());
+    return hasName === hasEmail || localize('com_ui_agent_git_identity_both_required');
+  };
 
   const handleChange = (value: boolean) => {
     setValue(AgentCapabilities.stateful_code_sessions, value, { shouldDirty: true });
@@ -180,18 +190,23 @@ export default function StatefulSessions() {
                 {localize('com_ui_agent_git_identity')}
               </div>
               <Input
-                {...register('git_identity.name')}
+                {...register('git_identity.name', { validate: validateGitIdentity })}
                 maxLength={128}
                 placeholder={localize('com_ui_agent_git_name')}
                 aria-label={localize('com_ui_agent_git_name')}
               />
               <Input
-                {...register('git_identity.email')}
+                {...register('git_identity.email', { validate: validateGitIdentity })}
                 type="email"
                 maxLength={254}
                 placeholder={localize('com_ui_agent_git_email')}
                 aria-label={localize('com_ui_agent_git_email')}
               />
+              {(errors.git_identity?.name || errors.git_identity?.email) && (
+                <p className="text-xs text-red-500" role="alert">
+                  {localize('com_ui_agent_git_identity_both_required')}
+                </p>
+              )}
               <p className="text-xs text-text-tertiary">
                 {localize('com_nav_info_agent_git_identity')}
               </p>

@@ -2102,6 +2102,7 @@
   "com_ui_skill_instructions_placeholder": "Enter your skill instructions in markdown...",
   "com_ui_skill_name_invalid": "Use lowercase letters, digits, and dashes only (kebab-case)",
   "com_ui_agent_git_identity": "Git identity",
+  "com_ui_agent_git_identity_both_required": "Enter both a Git name and email, or leave both blank.",
   "com_ui_agent_git_name": "Commit name",
   "com_ui_agent_git_email": "Commit email",
   "com_nav_info_agent_git_identity": "Applied as the author and committer for Git commands run by this agent. Credentials are configured separately.",
