@@ -10,8 +10,8 @@ import {
   resetActiveJobsGrace,
   getActiveJobsRefetchInterval,
 } from '../SSE/queries';
-import * as sseQueries from '../SSE/queries';
 import { useRunScheduleNowMutation } from '../Schedules/mutations';
+import * as sseQueries from '../SSE/queries';
 
 const mockRunScheduleNow = jest.fn<Promise<TScheduleRunNowResponse>, [string]>();
 const mockGetConversationById = jest.fn<Promise<TConversation>, [string]>();
@@ -303,6 +303,21 @@ describe('run-now conversation tracking', () => {
     await settleAdmission();
 
     expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
+    queryClient.clear();
+  });
+
+  it('still tracks a run started before the user query resolved', async () => {
+    const queryClient = createQueryClient();
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+
+    /** No user in cache at the click; run-now answering 200 already proved there
+     *  is a session, so its arrival is a load, not a change of hands. */
+    await runNow(queryClient);
+    signIn(queryClient, 'user-a');
+    await settleAdmission();
+
+    expect(readList(queryClient)[0].conversationId).toBe('run-convo-1');
     queryClient.clear();
   });
 
