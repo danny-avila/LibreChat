@@ -41,6 +41,7 @@ export async function reconcileCodeEnvironmentLifecycle({
     const checkpoints = mongoose.connection.db!.collection<{
       _id: string;
       lastId: Types.ObjectId | null;
+      upperId?: Types.ObjectId | null;
     }>('code_environment_reconciliation');
     const checkpointId = 'agent-reference-cleanup';
     await checkpoints.updateOne(
@@ -50,10 +51,24 @@ export async function reconcileCodeEnvironmentLifecycle({
     );
     const checkpoint = await checkpoints.findOne({ _id: checkpointId });
     const lastId = checkpoint?.lastId ?? null;
+    let upperId = checkpoint?.upperId;
+    if (upperId == null) {
+      const tail = await CodeEnvironment.findOne({})
+        .hint('_id_')
+        .sort({ _id: -1 })
+        .select('_id')
+        .lean<Pick<CodeEnvironmentDocument, '_id'>>();
+      upperId = tail?._id ?? null;
+      const captured = await checkpoints.updateOne(
+        { _id: checkpointId, lastId, upperId: null },
+        { $set: { upperId } },
+      );
+      if (captured.matchedCount !== 1) return;
+    }
     // Persist progress across leader changes and include old-replica writes on each sweep.
-    const expiredReferenceCandidates = await CodeEnvironment.find(
-      lastId == null ? {} : { _id: { $gt: lastId } },
-    )
+    const expiredReferenceCandidates = await CodeEnvironment.find({
+      _id: { $lte: upperId, ...(lastId == null ? {} : { $gt: lastId }) },
+    })
       .hint('_id_')
       .sort({ _id: 1 })
       .limit(limit)
@@ -66,11 +81,14 @@ export async function reconcileCodeEnvironmentLifecycle({
       );
     }
     // Advance only after cleanup succeeds; a competing sweep must not rewind progress.
+    const nextId = expiredReferenceCandidates[expiredReferenceCandidates.length - 1]?._id;
+    const sweepComplete = nextId == null || nextId.equals(upperId);
     await checkpoints.updateOne(
-      { _id: checkpointId, lastId },
+      { _id: checkpointId, lastId, upperId },
       {
         $set: {
-          lastId: expiredReferenceCandidates[expiredReferenceCandidates.length - 1]?._id ?? null,
+          lastId: sweepComplete ? null : nextId,
+          upperId: sweepComplete ? null : upperId,
         },
       },
     );

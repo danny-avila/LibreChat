@@ -1246,9 +1246,7 @@ describe('code environment registry', () => {
       _id: string;
       lastId: Types.ObjectId | null;
     }>('code_environment_reconciliation');
-    expect((await checkpoints.findOne({ _id: 'agent-reference-cleanup' }))?.lastId).toEqual(
-      environment._id,
-    );
+    expect((await checkpoints.findOne({ _id: 'agent-reference-cleanup' }))?.lastId).toBeNull();
     const live = { reservationId: 'live', expiresAt: new Date(Date.now() + 60_000) };
     await model.updateOne(
       { _id: environment._id },
@@ -1260,8 +1258,17 @@ describe('code environment registry', () => {
         },
       },
     );
-    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
-    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    for (let index = 0; index < 3; index++) {
+      await createMethods(mongoose).createCodeEnvironment({
+        environmentId: `new-tail-${index}`,
+        name: 'New tail',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: owner._id,
+      });
+      await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    }
     const result = await model
       .findById(environment._id)
       .lean<{ pendingAgentReferences: (typeof live)[] }>();
