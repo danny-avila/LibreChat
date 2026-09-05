@@ -1,16 +1,16 @@
 /* Scheduled chats */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, MutationKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
+import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
 import type {
   TSchedule,
+  TConversation,
   TCreateSchedule,
   TUpdateSchedule,
-  TSchedulesResponse,
   TScheduleRunNowResponse,
 } from 'librechat-data-provider';
 import type { QueryClient, UseMutationOptions } from '@tanstack/react-query';
 import { extendActiveJobsGrace } from '~/data-provider/SSE/queries';
-import { upsertConvoInAllQueries } from '~/utils';
+import { upsertConvoInAllQueries, isNotFoundError } from '~/utils';
 
 export const useCreateScheduleMutation = (
   options?: UseMutationOptions<TSchedule, Error, TCreateSchedule>,
@@ -68,48 +68,65 @@ export const useDeleteScheduleMutation = (
 };
 
 /**
- * Puts the started run's chat in the sidebar straight away.
- *
- * The conversation does not exist yet when this response lands: run-now answers
- * once the trigger delivery is durable, and the generation that writes the
- * conversation starts after it. Refetching the lists here would come back
- * without the chat and leave the sidebar exactly as it was — the bug this
- * closes — so the row is seeded from what the response and the cached schedule
- * already name, the same way a locally started chat is seeded before its first
- * message persists. The next natural list refetch replaces it with the server's
- * own row, generated title included.
+ * Waits before each probe, so the first one is not spent on a conversation that
+ * cannot exist yet. Admission is normally a second or two, but a failed dispatch
+ * is retried with exponential backoff, so the wait has a long tail: eight probes
+ * over roughly forty seconds cover the ordinary case without turning one click
+ * into an open-ended poll. A run admitted after that is left to the next list
+ * refetch rather than watched forever.
  */
-function seedStartedRunConversation(
-  queryClient: QueryClient,
-  { scheduleId, conversationId }: TScheduleRunNowResponse,
-): void {
-  if (!conversationId) {
+const ADMISSION_DELAYS_MS = [750, 1_500, 3_000, 6_000, 8_000, 8_000, 8_000, 8_000];
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Puts a manual run's chat in the sidebar once the server actually has it.
+ *
+ * Run-now answers as soon as the trigger delivery is durable, and the generation
+ * that writes the conversation starts after that — so at the moment the response
+ * lands there is nothing to refetch, which is why the click appeared to do
+ * nothing at all. The conversation route answers 404 until that write commits and
+ * applies the same visibility rule the list query does, which makes it an exact
+ * admission probe: a 200 means the chat is listable now, and carries the server's
+ * own row rather than a guess assembled from the client's cached schedule.
+ *
+ * A 404 is the run not having started yet; any other failure is not, and ends the
+ * watch rather than spending the budget on a request that is not going to change
+ * its answer.
+ *
+ * Deliberately detached from the caller: the sidebar has to gain the chat whether
+ * or not the panel the run was started from is still mounted. Bounded, and it
+ * writes only what the server returned — a delivery that never admits leaves
+ * every cache exactly as it found it.
+ */
+async function trackStartedRun(queryClient: QueryClient, conversationId: string): Promise<void> {
+  for (const delay of ADMISSION_DELAYS_MS) {
+    await wait(delay);
+    let conversation: TConversation;
+    try {
+      conversation = await dataService.getConversationById(conversationId);
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        continue;
+      }
+      return;
+    }
+    /** Warms the key the chat route reads, so opening the row it just added does
+     *  not have to ask again. Absent-only: anything already cached under this id
+     *  was put there by the chat itself and knows more than one list read does. */
+    queryClient.setQueryData<TConversation>(
+      [QueryKeys.conversation, conversationId],
+      (current) => current ?? conversation,
+    );
+    upsertConvoInAllQueries(queryClient, conversation);
+    /** A generation is live by definition here. The active-job list is the only
+     *  thing that can mark the row as running, and it stops polling while nothing
+     *  is listed — so re-arm it at admission, which is when a job exists, rather
+     *  than at the click, which is before one does. */
+    extendActiveJobsGrace();
+    queryClient.invalidateQueries([QueryKeys.activeJobs]);
     return;
   }
-  const cached = queryClient.getQueryData<TSchedulesResponse>([QueryKeys.schedules]);
-  const schedule = cached?.schedules.find((entry) => entry.id === scheduleId);
-  if (schedule == null) {
-    return;
-  }
-  const now = new Date().toISOString();
-  upsertConvoInAllQueries(queryClient, {
-    conversationId,
-    /** Mirrors the fire path's own resolution — an operator pin outranks the
-     *  schedule's stored destination — so the row is seeded into the project
-     *  list the run is actually filed under, and into no other. */
-    chatProjectId: cached?.limits.projectId ?? schedule.chatProjectId ?? null,
-    endpoint: EModelEndpoint.agents,
-    agent_id: schedule.agent_id,
-    title: schedule.name,
-    createdAt: now,
-    updatedAt: now,
-  });
-  /** Nothing here will open a stream for this run, so the active-job list is the
-   *  only thing that can show the row as running — and it stops polling while
-   *  nothing is listed. Report the generation this click just started and re-arm
-   *  the query, which picks the interval back up once it has fetched. */
-  extendActiveJobsGrace();
-  queryClient.invalidateQueries([QueryKeys.activeJobs]);
 }
 
 export const useRunScheduleNowMutation = (
@@ -122,7 +139,9 @@ export const useRunScheduleNowMutation = (
     {
       ...options,
       onSuccess: (data, ...rest) => {
-        seedStartedRunConversation(queryClient, data);
+        if (data.conversationId) {
+          void trackStartedRun(queryClient, data.conversationId);
+        }
         options?.onSuccess?.(data, ...rest);
       },
       // Invalidate on SETTLED, not just success: several run-now 409 paths are still
