@@ -483,7 +483,10 @@ export function createAgentMethods(
   getAgentWithVersionCount: (
     searchParameter: FilterQuery<IAgent>,
   ) => Promise<(IAgent & { version: number }) | null>;
-  getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
+  getAgents: (
+    searchParameter: FilterQuery<IAgent>,
+    select?: string | Record<string, number>,
+  ) => Promise<IAgent[]>;
   createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
   getAgentIdsByMCPServerName: (serverName: string) => Promise<Types.ObjectId[]>;
   getAgentsWithMCPServerNames: () => Promise<Array<Pick<IAgent, '_id' | 'mcpServerNames'>>>;
@@ -691,9 +694,12 @@ export function createAgentMethods(
   /**
    * Get multiple agent documents based on the provided search parameters.
    */
-  async function getAgents(searchParameter: FilterQuery<IAgent>): Promise<IAgent[]> {
+  async function getAgents(
+    searchParameter: FilterQuery<IAgent>,
+    select?: string | Record<string, number>,
+  ): Promise<IAgent[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.find(searchParameter).lean<IAgent[]>();
+    return await Agent.find(searchParameter, select).lean<IAgent[]>();
   }
 
   /** Returns the ids of every agent referencing `serverName`, the candidate set

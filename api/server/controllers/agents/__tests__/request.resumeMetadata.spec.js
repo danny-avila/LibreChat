@@ -3610,9 +3610,11 @@ describe('ResumableAgentController resume metadata', () => {
       const req = createFailedRequest({
         conversationId: undefined,
         clientRequestId: 'failed-new-conversation',
+        agent_id: 'unverified-agent',
         parentMessageId: '00000000-0000-0000-0000-000000000000',
         endpointOption: {
           endpoint: 'azureOpenAI',
+          agent_id: 'unverified-agent',
           modelOptions: { model: 'gpt-4o' },
           chatProjectId: '507f1f77bcf86cd799439011',
         },
@@ -3643,7 +3645,7 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'gpt-4o',
           chatProjectId: '507f1f77bcf86cd799439011',
         }),
-        expect.any(Object),
+        expect.objectContaining({ initialAgentId: null }),
       );
     });
   });
