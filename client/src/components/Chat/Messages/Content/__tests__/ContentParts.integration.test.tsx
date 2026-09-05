@@ -51,7 +51,10 @@ jest.mock('../ProgressText', () => ({
   ),
 }));
 
+/** Spread the real module: an icon set listed export-by-export goes silently
+ *  undefined the moment a component imports one more glyph. */
 jest.mock('lucide-react', () => ({
+  ...jest.requireActual('lucide-react'),
   ChevronDown: () => <span>{'chevron'}</span>,
   TriangleAlert: () => <span>{'alert'}</span>,
   Users: () => <span>{'users'}</span>,
@@ -119,6 +122,13 @@ jest.mock('../Image', () => ({
 jest.mock('../Container', () => ({
   __esModule: true,
   default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}));
+
+jest.mock('../SiblingHeader', () => ({
+  __esModule: true,
+  default: ({ agentId }: { agentId?: string }) => (
+    <div data-testid="sibling-header" data-agent-id={agentId} />
+  ),
 }));
 
 jest.mock('~/utils', () => {
@@ -912,5 +922,108 @@ describe('ContentParts integration: phase media row', () => {
     renderContentParts({ ...baseProps, content: phaseContent() });
 
     expect(screen.queryByTestId('attachment-group')).toBeNull();
+  });
+});
+
+describe('ContentParts integration: lane groups backed by one agent', () => {
+  const baseProps = {
+    messageId: 'msg-lane',
+    isCreatedByUser: false,
+    isLast: true,
+    isSubmitting: false,
+    isLatestMessage: true,
+  };
+
+  const inLane = (part: TMessageContentParts, agentId: string, groupId = 1): TMessageContentParts =>
+    ({ ...(part as object), agentId, groupId }) as unknown as TMessageContentParts;
+
+  it('renders no lane header when a phase marker splits a single-agent group', () => {
+    /** The reported shape: a multi-agent graph stamped a group id on the
+     *  primary agent's own output, and a phase marker ending mid-group split
+     *  it — so one lane rendered as TWO bordered cards, each repeating the
+     *  message's own author, and the answer read as a separate message. */
+    const answer = 'Monitoring the pull requests for the next hour.';
+    const content = [
+      makeMcpToolCall('t1'),
+      makeMcpToolCall('t2'),
+      inLane(makeMcpToolCall('t3'), 'agent_a'),
+      inLane(makeTextPart(answer), 'agent_a'),
+      makePhasePart(0, 3, 'Planned the monitoring run'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+    /** The card mounts collapsed and its body is lazy, so open it — the split
+     *  drew one header inside the card and one after it. */
+    fireEvent.click(screen.getByRole('button', { name: 'Planned the monitoring run' }));
+
+    expect(screen.queryAllByTestId('sibling-header')).toHaveLength(0);
+    expect(screen.getAllByText(answer)).toHaveLength(1);
+  });
+
+  it('groups the tool calls of a single-agent group, which lanes never do', () => {
+    const content = [
+      inLane(makeMcpToolCall('t1'), 'agent_a'),
+      inLane(makeMcpToolCall('t2'), 'agent_a'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+  });
+
+  it('still renders columns once a second agent shares the group', () => {
+    const content = [
+      inLane(makeTextPart('primary answer'), 'agent_a'),
+      inLane(makeTextPart('added answer'), 'agent_b____1'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    const headers = screen.getAllByTestId('sibling-header');
+    expect(headers.map((header) => header.getAttribute('data-agent-id'))).toEqual([
+      'agent_a',
+      'agent_b____1',
+    ]);
+  });
+
+  it('keeps lane attribution when a phase marker leaves one agent per slice', () => {
+    /** Lane cardinality belongs to the MESSAGE. A marker that puts each agent
+     *  of a real two-agent group in a different slice would otherwise demote
+     *  both, and the added agent's answer would read as the primary's. */
+    const content = [
+      inLane(makeTextPart('primary answer'), 'agent_a'),
+      inLane(makeTextPart('added answer'), 'agent_b____1'),
+      makePhasePart(0, 1, 'Ran both agents'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+    fireEvent.click(screen.getByRole('button', { name: 'Ran both agents' }));
+
+    const agentIds = screen
+      .getAllByTestId('sibling-header')
+      .map((header) => header.getAttribute('data-agent-id'));
+    expect(agentIds).toContain('agent_a');
+    expect(agentIds).toContain('agent_b____1');
+  });
+
+  it('keeps content that runs between two lane groups in transcript order', () => {
+    const content = [
+      inLane(makeTextPart('first wave primary'), 'agent_a', 1),
+      inLane(makeTextPart('first wave added'), 'agent_b____1', 1),
+      makeTextPart('handover note between the waves'),
+      inLane(makeTextPart('second wave primary'), 'agent_a', 2),
+      inLane(makeTextPart('second wave added'), 'agent_b____1', 2),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    const transcript = document.body.textContent ?? '';
+    expect(transcript).toContain('handover note between the waves');
+    expect(transcript.indexOf('handover note between the waves')).toBeGreaterThan(
+      transcript.indexOf('first wave primary'),
+    );
+    expect(transcript.indexOf('handover note between the waves')).toBeLessThan(
+      transcript.indexOf('second wave primary'),
+    );
   });
 });

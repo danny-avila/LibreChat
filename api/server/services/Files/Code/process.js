@@ -13,6 +13,7 @@ const {
   getCodeApiAuthHeaders,
   withCodeApiRateLimit,
   classifyCodeArtifact,
+  isMissingSandboxPathError,
   parseSandboxImageChunk,
   readWindowedSandboxImage,
   createCodeApiRateLimitBudget,
@@ -27,6 +28,7 @@ const {
   getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
+  executeWorkspaceTool,
   claimCodeDestination,
   createCodeDestinationSet,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
@@ -1617,9 +1619,10 @@ async function readSandboxFile({
     postData.files = files;
   }
 
+  let response;
   try {
     const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
-    const response = await axios({
+    response = await axios({
       method: 'post',
       url: `${baseURL}/exec`,
       data: postData,
@@ -1633,14 +1636,6 @@ async function readSandboxFile({
       httpsAgent: codeServerHttpsAgent,
       timeout: 15000,
     });
-    const result = response?.data ?? {};
-    if (result.stderr && (result.stdout == null || result.stdout === '')) {
-      throw new Error(String(result.stderr).trim());
-    }
-    if (result.stdout == null) {
-      return null;
-    }
-    return { content: String(result.stdout) };
   } catch (error) {
     logAxiosError({
       message: `Error reading sandbox file "${file_path}"`,
@@ -1648,6 +1643,250 @@ async function readSandboxFile({
     });
     throw error;
   }
+
+  const result = response?.data ?? {};
+  if (result.stderr && (result.stdout == null || result.stdout === '')) {
+    const reason = String(result.stderr).trim();
+    /** An absent path is the ordinary outcome, not a fault: `create_file`
+     *  reads its target before writing so it can tell a create from an
+     *  overwrite. Logging that at error level with a stack made every
+     *  file creation look like a file that had gone missing. */
+    if (isMissingSandboxPathError(reason)) {
+      logger.debug(`[readSandboxFile] "${file_path}" is not present in the sandbox: ${reason}`);
+    } else {
+      logger.error(`[readSandboxFile] Error reading sandbox file "${file_path}": ${reason}`);
+    }
+    throw new Error(reason);
+  }
+  if (result.stdout == null) {
+    return null;
+  }
+  return { content: String(result.stdout) };
+}
+
+/**
+ * Reads a bounded range from the workspace directory registered by an attached worker.
+ * The authenticated worker route is derived from the selected environment and
+ * the host path remains private to the worker.
+ *
+ * @param {Object} params
+ * @param {string} params.file_path
+ * @param {string} params.workspace_id
+ * @param {number} params.start_line
+ * @param {number} params.max_lines
+ * @param {string} params.codeApiBaseUrl
+ * @param {'default' | 'stateful'} params.executionProfile
+ * @param {string} [params.bridgeWorkerId]
+ * @param {ServerRequest} [params.req]
+ * @param {AbortSignal} [params.signal]
+ */
+async function readWorkspaceFile({
+  file_path,
+  workspace_id,
+  start_line,
+  max_lines,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'read_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      startLine: start_line,
+      maxLines: max_lines,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/**
+ * Searches literal text within the workspace directory registered by an attached worker.
+ *
+ * @param {Object} params
+ * @param {string} params.query
+ * @param {string} params.workspace_id
+ * @param {string} [params.path]
+ * @param {number} params.max_results
+ * @param {string} params.codeApiBaseUrl
+ * @param {'default' | 'stateful'} params.executionProfile
+ * @param {string} [params.bridgeWorkerId]
+ * @param {ServerRequest} [params.req]
+ * @param {AbortSignal} [params.signal]
+ */
+async function searchWorkspace({
+  query,
+  workspace_id,
+  path,
+  max_results,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'search_text',
+      workspaceId: workspace_id,
+      query,
+      ...(path ? { path } : {}),
+      maxResults: max_results,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/**
+ * Lists relative files within the workspace directory registered by an attached worker.
+ *
+ * @param {Object} params
+ * @param {string} params.workspace_id
+ * @param {string} [params.path]
+ * @param {string} [params.after_path]
+ * @param {number} params.max_results
+ * @param {string} params.codeApiBaseUrl
+ * @param {'default' | 'stateful'} params.executionProfile
+ * @param {string} [params.bridgeWorkerId]
+ * @param {ServerRequest} [params.req]
+ * @param {AbortSignal} [params.signal]
+ */
+async function listWorkspaceFiles({
+  workspace_id,
+  path,
+  after_path,
+  max_results,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'list_files',
+      workspaceId: workspace_id,
+      ...(path ? { path } : {}),
+      ...(after_path ? { afterPath: after_path } : {}),
+      maxResults: max_results,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Writes a UTF-8 file in the workspace registered by an attached worker. */
+async function writeWorkspaceFile({
+  file_path,
+  content,
+  overwrite,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'write_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      content,
+      overwrite,
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Applies an ordered exact-edit batch in one attached-worker mutation. */
+async function editWorkspaceFile({
+  file_path,
+  edits,
+  expected_base_sha256,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'edit_file',
+      workspaceId: workspace_id,
+      path: file_path,
+      edits,
+      ...(expected_base_sha256 ? { expectedBaseSha256: expected_base_sha256 } : {}),
+    },
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Previews an ordered exact-edit batch without mutating the attached workspace. */
+async function previewWorkspaceEdit({
+  file_path,
+  edits,
+  workspace_id,
+  codeApiBaseUrl,
+  executionProfile,
+  bridgeWorkerId,
+  req,
+  signal,
+}) {
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+  return executeWorkspaceTool({
+    baseURL: codeApiBaseUrl,
+    authHeaders: {
+      ...authHeaders,
+      ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
+    },
+    request: {
+      protocolVersion: 1,
+      operation: 'preview_edit',
+      workspaceId: workspace_id,
+      path: file_path,
+      edits,
+    },
+    ...(signal ? { signal } : {}),
+  });
 }
 
 /**
@@ -1916,6 +2155,12 @@ module.exports = {
   getSessionInfo,
   processCodeOutput,
   prepareCodeOutputForInspection,
+  readWorkspaceFile,
+  searchWorkspace,
+  listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,

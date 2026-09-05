@@ -20,29 +20,141 @@ function response() {
 }
 
 describe('code environment HTTP handlers', () => {
-  test('does not advertise principal pairing when Code API principal auth is disabled', async () => {
+  test('reports status only for an accessible worker through its current control plane', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'personal-vm',
+        online: true,
+        ready: true,
+        leaseExpiresInMs: 50_000,
+        capabilities: { sandboxProfile: 'native-srt', runtimes: ['bash'] },
+      }),
+    });
+    const controlPlane = {
+      id: 'self-service',
+      name: 'Self service',
+      type: 'attached' as const,
+      baseURL: 'https://code.example.com/v1',
+      owner: 'deployment' as const,
+      pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+    };
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
-          [EModelEndpoint.agents]: {
-            statefulCodeSessions: {
-              environments: [
-                {
-                  id: 'principal-workers',
-                  name: 'Principal workers',
-                  type: 'attached',
-                  baseURL: 'https://code.example.com/v1',
-                  owner: 'deployment',
-                  pairing: { allowPrincipalWorkers: true },
-                },
-              ],
-            },
-          },
+          [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [controlPlane] } },
         },
-      } as AppConfig),
+      } as unknown as AppConfig),
       registry: {
         register: jest.fn(),
-        listAccessible: jest.fn().mockResolvedValue([]),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://stale.example.com/v1',
+            controlPlaneId: 'self-service',
+            owner: 'principal',
+            workerId: 'personal-vm',
+          },
+        ]),
+        remove: jest.fn(),
+      },
+      readSecret: jest.fn(() => 'administrator-token'),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.status(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'personal-vm' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      environmentId: 'personal-vm',
+      status: 'ready',
+      leaseExpiresInMs: 50_000,
+      sandboxProfile: 'native-srt',
+      runtimes: ['bash'],
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.example.com/v1/bridge/workers/personal-vm/status',
+      expect.objectContaining({ headers: { Authorization: 'Bearer administrator-token' } }),
+    );
+  });
+
+  test('does not query status for an inaccessible environment', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
+      } as unknown as AppConfig),
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([]),
+        remove: jest.fn(),
+      },
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.status(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'another-users-vm' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('does not advertise principal pairing when Code API principal auth is disabled', async () => {
+    const listAccessible = jest.fn();
+    const listAccessibleConfigurations = jest.fn();
+    const listAccessibleDetails = jest.fn().mockResolvedValue({
+      summaries: [],
+      configurations: [],
+    });
+    const resolvedPrincipals = [
+      { principalType: 'role', principalId: 'USER' },
+      { principalType: 'user', principalId: '68b2f0c498f24c1e78fa0001' },
+    ];
+    const resolvePrincipals = jest.fn().mockResolvedValue(resolvedPrincipals);
+    const getAppConfig = jest.fn().mockResolvedValue({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'principal-workers',
+                name: 'Principal workers',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig);
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: {
+        register: jest.fn(),
+        listAccessible,
+        listAccessibleConfigurations,
+        listAccessibleDetails,
+        resolvePrincipals,
         remove: jest.fn(),
       },
       principalAuthEnabled: () => false,
@@ -56,6 +168,19 @@ describe('code environment HTTP handlers', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ environments: [], controlPlanes: [] });
+    expect(listAccessibleDetails).toHaveBeenCalledTimes(1);
+    expect(resolvePrincipals).toHaveBeenCalledTimes(1);
+    expect(listAccessibleDetails).toHaveBeenCalledWith(
+      expect.objectContaining({ principals: resolvedPrincipals }),
+    );
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resolvedPrincipals,
+        skipRuntimeAugmentation: true,
+      }),
+    );
+    expect(listAccessible).not.toHaveBeenCalled();
+    expect(listAccessibleConfigurations).not.toHaveBeenCalled();
   });
 
   test('lists only principal control planes present in the caller effective policy', async () => {
@@ -91,6 +216,7 @@ describe('code environment HTTP handlers', () => {
       idOnTheSource: undefined,
       tenantId: 'tenant-1',
       failClosed: true,
+      skipRuntimeAugmentation: true,
     });
   });
 
@@ -109,6 +235,99 @@ describe('code environment HTTP handlers', () => {
 
     expect(res.statusCode).toBe(400);
     expect(register).not.toHaveBeenCalled();
+  });
+
+  test('updates settings only through the selected control plane config schema', async () => {
+    const updateSettings = jest.fn().mockResolvedValue({
+      resourceId: '68b2f0c498f24c1e78fa0111',
+      id: 'personal-vm',
+      name: 'Personal VM',
+      type: 'attached',
+      canDelete: true,
+    });
+    const configSchema = {
+      permissions: {
+        fileWrite: { allowed: ['allow', 'ask', 'deny'] as const, default: 'ask' as const },
+      },
+    };
+    const resolvedPrincipals = [
+      { principalType: 'role', principalId: 'USER' },
+      { principalType: 'user', principalId: '68b2f0c498f24c1e78fa0001' },
+    ];
+    const resolvePrincipals = jest.fn().mockResolvedValue(resolvedPrincipals);
+    const listAccessibleConfigurations = jest.fn().mockResolvedValue([
+      {
+        id: 'personal-vm',
+        name: 'Personal VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com/v1',
+        controlPlaneId: 'self-service',
+        owner: 'principal',
+      },
+    ]);
+    const getAppConfig = jest.fn().mockResolvedValue({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'self-service',
+                name: 'Self service',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                owner: 'deployment',
+                configSchema,
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as AppConfig);
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations,
+        resolvePrincipals,
+        updateSettings,
+        remove: jest.fn(),
+      },
+    });
+    const res = response();
+
+    await handlers.updateSettings(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'personal-vm' },
+        body: { settings: { permissions: { fileWrite: 'allow' } } },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(resolvePrincipals).toHaveBeenCalledTimes(1);
+    expect(listAccessibleConfigurations).toHaveBeenCalledWith(
+      expect.objectContaining({ principals: resolvedPrincipals }),
+    );
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ resolvedPrincipals, skipRuntimeAugmentation: true }),
+    );
+    expect(updateSettings).toHaveBeenCalledWith({
+      actor: expect.objectContaining({
+        userId: '68b2f0c498f24c1e78fa0001',
+        principals: resolvedPrincipals,
+      }),
+      environmentId: 'personal-vm',
+      settings: { permissions: { fileWrite: 'allow' } },
+    });
+    expect(res.body).toEqual({
+      environment: expect.objectContaining({
+        id: 'personal-vm',
+        configSchema,
+        settings: { permissions: { fileWrite: 'allow' } },
+      }),
+    });
   });
 
   test('pairs a generated worker to the authenticated user and persists its private route', async () => {

@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.14
+version: 1.3.15
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -591,6 +591,15 @@ endpoints:
   #         # receive a one-time code for an outbound @librechat/code worker.
   #         # The administrator secret stays in the named environment variable.
   #         owner: deployment
+  #         # Optionally expose only these bounded preferences to environment owners.
+  #         configSchema:
+  #           permissions:
+  #             fileWrite:
+  #               allowed: [allow, ask, deny]
+  #               default: ask
+  #             commandExecution:
+  #               allowed: [ask, deny]
+  #               default: ask
   #         pairing:
   #           allowPrincipalWorkers: true
   #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
@@ -616,6 +625,21 @@ endpoints:
   #   checkpointer:
   #     type: mongo # mongo (default) or memory (single-process development only)
   #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
+  #   # (optional) Authenticate machine clients for the Agent Management API.
+  #   # Each verified OAuth client is bound server-side to one existing LibreChat
+  #   # user and tenant; that user's normal role and Agent ACLs still apply.
+  #   managementApi:
+  #     auth:
+  #       oidc:
+  #         enabled: true
+  #         issuer: 'https://identity.example.com/'
+  #         audience: 'https://librechat.example.com/agents'
+  #         # jwksUri: 'https://identity.example.com/.well-known/jwks.json'
+  #       clients:
+  #         - clientId: 'machine-client-id'
+  #           # subject: 'provider-specific-service-principal-subject'
+  #           userId: '507f1f77bcf86cd799439011'
+  #           tenantId: 'tenant-id'
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -656,7 +680,7 @@ endpoints:
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     # Multi-region endpoints: us, eu, global
   #     # IMPORTANT: specific regional endpoints only serve Claude Sonnet 4.6 and earlier. Newer
-  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5) require "global" or a multi-region value
+  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5/5.1) require "global" or a multi-region value
   #     # ("us"/"eu") and will 404 on a specific region. "global" also avoids the 10% regional premium.
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
@@ -675,6 +699,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-fable-5-1"
   #     #   - "claude-fable-5"
   #     #   - "claude-opus-5"
   #     #   - "claude-opus-4-8"
@@ -688,6 +713,8 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-fable-5.1:
+  #         deploymentName: claude-fable-5-1
   #       claude-fable-5:
   #         deploymentName: claude-fable-5
   #       claude-opus-5:
@@ -1205,6 +1232,11 @@ endpoints:
 # under any source so each input surface can use a different policy. Starter
 # ids are closed to the catalog below. Custom regexes use bounded,
 # linear-time syntax; unsupported constructs are rejected at config load.
+# `action` defaults to `block`. Set it to `audit` for a shadow rollout that
+# records raw-free findings without rejecting or modifying content. Redaction
+# is intentionally not an action yet because safe replacement requires a
+# mutation-aware boundary and match spans; configuring an unsupported action
+# is rejected rather than silently treated as enforcement.
 # Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
 # to disable starters while retaining any configured custom patterns.
 # Enabling or changing this policy does not rewrite or delete stored records.
@@ -1228,6 +1260,7 @@ endpoints:
 #   messages:
 #     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
+#       action: audit # `block` (default) or `audit`
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #       customPatterns:

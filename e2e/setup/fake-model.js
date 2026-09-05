@@ -1657,8 +1657,8 @@ function statefulCodeResponses(operation, toolNames) {
   }
 
   const commands = {
-    write: `printf ${STATEFUL_CODE_VALUE} > /mnt/data/librechat-bridge-state.txt && cat /mnt/data/librechat-bridge-state.txt`,
-    read: 'cat /mnt/data/librechat-bridge-state.txt',
+    write: `printf ${STATEFUL_CODE_VALUE} > librechat-bridge-state.txt && cat librechat-bridge-state.txt`,
+    read: 'cat librechat-bridge-state.txt',
   };
   const command = commands[operation];
   if (!command) {

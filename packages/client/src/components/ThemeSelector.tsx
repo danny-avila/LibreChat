@@ -1,7 +1,9 @@
 import { useContext, useCallback, useEffect, useState } from 'react';
 import { JSX } from 'react/jsx-runtime';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon, Monitor } from 'lucide';
+import type { IconNode } from './MorphIcon';
 import { ThemeContext, isDark } from '../theme';
+import { MorphIcon } from './MorphIcon';
 import { useLocalize } from '../hooks';
 import { Button } from './Button';
 
@@ -13,14 +15,14 @@ declare global {
 
 type ThemeType = 'system' | 'dark' | 'light';
 
+const themeIcons: Record<ThemeType, IconNode> = {
+  system: Monitor,
+  dark: Moon,
+  light: Sun,
+};
+
 const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) => void }) => {
   const localize = useLocalize();
-
-  const themeIcons: Record<ThemeType, JSX.Element> = {
-    system: <Monitor aria-hidden="true" />,
-    dark: <Moon aria-hidden="true" />,
-    light: <Sun aria-hidden="true" />,
-  };
 
   const nextTheme = isDark(theme) ? 'light' : 'dark';
 
@@ -47,7 +49,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
         onChange(nextTheme);
       }}
     >
-      {themeIcons[theme as ThemeType]}
+      <MorphIcon icon={themeIcons[theme as ThemeType]} size={24} />
     </Button>
   );
 };

@@ -16,6 +16,7 @@ export * from './SecretInput';
 export * from './FilterInput';
 export * from './FieldMessage';
 export * from './Label';
+export * from './MorphIcon';
 export * from './OriginalDialog';
 export * from './QuestionMark';
 export * from './Slider';

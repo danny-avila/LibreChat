@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Copy, Check } from 'lucide';
+import { Button, MorphIcon, TooltipAnchor } from '@librechat/client';
 import type { TMessage, SearchResultData } from 'librechat-data-provider';
 import { useLocalize, useCopyToClipboard, hasCopyableText } from '~/hooks';
 import { revealOnRowHoverClasses } from './styles';
@@ -47,11 +48,7 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
             disabled={!canCopy}
             onClick={() => copyToClipboard(setIsCopied)}
           >
-            {isCopied ? (
-              <CheckMark className="h-[19px] w-[19px]" />
-            ) : (
-              <Clipboard className="h-[19px] w-[19px]" />
-            )}
+            <MorphIcon icon={isCopied ? Check : Copy} size={19} />
           </Button>
         }
       />

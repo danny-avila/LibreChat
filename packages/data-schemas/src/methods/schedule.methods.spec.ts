@@ -1889,6 +1889,105 @@ describe('reserveStartedRun duplicate reporting', () => {
   });
 });
 
+describe('run reservation database error formats', () => {
+  const conflicts = [
+    {
+      conflict: 'duplicate',
+      keyPattern: { scheduleId: 1, scheduledFor: 1 },
+      index: 'scheduleId_1_scheduledFor_1',
+    },
+    { conflict: 'overlap', keyPattern: { scheduleId: 1 }, index: 'scheduleId_1' },
+    { conflict: 'slot-taken', keyPattern: { capacitySlot: 1 }, index: 'capacitySlot_1' },
+  ] as const;
+
+  describe.each(['keyPattern', 'errmsg', 'message'] as const)('%s', (format) => {
+    it.each(conflicts)(
+      'classifies $conflict on admission',
+      async ({ conflict, keyPattern, index }) => {
+        const schedule = await methods.createSchedule(scheduleData());
+        const data = runData(schedule);
+        await ScheduleRun.create({ ...data, status: 'success' });
+        const error = {
+          code: 11000,
+          ...(format === 'keyPattern'
+            ? { keyPattern }
+            : { [format]: `E11000 duplicate key error collection: scheduleruns index: ${index}` }),
+        };
+        // Inject the external database response shape; the occurrence lookup remains real.
+        jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce(error);
+        await expect(methods.reserveStartedRun(data)).resolves.toEqual(
+          conflict === 'duplicate' ? { conflict, existingStatus: 'success' } : { conflict },
+        );
+      },
+    );
+
+    it.each(conflicts.filter(({ conflict }) => conflict !== 'duplicate'))(
+      'classifies $conflict on approval resume',
+      async ({ conflict, keyPattern, index }) => {
+        const error = {
+          code: 11000,
+          ...(format === 'keyPattern'
+            ? { keyPattern }
+            : { [format]: `E11000 duplicate key error collection: scheduleruns index: ${index}` }),
+        };
+        jest.spyOn(ScheduleRun, 'findOneAndUpdate').mockImplementationOnce(() => {
+          throw error;
+        });
+        await expect(methods.markRunResumeClaimed('schedule', new Date(), 0)).resolves.toEqual({
+          conflict,
+        });
+      },
+    );
+  });
+
+  it.each(['started', 'requires_action', 'success'] as const)(
+    'preserves the existing %s occurrence status without keyPattern or keyValue',
+    async (status) => {
+      const schedule = await methods.createSchedule(scheduleData());
+      const data = runData(schedule);
+      await ScheduleRun.create({ ...data, status });
+      jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce({
+        code: 11000,
+        message:
+          'E11000 duplicate key error collection: scheduleruns index: scheduleId_1_scheduledFor_1 dup key: { scheduleId: "schedule" }',
+      });
+      await expect(methods.reserveStartedRun(data)).resolves.toEqual({
+        conflict: 'duplicate',
+        existingStatus: status,
+      });
+    },
+  );
+
+  it('prefers keyPattern over a contradictory index name', async () => {
+    jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce({
+      code: 11000,
+      keyPattern: { capacitySlot: 1 },
+      message: 'E11000 duplicate key error collection: scheduleruns index: scheduleId_1',
+    });
+    await expect(methods.reserveStartedRun({})).resolves.toEqual({ conflict: 'slot-taken' });
+  });
+
+  it.each([
+    { code: 11000 },
+    { code: 42, message: 'index: scheduleId_1' },
+    { code: 11000, message: 'index: scheduleId_1_extra' },
+    { code: 11000, message: 'index: prefix_scheduleId_1' },
+    { code: 11000, message: 'index: unrelated dup key: { value: "index: scheduleId_1" }' },
+    { code: 11000, keyPattern: {}, message: 'index: scheduleId_1' },
+    { code: 11000, keyPattern: { scheduleId: 1, unexpected: 1 } },
+    { code: 11000, keyPattern: { scheduledFor: 1 } },
+    { code: 11000, message: 123 },
+    new Error('connection lost'),
+  ])('rethrows unrecognized errors: %j', async (error) => {
+    jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce(error);
+    await expect(methods.reserveStartedRun({})).rejects.toBe(error);
+    jest.spyOn(ScheduleRun, 'findOneAndUpdate').mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(methods.markRunResumeClaimed('schedule', new Date(), 0)).rejects.toBe(error);
+  });
+});
+
 describe('deleteScheduleRun conversation fence', () => {
   it('deletes only the reservation the caller inserted', async () => {
     const schedule = await methods.createSchedule(scheduleData());

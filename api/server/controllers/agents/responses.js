@@ -453,11 +453,14 @@ async function saveConversation(req, conversationId, agentId, agent) {
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
-      agentId,
+      agent_id: agentId,
       ...(title != null && { title }),
       model: agent?.model,
     },
-    { context: 'Responses API - save conversation' },
+    {
+      context: 'Responses API - save conversation',
+      initialAgentId: agent?.id === agentId ? agentId : null,
+    },
   );
 }
 
@@ -1536,7 +1539,7 @@ const createResponse = async (req, res) => {
       protocol: 'responses',
       requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
       receivedAt,
-      principal: req.user,
+      principal: req.tenantId == null ? req.user : { ...req.user, tenantId: req.tenantId },
       payload: validation.request,
     });
   } catch (error) {

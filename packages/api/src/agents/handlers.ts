@@ -5,6 +5,7 @@ import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
 import type {
   LCTool,
+  FileRefs,
   EventHandler,
   LCToolRegistry,
   InjectedMessage,
@@ -17,6 +18,14 @@ import type {
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
+import type {
+  WorkspaceEditResult,
+  WorkspacePreviewEditResult,
+  WorkspaceListResult,
+  WorkspaceReadResult,
+  WorkspaceSearchResult,
+  WorkspaceWriteResult,
+} from '~/code/workspace';
 import type {
   BackgroundToolDeadClaimRecovery,
   BackgroundToolWakeupAdmission,
@@ -55,11 +64,14 @@ import {
   getBlockedUninspectableFileField,
   inspectContent,
   isContentTraversalLimitError,
+  isContentTraversalProtected,
 } from '~/protection';
 import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  LIST_WORKSPACE_FILES_TOOL_NAME,
+  SEARCH_WORKSPACE_TOOL_NAME,
   isCodeSessionToolName,
 } from './tools';
 import {
@@ -72,15 +84,27 @@ import {
   BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
 } from './backgroundCompletion';
 import {
+  isAbortError,
+  logAxiosError,
+  truncateMiddle,
+  runOutsideTracing,
+  getSafeErrorMetadata,
+} from '~/utils';
+import {
+  WorkspaceToolHttpError,
+  WORKSPACE_EDIT_MAX_COUNT,
+  WORKSPACE_WRITE_MAX_BYTES,
+} from '~/code/workspace';
+import {
   hasIntentArg,
   stripIntentArg,
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
-import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
-import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { createSkillContentDigest } from './compatibility';
+import { isMissingSandboxPathError } from '~/files/code';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -433,6 +457,77 @@ export interface ToolExecuteOptions {
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
   ) => Promise<void>;
+  /** Reads a bounded text range from an attached worker's logical workspace. */
+  readWorkspaceFile?: (params: {
+    file_path: string;
+    workspace_id: string;
+    start_line: number;
+    max_lines: number;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceReadResult>;
+  /** Searches literal text within an attached worker's logical workspace. */
+  searchWorkspace?: (params: {
+    query: string;
+    workspace_id: string;
+    path?: string;
+    max_results: number;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceSearchResult>;
+  /** Lists relative file paths within an attached worker's logical workspace. */
+  listWorkspaceFiles?: (params: {
+    workspace_id: string;
+    path?: string;
+    after_path?: string;
+    max_results: number;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceListResult>;
+  /** Writes a UTF-8 file within an attached worker's logical workspace. */
+  writeWorkspaceFile?: (params: {
+    file_path: string;
+    content: string;
+    overwrite: boolean;
+    workspace_id: string;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceWriteResult>;
+  /** Previews exact replacements without mutating an attached worker workspace. */
+  previewWorkspaceEdit?: (params: {
+    file_path: string;
+    edits: Array<{ oldText: string; newText: string }>;
+    workspace_id: string;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspacePreviewEditResult>;
+  /** Applies exact replacements atomically within an attached worker workspace. */
+  editWorkspaceFile?: (params: {
+    file_path: string;
+    edits: Array<{ oldText: string; newText: string }>;
+    expected_base_sha256?: string;
+    workspace_id: string;
+    codeApiBaseUrl: string;
+    executionProfile: CodeExecutionContext['executionProfile'];
+    bridgeWorkerId?: string;
+    req?: ServerRequest;
+    signal?: AbortSignal;
+  }) => Promise<WorkspaceEditResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
    * sandbox `/exec` endpoint. The host implementation supplies the
@@ -445,7 +540,7 @@ export interface ToolExecuteOptions {
   readSandboxFile?: (params: {
     file_path: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    files?: SandboxFileRef[];
     /** Per-conversation stateful runtime-session hint (thread_id); forwarded so a
      *  host file op that is the first sandbox call joins the same runtime session
      *  as bash_tool instead of the Code API's default session. */
@@ -469,7 +564,7 @@ export interface ToolExecuteOptions {
   readSandboxImage?: (params: {
     file_path: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    files?: SandboxFileRef[];
     /** @see readSandboxFile.runtime_session_hint */
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
@@ -497,7 +592,7 @@ export interface ToolExecuteOptions {
     file_path: string;
     content: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+    files?: SandboxFileRef[];
     /** @see readSandboxFile.runtime_session_hint */
     runtime_session_hint?: string;
     codeApiBaseUrl?: string;
@@ -507,12 +602,25 @@ export interface ToolExecuteOptions {
     stdout?: string;
     stderr?: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; storage_session_id?: string; session_id?: string }>;
+    files?: SandboxFileRef[];
   } | null>;
 }
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.byteLength <= maxBytes) {
+    return value;
+  }
+  let end = maxBytes;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return bytes.subarray(0, end).toString('utf8');
+}
+
 /**
  * Inline ceiling for images pulled out of the code-execution sandbox —
  * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
@@ -745,10 +853,12 @@ function getValueShape(value: unknown): string {
   return typeof value;
 }
 
-function addLineNumbers(content: string): string {
+function addLineNumbers(content: string, startLine = 1): string {
   const lines = content.split('\n');
-  const w = String(lines.length).length;
-  return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
+  const w = String(startLine + lines.length - 1).length;
+  return lines
+    .map((line, index) => `${String(startLine + index).padStart(w, ' ')} | ${line}`)
+    .join('\n');
 }
 
 type AuthoringSkill = NonNullable<
@@ -785,9 +895,21 @@ type ExistingSkillFile =
 
 type LoadedSandboxText = LoadedSkillText;
 
+/**
+ * A code-session file ref as it crosses the host boundary: the SDK's wire
+ * shape (`kind` / `resource_id` / `version` / `inherited`) plus the legacy
+ * per-file `session_id` older Code API responses carry, which
+ * `getPreparedCodeOutputBuffer` still reads as a storage-session fallback.
+ * Every field is load-bearing on the wire — `version` is required for
+ * `kind: 'skill'` refs and `resource_id` names the resource that owns the
+ * file's storage session — so refs must be carried whole, never rebuilt
+ * from a subset.
+ */
+type SandboxFileRef = FileRefs[number] & { session_id?: string };
+
 type SandboxSessionContext = {
   session_id?: string;
-  files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
+  files?: SandboxFileRef[];
 };
 
 const MIME_MAP: Readonly<Record<string, string>> = Object.freeze({
@@ -872,10 +994,13 @@ function filteredToolArgumentsResult(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    return (
-      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
-      errorResult(tc, error.body.message)
-    );
+    const filtered = filteredContentResult(tc, req, getContentTraversalFragments(error));
+    if (filtered != null) {
+      return filtered;
+    }
+    return isContentTraversalProtected({ error, filters: req?.config?.filters })
+      ? errorResult(tc, error.body.message)
+      : null;
   }
 }
 
@@ -923,10 +1048,13 @@ function filteredToolOutputResult(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    return (
-      filteredContentResult(tc, req, getContentTraversalFragments(error)) ??
-      errorResult(tc, error.body.message)
-    );
+    const filtered = filteredContentResult(tc, req, getContentTraversalFragments(error));
+    if (filtered != null) {
+      return filtered;
+    }
+    return isContentTraversalProtected({ error, filters: req?.config?.filters })
+      ? errorResult(tc, error.body.message)
+      : null;
   }
 }
 
@@ -971,7 +1099,7 @@ function isFilteredSkillProjection(
     return filteredSkillResult(tc, req, input) != null;
   } catch (error) {
     if (isContentTraversalLimitError(error)) {
-      return true;
+      return isContentTraversalProtected({ error, filters: req?.config?.filters });
     }
     throw error;
   }
@@ -1866,24 +1994,6 @@ function looksBinary(content: string): boolean {
 }
 
 /**
- * True for the errors a sandbox raises about the requested PATH, and only
- * those. Deliberately narrower than {@link isSandboxMissingFileError}: that
- * predicate also accepts a bare "not found", which the sandbox reader emits
- * for a missing interpreter (`python3: not found`). Reporting that as a
- * missing image would send the model to `ls /mnt/data` while hiding a
- * runner dependency the operator needs to see.
- */
-function isMissingSandboxPathError(reason: string): boolean {
-  const message = reason.toLowerCase();
-  return (
-    message.includes('no such file or directory') ||
-    message.includes('cannot access') ||
-    message.includes('cannot find the path') ||
-    message.includes('enoent')
-  );
-}
-
-/**
  * Model-visible error for an image the sandbox could not hand back. The
  * read is a supported operation that FAILED, so the message must not reuse
  * the "images cannot be read as text" phrasing — that reads as a permanent
@@ -2134,6 +2244,303 @@ async function handleSandboxFileFallback(
   }
 }
 
+async function handleWorkspaceFileRead(
+  tc: ToolCallRequest,
+  filePath: string,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  codeExecutionContext: CodeExecutionContext,
+  signal?: AbortSignal,
+): Promise<ToolExecuteResult> {
+  const { readWorkspaceFile } = options;
+  if (!readWorkspaceFile) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'Attached workspace reading is not configured.',
+    };
+  }
+  const args = tc.args as { start_line?: number; max_lines?: number };
+  const startLine = args.start_line ?? 1;
+  const maxLines = args.max_lines ?? 200;
+  if (filePath.length === 0) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'A relative path after workspace/ is required.',
+    };
+  }
+  if (
+    !Number.isSafeInteger(startLine) ||
+    startLine < 1 ||
+    !Number.isSafeInteger(maxLines) ||
+    maxLines < 1 ||
+    maxLines > 500
+  ) {
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: 'start_line must be positive and max_lines must be between 1 and 500.',
+    };
+  }
+  const filteredName = filteredFileNameResult(tc, req, filePath);
+  if (filteredName != null) {
+    return filteredName;
+  }
+
+  try {
+    const result = await readWorkspaceFile({
+      file_path: filePath,
+      workspace_id: 'primary',
+      start_line: startLine,
+      max_lines: maxLines,
+      codeApiBaseUrl: codeExecutionContext.baseUrl,
+      executionProfile: codeExecutionContext.executionProfile,
+      ...(codeExecutionContext.bridgeWorkerId
+        ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+        : {}),
+      ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
+    });
+    const filtered = filteredFileResult(tc, req, filePath, result.content);
+    if (filtered != null) {
+      return filtered;
+    }
+    if (looksBinary(result.content)) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `"${filePath}" appears to be a binary file and cannot be read as text.`,
+      };
+    }
+    let payload = result.content;
+    let locallyTruncated = false;
+    let localNextStartLine: number | undefined;
+    if (Buffer.byteLength(payload, 'utf8') > MAX_READABLE_BYTES) {
+      payload = truncateUtf8(payload, MAX_READABLE_BYTES);
+      locallyTruncated = true;
+      const lastCompleteLine = payload.lastIndexOf('\n');
+      if (lastCompleteLine >= 0) {
+        payload = payload.slice(0, lastCompleteLine);
+        localNextStartLine = result.startLine + payload.split('\n').length;
+      }
+    }
+    let numbered = addLineNumbers(payload, result.startLine);
+    if (locallyTruncated) {
+      numbered +=
+        localNextStartLine != null
+          ? `\n\n[truncated at ${MAX_READABLE_BYTES} bytes; more content is available; call read_file again with path "workspace/${filePath}" and start_line ${localNextStartLine}]`
+          : `\n\n[the line was truncated at ${MAX_READABLE_BYTES} bytes and cannot be paged by line]`;
+    } else if (result.truncated && result.nextStartLine != null) {
+      numbered += `\n\n[more content is available; call read_file again with path "workspace/${filePath}" and start_line ${result.nextStartLine}]`;
+    }
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: numbered,
+    };
+  } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn(
+      '[handleWorkspaceFileRead] Attached workspace read failed',
+      getSafeErrorMetadata(error),
+    );
+    return {
+      toolCallId: tc.id,
+      status: 'error',
+      content: '',
+      errorMessage: `"${filePath}" could not be read from the attached workspace.`,
+    };
+  }
+}
+
+async function handleWorkspaceSearchCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown> | undefined,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  signal?: AbortSignal,
+): Promise<ToolExecuteResult> {
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable ?? {});
+  if (
+    mergedConfigurable?.codeEnvAvailable !== true ||
+    codeExecutionContext?.environmentType !== 'attached'
+  ) {
+    return errorResult(tc, 'search_workspace requires an attached code environment.');
+  }
+  if (!options.searchWorkspace) {
+    return errorResult(tc, 'Attached workspace search is not configured.');
+  }
+
+  const args = tc.args as { query?: unknown; path?: unknown; max_results?: unknown };
+  const maxResults = args.max_results ?? 50;
+  if (
+    typeof args.query !== 'string' ||
+    args.query.length === 0 ||
+    args.query.length > 4096 ||
+    (args.path != null && typeof args.path !== 'string') ||
+    !Number.isSafeInteger(maxResults) ||
+    Number(maxResults) < 1 ||
+    Number(maxResults) > 200
+  ) {
+    return errorResult(tc, 'query, path, or max_results is invalid for workspace search.');
+  }
+
+  try {
+    const result = await options.searchWorkspace({
+      query: args.query,
+      workspace_id: 'primary',
+      ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
+      max_results: Number(maxResults),
+      codeApiBaseUrl: codeExecutionContext.baseUrl,
+      executionProfile: codeExecutionContext.executionProfile,
+      ...(codeExecutionContext.bridgeWorkerId
+        ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+        : {}),
+      ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
+    });
+
+    for (const match of result.matches) {
+      const filtered = filteredFileResult(tc, req, match.path, match.text);
+      if (filtered != null) return filtered;
+    }
+    const unboundedContent =
+      result.matches.length === 0
+        ? 'No matches found.'
+        : result.matches
+            .map((match) => `workspace/${match.path}:${match.line}:${match.column}: ${match.text}`)
+            .join('\n');
+    const truncationNotice = '\n\n[results truncated]';
+    const locallyTruncated = Buffer.byteLength(unboundedContent, 'utf8') > MAX_READABLE_BYTES;
+    const truncated = locallyTruncated || result.truncated;
+    const content = truncated
+      ? truncateUtf8(
+          unboundedContent,
+          MAX_READABLE_BYTES - Buffer.byteLength(truncationNotice, 'utf8'),
+        )
+      : unboundedContent;
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: truncated ? `${content}${truncationNotice}` : content,
+    };
+  } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn(
+      '[handleWorkspaceSearchCall] Attached workspace search failed',
+      getSafeErrorMetadata(error),
+    );
+    return errorResult(tc, 'The attached workspace could not be searched.');
+  }
+}
+
+async function handleWorkspaceListCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown> | undefined,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  signal?: AbortSignal,
+): Promise<ToolExecuteResult> {
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable ?? {});
+  if (
+    mergedConfigurable?.codeEnvAvailable !== true ||
+    codeExecutionContext?.environmentType !== 'attached'
+  ) {
+    return errorResult(tc, 'list_workspace_files requires an attached code environment.');
+  }
+  if (!options.listWorkspaceFiles) {
+    return errorResult(tc, 'Attached workspace file listing is not configured.');
+  }
+
+  const args = tc.args as { path?: unknown; after_path?: unknown; max_results?: unknown };
+  const maxResults = args.max_results ?? 100;
+  if (
+    (args.path != null && typeof args.path !== 'string') ||
+    (args.after_path != null && typeof args.after_path !== 'string') ||
+    !Number.isSafeInteger(maxResults) ||
+    Number(maxResults) < 1 ||
+    Number(maxResults) > 500
+  ) {
+    return errorResult(
+      tc,
+      'path, after_path, or max_results is invalid for workspace file listing.',
+    );
+  }
+
+  try {
+    const result = await options.listWorkspaceFiles({
+      workspace_id: 'primary',
+      ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
+      ...(typeof args.after_path === 'string' && args.after_path.length > 0
+        ? { after_path: args.after_path }
+        : {}),
+      max_results: Number(maxResults),
+      codeApiBaseUrl: codeExecutionContext.baseUrl,
+      executionProfile: codeExecutionContext.executionProfile,
+      ...(codeExecutionContext.bridgeWorkerId
+        ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+        : {}),
+      ...(req ? { req } : {}),
+      ...(signal ? { signal } : {}),
+    });
+
+    for (const path of result.paths) {
+      const filtered = filteredFileNameResult(tc, req, path);
+      if (filtered != null) return filtered;
+    }
+    if (result.paths.length === 0) {
+      return {
+        toolCallId: tc.id,
+        status: 'success',
+        content: 'The attached workspace contains no discoverable files in that path.',
+      };
+    }
+    const renderedPaths: string[] = [];
+    let content = '';
+    let contentBytes = 0;
+    for (const [index, path] of result.paths.entries()) {
+      const entry = `workspace/${path}`;
+      const separator = renderedPaths.length > 0 ? '\n' : '';
+      const hasMore = index < result.paths.length - 1 || result.truncated;
+      const notice = hasMore
+        ? `\n\n[results truncated; continue with after_path: ${JSON.stringify(path)}]`
+        : '';
+      const entryBytes = Buffer.byteLength(`${separator}${entry}`, 'utf8');
+      if (contentBytes + entryBytes + Buffer.byteLength(notice, 'utf8') > MAX_READABLE_BYTES) {
+        break;
+      }
+      renderedPaths.push(entry);
+      content += `${separator}${entry}`;
+      contentBytes += entryBytes;
+    }
+    const locallyTruncated = renderedPaths.length < result.paths.length;
+    const continuationPath = locallyTruncated
+      ? result.paths[renderedPaths.length - 1]
+      : result.nextAfterPath;
+    const truncated = locallyTruncated || result.truncated;
+    const truncationNotice = truncated
+      ? `\n\n[results truncated; continue with after_path: ${JSON.stringify(continuationPath)}]`
+      : '';
+    return {
+      toolCallId: tc.id,
+      status: 'success',
+      content: `${content}${truncationNotice}`,
+    };
+  } catch (error) {
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn(
+      '[handleWorkspaceListCall] Attached workspace file listing failed',
+      getSafeErrorMetadata(error),
+    );
+    return errorResult(tc, 'The attached workspace files could not be listed.');
+  }
+}
+
 function sandboxSessionContext(
   tc: ToolCallRequest,
   override?: SandboxSessionContext,
@@ -2150,6 +2557,24 @@ function cloneSandboxSessionContext(
   };
 }
 
+/** Storage identity of a mounted ref, matching the code session's own key. */
+function sandboxFileIdentity(file: SandboxFileRef): string {
+  return `${file.storage_session_id ?? ''}\0${file.id}`;
+}
+
+/**
+ * Folds a host file-authoring result's `session_id` / `files` into the
+ * batch-local sandbox context that the next authoring call on the same path
+ * reuses, matching how the graph's own code session folds the same artifact:
+ * incoming refs win field by field, an existing ref superseded by storage
+ * identity or by name is dropped, and every other mounted ref survives.
+ *
+ * Both halves are load-bearing. Rebuilding refs from a field subset dropped
+ * `kind`, `resource_id`, `version` and `inherited`, and a primed skill file
+ * stripped of its `version` is an invalid input ref — the Code API requires
+ * it whenever `kind === 'skill'`. Replacing the list wholesale unmounted
+ * every file the run had primed but this particular write did not return.
+ */
 function mergeSandboxSessionArtifact(
   context: SandboxSessionContext,
   artifact: ToolExecuteResult['artifact'],
@@ -2168,41 +2593,68 @@ function mergeSandboxSessionArtifact(
     return;
   }
 
-  const files: SandboxSessionContext['files'] = [];
+  const execSessionId = context.session_id;
+  const incoming: SandboxFileRef[] = [];
+  const incomingByIdentity = new Map<string, number>();
+  const incomingNames = new Set<string>();
   for (const file of value.files) {
     if (!file || typeof file !== 'object') {
       continue;
     }
-    const ref = file as {
-      id?: unknown;
-      name?: unknown;
-      session_id?: unknown;
-      storage_session_id?: unknown;
-    };
+    const ref = file as SandboxFileRef;
     if (typeof ref.id !== 'string' || typeof ref.name !== 'string') {
       continue;
     }
-    files.push({
-      id: ref.id,
-      name: ref.name,
-      ...(typeof ref.session_id === 'string' ? { session_id: ref.session_id } : {}),
-      ...(typeof ref.storage_session_id === 'string'
-        ? { storage_session_id: ref.storage_session_id }
-        : {}),
-    });
+    /* Carry the ref whole: the Code API reads fields this host never
+     * inspects, so a copy is a downgrade. Only the storage session is
+     * defaulted, and it resolves exactly as `getPreparedCodeOutputBuffer`
+     * resolves it — the legacy per-file `session_id` outranks the execution
+     * session, or an older Code API response would be remounted against the
+     * bucket that merely produced it. */
+    const merged: SandboxFileRef = { ...ref };
+    merged.storage_session_id ??= ref.session_id ?? execSessionId;
+
+    /* One artifact can name the same stored file twice. Fold the repeat into
+     * the entry already collected rather than mounting it again: codeapi
+     * rejects an `/exec` whose files collide on a destination, taking the
+     * whole call down with it. */
+    const identity = sandboxFileIdentity(merged);
+    const seen = incomingByIdentity.get(identity);
+    if (seen !== undefined) {
+      incoming[seen] = { ...incoming[seen], ...merged };
+      continue;
+    }
+    incomingByIdentity.set(identity, incoming.length);
+    incomingNames.add(merged.name);
+    incoming.push(merged);
   }
-  if (files.length > 0) {
-    context.files = files;
+  if (incoming.length === 0) {
+    return;
   }
+
+  const retained: SandboxFileRef[] = [];
+  for (const existing of context.files ?? []) {
+    const index = incomingByIdentity.get(sandboxFileIdentity(existing));
+    if (index !== undefined) {
+      incoming[index] = { ...existing, ...incoming[index] };
+      continue;
+    }
+    if (!incomingNames.has(existing.name)) {
+      retained.push(existing);
+    }
+  }
+  context.files = [...retained, ...incoming];
 }
 
+/**
+ * Broader than {@link isMissingSandboxPathError}: the authoring flow also
+ * treats a bare "not found" as an absent file, because a `cat` that cannot
+ * start is indistinguishable from a `cat` that found nothing as far as
+ * "should this create or overwrite?" is concerned.
+ */
 function isSandboxMissingFileError(error: unknown): boolean {
-  const message = getThrownValueMessage(error).toLowerCase();
-  return (
-    message.includes('no such file or directory') ||
-    message.includes('cannot access') ||
-    message.includes('not found')
-  );
+  const message = getThrownValueMessage(error);
+  return isMissingSandboxPathError(message) || message.toLowerCase().includes('not found');
 }
 
 function invalidSandboxAuthoringPath(filePath: string): string | null {
@@ -3151,6 +3603,202 @@ async function writeBundledSkillFile({
   });
 }
 
+function attachedWorkspaceAuthoringPath(
+  tc: ToolCallRequest,
+  filePath: string,
+): { filePath: string } | ToolExecuteResult {
+  if (!filePath.startsWith('workspace/')) {
+    return errorResult(tc, 'Attached environment file paths must use "workspace/{relativePath}".');
+  }
+  const relativePath = filePath.slice('workspace/'.length);
+  const pathError = invalidSandboxAuthoringPath(relativePath);
+  return pathError ? errorResult(tc, pathError) : { filePath: relativePath };
+}
+
+function attachedWorkspaceMutationParams(
+  codeExecutionContext: CodeExecutionContext,
+  req: ServerRequest | undefined,
+  signal: AbortSignal | undefined,
+): {
+  workspace_id: string;
+  codeApiBaseUrl: string;
+  executionProfile: CodeExecutionContext['executionProfile'];
+  bridgeWorkerId?: string;
+  req?: ServerRequest;
+  signal?: AbortSignal;
+} {
+  return {
+    workspace_id: 'primary',
+    codeApiBaseUrl: codeExecutionContext.baseUrl,
+    executionProfile: codeExecutionContext.executionProfile,
+    ...(codeExecutionContext.bridgeWorkerId
+      ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
+      : {}),
+    ...(req ? { req } : {}),
+    ...(signal ? { signal } : {}),
+  };
+}
+
+async function handleAttachedWorkspaceCreateFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  content,
+  overwrite,
+  codeExecutionContext,
+  signal,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  content: string;
+  overwrite: boolean;
+  codeExecutionContext: CodeExecutionContext;
+  signal?: AbortSignal;
+}): AuthoringResult {
+  if (!options.writeWorkspaceFile) {
+    return errorResult(tc, 'Attached workspace file writing is not configured.');
+  }
+  const path = attachedWorkspaceAuthoringPath(tc, filePath);
+  if ('status' in path) return path;
+  if (new TextEncoder().encode(content).byteLength > WORKSPACE_WRITE_MAX_BYTES) {
+    return errorResult(tc, 'Attached workspace files are limited to 1 MiB per write.');
+  }
+  const filtered = filteredFileResult(tc, req, path.filePath, content);
+  if (filtered != null) return filtered;
+
+  try {
+    const result = await options.writeWorkspaceFile({
+      file_path: path.filePath,
+      content,
+      overwrite,
+      ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+    });
+    const action = result.created ? 'Created' : 'Updated';
+    return successResult(tc, `${action} workspace/${path.filePath} (${content.length} chars).`, {
+      path: `workspace/${path.filePath}`,
+      [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
+      bytes_written: result.bytesWritten,
+      created: result.created,
+    });
+  } catch (error) {
+    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409 && !overwrite) {
+      return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+    }
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn('[file_authoring] Attached workspace write failed', getSafeErrorMetadata(error));
+    return errorResult(tc, `Failed to write "workspace/${path.filePath}".`);
+  }
+}
+
+async function handleAttachedWorkspaceEditFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  edits,
+  codeExecutionContext,
+  signal,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  edits: TextEdit[];
+  codeExecutionContext: CodeExecutionContext;
+  signal?: AbortSignal;
+}): AuthoringResult {
+  if (!options.editWorkspaceFile) {
+    return errorResult(tc, 'Attached workspace file editing is not configured.');
+  }
+  const path = attachedWorkspaceAuthoringPath(tc, filePath);
+  if ('status' in path) return path;
+  if (edits.length > WORKSPACE_EDIT_MAX_COUNT) {
+    return errorResult(
+      tc,
+      `Attached workspace edits are limited to ${WORKSPACE_EDIT_MAX_COUNT} replacements per call.`,
+    );
+  }
+  const editBytes = edits.reduce(
+    (bytes, edit) =>
+      bytes +
+      new TextEncoder().encode(edit.old_text).byteLength +
+      new TextEncoder().encode(edit.new_text).byteLength,
+    0,
+  );
+  if (editBytes > WORKSPACE_WRITE_MAX_BYTES) {
+    return errorResult(tc, 'Attached workspace edit text is limited to 1 MiB per call.');
+  }
+  const filteredName = filteredFileNameResult(tc, req, path.filePath);
+  if (filteredName != null) return filteredName;
+
+  try {
+    const workspaceEdits = edits.map((edit) => ({
+      oldText: edit.old_text,
+      newText: edit.new_text,
+    }));
+    let expectedBaseSha256: string | undefined;
+    if (hasActiveFileFieldPolicy(req?.config?.filters, ['content', 'extracted_text'])) {
+      if (!options.previewWorkspaceEdit) {
+        return errorResult(
+          tc,
+          'Attached workspace editing requires an updated BYOM worker while file-content protections are enabled.',
+        );
+      }
+      let preview: WorkspacePreviewEditResult;
+      try {
+        preview = await options.previewWorkspaceEdit({
+          file_path: path.filePath,
+          edits: workspaceEdits,
+          ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+        });
+      } catch (error) {
+        if (signal?.aborted === true && isAbortError(error)) throw error;
+        if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 400) {
+          return errorResult(
+            tc,
+            'This attached environment must update its LibreChat Code worker before protected files can be edited.',
+          );
+        }
+        throw error;
+      }
+      const filteredContent = filteredFileResult(tc, req, path.filePath, preview.content);
+      if (filteredContent != null) return filteredContent;
+      expectedBaseSha256 = preview.baseSha256;
+    }
+    const result = await options.editWorkspaceFile({
+      file_path: path.filePath,
+      edits: workspaceEdits,
+      ...(expectedBaseSha256 ? { expected_base_sha256: expectedBaseSha256 } : {}),
+      ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+    });
+    return successResult(
+      tc,
+      `Updated workspace/${path.filePath} with ${result.replacements} exact replacement${result.replacements === 1 ? '' : 's'}.`,
+      {
+        path: `workspace/${path.filePath}`,
+        [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
+        bytes_written: result.bytesWritten,
+        created: false,
+        edits: result.replacements,
+        strategies: Array.from({ length: result.replacements }, () => 'exact'),
+      },
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409) {
+      return errorResult(
+        tc,
+        `The requested text did not match exactly once in "workspace/${path.filePath}". Re-read the file and retry.`,
+      );
+    }
+    if (signal?.aborted === true && isAbortError(error)) throw error;
+    logger.warn('[file_authoring] Attached workspace edit failed', getSafeErrorMetadata(error));
+    return errorResult(tc, `Failed to edit "workspace/${path.filePath}".`);
+  }
+}
+
 async function handleSandboxCreateFileCall({
   tc,
   options,
@@ -3160,6 +3808,7 @@ async function handleSandboxCreateFileCall({
   overwrite,
   sandboxContext,
   codeExecutionContext,
+  signal,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -3169,7 +3818,20 @@ async function handleSandboxCreateFileCall({
   overwrite: boolean;
   sandboxContext?: SandboxSessionContext;
   codeExecutionContext?: CodeExecutionContext;
+  signal?: AbortSignal;
 }): AuthoringResult {
+  if (codeExecutionContext?.environmentType === 'attached') {
+    return await handleAttachedWorkspaceCreateFileCall({
+      tc,
+      options,
+      req,
+      filePath,
+      content,
+      overwrite,
+      codeExecutionContext,
+      signal,
+    });
+  }
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
     return errorResult(tc, pathError);
@@ -3211,6 +3873,7 @@ async function handleSandboxEditFileCall({
   edits,
   sandboxContext,
   codeExecutionContext,
+  signal,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -3219,7 +3882,19 @@ async function handleSandboxEditFileCall({
   edits: TextEdit[];
   sandboxContext?: SandboxSessionContext;
   codeExecutionContext?: CodeExecutionContext;
+  signal?: AbortSignal;
 }): AuthoringResult {
+  if (codeExecutionContext?.environmentType === 'attached') {
+    return await handleAttachedWorkspaceEditFileCall({
+      tc,
+      options,
+      req,
+      filePath,
+      edits,
+      codeExecutionContext,
+      signal,
+    });
+  }
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
     return errorResult(tc, pathError);
@@ -3279,6 +3954,7 @@ async function handleCreateFileCall(
   req?: ServerRequest,
   sourceConfigurable?: Record<string, unknown>,
   sandboxContext?: SandboxSessionContext,
+  signal?: AbortSignal,
 ): AuthoringResult {
   const args = tc.args as { path?: unknown; content?: unknown; overwrite?: unknown };
   if (typeof args.path !== 'string' || args.path.length === 0) {
@@ -3297,7 +3973,7 @@ async function handleCreateFileCall(
   }
 
   const overwrite = args.overwrite === true;
-  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+  if (!isSkillFilePath(args.path)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
         tc,
@@ -3313,6 +3989,7 @@ async function handleCreateFileCall(
       overwrite,
       sandboxContext,
       codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
+      signal,
     });
   }
 
@@ -3392,6 +4069,7 @@ async function handleEditFileCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   sandboxContext?: SandboxSessionContext,
+  signal?: AbortSignal,
 ): AuthoringResult {
   const args = tc.args as {
     path?: unknown;
@@ -3408,7 +4086,7 @@ async function handleEditFileCall(
     return errorResult(tc, edits);
   }
 
-  if (!args.path.startsWith(SKILL_FILE_PREFIX)) {
+  if (!isSkillFilePath(args.path)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
         tc,
@@ -3423,6 +4101,7 @@ async function handleEditFileCall(
       edits,
       sandboxContext,
       codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
+      signal,
     });
   }
 
@@ -3526,6 +4205,7 @@ async function handleReadFileCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   onSandboxReadSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
@@ -3542,6 +4222,25 @@ async function handleReadFileCall(
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
   const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   let accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+
+  if (args.path.startsWith('workspace/')) {
+    if (!codeEnvAvailable || codeExecutionContext?.environmentType !== 'attached') {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: 'workspace/ paths require an attached code environment.',
+      };
+    }
+    return handleWorkspaceFileRead(
+      tc,
+      args.path.slice('workspace/'.length),
+      options,
+      req,
+      codeExecutionContext,
+      signal,
+    );
+  }
 
   /**
    * Short-circuit absolute code-env paths: the path can never be a skill
@@ -4404,7 +5103,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
-      const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const {
+        toolCalls,
+        agentId,
+        configurable,
+        metadata,
+        signal: runSignal,
+        resolve,
+        reject,
+      } = data;
       const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
         (
           data as ToolExecuteBatchRequest & {
@@ -5545,6 +6252,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
+                    tc.name === SEARCH_WORKSPACE_TOOL_NAME ||
+                    tc.name === LIST_WORKSPACE_FILES_TOOL_NAME ||
                     isFileAuthoringCall
                   ) {
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
@@ -5571,6 +6280,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           () => {
                             sandboxReadSucceeded = true;
                           },
+                          runSignal,
+                        );
+                      } else if (tc.name === SEARCH_WORKSPACE_TOOL_NAME) {
+                        handlerResult = await handleWorkspaceSearchCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                          runSignal,
+                        );
+                      } else if (tc.name === LIST_WORKSPACE_FILES_TOOL_NAME) {
+                        handlerResult = await handleWorkspaceListCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                          runSignal,
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
@@ -5580,6 +6306,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           req,
                           sourceConfigurable,
                           sandboxContext,
+                          runSignal,
                         );
                       } else if (tc.name === EDIT_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleEditFileCall(
@@ -5588,6 +6315,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           req,
                           sandboxContext,
+                          runSignal,
                         );
                       } else {
                         handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
@@ -5611,10 +6339,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         });
                         return filteredError;
                       }
-                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      const context = {
                         ...logContext,
                         toolCallArgsShape: getValueShape(tc.args),
-                      });
+                      };
+                      if (runSignal?.aborted === true && isAbortError(toolError)) {
+                        logger.debug(
+                          `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
+                          context,
+                        );
+                      } else {
+                        logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, context);
+                      }
                       return {
                         toolCallId: tc.id,
                         status: 'error' as const,
@@ -5877,6 +6613,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolCall: toolCallConfig,
                       configurable: mergedConfigurable,
                       metadata,
+                      /** The run's cancellation signal. Without it a foreground
+                       *  tool call keeps running after Stop: an MCP call never
+                       *  sends `notifications/cancelled`, and every other
+                       *  signal-aware tool keeps burning quota on a turn the
+                       *  user already abandoned. Detached background calls
+                       *  intentionally use their own controller instead. */
+                      ...(runSignal != null && { signal: runSignal }),
                     } as Record<string, unknown>);
 
                     /* Only sandbox-bound calls carry a runtime session hint, so
@@ -5974,18 +6717,35 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
                     }
                     const { message, logContext } = getSafeToolError(toolError);
+                    /** A user Stop rejects every in-flight call at once. That is
+                     *  the abort working, not a fault, so it is logged at debug.
+                     *  An aborted run says the turn is over, not that THIS
+                     *  rejection was the cancellation, so the error must look
+                     *  like one too; an unrelated failure racing the Stop stays
+                     *  at error level. Either way the level is all that changes
+                     *  — filtering and the result shape are identical. */
+                    const logToolFailure = (context: Record<string, unknown>): void => {
+                      if (runSignal?.aborted === true && isAbortError(toolError)) {
+                        logger.debug(
+                          `[ON_TOOL_EXECUTE] Tool ${tc.name} cancelled by run abort`,
+                          context,
+                        );
+                        return;
+                      }
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, context);
+                    };
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
                     });
                     if (filteredError != null) {
-                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      logToolFailure({
                         name: logContext.name,
                         contentFiltered: true,
                       });
                       return filteredError;
                     }
-                    logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                    logToolFailure({
                       ...logContext,
                       toolCallArgsShape: getValueShape(tc.args),
                       toolInputSchemaKind: getToolInputSchemaKind(tool),

@@ -848,30 +848,36 @@ const remoteApiOidcScopeSchema = z.string().refine((scope) => !scope.includes(',
   message: 'scopes must be space-separated',
 });
 
-const remoteApiOidcSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-    issuer: remoteApiOidcUrlSchema.optional(),
-    audience: z.string().min(1).optional(),
-    jwksUri: remoteApiOidcUrlSchema.optional(),
-    scope: remoteApiOidcScopeSchema.optional(),
-  })
-  .superRefine((oidc, ctx) => {
-    if (oidc.enabled === true && !oidc.issuer) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['issuer'],
-        message: 'issuer is required when OIDC auth is enabled',
-      });
-    }
-    if (oidc.enabled === true && !oidc.audience) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['audience'],
-        message: 'audience is required when OIDC auth is enabled',
-      });
-    }
-  });
+const oidcAccessTokenSchema = z.object({
+  enabled: z.boolean().default(false),
+  issuer: remoteApiOidcUrlSchema.optional(),
+  audience: z.string().min(1).optional(),
+  jwksUri: remoteApiOidcUrlSchema.optional(),
+});
+
+function validateEnabledOidc(
+  oidc: z.infer<typeof oidcAccessTokenSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  if (oidc.enabled === true && !oidc.issuer) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['issuer'],
+      message: 'issuer is required when OIDC auth is enabled',
+    });
+  }
+  if (oidc.enabled === true && !oidc.audience) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['audience'],
+      message: 'audience is required when OIDC auth is enabled',
+    });
+  }
+}
+
+const remoteApiOidcSchema = oidcAccessTokenSchema
+  .extend({ scope: remoteApiOidcScopeSchema.optional() })
+  .superRefine(validateEnabledOidc);
 
 const remoteApiAuthSchema = z.object({
   apiKey: z
@@ -885,6 +891,59 @@ const remoteApiAuthSchema = z.object({
 const remoteApiSchema = z.object({
   auth: remoteApiAuthSchema.optional(),
 });
+
+const managementClientBindingSchema = z
+  .object({
+    clientId: z.string().trim().min(1).max(128),
+    subject: z.string().trim().min(1).max(512).optional(),
+    userId: z
+      .string()
+      .trim()
+      .regex(/^[a-f\d]{24}$/i, 'must be a MongoDB ObjectId')
+      .transform((userId) => userId.toLowerCase()),
+    tenantId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, 'must be a valid tenant id')
+      .refine((tenantId) => tenantId !== '__SYSTEM__', 'system tenant is not allowed'),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+
+const managementApiOidcSchema = oidcAccessTokenSchema.strict().superRefine(validateEnabledOidc);
+
+const managementApiAuthSchema = z
+  .object({
+    oidc: managementApiOidcSchema,
+    clients: z.array(managementClientBindingSchema).max(100).default([]),
+  })
+  .strict()
+  .superRefine((auth, ctx) => {
+    if (auth.oidc.enabled === true && auth.clients.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['clients'],
+        message: 'at least one client binding is required when management auth is enabled',
+      });
+    }
+
+    const clientIds = new Set<string>();
+    for (let index = 0; index < auth.clients.length; index++) {
+      const client = auth.clients[index];
+      if (clientIds.has(client.clientId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['clients', index, 'clientId'],
+          message: 'client IDs must be unique',
+        });
+      }
+      clientIds.add(client.clientId);
+    }
+  });
+
+const managementApiSchema = z.object({ auth: managementApiAuthSchema.optional() }).strict();
 
 /**
  * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s
@@ -1037,6 +1096,60 @@ export function isSecureCodeEnvironmentControlURL(baseURL: string): boolean {
   }
 }
 
+export const codeEnvironmentPermissionDecisionSchema = z.enum(['allow', 'ask', 'deny']);
+export type CodeEnvironmentPermissionDecision = z.infer<
+  typeof codeEnvironmentPermissionDecisionSchema
+>;
+
+const codeEnvironmentPermissionFieldSchema = z
+  .object({
+    allowed: z.array(codeEnvironmentPermissionDecisionSchema).min(1),
+    default: codeEnvironmentPermissionDecisionSchema.optional().default('ask'),
+  })
+  .strict()
+  .superRefine((field, context) => {
+    if (!field.allowed.includes(field.default)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['default'],
+        message: 'Permission default must be included in allowed values',
+      });
+    }
+  });
+
+/**
+ * Typed user-tunable surface for one attached code environment. Omitted fields
+ * remain fixed at LibreChat's safe baseline. Isolation, networking, mounts,
+ * privileged execution, and secrets are deliberately not representable here.
+ */
+export const codeEnvironmentUserConfigSchema = z
+  .object({
+    permissions: z
+      .object({
+        fileWrite: codeEnvironmentPermissionFieldSchema.optional(),
+        commandExecution: codeEnvironmentPermissionFieldSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type CodeEnvironmentUserConfigSchema = z.infer<typeof codeEnvironmentUserConfigSchema>;
+
+export const codeEnvironmentUserSettingsSchema = z
+  .object({
+    permissions: z
+      .object({
+        fileWrite: codeEnvironmentPermissionDecisionSchema.optional(),
+        commandExecution: codeEnvironmentPermissionDecisionSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type CodeEnvironmentUserSettings = z.infer<typeof codeEnvironmentUserSettingsSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1095,6 +1208,12 @@ export const agentsEndpointSchema = baseEndpointSchema
                 /** Distinguishes operator policy from a principal-authorized
                  * environment merged into request-scoped server config. */
                 owner: z.enum(['deployment', 'principal']).optional().default('deployment'),
+                /** Administrator-controlled user-tunable settings. Only fields
+                 * represented here may be changed by a principal. */
+                configSchema: codeEnvironmentUserConfigSchema.optional(),
+                /** Request-scoped effective settings for a principal-owned environment.
+                 * Deployment config should define defaults through configSchema instead. */
+                settings: codeEnvironmentUserSettingsSchema.optional(),
                 /** Server-only enrollment metadata. `tokenEnv` names an
                  * environment variable and never contains the token itself. */
                 pairing: z
@@ -1212,6 +1331,7 @@ export const agentsEndpointSchema = baseEndpointSchema
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
         })
         .optional(),
+      managementApi: managementApiSchema.optional(),
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,
@@ -1887,6 +2007,13 @@ export type TRumConfig = {
 
 export type StartupConfigContext = 'share';
 
+/**
+ * Per-endpoint dropParams for the startup config. Most endpoints (e.g. `custom`) map a
+ * provider name directly to its dropParams. `azureOpenAI` instead maps a provider name to
+ * a per-model dropParams lookup, since each Azure group can drop different parameters.
+ */
+export type EndpointsDropParamsMap = Record<string, string[] | Record<string, string[]>>;
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -1984,6 +2111,7 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
   fileUploadSseEnabled?: boolean;
+  endpointsDropParamsMap?: EndpointsDropParamsMap;
 };
 
 export type TSharedLinkStartupInterface = Pick<
@@ -2579,6 +2707,15 @@ export const alternateName = {
   [KnownEndpoints.helicone]: 'Helicone',
 };
 
+/**
+ * Models the Assistants endpoints cannot run. GPT-6 Astra serves tool calls only
+ * from the Responses API, and the Assistants surface does not route through
+ * `getOpenAILLMConfig`, so listing it there would offer a configuration the
+ * provider rejects. Kept out of `sharedOpenAIModels`, which both Assistants
+ * catalogs consume.
+ */
+const responsesOnlyOpenAIModels = ['gpt-6-astra'];
+
 const sharedOpenAIModels = [
   'gpt-5.6',
   'gpt-5.6-terra',
@@ -2607,6 +2744,7 @@ const sharedOpenAIModels = [
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5-1',
   'claude-fable-5',
   'claude-opus-5',
   'claude-opus-4-8',
@@ -2642,6 +2780,7 @@ const sharedAnthropicModels = [
  * availability); Opus 4.1 has no global profile, so it uses `us.`.
  */
 export const bedrockModels = [
+  'global.anthropic.claude-fable-5-1',
   'global.anthropic.claude-fable-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
@@ -2679,8 +2818,11 @@ export const bedrockModels = [
 export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
-  [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
+  // TODO: Add agent models (agentsModels)
+  [EModelEndpoint.agents]: [...responsesOnlyOpenAIModels, ...sharedOpenAIModels],
   [EModelEndpoint.google]: [
+    // Gemini 3.8 Models
+    'gemini-3.8-flash',
     // Gemini 3.7 Models
     'gemini-3.7-flash',
     // Gemini 3.6 Models
@@ -2702,6 +2844,7 @@ export const defaultModels = {
   ],
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
+    ...responsesOnlyOpenAIModels,
     ...sharedOpenAIModels,
     'chatgpt-4o-latest',
     'gpt-4-vision-preview',
@@ -2717,12 +2860,22 @@ const fitlerAssistantModels = (str: string) => {
 
 const openAIModels = defaultModels[EModelEndpoint.openAI];
 
+/**
+ * The OpenAI catalog without the models only the first-party OpenAI endpoint
+ * can run. Azure OpenAI shares this list, but Astra is neither routed to the
+ * Responses API nor given its request constraints there, and listing it first
+ * would let it become the default selection.
+ */
+const nonResponsesOnlyOpenAIModels = openAIModels.filter(
+  (model) => !responsesOnlyOpenAIModels.includes(model),
+);
+
 export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
-  [EModelEndpoint.azureOpenAI]: openAIModels,
+  [EModelEndpoint.azureOpenAI]: nonResponsesOnlyOpenAIModels,
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],
@@ -3044,6 +3197,10 @@ export enum ViolationTypes {
    * Registration violations.
    */
   REGISTRATIONS = 'registrations',
+  /**
+   * Shared link retrieval limit violations.
+   */
+  SHARE_LIMIT = 'share_limit',
 }
 
 /**
@@ -3296,7 +3453,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.14',
+  CONFIG_VERSION = '1.3.15',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */

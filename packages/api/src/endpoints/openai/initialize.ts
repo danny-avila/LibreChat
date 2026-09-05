@@ -18,6 +18,25 @@ import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
 
 /**
+ * Admin-configured base URL for a built-in OpenAI-family endpoint, or `undefined`
+ * when the endpoint is served by OpenAI/Azure directly.
+ *
+ * Read at call time rather than module load so environment changes apply, and
+ * shared with callers that must know the endpoint a built-in provider actually
+ * talks to before claiming its contract. May be the `user_provided` sentinel,
+ * which resolves to a per-user value only after a database read.
+ */
+export function getBuiltInBaseURL(endpoint?: string | null): string | undefined {
+  if (endpoint === EModelEndpoint.openAI) {
+    return process.env.OPENAI_REVERSE_PROXY;
+  }
+  if (endpoint === EModelEndpoint.azureOpenAI) {
+    return process.env.AZURE_OPENAI_BASEURL;
+  }
+  return undefined;
+}
+
+/**
  * Initializes OpenAI options for agent usage. This function always returns configuration
  * options and never creates a client instance (equivalent to optionsOnly=true behavior).
  *
@@ -32,8 +51,7 @@ export async function initializeOpenAI(
   const { appConfig, user, requestBody } = resolveEndpointRuntime(params);
   const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
   const allConfig = appConfig?.endpoints?.all;
-  const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY, AZURE_OPENAI_BASEURL } =
-    process.env;
+  const { PROXY, OPENAI_API_KEY, AZURE_API_KEY } = process.env;
 
   const { key: expiresAt } = requestBody;
   const modelName = model_parameters?.model as string | undefined;
@@ -43,13 +61,10 @@ export async function initializeOpenAI(
     [EModelEndpoint.azureOpenAI]: AZURE_API_KEY,
   };
 
-  const baseURLOptions = {
-    [EModelEndpoint.openAI]: OPENAI_REVERSE_PROXY,
-    [EModelEndpoint.azureOpenAI]: AZURE_OPENAI_BASEURL,
-  };
+  const configuredBaseURL = getBuiltInBaseURL(endpoint);
 
   const userProvidesKey = isUserProvided(credentials[endpoint as keyof typeof credentials]);
-  const userProvidesURL = isUserProvided(baseURLOptions[endpoint as keyof typeof baseURLOptions]);
+  const userProvidesURL = isUserProvided(configuredBaseURL);
 
   let userValues: UserKeyValues | null = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
@@ -60,9 +75,7 @@ export async function initializeOpenAI(
   let apiKey = userProvidesKey
     ? userValues?.apiKey
     : credentials[endpoint as keyof typeof credentials];
-  const baseURL = userProvidesURL
-    ? userValues?.baseURL
-    : baseURLOptions[endpoint as keyof typeof baseURLOptions];
+  const baseURL = userProvidesURL ? userValues?.baseURL : configuredBaseURL;
 
   const clientOptions: OpenAIConfigOptions = {
     proxy: PROXY ?? undefined,

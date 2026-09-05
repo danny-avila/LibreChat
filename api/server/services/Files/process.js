@@ -349,6 +349,8 @@ async function sweepExpiredFiles(options = {}) {
   return sweepExpiredFilesWithDeps(options, {
     getExpiredFiles: db.getExpiredFiles,
     processDeleteRequest,
+    incrementFileDeletionAttempts: db.incrementFileDeletionAttempts,
+    deferExpiredFile: db.deferExpiredFile,
     logger,
   });
 }
@@ -1314,7 +1316,14 @@ async function saveBase64Image(
   const effectiveResolution = resolution ?? appConfig.fileConfig?.imageGeneration ?? 'high';
   const file_id = _file_id ?? v4();
   let filename = `${file_id}-${_filename}`;
-  const { buffer: inputBuffer, type } = base64ToBuffer(url);
+  const { buffer: inputBuffer, type: declaredType } = base64ToBuffer(url);
+
+  const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
+  /** Sharp re-encodes what it resizes, so the bytes being saved are not necessarily in the
+   * format the data URL declared — an SVG arrives here and is rasterized to PNG. The record has
+   * to describe the bytes, because `file.type` is handed to providers verbatim as `media_type`
+   * (Anthropic), `inlineData.mimeType` (Google), and the `data:` prefix (OpenAI). */
+  const type = image.type ?? declaredType;
   if (!path.extname(_filename)) {
     const extension = mime.getExtension(type);
     if (extension) {
@@ -1323,8 +1332,6 @@ async function saveBase64Image(
       throw new Error(`Could not determine file extension from MIME type: ${type}`);
     }
   }
-
-  const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
   const filepath = await saveBuffer({

@@ -1332,9 +1332,10 @@ describe('OpenAIChatCompletionController', () => {
       req.user = {
         id: 'user-123',
         role: 'USER',
-        tenantId: 'tenant-123',
+        tenantId: 'stale-user-tenant',
         federatedTokens: { access_token: 'secret' },
       };
+      req.tenantId = 'request-tenant';
       const requestBody = {
         ...req.body,
         ephemeralAgent: { skills: true },
@@ -1350,7 +1351,10 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
         expect.objectContaining({
           protocol: 'chat.completions',
-          principal: req.user,
+          principal: {
+            ...req.user,
+            tenantId: 'request-tenant',
+          },
           payload: requestBody,
           requestId: expect.any(String),
           receivedAt: expect.any(Number),

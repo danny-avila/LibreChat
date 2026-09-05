@@ -1,9 +1,17 @@
 const fs = require('fs');
+const vm = require('vm');
 const path = require('path');
 
 describe('Experimental server configuration', () => {
   const source = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
   const standardSource = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+
+  it.each([
+    ['standard', standardSource],
+    ['experimental', source],
+  ])('parses the %s server without duplicate declarations', (_name, serverSource) => {
+    expect(() => new vm.Script(serverSource)).not.toThrow();
+  });
 
   it('configures HTTP timeouts for each cluster worker server', () => {
     const listenIndex = source.indexOf('const server = app.listen');
@@ -44,6 +52,19 @@ describe('Experimental server configuration', () => {
     expect(sweepIndex).toBeGreaterThan(connectIndex);
     // Idempotent guard lives in the service; started exactly once from this entrypoint.
     expect(source.match(/initializeScheduleErasureSweep\(\);/g)).toHaveLength(1);
+  });
+
+  it('starts code-environment lifecycle reconciliation after Mongo connects in each worker', () => {
+    const connectIndex = source.indexOf('await connectDb();');
+    const reconcileIndex = source.indexOf('startCodeEnvironmentLifecycleReconciler({ mongoose });');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(reconcileIndex).toBeGreaterThan(connectIndex);
+    expect(listenIndex).toBeGreaterThan(reconcileIndex);
+    expect(
+      source.match(/startCodeEnvironmentLifecycleReconciler\(\{ mongoose \}\);/g),
+    ).toHaveLength(1);
   });
 
   it('never arms the full schedule engine in a clustered worker', () => {
@@ -102,11 +123,15 @@ describe('Experimental server configuration', () => {
     const standardAdminTenantIndex = standardSource.indexOf(
       "app.use('/api/admin', preAuthTenantMiddleware);",
     );
-    const standardFirstAdminRouteIndex = standardSource.indexOf("app.use('/api/admin/insights'");
+    const standardFirstAdminRouteIndex = standardSource.indexOf(
+      "app.use('/api/admin', routes.adminAuth);",
+    );
     const experimentalAdminTenantIndex = source.indexOf(
       "app.use('/api/admin', preAuthTenantMiddleware);",
     );
-    const experimentalFirstAdminRouteIndex = source.indexOf("app.use('/api/admin/insights'");
+    const experimentalFirstAdminRouteIndex = source.indexOf(
+      "app.use('/api/admin', routes.adminAuth);",
+    );
 
     expect(standardAdminTenantIndex).toBeGreaterThan(-1);
     expect(standardFirstAdminRouteIndex).toBeGreaterThan(standardAdminTenantIndex);
@@ -119,5 +144,13 @@ describe('Experimental server configuration', () => {
       "app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);",
     );
     expect(source).toContain("app.use('/api/share', preAuthTenantMiddleware, routes.share);");
+  });
+
+  it.each([
+    ['standard', standardSource],
+    ['experimental', source],
+  ])('keeps Insights on the non-admin route in the %s server', (_name, serverSource) => {
+    expect(serverSource).toContain("app.use('/api/insights', routes.insights);");
+    expect(serverSource).not.toContain("app.use('/api/admin/insights'");
   });
 });

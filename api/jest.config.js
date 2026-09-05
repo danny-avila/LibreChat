@@ -7,6 +7,13 @@ const esModules = [
   '@langchain/langgraph-sdk',
   '@mistralai/mistralai',
   'uuid',
+  'sanitize-html',
+  'htmlparser2',
+  'domhandler',
+  'domelementtype',
+  'domutils',
+  'dom-serializer',
+  'entities',
 ].join('|');
 
 module.exports = {

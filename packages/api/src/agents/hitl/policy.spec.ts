@@ -72,15 +72,52 @@ describe('isToolDeniedByApprovalPolicy', () => {
 });
 
 describe('resolveToolApprovalPolicy', () => {
-  test('returns the endpoint policy unchanged (single layer wired today)', () => {
+  test('returns the endpoint policy unchanged when BYOM is not active', () => {
     const endpoint: TToolApprovalPolicy = { enabled: true, mode: 'default', deny: ['rm'] };
-    // Identity, not a copy — the resolver is a passthrough until more layers ship.
+    // Identity, not a copy — non-BYOM behavior remains unchanged.
     expect(resolveToolApprovalPolicy({ endpoint })).toBe(endpoint);
   });
 
   test('returns undefined when there is no endpoint policy', () => {
     expect(resolveToolApprovalPolicy({})).toBeUndefined();
     expect(resolveToolApprovalPolicy({ endpoint: undefined })).toBeUndefined();
+  });
+
+  test('enables the safe BYOM baseline without affecting unrelated tools', () => {
+    expect(resolveToolApprovalPolicy({ attachedCodeEnvironment: true })).toEqual({
+      enabled: true,
+      mode: 'bypass',
+    });
+  });
+
+  test.each(['default', 'dontAsk', 'bypass'] as const)(
+    'preserves an enabled endpoint %s policy when BYOM is active',
+    (mode) => {
+      const endpoint: TToolApprovalPolicy = {
+        enabled: true,
+        mode,
+        deny: ['dangerous_tool'],
+      };
+      expect(resolveToolApprovalPolicy({ endpoint, attachedCodeEnvironment: true })).toBe(endpoint);
+    },
+  );
+
+  test('uses the BYOM bypass baseline for a configured but inactive endpoint policy', () => {
+    expect(
+      resolveToolApprovalPolicy({
+        endpoint: { mode: 'dontAsk', deny: ['dangerous_tool'] },
+        attachedCodeEnvironment: true,
+      }),
+    ).toEqual({
+      enabled: true,
+      mode: 'bypass',
+      deny: ['dangerous_tool'],
+    });
+  });
+
+  test('preserves the administrator emergency override for BYOM', () => {
+    const endpoint: TToolApprovalPolicy = { enabled: false };
+    expect(resolveToolApprovalPolicy({ endpoint, attachedCodeEnvironment: true })).toBe(endpoint);
   });
 
   test('ignores the reserved agent/skills layers for now (behaviour-preserving)', () => {

@@ -1052,6 +1052,8 @@ describe('initializeClient — subagent loading', () => {
       'read_file',
       'create_file',
       'edit_file',
+      'search_workspace',
+      'list_workspace_files',
     ]);
 
     await expect(
@@ -1106,6 +1108,7 @@ describe('initializeClient — subagent loading', () => {
         statefulCodeEnvironment: 'agent-user',
         memory_scope: 'agent',
         memoryToolsRegistered: false,
+        skillAuthoringAvailable: false,
         historicalToolNames: ['web'],
       }),
     );

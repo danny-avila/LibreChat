@@ -1,5 +1,6 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librechat-data-provider';
+import { hasParallelLanes } from '~/utils/lanes';
 
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
@@ -412,6 +413,7 @@ function synthesizeActivityFolds(
  */
 export function groupActivityPhases(
   content: Array<TMessageContentParts | undefined> | undefined,
+  laneGroups?: ReadonlySet<number>,
 ): ActivityPhaseSegment[] | undefined {
   if (!content) {
     return undefined;
@@ -420,10 +422,14 @@ export function groupActivityPhases(
   /** Parallel columns lay their own activity out and are rendered by
    *  `ParallelContentRenderer`, which a synthesized card would pull onto the
    *  phase path. Server markers may still claim parallel spans; only the
-   *  client-built folds stand down. */
-  const foldable = !definedIndices.some(
-    (index) => (content[index] as { groupId?: string } | undefined)?.groupId != null,
-  );
+   *  client-built folds stand down. A group id alone is not enough: one that
+   *  resolves to a single agent renders sequentially, so it folds like any
+   *  other run.
+   *
+   *  `laneGroups` is the caller's own lane scan over this same content, and
+   *  content is rewritten on every streamed delta — taking the answer rather
+   *  than repeating the scan keeps a render to one pass. */
+  const foldable = laneGroups != null ? laneGroups.size === 0 : !hasParallelLanes(content);
   const completed = definedIndices
     .map((index) => ({ part: getActivityLabelPart(content[index]), index }))
     .filter(

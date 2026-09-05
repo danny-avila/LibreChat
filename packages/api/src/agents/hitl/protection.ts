@@ -165,7 +165,7 @@ export interface ResumeContentProtectionDependencies {
   getFiles: ResumeContentInspectionInput['getFiles'];
   getAgent: (filter: { id: string }) => Promise<Agent | null | undefined>;
   getActions: (
-    filter: { agent_id: { $in: string[] } },
+    query: { agentId: string[] },
     includeSensitive: boolean,
   ) => Promise<ResumeAction[] | null | undefined>;
   getUserMemories: (params: { userId: string; agentId?: string }) => Promise<MemoryContentInput[]>;
@@ -642,7 +642,7 @@ async function getResumeActionSnapshots(
     ENCRYPTED_ACTION_METADATA_FIELDS,
   );
   const actions =
-    (await dependencies.getActions({ agent_id: { $in: agentIds } }, needsEncryptedMetadata)) ?? [];
+    (await dependencies.getActions({ agentId: agentIds }, needsEncryptedMetadata)) ?? [];
   const withFunctions = actions.map((action) => {
     const rawSpec = action.metadata?.raw_spec;
     if (typeof rawSpec !== 'string') {

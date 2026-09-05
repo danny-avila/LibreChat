@@ -1,5 +1,7 @@
-import { HookRegistry } from '@librechat/agents';
+import { HookRegistry, executeHooks } from '@librechat/agents';
 import { registerToolApprovalHook, clearToolApprovalHooks } from './hooks';
+import { createAttachedCodeEnvironmentPolicyHook } from './byom';
+import { resolveToolApprovalPolicy } from './policy';
 import { buildHITLRunWiring } from './runtime';
 
 describe('buildHITLRunWiring', () => {
@@ -53,6 +55,40 @@ describe('buildHITLRunWiring', () => {
     });
     expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
   });
+
+  test.each([
+    ['default', 'ask'],
+    ['dontAsk', 'deny'],
+  ] as const)(
+    'keeps the enabled endpoint %s fallback for unrelated tools in BYOM runs',
+    async (mode, expectedDecision) => {
+      const policy = resolveToolApprovalPolicy({
+        endpoint: { enabled: true, mode },
+        attachedCodeEnvironment: true,
+      });
+      const wiring = buildHITLRunWiring(
+        policy,
+        {},
+        [],
+        [{ hook: createAttachedCodeEnvironmentPolicyHook(new Set(['attached-agent'])) }],
+      );
+
+      const result = await executeHooks({
+        registry: wiring?.hooks as HookRegistry,
+        matchQuery: 'mcp:github:create_issue',
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId: 'run-byom-policy',
+          toolName: 'mcp:github:create_issue',
+          toolInput: {},
+          toolUseId: 'tool-unrelated',
+          executingAgentId: 'attached-agent',
+        },
+      });
+
+      expect(result.decision).toBe(expectedDecision);
+    },
+  );
 });
 
 describe('buildHITLRunWiring host-hook composition', () => {

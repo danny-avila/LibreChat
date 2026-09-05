@@ -376,6 +376,17 @@ describe('file content inspection policy', () => {
         skills: { pii: { fields: ['file_text'], starterPatterns: [] } },
       } as FiltersConfig),
     ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { action: 'audit', fields: ['file_text'] } },
+      } as FiltersConfig),
+    ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { action: 'audit', fields: ['file_text'] } },
+        files: { pii: { fields: ['content'], uninspectable: 'block' } },
+      } as FiltersConfig),
+    ).toBe('content');
   });
 
   it('returns a stable raw-free block response', () => {
@@ -888,6 +899,40 @@ describe('file content inspection policy', () => {
       expect(getFiles).not.toHaveBeenCalled();
     },
   );
+
+  it('allows an oversized canonical file subtree for an audit-only policy', async () => {
+    const input = {
+      files: Array.from({ length: 4_200 }, (_, index) => ({
+        file_id: `file-${index}`,
+      })),
+    };
+    const getFiles = jest.fn();
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters: {
+          files: {
+            pii: {
+              action: 'audit',
+              fields: ['uri'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-file-field',
+                  label: 'private file field',
+                  regex: 'PRIVATE-FILE-[A-Z]+',
+                },
+              ],
+            },
+          },
+        },
+        input,
+        user: { id: 'user-1' },
+        getFiles,
+      }),
+    ).resolves.toMatchObject({ sanitizedInput: input, hydratedFiles: [] });
+    expect(getFiles).not.toHaveBeenCalled();
+  });
 
   it('hydrates discovered file names without rejecting an unrelated oversized subtree', async () => {
     const canonicalFile = {

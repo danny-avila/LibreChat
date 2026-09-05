@@ -292,6 +292,20 @@ describe('GET /api/config', () => {
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
     });
+
+    it('should not expose endpointsDropParamsMap to unauthenticated callers', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [{ name: 'custom-provider', dropParams: ['temperature'] }],
+        },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('endpointsDropParamsMap');
+    });
   });
 
   describe('authenticated (req.user exists)', () => {
@@ -701,6 +715,95 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('endpointsDropParamsMap', () => {
+    it('maps dropParams for array-configured custom endpoints', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [
+            { name: 'custom-provider', dropParams: ['temperature', 'top_p'] },
+            { name: 'no-drop-provider' },
+          ],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({
+        'custom-provider': ['temperature', 'top_p'],
+      });
+    });
+
+    it('normalizes an ollama custom endpoint name to lowercase', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [{ name: 'Ollama', dropParams: ['stop'] }],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({ ollama: ['stop'] });
+    });
+
+    it('keeps azureOpenAI dropParams model-specific instead of merging across groups', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          azureOpenAI: {
+            groupMap: {
+              groupA: { dropParams: ['temperature'] },
+              groupB: { dropParams: ['temperature', 'top_p'] },
+            },
+            modelGroupMap: {
+              'model-a': { group: 'groupA' },
+              'model-b': { group: 'groupB' },
+            },
+          },
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap.azureOpenAI).toEqual({
+        'model-a': ['temperature'],
+        'model-b': ['temperature', 'top_p'],
+      });
+    });
+
+    it('excludes endpoints without dropParams and non-param endpoints like agents', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [{ name: 'no-drop-provider' }],
+          azureOpenAI: {
+            groupMap: { groupA: {} },
+            modelGroupMap: { 'model-a': { group: 'groupA' } },
+          },
+          agents: [{ name: 'agents-provider', dropParams: ['temperature'] }],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({});
+    });
+
+    it('returns an empty map when appConfig has no endpoints', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({});
     });
   });
 

@@ -7,7 +7,7 @@ import type {
   DeleteResult,
   Model,
 } from 'mongoose';
-import type { AclEntry, IAclEntry } from '~/types';
+import type { IAclEntry } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { MAX_PERM_BITS } from '~/common/permissions';
 
@@ -42,8 +42,8 @@ const supersetCache = new Map<number, readonly number[]>();
  * which is the right behavior for a request asking for bits the system does
  * not recognize.
  *
- * For the current 4-bit `PermissionBits` enum the worst case is `required = 0`
- * which expands to 16 values; the best case (all bits required) expands to 1.
+ * For the current 5-bit `PermissionBits` enum the worst case is `required = 0`
+ * which expands to 32 values; the best case (all bits required) expands to 1.
  * Results are memoized per `requiredBits` so the expansion runs at most once
  * per distinct mask over the process lifetime.
  */
@@ -85,6 +85,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   findEntriesByResource: (
     resourceType: string,
     resourceId: string | Types.ObjectId,
+    session?: ClientSession,
   ) => Promise<IAclEntry[]>;
   findEntriesByPrincipalsAndResource: (
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
@@ -146,7 +147,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     options?: { session?: ClientSession },
   ) => Promise<DeleteResult>;
   bulkWriteAclEntries: (
-    ops: AnyBulkWriteOperation<AclEntry>[],
+    ops: AnyBulkWriteOperation[],
     options?: { session?: ClientSession },
   ) => Promise<import('mongodb').BulkWriteResult>;
   findPublicResourceIds: (
@@ -190,9 +191,14 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   async function findEntriesByResource(
     resourceType: string,
     resourceId: string | Types.ObjectId,
+    session?: ClientSession,
   ): Promise<IAclEntry[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return await AclEntry.find({ resourceType, resourceId }).lean<IAclEntry[]>();
+    const query = AclEntry.find({ resourceType, resourceId });
+    if (session) {
+      query.session(session);
+    }
+    return await query.lean<IAclEntry[]>();
   }
 
   /**
@@ -543,7 +549,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
    * @param options - Optional query options (e.g., { session })
    */
   async function bulkWriteAclEntries(
-    ops: AnyBulkWriteOperation<AclEntry>[],
+    ops: AnyBulkWriteOperation[],
     options?: { session?: ClientSession },
   ): Promise<import('mongodb').BulkWriteResult> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;

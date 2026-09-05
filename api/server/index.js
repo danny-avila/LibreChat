@@ -1,13 +1,13 @@
 require('../config/credentials');
 
 const telemetry = require('./telemetry');
-const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -46,6 +46,7 @@ const {
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
+  getRemainingShutdownMs,
   configureServerTimeouts,
   setupGracefulShutdown,
   updateInterfacePermissions,
@@ -54,6 +55,7 @@ const {
   configureAgentEventRuntime,
   createAgentEventTerminalHandler,
   createScheduleWriteGate,
+  startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -144,11 +146,23 @@ const configureGenerationStreams = () => {
       priority: 100,
     },
   );
+  /** Spend the shutdown budget that is actually left waiting for detached generations to
+   *  record their own provider drains, holding back a reserve for the tasks after this one.
+   *  Abandoning an unrecorded drain fences the next generation permanently. */
+  const destroyGenerationJobManager = () => {
+    const remaining = getRemainingShutdownMs();
+    return GenerationJobManager.destroy(
+      remaining == null
+        ? undefined
+        : { settlementBudgetMs: Math.max(0, remaining - SHUTDOWN_TEARDOWN_RESERVE_MS) },
+    );
+  };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
-  registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
-    priority: 100,
-  });
+  registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
 };
+
+/** Reserved for the shutdown tasks that run after the generation job manager. */
+const SHUTDOWN_TEARDOWN_RESERVE_MS = 10_000;
 
 const startServer = async () => {
   await waitForKeyvRedisClient();
@@ -179,6 +193,7 @@ const startServer = async () => {
   await ensureConfigIndexes(mongoose);
 
   logger.info('Connected to MongoDB');
+  startCodeEnvironmentLifecycleReconciler({ mongoose });
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
@@ -367,7 +382,7 @@ const startServer = async () => {
   /* API Endpoints */
   app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', preAuthTenantMiddleware);
-  app.use('/api/admin/insights', routes.insights);
+  app.use('/api/insights', routes.insights);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
   app.use('/api/admin/code-environments', routes.adminCodeEnvironments);

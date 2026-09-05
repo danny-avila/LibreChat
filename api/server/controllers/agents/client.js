@@ -16,6 +16,7 @@ const {
   createSafeUser,
   initializeAgent,
   resolveConfigHeaders,
+  resolveRequestTenantId,
   countTokens,
   getBalanceConfig,
   omitTitleOptions,
@@ -49,7 +50,11 @@ const {
   getAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
+  resolveToolApprovalPolicy,
   buildToolApprovalHooks,
+  collectAttachedCodeEnvironmentAgentIds,
+  collectAttachedCodeEnvironmentPolicySettings,
+  buildAttachedCodeEnvironmentAdmissionHooks,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
@@ -137,6 +142,12 @@ const {
   createCompactionSemanticIndexProjection,
   restoreCompactionSemanticIndexSnapshot,
   MAX_AGENT_CONTEXT_SKILLS,
+  isAgentFadingTier,
+  isAgentFadingTierEntries,
+  resolveRunContextMeta,
+  resolveRunFadingTiers,
+  createContextMetaPublisher,
+  selectRunContextMetaToPublish,
 } = require('@librechat/api');
 const {
   Run,
@@ -205,7 +216,7 @@ function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
     return undefined;
   }
-  const { calibrationRatio, encoding } = contextMeta;
+  const { calibrationRatio, encoding, fading, fadingTiers } = contextMeta;
   if (
     !Number.isFinite(calibrationRatio) ||
     calibrationRatio < 0.5 ||
@@ -217,7 +228,64 @@ function normalizeEventActorContextMeta(contextMeta) {
   ) {
     throw new RangeError('Event actor context calibration is invalid');
   }
-  return { calibrationRatio, ...(encoding == null ? {} : { encoding }) };
+  if (fading != null && !isAgentFadingTier(fading)) {
+    throw new RangeError('Event actor context fading tier is invalid');
+  }
+  if (fadingTiers != null && !isAgentFadingTierEntries(fadingTiers)) {
+    throw new RangeError('Event actor context fading tiers are invalid');
+  }
+  return {
+    calibrationRatio,
+    ...(encoding == null ? {} : { encoding }),
+    ...(fading == null ? {} : { fading }),
+    ...(fadingTiers == null ? {} : { fadingTiers }),
+  };
+}
+
+/**
+ * Seeds for a new run from the previous run's contextMeta: the calibration
+ * ratio when the tokenizer encoding still matches, and the fading tiers, which
+ * are character-based and so seed regardless of encoding. The default agent's
+ * tier and the per-agent map are both passed; the SDK restores each agent from
+ * its own entry and falls back to the default tier for the first agent.
+ */
+function resolveRunSeeds(client) {
+  const prevMeta = client.contextMeta;
+  if (prevMeta == null) {
+    return {};
+  }
+  const currentEncoding = client.getEncoding();
+  const encodingMatch = prevMeta.encoding === currentEncoding;
+  const calibrationRatio =
+    encodingMatch && prevMeta.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
+  const fadingTier = isAgentFadingTier(prevMeta.fading) ? prevMeta.fading : undefined;
+  const fadingTiers = resolveRunFadingTiers(prevMeta.fadingTiers);
+  logger.debug(
+    `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}, agents=${fadingTiers ? Object.keys(fadingTiers).length : 0}`,
+  );
+  return { calibrationRatio, fadingTier, fadingTiers };
+}
+
+/**
+ * Captures the compact context state of a run for persistence on the response
+ * message: calibration plus the latched fading tiers, never message content.
+ * Called from `finally`, so values survive an abort. The tier getters are
+ * optional so SDK versions without them persist calibration alone, and they
+ * already return only tiers that carry information; the encoding is only
+ * resolved when there is something to persist.
+ */
+function captureRunContextMeta(client) {
+  const run = client.run;
+  /** `Run` refreshes its own getters only after `processStream` settles, so a
+   * capture taken mid-run (a HITL pause, a Stop) reads the live graph state. */
+  const graph = run?.Graph;
+  const source = graph ?? run;
+  return resolveRunContextMeta({
+    calibrationRatio: source?.getCalibrationRatio?.() ?? 0,
+    fadingTier: source?.getFadingTier?.(),
+    fadingTiers: source?.getFadingTiers?.(),
+    getEncoding: () => client.getEncoding(),
+  });
 }
 
 function getLatestEventActorSummary(contentParts) {
@@ -351,6 +419,9 @@ class AgentClient extends BaseClient {
      *  ON_CONTEXT_USAGE handler; persisted on `metadata.contextUsage`.
      *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null } | undefined} */
     this.contextUsageSink = contextUsageSink;
+    if (this.contextUsageSink != null) {
+      this.contextUsageSink.onSnapshot = () => this.publishRunContextMeta({ live: true });
+    }
     /** Every emitted `on_token_usage` payload for this response (primary,
      *  summarization, sequential, and subagent); aggregated into the rollup
      *  persisted on `metadata.usage`.
@@ -635,7 +706,7 @@ class AgentClient extends BaseClient {
       hook: createSteerDrainHook(drainOptions),
       ...(isSteerPreemptSupported() && {
         preemptHook: createSteerPreemptBoundaryHook(drainOptions),
-        preemption: createSteerPreemptPoll(streamId),
+        preemption: createSteerPreemptPoll(streamId, this.jobCreatedAt),
       }),
       ...(isSteerTerminalContinuationSupported() && {
         terminalHook: createSteerTerminalContinuationHook(drainOptions),
@@ -1861,6 +1932,56 @@ class AgentClient extends BaseClient {
     };
   }
 
+  /**
+   * Seeds context meta captured at a pause (or from a parent response) into a
+   * rebuilt client. Malformed values are dropped rather than trusted.
+   * @param {unknown} contextMeta
+   */
+  /**
+   * Publishes the run's compact context state onto the job: the inherited seed
+   * before the run starts, then the live state after each pre-invoke context
+   * snapshot. A Stop or disconnect persists the response from job data alone, on
+   * whichever replica handles it, so callers await the publish ahead of the
+   * model call it describes. Ordering, deduplication, retries and failure
+   * handling live in the `packages/api` publisher; this is only the wiring.
+   * @param {{ live?: boolean }} [options] `live` marks a snapshot from the running
+   *   graph; the pre-run call publishes the inherited seed instead.
+   * @returns {Promise<void>}
+   */
+  publishRunContextMeta({ live = false } = {}) {
+    const streamId = this.options?.req?._resumableStreamId;
+    if (!streamId) {
+      return Promise.resolve();
+    }
+    this.contextMetaPublisher ??= createContextMetaPublisher({
+      write: (contextMeta) =>
+        GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt),
+      onFailure: (err) =>
+        logger.warn(
+          `[AgentClient] Failed to publish context meta for ${streamId}`,
+          getSafeErrorMetadata(err),
+        ),
+    });
+    const contextMeta = selectRunContextMetaToPublish({
+      live,
+      captured: captureRunContextMeta(this),
+      inherited: this.contextMeta,
+      hasPublished: this.contextMetaPublisher.hasPublished,
+      getEncoding: () => this.getEncoding(),
+    });
+    return contextMeta == null ? Promise.resolve() : this.contextMetaPublisher.publish(contextMeta);
+  }
+
+  seedContextMeta(contextMeta) {
+    try {
+      this.contextMeta = normalizeEventActorContextMeta(contextMeta);
+    } catch (err) {
+      logger.warn('[AgentClient] Ignoring malformed context meta', getSafeErrorMetadata(err));
+      this.contextMeta = undefined;
+    }
+    void this.publishRunContextMeta?.();
+  }
+
   async loadHistory(conversationId, parentMessageId = null) {
     if (this.eventActorContinuation === 'warm') {
       logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
@@ -2420,8 +2541,17 @@ class AgentClient extends BaseClient {
      *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
     const parentResponse =
       orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
-    if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
+    /** Only a server-authored response may seed the run: a client-submitted
+     * row carries no trusted calibration or fading state. */
+    if (
+      parentResponse?.contextMeta &&
+      !parentResponse.isCreatedByUser &&
+      parentResponse.isUserSubmitted !== true
+    ) {
       this.contextMeta = parentResponse.contextMeta;
+      /** Start the seed publish as soon as the parent's state is known: a Stop
+       * during the rest of setup must already find it on the job. */
+      void this.publishRunContextMeta?.();
     }
 
     const result = {
@@ -2793,6 +2923,7 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      tenantId: resolveRequestTenantId(this.options.req),
     });
 
     this.processMemory = processMemory;
@@ -3509,6 +3640,7 @@ class AgentClient extends BaseClient {
       ...(staged.compactionSemanticIndex == null
         ? {}
         : { compactionSemanticIndex: staged.compactionSemanticIndex }),
+      ...(staged.contextMeta == null ? {} : { contextMeta: staged.contextMeta }),
       persistencePending: true,
       ...(eventActorSuspension == null
         ? {}
@@ -3754,6 +3886,10 @@ class AgentClient extends BaseClient {
       compactionSemanticIndex: createCompactionSemanticIndexProjection(
         this.compactionSemanticIndexSnapshot,
       ),
+      // Calibration and fading state at the pause, so the resumed segment seeds
+      // its rebuilt pruner from the same tiers and its provider projection of
+      // history keeps the same bytes.
+      contextMeta: captureRunContextMeta({ run, getEncoding: () => this.getEncoding() }),
     };
     if (this.eventActorInvocationId != null) {
       return;
@@ -3764,6 +3900,9 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    /** The inherited state is on the job before any abortable setup begins; a
+     * publish already started while loading history is simply awaited. */
+    await this.publishRunContextMeta?.();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -3786,27 +3925,42 @@ class AgentClient extends BaseClient {
        * spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
-      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const attachedCodeEnvironmentAgentIds =
+        collectAttachedCodeEnvironmentAgentIds(topLevelAgents);
+      const attachedCodeEnvironmentSettings =
+        collectAttachedCodeEnvironmentPolicySettings(topLevelAgents);
+      const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
+        endpoint: agentsEConfig?.toolApproval,
+        attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
+      });
+      const resolvedToolApprovalHooks = isHITLEnabled(effectiveToolApprovalPolicy)
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
-            tenantId: this.options.req?.user?.tenantId,
+            tenantId: resolveRequestTenantId(this.options.req ?? {}),
             appConfig,
           })
         : undefined;
-      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const admissionToolApprovalHooks = [
+        ...(resolvedToolApprovalHooks ?? []),
+        ...buildAttachedCodeEnvironmentAdmissionHooks(
+          attachedCodeEnvironmentAgentIds,
+          attachedCodeEnvironmentSettings,
+        ),
+      ];
       const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
       const runCanPause = canAgentGraphPause({
-        policy: agentsEConfig?.toolApproval,
+        policy: effectiveToolApprovalPolicy,
         agents: topLevelAgents,
         hostGeneratedToolNames:
           this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
-        resolvedProgrammaticHooks: resolvedToolApprovalHooks,
+        resolvedProgrammaticHooks: admissionToolApprovalHooks,
         pluginHookSource: getPluginHookSource(),
         askUserQuestionAdminDisabled,
       });
       const runUsesCheckpointer = agentRunUsesCheckpointer({
-        policy: agentsEConfig?.toolApproval,
+        policy: effectiveToolApprovalPolicy,
         agents: topLevelAgents,
         askUserQuestionAdminDisabled,
       });
@@ -4122,18 +4276,7 @@ class AgentClient extends BaseClient {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
-        /** Seed calibration state from previous run if encoding matches */
-        const currentEncoding = this.getEncoding();
-        const prevMeta = this.contextMeta;
-        const encodingMatch = prevMeta?.encoding === currentEncoding;
-        const calibrationRatio =
-          encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
-
-        if (prevMeta) {
-          logger.debug(
-            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
-          );
-        }
+        const { calibrationRatio, fadingTier, fadingTiers } = resolveRunSeeds(this);
 
         const streamId = this.options.req?._resumableStreamId;
         // HITL: establish an empty checkpoint barrier for THIS immutable generation
@@ -4239,6 +4382,8 @@ class AgentClient extends BaseClient {
             : { compactionSemanticIndex: continuationCompactionSemanticIndex }),
           initialSessions,
           calibrationRatio,
+          fadingTier,
+          fadingTiers,
           runId: this.responseMessageId,
           signal: abortController.signal,
           /** The phase wrapper stays outermost: it claims and offsets the
@@ -4246,7 +4391,7 @@ class AgentClient extends BaseClient {
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
-          tenantId: this.options.req?.user?.tenantId,
+          tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
@@ -4307,6 +4452,8 @@ class AgentClient extends BaseClient {
         if (this.activityLabelsMarkedPromise != null) {
           await this.activityLabelsMarkedPromise;
         }
+        /** The inherited tier must be on the job before any Stop can read it. */
+        await this.publishRunContextMeta?.();
         try {
           const invocationMessages =
             this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
@@ -4458,17 +4605,10 @@ class AgentClient extends BaseClient {
        * the failure; retain that model-visible state for actor reconciliation. */
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      /** Capture calibration state from the run for persistence on the response message.
-       *  Runs in finally so values are captured even on abort. */
-      const ratio = this.run?.getCalibrationRatio() ?? 0;
-      if (ratio > 0 && ratio !== 1) {
-        this.contextMeta = {
-          calibrationRatio: Math.round(ratio * 1000) / 1000,
-          encoding: this.getEncoding(),
-        };
-      } else {
-        this.contextMeta = undefined;
-      }
+      /** A run that never came to exist has no state of its own: keep the
+       * inherited meta so the persisted error response still seeds the next
+       * turn. A created run's neutral state may still clear it. */
+      this.contextMeta = this.run == null ? this.contextMeta : captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
       this.stampMcpServerIdentities();
@@ -4570,6 +4710,9 @@ class AgentClient extends BaseClient {
     activityPhaseSnapshot,
     compactionSemanticIndex,
   }) {
+    /** The seeded state is on the job before the run is rebuilt, so a Stop
+     * during rebuild still persists it onto the stopped response. */
+    await this.publishRunContextMeta?.();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -4588,7 +4731,7 @@ class AgentClient extends BaseClient {
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
-            tenantId: this.options.req?.user?.tenantId,
+            tenantId: resolveRequestTenantId(this.options.req ?? {}),
             appConfig,
           })
         : undefined;
@@ -4770,6 +4913,7 @@ class AgentClient extends BaseClient {
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
         discoveredToolNames,
         initialSessions,
+        ...resolveRunSeeds(this),
         runId: this.responseMessageId,
         signal: abortController.signal,
         // The rebuilt graph numbers content indices from 0, but the aggregator was
@@ -4781,7 +4925,7 @@ class AgentClient extends BaseClient {
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
-        tenantId: this.options.req?.user?.tenantId,
+        tenantId: resolveRequestTenantId(this.options.req ?? {}),
         summarizationConfig: appConfig?.summarization,
         appConfig,
         tokenCounter,
@@ -4828,6 +4972,7 @@ class AgentClient extends BaseClient {
       if (this.activityLabelsMarkedPromise != null) {
         await this.activityLabelsMarkedPromise;
       }
+      await this.publishRunContextMeta?.();
       try {
         await run.resume(
           resumeValue,
@@ -4905,15 +5050,10 @@ class AgentClient extends BaseClient {
     } finally {
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      const ratio = this.run?.getCalibrationRatio() ?? 0;
-      if (ratio > 0 && ratio !== 1) {
-        this.contextMeta = {
-          calibrationRatio: Math.round(ratio * 1000) / 1000,
-          encoding: this.getEncoding(),
-        };
-      } else {
-        this.contextMeta = undefined;
-      }
+      /** A run that never came to exist has no state of its own: keep the
+       * inherited meta so the persisted error response still seeds the next
+       * turn. A created run's neutral state may still clear it. */
+      this.contextMeta = this.run == null ? this.contextMeta : captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
       this.stampMcpServerIdentities();
@@ -5142,6 +5282,7 @@ class AgentClient extends BaseClient {
     resolveConfigHeaders({
       llmConfig: clientOptions,
       user: createSafeUser(req?.user),
+      tenantId: resolveRequestTenantId(req ?? {}),
       body: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,

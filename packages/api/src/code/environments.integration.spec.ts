@@ -61,6 +61,7 @@ describe('code environment registry', () => {
       id: 'danny-vm',
       name: "Danny's VM",
       type: 'attached',
+      canEdit: true,
       canDelete: true,
     });
     await expect(registry.listRegisteredIds()).resolves.toEqual(['danny-vm']);
@@ -87,6 +88,62 @@ describe('code environment registry', () => {
         workerId: 'danny-worker',
       },
     ]);
+  });
+
+  test('persists owner settings and includes them in execution configuration', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const ownerId = new Types.ObjectId();
+    await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'settings-vm',
+        name: 'Settings VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'self-service',
+      },
+    });
+
+    await expect(
+      registry.updateSettings({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environmentId: 'settings-vm',
+        settings: { permissions: { fileWrite: 'allow', commandExecution: 'deny' } },
+      }),
+    ).resolves.toMatchObject({
+      id: 'settings-vm',
+      canEdit: true,
+      canDelete: true,
+    });
+
+    await expect(
+      registry.updateSettings({
+        actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+        environmentId: 'settings-vm',
+        settings: { permissions: { fileWrite: 'ask' } },
+      }),
+    ).resolves.toMatchObject({
+      settings: { permissions: { fileWrite: 'ask', commandExecution: 'deny' } },
+    });
+
+    await expect(
+      registry.listAccessibleConfigurations({
+        userId: ownerId,
+        role: 'USER',
+        idOnTheSource: null,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'settings-vm',
+        settings: { permissions: { fileWrite: 'ask', commandExecution: 'deny' } },
+      }),
+    ]);
+
+    await expect(
+      createMethods(mongoose).updateCodeEnvironmentSettings('settings-vm', {
+        permissions: { fileWrite: 'invalid' },
+      } as never),
+    ).rejects.toThrow();
   });
 
   test('discovers environments granted through role and group principals', async () => {
@@ -145,13 +202,56 @@ describe('code environment registry', () => {
         idOnTheSource: null,
       }),
     ).resolves.toEqual([
-      { ...roleEnvironment, canDelete: false },
-      { ...groupEnvironment, canDelete: false },
+      { ...roleEnvironment, canEdit: false, canDelete: false },
+      { ...groupEnvironment, canEdit: false, canDelete: false },
     ]);
+  });
+
+  test('reports edit and delete capabilities independently for shared editors', async () => {
+    const registry = createCodeEnvironmentRegistry(mongoose);
+    const access = new AccessControlService(mongoose);
+    const ownerId = new Types.ObjectId();
+    const editorId = new Types.ObjectId();
+    const environment = await registry.register({
+      actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+      environment: {
+        id: 'editor-vm',
+        name: 'Editor VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    await access.grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: editorId,
+      resourceType: ResourceType.CODE_ENVIRONMENT,
+      resourceId: environment.resourceId,
+      accessRoleId: AccessRoleIds.CODE_ENVIRONMENT_EDITOR,
+      grantedBy: ownerId,
+    });
+    const actor = { userId: editorId, role: 'USER', idOnTheSource: null };
+
+    await expect(registry.listAccessible(actor)).resolves.toEqual([
+      expect.objectContaining({ id: 'editor-vm', canEdit: true, canDelete: false }),
+    ]);
+    await expect(
+      registry.updateSettings({
+        actor,
+        environmentId: 'editor-vm',
+        settings: { permissions: { fileWrite: 'deny' } },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: 'editor-vm', canEdit: true, canDelete: false }),
+    );
   });
 
   test('computes delete permissions for an environment list in one batch', async () => {
     const batchSpy = jest.spyOn(AccessControlService.prototype, 'getResourcePermissionsMap');
+    const principalBatchSpy = jest.spyOn(
+      AccessControlService.prototype,
+      'getResourcePermissionsMapForPrincipals',
+    );
     const singleSpy = jest.spyOn(AccessControlService.prototype, 'checkPermission');
     const registry = createCodeEnvironmentRegistry(mongoose);
     const ownerId = new Types.ObjectId();
@@ -171,10 +271,12 @@ describe('code environment registry', () => {
     await expect(
       registry.listAccessible({ userId: ownerId, role: 'USER', idOnTheSource: null }),
     ).resolves.toHaveLength(2);
-    expect(batchSpy).toHaveBeenCalledTimes(1);
+    expect(batchSpy).not.toHaveBeenCalled();
+    expect(principalBatchSpy).toHaveBeenCalledTimes(1);
     expect(singleSpy).not.toHaveBeenCalled();
 
     batchSpy.mockRestore();
+    principalBatchSpy.mockRestore();
     singleSpy.mockRestore();
   });
 
@@ -686,6 +788,44 @@ describe('code environment registry', () => {
     await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([]);
   });
 
+  test('refreshes mutable settings when a cached configuration revision is stale', async () => {
+    const cache = createSharedCache();
+    const registry = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
+    const ownerId = new Types.ObjectId();
+    const actor = { userId: ownerId, role: 'USER', idOnTheSource: null };
+    await registry.register({
+      actor,
+      environment: {
+        id: 'cached-settings-vm',
+        name: 'Cached settings VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+      },
+    });
+    await registry.updateSettings({
+      actor,
+      environmentId: 'cached-settings-vm',
+      settings: { permissions: { commandExecution: 'allow' } },
+    });
+    await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([
+      expect.objectContaining({
+        settings: { permissions: { commandExecution: 'allow' } },
+      }),
+    ]);
+
+    await mongoose.models.CodeEnvironment.updateOne(
+      { environmentId: 'cached-settings-vm' },
+      { $set: { 'settings.permissions.commandExecution': 'deny' } },
+    );
+
+    await expect(registry.listAccessibleConfigurations(actor)).resolves.toEqual([
+      expect.objectContaining({
+        settings: { permissions: { commandExecution: 'deny' } },
+      }),
+    ]);
+  });
+
   test('caches registered environment ids behind the shared tenant revision', async () => {
     const cache = createSharedCache();
     const firstWorker = createCodeEnvironmentRegistry(mongoose, { configurationCache: cache });
@@ -1017,6 +1157,122 @@ describe('code environment registry', () => {
       pendingAgentReferences: [],
     });
     expect(claimed?.deletionLeaseId).not.toBe('abandoned-removal');
+  });
+
+  test('bounds expired agent reservation cleanup per reconciliation tick', async () => {
+    const methods = createMethods(mongoose);
+    const ownerId = new Types.ObjectId();
+    const expiredAt = new Date(Date.now() - 1_000);
+    await mongoose.models.User.create({
+      _id: ownerId,
+      email: 'reservation-owner@example.com',
+      provider: 'local',
+    });
+    const environments = await Promise.all(
+      ['first', 'second'].map((suffix) =>
+        methods.createCodeEnvironment({
+          environmentId: `expired-reservation-${suffix}`,
+          name: `Expired reservation ${suffix}`,
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+          controlPlaneId: 'shared-code-api',
+          createdBy: ownerId,
+        }),
+      ),
+    );
+    await Promise.all(
+      environments.map((environment, index) =>
+        mongoose.models.CodeEnvironment.updateOne(
+          { _id: environment._id },
+          {
+            $set: {
+              pendingAgentReferences: Array.from(
+                { length: index === 0 ? 100 : 1 },
+                (_, offset) => ({
+                  reservationId: `reservation-${index}-${offset}`,
+                  expiresAt: expiredAt,
+                }),
+              ),
+            },
+          },
+        ),
+      ),
+    );
+
+    const cleanupPlan = await mongoose.models.CodeEnvironment.collection
+      .find({})
+      .sort({ _id: 1 })
+      .hint('_id_')
+      .limit(1)
+      .explain('executionStats');
+    expect(JSON.stringify(cleanupPlan.queryPlanner.winningPlan)).not.toContain('"stage":"SORT"');
+    expect(cleanupPlan.executionStats.totalDocsExamined).toBeLessThanOrEqual(1);
+    expect(cleanupPlan.executionStats.totalKeysExamined).toBeLessThanOrEqual(1);
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+
+    const afterFirstTick = await mongoose.models.CodeEnvironment.countDocuments({
+      _id: { $in: environments.map(({ _id }) => _id) },
+      'pendingAgentReferences.0': { $exists: true },
+    });
+    expect(afterFirstTick).toBe(1);
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({
+        _id: { $in: environments.map(({ _id }) => _id) },
+        'pendingAgentReferences.0': { $exists: true },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  test('revisits legacy writes behind the durable cleanup cursor and preserves live leases', async () => {
+    const model = mongoose.models.CodeEnvironment;
+    const owner = await mongoose.models.User.create({
+      email: 'legacy-reference-owner@example.com',
+      provider: 'local',
+    });
+    const environment = await createMethods(mongoose).createCodeEnvironment({
+      environmentId: 'legacy-reference',
+      name: 'Legacy reference',
+      type: 'attached',
+      baseURL: 'https://code.example.com',
+      controlPlaneId: 'shared-code-api',
+      createdBy: owner._id,
+    });
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    const checkpoints = mongoose.connection.db!.collection<{
+      _id: string;
+      lastId: Types.ObjectId | null;
+    }>('code_environment_reconciliation');
+    expect((await checkpoints.findOne({ _id: 'agent-reference-cleanup' }))?.lastId).toBeNull();
+    const live = { reservationId: 'live', expiresAt: new Date(Date.now() + 60_000) };
+    await model.updateOne(
+      { _id: environment._id },
+      {
+        $push: {
+          pendingAgentReferences: {
+            $each: [{ reservationId: 'abandoned', expiresAt: new Date(0) }, live],
+          },
+        },
+      },
+    );
+    for (let index = 0; index < 3; index++) {
+      await createMethods(mongoose).createCodeEnvironment({
+        environmentId: `new-tail-${index}`,
+        name: 'New tail',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: owner._id,
+      });
+      await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    }
+    const result = await model
+      .findById(environment._id)
+      .lean<{ pendingAgentReferences: (typeof live)[] }>();
+    expect(result?.pendingAgentReferences).toEqual([expect.objectContaining(live)]);
   });
 
   test('preserves persisted agent references during interrupted-removal recovery', async () => {

@@ -12,6 +12,7 @@ jest.mock('@librechat/api', () => ({
   ioredisClient: { duplicate: jest.fn() },
   registerShutdownTask: jest.fn(),
   duplicateIoRedisClient: jest.fn(),
+  createIoRedisSubscriber: jest.fn(),
   createSubagentThreadTaskStore: jest.fn(() => mockTaskStore),
   createSubagentCompletionWakeupHandler: jest.fn(() => mockCompletionWakeupHandler),
   RedisSubagentTaskControlTransport: jest.fn(),
@@ -50,6 +51,7 @@ const {
   ioredisClient,
   registerShutdownTask,
   duplicateIoRedisClient,
+  createIoRedisSubscriber,
   createSubagentThreadTaskStore,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('./subagentThreadStore');
@@ -91,7 +93,7 @@ describe('subagent thread Redis lifecycle', () => {
     const activitySubscriber = { disconnect: jest.fn() };
     const taskPublisher = { disconnect: jest.fn() };
     const activityPublisher = { disconnect: jest.fn() };
-    ioredisClient.duplicate
+    createIoRedisSubscriber
       .mockReturnValueOnce(taskSubscriber)
       .mockReturnValueOnce(activitySubscriber);
     duplicateIoRedisClient
@@ -100,6 +102,10 @@ describe('subagent thread Redis lifecycle', () => {
 
     await configureSubagentTaskRouting();
 
+    expect(createIoRedisSubscriber.mock.calls).toEqual([
+      [ioredisClient, '[SubagentTaskRouting] task subscriber'],
+      [ioredisClient, '[SubagentTaskRouting] activity subscriber'],
+    ]);
     expect(activityPrepareRegistration).toEqual([
       'subagent activity streams prepare',
       expect.any(Function),

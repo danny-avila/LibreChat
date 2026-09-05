@@ -709,6 +709,122 @@ describe('getOpenAILLMConfig', () => {
     });
   });
 
+  describe('GPT-6 Astra Responses API routing', () => {
+    const astraConfig = (overrides: Record<string, unknown> = {}) =>
+      getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-6-astra' },
+        ...overrides,
+      });
+
+    it('routes every Astra turn to the Responses API, not only reasoning ones', () => {
+      expect(astraConfig().llmConfig).toHaveProperty('useResponsesApi', true);
+    });
+
+    /**
+     * The reason routing is decided here rather than at invocation time: the
+     * max-tokens field is shaped from `useResponsesApi`, so switching APIs later
+     * would send `max_completion_tokens` to an endpoint expecting
+     * `max_output_tokens`.
+     */
+    it('shapes max tokens for the API it actually uses', () => {
+      const result = astraConfig({
+        modelOptions: { model: 'gpt-6-astra', max_tokens: 4096 },
+      });
+      const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+      expect(kwargs).not.toHaveProperty('max_completion_tokens');
+      expect(kwargs.max_output_tokens ?? result.llmConfig.maxTokens).toBeDefined();
+    });
+
+    it('keeps routing when a drop rule only clears reasoning_effort', () => {
+      /**
+       * Unlike the GPT-5.6 default, Astra's routing is not reasoning-driven, so
+       * a rule clearing an unsupported stored effort must not disable it.
+       */
+      expect(astraConfig({ dropParams: ['reasoning_effort'] }).llmConfig).toHaveProperty(
+        'useResponsesApi',
+        true,
+      );
+    });
+
+    it('respects an explicit opt-out', () => {
+      expect(astraConfig({ dropParams: ['useResponsesApi'] }).llmConfig).not.toHaveProperty(
+        'useResponsesApi',
+        true,
+      );
+    });
+
+    it('leaves a custom gateway on its configured path', () => {
+      expect(astraConfig({ baseURL: 'https://gateway.internal/v1' }).llmConfig).not.toHaveProperty(
+        'useResponsesApi',
+        true,
+      );
+    });
+
+    it('does not change routing for other models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-5.5' },
+      });
+      expect(result.llmConfig).not.toHaveProperty('useResponsesApi', true);
+    });
+  });
+
+  describe('First-party endpoint declaration', () => {
+    /**
+     * The agents SDK gates its model-specific request constraints on this flag
+     * and defaults them off, rather than inferring the endpoint from a base
+     * URL. Only this layer can tell a faithful first-party route from a
+     * gateway, so the decision is made here and declared downstream.
+     */
+    const configFor = (overrides: Record<string, unknown> = {}) =>
+      getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-6-astra' },
+        ...overrides,
+      });
+
+    it('declares the first-party endpoint for canonical OpenAI', () => {
+      expect(configFor().llmConfig).toHaveProperty('firstPartyEndpoint', true);
+    });
+
+    it('declares it for an explicit api.openai.com base URL', () => {
+      expect(configFor({ baseURL: 'https://api.openai.com/v1' }).llmConfig).toHaveProperty(
+        'firstPartyEndpoint',
+        true,
+      );
+    });
+
+    /**
+     * Astra is not documented as available on Azure OpenAI, and Azure's
+     * first-party hosts do not satisfy the OpenAI-host check, so declaring it
+     * there would claim a surface this cannot verify.
+     */
+    it('does not declare it for Azure OpenAI', () => {
+      expect(configFor({ endpoint: EModelEndpoint.azureOpenAI }).llmConfig).not.toHaveProperty(
+        'firstPartyEndpoint',
+      );
+    });
+
+    it('does not declare it for a custom gateway base URL', () => {
+      expect(configFor({ baseURL: 'https://gateway.internal/v1' }).llmConfig).not.toHaveProperty(
+        'firstPartyEndpoint',
+      );
+    });
+
+    it('does not declare it for a non-OpenAI endpoint', () => {
+      expect(configFor({ endpoint: EModelEndpoint.custom }).llmConfig).not.toHaveProperty(
+        'firstPartyEndpoint',
+      );
+    });
+  });
+
   describe('GPT-5.6 Responses API Requirement', () => {
     it.each(['gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6'])(
       'should default to Responses API for %s when reasoning_effort is set',

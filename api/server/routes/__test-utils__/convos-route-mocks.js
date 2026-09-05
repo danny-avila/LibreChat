@@ -36,6 +36,15 @@ module.exports = {
       }
       return false;
     }),
+    /** Mirrors the real helper so the route's page-size clamping is exercised. */
+    normalizeLimit: jest.fn((value, { fallback = 25, max = 100 } = {}) => {
+      const raw = Array.isArray(value) ? value[0] : value;
+      const limit = parseInt(typeof raw === 'string' ? raw : '', 10);
+      if (!Number.isFinite(limit)) {
+        return fallback;
+      }
+      return Math.min(Math.max(limit, 1), max);
+    }),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),

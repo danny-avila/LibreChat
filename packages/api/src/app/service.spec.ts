@@ -473,6 +473,47 @@ describe('createAppConfigService', () => {
       });
     });
 
+    it('reuses caller-resolved principals without querying them again', async () => {
+      const deps = createDeps();
+      const { getAppConfig } = createAppConfigService(deps);
+      const resolvedPrincipals = [
+        { principalType: 'role', principalId: 'USER' },
+        { principalType: 'user', principalId: 'uid1' },
+      ];
+
+      await getAppConfig({ role: 'USER', userId: 'uid1', resolvedPrincipals });
+
+      expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith(resolvedPrincipals);
+    });
+
+    it.each(['', 'tenant-a'])(
+      'keeps explicit tenant %j when reusing principals and skipping augmentation',
+      async (tenantId) => {
+        const augmentConfig = jest.fn(async ({ appConfig }) => appConfig);
+        const deps = createDeps({ augmentConfig });
+        const { getAppConfig } = createAppConfigService(deps);
+        const resolvedPrincipals = [
+          { principalType: 'role', principalId: 'USER' },
+          { principalType: 'user', principalId: 'uid1' },
+        ];
+
+        await getAppConfig({
+          role: 'USER',
+          userId: 'uid1',
+          tenantId,
+          resolvedPrincipals,
+          skipRuntimeAugmentation: true,
+          failClosed: true,
+          refresh: true,
+        });
+
+        expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith(resolvedPrincipals, { tenantId });
+        expect(augmentConfig).not.toHaveBeenCalled();
+      },
+    );
+
     it('re-runs mutable principal config augmentation without rebuilding cached overrides', async () => {
       const augmentConfig = jest.fn(async ({ appConfig, principals }) => ({
         ...appConfig,
@@ -499,6 +540,20 @@ describe('createAppConfigService', () => {
           options: expect.objectContaining({ role: 'USER', userId: 'uid1' }),
         }),
       );
+    });
+
+    it('skips mutable runtime augmentation when the caller already loaded it', async () => {
+      const augmentConfig = jest.fn(async ({ appConfig }) => appConfig);
+      const deps = createDeps({ augmentConfig });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await getAppConfig({
+        role: 'USER',
+        userId: 'uid1',
+        skipRuntimeAugmentation: true,
+      });
+
+      expect(augmentConfig).not.toHaveBeenCalled();
     });
 
     it('preserves resolved principal restrictions when optional augmentation fails', async () => {
