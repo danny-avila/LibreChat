@@ -855,6 +855,7 @@
   "com_ui_agents_allow_share": "Allow sharing Agents",
   "com_ui_agents_allow_share_public": "Allow sharing Agents publicly",
   "com_ui_agents_allow_use": "Allow using Agents",
+  "com_ui_ai_disclaimer": "AI can make mistakes, so you should verify the answers.",
   "com_ui_all": "all",
   "com_ui_all_projects": "All projects",
   "com_ui_all_proper": "All",
