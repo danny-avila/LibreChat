@@ -41,7 +41,8 @@ import {
   useCatalogReady,
   useMCPConnectionStatus,
 } from '~/hooks';
-import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
+import { useGetStartupConfig, useMCPServersQuery, useMCPToolsQuery } from '~/data-provider';
+import { resolveHiddenEmptyServers } from '~/components/MCP/mcpServerUtils';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
 
@@ -125,10 +126,33 @@ export function useMCPServerManager({
     return definitions;
   }, [loadedServers, permissionsMap]);
 
+  /** The per-user tool catalog is only requested here when some server opts into
+   * `hideWhenEmpty` — otherwise this hook adds no request. The query key is shared
+   * with the app-startup warmup and the agent builder, so it never duplicates fetches. */
+  const anyHideWhenEmpty = useMemo(
+    () => availableMCPServers.some((s) => s.config.hideWhenEmpty === true),
+    [availableMCPServers],
+  );
+  const mcpToolsReady = useCatalogReady('mcpTools');
+  const { data: mcpToolsData, isError: mcpToolsError } = useMCPToolsQuery({
+    enabled: mcpEnabled && mcpToolsReady && anyHideWhenEmpty,
+  });
+  /** Servers hidden from pickers: opted into `hideWhenEmpty`, catalog loaded, zero tools.
+   * Pending catalogs keep flagged servers hidden (no flash); catalog errors hide
+   * nothing (fail-open). The rules live in `resolveHiddenEmptyServers` under test. */
+  const hiddenEmptyServers = useMemo(
+    () => resolveHiddenEmptyServers(availableMCPServers, mcpToolsData?.servers, mcpToolsError),
+    [availableMCPServers, mcpToolsData, mcpToolsError],
+  );
+
   // Memoize filtered servers for useMCPSelect to prevent infinite loops
   const selectableServers = useMemo(
-    () => availableMCPServers.filter((s) => s.config.chatMenu !== false && !s.consumeOnly),
-    [availableMCPServers],
+    () =>
+      availableMCPServers.filter(
+        (s) =>
+          s.config.chatMenu !== false && !s.consumeOnly && !hiddenEmptyServers.has(s.serverName),
+      ),
+    [availableMCPServers, hiddenEmptyServers],
   );
 
   const { mcpValues, setMCPValues, isPinned, setIsPinned } = useMCPSelect({
@@ -821,8 +845,10 @@ export function useMCPServerManager({
 
   return {
     availableMCPServers,
-    /** MCP servers filtered for chat menu selection (chatMenu !== false && !consumeOnly) */
+    /** MCP servers filtered for chat menu selection (chatMenu !== false && !consumeOnly && not hidden-empty) */
     selectableServers,
+    /** Servers hidden because `hideWhenEmpty` is set and the user's loaded catalog is empty */
+    hiddenEmptyServers,
     availableMCPServersMap: loadedServers,
     isLoading,
     connectionStatus,
