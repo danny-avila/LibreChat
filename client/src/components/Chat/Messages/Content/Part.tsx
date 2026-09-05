@@ -30,6 +30,7 @@ import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
+import ElicitationForm from './ElicitationForm';
 import RetrievalCall from './RetrievalCall';
 import ToolApproval from './ToolApproval';
 import AgentHandoff from './AgentHandoff';
@@ -479,6 +480,12 @@ const Part = memo(function Part({
         />
       );
     }
+  } else if (part.type === ContentTypes.ELICITATION) {
+    const elicitation = part.elicitation;
+    if (!elicitation) {
+      return null;
+    }
+    return <ElicitationForm {...elicitation} />;
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
     const cached = imageFile.file_id ? getCachedPreview(imageFile.file_id) : undefined;

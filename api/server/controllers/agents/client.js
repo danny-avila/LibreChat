@@ -174,6 +174,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  stripUiOnlyContentParts,
   stripLangChainTroubleshootingUrl,
   DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
@@ -4117,6 +4118,16 @@ class AgentClient extends BaseClient {
           intentToolNames: semanticIntentToolNames,
         },
       };
+      /**
+       * Strip UI-only content parts (elicitation cards) from the LLM payload
+       * before `formatAgentMessages` runs. Such parts are rendered and persisted
+       * for chat replay but carry no meaning for the model, so a persisted card
+       * must never leak into a completion request. Scoped to the payload (and the
+       * memory copy) — the persisted message and UI copy keep the card.
+       */
+      payload = stripUiOnlyContentParts(payload);
+      this.memoryPayload = stripUiOnlyContentParts(this.memoryPayload);
+
       let {
         messages: initialMessages,
         indexTokenCountMap,
