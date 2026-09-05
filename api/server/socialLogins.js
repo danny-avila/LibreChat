@@ -60,8 +60,10 @@ async function configureOpenId(app) {
 
   const config = await setupOpenId();
   if (!config) {
-    logger.error('OpenID Connect configuration failed - strategy not registered.');
-    return;
+    logger.error(
+      'OpenID Connect initialization failed - strategy not registered. Server startup will terminate.',
+    );
+    throw new Error('OpenID Connect initialization failed - strategy not registered.');
   }
 
   if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
