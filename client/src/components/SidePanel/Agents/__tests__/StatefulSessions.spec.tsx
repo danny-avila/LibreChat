@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 /* eslint-disable i18next/no-literal-string -- Test harness controls are not product UI. */
+import { useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -19,13 +20,15 @@ jest.mock('~/hooks', () => ({
 }));
 
 function IdentityForm() {
+  const [advanced, setAdvanced] = useState(true);
   const methods = useForm<AgentForm>({
     mode: 'onChange',
     defaultValues: { execute_code: true, stateful_code_sessions: true },
   });
   return (
     <FormProvider {...methods}>
-      <StatefulSessions />
+      {advanced && <StatefulSessions />}
+      <button onClick={() => setAdvanced(!advanced)}>Toggle Advanced</button>
       <button onClick={() => methods.setValue(AgentCapabilities.execute_code, false)}>
         Disable code
       </button>
@@ -54,7 +57,7 @@ test('clears cross-field errors when completing or clearing a Git identity', asy
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });
 
-test.each(['Disable code', 'Use managed', 'Disable sessions'])(
+test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Advanced'])(
   'discards a partial identity when its controls disappear: %s',
   async (action) => {
     render(<IdentityForm />);
@@ -67,6 +70,44 @@ test.each(['Disable code', 'Use managed', 'Disable sessions'])(
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   },
 );
+
+test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Advanced'])(
+  'discards an invalid email when its controls disappear: %s',
+  async (action) => {
+    render(<IdentityForm />);
+    fireEvent.change(screen.getByLabelText('com_ui_agent_git_name'), {
+      target: { value: 'Coding Agent' },
+    });
+    fireEvent.change(screen.getByLabelText('com_ui_agent_git_email'), {
+      target: { value: 'not-an-email' },
+    });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(action));
+    await waitFor(() => expect(screen.getByTestId('identity')).toBeEmptyDOMElement());
+  },
+);
+
+test.each([
+  { name: 'Coding Agent', email: 'agent@example.com' },
+  { name: '', email: '' },
+])('retains a valid identity or explicit clear through panel navigation: %j', async (identity) => {
+  render(<IdentityForm />);
+  fireEvent.change(screen.getByLabelText('com_ui_agent_git_name'), {
+    target: { value: identity.name },
+  });
+  fireEvent.change(screen.getByLabelText('com_ui_agent_git_email'), {
+    target: { value: identity.email },
+  });
+  fireEvent.click(screen.getByText('Toggle Advanced'));
+  expect(screen.getByTestId('identity')).toHaveTextContent(JSON.stringify(identity));
+  fireEvent.click(screen.getByText('Toggle Advanced'));
+  expect(screen.getByLabelText('com_ui_agent_git_name')).toHaveValue(identity.name);
+  expect(screen.getByLabelText('com_ui_agent_git_email')).toHaveValue(identity.email);
+  fireEvent.change(screen.getByLabelText('com_ui_agent_git_email'), {
+    target: { value: 'invalid' },
+  });
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+});
 
 test('preserves a complete identity when switching away from the attached environment', async () => {
   render(<IdentityForm />);

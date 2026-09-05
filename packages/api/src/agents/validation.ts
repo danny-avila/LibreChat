@@ -3,6 +3,7 @@ import {
   MemoryScope,
   SkillsScope,
   getMaxSubagents,
+  agentGitIdentitySchema,
   resolveModelCatalogKey,
   ViolationTypes,
   ErrorTypes,
@@ -407,22 +408,6 @@ export const agentSubagentsSchema: z.ZodOptional<z.ZodType<AgentSubagentsConfig>
 
 /** Base agent schema with all common fields */
 const agentCodeEnvironmentIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
-const agentGitIdentitySchema: z.ZodType<AgentGitIdentity | undefined> = z
-  .object({
-    name: z
-      .string()
-      .trim()
-      .min(1)
-      .max(128)
-      .refine((value) => !/[\0\r\n]/.test(value)),
-    email: z
-      .string()
-      .trim()
-      .email()
-      .max(254)
-      .refine((value) => !/[\0\r\n]/.test(value)),
-  })
-  .optional();
 const agentGitIdentityUpdateSchema: z.ZodType<AgentGitIdentity | null | undefined> =
   agentGitIdentitySchema.nullable();
 

@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import {
   AgentCapabilities,
+  agentGitIdentitySchema,
   STATEFUL_CODE_ENVIRONMENTS,
   resolveStatefulCodeEnvironment,
   resolveAllowedStatefulCodeEnvironments,
@@ -59,16 +60,25 @@ export default function StatefulSessions() {
     : executionEnvironments.find((candidate) => candidate.default === true);
   const showGitIdentity =
     codeEnabled && enabled && effectiveExecutionEnvironment?.type === 'attached';
-  useEffect(() => {
-    if (showGitIdentity) return;
+  const releaseIdentity = useCallback(() => {
     const identity = getValues('git_identity');
-    const incomplete = Boolean(identity?.name?.trim()) !== Boolean(identity?.email?.trim());
-    unregister('git_identity', { keepValue: !incomplete });
-  }, [showGitIdentity, getValues, unregister]);
+    const empty = !identity?.name?.trim() && !identity?.email?.trim();
+    unregister('git_identity', {
+      keepValue: empty || agentGitIdentitySchema.safeParse(identity).success,
+    });
+  }, [getValues, unregister]);
+  useEffect(() => {
+    if (!showGitIdentity) releaseIdentity();
+  }, [showGitIdentity, releaseIdentity]);
+  useEffect(() => releaseIdentity, [releaseIdentity]);
   const validateGitIdentity = (_value: string | undefined, values: AgentForm) => {
-    const hasName = Boolean(values.git_identity?.name?.trim());
-    const hasEmail = Boolean(values.git_identity?.email?.trim());
-    return hasName === hasEmail || localize('com_ui_agent_git_identity_both_required');
+    const identity = values.git_identity;
+    const empty = !identity?.name?.trim() && !identity?.email?.trim();
+    return (
+      empty ||
+      agentGitIdentitySchema.safeParse(identity).success ||
+      localize('com_ui_agent_git_identity_both_required')
+    );
   };
 
   const handleChange = (value: boolean) => {

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
@@ -313,6 +314,23 @@ export type AgentGitIdentity = {
   /** Commit author and committer email address. */
   email: string;
 };
+
+export const agentGitIdentitySchema: z.ZodType<AgentGitIdentity | undefined> = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .refine((value) => !/[\0\r\n]/.test(value)),
+    email: z
+      .string()
+      .trim()
+      .email()
+      .max(254)
+      .refine((value) => !/[\0\r\n]/.test(value)),
+  })
+  .optional();
 
 export type Agent = {
   _id?: string;
