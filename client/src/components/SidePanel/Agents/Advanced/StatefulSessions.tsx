@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import {
   AgentCapabilities,
@@ -39,6 +40,8 @@ export default function StatefulSessions() {
   const methods = useFormContext<AgentForm>();
   const {
     register,
+    unregister,
+    getValues,
     setValue,
     watch,
     formState: { errors },
@@ -54,6 +57,14 @@ export default function StatefulSessions() {
   const effectiveExecutionEnvironment = codeEnvironmentId
     ? executionEnvironments.find((candidate) => candidate.id === codeEnvironmentId)
     : executionEnvironments.find((candidate) => candidate.default === true);
+  const showGitIdentity =
+    codeEnabled && enabled && effectiveExecutionEnvironment?.type === 'attached';
+  useEffect(() => {
+    if (showGitIdentity) return;
+    const identity = getValues('git_identity');
+    const incomplete = Boolean(identity?.name?.trim()) !== Boolean(identity?.email?.trim());
+    unregister('git_identity', { keepValue: !incomplete });
+  }, [showGitIdentity, getValues, unregister]);
   const validateGitIdentity = (_value: string | undefined, values: AgentForm) => {
     const hasName = Boolean(values.git_identity?.name?.trim());
     const hasEmail = Boolean(values.git_identity?.email?.trim());
@@ -184,7 +195,7 @@ export default function StatefulSessions() {
           <p className="text-xs text-text-tertiary">
             {localize('com_nav_info_stateful_code_environment')}
           </p>
-          {effectiveExecutionEnvironment?.type === 'attached' && (
+          {showGitIdentity && (
             <div className="space-y-2 border-t border-border-light pt-3">
               <div className="text-xs font-medium text-text-secondary">
                 {localize('com_ui_agent_git_identity')}
