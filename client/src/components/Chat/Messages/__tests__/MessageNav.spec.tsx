@@ -129,9 +129,10 @@ import MessageNav, {
   previewTextFor,
   buildSteerEntry,
   buildFallbackEntry,
-  magnifyFalloff,
-  ribDimsFor,
 } from '../MessageNav';
+/** The rail's geometry is shared with the search results rail; it lives in the
+ *  one module both surfaces render. */
+import { magnifyFalloff, ribDimsFor } from '../Rail';
 
 function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
   return {
@@ -935,6 +936,11 @@ describe('MessageNav', () => {
 
       act(() => {
         fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+      /** The rail frames itself after the commit that reports the window, so the
+       *  settle frames it schedules land on the next flush. */
+      act(() => {
         jest.advanceTimersByTime(32);
       });
 
@@ -2445,6 +2451,183 @@ describe('MessageNav', () => {
       });
       expect(getById.mock.calls.map((c) => c[0])).toContain('m-3');
       getById.mockRestore();
+      restoreLayout();
+    });
+
+    it('installs one measurement observer, not one per copy of the effect', () => {
+      // The rail measures rib offsets on every resize and every entry or current
+      // change. A second observer doubles that pass for exactly the long lists
+      // the rail exists to navigate.
+      /** The effect legitimately re-runs as entries and the current rib settle,
+       *  disconnecting as it goes; what must never happen is two watching the
+       *  column at once. The transcript's own content observer is a separate,
+       *  legitimate watcher, so count only those aimed at the rail. */
+      const watching = new Set<CountingResizeObserver>();
+      const RealResizeObserver = global.ResizeObserver;
+      class CountingResizeObserver {
+        target: Element | null = null;
+        observe(el: Element) {
+          this.target = el;
+          watching.add(this);
+        }
+
+        unobserve() {
+          watching.delete(this);
+        }
+
+        disconnect() {
+          watching.delete(this);
+        }
+      }
+      (global as unknown as { ResizeObserver: unknown }).ResizeObserver = CountingResizeObserver;
+
+      const { container } = renderNav(
+        Array.from({ length: 6 }, (_, i) =>
+          buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+        ),
+      );
+
+      const column = getColumn(container);
+      const onColumn = [...watching].filter((o) => o.target === column);
+      expect(onColumn).toHaveLength(1);
+      (global as unknown as { ResizeObserver: unknown }).ResizeObserver = RealResizeObserver;
+    });
+
+    it('cancels the pending preview and magnification frame when the rail unmounts', () => {
+      // Leaving search, or switching conversations, is exactly the transition
+      // where a rib hovered moments earlier leaves a timer and a queued frame
+      // pointing at a component that is gone.
+      const messages = Array.from({ length: 6 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
+      const { container, unmount } = renderNav(messages);
+      const column = getColumn(container);
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      const clearSpy = jest.spyOn(global, 'clearTimeout');
+      const cancelSpy = jest.spyOn(window, 'cancelAnimationFrame');
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 15 });
+      });
+      /** Unmount inside the preview's open delay, with a frame still queued. */
+      act(() => {
+        unmount();
+      });
+
+      expect(clearSpy).toHaveBeenCalled();
+      expect(cancelSpy).toHaveBeenCalled();
+      /** Nothing left to fire against the unmounted rail. */
+      expect(() =>
+        act(() => {
+          jest.advanceTimersByTime(200);
+        }),
+      ).not.toThrow();
+
+      clearSpy.mockRestore();
+      cancelSpy.mockRestore();
+      restoreLayout();
+    });
+
+    it('re-pins to the bottom as a streaming thread appends ribs', async () => {
+      // Pinned at the bottom, the window stays `atEnd` from one appended rib to
+      // the next, so the window alone cannot be the trigger: each new rib grows
+      // the column underneath the reader and the newest ones settle out of
+      // sight.
+      const messages = Array.from({ length: 6 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable, content } = buildDom(messages);
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: 2400,
+        writable: true,
+        configurable: true,
+      });
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const column = getColumn(container);
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      let columnContent = 100;
+      Object.defineProperty(column, 'scrollHeight', {
+        get: () => columnContent,
+        configurable: true,
+      });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(64);
+      });
+      expect(column.scrollTop).toBe(70);
+
+      /** A response appends its row; the transcript stays at the bottom. */
+      const appended = document.createElement('div');
+      appended.id = 'm-6';
+      appended.className = 'message-render';
+      appended.textContent = 'message 6';
+      Object.defineProperty(appended, 'offsetTop', { value: 1300, configurable: true });
+      Object.defineProperty(appended, 'offsetHeight', { value: 150, configurable: true });
+      /** The MutationObserver delivers on a microtask, then the refresh debounce
+       *  runs, then the rail frames itself. */
+      await act(async () => {
+        content.appendChild(appended);
+        columnContent = 130;
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(250);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(64);
+        await Promise.resolve();
+      });
+
+      expect(messageRibs(container)).toHaveLength(7);
+      expect(column.scrollTop).toBe(100);
+    });
+
+    it('frames the window it missed once the gesture that froze it ends', () => {
+      // A drag that reaches the end commits `atEnd` while the rail is frozen.
+      // The owner hands back the same window afterwards, so releasing has to be
+      // what re-runs the follow — otherwise the column keeps the position the
+      // reader dragged it to, with the current ribs off-screen.
+      const messages = Array.from({ length: 10 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const restoreLayout = stubRibLayout(messages.map((m) => m.messageId));
+      const { container, scrollable } = renderNav(messages);
+      const column = getColumn(container);
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 30, height: 30 }) as DOMRect;
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      Object.defineProperty(column, 'scrollHeight', { value: 200, configurable: true });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+
+      /** Pointer on the rail: the follow is frozen from here on. */
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 10 });
+      });
+      (scrollable as HTMLElement).scrollTop = 3000;
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+      column.scrollTop = 5;
+      expect(column.scrollTop).toBe(5);
+
+      /** The window does not change again; only the gesture ending does. */
+      act(() => {
+        fireEvent.pointerLeave(column, { pointerId: 1 });
+        jest.advanceTimersByTime(32);
+      });
+
+      expect(column.scrollTop).toBe(170);
       restoreLayout();
     });
 

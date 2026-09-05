@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, type FC } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { useAtomValue } from 'jotai';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
@@ -6,8 +6,11 @@ import { Spinner, useToastContext } from '@librechat/client';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { Index, ListRowProps } from 'react-virtualized';
 import type { TMessage } from 'librechat-data-provider';
+import type { SearchNavEntry } from '~/components/Chat/Messages/SearchNav';
+import { extractPreviewFromContent } from '~/components/Chat/Messages/MessageNav';
 import { useElementSize, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
+import SearchNav from '~/components/Chat/Messages/SearchNav';
 import { useMessagesInfiniteQuery } from '~/data-provider';
 import { useFileMapContext } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -78,6 +81,22 @@ const MeasuredRow: FC<{
 });
 
 MeasuredRow.displayName = 'SearchMeasuredRow';
+
+const SCROLL_DURATION = 400;
+/** react-virtualized rounds the positions it is handed, so a jump's own scroll
+ *  events come back a fraction off what was written. */
+const SCROLL_MATCH_EPS = 2;
+const PREVIEW_MAX = 80;
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function buildPreview(message: TMessage): string {
+  const raw = message.text?.trim() ? message.text : extractPreviewFromContent(message.content);
+  const trimmed = raw.trim();
+  return trimmed.slice(0, PREVIEW_MAX) + (trimmed.length > PREVIEW_MAX ? '...' : '');
+}
 
 export default function Search() {
   const localize = useLocalize();
@@ -155,6 +174,134 @@ export default function Search() {
     [cache],
   );
 
+  /** Rendered row window reported by the List; `start` doubles as the current
+   *  (topmost visible) row and `[start..stop]` as the lit rib set. */
+  const [range, setRange] = useState<{ start: number; stop: number } | null>(null);
+  const scrollTopRef = useRef(0);
+  /** The last position the running jump wrote, so its own scroll events can be
+   *  told apart from the reader's. */
+  const animatedScrollRef = useRef<number | null>(null);
+  const scrollTokenRef = useRef(0);
+  const reducedMotionRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    reducedMotionRef.current = mq.matches;
+    const onChange = () => {
+      reducedMotionRef.current = mq.matches;
+    };
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
+  }, []);
+
+  /** A fresh query re-seeds the list from the top; drop the stale window, and
+   *  invalidate any rail jump still animating. Left running, it keeps writing
+   *  scroll positions over the reseed and finishes by snapping to a row index
+   *  from the previous result set. */
+  useEffect(() => {
+    scrollTokenRef.current++;
+    animatedScrollRef.current = null;
+    setRange(null);
+    scrollTopRef.current = 0;
+  }, [searchQuery]);
+
+  const navEntries = useMemo<SearchNavEntry[]>(() => {
+    const list: SearchNavEntry[] = messages.map((message, index) => ({
+      id: message.messageId ?? `search-row-${index}`,
+      index,
+      isUser: message.isCreatedByUser === true,
+      isEnd: false,
+      preview: buildPreview(message),
+    }));
+    if (list.length > 0) {
+      list.push({
+        id: 'search-nav-end',
+        index: list.length - 1,
+        isUser: false,
+        isEnd: true,
+        preview: '',
+      });
+    }
+    return list;
+  }, [messages]);
+
+  const visibleIndices = useMemo(() => {
+    const set = new Set<number>();
+    if (range) {
+      for (let i = range.start; i <= range.stop; i++) {
+        set.add(i);
+      }
+    }
+    return set;
+  }, [range]);
+
+  const currentIndex = range ? range.start : null;
+
+  /**
+   * A jump in flight is the list's own doing, so it must not read as the reader
+   * changing their mind — but a wheel or a drag must, or the animation fights
+   * them for 400ms and then snaps to the row it was aiming at, undoing the
+   * scroll entirely. The animation records every position it writes; a scroll
+   * that reports anything else came from the reader, and retires the jump.
+   */
+  const handleScroll = useCallback(({ scrollTop }: { scrollTop: number }) => {
+    const animated = animatedScrollRef.current;
+    if (animated == null || Math.abs(scrollTop - animated) > SCROLL_MATCH_EPS) {
+      scrollTokenRef.current++;
+      animatedScrollRef.current = null;
+    }
+    scrollTopRef.current = scrollTop;
+  }, []);
+
+  /** Seam 2: scroll the virtualized list to a row. A row may be unmounted, so we
+   *  sum measured heights to find its offset and animate scrollToPosition, then
+   *  snap with scrollToRow so the landing is exact even if the row re-measures. */
+  const onJump = useCallback(
+    (index: number, smooth: boolean) => {
+      const list = listRef.current;
+      if (!list) {
+        return;
+      }
+      if (!smooth || reducedMotionRef.current) {
+        list.scrollToRow(index);
+        return;
+      }
+      let target = 0;
+      for (let i = 0; i < index; i++) {
+        target += cache.getHeight(i, 0);
+      }
+      const startScroll = scrollTopRef.current;
+      const startTime = performance.now();
+      const token = ++scrollTokenRef.current;
+      animatedScrollRef.current = startScroll;
+      const step = (now: number) => {
+        if (token !== scrollTokenRef.current || !listRef.current) {
+          animatedScrollRef.current = null;
+          return;
+        }
+        const progress = Math.min(1, (now - startTime) / SCROLL_DURATION);
+        const position = startScroll + (target - startScroll) * easeOutCubic(progress);
+        animatedScrollRef.current = position;
+        listRef.current.scrollToPosition(position);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          listRef.current.scrollToRow(index);
+          animatedScrollRef.current = null;
+        }
+      };
+      requestAnimationFrame(step);
+    },
+    [cache],
+  );
+
   /** A new query reseeds the list: prior results stay mounted (keepPreviousData)
    *  so the List keeps its old scrollTop — drop measured heights AND scroll back
    *  to the top, or the next search can open mid-list and hide the top matches. */
@@ -214,15 +361,17 @@ export default function Search() {
   useEffect(() => () => throttledFetchNext.cancel(), [throttledFetchNext]);
 
   const handleRowsRendered = useCallback(
-    ({ stopIndex }: { stopIndex: number }) => {
+    ({ startIndex, stopIndex }: { startIndex: number; stopIndex: number }) => {
       /** Don't page while the outgoing results are still mounted (typing, or the
        *  new query is still fetching and previous data is shown). */
-      if (showingStale || !hasNextPage || isFetchingNextPage) {
-        return;
-      }
-      if (stopIndex >= messages.length - 8) {
+      if (!showingStale && hasNextPage && !isFetchingNextPage && stopIndex >= messages.length - 8) {
         throttledFetchNext();
       }
+      setRange((prev) =>
+        prev && prev.start === startIndex && prev.stop === stopIndex
+          ? prev
+          : { start: startIndex, stop: stopIndex },
+      );
     },
     [showingStale, hasNextPage, isFetchingNextPage, messages.length, throttledFetchNext],
   );
@@ -331,12 +480,19 @@ export default function Search() {
           rowHeight={getRowHeight}
           rowRenderer={rowRenderer}
           onRowsRendered={handleRowsRendered}
+          onScroll={handleScroll}
           overscanRowCount={10}
           aria-label={localize('com_nav_search_placeholder')}
           className={cn('outline-none', showingStale && 'opacity-70')}
           style={{ outline: 'none' }}
         />
       </div>
+      <SearchNav
+        entries={navEntries}
+        currentIndex={currentIndex}
+        visibleIndices={visibleIndices}
+        onJump={onJump}
+      />
       {isFetchingNextPage && (
         <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex justify-center py-4">
           <Spinner className="text-text-primary" />

@@ -1,12 +1,11 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { RailWindow } from './Rail';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { Rail } from './Rail';
 
 type MessageEntry = {
   id: string;
@@ -179,8 +178,6 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
 
 const JUMP_EPS = 4;
 const SCROLL_DURATION = 400;
-const BOTTOM_SNAP_RETRIES = 2;
-const DRAG_THRESHOLD = 4;
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
@@ -245,119 +242,6 @@ function entryTop(el: HTMLElement, container: HTMLElement): number {
   return top;
 }
 
-type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
-
-const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
-const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
-/** The rib you are reading is longer at rest, so the rail answers "where am I"
- *  from length alone — the only axis a 3px line has left once colour is spent
- *  on the in-view band. */
-const RIB_CURRENT: RibDims = { baseW: 21, baseH: 3, peakW: 39, peakH: 6 };
-/** Row height in px. `peakH` may reach it but never exceed it: the magnifier
- *  writes into normal flow, and a rib taller than its row would reflow every
- *  rib below the pointer — moving the rail out from under the pointer and
- *  leaving the measured centres (and so the preview and the click target)
- *  pointing at the wrong message. */
-const RIB_ROW_HEIGHT = 6;
-
-/** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
-const MAG_INFLUENCE = 50;
-/** Delay before the shared preview first opens; subsequent moves reposition instantly. */
-const TOOLTIP_OPEN_DELAY = 60;
-
-export function ribDimsFor(entry: MessageEntry, isCurrent = false): RibDims {
-  if (entry.isEnd === true || entry.isStart === true) {
-    return RIB_END;
-  }
-  return isCurrent ? RIB_CURRENT : RIB_MESSAGE;
-}
-
-/** Cosine bell: 1 at the pointer, easing to 0 at the influence radius. */
-export function magnifyFalloff(distance: number, influence: number): number {
-  if (distance >= influence) {
-    return 0;
-  }
-  return 0.5 * (1 + Math.cos((Math.PI * distance) / influence));
-}
-
-/** `shrink-0` is load-bearing: the ribs are flex items in a scrolling column, so
- *  without it every row compresses to its content the moment the rail overflows —
- *  halving the hit target of every rib in exactly the long conversations the rail
- *  exists to navigate. */
-const indicatorButtonClasses = cn(
-  'flex w-full shrink-0 items-center justify-end rounded-sm transition-opacity duration-300',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
-);
-
-const dimIndicatorClasses =
-  'opacity-40 group-hover/nav:opacity-100 group-focus-within/nav:opacity-100';
-
-const MessageIndicator = memo(function MessageIndicator({
-  entry,
-  isInView,
-  isCurrent,
-  isFocused,
-  label,
-  tabIndex,
-  onSelect,
-}: {
-  entry: MessageEntry;
-  /** The row intersects the viewport — the soft band around where you are. */
-  isInView: boolean;
-  /** The row you are reading: the rail's single "you are here" mark. */
-  isCurrent: boolean;
-  /** The rib the pointer or keyboard is previewing right now. */
-  isFocused: boolean;
-  label: string;
-  tabIndex: number;
-  onSelect: (id: string) => void;
-}) {
-  const dims = ribDimsFor(entry, isCurrent);
-  const isEmphasized = isCurrent || isFocused;
-  let tone = 'bg-text-tertiary';
-  if (isEmphasized) {
-    tone = 'bg-text-primary';
-  } else if (isInView) {
-    tone = 'bg-text-secondary';
-  }
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect(entry.id);
-      }}
-      className={cn(
-        indicatorButtonClasses,
-        isEmphasized || isInView ? 'opacity-100' : dimIndicatorClasses,
-      )}
-      style={{ height: RIB_ROW_HEIGHT }}
-      aria-label={label}
-      aria-current={isCurrent ? 'true' : undefined}
-      tabIndex={tabIndex}
-      data-msg-id={entry.id}
-    >
-      <span
-        className={cn(
-          'block rounded-full',
-          entry.isEnd === true || entry.isStart === true ? 'mr-[4.5px]' : '',
-          tone,
-        )}
-        style={{ width: dims.baseW, height: dims.baseH }}
-      />
-    </button>
-  );
-});
-
-const chevronButtonClasses = cn(
-  '-mr-1 rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
-  'group-hover/nav:text-text-secondary group-hover/nav:opacity-100',
-  'group-focus-within/nav:text-text-secondary group-focus-within/nav:opacity-100',
-  'group-hover/nav:hover:text-text-primary',
-  'group-hover/nav:disabled:opacity-30 group-focus-within/nav:disabled:opacity-30',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
-);
-
 function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivElement> }) {
   const localize = useLocalize();
   const { conversationId } = useMessagesConversation();
@@ -387,50 +271,16 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [canGoUp, setCanGoUp] = useState(false);
   const [canGoDown, setCanGoDown] = useState(false);
+  const [railWindow, setRailWindow] = useState<RailWindow | null>(null);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const observedRef = useRef(new Map<string, HTMLElement>());
-  const columnRef = useRef<HTMLDivElement>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleSetRef = useRef(new Set<string>());
   const messagesByIdRef = useRef(messagesById);
   const scrollTokenRef = useRef(0);
   const scrollMarginRef = useRef(0);
   const navRef = useRef<HTMLElement>(null);
-  const dragCleanupRef = useRef<(() => void) | null>(null);
-  const suppressClickRef = useRef(false);
-  const isDraggingRef = useRef(false);
-  /** True while the pointer or the keyboard is working the rail; freezes the
-   *  rail's auto-follow so the ribs stay put under an active gesture. */
-  const interactingRef = useRef(false);
-
-  const ribLayoutRef = useRef<
-    Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }>
-  >([]);
-  const measuredCountRef = useRef(-1);
-  const measuredCurrentRef = useRef<string | null | undefined>(undefined);
-  /** The pointer's VIEWPORT y, converted to the column's content space only at
-   *  the moment it is used. Caching the converted value goes stale the instant
-   *  the rail is wheel-scrolled under a stationary pointer, leaving the preview
-   *  — and the id a click in the gaps follows — on the rib that used to be
-   *  there. */
-  const pointerClientYRef = useRef<number | null>(null);
-  const magRafRef = useRef<number | null>(null);
-  const reducedMotionRef = useRef(false);
-  const focusedIdRef = useRef<string | null>(null);
-  const tipShownRef = useRef(false);
-  const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tipElRef = useRef<HTMLDivElement | null>(null);
-  const tipPosRef = useRef({ top: 0, right: 0 });
-
-  const [tip, setTip] = useState<{ id: string; top: number; right: number } | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  /** The rib the keyboard last landed on. A roving tab stop has to travel with
-   *  focus, not sit on the scroll-spy's current rib: leave it behind and the
-   *  column holds two tab stops, so Tab re-enters the rail it just left and
-   *  Shift+Tab walks back into it instead of out. Distinct from `hoveredId`,
-   *  which the pointer also drives — the tab order must not follow the mouse. */
-  const [focusedRibId, setFocusedRibId] = useState<string | null>(null);
 
   /** The terminus rib is pinned beside the down chevron rather than living in
    *  the scrolling column, so it stays reachable however far the rail scrolls.
@@ -454,66 +304,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     };
   }, [entries]);
 
-  const entryById = useMemo(() => {
-    const map = new Map<string, MessageEntry>();
-    for (let i = 0; i < entries.length; i++) {
-      map.set(entries[i].id, entries[i]);
-    }
-    if (startEntry) {
-      map.set(startEntry.id, startEntry);
-    }
-    return map;
-  }, [entries, startEntry]);
-
   /**
    * Rib centres in the column's own content space, plus the resting size each
    * rib returns to. Everything that answers "which rib is the pointer on" —
    * the fisheye, the preview, a click in the gaps, a drag — reads this one
    * layout, so they cannot disagree.
    */
-  const measureRibs = useCallback(() => {
-    const col = columnRef.current;
-    if (!col) {
-      return;
-    }
-    const layout: Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }> = [];
-    const kids = col.children;
-    for (let i = 0; i < kids.length; i++) {
-      const button = kids[i] as HTMLElement;
-      const id = button.getAttribute('data-msg-id');
-      const line = button.firstElementChild as HTMLElement | null;
-      const entry = id ? entryById.get(id) : undefined;
-      if (!id || !line || !entry) {
-        continue;
-      }
-      layout.push({
-        id,
-        line,
-        center: button.offsetTop + button.offsetHeight / 2,
-        dims: ribDimsFor(entry, id === currentId),
-      });
-    }
-    measuredCountRef.current = kids.length;
-    measuredCurrentRef.current = currentId;
-    ribLayoutRef.current = layout;
-  }, [entryById, currentId]);
-
-  /** Re-measures when the rib set or the current rib has changed since the last
-   *  measurement, so a gesture that arrives before the scheduled measure still
-   *  hit-tests against the ribs on screen and releases them to the resting size
-   *  they are actually rendered at. */
-  const ensureRibLayout = useCallback(() => {
-    const col = columnRef.current;
-    if (!col) {
-      return;
-    }
-    if (
-      measuredCountRef.current !== col.children.length ||
-      measuredCurrentRef.current !== currentId
-    ) {
-      measureRibs();
-    }
-  }, [measureRibs, currentId]);
 
   useEffect(() => {
     messagesByIdRef.current = messagesById;
@@ -676,10 +472,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (suppressClickRef.current) {
-        suppressClickRef.current = false;
-        return;
-      }
       scrollToStart(id);
       if (!isTerminusId(id)) {
         focusMessage(id);
@@ -687,13 +479,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     },
     [scrollToStart, focusMessage],
   );
-
-  const handleColumnClick = useCallback(() => {
-    const id = focusedIdRef.current;
-    if (id) {
-      handleSelect(id);
-    }
-  }, [handleSelect]);
 
   const focusNav = useCallback((): boolean => {
     const nav = navRef.current;
@@ -709,402 +494,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     target.focus();
     return document.activeElement === target;
   }, []);
-
-  /**
-   * The rib nearest the pointer, in the column's own content space.
-   *
-   * The column scrolls independently once a thread outgrows it, so a mapping
-   * built from the pointer's fraction of the column's *visible* height and the
-   * *whole* rib list answers with a rib the reader is not pointing at — the
-   * error grows with the thread and, worse, disagrees with the preview, which
-   * has always been nearest-centre. Both now read the same measured layout, so
-   * the rib under the pointer, the message named in the preview, and the
-   * message a drag lands on are one and the same.
-   */
-  const ribIdAt = useCallback(
-    (clientY: number): string | null => {
-      ensureRibLayout();
-      const col = columnRef.current;
-      const layout = ribLayoutRef.current;
-      if (!col || layout.length === 0) {
-        return null;
-      }
-      const contentY = clientY - col.getBoundingClientRect().top + col.scrollTop;
-      let nearestId: string | null = null;
-      let nearestD = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < layout.length; i++) {
-        const d = Math.abs(contentY - layout[i].center);
-        if (d >= nearestD) {
-          continue;
-        }
-        nearestD = d;
-        nearestId = layout[i].id;
-      }
-      return nearestId;
-    },
-    [ensureRibLayout],
-  );
-
-  const scrubTo = useCallback(
-    (clientY: number) => {
-      const col = columnRef.current;
-      if (!col) {
-        return;
-      }
-      const rect = col.getBoundingClientRect();
-      /** The terminus ribs are pinned outside the column, so the pointer reaches
-       *  them by travelling past its edges. */
-      if (endEntry && clientY >= rect.bottom) {
-        scrollToImmediate(MESSAGES_END_ID);
-        return;
-      }
-      if (startEntry && clientY <= rect.top) {
-        scrollToImmediate(MESSAGES_START_ID);
-        return;
-      }
-      const id = ribIdAt(clientY);
-      if (id) {
-        scrollToImmediate(id);
-      }
-    },
-    [scrollToImmediate, ribIdAt, endEntry, startEntry],
-  );
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) {
-        return;
-      }
-      dragCleanupRef.current?.();
-      suppressClickRef.current = false;
-      interactingRef.current = true;
-      const state = { pointerId: e.pointerId, startY: e.clientY, dragging: false };
-
-      const finish = (wasDragging: boolean) => {
-        document.removeEventListener('pointermove', onMove);
-        document.removeEventListener('pointerup', onUp);
-        document.removeEventListener('pointercancel', onUp);
-        window.removeEventListener('blur', onBlur);
-        dragCleanupRef.current = null;
-        isDraggingRef.current = false;
-        if (pointerClientYRef.current == null) {
-          interactingRef.current = false;
-        }
-        if (wasDragging) {
-          suppressClickRef.current = true;
-          window.setTimeout(() => {
-            suppressClickRef.current = false;
-          }, 0);
-        }
-      };
-
-      function onMove(ev: PointerEvent) {
-        if (ev.pointerId !== state.pointerId) {
-          return;
-        }
-        if ((ev.buttons & 1) === 0) {
-          finish(state.dragging);
-          return;
-        }
-        if (!state.dragging) {
-          if (Math.abs(ev.clientY - state.startY) < DRAG_THRESHOLD) {
-            return;
-          }
-          state.dragging = true;
-          isDraggingRef.current = true;
-        }
-        scrubTo(ev.clientY);
-      }
-
-      function onUp(ev: PointerEvent) {
-        if (ev.pointerId !== state.pointerId) {
-          return;
-        }
-        finish(state.dragging);
-      }
-
-      function onBlur() {
-        finish(state.dragging);
-      }
-
-      dragCleanupRef.current = () => finish(state.dragging);
-      document.addEventListener('pointermove', onMove);
-      document.addEventListener('pointerup', onUp);
-      document.addEventListener('pointercancel', onUp);
-      window.addEventListener('blur', onBlur);
-    },
-    [scrubTo],
-  );
-
-  useEffect(() => () => dragCleanupRef.current?.(), []);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    reducedMotionRef.current = mq.matches;
-    const onChange = () => {
-      reducedMotionRef.current = mq.matches;
-    };
-    if (typeof mq.addEventListener === 'function') {
-      mq.addEventListener('change', onChange);
-      return () => mq.removeEventListener('change', onChange);
-    }
-    mq.addListener(onChange);
-    return () => mq.removeListener(onChange);
-  }, []);
-
-  useEffect(() => {
-    const raf = requestAnimationFrame(measureRibs);
-    const col = columnRef.current;
-    const resize = col ? new ResizeObserver(measureRibs) : null;
-    if (col && resize) {
-      resize.observe(col);
-    }
-    return () => {
-      cancelAnimationFrame(raf);
-      resize?.disconnect();
-    };
-  }, [entries, currentId, measureRibs]);
-
-  const positionTip = useCallback((top: number, right: number) => {
-    tipPosRef.current = { top, right };
-    const el = tipElRef.current;
-    if (el) {
-      el.style.top = `${top}px`;
-      el.style.right = `${right}px`;
-    }
-  }, []);
-
-  const revealTip = useCallback(
-    (id: string | null) => {
-      if (!id || !entryById.has(id)) {
-        setTip(null);
-        return;
-      }
-      setTip({ id, top: tipPosRef.current.top, right: tipPosRef.current.right });
-    },
-    [entryById],
-  );
-
-  const clearTooltip = useCallback(() => {
-    if (tipTimerRef.current) {
-      clearTimeout(tipTimerRef.current);
-      tipTimerRef.current = null;
-    }
-    if (focusedIdRef.current !== null) {
-      focusedIdRef.current = null;
-      setHoveredId(null);
-    }
-    if (tipShownRef.current) {
-      tipShownRef.current = false;
-      setTip(null);
-    }
-  }, []);
-
-  const focusTooltip = useCallback(
-    (id: string, top: number, right: number) => {
-      positionTip(top, right);
-      if (focusedIdRef.current === id) {
-        return;
-      }
-      focusedIdRef.current = id;
-      setHoveredId(id);
-      if (tipShownRef.current) {
-        revealTip(id);
-        return;
-      }
-      if (tipTimerRef.current) {
-        return;
-      }
-      tipTimerRef.current = setTimeout(() => {
-        tipTimerRef.current = null;
-        tipShownRef.current = true;
-        revealTip(focusedIdRef.current);
-      }, TOOLTIP_OPEN_DELAY);
-    },
-    [positionTip, revealTip],
-  );
-
-  /** The pinned origin and terminus live outside the column, so they drive the
-   *  shared preview themselves instead of through the rail's magnification. */
-  const showTerminusTip = useCallback(
-    (el: HTMLElement, id: string) => {
-      const rect = el.getBoundingClientRect();
-      const left = columnRef.current?.getBoundingClientRect().left ?? rect.left;
-      focusTooltip(id, rect.top + rect.height / 2, window.innerWidth - left + 8);
-    },
-    [focusTooltip],
-  );
-
-  const handleEndPointerEnter = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_END_ID),
-    [showTerminusTip],
-  );
-
-  const handleEndFocus = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_END_ID),
-    [showTerminusTip],
-  );
-
-  const handleStartPointerEnter = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_START_ID),
-    [showTerminusTip],
-  );
-
-  const handleStartFocus = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => showTerminusTip(e.currentTarget, MESSAGES_START_ID),
-    [showTerminusTip],
-  );
-
-  const handleTerminusBlur = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => {
-      const next = e.relatedTarget as Node | null;
-      if (next && e.currentTarget.contains(next)) {
-        return;
-      }
-      clearTooltip();
-    },
-    [clearTooltip],
-  );
-
-  const applyMagnify = useCallback(() => {
-    magRafRef.current = null;
-    ensureRibLayout();
-    const col = columnRef.current;
-    const layout = ribLayoutRef.current;
-    const clientY = pointerClientYRef.current;
-    if (!col || clientY == null || layout.length === 0) {
-      return;
-    }
-    const reduce = reducedMotionRef.current;
-    const colRect = col.getBoundingClientRect();
-    const scrollTop = col.scrollTop;
-    const py = clientY - colRect.top + scrollTop;
-    let nearestId: string | null = null;
-    let nearestD = Number.POSITIVE_INFINITY;
-    let nearestCenter = 0;
-    for (let i = 0; i < layout.length; i++) {
-      const rib = layout[i];
-      const d = Math.abs(py - rib.center);
-      if (d < nearestD) {
-        nearestD = d;
-        nearestId = rib.id;
-        nearestCenter = rib.center;
-      }
-      if (reduce) {
-        continue;
-      }
-      const t = magnifyFalloff(d, MAG_INFLUENCE);
-      const dims = rib.dims;
-      rib.line.style.transition = 'none';
-      rib.line.style.width = `${(dims.baseW + (dims.peakW - dims.baseW) * t).toFixed(2)}px`;
-      rib.line.style.height = `${(dims.baseH + (dims.peakH - dims.baseH) * t).toFixed(2)}px`;
-    }
-    if (nearestId != null && nearestD <= MAG_INFLUENCE && !isDraggingRef.current) {
-      const top = colRect.top - scrollTop + nearestCenter;
-      const right = window.innerWidth - colRect.left + 8;
-      focusTooltip(nearestId, top, right);
-    } else {
-      clearTooltip();
-    }
-  }, [focusTooltip, clearTooltip, ensureRibLayout]);
-
-  /** Restores the resting dimensions rather than clearing them: the ribs carry
-   *  their base size inline, from the same `ribDimsFor` the magnifier reads, so
-   *  there is one source of truth for a rib's size and no snap on release. */
-  const resetMagnify = useCallback(() => {
-    ensureRibLayout();
-    const layout = ribLayoutRef.current;
-    for (let i = 0; i < layout.length; i++) {
-      const rib = layout[i];
-      rib.line.style.transition = 'width 140ms ease-out, height 140ms ease-out';
-      rib.line.style.width = `${rib.dims.baseW}px`;
-      rib.line.style.height = `${rib.dims.baseH}px`;
-    }
-  }, [ensureRibLayout]);
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const col = columnRef.current;
-      if (!col) {
-        return;
-      }
-      interactingRef.current = true;
-      pointerClientYRef.current = e.clientY;
-      if (magRafRef.current == null) {
-        magRafRef.current = requestAnimationFrame(applyMagnify);
-      }
-    },
-    [applyMagnify],
-  );
-
-  /** Wheeling the rail moves the ribs without moving the pointer, so the hit
-   *  test has to be redone from the same viewport coordinate against the new
-   *  scroll offset. */
-  const handleColumnScroll = useCallback(() => {
-    if (pointerClientYRef.current == null) {
-      return;
-    }
-    if (magRafRef.current == null) {
-      magRafRef.current = requestAnimationFrame(applyMagnify);
-    }
-  }, [applyMagnify]);
-
-  const handlePointerLeave = useCallback(() => {
-    pointerClientYRef.current = null;
-    if (!isDraggingRef.current) {
-      interactingRef.current = false;
-    }
-    if (magRafRef.current != null) {
-      cancelAnimationFrame(magRafRef.current);
-      magRafRef.current = null;
-    }
-    resetMagnify();
-    clearTooltip();
-  }, [resetMagnify, clearTooltip]);
-
-  const handleColumnFocus = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => {
-      const col = columnRef.current;
-      const target = e.target as HTMLElement;
-      const id = target.getAttribute?.('data-msg-id');
-      if (!col || id == null) {
-        return;
-      }
-      setFocusedRibId(id);
-      interactingRef.current = true;
-      const rect = target.getBoundingClientRect();
-      pointerClientYRef.current = rect.top + rect.height / 2;
-      if (magRafRef.current == null) {
-        magRafRef.current = requestAnimationFrame(applyMagnify);
-      }
-    },
-    [applyMagnify],
-  );
-
-  const handleColumnBlur = useCallback(
-    (e: React.FocusEvent<HTMLDivElement>) => {
-      const col = columnRef.current;
-      const next = e.relatedTarget as Node | null;
-      if (col && next && col.contains(next)) {
-        return;
-      }
-      setFocusedRibId(null);
-      handlePointerLeave();
-    },
-    [handlePointerLeave],
-  );
-
-  useEffect(
-    () => () => {
-      if (magRafRef.current != null) {
-        cancelAnimationFrame(magRafRef.current);
-      }
-      if (tipTimerRef.current) {
-        clearTimeout(tipTimerRef.current);
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     refreshEntries();
@@ -1188,40 +577,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
     let needsRecompute = false;
     let frameId: number | null = null;
-    let bottomFrameId: number | null = null;
-    let bottomSnapToken = 0;
-
-    const scrollColumnToBottom = () => {
-      const col = columnRef.current;
-      if (!col) {
-        return;
-      }
-      col.scrollTop = Math.max(0, col.scrollHeight - col.clientHeight);
-    };
-
-    const cancelColumnBottomScroll = () => {
-      bottomSnapToken++;
-      if (bottomFrameId != null) {
-        cancelAnimationFrame(bottomFrameId);
-        bottomFrameId = null;
-      }
-    };
-
-    const scheduleColumnBottomScroll = () => {
-      const token = ++bottomSnapToken;
-      const run = (remaining: number) => {
-        if (token !== bottomSnapToken) {
-          return;
-        }
-        scrollColumnToBottom();
-        if (remaining <= 0) {
-          bottomFrameId = null;
-          return;
-        }
-        bottomFrameId = requestAnimationFrame(() => run(remaining - 1));
-      };
-      run(BOTTOM_SNAP_RETRIES);
-    };
 
     const tick = () => {
       frameId = null;
@@ -1268,20 +623,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       setCanGoDown((prev) => (prev === nextCanDown ? prev : nextCanDown));
       setCurrentId((prev) => (prev === nextCurrentId ? prev : nextCurrentId));
 
-      const col = columnRef.current;
-      if (!col) {
-        return;
-      }
-      /** While the pointer or the keyboard is working the rail, the rail holds
-       *  still. Re-centring under an active pointer slides the ribs out from
-       *  under it mid-gesture, and it also discards any wheel scroll the reader
-       *  did to reach a distant part of a thread too long for one column. */
-      if (interactingRef.current) {
-        cancelColumnBottomScroll();
-        return;
-      }
+      /** Which entries the reader can see. The rail frames this itself; all it
+       *  needs from the transcript is the span, in entry indices. */
       if (containerMaxScrollTop > 0 && scrollTop >= containerMaxScrollTop - JUMP_EPS) {
-        scheduleColumnBottomScroll();
+        setRailWindow((prev) => (prev?.atEnd === true ? prev : { first: 0, last: 0, atEnd: true }));
         return;
       }
       const viewBottom = scrollTop + container.clientHeight;
@@ -1302,23 +647,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (first === -1) {
         return;
       }
-      if (last === entries.length - 1) {
-        scheduleColumnBottomScroll();
-        return;
-      }
-      cancelColumnBottomScroll();
-      const firstInd = col.children[first] as HTMLElement | undefined;
-      const lastInd = col.children[last] as HTMLElement | undefined;
-      if (!firstInd || !lastInd) {
-        return;
-      }
-      /** `offsetTop` is content-space only because the column is a positioned
-       *  ancestor; without that it resolves against the absolutely positioned
-       *  `nav` and every centring decision inherits the chevron's height. */
-      const mid = (firstInd.offsetTop + lastInd.offsetTop + lastInd.offsetHeight) / 2;
-      const target = mid - col.clientHeight / 2;
-      const columnMaxScrollTop = Math.max(0, col.scrollHeight - col.clientHeight);
-      col.scrollTop = Math.max(0, Math.min(target, columnMaxScrollTop));
+      const atEnd = last === entries.length - 1;
+      setRailWindow((prev) =>
+        prev != null && prev.first === first && prev.last === last && prev.atEnd === atEnd
+          ? prev
+          : { first, last, atEnd },
+      );
     };
 
     const scheduleTick = () => {
@@ -1344,7 +678,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (frameId != null) {
         cancelAnimationFrame(frameId);
       }
-      cancelColumnBottomScroll();
       resizeObserver.disconnect();
     };
   }, [entries, scrollableRef, resolveEntryEl]);
@@ -1510,43 +843,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
   }, [entries, scrollableRef, scrollToStart, resolveEntryEl]);
 
-  /**
-   * Arrow keys walk the ribs; only one of them is ever in the tab order.
-   * A rail that made every rib a tab stop put the whole transcript between the
-   * reader and the next control — hundreds of stops in a long thread.
-   */
-  const handleColumnKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    const col = columnRef.current;
-    if (!col) {
-      return;
-    }
-    const { key } = e;
-    if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Home' && key !== 'End') {
-      return;
-    }
-    const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
-    if (ribs.length === 0) {
-      return;
-    }
-    let index = -1;
-    for (let i = 0; i < ribs.length; i++) {
-      if (ribs[i] === document.activeElement) {
-        index = i;
-        break;
-      }
-    }
-    let next = 0;
-    if (key === 'End') {
-      next = ribs.length - 1;
-    } else if (key === 'ArrowUp') {
-      next = index <= 0 ? 0 : index - 1;
-    } else if (key === 'ArrowDown') {
-      next = index < 0 ? 0 : Math.min(ribs.length - 1, index + 1);
-    }
-    e.preventDefault();
-    ribs[next].focus();
-  }, []);
-
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.shiftKey && (e.code === 'KeyM' || e.key.toLowerCase() === 'm')) {
@@ -1570,152 +866,44 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const lastEntry = messageEntries[messageEntries.length - 1];
   const pendingId = isSubmitting && !lastEntry.isUser ? lastEntry.id : null;
 
-  const tipEntry = tip ? entryById.get(tip.id) : undefined;
-  let tipText = '';
-  if (tipEntry) {
-    tipText = previewTextFor(tipEntry, localize, tipEntry.id === pendingId);
-  }
+  const labelFor = (entry: MessageEntry): string => {
+    if (entry.isStart === true) {
+      return localize('com_ui_scroll_to_top');
+    }
+    if (entry.isEnd === true) {
+      return localize('com_ui_scroll_to_bottom');
+    }
+    return localize(
+      entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
+      { 0: previewTextFor(entry, localize, entry.id === pendingId).slice(0, 30) },
+    );
+  };
 
-  /** One tab stop for the whole column; the arrows move within it. It rides the
-   *  focused rib while the keyboard is in the rail, and otherwise the current
-   *  one, so Tab lands where the reader already is — and at the very bottom,
-   *  where current is the pinned terminus, on the last message rather than back
-   *  at the top of the thread. */
-  let rovingId = messageEntries[0].id;
-  if (currentId === MESSAGES_END_ID) {
-    rovingId = messageEntries[messageEntries.length - 1].id;
-  } else if (currentId != null && entryById.has(currentId)) {
-    rovingId = currentId;
-  }
-  if (focusedRibId != null && !isTerminusId(focusedRibId) && entryById.has(focusedRibId)) {
-    rovingId = focusedRibId;
-  }
+  const previewFor = (entry: MessageEntry): string =>
+    previewTextFor(entry, localize, entry.id === pendingId);
 
   return (
-    <nav
-      ref={navRef}
-      aria-label={localize('com_ui_message_nav')}
-      aria-keyshortcuts="Shift+Alt+M"
-      className={cn(
-        'group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))]',
-        '-translate-y-1/2 flex-col items-end gap-1.5 px-1.5 py-2 md:flex',
-      )}
-    >
-      <button
-        type="button"
-        onClick={jumpToPrevious}
-        disabled={!canGoUp}
-        className={chevronButtonClasses}
-        aria-label={localize('com_ui_message_nav_previous')}
-      >
-        <ChevronUp className="h-4 w-4" />
-      </button>
-
-      {startEntry && (
-        <div
-          className="flex w-14 cursor-pointer touch-none select-none flex-col items-stretch"
-          onPointerDown={handlePointerDown}
-          onPointerEnter={handleStartPointerEnter}
-          onPointerLeave={clearTooltip}
-          onFocus={handleStartFocus}
-          onBlur={handleTerminusBlur}
-        >
-          <MessageIndicator
-            entry={startEntry}
-            isInView={!canGoUp}
-            isCurrent={false}
-            isFocused={hoveredId === startEntry.id}
-            tabIndex={0}
-            onSelect={handleSelect}
-            label={localize('com_ui_scroll_to_top')}
-          />
-        </div>
-      )}
-
-      <div
-        ref={columnRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerLeave={handlePointerLeave}
-        onFocus={handleColumnFocus}
-        onBlur={handleColumnBlur}
-        onClick={handleColumnClick}
-        onKeyDown={handleColumnKeyDown}
-        onScroll={handleColumnScroll}
-        data-message-nav-column=""
-        className="relative flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
-        {messageEntries.map((entry) => {
-          const label = localize(
-            entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
-            { 0: previewTextFor(entry, localize, entry.id === pendingId).slice(0, 30) },
-          );
-          return (
-            <MessageIndicator
-              key={entry.id}
-              entry={entry}
-              isInView={visibleIds.has(entry.id)}
-              isCurrent={currentId === entry.id}
-              isFocused={hoveredId === entry.id}
-              tabIndex={entry.id === rovingId ? 0 : -1}
-              onSelect={handleSelect}
-              label={label}
-            />
-          );
-        })}
-      </div>
-
-      {endEntry && (
-        <div
-          className="flex w-14 cursor-pointer touch-none select-none flex-col items-stretch"
-          onPointerDown={handlePointerDown}
-          onPointerEnter={handleEndPointerEnter}
-          onPointerLeave={clearTooltip}
-          onFocus={handleEndFocus}
-          onBlur={handleTerminusBlur}
-        >
-          <MessageIndicator
-            entry={endEntry}
-            isInView={visibleIds.has(endEntry.id)}
-            isCurrent={currentId === endEntry.id}
-            isFocused={hoveredId === endEntry.id}
-            tabIndex={0}
-            onSelect={handleSelect}
-            label={localize('com_ui_scroll_to_bottom')}
-          />
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={jumpToNext}
-        disabled={!canGoDown}
-        className={chevronButtonClasses}
-        aria-label={localize('com_ui_message_nav_next')}
-      >
-        <ChevronDown className="h-4 w-4" />
-      </button>
-      {tip &&
-        tipText !== '' &&
-        createPortal(
-          <div
-            ref={tipElRef}
-            role="tooltip"
-            style={{
-              position: 'fixed',
-              top: tip.top,
-              right: tip.right,
-              transform: 'translateY(-50%)',
-              zIndex: 999,
-            }}
-            className="pointer-events-none max-w-[280px] rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
-          >
-            <p className="line-clamp-3 text-xs">{tipText}</p>
-          </div>,
-          document.body,
-        )}
-    </nav>
+    <Rail
+      navRef={navRef}
+      ariaLabel={localize('com_ui_message_nav')}
+      keyShortcuts="Shift+Alt+M"
+      entries={messageEntries}
+      startEntry={startEntry}
+      endEntry={endEntry}
+      currentId={currentId}
+      visibleIds={visibleIds}
+      railWindow={railWindow}
+      canGoUp={canGoUp}
+      canGoDown={canGoDown}
+      previousLabel={localize('com_ui_message_nav_previous')}
+      nextLabel={localize('com_ui_message_nav_next')}
+      onPrevious={jumpToPrevious}
+      onNext={jumpToNext}
+      onSelect={handleSelect}
+      onScrub={scrollToImmediate}
+      labelFor={labelFor}
+      previewFor={previewFor}
+    />
   );
 }
 
