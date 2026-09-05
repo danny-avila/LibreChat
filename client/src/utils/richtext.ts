@@ -20,7 +20,7 @@ import type {
 import type { Extension as MicromarkExtension } from 'micromark-util-types';
 import { mcpUIResourcePlugin } from '~/components/MCPUIResource/plugin';
 import { remarkApproxTilde } from './tilde';
-import { preprocessLaTeX } from './latex';
+import { singleDollarMath } from './latex';
 
 /**
  * Which message renderer this copy has to match. `Markdown` (assistant turns)
@@ -404,10 +404,11 @@ function serializeChildren(nodes: readonly SerializableNode[], context: Serializ
  * the clipboard as `text/html`. Paste targets that ignore Markdown (Teams,
  * Outlook, Word) strip stylesheets, so every visual cue has to be inline.
  *
- * Parsing mirrors the message renderers: the same LaTeX preprocessing, the same
- * micromark extensions with `singleDollarTextMath` off so currency such as
- * `$5 to $10` stays currency, then the same `remarkApproxTilde` and
- * `remark-supersub` transforms they apply to the parsed tree.
+ * Parsing mirrors the message renderers: the same currency-safe single-dollar
+ * math extension, the same `micromark-extension-math` with `singleDollarTextMath`
+ * off so currency such as `$5 to $10` stays currency, then the same
+ * `remarkApproxTilde` and `remark-supersub` transforms they apply to the parsed
+ * tree.
  */
 export function markdownToHtml(
   markdown: string,
@@ -417,10 +418,11 @@ export function markdownToHtml(
   if (mode.variant === 'full') {
     extensions.push(directive());
   }
+  if (mode.latex) {
+    extensions.push(singleDollarMath);
+  }
 
-  const source = mode.latex ? preprocessLaTeX(markdown) : markdown;
-
-  const tree = fromMarkdown(source, {
+  const tree = fromMarkdown(markdown, {
     extensions,
     mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown(), mathFromMarkdown()],
   });
