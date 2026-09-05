@@ -22,10 +22,17 @@ type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   additionalHeaders?: Record<string, string>;
 };
 type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
+type TenantExportBlockReason =
+  | 'collector_unconfigured'
+  | 'destination_unconfigured'
+  | 'emergency_disabled'
+  | 'fanout_disabled'
+  | 'missing_credentials'
+  | 'tenant_disabled';
 type LangfuseExportPlan =
-  | { type: 'directCentral' }
-  | { type: 'disabled' }
-  | { type: 'fanoutCollector'; collectorUrl: string }
+  | { type: 'directCentral'; reason: 'collector_unconfigured' | 'fanout_disabled' }
+  | { type: 'disabled'; reason: TenantExportBlockReason }
+  | { type: 'fanoutCollector'; collectorUrl: string; reason: TenantExportBlockReason }
   | {
       type: 'tenantFanout';
       collectorUrl: string;
@@ -36,6 +43,9 @@ type LangfuseExportPlan =
 const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
 const CENTRAL_EXPORT_ATTRIBUTE = 'librechat.langfuse.central_export.enabled';
+const EXPORT_PLAN_ATTRIBUTE = 'librechat.langfuse.export_plan';
+const EXPORT_REASON_ATTRIBUTE = 'librechat.langfuse.export_reason';
+const TENANT_ID_ATTRIBUTE = 'librechat.tenant.id';
 const CENTRAL_MEDIA_DISABLED_SEGMENT = 'central-media-disabled';
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
@@ -108,29 +118,94 @@ function disableCentralExport(langfuse: LangfuseRunConfigWithTraceAttributes): v
   };
 }
 
+function getTenantExportBlockReason({
+  tenantLangfuseEnabled,
+  hasTenantCredentials,
+  tenantExportEmergencyEnabled,
+  tenantDestination,
+}: {
+  tenantLangfuseEnabled: boolean;
+  hasTenantCredentials: boolean;
+  tenantExportEmergencyEnabled: boolean;
+  tenantDestination?: LangfuseTenantDestination;
+}): TenantExportBlockReason {
+  if (!tenantLangfuseEnabled) {
+    return 'tenant_disabled';
+  }
+  if (!hasTenantCredentials) {
+    return 'missing_credentials';
+  }
+  if (!tenantExportEmergencyEnabled) {
+    return 'emergency_disabled';
+  }
+  if (tenantDestination == null) {
+    return 'destination_unconfigured';
+  }
+  return 'missing_credentials';
+}
+
+function applyExportPlanTelemetry(
+  langfuse: LangfuseRunConfigWithTraceAttributes,
+  exportPlan: LangfuseExportPlan,
+  tenantId?: string,
+): void {
+  let exportPlanName = 'central_only';
+  if (exportPlan.type === 'tenantFanout') {
+    exportPlanName = 'tenant_fanout';
+  } else if (exportPlan.type === 'disabled') {
+    exportPlanName = 'disabled';
+  }
+  const exportReason = exportPlan.type === 'tenantFanout' ? 'configured' : exportPlan.reason;
+
+  langfuse.librechatTraceAttributes = {
+    ...(langfuse.librechatTraceAttributes ?? {}),
+    ...(tenantId ? { [TENANT_ID_ATTRIBUTE]: tenantId } : {}),
+    [EXPORT_PLAN_ATTRIBUTE]: exportPlanName,
+    [EXPORT_REASON_ATTRIBUTE]: exportReason,
+  };
+}
+
 function resolveLangfuseExportPlan({
   centralTraceExportEnabled,
   fanoutEnabled,
+  fanoutRequested,
   fanoutCollectorUrl,
-  tenantExportEnabled,
+  tenantLangfuseEnabled,
+  hasTenantCredentials,
+  tenantExportEmergencyEnabled,
   publicKey,
   secretKey,
   tenantDestination,
 }: {
   centralTraceExportEnabled: boolean;
   fanoutEnabled: boolean;
+  fanoutRequested: boolean;
   fanoutCollectorUrl?: string;
-  tenantExportEnabled: boolean;
+  tenantLangfuseEnabled: boolean;
+  hasTenantCredentials: boolean;
+  tenantExportEmergencyEnabled: boolean;
   publicKey?: string;
   secretKey?: string;
   tenantDestination?: LangfuseTenantDestination;
 }): LangfuseExportPlan {
   if (!fanoutEnabled || fanoutCollectorUrl == null) {
-    return centralTraceExportEnabled ? { type: 'directCentral' } : { type: 'disabled' };
+    const reason = fanoutRequested ? 'collector_unconfigured' : 'fanout_disabled';
+    if (centralTraceExportEnabled) {
+      return {
+        type: 'directCentral',
+        reason,
+      };
+    }
+    return { type: 'disabled', reason };
   }
 
   const canRouteTenantFanout =
-    tenantExportEnabled && publicKey != null && secretKey != null && tenantDestination != null;
+    tenantLangfuseEnabled &&
+    hasTenantCredentials &&
+    tenantExportEmergencyEnabled &&
+    publicKey != null &&
+    secretKey != null &&
+    tenantDestination != null;
 
   if (canRouteTenantFanout) {
     return {
@@ -145,10 +220,27 @@ function resolveLangfuseExportPlan({
   // Direct central export can use the collector normally. Central-suppressed
   // runs only reach the collector through a concrete tenant fanout route.
   if (centralTraceExportEnabled) {
-    return { type: 'fanoutCollector', collectorUrl: fanoutCollectorUrl };
+    return {
+      type: 'fanoutCollector',
+      collectorUrl: fanoutCollectorUrl,
+      reason: getTenantExportBlockReason({
+        tenantLangfuseEnabled,
+        hasTenantCredentials,
+        tenantExportEmergencyEnabled,
+        tenantDestination,
+      }),
+    };
   }
 
-  return { type: 'disabled' };
+  return {
+    type: 'disabled',
+    reason: getTenantExportBlockReason({
+      tenantLangfuseEnabled,
+      hasTenantCredentials,
+      tenantExportEmergencyEnabled,
+      tenantDestination,
+    }),
+  };
 }
 
 export function buildLangfuseConfig({
@@ -200,6 +292,7 @@ export function buildLangfuseConfig({
   const tenantCredentials = resolveTenantCredentials(config);
   const hasTenantCredentials = Boolean(tenantCredentials);
   const fanoutEnabled = isLangfuseFanoutEnabled();
+  const fanoutRequested = normalizeBoolean(process.env.LANGFUSE_FANOUT_ENABLED) === true;
   const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantDestination = resolveLangfuseTenantDestination(config?.destination);
   const tenantExportEmergencyEnabled = isLangfuseTenantExportEnabled();
@@ -222,13 +315,16 @@ export function buildLangfuseConfig({
   const exportPlan = resolveLangfuseExportPlan({
     centralTraceExportEnabled,
     fanoutEnabled,
+    fanoutRequested,
     fanoutCollectorUrl,
-    tenantExportEnabled:
-      tenantLangfuseEnabled && hasTenantCredentials && tenantExportEmergencyEnabled,
+    tenantLangfuseEnabled,
+    hasTenantCredentials,
+    tenantExportEmergencyEnabled,
     publicKey: tenantCredentials?.publicKey,
     secretKey: tenantCredentials?.secretKey,
     tenantDestination,
   });
+  applyExportPlanTelemetry(langfuse, exportPlan, normalizedTenantId);
 
   switch (exportPlan.type) {
     case 'tenantFanout':

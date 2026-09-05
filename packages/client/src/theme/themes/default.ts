@@ -10,8 +10,11 @@ export const defaultTheme: IThemeRGB = {
   'rgb-text-secondary': '66 66 66', // #424242 (gray-600)
   'rgb-text-secondary-alt': '89 89 89', // #595959 (gray-500)
   'rgb-text-tertiary': '89 89 89', // #595959 (gray-500)
+  'rgb-text-muted': '105 110 121', // #696e79 (Click UI text.muted)
   'rgb-text-warning': '180 83 9', // #b45309 (amber-700)
   'rgb-text-destructive': '220 38 38', // #dc2626 (red-600)
+  'rgb-shimmer-base': '33 33 33', // #212121 (gray-800), matching text-primary
+  'rgb-shimmer-dip': '129 130 134', // #818286
 
   // Link and accent colors
   'rgb-link': '37 99 235', // #2563eb (blue-600)
@@ -35,6 +38,8 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-hover-alt': '205 205 205', // #cdcdcd (gray-300)
   'rgb-surface-composer-hover': '227 227 227', // #e3e3e3 (gray-200)
   'rgb-surface-primary': '255 255 255', // #fff (white)
+  'rgb-chart-widget-surface': '255 255 255', // #fff (Click UI chart widget)
+  'rgb-chart-widget-stroke': '230 231 233', // #e6e7e9 (Click UI chart widget)
   'rgb-surface-primary-alt': '247 247 248', // #f7f7f8 (gray-50)
   'rgb-surface-primary-contrast': '236 236 236', // #ececec (gray-100)
   'rgb-surface-secondary': '247 247 248', // #f7f7f8 (gray-50)

@@ -490,6 +490,9 @@ class BaseClient {
       sender: 'User',
       text,
       isCreatedByUser: true,
+      ...(this.options?.req?._agentEventTriggerProjection != null && {
+        subagentTriggerProjection: this.options.req._agentEventTriggerProjection,
+      }),
     };
   }
 
@@ -1314,6 +1317,7 @@ class BaseClient {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
+      initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });

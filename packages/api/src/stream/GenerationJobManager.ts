@@ -3,6 +3,7 @@ import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   Constants,
   ContentTypes,
+  StepTypes,
   UsageEvents,
   ApprovalEvents,
   SteerEvents,
@@ -29,6 +30,7 @@ import type {
   IdempotencyClaimValue,
   PreemptMessage,
   SteerQueueItem,
+  DetachedAgentEventActionStoreMode,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { RecoveredSteerPayload } from './SteerRecovery';
@@ -36,20 +38,22 @@ import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
+  GenerationPublicationFencedError,
+  JobCreationSupersededError,
+  JobPredecessorMismatchError,
+  isPendingActionStale,
+  isPendingActionExpired,
+  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+  PROVIDER_DRAIN_TIMEOUT_MS,
+  STEER_QUEUE_MAX_DEPTH,
+} from './interfaces/IJobStore';
+import {
   recordGenerationStreamEarlyBufferOverflow,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
   recordGenerationJob,
 } from '~/app/metrics';
-import {
-  JobCreationSupersededError,
-  JobPredecessorMismatchError,
-  isPendingActionStale,
-  isPendingActionExpired,
-  PAUSE_PERSISTENCE_TIMEOUT_ERROR,
-  STEER_QUEUE_MAX_DEPTH,
-} from './interfaces/IJobStore';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
@@ -78,6 +82,7 @@ import {
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
+import { projectPendingMCPOAuthPrompts } from '~/mcp/oauth/resume';
 import { sanitizeJobMetadata } from './metadata';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
@@ -91,8 +96,36 @@ const REAPED_JOB_ERROR = 'Generation timed out';
  * digits; this trips only when Redis stalls, bounding buffered batches and
  * queued commands by pacing the producer instead of growing without limit. */
 const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
-const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
 const PROVIDER_DRAIN_POLL_MS = 50;
+
+/**
+ * The settlement budget is the opt-in. Graceful shutdown owns the real deadline and passes what
+ * is actually left, so open provider executions get the full remaining window to record their
+ * drains. A bare `destroy()` — test teardown, a direct reset — supplies nothing and must not
+ * block on executions that were begun and never drained.
+ */
+const SHUTDOWN_SETTLEMENT_FALLBACK_MS = 0;
+type ToolExecutionStatus = 'success' | 'error' | 'cancelled';
+type ToolCallWithExecutionStatus = Agents.AgentToolCall & {
+  executionStatus?: ToolExecutionStatus;
+};
+
+/** Current agents SDK releases serialize tool failures into one of these
+ * host-authored prefixes but do not yet carry ToolMessage.status on the wire.
+ * Stamp the result on the exact call while the completion envelope still has
+ * that identity; never infer it later from the aggregate step close. */
+function completedToolExecutionStatus(call: Agents.ToolCall): ToolExecutionStatus {
+  if (call.inputValidationError === true) {
+    return 'error';
+  }
+  const output = call.output;
+  return typeof output === 'string' &&
+    (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(output) ||
+      /^Error processing tool(?::|$)/i.test(output) ||
+      /^Error:[\s\S]*\n Please fix your mistakes\.$/i.test(output))
+    ? 'error'
+    : 'success';
+}
 
 /** Bounded completed-request replay horizon. It exceeds the default 24-hour
  * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
@@ -488,6 +521,13 @@ export type ApprovalExpiredHandler = (
   job: SerializableJobData,
 ) => void | Promise<void>;
 
+export type TerminalHostActionHandler = (
+  streamId: string,
+  job: SerializableJobData,
+  runSteps: Agents.RunStep[],
+  content: Agents.MessageContentComplex[],
+) => void | Promise<void>;
+
 export interface CreateGenerationJobOptions {
   startupTelemetry?: AgentStartupTelemetry;
   initialMetadata?: Partial<t.GenerationJobMetadata>;
@@ -557,6 +597,9 @@ interface RuntimeJobState {
    * its own abort registration. Keep this runtime's transport callbacks as a
    * channel handoff bridge until the successor explicitly releases them. */
   replacementTransportHold?: boolean;
+  /** Stored-terminal discovery proved that this held predecessor needs the
+   * receipt-aware retirement lifecycle once the successor releases the hold. */
+  replacementRetirementPending?: boolean;
   /**
    * Cooperative-seal requests for THIS generation. Armed by `requestPreempt`
    * (locally or via a fenced cross-replica publish), polled O(1) by the run's
@@ -569,6 +612,16 @@ interface RuntimeJobState {
     createdAt: number;
     /** Server-minted steerIds requested but not yet drained/cancelled. */
     ids: Set<string>;
+    /**
+     * Run-scoped wake callbacks handed to the SDK's `StreamPreemption`.
+     * Notified after an arm is ACCEPTED so the model attempt can look at a
+     * request the per-chunk poll cannot reach — a provider that has gone
+     * silent, or one streaming reasoning that will never become sealable.
+     *
+     * Hints only. `ids` above stays the sole authority, so a spurious or
+     * duplicate wake costs one O(1) re-read and nothing else.
+     */
+    wakes?: Set<() => void>;
     /**
      * steerIds whose removal was observed BEFORE their arm. Arm and clear are
      * published by different replicas over different connections, so a steer
@@ -696,6 +749,9 @@ class GenerationJobManagerClass {
   /** Serializes token-usage read/modify/write updates per stream. */
   private tokenUsageWriteQueues = new Map<string, Promise<void>>();
 
+  /** Serializes whole-array run-step snapshots so an older save cannot overwrite completion. */
+  private runStepWriteQueues = new Map<string, Promise<void>>();
+
   /** Partial-response and disconnect-state writes still draining during shutdown. */
   private subscriberCleanupPromises = new Set<Promise<void>>();
 
@@ -728,6 +784,18 @@ class GenerationJobManagerClass {
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
 
+  /**
+   * Provider executions this process has begun and not yet drained, awaited during shutdown so
+   * each can record its own drain once its trailing writes settle. Opened in
+   * `beginProviderExecution` and closed in `markProviderExecutionDrained` — the two chokepoints
+   * every entry point (interactive, resume, remote API) already passes through — so no caller
+   * has to remember to register, and a new entry point cannot silently opt out.
+   */
+  private readonly openProviderExecutions = new Map<
+    string,
+    { promise: Promise<void>; settle: () => void }
+  >();
+
   /** Whether we're using Redis stores */
   private _isRedis = false;
 
@@ -741,6 +809,7 @@ class GenerationJobManagerClass {
   /** Optional host hook; the generic stream runtime does not know what external
    * durable work (scheduled chats, webhooks, etc.) a generation represents. */
   private approvalExpiredHandler: ApprovalExpiredHandler | undefined;
+  private terminalHostActionHandler: TerminalHostActionHandler | undefined;
 
   constructor(options?: GenerationJobManagerOptions) {
     const jobStore =
@@ -833,9 +902,13 @@ class GenerationJobManagerClass {
       this.runStepBuffers?.clear();
       this.replayEventWriteQueues.clear();
       this.tokenUsageWriteQueues.clear();
+      this.runStepWriteQueues.clear();
     }
 
     this.ownedJobs.clear();
+    /** The trackers belong to the services being replaced; a stale one would make a later
+     *  graceful destroy() wait its whole budget on an execution that can never drain. */
+    this.releaseOpenProviderExecutions();
     setGenerationJobsInFlight(previousStore, 0);
 
     this.jobStore = services.jobStore;
@@ -870,10 +943,48 @@ class GenerationJobManagerClass {
     return this._isRedis;
   }
 
+  /**
+   * Store-selected detached Event Actor execution guarantee. In-memory stores
+   * support the same lifecycle within one process; Redis additionally makes it
+   * recoverable across restarts and replica handoffs.
+   */
+  get detachedAgentEventActionStoreMode(): DetachedAgentEventActionStoreMode | undefined {
+    return this.jobStore.detachedAgentEventActionStoreMode;
+  }
+
+  get supportsDetachedAgentEventActions(): boolean {
+    return this.detachedAgentEventActionStoreMode != null;
+  }
+
   /** Installs the application-owned approval-expiry hook without coupling the
    * stream package to any particular trigger/scheduler implementation. */
   setApprovalExpiredHandler(handler?: ApprovalExpiredHandler): void {
     this.approvalExpiredHandler = handler;
+  }
+
+  /** Installs a durable, generation-fenced terminal lifecycle adapter. */
+  setTerminalHostActionHandler(handler?: TerminalHostActionHandler): void {
+    this.terminalHostActionHandler = handler;
+  }
+
+  /**
+   * Event-driven retry for a durable terminal host action whose external
+   * evidence arrived after the generation itself became terminal. The exact
+   * generation fence prevents a delayed callback from touching a replacement;
+   * the periodic recovery sweep remains the restart/replica fallback.
+   */
+  async retryTerminalHostAction(streamId: string, expectedCreatedAt: number): Promise<boolean> {
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      job.status === 'running' ||
+      job.status === 'requires_action' ||
+      job.providerDrained === false ||
+      job.terminalHostActionPending !== true
+    ) {
+      return false;
+    }
+    return this.runTerminalHostActionHandler(streamId, job);
   }
 
   private get storeLabel(): GenerationJobStore {
@@ -1048,6 +1159,26 @@ class GenerationJobManagerClass {
     this.reconcileInactiveGeneration(streamId, createdAt, currentJob, observedRuntime);
   }
 
+  private async reconcileFencedRuntimeHandoff(
+    streamId: string,
+    runtime: RuntimeJobState,
+    currentJob: SerializableJobData | null,
+  ): Promise<void> {
+    const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
+    if (!runtime.abortController.signal.aborted) {
+      runtime.abortController.abort();
+    }
+    const abortProofPersisted = await this.persistFencedRuntimeAbortProof(
+      streamId,
+      runtime,
+      ownsExactProvider,
+    );
+    if (abortProofPersisted) {
+      this.reconcileInactiveGeneration(streamId, runtime.createdAt, currentJob, runtime);
+    }
+    this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+  }
+
   /** Promotes a terminal claim whose persistence owner disappeared to a conservative
    * terminal payload. The store CAS races safely with a slow owner: whichever
    * side finalizes first chooses the only payload subscribers may consume. */
@@ -1065,6 +1196,21 @@ class GenerationJobManagerClass {
     if (Date.now() - startedAt < TERMINAL_PERSISTENCE_TIMEOUT_MS) {
       return jobData;
     }
+    const observedRuntime = this.runtimeState.get(jobData.streamId);
+    let runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Preserve the pre-await object when one exists, but also admit a predecessor
+     * attachment created while terminal finalization is in flight. Every late
+     * read remains generation-fenced, so a successor runtime is never captured. */
+    const captureMatchingRuntime = (): RuntimeJobState | undefined => {
+      if (runtime) {
+        return runtime;
+      }
+      const candidate = this.runtimeState.get(jobData.streamId);
+      if (candidate?.createdAt === jobData.createdAt) {
+        runtime = candidate;
+      }
+      return runtime;
+    };
 
     const reconcileEvent = buildTerminalPersistenceReconcile(jobData);
     const serialized = JSON.stringify(reconcileEvent);
@@ -1074,16 +1220,35 @@ class GenerationJobManagerClass {
       serialized,
     );
     if (!recovered) {
-      return this.jobStore.getJob(jobData.streamId);
+      const currentJob = await this.jobStore.getJob(jobData.streamId);
+      const predecessorRuntime = captureMatchingRuntime();
+      if (predecessorRuntime && currentJob?.createdAt !== jobData.createdAt) {
+        await this.reconcileFencedRuntimeHandoff(jobData.streamId, predecessorRuntime, currentJob);
+      }
+      return currentJob;
     }
 
-    const runtime = this.runtimeState.get(jobData.streamId);
-    if (runtime?.createdAt === jobData.createdAt) {
-      runtime.finalEvent = reconcileEvent;
+    const recoveredRuntime = captureMatchingRuntime();
+    if (recoveredRuntime) {
+      recoveredRuntime.finalEvent = reconcileEvent;
     }
     try {
       await this.eventTransport.emitDone(jobData.streamId, reconcileEvent, jobData.createdAt);
     } catch (err) {
+      if (err instanceof GenerationPublicationFencedError) {
+        const currentJob = await this.jobStore.getJob(jobData.streamId);
+        const predecessorRuntime = captureMatchingRuntime();
+        if (predecessorRuntime) {
+          await this.reconcileFencedRuntimeHandoff(
+            jobData.streamId,
+            predecessorRuntime,
+            currentJob,
+          );
+        } else {
+          this.reconcileInactiveGeneration(jobData.streamId, jobData.createdAt, currentJob);
+        }
+        return currentJob;
+      }
       logger.error(
         `[GenerationJobManager] Failed to publish stale terminal-persistence recovery ${jobData.streamId}:`,
         err,
@@ -1169,7 +1334,68 @@ class GenerationJobManagerClass {
       state.ids.add(id);
       accepted += 1;
     }
+    if (accepted > 0) {
+      this.notePreemptArmed(state);
+    }
     return accepted;
+  }
+
+  /**
+   * Wakes the live model attempt after an accepted arm. Called for local and
+   * cross-replica arms alike, since both land here through `armPreemptIds`.
+   *
+   * Errors are swallowed per listener: a wake is an optimization over the
+   * per-chunk poll, and a throwing listener must not fail the arm that a
+   * queued steer already depends on.
+   */
+  private notePreemptArmed(state: NonNullable<RuntimeJobState['preempt']>): void {
+    if (state.wakes == null) {
+      return;
+    }
+    for (const wake of state.wakes) {
+      try {
+        wake();
+      } catch (error) {
+        logger.error('[GenerationJobManager] Preempt wake listener failed:', error);
+      }
+    }
+  }
+
+  /**
+   * Registers a wake listener for the SDK's `StreamPreemption.subscribe`.
+   * Returns the unsubscribe the SDK calls when the model attempt ends.
+   *
+   * Fenced on `createdAt` like every other preempt entry point: a run wiring
+   * itself to a replaced generation must not be woken by the replacement's
+   * arms. A mismatch yields an inert unsubscribe rather than throwing, so the
+   * run still starts — it simply falls back to the per-chunk poll.
+   *
+   * An arm that ALREADY happened is replayed on registration. Requests are
+   * level-triggered, and the window between a job becoming steerable and the
+   * SDK installing its listener is real: an interrupt landing there would be
+   * recorded with no callbacks to notify, and on a silent or reasoning-only
+   * turn no later chunk poll may ever run — the exact stall this channel
+   * exists to remove. The replay makes the host correct on its own terms
+   * rather than resting on when the SDK first reads the flag.
+   */
+  subscribePreempt(streamId: string, wake: () => void, jobCreatedAt?: number): () => void {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime == null || (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt)) {
+      return () => {};
+    }
+    const state = this.ensurePreemptState(runtime, jobCreatedAt ?? runtime.createdAt);
+    state.wakes ??= new Set();
+    const wakes = state.wakes;
+    wakes.add(wake);
+    if (state.ids.size > 0) {
+      /** Only the new listener, and only after it is registered: waking the
+       *  whole set would re-notify runs that already looked, and waking before
+       *  registration would leave a concurrent arm with nowhere to land. */
+      this.notePreemptArmed({ ...state, wakes: new Set([wake]) });
+    }
+    return () => {
+      wakes.delete(wake);
+    };
   }
 
   /** Non-terminal disarm used by a capable→incapable owner handover. The
@@ -1555,10 +1781,12 @@ class GenerationJobManagerClass {
       }
     } catch (err) {
       delivered = false;
-      logger.error(
-        `[GenerationJobManager] Failed to notify replaced generation ${streamId}@${predecessorCreatedAt}:`,
-        err,
-      );
+      if (!(err instanceof GenerationPublicationFencedError)) {
+        logger.error(
+          `[GenerationJobManager] Failed to notify replaced generation ${streamId}@${predecessorCreatedAt}:`,
+          err,
+        );
+      }
     }
     return delivered;
   }
@@ -1582,6 +1810,7 @@ class GenerationJobManagerClass {
       this.runStepBuffers?.delete(streamId);
       this.replayEventWriteQueues.delete(streamId);
       this.tokenUsageWriteQueues.delete(streamId);
+      this.runStepWriteQueues.delete(streamId);
       this.jobStore.clearContentState(streamId, predecessor.createdAt);
       try {
         // The replacement cannot be exposed, so neither generation can
@@ -1923,7 +2152,10 @@ class GenerationJobManagerClass {
    * terminal hash that makes every duplicate retry wait until Redis TTL expiry. */
   private async terminalizeUnexposedGeneration(
     streamId: string,
-    job: Pick<SerializableJobData, 'createdAt' | 'conversationId' | 'providerExecutionId'>,
+    job: Pick<
+      SerializableJobData,
+      'createdAt' | 'conversationId' | 'providerExecutionId' | 'agentEventDeliveryKey'
+    >,
     message: string,
   ): Promise<boolean> {
     try {
@@ -1946,6 +2178,10 @@ class GenerationJobManagerClass {
                 completedAt: Date.now(),
                 error: message,
                 finalEvent: JSON.stringify(finalEvent),
+                ...(job.agentEventDeliveryKey != null &&
+                  this.terminalHostActionHandler != null && {
+                    terminalHostActionPending: true,
+                  }),
               },
               expectCreatedAt: job.createdAt,
             })
@@ -2235,12 +2471,7 @@ class GenerationJobManagerClass {
           return false;
         },
       );
-      await this.jobStore.transitionStatus(streamId, {
-        from: 'running',
-        to: 'error',
-        patch: { completedAt: Date.now(), error: SHUTDOWN_JOB_ERROR },
-        expectCreatedAt: jobData.createdAt,
-      });
+      await this.completeJob(streamId, SHUTDOWN_JOB_ERROR, jobData.createdAt);
       if (jobData.providerExecutionId) {
         await this.markProviderExecutionDrained(
           streamId,
@@ -2395,7 +2626,7 @@ class GenerationJobManagerClass {
         // across same-stream replacement. This also lets a predecessor whose
         // registration was still becoming ready dispose itself without
         // briefly unsubscribing the successor.
-        this.releaseAbortSubscription(replacedRuntime, true);
+        this.releaseReplacementTransportHold(streamId, replacedRuntime);
       }
       // This epoch is not exposed to its controller until the durable bit and
       // owner listener agree. A replacement that wins before this write sees
@@ -2431,7 +2662,7 @@ class GenerationJobManagerClass {
       }
     } catch (error) {
       if (replacedRuntime != null && replacedRuntime !== runtime) {
-        this.releaseAbortSubscription(replacedRuntime, true);
+        this.releaseReplacementTransportHold(streamId, replacedRuntime);
       }
       // The durable job already exists, but the caller has not received its
       // generation identity yet. Finalize that exact epoch here so a controller
@@ -2563,6 +2794,14 @@ class GenerationJobManagerClass {
         agent_id: jobData.agent_id,
         // Surface whether the turn was temporary so a resume keeps it non-persisted.
         isTemporary: jobData.isTemporary,
+        agentEventDeliveryKey: jobData.agentEventDeliveryKey,
+        agentEventInvocationKey: jobData.agentEventInvocationKey,
+        agentEventInvocationGenerationCreatedAt: jobData.agentEventInvocationGenerationCreatedAt,
+        agentEventDetachedActionProducerRequired: jobData.agentEventDetachedActionProducerRequired,
+        agentEventDetachedTerminalEvidence: jobData.agentEventDetachedTerminalEvidence,
+        agentEventBindingId: jobData.agentEventBindingId,
+        agentEventExpectedAction: jobData.agentEventExpectedAction,
+        agentEventSuspension: jobData.agentEventSuspension,
         scheduleId: jobData.scheduleId,
         scheduledFor: jobData.scheduledFor,
         scheduleConfigRevision: jobData.scheduleConfigRevision,
@@ -2574,6 +2813,8 @@ class GenerationJobManagerClass {
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
+        compactionSemanticIndex: jobData.compactionSemanticIndex,
+        contextMeta: jobData.contextMeta,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -2581,9 +2822,11 @@ class GenerationJobManagerClass {
         // legacy resume's execution rewrite invalidates a stale assertion.
         steerQuotesExecutionId: jobData.steerQuotesExecutionId,
         providerExecutionId: jobData.providerExecutionId,
+        providerExecutionStartedId: jobData.providerExecutionStartedId,
         providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,
+        agentEventLegacyTurnToken: jobData.agentEventLegacyTurnToken,
         terminalPersistencePending: jobData.terminalPersistencePending,
         terminalPersistenceStartedAt: jobData.terminalPersistenceStartedAt,
         // Surface the pending review so status/resume routes built on the
@@ -2835,6 +3078,115 @@ class GenerationJobManagerClass {
       await this.synchronizeLegacyGenerationClaim(userId, clientRequestId, legacy, primary);
     }
     return { claimed: false, existing: primary, source: 'primary' };
+  }
+
+  /** Checks the mixed-version admission key without creating or repairing a
+   * claim. This is deliberately weaker than `claimGeneration`: callers may
+   * use it only to exempt a confirmed retry from request rate limiting; the
+   * controller must still perform the authoritative claim transition. */
+  async hasGenerationClaim(userId: string, clientRequestId: string): Promise<boolean> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return false;
+    }
+    return (
+      (await this.jobStore.hasIdempotencyKey?.(
+        this.legacyGenerationClaimKey(userId, clientRequestId),
+      )) === true
+    );
+  }
+
+  /** Returns immutable proof that one exact request crossed generation
+   * admission, even after the generation job itself has completed or been
+   * replaced. Built-in stores retain this started receipt for the bounded
+   * idempotency horizon; legacy custom stores fall back to the live job. */
+  async getGenerationAdmissionEvidence(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string = streamId,
+  ): Promise<{ generationId: string; generationCreatedAt: number } | null> {
+    if (!CLIENT_REQUEST_ID_PATTERN.test(clientRequestId)) {
+      return null;
+    }
+    const getClaim = this.jobStore.getIdempotencyClaim;
+    if (getClaim != null) {
+      const claim = await getClaim.call(
+        this.jobStore,
+        this.generationClaimKey(userId, clientRequestId, streamId),
+      );
+      if (claim == null) {
+        return null;
+      }
+      const normalized = normalizeTokenClaim(claim, 'admission evidence');
+      assertClaimMatchesRequest(normalized, streamId, conversationId);
+      if (normalized.startedAt == null) {
+        return null;
+      }
+      return {
+        generationId: normalized.streamId,
+        generationCreatedAt: normalized.startedAt,
+      };
+    }
+
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      job == null ||
+      job.userId !== userId ||
+      (job.conversationId ?? streamId) !== conversationId ||
+      job.idempotencyClientRequestId !== clientRequestId
+    ) {
+      return null;
+    }
+    return { generationId: streamId, generationCreatedAt: job.createdAt };
+  }
+
+  /** Atomically prevents an unpublished automatic continuation from starting
+   * after its delivery has been retired for manual recovery. If recovery wins
+   * the unstarted idempotency claim (directly or through the existing takeover
+   * CAS), it converts that exact token into a started tombstone. A concurrent
+   * `createJob` still holding the predecessor token then fails its atomic
+   * create, while later duplicate POSTs take the settled/refetch path.
+   *
+   * `started` means job creation won the claim race; the caller must inspect
+   * the generation itself before releasing any result ownership. */
+  async fenceGenerationClaimForRecovery(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string,
+  ): Promise<'fenced' | 'started' | 'unavailable'> {
+    const observed = await this.claimGeneration(userId, clientRequestId, streamId, conversationId);
+    if (observed.existing == null) {
+      return 'unavailable';
+    }
+    if (observed.existing.startedAt != null) {
+      return 'started';
+    }
+
+    let owned = observed;
+    if (!observed.claimed) {
+      owned = await this.takeoverGeneration(userId, clientRequestId, streamId, observed.existing);
+      if (owned.existing?.startedAt != null) {
+        return 'started';
+      }
+      if (!owned.claimed || owned.existing == null) {
+        return 'unavailable';
+      }
+    }
+
+    const claim = normalizeTokenClaim(owned.existing, 'background completion recovery fence');
+    if (claim.startedAt != null) {
+      return 'started';
+    }
+    await this.tombstoneObservedGenerationClaim(
+      userId,
+      clientRequestId,
+      streamId,
+      claim,
+      Date.now(),
+      claim.generationProtocolVersion === 2 ? 2 : 1,
+    );
+    return 'fenced';
   }
 
   private generationClaimKey(userId: string, clientRequestId: string, streamId: string): string {
@@ -3262,6 +3614,21 @@ class GenerationJobManagerClass {
     ]);
   }
 
+  private async persistAgentEventRunStepEvidence(
+    streamId: string,
+    job: Pick<SerializableJobData, 'createdAt' | 'agentEventDeliveryKey'>,
+  ): Promise<void> {
+    if (job.agentEventDeliveryKey == null) {
+      return;
+    }
+    const buffered = this.runStepBuffers?.get(streamId);
+    if (buffered?.createdAt === job.createdAt && this.jobStore.saveRunSteps != null) {
+      await this.queueJobWrite(this.runStepWriteQueues, streamId, () =>
+        this.jobStore.saveRunSteps!(streamId, [...buffered.steps], job.createdAt),
+      );
+    }
+  }
+
   async claimTerminalJob(
     streamId: string,
     status: TerminalJobClaim['status'],
@@ -3327,6 +3694,7 @@ class GenerationJobManagerClass {
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
     await this.flushCoalescedStreamBuffers(streamId);
+    await this.persistAgentEventRunStepEvidence(streamId, jobData);
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -3340,6 +3708,10 @@ class GenerationJobManagerClass {
       patch: {
         completedAt,
         ...(terminalError != null && { error: terminalError }),
+        ...(jobData.agentEventDeliveryKey != null &&
+          this.terminalHostActionHandler != null && {
+            terminalHostActionPending: true,
+          }),
         ...(options.persistencePending === true && {
           terminalPersistencePending: true,
           terminalPersistenceStartedAt: completedAt,
@@ -3402,7 +3774,11 @@ class GenerationJobManagerClass {
   async publishTerminalClaim(
     claim: TerminalJobClaim,
     finalEvent: t.ServerSentEvent | null,
-  ): Promise<{ finalEvent: t.ServerSentEvent; persistenceFailed: boolean }> {
+  ): Promise<{
+    finalEvent: t.ServerSentEvent;
+    persistenceFailed: boolean;
+    publicationFenced?: true;
+  }> {
     if (!this.terminalClaimRuntimes.has(claim) || claim.persistencePending !== true) {
       throw new Error('Terminal persistence claim was not issued by this manager');
     }
@@ -3460,6 +3836,11 @@ class GenerationJobManagerClass {
     } else if (runtime) {
       runtime.finalEvent = publicationEvent;
     }
+    const persistenceFailed =
+      finalEvent == null ||
+      !durable ||
+      publicationEvent !== finalEvent ||
+      ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
 
     try {
       if (runtime?.createdEventPublication) {
@@ -3467,6 +3848,13 @@ class GenerationJobManagerClass {
       }
       await this.eventTransport.emitDone(streamId, publicationEvent, createdAt);
     } catch (publicationError) {
+      if (publicationError instanceof GenerationPublicationFencedError) {
+        return {
+          finalEvent: publicationEvent,
+          persistenceFailed,
+          publicationFenced: true,
+        };
+      }
       logger.error(
         `[GenerationJobManager] Failed to publish terminal persistence result ${streamId}:`,
         publicationError,
@@ -3494,11 +3882,6 @@ class GenerationJobManagerClass {
       throw publicationError;
     }
 
-    const persistenceFailed =
-      finalEvent == null ||
-      !durable ||
-      publicationEvent !== finalEvent ||
-      ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
     if (!persistenceFailed && runtime?.startupTelemetry) {
       this.recordStartupEvent(runtime, publicationEvent);
     }
@@ -3535,10 +3918,20 @@ class GenerationJobManagerClass {
         ? claimedRuntime
         : undefined;
     let cleanupError: unknown;
+    let retainTerminalHostEvidence = false;
 
     // Error jobs stay durable long enough for late subscribers to receive the
     // stored error. A publication failure must never bypass the finally cleanup.
     try {
+      const claimedTerminalJob = await this.jobStore.getJob(streamId);
+      if (
+        claimedTerminalJob?.createdAt === createdAt &&
+        claimedTerminalJob.terminalHostActionPending === true
+      ) {
+        retainTerminalHostEvidence =
+          claimedTerminalJob.providerDrained === false ||
+          !(await this.runTerminalHostActionHandler(streamId, claimedTerminalJob));
+      }
       if (status === 'error' && !this.terminalErrorPublicationSuppressions.has(claim)) {
         const terminalError = error ?? 'Generation failed';
         if (runtime) {
@@ -3550,19 +3943,21 @@ class GenerationJobManagerClass {
           }
           await this.eventTransport.emitError(streamId, terminalError, createdAt);
         } catch (publishError) {
-          logger.error(
-            `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
-            publishError,
-          );
-          if (runtime && this.runtimeState.get(streamId) === runtime) {
-            for (const notify of [...runtime.localErrorHandlers]) {
-              try {
-                notify(terminalError);
-              } catch (notifyError) {
-                logger.error(
-                  `[GenerationJobManager] Failed to notify terminal error for ${streamId}:`,
-                  notifyError,
-                );
+          if (!(publishError instanceof GenerationPublicationFencedError)) {
+            logger.error(
+              `[GenerationJobManager] Failed to publish terminal error for ${streamId}:`,
+              publishError,
+            );
+            if (runtime && this.runtimeState.get(streamId) === runtime) {
+              for (const notify of [...runtime.localErrorHandlers]) {
+                try {
+                  notify(terminalError);
+                } catch (notifyError) {
+                  logger.error(
+                    `[GenerationJobManager] Failed to notify terminal error for ${streamId}:`,
+                    notifyError,
+                  );
+                }
               }
             }
           }
@@ -3578,6 +3973,7 @@ class GenerationJobManagerClass {
           !retainForTerminalReplay &&
           terminalJob?.providerDrained !== false &&
           terminalJob?.preserveForScheduleReconcile !== true &&
+          terminalJob?.terminalHostActionPending !== true &&
           (terminalJob?.createdAt !== createdAt || terminalJob.terminalPersistencePending !== true)
         ) {
           // A same-stream replacement created after the claim makes this a safe
@@ -3587,6 +3983,7 @@ class GenerationJobManagerClass {
       }
     } catch (err) {
       cleanupError = err;
+      retainTerminalHostEvidence = true;
     } finally {
       if (runtime && this.runtimeState.get(streamId) === runtime) {
         this.releaseAbortSubscription(runtime);
@@ -3599,10 +3996,13 @@ class GenerationJobManagerClass {
           runtime.startupTelemetry?.end('completed_without_delta');
         }
         runtime.startupTelemetry = undefined;
-        this.jobStore.clearContentState(streamId, createdAt);
-        this.runStepBuffers?.delete(streamId);
+        if (!retainTerminalHostEvidence) {
+          this.jobStore.clearContentState(streamId, createdAt);
+          this.runStepBuffers?.delete(streamId);
+        }
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
+        this.runStepWriteQueues.delete(streamId);
         if (status !== 'error' && this._cleanupOnComplete) {
           this.runtimeState.delete(streamId);
         }
@@ -3860,6 +4260,7 @@ class GenerationJobManagerClass {
      * claimTerminalJob), so it must drain the coalescers itself — and ahead of
      * the content snapshot, so a chunk-log reconstruction sees the window tail. */
     await this.flushCoalescedStreamBuffers(streamId);
+    await this.persistAgentEventRunStepEvidence(streamId, jobData);
     /** Snapshot before claiming terminal state. This is non-destructive: if a
      * same-epoch approval resume wins the later CAS, its content and steer
      * queue remain fully owned by that resumed run. */
@@ -3901,6 +4302,10 @@ class GenerationJobManagerClass {
           completedAt: terminalPersistenceStartedAt,
           terminalPersistencePending: true,
           terminalPersistenceStartedAt,
+          ...(jobData.agentEventDeliveryKey != null &&
+            this.terminalHostActionHandler != null && {
+              terminalHostActionPending: true,
+            }),
         },
       });
       if (drainedSteers != null) {
@@ -4007,6 +4412,22 @@ class GenerationJobManagerClass {
           contentError,
         );
       }
+      /** The owner publishes run state (context meta) ahead of each model call
+       * and awaits that write, so a publish that landed after the initial read
+       * describes the call whose partial output the snapshot above carries.
+       * Read it back from the same epoch so the stopped response persists the
+       * tier that produced its bytes, not the one seen before the claim. */
+      try {
+        const refreshed = await this.jobStore.getJob(streamId);
+        if (refreshed?.createdAt === jobData.createdAt && refreshed.contextMeta != null) {
+          jobData = { ...jobData, contextMeta: refreshed.contextMeta };
+        }
+      } catch (metadataError) {
+        logger.warn(
+          `[GenerationJobManager] Failed to refresh committed abort metadata for ${streamId}:`,
+          metadataError,
+        );
+      }
       if (options?.transformAbortContent) {
         content = options.transformAbortContent(
           content as TMessageContentParts[],
@@ -4111,8 +4532,10 @@ class GenerationJobManagerClass {
       };
     } finally {
       try {
-        if (options?.awaitProviderDrain) {
+        const mustDrainForTerminalEvidence = jobData.agentEventDeliveryKey != null;
+        if (options?.awaitProviderDrain || mustDrainForTerminalEvidence) {
           await this.waitForProviderDrainIfRequired(streamId, jobData);
+          await this.persistAgentEventRunStepEvidence(streamId, jobData);
         }
       } finally {
         await this.finishTerminalJob(terminalClaim);
@@ -4651,11 +5074,27 @@ class GenerationJobManagerClass {
         }
 
         let terminalJob = await this.jobStore.getJob(streamId);
+        if (terminalJob?.createdAt !== runtime.createdAt) {
+          if (terminalJob) {
+            await this.reconcileFencedRuntimeHandoff(streamId, runtime, terminalJob);
+          } else {
+            queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+          }
+          return;
+        }
         if (
           terminalJob?.terminalPersistencePending === true &&
           ['complete', 'error', 'aborted'].includes(terminalJob.status)
         ) {
           terminalJob = await this.recoverStaleTerminalPersistence(terminalJob);
+          if (terminalJob?.createdAt !== runtime.createdAt) {
+            if (terminalJob) {
+              await this.reconcileFencedRuntimeHandoff(streamId, runtime, terminalJob);
+            } else {
+              queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+            }
+            return;
+          }
           if (terminalJob?.terminalPersistencePending === true) {
             const startedAt =
               terminalJob.terminalPersistenceStartedAt ??
@@ -5538,11 +5977,18 @@ class GenerationJobManagerClass {
     const eventType = eventObj.event as string | undefined;
     const eventData = eventObj.data;
     if (
-      (eventType === 'on_run_step' || eventType === 'on_run_step_completed') &&
+      (eventType === 'on_run_step' ||
+        eventType === 'on_run_step_completed' ||
+        eventType === 'on_run_step_closed') &&
       eventData != null &&
       typeof eventData === 'object'
     ) {
-      this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
+      this.saveRunStepFromEvent(
+        streamId,
+        eventType,
+        eventData as Record<string, unknown>,
+        runtime.createdAt,
+      );
     }
 
     /**
@@ -5976,38 +6422,46 @@ class GenerationJobManagerClass {
     return true;
   }
 
+  private async persistFencedRuntimeAbortProof(
+    streamId: string,
+    runtime: RuntimeJobState,
+    ownsExactProvider: boolean,
+  ): Promise<boolean> {
+    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
+    if (!this._isRedis || !ownsExactProvider) {
+      return true;
+    }
+    if (recordAbortAcknowledgement == null) {
+      return false;
+    }
+
+    try {
+      const confirmed = await recordAbortAcknowledgement.call(
+        this.eventTransport,
+        streamId,
+        runtime.createdAt,
+      );
+      if (!confirmed) {
+        logger.warn(
+          `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
+        );
+      }
+      return confirmed;
+    } catch (error) {
+      logger.error(
+        `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
+        error,
+      );
+      return false;
+    }
+  }
+
   private recordFencedRuntimeAbortProof(
     streamId: string,
     runtime: RuntimeJobState,
     ownsExactProvider: boolean,
   ): void {
-    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
-    if (!this._isRedis || recordAbortAcknowledgement == null || !ownsExactProvider) {
-      return;
-    }
-
-    try {
-      void recordAbortAcknowledgement
-        .call(this.eventTransport, streamId, runtime.createdAt)
-        .then((confirmed) => {
-          if (!confirmed) {
-            logger.warn(
-              `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
-            );
-          }
-        })
-        .catch((error) => {
-          logger.error(
-            `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
-            error,
-          );
-        });
-    } catch (error) {
-      logger.error(
-        `[GenerationJobManager] Failed to start abort proof for fenced generation ${streamId}:`,
-        error,
-      );
-    }
+    void this.persistFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
   }
 
   private cleanupFencedRuntime(streamId: string, runtime: RuntimeJobState): void {
@@ -6021,6 +6475,7 @@ class GenerationJobManagerClass {
         this.runStepBuffers?.delete(streamId);
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
+        this.runStepWriteQueues.delete(streamId);
       }
     }
 
@@ -6065,10 +6520,21 @@ class GenerationJobManagerClass {
     const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
     runtime.abortController.abort();
     this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
-    if (this.shuttingDown) {
+    this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+  }
+
+  private preserveFencedRuntimeUntilHandoff(streamId: string, runtime: RuntimeJobState): void {
+    const currentRuntime = this.runtimeState.get(streamId);
+    if (
+      this.shuttingDown ||
+      (currentRuntime !== runtime &&
+        (currentRuntime == null || currentRuntime.createdAt <= runtime.createdAt)) ||
+      this.fencedRuntimeRetirements.has(runtime)
+    ) {
       return;
     }
     if (runtime.replacementTransportHold === true) {
+      runtime.replacementRetirementPending = true;
       return;
     }
     if (runtime.localErrorHandlers.size === 0) {
@@ -6078,6 +6544,15 @@ class GenerationJobManagerClass {
     const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
     this.fencedRuntimeRetirements.set(runtime, retirement);
     this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
+  }
+
+  private releaseReplacementTransportHold(streamId: string, runtime: RuntimeJobState): void {
+    const retirementPending = runtime.replacementRetirementPending === true;
+    runtime.replacementRetirementPending = false;
+    this.releaseAbortSubscription(runtime, true);
+    if (retirementPending) {
+      this.preserveFencedRuntimeUntilHandoff(streamId, runtime);
+    }
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
@@ -6130,22 +6605,147 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Extract and save run step from event data.
-   * The data is already the run step object from the event payload.
+   * Extract and save a run step from its wire envelope. Completed events wrap
+   * the authoritative step under `result`; live and closed events carry their
+   * payload directly. The terminal close is the authoritative execution status:
+   * a tool-end payload may contain an error output even though the step closes
+   * as failed.
    */
   private saveRunStepFromEvent(
     streamId: string,
+    eventType: 'on_run_step' | 'on_run_step_completed' | 'on_run_step_closed',
     data: Record<string, unknown>,
     expectedCreatedAt: number,
   ): void {
-    // The data IS the run step object
-    const runStep = data as Agents.RunStep;
-    if (!runStep.id) {
+    const candidate = eventType === 'on_run_step_completed' ? data.result : data;
+    if (
+      candidate == null ||
+      typeof candidate !== 'object' ||
+      !('id' in candidate) ||
+      typeof candidate.id !== 'string' ||
+      candidate.id.length === 0
+    ) {
       return;
     }
 
-    // Fire and forget - accumulate run steps
-    this.accumulateRunStep(streamId, runStep, expectedCreatedAt);
+    if (eventType === 'on_run_step') {
+      this.accumulateRunStep(streamId, candidate as Agents.RunStep, expectedCreatedAt);
+      return;
+    }
+
+    if (eventType === 'on_run_step_closed') {
+      const closed = candidate as Agents.RunStepClosedEvent;
+      if (
+        closed.status !== 'completed' &&
+        closed.status !== 'cancelled' &&
+        closed.status !== 'failed'
+      ) {
+        return;
+      }
+      const bufferState = this.runStepBuffers?.get(streamId);
+      const existingStep =
+        bufferState?.createdAt === expectedCreatedAt
+          ? bufferState.steps.find((step) => step.id === closed.id)
+          : undefined;
+      if (existingStep == null) {
+        return;
+      }
+      const terminalCalls =
+        existingStep.stepDetails.type === StepTypes.TOOL_CALLS
+          ? ((existingStep.stepDetails.tool_calls ?? []) as ToolCallWithExecutionStatus[])
+          : [];
+      const unresolvedCalls = terminalCalls.filter((call) => call.executionStatus == null);
+      const calls: Agents.AgentToolCall[] =
+        closed.status !== 'completed' && unresolvedCalls.length === 1
+          ? terminalCalls.map((call) =>
+              call === unresolvedCalls[0]
+                ? {
+                    ...call,
+                    executionStatus: closed.status === 'failed' ? 'error' : 'cancelled',
+                  }
+                : call,
+            )
+          : terminalCalls;
+      this.accumulateRunStep(
+        streamId,
+        {
+          ...existingStep,
+          status: closed.status,
+          ...(existingStep.stepDetails.type === StepTypes.TOOL_CALLS && {
+            stepDetails: { ...existingStep.stepDetails, tool_calls: calls },
+          }),
+        },
+        expectedCreatedAt,
+      );
+      return;
+    }
+
+    if ('stepDetails' in candidate) {
+      this.accumulateRunStep(
+        streamId,
+        { ...(candidate as Agents.RunStep), status: 'completed' },
+        expectedCreatedAt,
+      );
+      return;
+    }
+
+    const completion = candidate as Agents.ToolEndEvent;
+    const completedToolCall = completion.tool_call;
+    if (completedToolCall == null) {
+      return;
+    }
+    const bufferState = this.runStepBuffers?.get(streamId);
+    const existingStep =
+      bufferState?.createdAt === expectedCreatedAt
+        ? bufferState.steps.find((step) => step.id === completion.id)
+        : undefined;
+    const existingCalls =
+      existingStep?.stepDetails?.type === StepTypes.TOOL_CALLS
+        ? (existingStep.stepDetails.tool_calls ?? [])
+        : [];
+    const completedCallId = completedToolCall.id;
+    const executionStatus = completedToolExecutionStatus(completedToolCall);
+    const existingCallIndex =
+      completedCallId == null ? -1 : existingCalls.findIndex((call) => call.id === completedCallId);
+    const completedCalls = [...existingCalls];
+    if (existingCallIndex >= 0) {
+      const existingCall = completedCalls[existingCallIndex];
+      completedCalls[existingCallIndex] =
+        'function' in existingCall
+          ? ({
+              id: existingCall.id,
+              type: 'function',
+              executionStatus,
+              function: {
+                ...existingCall.function,
+                output: completedToolCall.output,
+              },
+              ...('inputValidationError' in completedToolCall &&
+                completedToolCall.inputValidationError === true && {
+                  inputValidationError: true,
+                }),
+            } as ToolCallWithExecutionStatus)
+          : { ...existingCall, ...completedToolCall, executionStatus };
+    } else {
+      completedCalls.push({ ...completedToolCall, executionStatus } as ToolCallWithExecutionStatus);
+    }
+
+    this.accumulateRunStep(
+      streamId,
+      {
+        ...(existingStep ?? {
+          id: completion.id,
+          index: completion.index,
+          type: StepTypes.TOOL_CALLS,
+        }),
+        status: 'completed',
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: completedCalls,
+        },
+      },
+      expectedCreatedAt,
+    );
   }
 
   /**
@@ -6182,7 +6782,10 @@ class GenerationJobManagerClass {
 
     // Save to Redis
     if (this.jobStore.saveRunSteps) {
-      this.jobStore.saveRunSteps(streamId, buffer, expectedCreatedAt).catch((err) => {
+      const snapshot = [...buffer];
+      void this.queueJobWrite(this.runStepWriteQueues, streamId, () =>
+        this.jobStore.saveRunSteps!(streamId, snapshot, expectedCreatedAt),
+      ).catch((err) => {
         logger.error(`[GenerationJobManager] Failed to save run steps:`, err);
       });
     }
@@ -6473,16 +7076,115 @@ class GenerationJobManagerClass {
     await this.jobStore.updateJob(streamId, updates, generationId);
   }
 
+  /** Stages exact detached terminal evidence in the generation-owned job outbox
+   * and verifies the epoch-fenced write before the external result leaves memory. */
+  async persistAgentEventDetachedTerminalEvidence(
+    streamId: string,
+    expectedCreatedAt: number,
+    evidence: NonNullable<t.GenerationJobMetadata['agentEventDetachedTerminalEvidence']>,
+  ): Promise<boolean> {
+    await this.jobStore.updateJob(
+      streamId,
+      { agentEventDetachedTerminalEvidence: evidence },
+      expectedCreatedAt,
+    );
+    const persisted = await this.jobStore.getJob(streamId);
+    const actual = persisted?.agentEventDetachedTerminalEvidence;
+    return (
+      persisted?.createdAt === expectedCreatedAt &&
+      actual?.version === evidence.version &&
+      actual.deliveryKey === evidence.deliveryKey &&
+      actual.generationCreatedAt === evidence.generationCreatedAt &&
+      actual.taskId === evidence.taskId &&
+      actual.idempotencyKey === evidence.idempotencyKey &&
+      actual.status === evidence.status &&
+      actual.result === evidence.result &&
+      actual.error === evidence.error &&
+      actual.observedAt === evidence.observedAt
+    );
+  }
+
   /** Records that one exact provider segment has completed every trailing write.
    * The opaque segment id prevents a paused controller from acknowledging a
    * later HITL resume that reuses the same generation epoch. */
+
+  /**
+   * Wait for tracked generations to settle, bounded so shutdown still finishes inside a
+   * container stop grace period. Anything still outstanding is left alone: asserting a drain
+   * it has not reached is the unsafe direction, so we log and let the deployment's
+   * hard-kill handling own that case.
+   */
+  private async awaitGenerationSettlements(budget: number): Promise<void> {
+    const deadline = Date.now() + budget;
+    /** Re-snapshot until the set drains. A settlement can be registered while an earlier
+     *  one is being awaited — the controller registers its detached chain just before its
+     *  initialization settlement resolves — and a one-time snapshot would return between
+     *  the two, tearing down the store and transport under a still-running provider. */
+    while (this.openProviderExecutions.size > 0) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        break;
+      }
+      const pending = [...this.openProviderExecutions.values()].map((entry) => entry.promise);
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          Promise.allSettled(pending),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, remaining);
+          }),
+        ]);
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    }
+    const unsettled = this.openProviderExecutions.size;
+    if (unsettled > 0) {
+      logger.warn(
+        `[GenerationJobManager] ${unsettled} provider execution(s) did not drain within ${budget}ms of shutdown; their drains are unrecorded`,
+      );
+    }
+  }
+
   async markProviderExecutionDrained(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    try {
+      return await this.recordProviderExecutionDrain(
+        streamId,
+        expectedCreatedAt,
+        providerExecutionId,
+      );
+    } finally {
+      /** Settles the shutdown wait whether or not the record succeeded: a drain that failed
+       *  to write has nothing further to wait for, and holding shutdown open on it would only
+       *  push the process into the force-exit with the same unrecorded marker. */
+      this.closeProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
+    }
+  }
+
+  private async recordProviderExecutionDrain(
     streamId: string,
     expectedCreatedAt: number,
     providerExecutionId: string,
   ): Promise<boolean> {
     if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
       return false;
+    }
+
+    const observedJob = await this.jobStore.getJob(streamId);
+    if (
+      observedJob?.createdAt === expectedCreatedAt &&
+      observedJob.providerExecutionId === providerExecutionId
+    ) {
+      // `providerDrained` is also the cross-replica host-settlement readiness
+      // fence. Flush the complete generation-fenced run-step snapshot before
+      // advertising that no more provider evidence can arrive.
+      await this.persistAgentEventRunStepEvidence(streamId, observedJob);
     }
 
     const [marked, recorded] = await Promise.all([
@@ -6497,6 +7199,19 @@ class GenerationJobManagerClass {
     const job = await this.jobStore.getJob(streamId);
     if (
       marked &&
+      job?.createdAt === expectedCreatedAt &&
+      job.providerExecutionId === providerExecutionId &&
+      job.providerDrained === true &&
+      job.terminalHostActionPending === true
+    ) {
+      if (job.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
+        await this.runApprovalExpiredHandler(streamId, job);
+      } else {
+        await this.runTerminalHostActionHandler(streamId, job);
+      }
+    }
+    if (
+      marked &&
       recorded &&
       this._cleanupOnComplete &&
       job?.createdAt === expectedCreatedAt &&
@@ -6504,6 +7219,7 @@ class GenerationJobManagerClass {
       job.providerDrained === true &&
       job.preserveForScheduleReconcile !== true &&
       job.terminalPersistencePending !== true &&
+      job.terminalHostActionPending !== true &&
       (job.status === 'complete' || job.status === 'aborted')
     ) {
       await this.jobStore.deleteJob(streamId, expectedCreatedAt);
@@ -6521,10 +7237,86 @@ class GenerationJobManagerClass {
     if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
       return false;
     }
-    return (
-      this.jobStore.beginProviderExecution?.(streamId, expectedCreatedAt, providerExecutionId) ??
-      Promise.resolve(false)
-    );
+    /** A provider that has not started by the time shutdown begins must not start. The
+     *  settlement wait only covers executions begun before it returned; one begun after it
+     *  would commit `providerDrained: false` against a store that is about to close and
+     *  fence its successor. Callers already treat `false` as "stopped before provider
+     *  startup", and nothing has been committed. */
+    if (this.shuttingDown) {
+      return false;
+    }
+    /** Opened before the CAS and closed only on a definitive `false`. A rejected reply is
+     *  ambiguous — the store may already have committed `providerDrained: false` — and every
+     *  caller treats it that way, running or cleaning up and recording the drain either way.
+     *  Leaving the tracker open makes shutdown wait for that record instead of tearing the
+     *  transport down underneath it; the deadline still bounds the wait if it never comes. */
+    this.openProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
+    const started =
+      (await this.jobStore.beginProviderExecution?.(
+        streamId,
+        expectedCreatedAt,
+        providerExecutionId,
+      )) ?? false;
+    if (!started) {
+      this.closeProviderExecution(streamId, expectedCreatedAt, providerExecutionId);
+    }
+    return started;
+  }
+
+  private providerExecutionKey(
+    streamId: string,
+    createdAt: number,
+    providerExecutionId: string,
+  ): string {
+    return `${streamId}:${createdAt}:${providerExecutionId}`;
+  }
+
+  private openProviderExecution(
+    streamId: string,
+    createdAt: number,
+    providerExecutionId: string,
+  ): void {
+    const key = this.providerExecutionKey(streamId, createdAt, providerExecutionId);
+    if (this.openProviderExecutions.has(key)) {
+      return;
+    }
+    let settle: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.openProviderExecutions.set(key, { promise, settle });
+  }
+
+  private closeProviderExecution(
+    streamId: string,
+    createdAt: number,
+    providerExecutionId: string,
+  ): void {
+    const key = this.providerExecutionKey(streamId, createdAt, providerExecutionId);
+    const entry = this.openProviderExecutions.get(key);
+    if (entry == null) {
+      return;
+    }
+    this.openProviderExecutions.delete(key);
+    entry.settle();
+  }
+
+  /**
+   * Release the tracker for an execution whose owner will never record its drain — a run
+   * that settled its provider work but failed terminalization and deliberately publishes no
+   * marker. Nothing is written: shutdown simply stops waiting on it, and the absent marker
+   * keeps telling a successor the truth.
+   */
+  abandonProviderExecution(streamId: string, createdAt: number, providerExecutionId: string): void {
+    this.closeProviderExecution(streamId, createdAt, providerExecutionId);
+  }
+
+  /** Settle and drop every open tracker; used wherever the services they belong to go away. */
+  private releaseOpenProviderExecutions(): void {
+    for (const entry of this.openProviderExecutions.values()) {
+      entry.settle();
+    }
+    this.openProviderExecutions.clear();
   }
 
   private async waitForProviderExecutionDrain(
@@ -7023,6 +7815,7 @@ class GenerationJobManagerClass {
       model: jobData.model,
       titleEvent,
       replayEvents,
+      pendingOAuthPrompts: projectPendingMCPOAuthPrompts(replayEvents, effectiveRunSteps),
       collectedUsage,
       contextUsage,
       // Carry the live pending approval in the resume contract so a reloading /
@@ -7155,7 +7948,10 @@ class GenerationJobManagerClass {
       expectedCreatedAt ?? observedJob?.createdAt,
       // Only retain a durable host-action marker when a host adapter is installed to
       // consume it — a store with no handler owes no action and accumulates nothing.
-      { markHostActionPending: this.approvalExpiredHandler != null },
+      {
+        markHostActionPending:
+          this.approvalExpiredHandler != null || this.terminalHostActionHandler != null,
+      },
     );
     if (expiredJob == null) {
       return false;
@@ -7172,6 +7968,14 @@ class GenerationJobManagerClass {
   ): Promise<void> {
     try {
       await this.approvalExpiredHandler?.(streamId, job);
+      if (job.agentEventDeliveryKey != null) {
+        await this.terminalHostActionHandler?.(
+          streamId,
+          job,
+          await this.getTerminalRunSteps(streamId, job),
+          (await this.jobStore.getContentParts(streamId, job.createdAt))?.content ?? [],
+        );
+      }
       // Success: the durable host action is settled. Clear its pending marker, fenced to
       // this exact generation so a replacement at the same streamId keeps its own state.
       // A no-op handler (or none) clears harmlessly, so non-scheduled jobs never linger.
@@ -7183,6 +7987,52 @@ class GenerationJobManagerClass {
       // idempotent hook until it acknowledges.
       logger.error(`[GenerationJobManager] Approval-expiry host hook failed: ${streamId}`, err);
     }
+  }
+
+  private async runTerminalHostActionHandler(
+    streamId: string,
+    job: SerializableJobData,
+  ): Promise<boolean> {
+    try {
+      if (job.agentEventDeliveryKey != null) {
+        await this.terminalHostActionHandler?.(
+          streamId,
+          job,
+          await this.getTerminalRunSteps(streamId, job),
+          (await this.jobStore.getContentParts(streamId, job.createdAt))?.content ?? [],
+        );
+      }
+      await this.jobStore.clearTerminalHostAction?.(streamId, job.createdAt);
+      this.jobStore.clearContentState(streamId, job.createdAt);
+      const buffered = this.runStepBuffers?.get(streamId);
+      if (buffered?.createdAt === job.createdAt) {
+        this.runStepBuffers?.delete(streamId);
+      }
+      return true;
+    } catch (err) {
+      logger.error(`[GenerationJobManager] Terminal host hook failed: ${streamId}`, err);
+      return false;
+    }
+  }
+
+  private async getTerminalRunSteps(
+    streamId: string,
+    job: Pick<SerializableJobData, 'createdAt'>,
+  ): Promise<Agents.RunStep[]> {
+    const persistedRunSteps = await this.jobStore.getRunSteps(streamId, job.createdAt);
+    const buffered = this.runStepBuffers?.get(streamId);
+    const runStepsById = new Map(persistedRunSteps.map((step) => [step.id, step]));
+    if (buffered?.createdAt === job.createdAt) {
+      for (const step of buffered.steps) {
+        const persisted = runStepsById.get(step.id);
+        // A stale/in-progress event must never erase authoritative completed
+        // evidence recovered from the durable owner.
+        if (persisted?.status !== 'completed' || step.status === 'completed') {
+          runStepsById.set(step.id, step);
+        }
+      }
+    }
+    return [...runStepsById.values()].sort((left, right) => left.index - right.index);
   }
 
   private async notifyApprovalExpiredRuntime(
@@ -7204,16 +8054,18 @@ class GenerationJobManagerClass {
         runtime.approvalExpiryPublished = true;
       }
     } catch (err) {
-      logger.error(`[GenerationJobManager] Failed to publish expired approval ${streamId}`, err);
-      if (runtime?.createdAt === createdAt) {
-        for (const notify of [...runtime.localErrorHandlers]) {
-          try {
-            notify(APPROVAL_EXPIRED_ERROR);
-          } catch (notifyError) {
-            logger.error(
-              `[GenerationJobManager] Failed to notify expired approval ${streamId}`,
-              notifyError,
-            );
+      if (!(err instanceof GenerationPublicationFencedError)) {
+        logger.error(`[GenerationJobManager] Failed to publish expired approval ${streamId}`, err);
+        if (runtime?.createdAt === createdAt) {
+          for (const notify of [...runtime.localErrorHandlers]) {
+            try {
+              notify(APPROVAL_EXPIRED_ERROR);
+            } catch (notifyError) {
+              logger.error(
+                `[GenerationJobManager] Failed to notify expired approval ${streamId}`,
+                notifyError,
+              );
+            }
           }
         }
       }
@@ -7252,6 +8104,22 @@ class GenerationJobManagerClass {
         logger.error('[GenerationJobManager] Failed to enumerate pending host actions', err);
       }
     }
+    // Detached completion generations live in a versioned recovery lane. An
+    // older replica knows only the ordinary terminal-host-action index and
+    // therefore cannot deserialize away the original invocation identity or
+    // acknowledge the completion against the wrong mailbox delivery.
+    if (this.jobStore.getDetachedAgentEventTerminalHostActionJobs) {
+      try {
+        for (const job of await this.jobStore.getDetachedAgentEventTerminalHostActionJobs()) {
+          candidates.set(job.streamId, job);
+        }
+      } catch (err) {
+        logger.error(
+          '[GenerationJobManager] Failed to enumerate detached Event Actor host actions',
+          err,
+        );
+      }
+    }
     const streamIds = new Set([...this.runtimeState.keys(), ...candidates.keys()]);
     for (const streamId of streamIds) {
       let job: SerializableJobData | null;
@@ -7277,10 +8145,21 @@ class GenerationJobManagerClass {
         // successful ack prevents duplicate work. The terminal SSE relay below is
         // separately idempotent (emitError's errorEvent flag) and always runs so a
         // loser-replica subscriber still gets a terminal event.
-        if (job.terminalHostActionPending === true) {
+        if (job.terminalHostActionPending === true && job.providerDrained !== false) {
           await this.runApprovalExpiredHandler(streamId, job);
         }
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
+        changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
+        continue;
+      }
+      if (
+        job != null &&
+        job.status !== 'running' &&
+        job.status !== 'requires_action' &&
+        job.terminalHostActionPending === true &&
+        job.providerDrained !== false
+      ) {
+        await this.runTerminalHostActionHandler(streamId, job);
         changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
         continue;
       }
@@ -7362,6 +8241,14 @@ class GenerationJobManagerClass {
         }
 
         const currentJob = await this.jobStore.getJob(streamId);
+        if (
+          currentJob?.createdAt === observedRuntime.createdAt &&
+          currentJob.terminalHostActionPending === true
+        ) {
+          // The callback retry still owns this generation's evidence. Retain
+          // runtime buffers until it acknowledges and clears the durable marker.
+          continue;
+        }
         const isRetainedTerminal =
           currentJob?.createdAt === observedRuntime.createdAt &&
           currentJob.status !== 'running' &&
@@ -7380,6 +8267,7 @@ class GenerationJobManagerClass {
         this.runStepBuffers?.delete(streamId);
         this.replayEventWriteQueues.delete(streamId);
         this.tokenUsageWriteQueues.delete(streamId);
+        this.runStepWriteQueues.delete(streamId);
         this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
         this.eventTransport.cleanup(streamId);
         continue;
@@ -7416,6 +8304,11 @@ class GenerationJobManagerClass {
           );
           observedRuntime.startupTelemetry?.mark('first_response_event_queued');
         } catch (err) {
+          if (err instanceof GenerationPublicationFencedError) {
+            const currentJob = await this.jobStore.getJob(streamId);
+            await this.reconcileFencedRuntimeHandoff(streamId, observedRuntime, currentJob);
+            continue;
+          }
           logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
         }
       }
@@ -7549,13 +8442,32 @@ class GenerationJobManagerClass {
     return this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
   }
 
+  /** Resolves every cleanup-blocking run attached to any target conversation.
+   * Remote API runs use response IDs as stream identities, so conversation
+   * deletion cannot assume one stream per conversation. */
+  async getCleanupBlockingJobIdsForConversations(
+    userId: string,
+    conversationIds: readonly string[],
+    tenantId?: string,
+  ): Promise<string[]> {
+    if (conversationIds.length === 0) {
+      return [];
+    }
+    const targets = new Set(conversationIds);
+    const streamIds = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job != null && job.userId === userId && targets.has(job.conversationId ?? '');
+    });
+  }
+
   private async finalizeOwnedJobsForShutdown(): Promise<void> {
     const ownedJobs = [...this.ownedJobs];
     if (ownedJobs.length === 0) {
       return;
     }
 
-    const completedAt = Date.now();
     const results = await Promise.allSettled(
       ownedJobs.map(async ([streamId, createdAt]) => {
         const job = await this.jobStore.getJob(streamId);
@@ -7571,35 +8483,11 @@ class GenerationJobManagerClass {
           runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
           await this.persistSubscriberCleanup(streamId, runtime);
         }
-        /** Shutdown interrupts live emitters, so their coalesced window must
-         * drain before the terminal CAS — same rule as claim/abort. */
-        await this.flushCoalescedStreamBuffers(streamId);
-        const finalized = await this.jobStore.transitionStatus(streamId, {
-          from: 'running',
-          to: 'error',
-          expectCreatedAt: createdAt,
-          patch: { completedAt, error: SHUTDOWN_JOB_ERROR },
-        });
-        if (!finalized) {
+        const claim = await this.claimTerminalJob(streamId, 'error', SHUTDOWN_JOB_ERROR, createdAt);
+        if (claim == null) {
           return;
         }
-
-        if (runtime?.createdAt === createdAt) {
-          runtime.errorEvent = SHUTDOWN_JOB_ERROR;
-          this.releaseAbortSubscription(runtime);
-        }
-        try {
-          await this.eventTransport.emitError(streamId, SHUTDOWN_JOB_ERROR, createdAt);
-        } catch (err) {
-          logger.error(
-            `[GenerationJobManager] Failed to publish shutdown error for ${streamId}:`,
-            err,
-          );
-        }
-        if (this.ownedJobs.get(streamId) === createdAt) {
-          this.ownedJobs.delete(streamId);
-        }
-        recordGenerationJob(this.storeLabel, 'error');
+        await this.finishTerminalJob(claim);
       }),
     );
 
@@ -7646,7 +8534,13 @@ class GenerationJobManagerClass {
    * Destroy the manager.
    * Cleans up all resources including runtime state, buffers, and stores.
    */
-  async destroy(): Promise<void> {
+  async destroy(options: { settlementBudgetMs?: number } = {}): Promise<void> {
+    const settlementBudgetMs = Number.isFinite(options.settlementBudgetMs)
+      ? Math.max(0, options.settlementBudgetMs as number)
+      : SHUTDOWN_SETTLEMENT_FALLBACK_MS;
+    /** Anchored here, not after subscriber cleanup: that cleanup is unbounded, and the caller's
+     *  budget was measured against the force-exit timer that keeps running through it. */
+    const settlementDeadline = Date.now() + settlementBudgetMs;
     this.shuttingDown = true;
     this.cancelFencedRuntimeRetirements();
 
@@ -7663,15 +8557,21 @@ class GenerationJobManagerClass {
     }
 
     await this.drainSubscriberCleanups();
+    await this.awaitGenerationSettlements(Math.max(0, settlementDeadline - Date.now()));
     await this.finalizeOwnedJobsForShutdown();
     await this.jobStore.destroy();
     this.eventTransport.destroy();
+    /** Whatever the bounded wait left behind must not outlive this store: a later
+     *  `configure()`/`initialize()` in the same process would otherwise wait a full budget
+     *  on executions that can never drain. */
+    this.releaseOpenProviderExecutions();
     this.runtimeState.clear();
     this.ownedJobs.clear();
     this.syncRunningJobMetrics();
     this.runStepBuffers?.clear();
     this.replayEventWriteQueues.clear();
     this.tokenUsageWriteQueues.clear();
+    this.runStepWriteQueues.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
   }

@@ -153,6 +153,9 @@ html {
   --text-secondary: var(--gray-600);
   --text-secondary-alt: var(--gray-500);
   --text-tertiary: var(--gray-500);
+  --text-muted: 105 110 121; /* Click UI global.color.text.muted #696e79 */
+  --shimmer-dip: 129 130 134;
+  --shimmer-dip-alpha: 0.18;
   --text-warning: var(--amber-700);
   --text-destructive: var(--red-600);
   --link: var(--blue-600);
@@ -170,6 +173,8 @@ html {
   --surface-hover-alt: var(--gray-300);
   --surface-composer-hover: var(--gray-200);
   --surface-primary: var(--white);
+  --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
+  --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
   --surface-primary-alt: var(--gray-50);
   --surface-primary-contrast: var(--gray-100);
   --surface-secondary: var(--gray-50);
@@ -259,6 +264,11 @@ html {
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--gray-400);
   --text-tertiary: var(--gray-400);
+  --text-muted: 179 182 189; /* Click UI global.color.text.muted #b3b6bd */
+  --shimmer-base: 255 255 255;
+  --shimmer-base-alpha: 0.8;
+  --shimmer-dip: 179 179 179;
+  --shimmer-dip-alpha: 0.25;
   --text-warning: var(--amber-500);
   --text-destructive: var(--red-400);
   --link: var(--blue-400);
@@ -275,6 +285,8 @@ html {
   --surface-hover-alt: var(--gray-600);
   --surface-composer-hover: var(--gray-600);
   --surface-primary: var(--gray-900);
+  --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
+  --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
   --surface-primary-alt: var(--gray-850);
   --surface-primary-contrast: var(--gray-850);
   --surface-secondary: var(--gray-800);
@@ -345,7 +357,10 @@ html {
   --text-primary: var(--gizmo-gray-950);
   --text-secondary: var(--gizmo-gray-600);
   --text-tertiary: var(--gizmo-gray-500);
+  --text-muted: 105 110 121; /* Click UI global.color.text.muted #696e79 */
   --surface-primary: var(--white);
+  --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
+  --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
   --surface-secondary: var(--gray-50);
   --surface-tertiary: var(--gray-100);
   --border-light: 0 0 0;
@@ -361,7 +376,10 @@ html {
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-tertiary: var(--gizmo-gray-500);
+  --text-muted: 179 182 189; /* Click UI global.color.text.muted #b3b6bd */
   --surface-primary: var(--gray-900);
+  --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
+  --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
   --surface-secondary: var(--gray-800);
   --surface-tertiary: var(--gray-700);
   --border-light: 217 217 227;
@@ -424,6 +442,14 @@ html {
 
 .bg-token-surface-secondary {
   background-color: rgb(var(--surface-secondary));
+}
+
+/* Forced-colors overrides the inline `background-color: currentColor` a masked
+ * CustomIcon paints with; `!important` is needed to beat that inline style. */
+@media (forced-colors: active) {
+  .custom-icon-tint {
+    background-color: CanvasText !important;
+  }
 }
 
 .ellipsis {
@@ -2488,14 +2514,22 @@ html[data-input-modality='keyboard']
   }
 }
 
+/* The sweep every in-flight label shares: a running tool call, streaming
+   reasoning, the elapsed timer. Painted from theme roles rather than fixed
+   black/white keyed off `.dark`, so a stored or custom theme restates it the
+   way it restates any other color. Unset, the base falls back to whatever
+   `--text-primary` is in scope AT THE LABEL — resolving it in a `:root`
+   declaration instead would freeze the default and ignore theme scopes applied
+   further down. Dark declares a base outright: its established value is dimmer
+   than that theme's text color rather than equal to it. */
 .shimmer {
   display: inline-block;
   position: relative;
   background: linear-gradient(
     90deg,
-    rgb(33, 33, 33) 25%,
-    rgba(129, 130, 134, 0.18) 50%,
-    rgb(33, 33, 33) 75%
+    rgb(var(--shimmer-base, var(--text-primary)) / var(--shimmer-base-alpha, 1)) 25%,
+    rgb(var(--shimmer-dip) / var(--shimmer-dip-alpha, 1)) 50%,
+    rgb(var(--shimmer-base, var(--text-primary)) / var(--shimmer-base-alpha, 1)) 75%
   );
   background-size: 200% 100%;
   background-clip: text;
@@ -2504,18 +2538,16 @@ html[data-input-modality='keyboard']
   animation: shimmer 4s linear infinite;
 }
 
-.dark .shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.8) 25%,
-    rgba(179, 179, 179, 0.25) 50%,
-    rgba(255, 255, 255, 0.8) 75%
-  );
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 4s linear infinite;
+/* Halting the animation alone is not a fallback: the background would settle
+   at position 0 and show only half the sweep, stranding the tail of the label
+   in the near-invisible dip. Drop the gradient and hand the glyphs back to the
+   color they would have had. */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    background: none;
+    animation: none;
+    -webkit-text-fill-color: currentcolor;
+  }
 }
 
 .sharepoint-picker-bg {

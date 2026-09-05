@@ -16,6 +16,11 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilySearchUrl: 0 as const,
     },
+    keenable: {
+      /** Optional (0) — Keenable works keyless; a key only lifts rate limits */
+      keenableApiKey: 0 as const,
+      keenableApiUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -30,6 +35,12 @@ export const webSearchAuth = {
     tavily: {
       tavilyApiKey: 1 as const,
       tavilyExtractUrl: 0 as const,
+    },
+    keenable: {
+      /** Optional (0) — Keenable's page fetch is keyless as well; a key only
+       * lifts rate limits. The fetch endpoint itself is overridden with the
+       * `KEENABLE_FETCH_URL` env var, not through this config. */
+      keenableApiKey: 0 as const,
     },
   },
   rerankers: {
@@ -68,6 +79,12 @@ export function getWebSearchKeys(): TWebSearchKeys[] {
 
 export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
 
+export const webSearchSelectionFields = {
+  selectedProvider: 'LIBRECHAT_WEB_SEARCH_PROVIDER',
+  selectedScraper: 'LIBRECHAT_WEB_SEARCH_SCRAPER',
+  selectedReranker: 'LIBRECHAT_WEB_SEARCH_RERANKER',
+} as const;
+
 export function loadWebSearchConfig(
   config: TWebSearchConfigInput | undefined,
 ): TCustomConfig['webSearch'] {
@@ -80,6 +97,8 @@ export function loadWebSearchConfig(
   const tavilyApiKey = config?.tavilyApiKey ?? '${TAVILY_API_KEY}';
   const tavilySearchUrl = config?.tavilySearchUrl ?? '${TAVILY_SEARCH_URL}';
   const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
+  const keenableApiKey = config?.keenableApiKey ?? '${KEENABLE_API_KEY}';
+  const keenableApiUrl = config?.keenableApiUrl ?? '${KEENABLE_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
@@ -102,6 +121,8 @@ export function loadWebSearchConfig(
     tavilyApiKey,
     tavilySearchUrl,
     tavilyExtractUrl,
+    keenableApiKey,
+    keenableApiUrl,
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,

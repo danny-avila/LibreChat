@@ -2,16 +2,36 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
-import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
-import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~/store/families';
-import type { GenerationProtocolVersion } from '~/data-provider';
+import {
+  Constants,
+  ContentTypes,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
+import type {
+  TAgentQueuedTurnFileRef,
+  TMessage,
+  TConversation,
+  TMessageContentParts,
+} from 'librechat-data-provider';
+import type {
+  RunEnd,
+  PendingSteer,
+  QueuedMessage,
+  QueuedMessageOrigin,
+  SettledQueuedTurnReceipt,
+} from '~/store/families';
+import type { AgentQueuedTurnReceipt, GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
-  useGetMessagesByConvoId,
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
+  useAgentQueuedTurns,
+  useCancelAgentQueuedTurnMutation,
+  useEnqueueAgentQueuedTurnMutation,
+  isDefiniteQueuedTurnRejection,
+  isDefiniteQueuedTurnsUnsupported,
   supportsGenerationProtocolV2,
 } from '~/data-provider';
 import {
@@ -23,6 +43,7 @@ import {
   mergeRestagedQuotes,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { useLatestMessage } from '~/hooks/Messages';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -42,6 +63,10 @@ export interface QueuedMessageContext {
 
 /** Server-side cap on a usage touch (mirrors `FILES_USAGE_MAX_IDS`). */
 const QUEUE_USAGE_MAX_FILES = 10;
+/** Bound transport-outcome reconciliation while still guaranteeing several
+ * list reads after the enqueue promise settles. Focus/remount remains a later
+ * reconciliation path for exceptionally slow intermediaries. */
+const QUEUED_TURN_RECONCILIATION_MS = 60_000;
 
 type SteerErrorCode =
   | 'NO_ACTIVE_RUN'
@@ -97,30 +122,246 @@ function isSameRunEpoch(a: RunEnd | null, b: RunEnd): boolean {
 
 /** True when the latest assistant message carries an unresolved tool approval —
  *  the run is (or is about to be) paused, so a steer POST would 409. */
-function hasLiveToolApproval(messages: TMessage[] | undefined): boolean {
-  if (!messages || messages.length === 0) {
+function hasLiveToolApproval(message: TMessage | null): boolean {
+  if (message?.isCreatedByUser !== false) {
     return false;
   }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message.isCreatedByUser !== false) {
-      continue;
-    }
-    const content = message.content;
-    if (!Array.isArray(content)) {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((part: TMessageContentParts | undefined) => {
+    if (part?.type !== ContentTypes.TOOL_CALL) {
       return false;
     }
-    return content.some((part: TMessageContentParts | undefined) => {
-      if (part?.type !== ContentTypes.TOOL_CALL) {
-        return false;
-      }
-      const toolCall = part[ContentTypes.TOOL_CALL] as
-        | { approval?: unknown; output?: string | null }
-        | undefined;
-      return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
-    });
+    const toolCall = part[ContentTypes.TOOL_CALL] as
+      | { approval?: unknown; output?: string | null }
+      | undefined;
+    return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
+  });
+}
+
+interface LiveMessageState {
+  approval: boolean;
+  parentMessageId?: string;
+}
+
+function selectLiveMessageState(message: TMessage | null): LiveMessageState {
+  const parentMessageId =
+    message?.isCreatedByUser === false && typeof message.messageId === 'string'
+      ? message.messageId
+      : undefined;
+  return { approval: hasLiveToolApproval(message), parentMessageId };
+}
+
+function compareQueuedMessages(a: QueuedMessage, b: QueuedMessage): number {
+  const priority = Number(b.priority ?? false) - Number(a.priority ?? false);
+  if (priority !== 0) {
+    return priority;
   }
-  return false;
+  const aServerOrder = a.server?.revision;
+  const bServerOrder = b.server?.revision;
+  if (aServerOrder != null && bServerOrder != null && aServerOrder !== bServerOrder) {
+    return aServerOrder - bServerOrder;
+  }
+  if (a.server != null && b.server == null) {
+    return -1;
+  }
+  if (a.server == null && b.server != null) {
+    return 1;
+  }
+  return a.createdAt - b.createdAt;
+}
+
+function queuedTurnCreatedAt(receipt: AgentQueuedTurnReceipt): number {
+  const createdAt = Date.parse(receipt.createdAt);
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+type QueuedTurnReceiptSource = 'snapshot' | 'enqueue' | 'direct';
+
+function isAdmissionIndeterminateReceipt(receipt: AgentQueuedTurnReceipt): boolean {
+  return (
+    receipt.failure?.code === 'ADMISSION_INDETERMINATE' &&
+    (receipt.status === 'claimed' || receipt.status === 'dead')
+  );
+}
+
+function settledEvidenceForReceipt(
+  receipt: AgentQueuedTurnReceipt,
+): SettledQueuedTurnReceipt | undefined {
+  if (
+    receipt.status === 'admitted' &&
+    (receipt.effectivePredecessorCreatedAt != null || receipt.rootPredecessor === true)
+  ) {
+    return {
+      clientRequestId: receipt.clientRequestId,
+      status: 'admitted',
+      ...(receipt.effectivePredecessorCreatedAt != null && {
+        effectivePredecessorCreatedAt: receipt.effectivePredecessorCreatedAt,
+      }),
+      ...(receipt.rootPredecessor === true && { rootPredecessor: true }),
+    };
+  }
+  if (receipt.status === 'admitted') {
+    return {
+      clientRequestId: receipt.clientRequestId,
+      status: 'admitted_pending_boundary',
+    };
+  }
+  if (isAdmissionIndeterminateReceipt(receipt)) {
+    return { clientRequestId: receipt.clientRequestId, status: 'indeterminate' };
+  }
+  if (receipt.status === 'cancelled') {
+    return { clientRequestId: receipt.clientRequestId, status: 'cancelled' };
+  }
+  if (receipt.status === 'dead') {
+    return { clientRequestId: receipt.clientRequestId, status: 'dead' };
+  }
+  return undefined;
+}
+
+/** Client receipt knowledge is a monotonic evidence lattice. Enqueue is the
+ * only source that can carry a pre-scheduling snapshot, so it never weakens
+ * evidence already observed by GET/direct settlement. Indeterminate evidence
+ * can advance only through a later authoritative terminal observation. */
+function mergeSettledQueuedTurnEvidence(
+  existing: SettledQueuedTurnReceipt | undefined,
+  receipt: AgentQueuedTurnReceipt,
+  source: QueuedTurnReceiptSource,
+): SettledQueuedTurnReceipt | undefined {
+  const incoming = settledEvidenceForReceipt(receipt);
+  if (existing == null) {
+    return incoming;
+  }
+  if (existing.status === 'admitted_pending_boundary' && incoming?.status === 'admitted') {
+    return incoming;
+  }
+  if (
+    existing.status === 'indeterminate' &&
+    source !== 'enqueue' &&
+    incoming != null &&
+    incoming.status !== 'indeterminate'
+  ) {
+    return incoming;
+  }
+  return existing;
+}
+
+function toQueuedTurnFileRefs(files: TMessage['files']): TAgentQueuedTurnFileRef[] | undefined {
+  const refs = (files ?? []).flatMap((file): TAgentQueuedTurnFileRef[] => {
+    if (typeof file.file_id !== 'string' || file.file_id.length === 0) {
+      return [];
+    }
+    return [
+      {
+        file_id: file.file_id,
+        ...(file.type != null && { type: file.type }),
+        ...(file.filepath != null && { filepath: file.filepath }),
+        ...(file.filename != null && { filename: file.filename }),
+        ...(file.height != null && { height: file.height }),
+        ...(file.width != null && { width: file.width }),
+        ...(file.bytes != null && { bytes: file.bytes }),
+      },
+    ];
+  });
+  return refs.length > 0 ? refs : undefined;
+}
+
+function reconcileServerQueuedTurns(
+  previous: QueuedMessage[],
+  receipts: AgentQueuedTurnReceipt[],
+  settledByRequestId: ReadonlyMap<string, SettledQueuedTurnReceipt>,
+  authoritativeSnapshot = true,
+): QueuedMessage[] {
+  const previousByClientRequestId = new Map(
+    previous.flatMap((item) =>
+      item.clientRequestId != null ? [[item.clientRequestId, item] as const] : [],
+    ),
+  );
+  const observedClientRequestIds = new Set(receipts.map((receipt) => receipt.clientRequestId));
+  const projected = receipts.flatMap((receipt): QueuedMessage[] => {
+    const settled = settledByRequestId.get(receipt.clientRequestId);
+    const admissionIndeterminate = isAdmissionIndeterminateReceipt(receipt);
+    if (settled?.status === 'admitted' || settled?.status === 'cancelled') {
+      return [];
+    }
+    const optimistic = previousByClientRequestId.get(receipt.clientRequestId);
+    if (
+      (settled?.status === 'dead' ||
+        settled?.status === 'admitted_pending_boundary' ||
+        (settled?.status === 'indeterminate' && !admissionIndeterminate)) &&
+      receipt.status !== 'dead' &&
+      receipt.status !== 'admitted'
+    ) {
+      return optimistic == null ? [] : [optimistic];
+    }
+    const boundaryPending = receipt.status === 'admitted';
+    let status: NonNullable<QueuedMessage['server']>['status'] = 'rejected';
+    if (admissionIndeterminate) {
+      status = 'indeterminate';
+    } else if (boundaryPending) {
+      status = 'uncertain';
+    } else if (receipt.status === 'queued' || receipt.status === 'claimed') {
+      status = receipt.status;
+    }
+    return [
+      {
+        id: optimistic?.id ?? receipt.clientRequestId,
+        text: receipt.text,
+        createdAt: queuedTurnCreatedAt(receipt),
+        clientRequestId: receipt.clientRequestId,
+        parentMessageId: receipt.parentMessageId,
+        ...(receipt.expectedPredecessorCreatedAt != null && {
+          expectedPredecessorCreatedAt: receipt.expectedPredecessorCreatedAt,
+        }),
+        ...(receipt.files != null && receipt.files.length > 0 && { files: receipt.files }),
+        ...(receipt.quotes != null && receipt.quotes.length > 0 && { quotes: receipt.quotes }),
+        ...(receipt.manualSkills != null &&
+          receipt.manualSkills.length > 0 && {
+            manualSkills: receipt.manualSkills,
+          }),
+        ...(receipt.priority === true && { priority: true }),
+        server: {
+          id: receipt.queuedTurnId,
+          status,
+          revision: receipt.revision,
+          ...(boundaryPending && {
+            uncertainSince: optimistic?.server?.uncertainSince ?? Date.now(),
+          }),
+          ...(receipt.position != null && { position: receipt.position }),
+          ...(receipt.failure?.code != null && { errorCode: receipt.failure.code }),
+          ...(receipt.failure?.message != null && { errorMessage: receipt.failure.message }),
+        },
+      },
+    ];
+  });
+  const retained = previous.filter((item) => {
+    if (item.server == null) {
+      return true;
+    }
+    const settled =
+      item.clientRequestId == null ? undefined : settledByRequestId.get(item.clientRequestId);
+    if (settled?.status === 'admitted' || settled?.status === 'cancelled') {
+      return false;
+    }
+    if (settled?.status === 'dead' || settled?.status === 'admitted_pending_boundary') {
+      return item.clientRequestId == null || !observedClientRequestIds.has(item.clientRequestId);
+    }
+    if (item.clientRequestId == null || observedClientRequestIds.has(item.clientRequestId)) {
+      return false;
+    }
+    if (!authoritativeSnapshot) {
+      return true;
+    }
+    return (
+      item.server.status === 'sending' ||
+      item.server.status === 'uncertain' ||
+      item.server.status === 'indeterminate' ||
+      item.server.status === 'rejected'
+    );
+  });
+  return [...retained, ...projected].sort(compareQueuedMessages);
 }
 
 export interface UseSteeringParams {
@@ -177,6 +418,8 @@ export default function useSteering({
   const { mutate: steerMessage } = useSteerMessageMutation();
   const { mutateAsync: cancelSteer } = useCancelSteerMutation();
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
+  const { mutate: enqueueAgentQueuedTurn } = useEnqueueAgentQueuedTurnMutation();
+  const { mutateAsync: cancelAgentQueuedTurn } = useCancelAgentQueuedTurnMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
   const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
@@ -185,15 +428,168 @@ export default function useSteering({
   const steerable = !isAssistantsEndpoint(endpoint);
   const hasRealConvoId =
     conversationId != null && conversationId !== '' && conversationId !== Constants.NEW_CONVO;
+  const serverQueueEnabled = isAgentsEndpoint(endpoint) && hasRealConvoId;
   /** v1 gates the during-run UI to the primary composer, like the HITL popover. */
   const enabled = steerable && index === 0;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
+  const queuedMessages = useRecoilValue(store.queuedMessagesByConvoId(queueKey));
+  const setQueuedMessages = useSetRecoilState(store.queuedMessagesByConvoId(queueKey));
+  const knownClientRequestIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          queuedMessages.flatMap((item) =>
+            item.server != null && item.clientRequestId != null ? [item.clientRequestId] : [],
+          ),
+        ),
+      ).slice(0, 100),
+    [queuedMessages],
+  );
+  const reconciliationUntil = queuedMessages.reduce<number | undefined>((latest, item) => {
+    if (item.server?.status !== 'uncertain' || item.server.uncertainSince == null) {
+      return latest;
+    }
+    const until = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
+    return latest == null ? until : Math.max(latest, until);
+  }, undefined);
+  const nextReconciliationExpiry = queuedMessages.reduce<number | undefined>((earliest, item) => {
+    if (
+      item.server?.status !== 'uncertain' ||
+      item.server.uncertainSince == null ||
+      item.server.reconciliationExpired === true
+    ) {
+      return earliest;
+    }
+    const expiry = item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS;
+    return earliest == null ? expiry : Math.min(earliest, expiry);
+  }, undefined);
+  const { data: serverQueuedTurns } = useAgentQueuedTurns(
+    conversationId,
+    serverQueueEnabled,
+    knownClientRequestIds,
+    reconciliationUntil,
+  );
   const activeGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(queueKey),
   );
   const activeGenerationProtocolVersion = useRecoilValue(
     store.activeGenerationProtocolVersionByConvoId(queueKey),
   );
+
+  const applyQueuedTurnReceipts = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (receipts: AgentQueuedTurnReceipt[], source: QueuedTurnReceiptSource = 'snapshot') => {
+        const previousSettled = snapshot
+          .getLoadable(store.settledQueuedTurnReceiptsByConvoId(queueKey))
+          .getValue();
+        const previousPending = snapshot
+          .getLoadable(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey))
+          .getValue();
+        const completedRequestIds = new Set(
+          source === 'enqueue' ? receipts.map((receipt) => receipt.clientRequestId) : [],
+        );
+        const nextPending = previousPending.filter((id) => !completedRequestIds.has(id));
+        const settledByRequestId = new Map(
+          previousSettled.map((receipt) => [receipt.clientRequestId, receipt]),
+        );
+        for (const receipt of receipts) {
+          const existing = settledByRequestId.get(receipt.clientRequestId);
+          const settled = mergeSettledQueuedTurnEvidence(existing, receipt, source);
+          if (settled == null) {
+            continue;
+          }
+          settledByRequestId.set(receipt.clientRequestId, settled);
+        }
+        const terminalForReconciliation = new Map(settledByRequestId);
+        const pendingRequestIds = new Set(nextPending);
+        const nextSettled = [...settledByRequestId.values()].filter(
+          (receipt) =>
+            (receipt.status === 'admitted' &&
+              receipt.rootPredecessor !== true &&
+              receipt.boundaryConsumed !== true) ||
+            pendingRequestIds.has(receipt.clientRequestId),
+        );
+        if (source === 'enqueue') {
+          set(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey), nextPending);
+        }
+        if (
+          nextSettled.length !== previousSettled.length ||
+          nextSettled.some((receipt, index) => receipt !== previousSettled[index])
+        ) {
+          set(store.settledQueuedTurnReceiptsByConvoId(queueKey), nextSettled);
+        }
+        if (source !== 'direct') {
+          set(store.queuedMessagesByConvoId(queueKey), (previous) =>
+            reconcileServerQueuedTurns(
+              previous,
+              receipts,
+              terminalForReconciliation,
+              source === 'snapshot',
+            ),
+          );
+        }
+      },
+    [queueKey],
+  );
+
+  const finishQueuedTurnEnqueue = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (clientRequestId: string): boolean => {
+        const settledReceipts = snapshot
+          .getLoadable(store.settledQueuedTurnReceiptsByConvoId(queueKey))
+          .getValue();
+        const settled = settledReceipts.find(
+          (receipt) => receipt.clientRequestId === clientRequestId,
+        );
+        set(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey), (previous) =>
+          previous.filter((id) => id !== clientRequestId),
+        );
+        if (
+          settled != null &&
+          (settled.status !== 'admitted' || settled.boundaryConsumed === true)
+        ) {
+          set(store.settledQueuedTurnReceiptsByConvoId(queueKey), (previous) =>
+            previous.filter((receipt) => receipt.clientRequestId !== clientRequestId),
+          );
+        }
+        return settled != null;
+      },
+    [queueKey],
+  );
+
+  useEffect(() => {
+    if (!serverQueueEnabled || serverQueuedTurns == null) {
+      return;
+    }
+    applyQueuedTurnReceipts(serverQueuedTurns);
+  }, [serverQueueEnabled, serverQueuedTurns, applyQueuedTurnReceipts]);
+  useEffect(() => {
+    if (!serverQueueEnabled || nextReconciliationExpiry == null) {
+      return;
+    }
+    const expire = () => {
+      const observedAt = Date.now();
+      setQueuedMessages((previous) =>
+        previous.map((item) => {
+          if (
+            item.server?.status !== 'uncertain' ||
+            item.server.uncertainSince == null ||
+            item.server.reconciliationExpired === true ||
+            item.server.uncertainSince + QUEUED_TURN_RECONCILIATION_MS > observedAt
+          ) {
+            return item;
+          }
+          return {
+            ...item,
+            server: { ...item.server, reconciliationExpired: true },
+          };
+        }),
+      );
+    };
+    const delay = Math.max(0, nextReconciliationExpiry - Date.now());
+    const timer = window.setTimeout(expire, delay);
+    return () => window.clearTimeout(timer);
+  }, [nextReconciliationExpiry, serverQueueEnabled, setQueuedMessages]);
   /** The start POST installs this epoch before any live mutation may be sent.
    * `isSubmitting` flips earlier so the user can keep typing; during that
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
@@ -299,22 +695,17 @@ export default function useSteering({
     }
   }, [pendingSteers, queueKey]);
 
-  /** Boolean `select` so streaming deltas don't notify this subscription:
-   * structural sharing only re-renders the composer when the flag flips. */
-  const { data: liveToolApproval } = useGetMessagesByConvoId<boolean>(
-    hasRealConvoId ? conversationId : '',
-    {
-      enabled: hasRealConvoId,
-      select: hasLiveToolApproval,
-    },
-  );
+  /** The exact visible assistant tail is captured into a server queued turn,
+   * while the approval bit keeps the steering controls honest. */
+  const latestMessage = useLatestMessage(index, hasRealConvoId ? conversationId : null);
+  const liveMessageState = useMemo(() => selectLiveMessageState(latestMessage), [latestMessage]);
   /** Both approval cards and `ask_user_question` suspend the current
    * generation while keeping its submission slot occupied. Answer mode hides
    * the ordinary during-run composer, but waiting-message controls still need
    * to know a live generation exists so they remain discoverable and disabled
    * instead of looking as though the action disappeared. */
   const pausedOnApproval =
-    enabled && isSubmitting ? answerModeActive || (liveToolApproval ?? false) : false;
+    enabled && isSubmitting ? answerModeActive || (liveMessageState?.approval ?? false) : false;
 
   /** Whether a steer can reach the live run right now — independent of the
    *  user's default action, so the per-send menu can always override to
@@ -523,6 +914,22 @@ export default function useSteering({
     [markFilesUsage],
   );
 
+  const updateQueuedMessage = useRecoilCallback(
+    ({ set }) =>
+      (id: string, update: (item: QueuedMessage) => QueuedMessage | null) => {
+        set(store.queuedMessagesByConvoId(queueKey), (previous) =>
+          previous.flatMap((item) => {
+            if (item.id !== id) {
+              return [item];
+            }
+            const next = update(item);
+            return next == null ? [] : [next];
+          }),
+        );
+      },
+    [queueKey],
+  );
+
   const enqueue = useRecoilCallback(
     ({ set }) =>
       (
@@ -545,11 +952,23 @@ export default function useSteering({
         if (trimmed.length === 0) {
           return;
         }
-        const item = {
+        const parentMessageId = liveMessageState?.parentMessageId;
+        /** The active epoch is the authority-transfer fence. During startup an
+         * existing branch tail may already be visible while no generation owns
+         * it yet, so keep those turns local until the epoch is concrete. */
+        const serverOwned =
+          serverQueueEnabled && parentMessageId != null && activeGenerationCreatedAt != null;
+        const generatedClientRequestId = options?.clientRequestId == null;
+        const clientRequestId = options?.clientRequestId ?? (serverOwned ? v4() : undefined);
+        const item: QueuedMessage = {
           id: options?.id ?? v4(),
           text: trimmed,
           createdAt: options?.createdAt ?? Date.now(),
-          ...(options?.clientRequestId && { clientRequestId: options.clientRequestId }),
+          ...(clientRequestId != null && { clientRequestId }),
+          ...(serverOwned && {
+            parentMessageId,
+            server: { status: 'sending' },
+          }),
           ...((options?.expectedPredecessorCreatedAt ?? activeGenerationCreatedAt) != null && {
             expectedPredecessorCreatedAt:
               options?.expectedPredecessorCreatedAt ?? activeGenerationCreatedAt ?? undefined,
@@ -557,21 +976,105 @@ export default function useSteering({
           ...(options?.files && options.files.length > 0 && { files: options.files }),
           ...(options?.quotes && options.quotes.length > 0 && { quotes: options.quotes }),
           ...(options?.manualSkills &&
-            options.manualSkills.length > 0 && { manualSkills: options.manualSkills }),
+            options.manualSkills.length > 0 && {
+              manualSkills: options.manualSkills,
+            }),
           ...(options?.front && { priority: true }),
         };
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          [...prev, item].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
-          ),
+          [...prev, item].sort(compareQueuedMessages),
         );
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
         }
+        if (!serverOwned || clientRequestId == null) {
+          return;
+        }
+        set(store.pendingQueuedTurnEnqueueIdsByConvoId(queueKey), (previous) =>
+          previous.includes(clientRequestId) ? previous : [...previous, clientRequestId],
+        );
+        const serverFiles = toQueuedTurnFileRefs(item.files);
+        /** Commit the optimistic Recoil row before mutation callbacks can
+         * reconcile it. This also makes synchronous test/adaptor completions
+         * obey the same ordering as a real network response. */
+        queueMicrotask(() =>
+          enqueueAgentQueuedTurn(
+            {
+              conversationId,
+              clientRequestId,
+              parentMessageId,
+              text: item.text,
+              ...(serverFiles != null && { files: serverFiles }),
+              ...(item.quotes != null && item.quotes.length > 0 && { quotes: item.quotes }),
+              ...(item.manualSkills != null &&
+                item.manualSkills.length > 0 && {
+                  manualSkills: item.manualSkills,
+                }),
+              ...(item.priority === true && { priority: true }),
+              ...(item.expectedPredecessorCreatedAt != null && {
+                expectedPredecessorCreatedAt: item.expectedPredecessorCreatedAt,
+              }),
+            },
+            {
+              onSuccess: (receipt) => {
+                applyQueuedTurnReceipts([receipt], 'enqueue');
+              },
+              onError: (error) => {
+                if (finishQueuedTurnEnqueue(clientRequestId)) {
+                  return;
+                }
+                updateQueuedMessage(item.id, (current) => {
+                  if (isDefiniteQueuedTurnsUnsupported(error)) {
+                    const {
+                      server: _server,
+                      parentMessageId: _parentMessageId,
+                      clientRequestId: fallbackClientRequestId,
+                      ...legacy
+                    } = current;
+                    return {
+                      ...legacy,
+                      ...(!generatedClientRequestId && fallbackClientRequestId != null
+                        ? { clientRequestId: fallbackClientRequestId }
+                        : {}),
+                    };
+                  }
+                  if (!isDefiniteQueuedTurnRejection(error)) {
+                    return {
+                      ...current,
+                      server: {
+                        ...current.server,
+                        status: 'uncertain',
+                        uncertainSince: current.server?.uncertainSince ?? Date.now(),
+                      },
+                    };
+                  }
+                  const code = getSteerErrorCode(error);
+                  return {
+                    ...current,
+                    server: {
+                      ...current.server,
+                      status: 'rejected',
+                      ...(code != null && { errorCode: code }),
+                    },
+                  };
+                });
+              },
+            },
+          ),
+        );
       },
-    [queueKey, markQueuedFilesUsage, activeGenerationCreatedAt],
+    [
+      queueKey,
+      conversationId,
+      serverQueueEnabled,
+      liveMessageState?.parentMessageId,
+      markQueuedFilesUsage,
+      activeGenerationCreatedAt,
+      enqueueAgentQueuedTurn,
+      applyQueuedTurnReceipts,
+      finishQueuedTurnEnqueue,
+      updateQueuedMessage,
+    ],
   );
 
   /** Consumes completed composer attachments into message file refs (clearing
@@ -678,7 +1181,10 @@ export default function useSteering({
               return rest;
             }
             const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
-            return { ...rest, queuedOrigin: { ...rest.queuedOrigin, item: originItem } };
+            return {
+              ...rest,
+              queuedOrigin: { ...rest.queuedOrigin, item: originItem },
+            };
           });
           return changed ? next : prev;
         });
@@ -705,6 +1211,27 @@ export default function useSteering({
         set(store.queuedMessagesByConvoId(queueKey), (prev) =>
           prev.filter((item) => item.id !== id),
         );
+      },
+    [queueKey],
+  );
+
+  const downgradeServerQueuedTurn = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (id: string): boolean => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        let found = false;
+        const next = queue.map((item) => {
+          if (item.id !== id) {
+            return item;
+          }
+          found = true;
+          const { server: _server, parentMessageId: _parentMessageId, ...local } = item;
+          return local;
+        });
+        if (found) {
+          set(store.queuedMessagesByConvoId(queueKey), next);
+        }
+        return found;
       },
     [queueKey],
   );
@@ -747,11 +1274,47 @@ export default function useSteering({
    * terminal source generation, not whichever run now occupies the chat. */
   const discardQueued = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
+      if (item.server != null) {
+        if (item.server.status === 'rejected' && item.server.id == null) {
+          return downgradeServerQueuedTurn(item.id);
+        }
+        if (item.server.id == null || !hasRealConvoId) {
+          showToast({
+            message: localize('com_ui_steer_cancel_failed'),
+            status: 'error',
+          });
+          return false;
+        }
+        try {
+          const receipt = await cancelAgentQueuedTurn({
+            conversationId,
+            queuedTurnId: item.server.id,
+          });
+          if (receipt.status !== 'cancelled') {
+            showToast({
+              message: localize('com_ui_steer_cancel_failed'),
+              status: 'error',
+            });
+            return false;
+          }
+          applyQueuedTurnReceipts([receipt], 'direct');
+          return downgradeServerQueuedTurn(item.id);
+        } catch {
+          showToast({
+            message: localize('com_ui_steer_cancel_failed'),
+            status: 'error',
+          });
+          return false;
+        }
+      }
       if (item.recoverySteerId == null) {
         return true;
       }
       if (item.recoveryClientSteerId == null || !hasRealConvoId) {
-        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+        showToast({
+          message: localize('com_ui_steer_cancel_failed'),
+          status: 'error',
+        });
         return false;
       }
       try {
@@ -761,16 +1324,32 @@ export default function useSteering({
           clientSteerId: item.recoveryClientSteerId,
         });
         if (removed !== true) {
-          showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+          showToast({
+            message: localize('com_ui_steer_cancel_failed'),
+            status: 'error',
+          });
           return false;
         }
         return downgradeQueuedRecovery(item.id);
       } catch {
-        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+        showToast({
+          message: localize('com_ui_steer_cancel_failed'),
+          status: 'error',
+        });
         return false;
       }
     },
-    [cancelSteer, conversationId, downgradeQueuedRecovery, hasRealConvoId, localize, showToast],
+    [
+      cancelSteer,
+      cancelAgentQueuedTurn,
+      applyQueuedTurnReceipts,
+      conversationId,
+      downgradeQueuedRecovery,
+      downgradeServerQueuedTurn,
+      hasRealConvoId,
+      localize,
+      showToast,
+    ],
   );
 
   /** Capture-then-remove, including the item's neighbours, so any refused send
@@ -967,8 +1546,12 @@ export default function useSteering({
           expectedPredecessorCreatedAt: targetGenerationCreatedAt,
           ...(files && { files }),
           ...carried,
-          ...(context?.clientRequestId && { clientRequestId: context.clientRequestId }),
-          ...(context?.recoverySteerId && { recoverySteerId: context.recoverySteerId }),
+          ...(context?.clientRequestId && {
+            clientRequestId: context.clientRequestId,
+          }),
+          ...(context?.recoverySteerId && {
+            recoverySteerId: context.recoverySteerId,
+          }),
         },
         beforeIds: [],
         afterIds: [],
@@ -1050,7 +1633,9 @@ export default function useSteering({
                         generationCreatedAt: targetGenerationCreatedAt,
                       }),
                       generationProtocolVersion: targetGenerationProtocolVersion,
-                      ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                      ...(opts?.queuedOrigin && {
+                        queuedOrigin: opts.queuedOrigin,
+                      }),
                       ...carried,
                     });
                   } else {
@@ -1080,7 +1665,9 @@ export default function useSteering({
                     generationCreatedAt: targetGenerationCreatedAt,
                   }),
                   generationProtocolVersion: targetGenerationProtocolVersion,
-                  ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                  ...(opts?.queuedOrigin && {
+                    queuedOrigin: opts.queuedOrigin,
+                  }),
                   ...carried,
                 } satisfies PendingSteer;
                 if (acknowledgeSteer(conversationId, localId, acknowledged)) {
@@ -1137,11 +1724,18 @@ export default function useSteering({
                     return;
                   }
                   restoreRejectedSteer();
-                  showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
+                  showToast({
+                    message: localize('com_ui_steer_paused_queued'),
+                    status: 'info',
+                  });
                   return;
                 }
                 const errorData = (
-                  error as { response?: { data?: { generationProtocolVersion?: unknown } } }
+                  error as {
+                    response?: {
+                      data?: { generationProtocolVersion?: unknown };
+                    };
+                  }
                 )?.response?.data;
                 if (
                   code === 'RUN_REPLACED' &&
@@ -1154,7 +1748,10 @@ export default function useSteering({
                    * drain regardless of this tab's local submission state. */
                   replaceSteerChip(conversationId, localId, null);
                   restoreRejectedSteer();
-                  showToast({ message: localize('com_ui_steer_paused_queued'), status: 'info' });
+                  showToast({
+                    message: localize('com_ui_steer_paused_queued'),
+                    status: 'info',
+                  });
                   return;
                 }
                 if (isDefiniteSteerRejection(error)) {
@@ -1173,7 +1770,9 @@ export default function useSteering({
                       generationCreatedAt: targetGenerationCreatedAt,
                     }),
                     generationProtocolVersion: targetGenerationProtocolVersion,
-                    ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                    ...(opts?.queuedOrigin && {
+                      queuedOrigin: opts.queuedOrigin,
+                    }),
                     ...carried,
                   });
                   return;
@@ -1190,7 +1789,9 @@ export default function useSteering({
                     generationCreatedAt: targetGenerationCreatedAt,
                   }),
                   generationProtocolVersion: targetGenerationProtocolVersion,
-                  ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
+                  ...(opts?.queuedOrigin && {
+                    queuedOrigin: opts.queuedOrigin,
+                  }),
                   ...carried,
                 });
               } finally {
@@ -1256,7 +1857,10 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading) {
         return false;
       }
-      enqueue(trimmed, { files: takeComposerFiles(), ...takeComposerContext() });
+      enqueue(trimmed, {
+        files: takeComposerFiles(),
+        ...takeComposerContext(),
+      });
       takeComposerDraft();
       return true;
     },
@@ -1274,7 +1878,10 @@ export default function useSteering({
     ) => {
       /** A failed interrupt-steer must retry AS an interrupt — resubmitting it
        *  as an ordinary steer would silently let generation run on. */
-      submitSteer(text, steerFiles, context, { ...opts, clientSteerId: steerId });
+      submitSteer(text, steerFiles, context, {
+        ...opts,
+        clientSteerId: steerId,
+      });
     },
     [submitSteer],
   );
@@ -1356,7 +1963,7 @@ export default function useSteering({
    *  restore context so a degraded steer requeues/sends with them intact.
    *  `preempt` escalates the steer to interrupt at the next safe token
    *  boundary; it only means something on the live-run path. */
-  const sendQueuedNow = useCallback(
+  const sendLocalQueuedNow = useCallback(
     (item: QueuedMessage, opts?: { preempt?: boolean }) => {
       /** In answer mode (and any other submission-owned non-steerable state)
        * there is no immediate path. Refuse before touching queue state so a
@@ -1366,7 +1973,11 @@ export default function useSteering({
       }
       /** UI callers always find the item; a stale/direct caller has no original
        *  neighbours, so restoration falls back to the queue's priority split. */
-      const origin = takeQueued(item.id) ?? { item, beforeIds: [], afterIds: [] };
+      const origin = takeQueued(item.id) ?? {
+        item,
+        beforeIds: [],
+        afterIds: [],
+      };
       const taken = origin.item;
       if (duringRunActive && canSteer) {
         const consumed = submitSteer(
@@ -1432,6 +2043,30 @@ export default function useSteering({
     ],
   );
 
+  const queuedActionClaimsRef = useRef(new Set<string>());
+  const sendQueuedNow = useCallback(
+    (item: QueuedMessage, opts?: { preempt?: boolean }) => {
+      if (item.server == null) {
+        sendLocalQueuedNow(item, opts);
+        return;
+      }
+      if (queuedActionClaimsRef.current.has(item.id)) {
+        return;
+      }
+      queuedActionClaimsRef.current.add(item.id);
+      void discardQueued(item)
+        .then((discarded) => {
+          if (discarded) {
+            sendLocalQueuedNow(item, opts);
+          }
+        })
+        .finally(() => {
+          queuedActionClaimsRef.current.delete(item.id);
+        });
+    },
+    [discardQueued, sendLocalQueuedNow],
+  );
+
   /** Abort the current run and auto-send this text once the abort settles. */
   const interruptAndSend = useCallback(
     (text: string): boolean => {
@@ -1439,7 +2074,11 @@ export default function useSteering({
       if (trimmed.length === 0 || filesLoading || !canControlGeneration) {
         return false;
       }
-      enqueue(trimmed, { front: true, files: takeComposerFiles(), ...takeComposerContext() });
+      enqueue(trimmed, {
+        front: true,
+        files: takeComposerFiles(),
+        ...takeComposerContext(),
+      });
       takeComposerDraft();
       armDrainAfterAbort();
       stopGenerating();

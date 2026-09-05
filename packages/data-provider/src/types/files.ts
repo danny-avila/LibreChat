@@ -256,7 +256,9 @@ export type TFilesUsageResponse = {
 
 export type DeleteFilesResponse = {
   message: string;
-  result: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  deletedFileIds?: string[];
+  failedFileIds?: string[];
 };
 
 export type BatchFile = {
@@ -280,4 +282,7 @@ export type DeleteMutationOptions = {
   onSuccess?: (data: DeleteFilesResponse, variables: DeleteFilesBody, context?: unknown) => void;
   onMutate?: (variables: DeleteFilesBody) => void | Promise<unknown>;
   onError?: (error: unknown, variables: DeleteFilesBody, context?: unknown) => void;
+  /** Suppresses the result toasts. Background cleanup runs on a timer the user never asked for,
+   * and a storage failure that keeps failing would otherwise announce itself on every retry. */
+  silent?: boolean;
 };

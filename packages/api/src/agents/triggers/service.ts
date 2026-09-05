@@ -1,8 +1,18 @@
-import { logger, runAsSystem } from '@librechat/data-schemas';
-import type { AgentTriggerDeliveryStatusRecord } from '@librechat/data-schemas';
+import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+  logger,
+  runAsSystem,
+} from '@librechat/data-schemas';
+import type {
+  AgentTriggerDeliveryMethods,
+  AgentTriggerDeliveryStatusRecord,
+} from '@librechat/data-schemas';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
+  AgentTriggerDeliveryEngineDeps,
   AgentTriggerDeliveryEngineOptions,
   AgentTriggerDeliveryRecord,
   AgentTriggerDeliveryStore,
@@ -17,8 +27,8 @@ import type { BoundAddress } from '../../app/origin';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
-import { selfOriginFromAddress } from '../../app/origin';
 import { prepareAgentTriggerDelivery } from './delivery';
+import { selfOriginFromAddress } from '../../app/origin';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
 
@@ -45,12 +55,14 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
+  supportsDetachedActionCompletion?: () => boolean;
+  settleSourceBeforeDeadLetter?: AgentTriggerDeliveryEngineDeps['settleSourceBeforeDeadLetter'];
 }
 
 export interface AgentTriggerDeliveryReceipt {
   id: string;
   deliveryKey: string;
-  status: AgentTriggerStoredRecord['status'];
+  status: Exclude<AgentTriggerStoredRecord['status'], 'batched'>;
   availableAt: Date;
   replayed: boolean;
 }
@@ -86,12 +98,19 @@ export interface AgentTriggerDeliveryPersistence {
   enqueueAgentTriggerDelivery: (
     input: PreparedAgentTriggerDelivery,
   ) => Promise<{ delivery: AgentTriggerStoredRecord; replayed: boolean }>;
-  claimNextAgentTriggerDelivery: AgentTriggerDeliveryStore['claimNext'];
+  claimNextAgentTriggerDelivery: (
+    input: Parameters<AgentTriggerDeliveryStore['claimNext']>[0] & {
+      workerCapabilities?: string[];
+    },
+  ) => ReturnType<AgentTriggerDeliveryStore['claimNext']>;
   findEarlierAgentTriggerDelivery: AgentTriggerDeliveryStore['findEarlierUnsettled'];
+  getAgentTriggerDeliveryBatch: AgentTriggerDeliveryStore['getBatch'];
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
+  retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
+  renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -108,6 +127,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<AgentTriggerStoredRecord | null>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
   recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
   reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     userId: string,
@@ -116,6 +136,7 @@ export interface AgentTriggerDeliveryPersistence {
   ) => Promise<void>;
   cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  expireLegacyAgentEventActorReceipts?: (now: Date, limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
@@ -139,16 +160,37 @@ export interface AgentTriggerService {
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
+  retire: (
+    deliveryKey: string,
+    sourceId: string,
+    reason: string,
+    options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
+  ) => Promise<boolean>;
+  renewProducerLease: (deliveryKey: string, sourceId: string, leaseUntil: Date) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   purgeUser: (userId: string) => Promise<void>;
 }
 
-function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTriggerDeliveryStore {
+function createDeliveryStore(
+  methods: AgentTriggerDeliveryPersistence,
+  supportsDetachedActionCompletion: () => boolean,
+): AgentTriggerDeliveryStore {
   return {
-    claimNext: methods.claimNextAgentTriggerDelivery,
+    claimNext: (input) =>
+      methods.claimNextAgentTriggerDelivery({
+        ...input,
+        workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+          AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+          ...(supportsDetachedActionCompletion()
+            ? [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1]
+            : []),
+        ],
+      }),
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
+    getBatch: methods.getAgentTriggerDeliveryBatch,
     release: methods.releaseAgentTriggerDelivery,
     beginAttempt: methods.beginAgentTriggerDeliveryAttempt,
     defer: methods.deferAgentTriggerDeliveryAttempt,
@@ -156,6 +198,21 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
     retry: methods.retryAgentTriggerDelivery,
     dead: methods.deadLetterAgentTriggerDelivery,
   };
+}
+
+function publicReceiptStatus(
+  status: AgentTriggerStoredRecord['status'],
+): AgentTriggerDeliveryReceipt['status'] {
+  if (status === 'batched' || status === 'capability_pending') {
+    return 'pending';
+  }
+  if (status === 'capability_staging') {
+    return 'staging';
+  }
+  if (status === 'capability_dead') {
+    return 'dead';
+  }
+  return status === 'capability_leased' ? 'leased' : status;
 }
 
 function requireDeliveryOrigin(boundOrigin: string | undefined): void {
@@ -182,6 +239,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   const purgeRecoveryIntervalMs =
     deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
   const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
+  const supportsDetachedActionCompletion = deps.supportsDetachedActionCompletion ?? (() => false);
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
@@ -203,8 +261,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   let stopping = false;
   const isPrincipalActive = deps.isPrincipalActive;
   const host: AgentTriggerExecutionHost = createAgentTriggerExecutionHost({
-    getBaseUrl: () => {
-      const origin = process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin;
+    getBaseUrl: (options) => {
+      const origin =
+        options?.localOnly === true
+          ? boundOrigin
+          : (process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin);
       if (origin == null) {
         throw new Error('Agent trigger service has not been initialized with a listener address');
       }
@@ -215,7 +276,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       ((principal) => generateAgentTriggerToken(principal.userId, AGENT_TRIGGER_TOKEN_TTL)),
     ...(deps.fetch != null && { fetch: deps.fetch }),
     ...(deps.getTimezone != null && { getTimezone: deps.getTimezone }),
-    ...(deps.prepareContinue != null && { prepareContinue: deps.prepareContinue }),
+    ...(deps.prepareContinue != null && {
+      prepareContinue: deps.prepareContinue,
+    }),
     ...(deps.timeoutMs != null && { timeoutMs: deps.timeoutMs }),
   });
 
@@ -247,7 +310,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
 
   const dispatchForActivePrincipal = async (
     envelope: unknown,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; attempt?: number; maxAttempts?: number },
   ): Promise<AgentTriggerExecutionResult> => {
     const parsed = parseAgentTriggerEnvelope(envelope);
     await requireActivePrincipal(parsed.principal.userId);
@@ -285,20 +348,68 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       return purgeRecoveryPromise;
     }
     const methods = deps.methods;
+    /** Independent maintenance operations fail alone: a rejection is logged
+     * and counted as zero progress instead of aborting the pass, so one broken
+     * cleanup (e.g. an engine-specific query rejection) can never starve the
+     * others. Batch-receipt recovery is NOT independent: lane reclamation
+     * consumes the lane-cleanup markers, and running it against a
+     * half-recovered batch clears a request that a later successful recovery
+     * can no longer re-arm, retaining the lane permanently — so reclamation
+     * still waits for a batch-recovery pass that did not fail. */
+    const isolated = (label: string, run: () => Promise<number>): Promise<number> =>
+      run().catch((error) => {
+        logger.error(
+          `[agent-triggers] durable delivery maintenance step failed (${label}):`,
+          error,
+        );
+        return 0;
+      });
     const current = runAsSystem(async () => {
-      const [purgedUsers, publishedLanes, reclaimedLanes] = await Promise.all([
-        methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
-        methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
-      ]);
+      const [purgedUsers, publishedLanes, batchRecovery, expiredLegacyActorReceipts] =
+        await Promise.all([
+          isolated('user purges', () => methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit)),
+          isolated('lane publications', () =>
+            methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          ),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit).then(
+            (count) => ({ succeeded: true as const, count }),
+            (error) => {
+              logger.error(
+                '[agent-triggers] durable delivery maintenance step failed (batch receipts):',
+                error,
+              );
+              return { succeeded: false as const, count: 0 };
+            },
+          ),
+          isolated(
+            'legacy actor receipts',
+            () =>
+              methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+              Promise.resolve(0),
+          ),
+        ]);
+      const recoveredBatches = batchRecovery.count;
+      const reclaimedLanes = batchRecovery.succeeded
+        ? await isolated('lane reclamation', () =>
+            methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
+          )
+        : 0;
       if (publishedLanes > 0) {
         deliveryEngine?.wake();
       }
-      if (purgedUsers > 0 || publishedLanes > 0 || reclaimedLanes > 0) {
+      if (
+        purgedUsers > 0 ||
+        publishedLanes > 0 ||
+        recoveredBatches > 0 ||
+        reclaimedLanes > 0 ||
+        expiredLegacyActorReceipts > 0
+      ) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
           publishedLanes,
+          recoveredBatches,
           reclaimedLanes,
+          expiredLegacyActorReceipts,
         });
       }
     })
@@ -369,8 +480,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         deliveryEngine = createAgentTriggerDeliveryEngine(
           {
-            store: createDeliveryStore(methods),
+            store: createDeliveryStore(methods, supportsDetachedActionCompletion),
             dispatch: dispatchForActivePrincipal,
+            ...(deps.settleSourceBeforeDeadLetter != null && {
+              settleSourceBeforeDeadLetter: deps.settleSourceBeforeDeadLetter,
+            }),
           },
           deps.deliveryOptions,
         );
@@ -388,8 +502,18 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
       const prepared = prepareAgentTriggerDelivery(envelope, options);
+      const awaitTerminalHandling =
+        prepared.envelope.mode === 'continue' &&
+        prepared.envelope.target.bindingId != null &&
+        prepared.envelope.target.sourceKeyId != null;
+      const durableDelivery: PreparedAgentTriggerDelivery = {
+        ...prepared,
+        ...(awaitTerminalHandling && { awaitTerminalHandling: true }),
+      };
       await requireActivePrincipal(String(prepared.user));
-      const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));
+      const queued = await runAsSystem(async () =>
+        methods.enqueueAgentTriggerDelivery(durableDelivery),
+      );
       try {
         await requireActivePrincipal(String(prepared.user));
       } catch (error) {
@@ -402,11 +526,22 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       } else {
         deliveryEngine?.wake();
       }
+      const effective =
+        queued.delivery.status === 'batched'
+          ? await runAsSystem(async () =>
+              methods.getAgentTriggerDeliveryStatus(
+                prepared.deliveryKey,
+                prepared.user,
+                prepared.envelope.event.source.id,
+                prepared.tenantId,
+              ),
+            )
+          : null;
       return {
         id: queued.delivery.id,
         deliveryKey: queued.delivery.deliveryKey,
-        status: queued.delivery.status,
-        availableAt: queued.delivery.availableAt,
+        status: publicReceiptStatus(effective?.status ?? queued.delivery.status),
+        availableAt: effective?.availableAt ?? queued.delivery.availableAt,
         replayed: queued.replayed,
       };
     },
@@ -430,6 +565,29 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         return revived;
       }),
+    retire: (deliveryKey, sourceId, reason, options) =>
+      runAsSystem(async () => {
+        const retired = await requireCleanupMethods().retireAgentTriggerDelivery({
+          deliveryKey,
+          sourceId,
+          reason,
+          settledAt: new Date(),
+          ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
+          ...(options?.onlyIfDead === true ? { onlyIfDead: true } : {}),
+        });
+        if (retired) {
+          deliveryEngine?.wake();
+        }
+        return retired;
+      }),
+    renewProducerLease: (deliveryKey, sourceId, leaseUntil) =>
+      runAsSystem(async () =>
+        requireMethods().renewAgentTriggerDeliveryProducerLease({
+          deliveryKey,
+          sourceId,
+          leaseUntil,
+        }),
+      ),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>

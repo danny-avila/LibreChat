@@ -826,6 +826,9 @@ export function areMessageFieldsEqual(
     prevMsg.text === nextMsg.text &&
     prevMsg.error === nextMsg.error &&
     prevMsg.unfinished === nextMsg.unfinished &&
+    /** Read by the row: `useGenerationsByLatest` gates the Continue button on it and
+     *  `ContentRender` renders the tool-call-limit notice from it. */
+    prevMsg.finish_reason === nextMsg.finish_reason &&
     prevMsg.createdAt === nextMsg.createdAt &&
     prevMsg.depth === nextMsg.depth &&
     prevMsg.isCreatedByUser === nextMsg.isCreatedByUser &&

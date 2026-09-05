@@ -109,6 +109,8 @@ describe('Convos Routes', () => {
     moderatedTexts.length = 0;
     generationJobManager.getJob.mockResolvedValue(null);
     generationJobManager.abortJob.mockResolvedValue({ success: true });
+    generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([]);
+    generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([]);
   });
 
   it('binds the activity subscription adapter to the subagent task store', () => {
@@ -406,6 +408,9 @@ describe('Convos Routes', () => {
 
     it('drains a paused event actor after owner-wide deletion removes its conversation', async () => {
       const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([
+        'paused-event-child',
+      ]);
       deleteConvos.mockResolvedValue({
         deletedCount: 1,
         conversationIds: ['paused-event-child'],
@@ -427,6 +432,108 @@ describe('Convos Routes', () => {
         expectedCreatedAt: createdAt,
         awaitProviderDrain: true,
       });
+    });
+
+    it('drains every owner remote run before selecting the delete-all snapshot', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([
+        'resp-new-conversation',
+      ]);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp-new-conversation'
+          ? {
+              conversationId: 'conversation-not-yet-persisted',
+              metadata: { userId: 'test-user-123' },
+              status: 'running',
+              createdAt,
+            }
+          : null,
+      );
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['conversation-not-yet-persisted'],
+      });
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.getCleanupBlockingJobIdsForUser).toHaveBeenCalledWith(
+        'test-user-123',
+        undefined,
+      );
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp-new-conversation', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(generationJobManager.abortJob.mock.invocationCallOrder[0]).toBeLessThan(
+        deleteConvos.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('re-drains and removes persistence created during a recovered owner-fence gap', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForUser
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(['resp-gap']);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp-gap'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos
+        .mockResolvedValueOnce({ deletedCount: 1, conversationIds: ['original'] })
+        .mockImplementationOnce(async (_userId, _filter, options) => {
+          expect(options).toEqual(
+            expect.objectContaining({ allowEmpty: true, beforeDelete: expect.any(Function) }),
+          );
+          await options.beforeDelete(['gap-conversation']);
+          return { deletedCount: 1, conversationIds: ['gap-conversation'] };
+        });
+      subagentThreadStore.withOwnerDeletionFence.mockImplementationOnce(
+        async (_userId, _tenantId, deletion, recover) => {
+          const result = await deletion();
+          await recover();
+          return result;
+        },
+      );
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp-gap', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(deleteConvos).toHaveBeenCalledTimes(2);
+      expect(deleteMessages).toHaveBeenCalledWith({ user: 'test-user-123' });
+      expect(deleteAgentCheckpoints.mock.calls.map((call) => call[0])).toEqual([
+        ['original'],
+        ['gap-conversation'],
+      ]);
+    });
+
+    it('retries owner message cleanup after conversations were already removed', async () => {
+      deleteConvos
+        .mockResolvedValueOnce({ deletedCount: 1, conversationIds: ['original'] })
+        .mockResolvedValueOnce({ deletedCount: 0, conversationIds: [] });
+      deleteMessages
+        .mockRejectedValueOnce(new Error('message database unavailable'))
+        .mockResolvedValueOnce({ deletedCount: 1 });
+
+      const first = await request(app).delete('/api/convos/all');
+      const retry = await request(app).delete('/api/convos/all');
+
+      expect(first.status).toBe(500);
+      expect(retry.status).toBe(201);
+      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(['original']);
+      expect(deleteConvos).toHaveBeenNthCalledWith(
+        2,
+        'test-user-123',
+        {},
+        expect.objectContaining({ allowEmpty: true }),
+      );
+      expect(deleteMessages).toHaveBeenCalledTimes(2);
+      expect(deleteMessages).toHaveBeenLastCalledWith({ user: 'test-user-123' });
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -636,6 +743,36 @@ describe('Convos Routes', () => {
         {},
         expect.objectContaining({ beforeDelete: expect.any(Function) }),
       );
+      expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][3]).toEqual(
+        expect.any(Function),
+      );
+    });
+
+    it('drains owner remote runs before the empty-filter deletion snapshot', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue(['resp-new']);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp-new'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['new-conversation'],
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp-new', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(generationJobManager.abortJob.mock.invocationCallOrder[0]).toBeLessThan(
+        deleteConvos.mock.invocationCallOrder[0],
+      );
     });
 
     it('drains a paused event actor after an empty-filter deletion removes it', async () => {
@@ -666,9 +803,12 @@ describe('Convos Routes', () => {
     });
 
     it('fails closed before checkpoint pruning when generation lookup stays unavailable', async () => {
-      deleteConvos.mockResolvedValue({
-        deletedCount: 1,
-        conversationIds: ['paused-event-child'],
+      deleteConvos.mockImplementation(async (_userId, _filter, options) => {
+        await options.beforeDelete(['paused-event-child']);
+        return {
+          deletedCount: 1,
+          conversationIds: ['paused-event-child'],
+        };
       });
       generationJobManager.getJob.mockRejectedValue(new Error('generation store unavailable'));
 
@@ -743,13 +883,170 @@ describe('Convos Routes', () => {
         expectedCreatedAt: createdAt,
         awaitProviderDrain: true,
       });
-      expect(deleteConvos).toHaveBeenNthCalledWith(2, 'test-user-123', {
-        conversationId: { $in: ['parent-conversation', 'child-conversation'] },
-      });
+      expect(deleteConvos).toHaveBeenNthCalledWith(
+        2,
+        'test-user-123',
+        { conversationId: { $in: ['parent-conversation', 'child-conversation'] } },
+        { allowEmpty: true },
+      );
       expect(deleteMessages).toHaveBeenCalledWith({
         user: 'test-user-123',
         conversationId: { $in: ['parent-conversation', 'child-conversation'] },
       });
+    });
+
+    it('drains response-id runs indexed under a deleted conversation', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
+        'resp_remote-run',
+      ]);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp_remote-run'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.getCleanupBlockingJobIdsForConversations).toHaveBeenCalledWith(
+        'test-user-123',
+        ['conversation-1'],
+        undefined,
+      );
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp_remote-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
+    it('waits for terminal response-id runs whose provider writes are undrained', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
+        'resp_terminal-run',
+      ]);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp_terminal-run'
+          ? {
+              metadata: { userId: 'test-user-123', providerDrained: false },
+              status: 'complete',
+              createdAt,
+            }
+          : null,
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp_terminal-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
+    it('catches a response-id run admitted after the pre-delete snapshot', async () => {
+      const createdAt = Date.now();
+      let deletionCommitted = false;
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockImplementation(async () =>
+        deletionCommitted ? ['resp_late-run'] : [],
+      );
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'resp_late-run'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        deletionCommitted = true;
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.getCleanupBlockingJobIdsForConversations).toHaveBeenCalledTimes(
+        2,
+      );
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('resp_late-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
+    it('removes persistence even when a racing response drains before post-delete discovery', async () => {
+      deleteConvos
+        .mockImplementationOnce(async (_userId, _filter, options) => {
+          await options.beforeDelete(['conversation-1']);
+          return { deletedCount: 1, conversationIds: ['conversation-1'] };
+        })
+        .mockResolvedValueOnce({ deletedCount: 1, conversationIds: ['conversation-1'] });
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([]);
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).not.toHaveBeenCalled();
+      expect(deleteConvos).toHaveBeenNthCalledWith(
+        2,
+        'test-user-123',
+        { conversationId: { $in: ['conversation-1'] } },
+        { allowEmpty: true },
+      );
+      expect(deleteMessages).toHaveBeenCalledWith({
+        user: 'test-user-123',
+        conversationId: { $in: ['conversation-1'] },
+      });
+    });
+
+    it('fails closed when the idempotent remnant sweep hits a storage failure', async () => {
+      deleteConvos
+        .mockImplementationOnce(async (_userId, _filter, options) => {
+          await options.beforeDelete(['conversation-1']);
+          return { deletedCount: 1, conversationIds: ['conversation-1'] };
+        })
+        .mockRejectedValueOnce(new Error('remnant database unavailable'));
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error clearing conversations');
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when remnant message cleanup is unavailable', async () => {
+      deleteConvos
+        .mockImplementationOnce(async (_userId, _filter, options) => {
+          await options.beforeDelete(['conversation-1']);
+          return { deletedCount: 1, conversationIds: ['conversation-1'] };
+        })
+        .mockResolvedValueOnce({ deletedCount: 0, conversationIds: [] });
+      deleteMessages.mockRejectedValueOnce(new Error('message database unavailable'));
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error clearing conversations');
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
     });
 
     it('does not prune generation persistence when provider stop is unconfirmed', async () => {
@@ -1011,6 +1308,7 @@ describe('Convos Routes', () => {
 
       expect(executionOrder).toEqual([
         'deleteConvos',
+        'deleteConvos',
         'deleteToolCalls',
         'deleteConvoSharedLinksWithCleanup',
       ]);
@@ -1115,6 +1413,73 @@ describe('Convos Routes', () => {
       expect(getConvosByCursor).toHaveBeenCalledWith(
         'test-user-123',
         expect.objectContaining({ pinned: false }),
+      );
+    });
+  });
+
+  describe('GET / limit clamping', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    /** `parseInt('-1') || 25` kept the -1, and `.limit(-1 + 1)` is `.limit(0)`, which
+     * MongoDB reads as "no limit" — one request drained the caller's whole list. */
+    it('clamps a negative limit instead of forwarding it', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '-1' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 1 }),
+      );
+    });
+
+    it('caps an oversized limit at the page ceiling', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '999999999' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 100 }),
+      );
+    });
+
+    it('raises a zero limit to a single row', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '0' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 1 }),
+      );
+    });
+
+    it.each([
+      ['absent', undefined],
+      ['non-numeric', 'all'],
+    ])('falls back to the default page size when the limit is %s', async (_label, limit) => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query(limit === undefined ? {} : { limit });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 25 }),
+      );
+    });
+
+    /** Express parses a repeated key into an array, which `parseInt` silently reads as
+     * its first element's digits rather than rejecting. */
+    it('clamps a repeated limit parameter', async () => {
+      const response = await request(app).get('/api/convos?limit=999999&limit=5');
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 100 }),
       );
     });
   });

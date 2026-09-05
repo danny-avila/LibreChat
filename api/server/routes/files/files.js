@@ -7,11 +7,13 @@ const {
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
+  buildDeleteFilesResponse,
   shouldUseUploadSse,
   startUploadSseStream,
   sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
+  createCodeExecutionRouteKey,
   getCodeExecutionBaseUrl,
   assertUploadContentAllowed,
   hasActiveFilePolicy,
@@ -176,6 +178,9 @@ router.post('/usage', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   try {
+    const sendDeleteResult = (result, successMessage) =>
+      res.status(200).json(buildDeleteFilesResponse(result, successMessage));
+
     const { files: _files } = req.body;
 
     /** @type {MongoFile[]} */
@@ -260,14 +265,14 @@ router.delete('/', async (req, res) => {
     }
 
     if (dbFiles.length > 0 && nonOwnedFiles.length === 0) {
-      await processDeleteRequest({ req, files: ownedFiles });
+      const result = await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
         `[/files] Files deleted successfully: ${ownedFiles
           .filter((f) => f.file_id)
           .map((f) => f.file_id)
           .join(', ')}`,
       );
-      res.status(200).json({ message: 'Files deleted successfully' });
+      sendDeleteResult(result, 'Files deleted successfully');
       return;
     }
 
@@ -284,26 +289,25 @@ router.delete('/', async (req, res) => {
     /* Handle assistant unlinking even if no valid files to delete */
     if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
       const assistant = await db.getAssistant({
-        id: req.body.assistant_id,
+        assistantId: req.body.assistant_id,
       });
 
-      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const toolResourceFiles = assistant?.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
       const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
-      await processDeleteRequest({ req, files: assistantFiles });
-      res.status(200).json({ message: 'File associations removed successfully from assistant' });
+      const result = await processDeleteRequest({ req, files: assistantFiles });
+      sendDeleteResult(result, 'File associations removed successfully from assistant');
       return;
     } else if (
       req.body.assistant_id &&
       req.body.files?.[0]?.filepath === EModelEndpoint.azureAssistants
     ) {
-      await processDeleteRequest({ req, files: req.body.files });
-      return res
-        .status(200)
-        .json({ message: 'File associations removed successfully from Azure Assistant' });
+      const result = await processDeleteRequest({ req, files: req.body.files });
+      sendDeleteResult(result, 'File associations removed successfully from Azure Assistant');
+      return;
     }
 
-    await processDeleteRequest({ req, files: authorizedFiles });
+    const result = await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
       `[/files] Files deleted successfully: ${authorizedFiles
@@ -311,7 +315,7 @@ router.delete('/', async (req, res) => {
         .map((f) => f.file_id)
         .join(', ')}`,
     );
-    res.status(200).json({ message: 'Files deleted successfully' });
+    sendDeleteResult(result, 'Files deleted successfully');
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -347,7 +351,29 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(400).send('Bad request');
     }
     const executionProfile = requestedProfile ?? 'default';
-    const baseUrl = getCodeExecutionBaseUrl(executionProfile);
+    const requestedRouteKey = req.query.execution_route_key;
+    if (
+      requestedRouteKey != null &&
+      (typeof requestedRouteKey !== 'string' ||
+        executionProfile !== 'stateful' ||
+        !/^stateful:[a-f0-9]{32}$/.test(requestedRouteKey))
+    ) {
+      logger.debug(`${logPrefix} invalid execution_route_key`);
+      return res.status(400).send('Bad request');
+    }
+    const environments =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const configuredEnvironment = requestedRouteKey
+      ? environments?.find(
+          (environment) =>
+            createCodeExecutionRouteKey('stateful', environment) === requestedRouteKey,
+        )
+      : undefined;
+    if (requestedRouteKey && !configuredEnvironment) {
+      logger.debug(`${logPrefix} unknown execution_route_key`);
+      return res.status(404).send('Not found');
+    }
+    const baseUrl = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
 
     const { getDownloadStream } = getStrategyFunctions(FileSources.execute_code);
     if (!getDownloadStream) {
@@ -372,7 +398,16 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
         id: req.user.id,
       },
       req,
-      { baseUrl, executionProfile },
+      {
+        baseUrl,
+        executionProfile,
+        ...((configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId) != null
+          ? {
+              bridgeWorkerId:
+                configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+            }
+          : {}),
+      },
     );
     res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('Content-Type', 'application/octet-stream');

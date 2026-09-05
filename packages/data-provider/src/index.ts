@@ -3,6 +3,7 @@ export * from './azure';
 export * from './bedrock';
 export * from './balance';
 export * from './config';
+export * from './langchain';
 export * from './filters';
 export * from './file-config';
 /* messages  */
@@ -37,6 +38,7 @@ export * from './types/web';
 export * from './types/graph';
 export * from './types/insights';
 export * from './types/subagents';
+export * from './types/queuedTurns';
 /* access permissions */
 export * from './accessPermissions';
 /* query/mutation keys */
@@ -55,6 +57,8 @@ export { dataService };
 import * as dataService from './data-service';
 /* provider identity */
 export * from './providers';
+/* icon sanitization policy */
+export * from './svg';
 /* general helpers */
 export * from './utils';
 export * from './actions';
@@ -67,3 +71,4 @@ export * from './parameterSettings';
 export * from './agentToolOptions';
 /* code-execution sandbox */
 export * from './codeEnvRef';
+export * from './code/worker';

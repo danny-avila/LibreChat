@@ -2,6 +2,8 @@ import { expect } from '@playwright/test';
 import type { ParsedServerConfig } from '~/mcp/types';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
+type StdioServerConfig = Extract<ParsedServerConfig, { type: 'stdio' }>;
+
 describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   let ServerConfigsCacheRedisAggregateKey: typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey;
   let keyvRedisClient: Awaited<typeof import('~/cache/redisClients')>['keyvRedisClient'];
@@ -10,19 +12,19 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
     typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey
   >;
 
-  const mockConfig1 = {
+  const mockConfig1: StdioServerConfig = {
     type: 'stdio',
     command: 'node',
     args: ['server1.js'],
     env: { TEST: 'value1' },
-  } as ParsedServerConfig;
+  };
 
-  const mockConfig2 = {
+  const mockConfig2: StdioServerConfig = {
     type: 'stdio',
     command: 'python',
     args: ['server2.py'],
     env: { TEST: 'value2' },
-  } as ParsedServerConfig;
+  };
 
   const mockConfig3 = {
     type: 'sse',
@@ -228,6 +230,87 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
         expect(result.server2).toMatchObject(mockConfig2);
         expect(result.server3).toMatchObject(mockConfig3);
       }
+    });
+
+    it('atomically preserves concurrent instruction backfills from separate replicas', async () => {
+      const replicaA = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const replicaB = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      await cache.add('server1', mockConfig1);
+      await cache.add('server2', mockConfig2);
+
+      await expect(
+        Promise.all([
+          replicaA.patch('server1', { resolvedInstructions: 'server one instructions' }),
+          replicaB.patch('server2', { resolvedInstructions: 'server two instructions' }),
+        ]),
+      ).resolves.toEqual([true, true]);
+
+      const result = await cache.getAll();
+      expect(result.server1.resolvedInstructions).toBe('server one instructions');
+      expect(result.server2.resolvedInstructions).toBe('server two instructions');
+    });
+
+    it('routes every aggregate mutation through Redis-side atomic updates', async () => {
+      const replica = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const cacheSetSpy = jest.spyOn(replica['cache'], 'set');
+
+      await replica.add('atomic-server', mockConfig1);
+      await replica.update('atomic-server', mockConfig2);
+      await replica.upsert('atomic-server', mockConfig3);
+      await replica.remove('atomic-server');
+
+      expect(cacheSetSpy.mock.calls).toHaveLength(0);
+      cacheSetSpy.mockRestore();
+    });
+
+    it('preserves patches concurrent with whole-entry mutations on other replicas', async () => {
+      const patchReplica = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+      const writerReplica = new ServerConfigsCacheRedisAggregateKey('agg-test', false);
+
+      for (let i = 0; i < 20; i++) {
+        const patchedName = `patched-${i}`;
+        const updatedName = `updated-${i}`;
+        await cache.add(patchedName, mockConfig1);
+        await cache.add(updatedName, mockConfig2);
+
+        await expect(
+          Promise.all([
+            patchReplica.patch(patchedName, { resolvedInstructions: `instructions-${i}` }),
+            writerReplica.update(updatedName, { ...mockConfig3, description: `updated-${i}` }),
+          ]),
+        ).resolves.toEqual([true, undefined]);
+
+        const result = await cache.getAll();
+        expect(result[patchedName].resolvedInstructions).toBe(`instructions-${i}`);
+        expect(result[updatedName].description).toBe(`updated-${i}`);
+      }
+    });
+
+    it('preserves empty arrays through every Redis-side mutation path', async () => {
+      const emptyArgsConfig: StdioServerConfig = { ...mockConfig1, args: [] };
+
+      await cache.add('empty-arrays', emptyArgsConfig);
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
+
+      await cache.patch('empty-arrays', { resolvedInstructions: 'patched' });
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
+
+      await cache.update('empty-arrays', { ...mockConfig2, args: [] });
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
+
+      await cache.upsert('empty-arrays', { ...mockConfig1, command: 'updated', args: [] });
+      expect(await cache.get('empty-arrays')).toMatchObject({ args: [] });
+    });
+
+    it('preserves empty arrays in an untouched entry when another entry is patched', async () => {
+      const emptyArgsConfig: StdioServerConfig = { ...mockConfig1, args: [] };
+      await cache.add('untouched-empty-arrays', emptyArgsConfig);
+      await cache.add('patched-entry', mockConfig2);
+
+      await cache.patch('patched-entry', { resolvedInstructions: 'patched' });
+
+      expect(await cache.get('untouched-empty-arrays')).toMatchObject({ args: [] });
+      expect((await cache.get('patched-entry'))?.resolvedInstructions).toBe('patched');
     });
   });
 

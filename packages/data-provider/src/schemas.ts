@@ -349,6 +349,7 @@ export const defaultAgentFormValues = {
   [Tools.web_search]: false,
   [Tools.memory]: false,
   stateful_code_environment: 'user' as const,
+  code_environment_id: undefined as string | null | undefined,
   category: 'general',
   support_contact: {
     name: '',
@@ -360,6 +361,10 @@ export const defaultAgentFormValues = {
   /** Master toggle for skill use on this agent. `true` activates skills
    *  (full catalog unless `skills` narrows it). Anything else = inactive. */
   skills_enabled: undefined as boolean | undefined,
+  /** Enables runtime skill creation without exposing an existing skill catalog. */
+  skill_authoring_enabled: undefined as boolean | undefined,
+  /** Explicit catalog scope. Missing preserves the legacy enabled + empty = all behavior. */
+  skills_scope: undefined as SkillsScope | undefined,
   /** `undefined` = feature disabled by default (no subagent tool injected). */
   subagents: undefined as
     | {
@@ -461,9 +466,54 @@ const getGoogleMaxOutputTokens = (modelName: string): number => {
   return GOOGLE_LEGACY_MAX_OUTPUT;
 };
 
+/**
+ * Per-model thinking budget bounds, documented in
+ * `com_endpoint_google_thinking_budget`: Gemini 2.5 Pro accepts 128-32,768,
+ * Flash accepts 0-24,576, and Flash Lite accepts 512-24,576. The generic
+ * 32,000 in the shared definition both under-limits Pro and lets invalid
+ * Flash values through.
+ *
+ * `-1` remains the "decide automatically" sentinel and is not part of these
+ * floors. Callers must keep `range.min` at -1 and apply `min` only to
+ * non-negative values.
+ */
+const GOOGLE_THINKING_BUDGET_PRO_MAX = 32768 as const;
+const GOOGLE_THINKING_BUDGET_FLASH_MAX = 24576 as const;
+const GOOGLE_THINKING_BUDGET_PRO_MIN = 128 as const;
+const GOOGLE_THINKING_BUDGET_FLASH_MIN = 0 as const;
+const GOOGLE_THINKING_BUDGET_FLASH_LITE_MIN = 512 as const;
+
+export type GoogleThinkingBudgetBounds = { min: number; max: number };
+
+export const getGoogleThinkingBudgetBounds = (
+  modelName: string,
+): GoogleThinkingBudgetBounds | undefined => {
+  if (!/gemini-2\.5/i.test(modelName)) {
+    return undefined;
+  }
+  if (/flash[-_.]?lite/i.test(modelName)) {
+    return { min: GOOGLE_THINKING_BUDGET_FLASH_LITE_MIN, max: GOOGLE_THINKING_BUDGET_FLASH_MAX };
+  }
+  if (/flash/i.test(modelName)) {
+    return { min: GOOGLE_THINKING_BUDGET_FLASH_MIN, max: GOOGLE_THINKING_BUDGET_FLASH_MAX };
+  }
+  if (/pro/i.test(modelName)) {
+    return { min: GOOGLE_THINKING_BUDGET_PRO_MIN, max: GOOGLE_THINKING_BUDGET_PRO_MAX };
+  }
+  return undefined;
+};
+
+export const getGoogleThinkingBudgetMax = (modelName: string): number | undefined =>
+  getGoogleThinkingBudgetBounds(modelName)?.max;
+
 export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
+  },
+  maxContextTokens: {
+    min: 10 as const,
+    max: 2000000 as const,
+    step: 1000 as const,
   },
   maxOutputTokens: {
     min: 1 as const,
@@ -785,6 +835,13 @@ export const tExampleSchema = z.object({
 
 export type TExample = z.infer<typeof tExampleSchema>;
 
+/** Compact context-fading tier persisted beside a message's calibration ratio. */
+const agentFadingTierSchema = z.object({
+  v: z.literal(1),
+  budgetTokens: z.number().positive(),
+  masked: z.boolean(),
+});
+
 export const tMessageSchema = z.object({
   messageId: z.string(),
   endpoint: z.string().optional(),
@@ -846,6 +903,15 @@ export const tMessageSchema = z.object({
         .describe(
           'Tokenizer encoding used when this ratio was computed (e.g. "claude", "o200k_base")',
         ),
+      fading: agentFadingTierSchema
+        .optional()
+        .describe(
+          'Latched context-fading tier of the default agent; seeds the next run so the provider projection of history keeps the same bytes',
+        ),
+      fadingTiers: z
+        .array(agentFadingTierSchema.extend({ agentId: z.string().min(1) }))
+        .optional()
+        .describe('Latched context-fading tiers keyed by agent ID, stored as entries'),
     })
     .optional(),
   /**
@@ -885,6 +951,28 @@ export enum MemoryScope {
   agent = 'agent',
 }
 
+/** Catalog exposure for a persisted agent with skills enabled. */
+export enum SkillsScope {
+  all = 'all',
+  selected = 'selected',
+  none = 'none',
+}
+
+/** Resolves explicit and legacy persisted-agent skill catalog states. */
+export function resolveAgentSkillsScope(
+  skills: readonly string[] | undefined,
+  enabled: boolean | undefined,
+  scope: SkillsScope | undefined,
+): SkillsScope {
+  if (enabled !== true) {
+    return SkillsScope.none;
+  }
+  if (scope !== undefined) {
+    return scope;
+  }
+  return (skills ?? []).length > 0 ? SkillsScope.selected : SkillsScope.all;
+}
+
 export type MemoryArtifact = {
   key: string;
   value?: string;
@@ -912,6 +1000,10 @@ export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  /** Saved-agent owner when provider tool-call ids repeat across handoffs. */
+  agentId?: string;
+  /** Host run-step owner when one agent repeats a provider tool-call id. */
+  stepId?: string;
   workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];
@@ -1308,6 +1400,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   examples: true,
   temperature: true,
   maxOutputTokens: true,
+  resendFiles: true,
   artifacts: true,
   topP: true,
   topK: true,

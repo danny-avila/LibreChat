@@ -200,8 +200,8 @@ export interface ScheduleEngineDeps {
   ) => Promise<unknown>;
   /**
    * Reads the durable trigger delivery for a reservation's `deliveryKey`, so
-   * reconciliation can tell a still-live admission (`staging`/`pending`/`leased`, which a
-   * `Retry-After` can defer up to 24h) or a dead-letter (`dead`, with its `lastError`)
+   * reconciliation can tell a still-live admission (`staging`/`batched`/`pending`/`leased`, which
+   * a `Retry-After` can defer up to 24h) or a dead-letter (`dead`, with its `lastError`)
    * apart from a genuinely orphaned jobless run. Null when no delivery record exists.
    */
   getTriggerDelivery: (deliveryKey: string) => Promise<{

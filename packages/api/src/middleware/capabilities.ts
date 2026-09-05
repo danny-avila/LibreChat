@@ -69,6 +69,11 @@ export type HasConfigCapabilityFn = (
   verb?: 'manage' | 'read',
 ) => Promise<boolean>;
 
+export type GetHeldCapabilitiesFn = (
+  user: CapabilityUser,
+  capabilities: SystemCapability[],
+) => Promise<Set<SystemCapability>>;
+
 /**
  * Per-request store for caching resolved principals and capability check results.
  * When running inside an Express request (via `capabilityContextMiddleware`),
@@ -141,6 +146,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
   hasCapability: HasCapabilityFn;
   requireCapability: RequireCapabilityFn;
   hasConfigCapability: HasConfigCapabilityFn;
+  getHeldCapabilities: GetHeldCapabilitiesFn;
   hasAnyConfigReadAccess: (user: CapabilityUser) => Promise<boolean>;
   getReadableConfigSections: GetReadableConfigSectionsFn;
 } {
@@ -175,6 +181,14 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     return checkAny({ principals, tenantId: user.tenantId });
   }
 
+  async function getHeldCapabilities(
+    user: CapabilityUser,
+    capabilities: SystemCapability[],
+  ): Promise<Set<SystemCapability>> {
+    const principals = await resolvePrincipals(user);
+    return getHeldCaps({ principals, capabilities, tenantId: user.tenantId });
+  }
+
   /**
    * Resolves which of `sections` the user can read in a single batched
    * query, instead of one `hasConfigCapability` round trip per section.
@@ -183,17 +197,12 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     user: CapabilityUser,
     sections: ConfigSection[],
   ): Promise<{ broad: boolean; sections: Set<string> }> {
-    const principals = await resolvePrincipals(user);
     const capsToCheck = [
       SystemCapabilities.READ_CONFIGS,
       SystemCapabilities.MANAGE_CONFIGS,
       ...sections.map(readConfigCapability),
     ];
-    const held = await getHeldCaps({
-      principals,
-      capabilities: capsToCheck,
-      tenantId: user.tenantId,
-    });
+    const held = await getHeldCapabilities(user, capsToCheck);
     const broad =
       held.has(SystemCapabilities.READ_CONFIGS) || held.has(SystemCapabilities.MANAGE_CONFIGS);
     const readableSections = new Set(
@@ -298,6 +307,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     hasCapability,
     requireCapability,
     hasConfigCapability,
+    getHeldCapabilities,
     hasAnyConfigReadAccess,
     getReadableConfigSections,
   };

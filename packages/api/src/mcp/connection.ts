@@ -1158,6 +1158,30 @@ export class MCPConnection extends EventEmitter {
     return this.requestHeaders;
   }
 
+  /**
+   * Replaces only the runtime bearer, leaving the rest of the per-request headers
+   * a tool call installed intact. Runtime headers outrank the ones baked into the
+   * transport (see `buildFetchInit`), so a credential refreshed mid-connection has
+   * to land here as well or the stale `authorization` from the last tool call would
+   * keep winning on the retry.
+   */
+  setAuthorizationHeader(accessToken: string): void {
+    this.requestHeaders = {
+      ...(this.requestHeaders ?? {}),
+      authorization: `Bearer ${accessToken}`,
+    };
+  }
+
+  /**
+   * Halts reconnect attempts for a credential this connection cannot refresh on its
+   * own. Retrying would replay the rejected bearer through every backoff step and
+   * spend the circuit breaker's cycle budget; the connection is instead left for its
+   * next borrower to dispose and rebuild with a live credential.
+   */
+  stopReconnecting(): void {
+    this.shouldStopReconnecting = true;
+  }
+
   constructor(params: MCPConnectionParams) {
     super();
     this.options = params.serverConfig;
@@ -1926,6 +1950,12 @@ export class MCPConnection extends EventEmitter {
         }
 
         this.transport = await runOutsideTracing(() => this.constructTransport(this.options));
+        /** `dispose()` can land while the transport is still being constructed — it finds nothing
+         *  to close and returns, so without this check the attempt would go on to connect and
+         *  leave a live connection on a disposed object. Ownership of teardown is ours here. */
+        if (await this.abandonIfDisposed()) {
+          return;
+        }
         this.patchTransportSend();
 
         const connectTimeout = this.options.initTimeout ?? DEFAULT_INIT_TIMEOUT;
@@ -1937,6 +1967,9 @@ export class MCPConnection extends EventEmitter {
           ),
         );
 
+        if (await this.abandonIfDisposed()) {
+          return;
+        }
         this.setupTransportOnMessageHandler();
         this.connectionState = 'connected';
         this.emit('connectionChange', 'connected');
@@ -2057,6 +2090,33 @@ export class MCPConnection extends EventEmitter {
     })();
 
     return this.connectPromise;
+  }
+
+  /**
+   * Tears down a transport this attempt created after the connection was already disposed.
+   * Returns whether the caller should abandon the rest of the connect sequence.
+   */
+  private async abandonIfDisposed(): Promise<boolean> {
+    if (!this.isDisposed) {
+      return false;
+    }
+    logger.debug(`${this.getLogPrefix()} Disposed mid-connect; discarding the transport it opened`);
+    const transport = this.transport;
+    this.transport = null;
+    /** Closing the client only closes a transport the client has already adopted, which it has
+     *  not when disposal beat `client.connect()`. Close the transport itself first, or the
+     *  session this attempt opened outlives the connection that owned it. */
+    try {
+      await transport?.close();
+    } catch {
+      // Ignore cleanup errors
+    }
+    try {
+      await this.client.close();
+    } catch {
+      // Ignore cleanup errors
+    }
+    return true;
   }
 
   private patchTransportSend(): void {
@@ -2348,16 +2408,32 @@ export class MCPConnection extends EventEmitter {
    * Fetches a bounded tool snapshot while preserving whether every requested page succeeded.
    * Notification refreshes use `complete` to avoid replacing a known-good cache with an empty or
    * partial list after a transient `tools/list` failure.
+   *
+   * @param deadlineMs Absolute epoch-ms cap for a caller working to a fixed budget. Pagination
+   * stops at whichever comes first, this or `TOOLS_LIST_TIMEOUT_MS`, and the partial result is
+   * returned as incomplete so it is never published as an authoritative catalog.
+   * @param signal Cancels the in-flight `tools/list` request itself, not just the wait for it —
+   * the SDK raises an abort from `request()` and the failed page ends pagination gracefully.
    */
-  public async fetchToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchToolsSnapshot(
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<MCPToolsSnapshot> {
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
+    /** A spent budget ends the fetch before the reservation below spends cache round trips on an
+     *  ordering this incomplete result can never publish under. */
+    if ((deadlineMs != null && Date.now() >= deadlineMs) || signal?.aborted === true) {
+      this.warnToolsListBudgetExceeded('time', 0);
+      return { tools: [], complete: false };
+    }
     /** Reserved before the first page so the resulting catalog can never outrank one published
      * from a `tools/list` that started later. Every app-level publisher reads its ordering off
      * the snapshot it received, which is the only way to know when the data was actually read. */
     const ordering = await this.reserveToolsPublicationRevision();
-    const deadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    const budgetDeadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
+    const deadline = deadlineMs != null ? Math.min(budgetDeadline, deadlineMs) : budgetDeadline;
     const allTools: MCPListToolsResult['tools'] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
@@ -2386,7 +2462,7 @@ export class MCPConnection extends EventEmitter {
         return snapshot(false);
       }
 
-      const result = await this.listToolsPage(cursor, remainingMs);
+      const result = await this.listToolsPage(cursor, remainingMs, signal);
       if (result == null) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
         return snapshot(false);
@@ -2467,11 +2543,19 @@ export class MCPConnection extends EventEmitter {
    * Returns a complete snapshot that cannot precede a concurrent `list_changed` refresh.
    * If the notification refresh cannot complete, the caller receives an incomplete snapshot
    * instead of publishing a request result that may already be stale.
+   *
+   * @param deadlineMs Absolute epoch-ms cap; see `fetchToolsSnapshot`. It also bounds the wait
+   * for a concurrent refresh, so a caller on a budget is never held by another caller's fetch.
+   * @param signal Cancels this caller's own `tools/list` requests; see `fetchToolsSnapshot`. A
+   * concurrent refresh is shared work and is never aborted on one caller's behalf.
    */
-  public async fetchOrderedToolsSnapshot(): Promise<MCPToolsSnapshot> {
+  public async fetchOrderedToolsSnapshot(
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<MCPToolsSnapshot> {
     const startEpoch = this.toolListRefreshEpoch;
     const startGeneration = this.toolListChangeGeneration;
-    const snapshot = await this.fetchToolsSnapshot();
+    const snapshot = await this.fetchToolsSnapshot(deadlineMs, signal);
 
     if (
       startEpoch === this.toolListRefreshEpoch &&
@@ -2484,12 +2568,24 @@ export class MCPConnection extends EventEmitter {
       startEpoch === this.toolListRefreshEpoch &&
       this.handledToolListChangeGeneration < this.toolListChangeGeneration
     ) {
+      if ((deadlineMs != null && Date.now() >= deadlineMs) || signal?.aborted === true) {
+        break;
+      }
       this.startToolListRefresh();
       const refresh = this.toolListRefreshPromise;
       if (!refresh) {
         break;
       }
-      await refresh;
+      /** The refresh runs on the connection's own budget, not the caller's, so a refresh already
+       *  in flight can outlast this deadline — and a cancelled caller must stop waiting even
+       *  though the shared refresh itself is never aborted on one caller's behalf. Stop waiting
+       *  rather than adopting its budget; it keeps running for whoever else wants it and this
+       *  caller reports an incomplete read. */
+      if (deadlineMs == null && signal == null) {
+        await refresh;
+      } else if (!(await this.settlesBefore(refresh, deadlineMs, signal))) {
+        break;
+      }
       if (this.toolListRefreshRetryTimer) {
         break;
       }
@@ -2513,6 +2609,37 @@ export class MCPConnection extends EventEmitter {
     return { tools: [], complete: false };
   }
 
+  /** Waits for `promise` only until `deadlineMs` or an abort, reporting whether it settled first. */
+  private async settlesBefore(
+    promise: Promise<unknown>,
+    deadlineMs?: number,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted === true) {
+      return false;
+    }
+    let timer: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const interrupted = new Promise<false>((resolve) => {
+      if (deadlineMs != null) {
+        timer = setTimeout(() => resolve(false), Math.max(0, deadlineMs - Date.now()));
+        timer.unref?.();
+      }
+      if (signal != null) {
+        onAbort = () => resolve(false);
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+    try {
+      return await Promise.race([promise.then(() => true), interrupted]);
+    } finally {
+      clearTimeout(timer);
+      if (onAbort != null) {
+        signal?.removeEventListener('abort', onAbort);
+      }
+    }
+  }
+
   private warnToolsListBudgetExceeded(reason: string, toolCount: number): void {
     logger.warn(
       `${this.getLogPrefix()} Stopping tools/list pagination because the ${reason} budget was reached after ${toolCount} tool(s).`,
@@ -2523,11 +2650,13 @@ export class MCPConnection extends EventEmitter {
   private async listToolsPage(
     cursor: string | undefined,
     timeoutMs: number,
+    signal?: AbortSignal,
   ): Promise<MCPListToolsResult | null> {
     try {
       return await this.client.listTools(cursor != null ? { cursor } : undefined, {
         timeout: timeoutMs,
         maxTotalTimeout: timeoutMs,
+        signal,
       });
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
@@ -2545,7 +2674,12 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  public async isConnected(): Promise<boolean> {
+  /**
+   * @param signal Aborts the in-flight verification request (ping or its fallback) so a caller on
+   * a budget is not held for the probe's own SDK timeout. An aborted probe reports `false` for
+   * this caller only; it never mutates connection state, so a shared connection stays usable.
+   */
+  public async isConnected(signal?: AbortSignal): Promise<boolean> {
     // First check if we're in a connected state
     if (this.connectionState !== 'connected') {
       return false;
@@ -2556,14 +2690,26 @@ export class MCPConnection extends EventEmitter {
     if (now - this.lastConnectionCheckAt < mcpConfig.CONNECTION_CHECK_TTL) {
       return true;
     }
+    const previousCheckAt = this.lastConnectionCheckAt;
     this.lastConnectionCheckAt = now;
     this.lastConnectionCheckError = undefined;
+    /** An aborted probe answered nothing: restore the TTL stamp so the next caller probes for
+     *  real, instead of a dead shared connection reading as healthy for the whole TTL window. */
+    const probeAborted = (): boolean => signal?.aborted === true;
+    const abandonProbe = (): false => {
+      this.lastConnectionCheckAt = previousCheckAt;
+      logger.debug(`${this.getLogPrefix()} Health probe aborted by caller signal`);
+      return false;
+    };
 
     try {
       // Try ping first as it's the lightest check
-      await this.client.ping();
+      await this.client.ping({ signal });
       return this.connectionState === 'connected';
     } catch (error) {
+      if (probeAborted()) {
+        return abandonProbe();
+      }
       // Check if the error is because ping is not supported (method not found)
       const pingUnsupported =
         error instanceof Error &&
@@ -2590,13 +2736,13 @@ export class MCPConnection extends EventEmitter {
 
         // If we have capabilities, try calling a supported method to verify connection
         if (capabilities?.tools) {
-          await this.client.listTools();
+          await this.client.listTools(undefined, { signal });
           return this.connectionState === 'connected';
         } else if (capabilities?.resources) {
-          await this.client.listResources();
+          await this.client.listResources(undefined, { signal });
           return this.connectionState === 'connected';
         } else if (capabilities?.prompts) {
-          await this.client.listPrompts();
+          await this.client.listPrompts(undefined, { signal });
           return this.connectionState === 'connected';
         } else {
           // No capabilities to test, but we're in connected state and initialization succeeded
@@ -2606,6 +2752,9 @@ export class MCPConnection extends EventEmitter {
           return this.connectionState === 'connected';
         }
       } catch (capabilityError) {
+        if (probeAborted()) {
+          return abandonProbe();
+        }
         // If capability check fails, the connection is likely broken
         this.lastConnectionCheckError = capabilityError;
         logger.error(`${this.getLogPrefix()} Connection verification failed`);

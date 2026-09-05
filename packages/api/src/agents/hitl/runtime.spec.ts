@@ -1,5 +1,7 @@
-import { HookRegistry } from '@librechat/agents';
+import { HookRegistry, executeHooks } from '@librechat/agents';
 import { registerToolApprovalHook, clearToolApprovalHooks } from './hooks';
+import { createAttachedCodeEnvironmentPolicyHook } from './byom';
+import { resolveToolApprovalPolicy } from './policy';
 import { buildHITLRunWiring } from './runtime';
 
 describe('buildHITLRunWiring', () => {
@@ -27,6 +29,66 @@ describe('buildHITLRunWiring', () => {
     const wiring = buildHITLRunWiring({ enabled: true });
     expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
   });
+
+  test('updates the baseline policy for aliases learned after run creation', async () => {
+    const wiring = buildHITLRunWiring({ enabled: true, mode: 'dontAsk', allow: ['legacy_tool'] });
+    const policyHook = wiring?.hooks.getMatchers('PreToolUse')[0].hooks[0];
+    expect(
+      await policyHook?.({ toolName: 'current_tool' } as never, new AbortController().signal),
+    ).toEqual({ decision: 'deny' });
+
+    wiring?.addMCPToolAliases([{ name: 'current_tool', aliasName: 'legacy_tool' }], {
+      enabled: true,
+      mode: 'dontAsk',
+      allow: ['legacy_tool', 'current_tool'],
+    });
+    expect(
+      await policyHook?.({ toolName: 'current_tool' } as never, new AbortController().signal),
+    ).toEqual({ decision: 'allow' });
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
+
+    // Re-resolving the same descriptor must not grow the run-wide hook registry.
+    wiring?.addMCPToolAliases([{ name: 'current_tool', aliasName: 'legacy_tool' }], {
+      enabled: true,
+      mode: 'dontAsk',
+      allow: ['legacy_tool', 'current_tool'],
+    });
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(1);
+  });
+
+  test.each([
+    ['default', 'ask'],
+    ['dontAsk', 'deny'],
+  ] as const)(
+    'keeps the enabled endpoint %s fallback for unrelated tools in BYOM runs',
+    async (mode, expectedDecision) => {
+      const policy = resolveToolApprovalPolicy({
+        endpoint: { enabled: true, mode },
+        attachedCodeEnvironment: true,
+      });
+      const wiring = buildHITLRunWiring(
+        policy,
+        {},
+        [],
+        [{ hook: createAttachedCodeEnvironmentPolicyHook(new Set(['attached-agent'])) }],
+      );
+
+      const result = await executeHooks({
+        registry: wiring?.hooks as HookRegistry,
+        matchQuery: 'mcp:github:create_issue',
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId: 'run-byom-policy',
+          toolName: 'mcp:github:create_issue',
+          toolInput: {},
+          toolUseId: 'tool-unrelated',
+          executingAgentId: 'attached-agent',
+        },
+      });
+
+      expect(result.decision).toBe(expectedDecision);
+    },
+  );
 });
 
 describe('buildHITLRunWiring host-hook composition', () => {
@@ -60,5 +122,38 @@ describe('buildHITLRunWiring host-hook composition', () => {
     expect(factory).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'u1', conversationId: 'c1' }),
     );
+  });
+
+  test('reuses request-scoped hooks resolved by admission without invoking factories twice', () => {
+    const hook = async () => ({ decision: 'ask' as const });
+    const factory = jest.fn(() => hook);
+    registerToolApprovalHook(factory);
+    const resolved = [{ hook }];
+    factory.mockClear();
+
+    const wiring = buildHITLRunWiring({ enabled: true }, {}, [], resolved);
+
+    expect(factory).not.toHaveBeenCalled();
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
+  });
+
+  test('matches lazy aliases without changing host-hook ordering', async () => {
+    const hook = jest.fn(async () => ({ decision: 'deny' as const }));
+    registerToolApprovalHook(() => hook, {
+      matcher: '^legacy_tool$',
+    });
+    const wiring = buildHITLRunWiring({ enabled: true, mode: 'bypass' });
+    const hostHook = wiring?.hooks.getMatchers('PreToolUse')[1].hooks[0];
+    await hostHook?.({ toolName: 'current_tool' } as never, new AbortController().signal);
+    expect(hook).not.toHaveBeenCalled();
+
+    wiring?.addMCPToolAliases([{ name: 'current_tool', aliasName: 'legacy_tool' }], {
+      enabled: true,
+      mode: 'bypass',
+    });
+    await hostHook?.({ toolName: 'current_tool' } as never, new AbortController().signal);
+    expect(hook).toHaveBeenCalledTimes(1);
+    // Baseline policy + host matcher; plugins registered later remain last.
+    expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
   });
 });

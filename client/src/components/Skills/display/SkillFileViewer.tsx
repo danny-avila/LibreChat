@@ -1,8 +1,9 @@
 import React, { memo, useMemo, useState, useCallback, useRef } from 'react';
+import { Copy, Check } from 'lucide';
 import { useNavigate } from 'react-router-dom';
 import { apiBaseUrl } from 'librechat-data-provider';
-import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
-import { ArrowLeft, Copy, Check, FileText, FileQuestion } from 'lucide-react';
+import { ArrowLeft, FileText, FileQuestion } from 'lucide-react';
+import { Spinner, MorphIcon, TooltipAnchor, useToastContext } from '@librechat/client';
 import { useGetSkillFileContentQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { parseFrontmatter } from '../utils';
@@ -90,7 +91,7 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
                   className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
                   aria-label={localize('com_ui_copy_to_clipboard')}
                 >
-                  {isCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                  <MorphIcon icon={isCopied ? Check : Copy} className="size-4" />
                 </button>
               }
             />

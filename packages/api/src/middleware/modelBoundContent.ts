@@ -26,6 +26,7 @@ import type {
 } from '../protection/adapters/nested';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
+import type { ConfiguredContentInspector } from '../protection/runtime';
 import type { CanonicalFileInspectionFile } from '../protection/files';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
@@ -68,6 +69,7 @@ import { extractMessageContent, snapshotExternalMessages } from '../protection/a
 import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { ContentFilterError, isContentFilterError } from './contentFilter';
 import { createConfiguredContentInspector } from '../protection/runtime';
+import { aggregateAuditFindingsSync } from '../protection/audit';
 
 export type ModelBoundProviderAttribution = 'user' | 'model' | 'tool' | 'synthetic';
 
@@ -3393,21 +3395,35 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     filters: input.filters,
     legacyPii: input.legacyPii,
   });
+  if (inspector?.hasAuditRules !== true) {
+    inspectModelBoundContent(input, inspector);
+    return;
+  }
+  aggregateAuditFindingsSync(() => inspectModelBoundContent(input, inspector));
+}
+
+function inspectModelBoundContent(
+  input: ModelBoundContentInput,
+  inspector: ConfiguredContentInspector | null,
+): void {
   const hasFileFailClose =
     getBlockedUninspectableFileField(input.filters, FILE_FILTER_FIELDS) != null;
   if (inspector == null && !hasFileFailClose) {
     return;
   }
   const inspectionSession = inspector?.createSession();
+  const shouldContinueAfterFinding = inspectionSession?.hasAuditRules === true;
   let finding: ReturnType<NonNullable<typeof inspectionSession>['inspect']> = null;
   const inspectFragments = (fragments: Iterable<TextContentFragment>): void => {
-    if (finding == null) {
-      finding = inspectionSession?.inspect(fragments) ?? null;
+    if (finding == null || shouldContinueAfterFinding) {
+      const nextFinding = inspectionSession?.inspect(fragments) ?? null;
+      finding ??= nextFinding;
     }
   };
   const inspectFragment = (fragment: TextContentFragment): void => {
-    if (finding == null) {
-      finding = inspectionSession?.inspectFragment(fragment) ?? null;
+    if (finding == null || shouldContinueAfterFinding) {
+      const nextFinding = inspectionSession?.inspectFragment(fragment) ?? null;
+      finding ??= nextFinding;
     }
   };
   const traversalErrors: ContentTraversalLimitError[] = [
@@ -3616,17 +3632,17 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
        *  assistant row as submitted content. Structured tool calls/results
        *  remain externally sourced model-bound content. Explicit paths and
        *  semantic steer parts identify user-authored fragments in mixed rows. */
-      if (finding == null) {
+      if (finding == null || shouldContinueAfterFinding) {
         const submittedPathSet = new Set<string>(userSubmittedPaths);
         for (const fragment of messageFragments) {
           if (fragment.source === 'tool_argument') {
             inspectFragment(fragment);
-            if (finding != null) {
+            if (finding != null && !shouldContinueAfterFinding) {
               break;
             }
           }
         }
-        if (finding == null) {
+        if (finding == null || shouldContinueAfterFinding) {
           const submittedToolOutputs: Array<
             Extract<TextContentFragment, { source: 'tool_argument' }>
           > = [];
@@ -3637,7 +3653,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
             }
             if (fragment.source !== 'tool_argument') {
               inspectFragment(fragment);
-              if (finding != null) {
+              if (finding != null && !shouldContinueAfterFinding) {
                 break;
               }
             }
@@ -3651,19 +3667,19 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
               assembledText.push(fragment.text);
             }
           }
-          if (finding == null) {
+          if (finding == null || shouldContinueAfterFinding) {
             for (const fragment of submittedToolOutputs) {
               inspectFragment(asUserSubmittedMessageFragment(fragment));
-              if (finding != null) {
+              if (finding != null && !shouldContinueAfterFinding) {
                 break;
               }
             }
           }
-          if (finding == null) {
+          if (finding == null || shouldContinueAfterFinding) {
             inspectFragments(exactMessageFragments);
           }
           if (
-            finding == null &&
+            (finding == null || shouldContinueAfterFinding) &&
             (hasActivePiiPatterns(input.legacyPii) ||
               hasActivePiiFields(input.filters?.messages?.pii, ['assembled_context']))
           ) {

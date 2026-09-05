@@ -1,6 +1,8 @@
+import { logger } from '@librechat/data-schemas';
 import {
   Constants,
   MCPOptionsSchema,
+  extractEnvVariable,
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
@@ -211,6 +213,9 @@ type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
   'requiresOAuth' | 'source' | 'dbId' | 'startup'
 > & {
+  /** Loosened like the fields below: raw (pre-inspection) configs carry
+   *  optional API-key fields, and the gating predicates only inspect them. */
+  apiKey?: { key?: string; source?: 'user' | 'admin' } | null;
   args?: string[];
   /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
    *  scoping predicates only check key presence */
@@ -227,7 +232,15 @@ type UserScopedConnectionConfig = Pick<
 };
 
 function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
-  return [config.args, config.env, config.headers, config.oauth, config.oauth_headers, config.url];
+  return [
+    config.apiKey?.key,
+    config.args,
+    config.env,
+    config.headers,
+    config.oauth,
+    config.oauth_headers,
+    config.url,
+  ];
 }
 
 /** Whether a server should use MCP OAuth handling. */
@@ -273,7 +286,7 @@ function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
 
 function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
   if (typeof value === 'string') {
-    return pattern.test(value);
+    return pattern.test(value) || pattern.test(extractEnvVariable(value));
   }
   if (Array.isArray(value)) {
     return value.some((item) => hasPlaceholder(item, pattern));
@@ -291,11 +304,13 @@ function addRuntimeBodyPlaceholderFields(
   fields: Set<keyof RequestBody>,
 ): void {
   if (typeof value === 'string') {
-    for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
-      const placeholderKey = match[1];
-      const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
-      if (field) {
-        fields.add(field);
+    for (const candidate of new Set([value, extractEnvVariable(value)])) {
+      for (const match of candidate.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
+        const placeholderKey = match[1];
+        const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
+        if (field) {
+          fields.add(field);
+        }
       }
     }
     return;
@@ -390,6 +405,98 @@ export function requiresEphemeralUserConnection(config: UserScopedConnectionConf
 }
 
 /**
+ * Whether a resolved server config may be reached from the chat MCP picker.
+ *
+ * Mirrors `selectableServers` in the client's `useMCPServerManager`, which is
+ * the list the dropdown offers: `chatMenu: false` is the operator hiding a
+ * server from chat, and `consumeOnly` marks a server the user reaches only
+ * through an agent that references it, never on its own.
+ *
+ * An unresolved config is selectable. A name the registry cannot resolve is
+ * either request-tier (declared on the request body and never registered) or
+ * genuinely unknown, and both already have their own handling downstream —
+ * failing closed here would silently drop request-scoped servers instead.
+ */
+export function isChatSelectableMCPServer(
+  config?: Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | null,
+): boolean {
+  if (config == null) {
+    return true;
+  }
+  return config.chatMenu !== false && config.consumeOnly !== true;
+}
+
+/**
+ * Narrows a chat picker selection to the servers that picker is allowed to
+ * offer, so a stale client, a replayed body, or a hand-written request cannot
+ * reach a server the menu hides.
+ *
+ * Pass only the picker's own selection. Servers a model spec pins
+ * (`modelSpec.mcpServers`) are the operator's choice and stay attached even
+ * when hidden, so they must be added after this call, not through it.
+ *
+ * The accessible set comes from the registry — the same resolution that feeds
+ * the client's catalog, with its own tier precedence already applied — rather
+ * than being re-derived from the request's config overlay. A user-tier or
+ * process-backed server outranks a config entry of the same name, and this must
+ * agree with whatever the picker was actually offered.
+ *
+ * Names are deduplicated before the lookup, since the selection is
+ * request-supplied, and are matched through the same normalized-name aliasing
+ * that tool loading uses, built over the whole accessible set so an exact name
+ * always wins over another server's normalized form. A name the registry does
+ * not know is request-tier — declared on the body, never registered — and is
+ * kept, as is every name if the lookup fails: this narrows an
+ * already-authenticated selection and is not the authorization boundary.
+ *
+ * Returns the names as they were sent, so callers keep addressing servers the
+ * way the rest of the request does.
+ */
+export async function filterChatSelectableMCPServers(
+  selectedServers: string[] | null | undefined,
+  {
+    userId,
+    role,
+    getAccessibleMCPServers,
+  }: {
+    userId: string;
+    role?: string;
+    getAccessibleMCPServers?: (
+      userId: string,
+      role?: string,
+    ) => Promise<Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>>;
+  },
+): Promise<string[]> {
+  if (!Array.isArray(selectedServers) || selectedServers.length === 0) {
+    return [];
+  }
+  const uniqueServers = [...new Set(selectedServers)];
+  if (getAccessibleMCPServers == null) {
+    return uniqueServers;
+  }
+
+  let accessible: Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>;
+  try {
+    accessible = await getAccessibleMCPServers(userId, role);
+  } catch (error) {
+    logger.warn('[MCP] Could not resolve accessible servers; keeping the chat selection', error);
+    return uniqueServers;
+  }
+
+  const accessibleNames = Object.keys(accessible ?? {});
+  if (accessibleNames.length === 0) {
+    return uniqueServers;
+  }
+  const aliases = buildServerNameAliases(accessibleNames);
+
+  return uniqueServers.filter((serverName) => {
+    const resolved =
+      accessible[serverName] ?? accessible[aliases.get(normalizeServerName(serverName)) ?? ''];
+    return isChatSelectableMCPServer(resolved);
+  });
+}
+
+/**
  * Returns true when a server requires a per-user connection instead of an
  * app-shared connection.
  */
@@ -406,6 +513,27 @@ export function requiresUserScopedConnection(config: UserScopedConnectionConfig)
 export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
   return (
     config.startup !== false && !isUserSourced(config) && !requiresUserScopedConnection(config)
+  );
+}
+
+/**
+ * Server instructions fetched from a connection are safe to retain in the
+ * shared YAML registry only when the connection cannot vary by identity or
+ * request. `startup: false` is the one context-independent reason startup
+ * inspection leaves instructions unresolved; every other deferred case can
+ * expose authenticated or request-specific instructions to another user.
+ */
+export function canBackfillSharedServerInstructions(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup === false &&
+    !requiresUserScopedConnection(config) &&
+    /** A configured `oauth` block is identity-scoped even when `requiresOAuth`
+     *  is unset or was stamped `false` by the skipped startup inspection —
+     *  `requiresUserScopedConnection` alone would let it through while
+     *  `isOAuthServer` still arms the OAuth machinery for the unstamped case. */
+    config.oauth == null &&
+    config.oauth_headers == null &&
+    config.apiKey?.source !== 'user'
   );
 }
 
@@ -614,6 +742,23 @@ export function escapeRegex(str: string): string {
  * @param title - The display title to convert
  * @returns A slug suitable for use as serverName (e.g., "GitHub MCP Tool" → "github-mcp-tool")
  */
+/**
+ * One cancellation signal for a budgeted operation: the remaining budget and the caller's own
+ * signal, whichever fires first. Undefined when neither bound exists, so unbudgeted callers pay
+ * nothing.
+ */
+export function createDeadlineAbortSignal(
+  deadlineMs?: number,
+  callerSignal?: AbortSignal,
+): AbortSignal | undefined {
+  const budget =
+    deadlineMs != null ? AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())) : undefined;
+  if (budget != null && callerSignal != null) {
+    return AbortSignal.any([budget, callerSignal]);
+  }
+  return budget ?? callerSignal;
+}
+
 export function generateServerNameFromTitle(title: string): string {
   const slug = title
     .toLowerCase()

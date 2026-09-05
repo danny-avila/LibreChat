@@ -44,6 +44,7 @@ const createAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools,
     });
     const healedTools = await healMcpToolNames({
@@ -95,7 +96,7 @@ const createAssistant = async (req, res) => {
 
     const assistant = await openai.beta.assistants.create(assistantData);
 
-    const createData = { user: req.user.id };
+    const createData = { user: req.user.id, endpoint };
     if (conversation_starters) {
       createData.conversation_starters = conversation_starters;
     }
@@ -103,7 +104,7 @@ const createAssistant = async (req, res) => {
       createData.append_current_datetime = append_current_datetime;
     }
 
-    const document = await updateAssistantDoc({ assistant_id: assistant.id }, createData);
+    const document = await updateAssistantDoc({ assistantId: assistant.id }, createData);
 
     if (azureModelIdentifier) {
       assistant.model = azureModelIdentifier;
@@ -172,6 +173,7 @@ const patchAssistant = async (req, res) => {
 
     const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
       req,
+      res,
       tools: updateData.tools,
     });
     const healedTools = await healMcpToolNames({
@@ -218,14 +220,14 @@ const patchAssistant = async (req, res) => {
 
     if (conversation_starters !== undefined) {
       const conversationStartersUpdate = await updateAssistantDoc(
-        { assistant_id },
+        { assistantId: assistant_id },
         { conversation_starters },
       );
       updatedAssistant.conversation_starters = conversationStartersUpdate.conversation_starters;
     }
 
     if (append_current_datetime !== undefined) {
-      await updateAssistantDoc({ assistant_id }, { append_current_datetime });
+      await updateAssistantDoc({ assistantId: assistant_id }, { append_current_datetime });
       updatedAssistant.append_current_datetime = append_current_datetime;
     }
 
@@ -366,6 +368,7 @@ const uploadAssistantAvatar = async (req, res) => {
     }
 
     const { assistant_id } = req.params;
+    const endpoint = req.body?.endpoint ?? req.query?.endpoint;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });
     }
@@ -415,13 +418,14 @@ const uploadAssistantAvatar = async (req, res) => {
     const promises = [];
     promises.push(
       updateAssistantDoc(
-        { assistant_id },
+        { assistantId: assistant_id },
         {
           avatar: {
             filepath: image.filepath,
             source: appConfig.fileStrategy,
           },
           user: req.user.id,
+          endpoint,
         },
       ),
     );

@@ -4,6 +4,12 @@ const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud')
 const {
   getSessionInfo,
   checkIfActive,
+  readWorkspaceFile,
+  searchWorkspace,
+  listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
@@ -158,7 +164,11 @@ function canEditSkill({ req, skillId }) {
   });
 }
 
-function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+function isAgentSkillAuthoringEnabledForRun({
+  agent,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
   if (!skillsCapabilityEnabled) {
     return false;
   }
@@ -171,7 +181,7 @@ function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralS
     }
     return ephemeralSkillsToggle === true;
   }
-  return agent.skills_enabled === true;
+  return agent.skills_enabled === true || agent.skill_authoring_enabled === true;
 }
 
 function canAuthorSkillFiles({
@@ -182,7 +192,11 @@ function canAuthorSkillFiles({
   ephemeralSkillsToggle,
 }) {
   return (
-    isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) &&
+    isAgentSkillAuthoringEnabledForRun({
+      agent,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    }) &&
     (scopedEditableSkillIds.length > 0 || skillCreateAllowed === true)
   );
 }
@@ -372,6 +386,12 @@ const skillToolDeps = {
   updateSkillFileCodeEnvIds: deploymentSkillMethods.updateSkillFileCodeEnvIds,
   getSkillFileByPath: deploymentSkillMethods.getSkillFileByPath,
   updateSkillFileContent: deploymentSkillMethods.updateSkillFileContent,
+  readWorkspaceFile,
+  searchWorkspace,
+  listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known
@@ -397,7 +417,7 @@ function getSkillToolDeps() {
 module.exports = {
   getSkillToolDeps,
   canAuthorSkillFiles,
-  isAgentSkillsEnabledForRun,
+  isAgentSkillAuthoringEnabledForRun,
   getSkillDbMethods,
   withDeploymentSkillIds,
   getSkillStrategyFunctions,

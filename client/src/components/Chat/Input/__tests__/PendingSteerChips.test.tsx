@@ -17,9 +17,15 @@ const mockRestoreToComposer = jest.fn(() => true);
 const mockEditToComposer = jest.fn();
 const mockShowToast = jest.fn();
 
-jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
+// SteerMenu (rendered under PendingSteerChips) uses MorphIcon; map icon
+// identity so inverted Zap/Clock ternaries fail tests instead of going silent.
+jest.mock('@librechat/client', () => {
+  const { createSteerMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    useToastContext: () => ({ showToast: mockShowToast }),
+    MorphIcon: createSteerMorphIconMock(),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -163,6 +169,67 @@ describe('PendingSteerChips — queued primary availability', () => {
   });
 });
 
+describe('PendingSteerChips — terminal server state', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('shows a durable rejection as failed work', () => {
+    renderChips([
+      {
+        id: 'rejected-turn',
+        text: 'could not be admitted',
+        createdAt: 1,
+        server: { status: 'rejected', errorCode: 'ADMISSION_FAILED' },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_queued_turn_failed')).toBeInTheDocument();
+  });
+
+  it('shows indeterminate admission as non-actionable reconciliation work', () => {
+    renderChips([
+      {
+        id: 'indeterminate-turn',
+        text: 'external result unknown',
+        createdAt: 1,
+        server: {
+          id: 'server-indeterminate-1',
+          status: 'indeterminate',
+          errorCode: 'ADMISSION_INDETERMINATE',
+        },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_queued_turn_reconciliation_required')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_remove_queued')).toBeDisabled();
+    expect(screen.queryByText('com_ui_send_now')).toBeNull();
+  });
+
+  it('dismisses an expired ambiguous receipt without restoring or resending it', () => {
+    renderChips([
+      {
+        id: 'uncertain-turn',
+        text: 'delivery outcome unknown',
+        createdAt: 1,
+        server: {
+          status: 'uncertain',
+          uncertainSince: 1,
+          reconciliationExpired: true,
+        },
+      },
+    ]);
+
+    expect(screen.getByText('com_ui_steer_delivery_unconfirmed')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('com_ui_dismiss_unconfirmed_delivery'));
+
+    expect(mockRemoveQueued).toHaveBeenCalledWith('uncertain-turn');
+    expect(mockDiscardQueued).not.toHaveBeenCalled();
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+});
+
 describe('PendingSteerChips — queued trash', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -238,6 +305,32 @@ describe('PendingSteerChips — queued trash', () => {
       CONVO_ID,
     );
     expect(mockRemoveQueued).toHaveBeenCalledWith('q-recovered');
+  });
+
+  it('discards a dead server row before restoring and removing it', async () => {
+    const dead = {
+      id: 'q-dead',
+      text: 'recover dead work',
+      createdAt: 1,
+      clientRequestId: 'client-dead',
+      server: {
+        id: 'server-dead',
+        status: 'rejected' as const,
+        errorCode: 'ADMISSION_FAILED',
+      },
+    };
+    renderChips([dead]);
+
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+
+    await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(dead));
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'recover dead work',
+      undefined,
+      { quotes: undefined, manualSkills: undefined },
+      CONVO_ID,
+    );
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q-dead');
   });
 
   it('offers Edit for a recovered row and leaves it untouched when discard is refused', async () => {
@@ -540,4 +633,36 @@ describe('PendingSteerChips — queued interrupt-now', () => {
       expect(await screen.findByText('com_ui_wait_for_tool_steps')).toBeInTheDocument();
     },
   );
+});
+
+describe('PendingSteerChips — queued caption', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const queuedItem = { id: 'q1', text: 'follow up later', createdAt: 1 };
+
+  it('explains when queued messages will send while a run is active', () => {
+    renderChips([queuedItem], { steering: { duringRunActive: true } });
+    expect(screen.getByTestId('queued-caption')).toHaveTextContent('com_ui_steer_queued_info');
+  });
+
+  it('renders one caption for the whole group, not one per row', () => {
+    renderChips([queuedItem, { id: 'q2', text: 'and another', createdAt: 2 }], {
+      steering: { duringRunActive: true },
+    });
+    expect(screen.getAllByTestId('queued-caption')).toHaveLength(1);
+  });
+
+  it('keeps the caption beside the ARIA list, never as a non-listitem child of it', () => {
+    renderChips([queuedItem], { steering: { duringRunActive: true } });
+    const list = screen.getByRole('list', { name: 'com_ui_queued_messages' });
+    expect(list).not.toContainElement(screen.getByTestId('queued-caption'));
+    expect(list).toContainElement(screen.getByTestId('queued-message-row'));
+  });
+
+  it('omits the caption once the run is over, when rows drain on their own terms', () => {
+    renderChips([queuedItem], { steering: { duringRunActive: false } });
+    expect(screen.queryByTestId('queued-caption')).toBeNull();
+  });
 });

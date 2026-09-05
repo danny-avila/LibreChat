@@ -20,6 +20,8 @@ import type {
   SteerArmResult,
   SteerEnqueueReceiptResult,
   SteerEnqueueVersionedResult,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
@@ -28,11 +30,13 @@ import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobCreationSupersededError,
+  JobStatusTransitionDeadlineError,
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_QUEUE_MAX_DEPTH,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
+  PROVIDER_DRAIN_TIMEOUT_MS,
   isPendingActionStale,
   toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
@@ -106,6 +110,7 @@ function assertCreateIdempotencyArguments(
  *     from,
  *     expectActionId | "",
  *     expectCreatedAt | "",
+ *     notAfterMs | "",
  *     ttl,
  *     terminal ("0" | "1"),
  *     chunksAfterComplete,
@@ -123,14 +128,17 @@ const JOB_CAS_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
   'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "pendingActionId") ~= ARGV[2] then return 0 end ' +
   'if ARGV[3] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[3] then return 0 end ' +
+  'if ARGV[4] ~= "" then local now = redis.call("TIME") ' +
+  'local nowMs = tonumber(now[1]) * 1000 + math.floor(tonumber(now[2]) / 1000) ' +
+  'if nowMs >= tonumber(ARGV[4]) then return -1 end end ' +
   'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
-  'local ttl = tonumber(ARGV[4]) ' +
-  'local terminal = ARGV[5] == "1" ' +
-  'local chunksTtl = tonumber(ARGV[6]) ' +
-  'local runStepsTtl = tonumber(ARGV[7]) ' +
-  'local parkedTtl = tonumber(ARGV[8]) ' +
-  'local generationEpochGraceTtl = tonumber(ARGV[9]) ' +
-  'local receiptTtl = tonumber(ARGV[10]) ' +
+  'local ttl = tonumber(ARGV[5]) ' +
+  'local terminal = ARGV[6] == "1" ' +
+  'local chunksTtl = tonumber(ARGV[7]) ' +
+  'local runStepsTtl = tonumber(ARGV[8]) ' +
+  'local parkedTtl = tonumber(ARGV[9]) ' +
+  'local generationEpochGraceTtl = tonumber(ARGV[10]) ' +
+  'local receiptTtl = tonumber(ARGV[11]) ' +
   'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
   'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
   'local generationProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") == "2" and 2 or 1 ' +
@@ -162,8 +170,8 @@ const JOB_CAS_LUA =
   'or (item.createdAt and (type(item.createdAt) ~= "number" or item.createdAt < 0)) ' +
   'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then return 0 end ' +
   'validatedPrior[#validatedPrior + 1] = item end end end ' +
-  'local hdelCount = tonumber(ARGV[12]) ' +
-  'local idx = 13 ' +
+  'local hdelCount = tonumber(ARGV[13]) ' +
+  'local idx = 14 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
@@ -226,7 +234,7 @@ const JOB_CAS_LUA =
   'redis.call("DEL", KEYS[5], KEYS[6]) ' +
   'if chunksTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], chunksTtl) end ' +
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[4]) else redis.call("EXPIRE", KEYS[4], runStepsTtl) end ' +
-  'if ARGV[11] == "1" then if #items == 0 then return "[]" end return cjson.encode(items) end ' +
+  'if ARGV[12] == "1" then if #items == 0 then return "[]" end return cjson.encode(items) end ' +
   'else ' +
   'redis.call("EXPIRE", KEYS[3], ttl) ' +
   'redis.call("EXPIRE", KEYS[4], ttl) ' +
@@ -357,14 +365,19 @@ const JOB_CREATE_LUA =
   'local replacedProviderExecutionId = redis.call("HGET", KEYS[1], "providerExecutionId") ' +
   'local replacedProviderDrained = redis.call("HGET", KEYS[1], "providerDrained") ' +
   'local replacedTerminalPersistencePending = redis.call("HGET", KEYS[1], "terminalPersistencePending") ' +
+  'local replacedTerminalHostActionPending = redis.call("HGET", KEYS[1], "terminalHostActionPending") ' +
+  'local replacedDetachedTerminalHostActionPending = redis.call("HGET", KEYS[1], "detachedAgentEventTerminalHostActionPending") ' +
   'local replacedProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") ' +
   'local MAX_SAFE_EPOCH = 9007199254740991 ' +
   'local function isSafeEpoch(value) return type(value) == "number" and value >= 0 ' +
   'and value <= MAX_SAFE_EPOCH and value == math.floor(value) end ' +
   'local function isValidJobStatus(value) return value == "running" or value == "requires_action" ' +
   'or value == "complete" or value == "error" or value == "aborted" end ' +
+  'local detachedTerminalShield = replacedStatus == "detached_terminal_pending_v1" ' +
+  'and replacedDetachedTerminalHostActionPending == "1" ' +
   'local replacedEpoch = tonumber(replacedCreatedAt) local previousCreatedAt = replacedEpoch ' +
-  'if previousJobExists == 1 and (not isSafeEpoch(replacedEpoch) or not isValidJobStatus(replacedStatus)) then ' +
+  'if previousJobExists == 1 and (not isSafeEpoch(replacedEpoch) ' +
+  'or (not isValidJobStatus(replacedStatus) and not detachedTerminalShield)) then ' +
   'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
   'if (replacedProviderExecutionId and not replacedProviderDrained) ' +
   'or (replacedProviderDrained and not replacedProviderExecutionId) ' +
@@ -379,10 +392,13 @@ const JOB_CREATE_LUA =
   'local observedConversationId = replacedConversationId ' +
   'local observedActive = previousJobExists == 1 and ' +
   '(replacedStatus == "running" or replacedStatus == "requires_action" ' +
-  'or replacedTerminalPersistencePending == "1") ' +
+  'or replacedTerminalPersistencePending == "1" or replacedTerminalHostActionPending == "1" or replacedDetachedTerminalHostActionPending == "1") ' +
   'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then ' +
   'previousCreatedAt = retainedEpoch observedCreatedAt = retainedEpochRaw ' +
   'observedStatus = nil observedConversationId = nil observedActive = false end ' +
+  'if observedActive and (replacedTerminalHostActionPending == "1" or replacedDetachedTerminalHostActionPending == "1") then ' +
+  'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
+  'observedCreatedAt, observedStatus or "", observedConversationId or "", "1", "1" } end ' +
   'if ARGV[13] == "1" and observedActive then ' +
   'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
   'observedCreatedAt, observedStatus or "", observedConversationId or "", "1", "1" } end ' +
@@ -608,6 +624,17 @@ const PROVIDER_DRAIN_LUA =
   'if redis.call("HGET", KEYS[1], "providerExecutionId") ~= ARGV[2] then return 0 end ' +
   'redis.call("HSET", KEYS[1], "providerDrained", "1") return 1';
 
+/** Recover a terminal host action whose provider-owning process disappeared
+ * after the terminal CAS. `completedAt` is immutable for this generation, so
+ * the deadline cannot be extended by retry enumeration. */
+const RECOVER_TERMINAL_PROVIDER_DRAIN_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "terminalHostActionPending") ~= "1" and redis.call("HGET", KEYS[1], "detachedAgentEventTerminalHostActionPending") ~= "1" then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "providerDrained") ~= "0" then return 0 end ' +
+  'local completedAt = tonumber(redis.call("HGET", KEYS[1], "completedAt") or "") ' +
+  'if not completedAt or completedAt > tonumber(ARGV[2]) then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "providerDrained", "1") return 1';
+
 /** Exact initial provider-start fence. The controller rechecks account
  * deletion before this CAS; an abort/replacement that wins next prevents the
  * provider from starting after destructive cleanup has begun. */
@@ -616,7 +643,7 @@ const PROVIDER_BEGIN_LUA =
   'if redis.call("HGET", KEYS[1], "providerExecutionId") ~= ARGV[2] then return 0 end ' +
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
   'if redis.call("HGET", KEYS[1], "providerDrained") ~= "1" then return 0 end ' +
-  'redis.call("HSET", KEYS[1], "providerDrained", "0") return 1';
+  'redis.call("HSET", KEYS[1], "providerDrained", "0", "providerExecutionStartedId", ARGV[2]) return 1';
 
 /** Single-winner promotion from abort-persistence pending to a consumable
  * terminal payload. Owner success/failure and stale-owner recovery share this
@@ -872,8 +899,9 @@ const CHUNK_APPEND_BATCH_LUA =
  * still-live approval after that window loses the tool/run-step timeline even though the
  * approval remains resumable. Reads the paused window from the job key (which
  * `transitionStatus` set); a normally-running job keeps the short running TTL. The write
- * also requires an active status so a late provider event cannot recreate run steps after
- * a same-epoch terminal transition deleted or retained the final timeline.
+ * also requires either an active status or the exact terminal host-action marker. That
+ * narrow terminal window lets a draining provider owner commit its final evidence before
+ * the host callback acknowledges; after acknowledgement, late writes are fenced out.
  *
  *   KEYS: [runSteps, job]
  *   ARGV: [runStepsJson, runningTtl, expectCreatedAt | ""]
@@ -883,11 +911,12 @@ const RUNSTEPS_SAVE_LUA =
   'if not currentCreatedAt then return 0 end ' +
   'if ARGV[3] ~= "" and currentCreatedAt ~= ARGV[3] then return 0 end ' +
   'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
-  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return 0 end ' +
+  'local terminalHostActionPending = redis.call("HGET", KEYS[2], "terminalHostActionPending") == "1" or redis.call("HGET", KEYS[2], "detachedAgentEventTerminalHostActionPending") == "1" ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" and not terminalHostActionPending then return 0 end ' +
   'redis.call("SET", KEYS[1], ARGV[1]) ' +
   'local run = tonumber(ARGV[2]) ' +
   'local target = run ' +
-  'if redis.call("HGET", KEYS[2], "status") == "requires_action" then ' +
+  'if currentStatus == "requires_action" or terminalHostActionPending then ' +
   'local jt = redis.call("TTL", KEYS[2]) ' +
   'if jt > target then target = jt end ' +
   'end ' +
@@ -1087,6 +1116,42 @@ const STEER_DRAIN_LUA =
   'if ttl >= 0 and ttl < tonumber(ARGV[2]) then redis.call("EXPIRE", KEYS[i], ARGV[2]) end end ' +
   'redis.call("DEL", KEYS[2]) ' +
   'return items';
+
+/** Atomic terminal choice: claim the current v2 FIFO batch, or close steer
+ * admission when the queue is empty / the continuation budget is exhausted.
+ * The first return entry is the outcome; claimed item JSON follows it. */
+const STEER_TERMINAL_ADMISSION_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return { "unavailable" } end ' +
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" ' +
+  'or redis.call("HGET", KEYS[1], "steersClosed") == "1" then return { "unavailable" } end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'if ARGV[3] ~= "1" or redis.call("HGET", KEYS[1], "generationProtocolVersion") ~= "2" then ' +
+  'redis.call("HSET", KEYS[1], "steersClosed", "1") return { "sealed" } end ' +
+  'if #items == 0 and ARGV[4] == "1" then return { "open" } end ' +
+  'if #items == 0 then redis.call("HSET", KEYS[1], "steersClosed", "1") return { "sealed" } end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local decodedItems = {} local decodedReceipts = {} ' +
+  'for i = 1, #items do local ok, item = pcall(cjson.decode, items[i]) ' +
+  'if not ok or type(item) ~= "table" or not item.steerId then ' +
+  'return redis.error_reply("invalid steer queue item") end decodedItems[i] = item ' +
+  'if item.clientSteerId then local raw = redis.call("HGET", KEYS[4], item.clientSteerId) ' +
+  'if not raw then return redis.error_reply("missing steer receipt") end ' +
+  'local receiptOk, receipt = pcall(cjson.decode, raw) ' +
+  'if not receiptOk or type(receipt) ~= "table" ' +
+  'or receipt.clientSteerId ~= item.clientSteerId ' +
+  'or tostring(receipt.generationCreatedAt or "") ~= currentCreatedAt ' +
+  'or receipt.state ~= "queued" or not receipt.item ' +
+  'or receipt.item.steerId ~= item.steerId ' +
+  'or receipt.item.clientSteerId ~= item.clientSteerId then ' +
+  'return redis.error_reply("invalid steer receipt") end decodedReceipts[i] = receipt end end ' +
+  'redis.call("RPUSH", KEYS[3], unpack(items)) redis.call("EXPIRE", KEYS[3], ARGV[2]) ' +
+  'for i = 1, #items do local item = decodedItems[i] local receipt = decodedReceipts[i] ' +
+  'if receipt then receipt.item = item receipt.state = "claimed" ' +
+  'redis.call("HSET", KEYS[4], item.clientSteerId, cjson.encode(receipt)) end end ' +
+  'for i = 4, 5 do local ttl = redis.call("TTL", KEYS[i]) ' +
+  'if ttl >= 0 and ttl < tonumber(ARGV[2]) then redis.call("EXPIRE", KEYS[i], ARGV[2]) end end ' +
+  'redis.call("DEL", KEYS[2]) local result = { "claimed" } ' +
+  'for i = 1, #items do result[#result + 1] = items[i] end return result';
 
 /** Roll back claimed items whose durable applied-part write failed. New
  * enqueues may have landed after the drain, so the failed accepted batch is
@@ -1563,12 +1628,59 @@ const KEYS = {
   /** Terminal jobs that still owe a durable host lifecycle hook (global set). Retains
    *  the aborted approval-expiry job for cross-replica / post-restart hook retry. */
   terminalHostActionJobs: 'stream:terminal_host_action',
+  /** Versioned recovery lane for detached Event Actor completion generations.
+   * Pre-detached replicas only scan `terminalHostActionJobs`, so they cannot
+   * claim a generation whose host hook requires both invocation identities. */
+  detachedAgentEventTerminalHostActionJobsV1: 'stream:agent_event_detached:terminal_host_action:v1',
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
   /** Idempotency claim for a start-generation request: stream:idem:{userId:clientRequestId} */
   idempotency: (key: string) => `stream:idem:${key}`,
 };
+
+/** Pre-detached creation scripts reject an unknown status before replacement,
+ * while capable readers project the private logical terminal status. */
+const DETACHED_TERMINAL_LEGACY_STATUS = 'detached_terminal_pending_v1';
+
+interface TerminalHostActionMember {
+  streamId: string;
+  createdAt?: number;
+}
+
+/** The retry index is global (and therefore outside the per-stream Redis
+ * Cluster slot), so its members must carry generation identity. Otherwise an
+ * acknowledgement for generation A can remove generation B's pre-armed hint. */
+function terminalHostActionMember(streamId: string, createdAt: number): string {
+  return JSON.stringify([streamId, createdAt]);
+}
+
+function isDetachedAgentEventCompletionJob(job: SerializableJobData): boolean {
+  // The invocation key alone is enough to make legacy recovery unsafe. Keep a
+  // malformed completion with a missing generation timestamp in the capable
+  // lane so it fails closed there instead of exposing it to an old consumer.
+  return job.agentEventInvocationKey != null;
+}
+
+function parseTerminalHostActionMember(member: string): TerminalHostActionMember {
+  try {
+    const parsed = JSON.parse(member) as unknown;
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      typeof parsed[0] === 'string' &&
+      typeof parsed[1] === 'number' &&
+      Number.isSafeInteger(parsed[1]) &&
+      parsed[1] >= 0
+    ) {
+      return { streamId: parsed[0], createdAt: parsed[1] };
+    }
+  } catch {
+    // Older releases indexed the bare stream id. Enumeration migrates any
+    // still-live legacy member to the generation-scoped representation.
+  }
+  return { streamId: member };
+}
 
 /**
  * Default TTL values in seconds.
@@ -1650,6 +1762,8 @@ interface PendingChunkAppendBatch {
 }
 
 export class RedisJobStore implements IJobStoreV2 {
+  readonly detachedAgentEventActionStoreMode = 'distributed' as const;
+
   private redis: Redis | Cluster;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private ttl: typeof DEFAULT_TTL;
@@ -1831,14 +1945,12 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     const safeInitialMetadata = { ...initialMetadata };
     delete safeInitialMetadata.providerDrained;
-    let generationProtocolVersion: 1 | 2 = 1;
+    let generationProtocolVersion: 1 | 2 = 2;
     if (
       initialMetadata.generationProtocolVersion === 1 ||
       initialMetadata.generationProtocolVersion === 2
     ) {
       generationProtocolVersion = initialMetadata.generationProtocolVersion;
-    } else if (process.env.GENERATION_PROTOCOL_VERSION === '2') {
-      generationProtocolVersion = 2;
     }
     const job: CreatedJobData = {
       ...safeInitialMetadata,
@@ -2260,6 +2372,15 @@ export class RedisJobStore implements IJobStoreV2 {
       job && (statusKey != null || job.providerDrained === false)
         ? KEYS.userJobs(job.userId, job.tenantId)
         : null;
+    const terminalMember = job == null ? null : terminalHostActionMember(streamId, job.createdAt);
+    const terminalHostActionIndex =
+      job != null && isDetachedAgentEventCompletionJob(job)
+        ? KEYS.detachedAgentEventTerminalHostActionJobsV1
+        : KEYS.terminalHostActionJobs;
+    const otherTerminalHostActionIndex =
+      terminalHostActionIndex === KEYS.terminalHostActionJobs
+        ? KEYS.detachedAgentEventTerminalHostActionJobsV1
+        : KEYS.terminalHostActionJobs;
 
     if (this.isCluster) {
       const operations: Promise<unknown>[] = [
@@ -2269,12 +2390,28 @@ export class RedisJobStore implements IJobStoreV2 {
         statusKey === KEYS.requiresActionJobs
           ? this.redis.sadd(KEYS.requiresActionJobs, streamId)
           : this.redis.srem(KEYS.requiresActionJobs, streamId),
-        // Terminal host-action membership follows the durable hash field, not status, so
-        // an aborted approval-expiry job stays enumerable for hook retry until acked.
-        job?.terminalHostActionPending === true
-          ? this.redis.sadd(KEYS.terminalHostActionJobs, streamId)
-          : this.redis.srem(KEYS.terminalHostActionJobs, streamId),
       ];
+      if (job?.terminalHostActionPending === true) {
+        operations.push(this.redis.sadd(terminalHostActionIndex, terminalMember!));
+        operations.push(this.redis.srem(otherTerminalHostActionIndex, terminalMember!));
+        if (terminalHostActionIndex !== KEYS.terminalHostActionJobs) {
+          operations.push(this.redis.srem(KEYS.terminalHostActionJobs, streamId));
+        }
+      } else if (terminalMember == null) {
+        operations.push(this.redis.srem(KEYS.terminalHostActionJobs, streamId));
+        operations.push(this.redis.srem(KEYS.detachedAgentEventTerminalHostActionJobsV1, streamId));
+      } else {
+        operations.push(this.redis.srem(KEYS.terminalHostActionJobs, streamId, terminalMember));
+        operations.push(
+          this.redis.srem(
+            KEYS.detachedAgentEventTerminalHostActionJobsV1,
+            streamId,
+            terminalMember,
+          ),
+        );
+      }
+      // Terminal host-action membership follows the durable hash field, not status, so
+      // an aborted approval-expiry job stays enumerable for hook retry until acked.
       for (const userJobsKey of observedUserKeys) {
         if (userJobsKey !== activeUserKey) {
           operations.push(this.redis.srem(userJobsKey, streamId));
@@ -2306,9 +2443,15 @@ export class RedisJobStore implements IJobStoreV2 {
       pipeline.srem(KEYS.requiresActionJobs, streamId);
     }
     if (job?.terminalHostActionPending === true) {
-      pipeline.sadd(KEYS.terminalHostActionJobs, streamId);
+      pipeline.sadd(terminalHostActionIndex, terminalMember!);
+      pipeline.srem(otherTerminalHostActionIndex, terminalMember!);
+      pipeline.srem(KEYS.terminalHostActionJobs, streamId);
+    } else if (terminalMember != null) {
+      pipeline.srem(KEYS.terminalHostActionJobs, streamId, terminalMember);
+      pipeline.srem(KEYS.detachedAgentEventTerminalHostActionJobsV1, streamId, terminalMember);
     } else {
       pipeline.srem(KEYS.terminalHostActionJobs, streamId);
+      pipeline.srem(KEYS.detachedAgentEventTerminalHostActionJobsV1, streamId);
     }
     for (const userJobsKey of observedUserKeys) {
       if (userJobsKey !== activeUserKey) {
@@ -2456,17 +2599,35 @@ export class RedisJobStore implements IJobStoreV2 {
     args: JobStatusTransition,
     returnDrainedSteers: boolean,
   ): Promise<true | SteerQueueItem[] | null> {
-    const { from, to, patch, clear, expectActionId, expectCreatedAt } = args;
+    const { from, to, patch, clear, expectActionId, expectCreatedAt, notAfterMs } = args;
     const key = KEYS.job(streamId);
+    const terminal = this.statusSetKey(to) === null;
+    const terminalJob = terminal ? await this.getJob(streamId) : null;
+    const detachedTerminalHostActionPending =
+      terminal &&
+      patch?.terminalHostActionPending === true &&
+      terminalJob != null &&
+      isDetachedAgentEventCompletionJob(terminalJob);
+    const persistedPatch = detachedTerminalHostActionPending
+      ? {
+          ...patch,
+          status: DETACHED_TERMINAL_LEGACY_STATUS,
+          terminalHostActionPending: undefined,
+          detachedAgentEventTerminalHostActionPending: true,
+          detachedAgentEventTerminalStatus: to as Extract<
+            JobStatus,
+            'complete' | 'aborted' | 'error'
+          >,
+        }
+      : patch;
 
     // status + patch become HSET pairs; serializeJob skips undefined, so
     // cleared fields go through HDEL (`clear`) instead.
     const fields = Object.entries(
-      this.serializeJob({ status: to, ...(patch ?? {}) } as SerializableJobData),
+      this.serializeJob({ status: to, ...(persistedPatch ?? {}) } as SerializableJobData),
     ).flat();
     const clearFields = (clear ?? []).map(String);
 
-    const terminal = this.statusSetKey(to) === null;
     let ttl = terminal ? this.ttl.completed : this.runningStorageTtlSeconds();
     if (terminal && patch?.terminalPersistencePending === true) {
       ttl = Math.max(ttl, TERMINAL_PERSISTENCE_RETENTION_TTL_S);
@@ -2483,7 +2644,21 @@ export class RedisJobStore implements IJobStoreV2 {
       // decision can resume it.
       ttl = this.pauseTtlSeconds(patch?.pendingAction);
     }
-    const terminalJob = terminal ? await this.getJob(streamId) : null;
+    // Redis Cluster cannot atomically update the same-slot job hash and this
+    // global retry index. Arm a generation-scoped retry hint before the
+    // terminal CAS. A predecessor acknowledgement can remove only its own
+    // member, regardless of how a successor's SADD and CAS interleave.
+    const terminalMemberCreatedAt = expectCreatedAt ?? terminalJob?.createdAt;
+    if (terminal && patch?.terminalHostActionPending === true && terminalMemberCreatedAt != null) {
+      const terminalHostActionIndex =
+        terminalJob != null && isDetachedAgentEventCompletionJob(terminalJob)
+          ? KEYS.detachedAgentEventTerminalHostActionJobsV1
+          : KEYS.terminalHostActionJobs;
+      await this.redis.sadd(
+        terminalHostActionIndex,
+        terminalHostActionMember(streamId, terminalMemberCreatedAt),
+      );
+    }
 
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
     //    Works identically on cluster and single-node, so two concurrent
@@ -2504,10 +2679,17 @@ export class RedisJobStore implements IJobStoreV2 {
       from,
       expectActionId ?? '',
       expectCreatedAt != null ? String(expectCreatedAt) : '',
+      notAfterMs != null ? String(notAfterMs) : '',
       String(ttl),
       terminal ? '1' : '0',
-      String(this.ttl.chunksAfterComplete),
-      String(this.ttl.runStepsAfterComplete),
+      String(
+        terminal && patch?.terminalHostActionPending === true ? ttl : this.ttl.chunksAfterComplete,
+      ),
+      String(
+        terminal && patch?.terminalHostActionPending === true
+          ? ttl
+          : this.ttl.runStepsAfterComplete,
+      ),
       String(this.parkedRecoveryTtlSeconds()),
       String(GENERATION_EPOCH_GRACE_TTL_S),
       String(args.steerReceiptTtlSeconds ?? 0),
@@ -2516,6 +2698,9 @@ export class RedisJobStore implements IJobStoreV2 {
       ...clearFields,
       ...fields,
     );
+    if (result === -1 && notAfterMs != null) {
+      throw new JobStatusTransitionDeadlineError(notAfterMs);
+    }
     if (returnDrainedSteers ? typeof result !== 'string' : result !== 1) {
       return null;
     }
@@ -2562,6 +2747,22 @@ export class RedisJobStore implements IJobStoreV2 {
     } catch {
       // An unreadable existing owner is outcome-ambiguous. Never turn store
       // corruption into a duplicate generation by pretending the key is free.
+      throw new Error('Invalid generation idempotency claim');
+    }
+  }
+
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    return (await this.redis.exists(KEYS.idempotency(key))) === 1;
+  }
+
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const value = await this.redis.get(KEYS.idempotency(key));
+    if (value == null) {
+      return null;
+    }
+    try {
+      return JSON.parse(value) as IdempotencyClaimValue;
+    } catch {
       throw new Error('Invalid generation idempotency claim');
     }
   }
@@ -2732,55 +2933,171 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
-    const streamIds = await this.redis.smembers(KEYS.terminalHostActionJobs);
-    if (streamIds.length === 0) {
+    return this.getIndexedTerminalHostActionJobs(KEYS.terminalHostActionJobs, false);
+  }
+
+  async getDetachedAgentEventTerminalHostActionJobs(): Promise<SerializableJobData[]> {
+    return this.getIndexedTerminalHostActionJobs(
+      KEYS.detachedAgentEventTerminalHostActionJobsV1,
+      true,
+    );
+  }
+
+  private async getIndexedTerminalHostActionJobs(
+    indexKey: string,
+    detachedAgentEventCompletion: boolean,
+  ): Promise<SerializableJobData[]> {
+    const members = await this.redis.smembers(indexKey);
+    if (members.length === 0) {
       return [];
     }
-    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    const indexed = members.map((member) => ({ member, ...parseTerminalHostActionMember(member) }));
+    const jobs = await Promise.all(indexed.map(({ streamId }) => this.getJob(streamId)));
     // The durable hash field is the source of truth; a stale set entry (job reaped, or the
-    // marker already cleared) is filtered out and self-heals via reconcileJobMembership.
+    // marker/generation already replaced) is filtered out. Bare legacy members
+    // are migrated while they are still live.
     const stale: string[] = [];
-    const pending: SerializableJobData[] = [];
-    for (let i = 0; i < streamIds.length; i++) {
-      const job = jobs[i];
-      if (job != null && job.terminalHostActionPending === true) {
-        pending.push(job);
+    const legacy: string[] = [];
+    const migrate: string[] = [];
+    const rerouteToLegacy: string[] = [];
+    const rerouteToDetached: string[] = [];
+    const heldByGeneration = new Map<string, SerializableJobData>();
+    const readyByGeneration = new Map<string, SerializableJobData>();
+    const providerLossCutoff = Date.now() - PROVIDER_DRAIN_TIMEOUT_MS;
+    for (let i = 0; i < indexed.length; i++) {
+      const indexedMember = indexed[i];
+      let job = jobs[i];
+      if (
+        job != null &&
+        job.terminalHostActionPending === true &&
+        (indexedMember.createdAt == null || indexedMember.createdAt === job.createdAt)
+      ) {
+        const jobIsDetachedCompletion = isDetachedAgentEventCompletionJob(job);
+        if (jobIsDetachedCompletion !== detachedAgentEventCompletion) {
+          const generationMember = terminalHostActionMember(job.streamId, job.createdAt);
+          if (jobIsDetachedCompletion) {
+            rerouteToDetached.push(generationMember);
+          } else {
+            rerouteToLegacy.push(generationMember);
+          }
+          stale.push(indexedMember.member);
+          continue;
+        }
+        if (indexedMember.createdAt == null) {
+          legacy.push(indexedMember.member);
+          migrate.push(terminalHostActionMember(job.streamId, job.createdAt));
+        }
+        if (
+          job.providerDrained === false &&
+          job.completedAt != null &&
+          job.completedAt <= providerLossCutoff
+        ) {
+          const recovered =
+            Number(
+              await this.redis.eval(
+                RECOVER_TERMINAL_PROVIDER_DRAIN_LUA,
+                1,
+                KEYS.job(job.streamId),
+                String(job.createdAt),
+                String(providerLossCutoff),
+              ),
+            ) === 1;
+          if (recovered) {
+            job = { ...job, providerDrained: true };
+          }
+        }
+        const generationKey = terminalHostActionMember(job.streamId, job.createdAt);
+        heldByGeneration.set(generationKey, job);
+        // A terminal provider can still be committing its last tool result.
+        // The provider owner persists the complete run-step snapshot before it
+        // flips this fence, so another replica must not settle earlier.
+        if (job.providerDrained !== false) {
+          readyByGeneration.set(generationKey, job);
+        }
+      } else if (
+        job != null &&
+        indexedMember.createdAt != null &&
+        indexedMember.createdAt === job.createdAt
+      ) {
+        /** The terminal transition pre-arms this exact generation before its
+         * hash CAS. Do not delete that hint merely because the CAS has not
+         * become visible yet: the producer can commit and die before its
+         * post-CAS reconciliation. The hint becomes removable once the exact
+         * generation hash is replaced or reaped. */
+        continue;
       } else {
-        stale.push(streamIds[i]);
+        stale.push(indexedMember.member);
+      }
+    }
+    // Repair a hint written by an earlier capable build before removing it
+    // from the wrong lane. In particular, this drains detached completions out
+    // of the legacy set without ever returning them to a capable claimant.
+    if (rerouteToLegacy.length > 0) {
+      await this.redis.sadd(KEYS.terminalHostActionJobs, ...rerouteToLegacy);
+    }
+    if (rerouteToDetached.length > 0) {
+      await this.redis.sadd(KEYS.detachedAgentEventTerminalHostActionJobsV1, ...rerouteToDetached);
+    }
+    if (migrate.length > 0) {
+      try {
+        await this.redis.sadd(indexKey, ...migrate);
+        await this.redis.srem(indexKey, ...legacy);
+      } catch {
+        // Preserve the legacy hint if migration cannot prove the replacement
+        // member was written. A duplicate hint is safer than lost discovery.
       }
     }
     if (stale.length > 0) {
-      await this.redis.srem(KEYS.terminalHostActionJobs, ...stale).catch(() => undefined);
+      await this.redis.srem(indexKey, ...stale).catch(() => undefined);
     }
     // Enumerating IS the retry attempt: extend each pending job's TTL so unacknowledged
     // host-action evidence outlives a host dependency (e.g. Mongo) that stays unreachable
     // longer than the retention window. A deployment that stops sweeping lets it age out.
-    if (pending.length > 0 && this.ttl.requiresAction > 0) {
+    const held = [...heldByGeneration.values()];
+    if (held.length > 0 && this.ttl.requiresAction > 0) {
       await Promise.all(
-        pending.map((job) =>
-          this.redis.expire(KEYS.job(job.streamId), this.ttl.requiresAction).catch(() => undefined),
+        held.flatMap((job) =>
+          [KEYS.job(job.streamId), KEYS.chunks(job.streamId), KEYS.runSteps(job.streamId)].map(
+            (key) => this.redis.expire(key, this.ttl.requiresAction).catch(() => undefined),
+          ),
         ),
       );
     }
-    return pending;
+    return [...readyByGeneration.values()];
   }
 
   async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
     // Identity-fenced: only clear when the hash still holds this exact generation, so a
     // replacement at the same streamId is never cleared through its predecessor. The HDEL
-    // and the completed-TTL reset happen atomically; membership is then reconciled to SREM.
+    // and configured evidence-TTL reset happen atomically. The global retry
+    // member includes this generation, so removing it cannot affect a successor.
     const cleared = (await this.redis.eval(
       'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
-        'redis.call("HDEL", KEYS[1], "terminalHostActionPending") ' +
-        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) end ' +
+        'local detachedStatus = redis.call("HGET", KEYS[1], "detachedAgentEventTerminalStatus") ' +
+        'if detachedStatus then redis.call("HSET", KEYS[1], "status", detachedStatus) end ' +
+        'redis.call("HDEL", KEYS[1], "terminalHostActionPending", "detachedAgentEventTerminalHostActionPending", "detachedAgentEventTerminalStatus") ' +
+        'if detachedStatus then redis.call("HDEL", KEYS[1], "lastActiveAt") end ' +
+        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) else redis.call("DEL", KEYS[1]) end ' +
+        'if tonumber(ARGV[3]) > 0 then redis.call("EXPIRE", KEYS[2], ARGV[3]) else redis.call("DEL", KEYS[2]) end ' +
+        'if tonumber(ARGV[4]) > 0 then redis.call("EXPIRE", KEYS[3], ARGV[4]) else redis.call("DEL", KEYS[3]) end ' +
         'return 1',
-      1,
+      3,
       KEYS.job(streamId),
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
       String(this.ttl.completed),
+      String(this.ttl.chunksAfterComplete),
+      String(this.ttl.runStepsAfterComplete),
     )) as number;
-    if (cleared === 1) {
-      await this.redis.srem(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
+    if (cleared === 1 && expectedCreatedAt != null) {
+      const member = terminalHostActionMember(streamId, expectedCreatedAt);
+      await Promise.all([
+        this.redis.srem(KEYS.terminalHostActionJobs, member).catch(() => undefined),
+        this.redis
+          .srem(KEYS.detachedAgentEventTerminalHostActionJobsV1, member)
+          .catch(() => undefined),
+      ]);
     }
   }
 
@@ -2919,6 +3236,7 @@ export class RedisJobStore implements IJobStoreV2 {
               patch: {
                 completedAt: now,
                 error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+                ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
               },
               clear: [
                 'pendingAction',
@@ -3876,6 +4194,35 @@ export class RedisJobStore implements IJobStoreV2 {
     return this.parseSteerItems(raw);
   }
 
+  async admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    const raw = await this.redis.eval(
+      STEER_TERMINAL_ADMISSION_LUA,
+      5,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      KEYS.claimedSteers(streamId),
+      KEYS.steerReceipts(streamId),
+      KEYS.steerReceiptOrder(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      String(this.runningStorageTtlSeconds()),
+      policy.allowClaim ? '1' : '0',
+      policy.keepOpenWhenEmpty ? '1' : '0',
+    );
+    if (!Array.isArray(raw) || typeof raw[0] !== 'string') {
+      return { outcome: 'unavailable' };
+    }
+    if (raw[0] !== 'claimed') {
+      return {
+        outcome: raw[0] === 'sealed' || raw[0] === 'open' ? raw[0] : 'unavailable',
+      };
+    }
+    return { outcome: 'claimed', items: this.parseSteerItems(raw.slice(1)) };
+  }
+
   async restoreClaimedSteers(
     streamId: string,
     items: SteerQueueItem[],
@@ -4552,11 +4899,17 @@ export class RedisJobStore implements IJobStoreV2 {
    * Deserialize job data from Redis hash.
    */
   private deserializeJob(data: Record<string, string>): SerializableJobData {
+    const detachedAgentEventTerminalStatus =
+      data.detachedAgentEventTerminalStatus === 'complete' ||
+      data.detachedAgentEventTerminalStatus === 'aborted' ||
+      data.detachedAgentEventTerminalStatus === 'error'
+        ? data.detachedAgentEventTerminalStatus
+        : undefined;
     const job: CreatedJobData = {
       streamId: data.streamId,
       userId: data.userId,
       tenantId: data.tenantId || undefined,
-      status: data.status as JobStatus,
+      status: detachedAgentEventTerminalStatus ?? (data.status as JobStatus),
       createdAt: parseInt(data.createdAt, 10),
       generationProtocolVersion: data.generationProtocolVersion === '2' ? 2 : 1,
       checkpointNamespace: data.checkpointNamespace || undefined,
@@ -4590,6 +4943,26 @@ export class RedisJobStore implements IJobStoreV2 {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      agentEventDeliveryKey: data.agentEventDeliveryKey || undefined,
+      agentEventInvocationKey: data.agentEventInvocationKey || undefined,
+      agentEventInvocationGenerationCreatedAt: data.agentEventInvocationGenerationCreatedAt
+        ? parseInt(data.agentEventInvocationGenerationCreatedAt, 10)
+        : undefined,
+      agentEventDetachedActionProducerRequired:
+        data.agentEventDetachedActionProducerRequired != null
+          ? data.agentEventDetachedActionProducerRequired === '1'
+          : undefined,
+      agentEventDetachedTerminalEvidence: data.agentEventDetachedTerminalEvidence
+        ? JSON.parse(data.agentEventDetachedTerminalEvidence)
+        : undefined,
+      agentEventBindingId: data.agentEventBindingId || undefined,
+      agentEventExpectedAction: data.agentEventExpectedAction
+        ? JSON.parse(data.agentEventExpectedAction)
+        : undefined,
+      agentEventSuspension: data.agentEventSuspension
+        ? JSON.parse(data.agentEventSuspension)
+        : undefined,
+      agentEventLegacyTurnToken: data.agentEventLegacyTurnToken || undefined,
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,
       scheduleConfigRevision: data.scheduleConfigRevision
@@ -4609,12 +4982,26 @@ export class RedisJobStore implements IJobStoreV2 {
           ? data.preserveForScheduleReconcile === '1'
           : undefined,
       terminalHostActionPending:
-        data.terminalHostActionPending != null ? data.terminalHostActionPending === '1' : undefined,
+        data.terminalHostActionPending === '1' ||
+        data.detachedAgentEventTerminalHostActionPending === '1'
+          ? true
+          : undefined,
+      detachedAgentEventTerminalHostActionPending:
+        data.detachedAgentEventTerminalHostActionPending != null
+          ? data.detachedAgentEventTerminalHostActionPending === '1'
+          : undefined,
+      detachedAgentEventTerminalStatus,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       activityPhaseSnapshot: data.activityPhaseSnapshot
         ? JSON.parse(data.activityPhaseSnapshot)
         : undefined,
+      compactionSemanticIndex: data.compactionSemanticIndex
+        ? JSON.parse(data.compactionSemanticIndex)
+        : undefined,
+      /** Calibration and fading state captured at a HITL pause; without this line
+       *  every Redis deployment would resume with no tier to seed. */
+      contextMeta: data.contextMeta ? JSON.parse(data.contextMeta) : undefined,
       /** The owning replica's seal capability. `serializeJob` writes every
        *  boolean generically, but this mapper is explicit — omitting it here
        *  drops the flag on every read, so the steer route would compute
@@ -4628,6 +5015,7 @@ export class RedisJobStore implements IJobStoreV2 {
       providerAbortReady:
         data.providerAbortReady != null ? data.providerAbortReady === '1' : undefined,
       providerExecutionId: data.providerExecutionId || undefined,
+      providerExecutionStartedId: data.providerExecutionStartedId || undefined,
       providerDrained: data.providerDrained != null ? data.providerDrained === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
