@@ -1,5 +1,9 @@
 import { tool } from '@librechat/agents/langchain/tools';
-import { BashExecutionToolDefinition, BashToolOutputReferencesGuide } from '@librechat/agents';
+import {
+  BashExecutionToolDefinition,
+  BashToolOutputReferencesGuide,
+  createBashProgrammaticToolCallingTool,
+} from '@librechat/agents';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { AgentGitIdentity } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
@@ -78,6 +82,21 @@ function commandWithGitIdentity(
     throw new Error('Invalid agent Git identity');
   }
   return `export GIT_AUTHOR_NAME=${quoteShellArgument(name)} GIT_AUTHOR_EMAIL=${quoteShellArgument(email)} GIT_COMMITTER_NAME=${quoteShellArgument(name)} GIT_COMMITTER_EMAIL=${quoteShellArgument(email)}; ${command}`;
+}
+
+/** Apply authorship before the SDK prepares the script and its replay requests. */
+export function createGitIdentityProgrammaticBashTool(
+  options: Parameters<typeof createBashProgrammaticToolCallingTool>[0],
+  identity?: AgentGitIdentity | null,
+): DynamicStructuredTool {
+  const bashTool = createBashProgrammaticToolCallingTool(options);
+  if (identity == null) return bashTool;
+  const execute = bashTool.func.bind(bashTool);
+  bashTool.func = (input, ...args) => {
+    const params = input as { code: string };
+    return execute({ ...params, code: commandWithGitIdentity(params.code, identity) }, ...args);
+  };
+  return bashTool;
 }
 
 function formatCommandResult(result: WorkspaceExecuteCommandResult): string {

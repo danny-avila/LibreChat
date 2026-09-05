@@ -1,5 +1,50 @@
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { CodeBridgeFetch } from './bridge';
-import { ATTACHED_WORKSPACE_BASH_SCHEMA, createAttachedWorkspaceBashTool } from './command';
+import {
+  ATTACHED_WORKSPACE_BASH_SCHEMA,
+  createAttachedWorkspaceBashTool,
+  createGitIdentityProgrammaticBashTool,
+} from './command';
+
+describe('programmatic Bash Git identity', () => {
+  test('applies authorship before the SDK sends a programmatic script', async () => {
+    let receivedCode = '';
+    const server = createServer(async (req, res) => {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      receivedCode = JSON.parse(body).code;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ status: 'completed', stdout: 'done', stderr: '', files: [] }));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    const bashTool = createGitIdentityProgrammaticBashTool(
+      { baseUrl: `http://127.0.0.1:${port}/v1`, authHeaders: () => ({}) },
+      { name: "Agent O'Brien", email: 'agent@example.com' },
+    );
+    try {
+      const invocationConfig = {
+        tags: [],
+        toolCall: { toolDefs: [] },
+      };
+      await bashTool.func(
+        { code: 'git commit -m feature', tool_manifest: [] },
+        undefined,
+        invocationConfig,
+      );
+      expect(receivedCode).toContain(`GIT_AUTHOR_NAME='Agent O'"'"'Brien'`);
+      expect(receivedCode).toContain("GIT_COMMITTER_EMAIL='agent@example.com'");
+      expect(receivedCode).toContain('git commit -m feature');
+      expect(receivedCode).not.toContain('git config');
+    } finally {
+      server.close();
+      await once(server, 'close');
+    }
+  });
+});
 
 function commandResponse(overrides: Record<string, unknown> = {}): Response {
   return new Response(

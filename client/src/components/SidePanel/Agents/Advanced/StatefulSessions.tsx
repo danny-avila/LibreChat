@@ -190,20 +190,26 @@ export default function StatefulSessions() {
                 {localize('com_ui_agent_git_identity')}
               </div>
               <Input
-                {...register('git_identity.name', { validate: validateGitIdentity })}
+                {...register('git_identity.name', {
+                  validate: validateGitIdentity,
+                  deps: ['git_identity.email'],
+                })}
                 maxLength={128}
                 placeholder={localize('com_ui_agent_git_name')}
                 aria-label={localize('com_ui_agent_git_name')}
               />
               <Input
-                {...register('git_identity.email', { validate: validateGitIdentity })}
+                {...register('git_identity.email', {
+                  validate: validateGitIdentity,
+                  deps: ['git_identity.name'],
+                })}
                 type="email"
                 maxLength={254}
                 placeholder={localize('com_ui_agent_git_email')}
                 aria-label={localize('com_ui_agent_git_email')}
               />
               {(errors.git_identity?.name || errors.git_identity?.email) && (
-                <p className="text-xs text-red-500" role="alert">
+                <p className="text-xs text-text-destructive" role="alert">
                   {localize('com_ui_agent_git_identity_both_required')}
                 </p>
               )}
