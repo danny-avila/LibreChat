@@ -6,7 +6,7 @@ import {
   PermissionTypes,
   ResourceType,
 } from 'librechat-data-provider';
-import type { SkillFrontmatterValue } from 'librechat-data-provider';
+import type { SkillFrontmatterValue, TSkill, TUpdateSkillPayload } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { SkillsHandlers, SkillsHandlersDeps } from './handlers';
 import type { AgentManagementReadDeps } from '../agents/reads';
@@ -35,7 +35,9 @@ const frontmatterValue: z.ZodType<SkillFrontmatterValue> = z.lazy(() =>
     z.record(frontmatterValue),
   ]),
 );
-export const skillManagementUpdateSchema = z
+export type SkillManagementUpdate = TUpdateSkillPayload & { expectedVersion: number };
+
+export const skillManagementUpdateSchema: z.ZodType<SkillManagementUpdate> = z
   .object({
     name: fields.name.optional(),
     displayTitle: fields.displayTitle,
@@ -60,10 +62,29 @@ const summarySchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
-export const skillManagementResponseSchema = summarySchema.extend({
-  body: z.string(),
-  frontmatter: z.record(frontmatterValue).optional(),
-});
+export type SkillManagementResponse = Pick<
+  TSkill,
+  | 'name'
+  | 'displayTitle'
+  | 'description'
+  | 'category'
+  | 'alwaysApply'
+  | 'version'
+  | 'fileCount'
+  | 'disableModelInvocation'
+  | 'userInvocable'
+  | 'allowedTools'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'body'
+  | 'frontmatter'
+> & { id: string };
+
+export const skillManagementResponseSchema: z.ZodType<SkillManagementResponse> =
+  summarySchema.extend({
+    body: z.string(),
+    frontmatter: z.record(frontmatterValue).optional(),
+  });
 const fileSchema = z.object({
   relativePath: z.string(),
   filename: z.string(),
@@ -146,7 +167,12 @@ async function runHandler(
 }
 
 /** Machine API adapters reuse the browser Skills behavior after principal and resource checks. */
-export function createSkillManagementHandlers(deps: SkillManagementDeps) {
+export function createSkillManagementHandlers(
+  deps: SkillManagementDeps,
+): Record<
+  'list' | 'get' | 'update' | 'listFiles' | 'getFile' | 'updateFile',
+  (request: Request, res: Response) => Promise<Response>
+> {
   function wrap(
     permission: PermissionBits | undefined,
     operation: (req: ManagementRequest, res: Response) => Promise<Response>,
