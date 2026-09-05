@@ -13,6 +13,8 @@ import treePerfConfig from './playwright.config.tree-perf';
 export default defineConfig({
   ...treePerfConfig,
   testDir: 'specs/mock',
-  testMatch: /(message-tree|thread-fold|chat|hover-actions)\.spec\.ts$/,
+  testMatch: process.env.TREE_PARITY_MATCH
+    ? new RegExp(process.env.TREE_PARITY_MATCH)
+    : /(message-tree|thread-fold|chat|hover-actions)\.spec\.ts$/,
   outputDir: 'specs/.test-results',
 });

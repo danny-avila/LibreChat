@@ -17,7 +17,15 @@ import {
   topComponents,
   totals,
 } from '../perf/scan';
-import { ROWS, TURNS, altHeading, buildTreeMessages, turnHeading } from './payload';
+import {
+  ROWS,
+  SHALLOW_BRANCH_CONTINUATION_TURNS,
+  SHALLOW_BRANCH_TURN,
+  TURNS,
+  altHeading,
+  buildTreeMessages,
+  turnHeading,
+} from './payload';
 
 /**
  * Message-tree render benchmark (react-scan).
@@ -95,11 +103,62 @@ function heading(page: Page, text: string) {
   return messagesView(page).getByRole('heading', { name: text, exact: true }).first();
 }
 
+type ResourceSample = {
+  heapMB: number;
+  heapTotalMB: number;
+  nodes: number;
+  listeners: number;
+  rendererCpuS: number;
+};
+
+/**
+ * Process-level cost per phase: JS heap after a forced GC (retained memory,
+ * not allocation churn), DOM node and listener counts, and the renderer
+ * process CPU time consumed during the phase (all threads, so compositor and
+ * GC work count, which the main-thread task total above leaves out).
+ */
+async function createResourceProbe(page: Page) {
+  const session = await page.context().newCDPSession(page);
+  await session.send('HeapProfiler.enable');
+  await session.send('Performance.enable');
+  const browser = page.context().browser();
+  const browserSession = browser ? await browser.newBrowserCDPSession() : null;
+  const rendererCpu = async () => {
+    if (!browserSession) {
+      return 0;
+    }
+    const { processInfo } = await browserSession.send('SystemInfo.getProcessInfo');
+    return processInfo
+      .filter((info) => info.type === 'renderer')
+      .reduce((sum, info) => sum + info.cpuTime, 0);
+  };
+  let cpuStart = 0;
+  return {
+    async start() {
+      cpuStart = await rendererCpu();
+    },
+    async sample(): Promise<ResourceSample> {
+      const cpuEnd = await rendererCpu();
+      await session.send('HeapProfiler.collectGarbage');
+      const { metrics } = await session.send('Performance.getMetrics');
+      const metric = (name: string) => metrics.find((entry) => entry.name === name)?.value ?? 0;
+      return {
+        heapMB: metric('JSHeapUsedSize') / 1048576,
+        heapTotalMB: metric('JSHeapTotalSize') / 1048576,
+        nodes: metric('Nodes'),
+        listeners: metric('JSEventListeners'),
+        rendererCpuS: cpuEnd - cpuStart,
+      };
+    },
+  };
+}
+
 function report(
   name: string,
   snapshot: PerfSnapshot,
   browser: BrowserPhase,
   extra: Record<string, number> = {},
+  resources?: ResourceSample,
 ) {
   const sum = totals(snapshot);
   const tasks = longTaskStats(snapshot);
@@ -114,6 +173,13 @@ function report(
       `busy=${browser.busyPercent.toFixed(1)}% layouts=${browser.layoutCount} ` +
       `heap=${(browser.heapEndBytes / 1048576).toFixed(0)}MB nodes=${browser.nodesEnd}`,
   );
+  if (resources) {
+    console.log(
+      `resources: rendererCPU=${resources.rendererCpuS.toFixed(2)}s ` +
+        `heapAfterGC=${resources.heapMB.toFixed(1)}MB heapTotal=${resources.heapTotalMB.toFixed(0)}MB ` +
+        `nodes=${resources.nodes} listeners=${resources.listeners}`,
+    );
+  }
   for (const [key, value] of Object.entries(extra)) {
     console.log(`${key}=${value}`);
   }
@@ -129,6 +195,9 @@ function report(
     console.log(`  ${line}`);
   }
 }
+
+/** Rows the deep switch drops: the spine below the branch turn, less the alternate continuation. */
+const DEEP_SWITCH_ROWS = ROWS - SHALLOW_BRANCH_TURN * 2 - SHALLOW_BRANCH_CONTINUATION_TURNS * 2;
 
 async function clickSibling(page: Page, name: string, position: 'first' | 'last') {
   const buttons = page.getByRole('button', { name, exact: true });
@@ -176,6 +245,7 @@ async function runVariant(
     }
     await installBrowserPerf(page);
     const probe = await createBrowserProbe(page);
+    const resourceProbe = await createResourceProbe(page);
     /** TTS mounts a src-less <audio> per row whose error event logs a React
      *  fiber dump through vite's console forwarding, which floods the
      *  terminal and stalls the page under measurement. */
@@ -197,17 +267,25 @@ async function runVariant(
      *  event, after the first commit. */
     await page.goto(`/c/${CONVO.id}`, { timeout: 180_000 });
     await probe.start();
+    await resourceProbe.start();
     await expect(heading(page, turnHeading(CONVO.label, 1))).toBeAttached({ timeout: 120_000 });
     await expect(heading(page, turnHeading(CONVO.label, TURNS))).toBeAttached({
       timeout: 120_000,
     });
     await page.waitForTimeout(1000);
     const load = await snapshotPerf(page);
-    report('load (all rows mounted)', load, await probe.finish(), { rows: ROWS });
+    report(
+      'load (all rows mounted)',
+      load,
+      await probe.finish(),
+      { rows: ROWS },
+      await resourceProbe.sample(),
+    );
     await attachSnapshot(testInfo, 'load.json', load, { rows: ROWS });
 
     await resetPerf(page);
     await probe.start();
+    await resourceProbe.start();
     await sendMessage(page, 'E2E_SLOW_REPLY:tree');
     await expect(page.getByRole('button', { name: 'Stop generating' })).toBeVisible({
       timeout: 30_000,
@@ -218,12 +296,19 @@ async function runVariant(
     await page.waitForTimeout(500);
     const stream = await snapshotPerf(page);
     const streamBrowser = await probe.finish();
+    const streamResources = await resourceProbe.sample();
     const flushes = stream.renders['ContentRender']?.count ?? 0;
     const multi = stream.renders['MultiMessage']?.count ?? 0;
-    report('stream (160 chunks @35ms into a ' + ROWS + '-row thread)', stream, streamBrowser, {
-      'flushes(ContentRender renders)': flushes,
-      'MultiMessage renders per flush': flushes > 0 ? Math.round((multi / flushes) * 10) / 10 : 0,
-    });
+    report(
+      'stream (160 chunks @35ms into a ' + ROWS + '-row thread)',
+      stream,
+      streamBrowser,
+      {
+        'flushes(ContentRender renders)': flushes,
+        'MultiMessage renders per flush': flushes > 0 ? Math.round((multi / flushes) * 10) / 10 : 0,
+      },
+      streamResources,
+    );
     await attachSnapshot(testInfo, 'stream.json', stream, { rows: ROWS + 2, flushes });
     if (WITH_SCAN) {
       expect(flushes).toBeGreaterThan(5);
@@ -231,40 +316,68 @@ async function runVariant(
 
     await resetPerf(page);
     await probe.start();
+    await resourceProbe.start();
     await clickSibling(page, 'Previous sibling message', 'last');
     await expect(heading(page, altHeading(CONVO.label, TURNS))).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(500);
     const leafPrev = await snapshotPerf(page);
-    report('switch leaf -> alternate (drops 2 rows)', leafPrev, await probe.finish());
+    report(
+      'switch leaf -> alternate (drops 2 rows)',
+      leafPrev,
+      await probe.finish(),
+      {},
+      await resourceProbe.sample(),
+    );
     await attachSnapshot(testInfo, 'switch-leaf-prev.json', leafPrev, {});
 
     await resetPerf(page);
     await probe.start();
+    await resourceProbe.start();
     await clickSibling(page, 'Next sibling message', 'last');
     await expect(heading(page, turnHeading(CONVO.label, TURNS))).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(500);
     const leafNext = await snapshotPerf(page);
-    report('switch leaf -> spine (restores 2 rows)', leafNext, await probe.finish());
+    report(
+      'switch leaf -> spine (restores 2 rows)',
+      leafNext,
+      await probe.finish(),
+      {},
+      await resourceProbe.sample(),
+    );
     await attachSnapshot(testInfo, 'switch-leaf-next.json', leafNext, {});
 
     await resetPerf(page);
     await probe.start();
+    await resourceProbe.start();
     await clickSibling(page, 'Previous sibling message', 'first');
     await expect(heading(page, altHeading(CONVO.label, 3))).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(500);
     const shallowPrev = await snapshotPerf(page);
-    report('switch turn 3 -> alternate (drops ~236 rows)', shallowPrev, await probe.finish());
+    report(
+      `switch turn ${SHALLOW_BRANCH_TURN} -> alternate (drops ~${DEEP_SWITCH_ROWS} rows)`,
+      shallowPrev,
+      await probe.finish(),
+      {},
+      await resourceProbe.sample(),
+    );
     await attachSnapshot(testInfo, 'switch-shallow-prev.json', shallowPrev, {});
 
     await resetPerf(page);
     await probe.start();
+    await resourceProbe.start();
     await clickSibling(page, 'Next sibling message', 'first');
     await expect(heading(page, turnHeading(CONVO.label, TURNS))).toBeAttached({
       timeout: 60_000,
     });
     await page.waitForTimeout(1000);
     const shallowNext = await snapshotPerf(page);
-    report('switch turn 3 -> spine (remounts ~236 rows)', shallowNext, await probe.finish());
+    report(
+      `switch turn ${SHALLOW_BRANCH_TURN} -> spine (remounts ~${DEEP_SWITCH_ROWS} rows)`,
+      shallowNext,
+      await probe.finish(),
+      {},
+      await resourceProbe.sample(),
+    );
     await attachSnapshot(testInfo, 'switch-shallow-next.json', shallowNext, {});
   }
 }
