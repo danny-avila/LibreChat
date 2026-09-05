@@ -1159,6 +1159,122 @@ describe('code environment registry', () => {
     expect(claimed?.deletionLeaseId).not.toBe('abandoned-removal');
   });
 
+  test('bounds expired agent reservation cleanup per reconciliation tick', async () => {
+    const methods = createMethods(mongoose);
+    const ownerId = new Types.ObjectId();
+    const expiredAt = new Date(Date.now() - 1_000);
+    await mongoose.models.User.create({
+      _id: ownerId,
+      email: 'reservation-owner@example.com',
+      provider: 'local',
+    });
+    const environments = await Promise.all(
+      ['first', 'second'].map((suffix) =>
+        methods.createCodeEnvironment({
+          environmentId: `expired-reservation-${suffix}`,
+          name: `Expired reservation ${suffix}`,
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+          controlPlaneId: 'shared-code-api',
+          createdBy: ownerId,
+        }),
+      ),
+    );
+    await Promise.all(
+      environments.map((environment, index) =>
+        mongoose.models.CodeEnvironment.updateOne(
+          { _id: environment._id },
+          {
+            $set: {
+              pendingAgentReferences: Array.from(
+                { length: index === 0 ? 100 : 1 },
+                (_, offset) => ({
+                  reservationId: `reservation-${index}-${offset}`,
+                  expiresAt: expiredAt,
+                }),
+              ),
+            },
+          },
+        ),
+      ),
+    );
+
+    const cleanupPlan = await mongoose.models.CodeEnvironment.collection
+      .find({})
+      .sort({ _id: 1 })
+      .hint('_id_')
+      .limit(1)
+      .explain('executionStats');
+    expect(JSON.stringify(cleanupPlan.queryPlanner.winningPlan)).not.toContain('"stage":"SORT"');
+    expect(cleanupPlan.executionStats.totalDocsExamined).toBeLessThanOrEqual(1);
+    expect(cleanupPlan.executionStats.totalKeysExamined).toBeLessThanOrEqual(1);
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+
+    const afterFirstTick = await mongoose.models.CodeEnvironment.countDocuments({
+      _id: { $in: environments.map(({ _id }) => _id) },
+      'pendingAgentReferences.0': { $exists: true },
+    });
+    expect(afterFirstTick).toBe(1);
+
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+
+    await expect(
+      mongoose.models.CodeEnvironment.countDocuments({
+        _id: { $in: environments.map(({ _id }) => _id) },
+        'pendingAgentReferences.0': { $exists: true },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  test('revisits legacy writes behind the durable cleanup cursor and preserves live leases', async () => {
+    const model = mongoose.models.CodeEnvironment;
+    const owner = await mongoose.models.User.create({
+      email: 'legacy-reference-owner@example.com',
+      provider: 'local',
+    });
+    const environment = await createMethods(mongoose).createCodeEnvironment({
+      environmentId: 'legacy-reference',
+      name: 'Legacy reference',
+      type: 'attached',
+      baseURL: 'https://code.example.com',
+      controlPlaneId: 'shared-code-api',
+      createdBy: owner._id,
+    });
+    await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    const checkpoints = mongoose.connection.db!.collection<{
+      _id: string;
+      lastId: Types.ObjectId | null;
+    }>('code_environment_reconciliation');
+    expect((await checkpoints.findOne({ _id: 'agent-reference-cleanup' }))?.lastId).toBeNull();
+    const live = { reservationId: 'live', expiresAt: new Date(Date.now() + 60_000) };
+    await model.updateOne(
+      { _id: environment._id },
+      {
+        $push: {
+          pendingAgentReferences: {
+            $each: [{ reservationId: 'abandoned', expiresAt: new Date(0) }, live],
+          },
+        },
+      },
+    );
+    for (let index = 0; index < 3; index++) {
+      await createMethods(mongoose).createCodeEnvironment({
+        environmentId: `new-tail-${index}`,
+        name: 'New tail',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+        controlPlaneId: 'shared-code-api',
+        createdBy: owner._id,
+      });
+      await reconcileCodeEnvironmentLifecycle({ mongoose, limit: 1 });
+    }
+    const result = await model
+      .findById(environment._id)
+      .lean<{ pendingAgentReferences: (typeof live)[] }>();
+    expect(result?.pendingAgentReferences).toEqual([expect.objectContaining(live)]);
+  });
+
   test('preserves persisted agent references during interrupted-removal recovery', async () => {
     const ownerId = new Types.ObjectId();
     const registry = createCodeEnvironmentRegistry(mongoose);
