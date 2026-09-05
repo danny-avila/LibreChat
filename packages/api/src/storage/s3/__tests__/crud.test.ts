@@ -1463,6 +1463,40 @@ describe('S3 CRUD', () => {
       expect(key).toBe('images/user123/file.png');
     });
 
+    it('decodes percent-encoded keys from virtual-hosted-style URLs', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url(
+        'https://bucket.s3.amazonaws.com/uploads/user123/abc__%C3%81rsreikningur_2025.pdf',
+      );
+      expect(key).toBe('uploads/user123/abc__Ársreikningur_2025.pdf');
+    });
+
+    it('decodes percent-encoded keys from path-style URLs', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url(
+        'https://s3.us-west-2.amazonaws.com/test-bucket/uploads/user123/%E6%97%A5%E6%9C%AC%E8%AA%9E.pdf',
+      );
+      expect(key).toBe('uploads/user123/日本語.pdf');
+    });
+
+    it('preserves a literal percent in a filename (round-trip through %25)', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url('https://bucket.s3.amazonaws.com/uploads/100%25_done.pdf');
+      expect(key).toBe('uploads/100%_done.pdf');
+    });
+
+    it('returns a raw key untouched even when it contains a percent sign', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = 'uploads/user123/100%_done.pdf';
+      expect(extractKeyFromS3Url(key)).toBe(key);
+    });
+
+    it('falls back to the raw value on a malformed escape sequence', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url('https://bucket.s3.amazonaws.com/uploads/bad%E0%A4A.pdf');
+      expect(key).toBe('uploads/bad%E0%A4A.pdf');
+    });
+
     it('extracts key from path-style regional endpoint', async () => {
       const { extractKeyFromS3Url } = await import('../crud');
       const key = extractKeyFromS3Url(
@@ -1511,12 +1545,13 @@ describe('S3 CRUD', () => {
       expect(key).toBe('folder/file.txt');
     });
 
-    it('handles URLs with encoded characters', async () => {
+    it('decodes URLs with encoded characters back to the stored key', async () => {
       const { extractKeyFromS3Url } = await import('../crud');
       const key = extractKeyFromS3Url(
         'https://bucket.s3.amazonaws.com/test-bucket/images/user123/my%20file%20name.jpg',
       );
-      expect(key).toBe('images/user123/my%20file%20name.jpg');
+      /** The object was stored under `my file name.jpg`; `%20` is URL transport, not part of the key. */
+      expect(key).toBe('images/user123/my file name.jpg');
     });
 
     it('handles deep nested paths', async () => {

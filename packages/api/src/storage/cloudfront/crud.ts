@@ -1,10 +1,9 @@
 import crypto from 'crypto';
+import { logger } from '@librechat/data-schemas';
 import { getSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
-import { logger } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type { Readable } from 'stream';
-import type { ServerRequest } from '~/types';
 import type {
   SaveBufferParams,
   GetURLParams,
@@ -14,10 +13,7 @@ import type {
   SaveURLResult,
   UploadResult,
 } from '~/storage/types';
-import { getCloudFrontConfig } from '~/cdn/cloudfront';
-import { s3Config } from '~/storage/s3/s3Config';
-import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
-import { sanitizeContentDispositionFilename } from '~/storage/validation';
+import type { ServerRequest } from '~/types';
 import {
   getS3Key,
   saveBufferToS3,
@@ -27,6 +23,10 @@ import {
   getS3FileStream,
   resolveStoredS3Key,
 } from '~/storage/s3/crud';
+import { AVATAR_BASE_PATH, DEFAULT_BASE_PATH as defaultBasePath } from '~/storage/constants';
+import { sanitizeContentDispositionFilename } from '~/storage/validation';
+import { getCloudFrontConfig } from '~/cdn/cloudfront';
+import { s3Config } from '~/storage/s3/s3Config';
 
 let _cloudFrontClient: CloudFrontClient | null = null;
 
@@ -84,7 +84,15 @@ function buildCloudFrontUrl(s3Key: string): string {
   }
   const cleanDomain = config.domain.replace(/\/+$/, '');
   const cleanKey = s3Key.replace(/^\/+/, '');
-  return `${cleanDomain}/${cleanKey}`;
+  /**
+   * Percent-encode each path segment (the separators stay literal). Without this a CloudFront
+   * URL carries the raw key while an SDK-generated S3 URL carries an encoded one, so the two
+   * forms of `file.filepath` disagree about what a `%` means: a key containing the literal text
+   * `%20` would be indistinguishable from a key containing a space. Encoding here keeps both
+   * producers consistent, which is what lets `extractKeyFromS3Url` decode unconditionally.
+   */
+  const encodedKey = cleanKey.split('/').map(encodeURIComponent).join('/');
+  return `${cleanDomain}/${encodedKey}`;
 }
 
 function signUrl(url: string | URL): string {
