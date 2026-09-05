@@ -18,6 +18,7 @@ const {
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
+  checkAccess,
 } = require('@librechat/api');
 const {
   Time,
@@ -27,7 +28,9 @@ const {
   ResourceType,
   EModelEndpoint,
   EToolResources,
+  Permissions,
   PermissionBits,
+  PermissionTypes,
   checkOpenAIStorage,
   isAssistantsEndpoint,
   hasActivePiiPatterns,
@@ -43,6 +46,7 @@ const { fileAccess } = require('~/server/middleware/accessResources/fileAccess')
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { getRoleByName } = require('~/models');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
@@ -725,6 +729,16 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
+/**
+ * Role permission required to upload for a given tool resource. Mirrors
+ * `toolAccessPermType` in `~/server/controllers/tools.js`, which gates the
+ * matching tool call — the upload is the other half of the same door.
+ */
+const toolResourcePermType = {
+  [EToolResources.file_search]: PermissionTypes.FILE_SEARCH,
+  [EToolResources.execute_code]: PermissionTypes.RUN_CODE,
+};
+
 router.post('/', async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
@@ -741,6 +755,24 @@ router.post('/', async (req, res) => {
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req });
+
+    /** Check the role permission before any content inspection: a forbidden upload
+     * must be rejected without reading or embedding the file. */
+    const requiredPermission = toolResourcePermType[metadata.tool_resource];
+    if (requiredPermission != null) {
+      const hasAccess = await checkAccess({
+        user: req.user,
+        permissionType: requiredPermission,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
+      if (!hasAccess) {
+        logger.warn(
+          `[${requiredPermission}] Forbidden: Insufficient permissions for User ${req.user.id}: ${Permissions.USE}`,
+        );
+        return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+      }
+    }
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,
