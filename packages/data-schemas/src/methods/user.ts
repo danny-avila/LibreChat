@@ -22,7 +22,8 @@ interface UserMethodDeps {
 }
 
 function isAuthUserDocCacheEnabled(): boolean {
-  return process.env.AUTH_USER_CACHE_MODE === 'on';
+  const configuredMode = process.env.AUTH_USER_CACHE_MODE;
+  return configuredMode === undefined || configuredMode === 'on';
 }
 
 /** Factory function that takes mongoose instance and returns the methods */
