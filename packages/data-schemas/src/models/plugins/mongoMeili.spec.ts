@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MeiliSearchTimeOutError } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import mongoMeili, { MEILI_INDEX_SCHEMA_VERSION } from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
@@ -21,7 +22,10 @@ interface DynamicMeiliDocument extends mongoose.Document {
 
 type DynamicMeiliModel = mongoose.Model<DynamicMeiliDocument> & SchemaWithMeiliMethods;
 
-const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
+const createDynamicMeiliModel = (
+  modelName: string,
+  syncOptions: { syncBatchSize?: number; syncDelayMs?: number } = {},
+): DynamicMeiliModel => {
   const schema = new mongoose.Schema<DynamicMeiliDocument>({
     docId: {
       type: String,
@@ -51,6 +55,7 @@ const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
     apiKey: 'bar',
     indexName: modelName.toLowerCase(),
     primaryKey: 'docId',
+    ...syncOptions,
   });
 
   return mongoose.model<DynamicMeiliDocument>(modelName, schema) as unknown as DynamicMeiliModel;
@@ -92,9 +97,11 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
   getDocuments: mockGetDocuments,
+  waitForTask: mockWaitForTask,
 });
 jest.mock('meilisearch', () => {
   return {
+    MeiliSearchTimeOutError: class MeiliSearchTimeOutError extends Error {},
     MeiliSearch: jest.fn().mockImplementation(() => {
       return {
         index: mockIndex,
@@ -124,7 +131,7 @@ describe('Meilisearch Mongoose plugin', () => {
 
   beforeEach(() => {
     mockAddDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
-    mockAddDocumentsInBatches.mockClear();
+    mockAddDocumentsInBatches.mockReset().mockResolvedValue([{ taskUid: 1 }]);
     mockUpdateDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
     mockDeleteDocument.mockReset().mockResolvedValue({ taskUid: 2 });
     mockDeleteDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
@@ -601,11 +608,63 @@ describe('Meilisearch Mongoose plugin', () => {
     mockGetDocuments.mockResolvedValueOnce({ results: [{ conversationId }] });
     mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
 
-    await conversationModel.syncWithMeili();
+    await expect(conversationModel.syncWithMeili()).rejects.toThrow(
+      'Meilisearch task 1 ended with failed',
+    );
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
     expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId]);
     expect(storedDoc?._meiliIndex).toBe(true);
+  });
+
+  test('continues waiting for an update-hook deletion after an SDK timeout', async () => {
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Indexed conversation awaiting cleanup',
+      endpoint: EModelEndpoint.agents,
+      _meiliIndex: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const conversation = await conversationModel
+      .findOne({ conversationId })
+      .select('+_meiliIndex +_meiliIndexAttempted');
+    const TimeoutError = MeiliSearchTimeOutError as unknown as new (message: string) => Error;
+    mockDeleteDocument.mockClear();
+    mockWaitForTask.mockClear();
+    mockWaitForTask
+      .mockRejectedValueOnce(new TimeoutError('still processing'))
+      .mockResolvedValueOnce({ status: 'succeeded' });
+
+    conversation!.subagentThread = {
+      rootConversationId: 'root-conversation',
+      parentConversationId: 'parent-conversation',
+      parentMessageId: 'parent-message',
+      parentToolCallId: 'parent-tool-call',
+      subagentType: 'agent-child',
+      subagentKind: 'agent',
+      depth: 1,
+    };
+    await conversation!.save();
+    await waitForMockCalls(mockWaitForTask, 2);
+    await waitForCondition(async () => {
+      const storedDoc = await conversationModel.collection.findOne({ conversationId });
+      return storedDoc?._meiliIndex === undefined && storedDoc?._meiliIndexAttempted === undefined;
+    });
+
+    expect(mockDeleteDocument).toHaveBeenCalledTimes(1);
+    expect(mockWaitForTask).toHaveBeenCalledTimes(2);
+    expect(mockWaitForTask).toHaveBeenCalledWith(2, {
+      timeOutMs: 10000,
+      intervalMs: 100,
+    });
   });
 
   test('retries update-hook deletion before clearing an indexed marker', async () => {
@@ -699,7 +758,7 @@ describe('Meilisearch Mongoose plugin', () => {
       .spyOn(conversationModel, 'updateMany')
       .mockRejectedValueOnce(new Error('Mongo acknowledgment failed'));
 
-    await conversationModel.syncWithMeili();
+    await expect(conversationModel.syncWithMeili()).rejects.toThrow('Mongo acknowledgment failed');
     expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
       true,
     );
@@ -1186,6 +1245,423 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(expect.any(Array), undefined, {
         primaryKey: 'conversationId',
       });
+      expect(mockWaitForTask).toHaveBeenCalledWith(1, {
+        timeOutMs: 10_000,
+        intervalMs: 100,
+      });
+    });
+
+    test('does not mark Mongo documents indexed before the Meilisearch task succeeds', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Wait for Meilisearch',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(0);
+
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+      expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(1);
+    });
+
+    test('bounds repeated SDK timeout windows with an overall task deadline', async () => {
+      const modelName = `TaskDeadline${Date.now()}`;
+      const Model = createDynamicMeiliModel(modelName);
+      const TimeoutError = MeiliSearchTimeOutError as unknown as new (message: string) => Error;
+      let now = Date.now();
+      const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+      try {
+        await Model.collection.insertOne({
+          docId: 'task-deadline',
+          user: 'user',
+          title: 'Task deadline',
+          isTemporary: false,
+          expiredAt: null,
+          _meiliIndex: false,
+          updatedAt: new Date(),
+        });
+        mockWaitForTask.mockImplementation(async () => {
+          now += 10_000;
+          throw new TimeoutError('still processing');
+        });
+
+        await expect(Model.syncWithMeili()).rejects.toThrow(
+          'Meilisearch task 1 did not complete within 600000ms',
+        );
+        expect(mockWaitForTask).toHaveBeenCalledTimes(60);
+      } finally {
+        nowSpy.mockRestore();
+        mongoose.deleteModel(modelName);
+      }
+    });
+
+    test('acknowledges an explicit null updatedAt snapshot without requeueing it', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      mockAddDocumentsInBatches
+        .mockResolvedValueOnce([{ taskUid: 1 }])
+        .mockRejectedValueOnce(new Error('null snapshot was requeued'));
+      const _id = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Null timestamp snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+        updatedAt: null,
+      });
+
+      await expect(conversationModel.syncWithMeili()).resolves.toBeUndefined();
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(1);
+      expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(1);
+    });
+
+    test('fails when an unchanged submitted snapshot is not acknowledged', async () => {
+      const modelName = `UnacknowledgedSnapshot${Date.now()}`;
+      const Model = createDynamicMeiliModel(modelName);
+      const updateManySpy = jest
+        .spyOn(Model, 'updateMany')
+        .mockResolvedValueOnce({
+          acknowledged: true,
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        } as never)
+        .mockResolvedValueOnce({
+          acknowledged: true,
+          matchedCount: 0,
+          modifiedCount: 0,
+          upsertedCount: 0,
+          upsertedId: null,
+        } as never);
+      try {
+        await Model.collection.insertOne({
+          docId: 'unacknowledged-snapshot',
+          user: 'user',
+          title: 'Unchanged snapshot',
+          isTemporary: false,
+          expiredAt: null,
+          _meiliIndex: false,
+          updatedAt: new Date(),
+        });
+        const documents = await Model.find({ docId: 'unacknowledged-snapshot' })
+          .select('docId user title updatedAt')
+          .lean();
+
+        await expect(Model.processSyncBatch(mockIndex(), documents)).rejects.toThrow(
+          '[processSyncBatch] docId unacknowledged-snapshot remained unacknowledged',
+        );
+      } finally {
+        updateManySpy.mockRestore();
+        mongoose.deleteModel(modelName);
+      }
+    });
+
+    test('requeues a Mongo document changed while its task was running', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const originalUpdatedAt = new Date('2026-09-01T10:00:00.000Z');
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Original snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+        updatedAt: originalUpdatedAt,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.updateOne(
+        { _id },
+        {
+          $set: {
+            title: 'Newer snapshot',
+            updatedAt: new Date(originalUpdatedAt.getTime() + 1000),
+            _meiliIndex: true,
+            _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
+          },
+        },
+      );
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(2);
+      expect(mockAddDocumentsInBatches).toHaveBeenLastCalledWith(
+        [expect.objectContaining({ title: 'Newer snapshot' })],
+        undefined,
+        { primaryKey: 'conversationId' },
+      );
+      expect(await conversationModel.countDocuments({ _id, _meiliIndex: true })).toBe(1);
+    });
+
+    test('continues beyond the estimate while new documents make durable progress', async () => {
+      const modelName = `GrowingSync${Date.now()}`;
+      const Model = createDynamicMeiliModel(modelName, {
+        syncBatchSize: 1,
+        syncDelayMs: 1,
+      });
+      let insertedAfterEstimate = false;
+      try {
+        await Model.collection.insertOne({
+          docId: 'initial-document',
+          user: 'user',
+          title: 'Initial title',
+          isTemporary: false,
+          expiredAt: null,
+          _meiliIndex: false,
+          updatedAt: new Date(0),
+        });
+        mockWaitForTask.mockImplementation(async () => {
+          if (!insertedAfterEstimate) {
+            insertedAfterEstimate = true;
+            await Model.collection.insertMany(
+              Array.from({ length: 11 }, (_, index) => ({
+                docId: `arriving-document-${index}`,
+                user: 'user',
+                title: `Arriving title ${index}`,
+                isTemporary: false,
+                expiredAt: null,
+                _meiliIndex: false,
+                updatedAt: new Date(index + 1),
+              })),
+            );
+          }
+          return { status: 'succeeded' };
+        });
+
+        await expect(Model.syncWithMeili()).resolves.toBeUndefined();
+
+        expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(12);
+        expect(await Model.countDocuments({ _meiliIndex: true })).toBe(12);
+      } finally {
+        mongoose.deleteModel(modelName);
+      }
+    });
+
+    test('bounds repeated retry passes when a document never stabilizes', async () => {
+      const modelName = `UnstableSync${Date.now()}`;
+      const Model = createDynamicMeiliModel(modelName, {
+        syncBatchSize: 1,
+        syncDelayMs: 1,
+      });
+      let updateVersion = 0;
+      try {
+        await Model.collection.insertOne({
+          docId: 'unstable-document',
+          user: 'user',
+          title: 'Initial title',
+          isTemporary: false,
+          expiredAt: null,
+          _meiliIndex: false,
+          updatedAt: new Date(0),
+        });
+        mockWaitForTask.mockImplementation(async () => {
+          updateVersion += 1;
+          await Model.collection.updateOne(
+            { docId: 'unstable-document' },
+            {
+              $set: {
+                title: `Updated ${updateVersion}`,
+                updatedAt: new Date(updateVersion),
+              },
+            },
+          );
+          return { status: 'succeeded' };
+        });
+
+        await expect(Model.syncWithMeili()).rejects.toThrow(
+          '[syncWithMeili] Reconciliation did not converge after 10 consecutive retry batches',
+        );
+        expect(mockAddDocumentsInBatches).toHaveBeenCalledTimes(10);
+      } finally {
+        mongoose.deleteModel(modelName);
+      }
+    });
+
+    test('removes a stale task snapshot when the Mongo document becomes excluded', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const conversationId = new mongoose.Types.ObjectId();
+      const originalUpdatedAt = new Date('2026-09-01T10:00:00.000Z');
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Visible snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+        updatedAt: originalUpdatedAt,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.updateOne(
+        { _id },
+        {
+          $set: {
+            subagentThread: {
+              rootConversationId: 'root-conversation',
+              parentConversationId: 'parent-conversation',
+              parentMessageId: 'parent-message',
+              parentToolCallId: 'parent-tool-call',
+              subagentType: 'agent-child',
+              subagentKind: 'agent',
+              depth: 1,
+            },
+            updatedAt: new Date(originalUpdatedAt.getTime() + 1000),
+          },
+        },
+      );
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+
+      expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId.toString()]);
+      const storedDoc = await conversationModel.collection.findOne({ _id });
+      expect(storedDoc?._meiliIndex).toBeUndefined();
+      expect(storedDoc?._meiliIndexAttempted).toBeUndefined();
+      expect(storedDoc?._meiliCleanupVersion).toBe(1);
+    });
+
+    test('removes a stale task snapshot when the Mongo document is deleted', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const conversationId = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Deleted snapshot',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+
+      const syncing = conversationModel.syncWithMeili();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.deleteOne({ _id });
+      finishTask?.({ status: 'succeeded' });
+      await syncing;
+
+      expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId.toString()]);
+      expect(await conversationModel.collection.findOne({ _id })).toBeNull();
+    });
+
+    test('requeues a document re-included before an older cleanup task completes', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishDeletion: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishDeletion = resolve;
+          }),
+      );
+      const _id = new mongoose.Types.ObjectId();
+      const conversationId = new mongoose.Types.ObjectId();
+      await conversationModel.collection.insertOne({
+        _id,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        title: 'Re-included conversation',
+        endpoint: EModelEndpoint.openAI,
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+        _meiliIndex: true,
+        expiredAt: null,
+      });
+
+      const cleanup = conversationModel.cleanupExcludedMeiliIndex();
+      await waitForMock(mockWaitForTask);
+      await conversationModel.collection.updateOne(
+        { _id },
+        {
+          $unset: { subagentThread: '' },
+          $set: { _meiliIndex: true },
+        },
+      );
+      finishDeletion?.({ status: 'succeeded' });
+      await cleanup;
+
+      const pendingDoc = await conversationModel.collection.findOne({ _id });
+      expect(pendingDoc?._meiliIndex).toBe(false);
+      expect(pendingDoc?._meiliIndexAttempted).toBe(true);
+
+      mockWaitForTask.mockClear();
+      await conversationModel.syncWithMeili();
+
+      expect(mockAddDocumentsInBatches).toHaveBeenCalledWith(
+        [expect.objectContaining({ conversationId })],
+        undefined,
+        { primaryKey: 'conversationId' },
+      );
+      expect((await conversationModel.collection.findOne({ _id }))?._meiliIndex).toBe(true);
     });
 
     test('a transient document-write failure retries without delaying MongoDB persistence', async () => {
@@ -1545,7 +2021,7 @@ describe('Meilisearch Mongoose plugin', () => {
       });
 
       // Mock addDocumentsInBatches to succeed but simulate updateMany failure
-      mockAddDocumentsInBatches.mockResolvedValueOnce({});
+      mockAddDocumentsInBatches.mockResolvedValueOnce([{ taskUid: 1 }]);
 
       // Spy on updateMany and make it fail
       const updateManySpy = jest
@@ -1855,6 +2331,21 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockGetDocuments).toHaveBeenCalledTimes(1);
     });
 
+    test('cleanupMeiliIndex treats a missing index as an empty cleanup target', async () => {
+      const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
+      const missingIndexError = Object.assign(new Error('Index not found'), {
+        code: 'index_not_found',
+      });
+      mockGetDocuments.mockRejectedValueOnce(missingIndexError);
+
+      const indexMock = mockIndex();
+
+      await expect(
+        messageModel.cleanupMeiliIndex(indexMock, 'messageId', 100, 0),
+      ).resolves.toBeUndefined();
+      expect(mockDeleteDocuments).not.toHaveBeenCalled();
+    });
+
     test('cleanupMeiliIndex stops when results.length < batchSize', async () => {
       const conversationModel = createConversationModel(
         mongoose,
@@ -2001,17 +2492,16 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(mockGetDocuments).toHaveBeenCalledTimes(3);
     });
 
-    test('cleanupMeiliIndex handles errors gracefully', async () => {
+    test('cleanupMeiliIndex propagates errors', async () => {
       const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
 
       mockGetDocuments.mockRejectedValueOnce(new Error('MeiliSearch connection error'));
 
       const indexMock = mockIndex();
 
-      // Should not throw, errors are caught and logged
-      await expect(
-        messageModel.cleanupMeiliIndex(indexMock, 'messageId', 100, 0),
-      ).resolves.not.toThrow();
+      await expect(messageModel.cleanupMeiliIndex(indexMock, 'messageId', 100, 0)).rejects.toThrow(
+        'MeiliSearch connection error',
+      );
     });
 
     test('cleanupMeiliIndex with all documents being orphaned', async () => {

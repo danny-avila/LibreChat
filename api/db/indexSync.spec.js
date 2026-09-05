@@ -16,8 +16,11 @@ const mockLogger = {
 
 const mockMeiliHealth = jest.fn();
 const mockMeiliIndex = jest.fn();
+const mockWaitForTask = jest.fn();
 const mockBatchResetMeiliFlags = jest.fn();
 const mockIsEnabled = jest.fn();
+const mockRunDistributedJob = jest.fn();
+const mockWaitForMeiliTask = jest.fn();
 const mockGetLogStores = jest.fn();
 
 // Create mock models that will be reused
@@ -38,9 +41,11 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('meilisearch', () => ({
+  MeiliSearchTimeOutError: class MeiliSearchTimeOutError extends Error {},
   MeiliSearch: jest.fn(() => ({
     health: mockMeiliHealth,
     index: mockMeiliIndex,
+    waitForTask: mockWaitForTask,
   })),
 }));
 
@@ -50,6 +55,8 @@ jest.mock('./utils', () => ({
 
 jest.mock('@librechat/api', () => ({
   isEnabled: mockIsEnabled,
+  runDistributedJob: mockRunDistributedJob,
+  waitForMeiliTask: mockWaitForMeiliTask,
   FlowStateManager: jest.fn(),
 }));
 
@@ -97,12 +104,20 @@ describe('performSync() - syncThreshold logic', () => {
 
     // Mock isEnabled
     mockIsEnabled.mockImplementation((val) => val === 'true' || val === true);
+    mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) => handler());
+    mockWaitForMeiliTask.mockImplementation(async (client, taskUid, operation) => {
+      const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
+      if (task.status !== 'succeeded') {
+        throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
+      }
+    });
 
     // Mock MeiliSearch client responses
     mockMeiliHealth.mockResolvedValue({ status: 'available' });
+    mockWaitForTask.mockResolvedValue({ status: 'succeeded' });
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
-      updateSettings: jest.fn().mockResolvedValue({}),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
@@ -116,6 +131,168 @@ describe('performSync() - syncThreshold logic', () => {
   afterAll(() => {
     mongoose.models.Message = originalMessageModel;
     mongoose.models.Conversation = originalConversationModel;
+  });
+
+  test('skips synchronization when another replica completed the distributed job', async () => {
+    mockRunDistributedJob.mockResolvedValue(undefined);
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(mockGetLogStores).not.toHaveBeenCalled();
+    expect(mockMeiliHealth).not.toHaveBeenCalled();
+  });
+
+  test('propagates synchronization failures to the distributed job coordinator', async () => {
+    const createFlowWithHandler = jest.fn().mockRejectedValue(new Error('sync failed'));
+    const { FlowStateManager } = require('@librechat/api');
+    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
+    mockGetLogStores.mockReturnValueOnce({});
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('sync failed');
+    expect(mockLogger.error).toHaveBeenCalledWith('[indexSync] error', expect.any(Error));
+  });
+
+  test('propagates failed settings tasks to the distributed job coordinator', async () => {
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 17 }),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    });
+    mockWaitForTask.mockResolvedValue({ status: 'failed' });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('messages settings task 17 ended with failed');
+    expect(mockBatchResetMeiliFlags).not.toHaveBeenCalled();
+  });
+
+  test('propagates failed orphan-deletion tasks to the distributed job coordinator', async () => {
+    const deleteDocuments = jest.fn().mockResolvedValue({ taskUid: 23 });
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn(),
+      search: jest.fn().mockResolvedValue({ hits: [{ messageId: 'legacy-document' }] }),
+      deleteDocuments,
+    });
+    mockWaitForTask.mockResolvedValue({ status: 'canceled' });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('messages cleanup task 23 ended with canceled');
+    expect(deleteDocuments).toHaveBeenCalledWith(['legacy-document']);
+  });
+
+  test('does not skip orphaned documents after deleting a full search page', async () => {
+    const firstPageIds = Array.from({ length: 1000 }, (_, index) => `legacy-${index}`);
+    const deleteDocuments = jest
+      .fn()
+      .mockResolvedValueOnce({ taskUid: 31 })
+      .mockResolvedValueOnce({ taskUid: 32 });
+    const search = jest
+      .fn()
+      .mockResolvedValueOnce({ hits: [{ messageId: firstPageIds[0] }] })
+      .mockResolvedValueOnce({ hits: [] })
+      .mockResolvedValueOnce({ hits: firstPageIds.map((messageId) => ({ messageId })) })
+      .mockResolvedValueOnce({ hits: [{ messageId: 'legacy-final' }] })
+      .mockResolvedValueOnce({ hits: [] });
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn(),
+      search,
+      deleteDocuments,
+    });
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 1,
+      totalDocuments: 1,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 1,
+      totalDocuments: 1,
+      isComplete: true,
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(search).toHaveBeenNthCalledWith(4, '', { limit: 1000, offset: 0 });
+    expect(deleteDocuments).toHaveBeenNthCalledWith(1, firstPageIds);
+    expect(deleteDocuments).toHaveBeenNthCalledWith(2, ['legacy-final']);
+  });
+
+  test('fails orphan cleanup when a legacy hit lacks the configured primary key', async () => {
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn(),
+      search: jest.fn().mockResolvedValue({ hits: [{ id: 'wrong-key' }] }),
+      deleteDocuments: jest.fn(),
+    });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow(
+      '[indexSync] Cannot clean messages document without messageId',
+    );
+  });
+
+  test('fails orphan cleanup when a completed deletion does not advance the page', async () => {
+    const stalledPage = Array.from({ length: 1000 }, (_, index) => ({
+      messageId: `legacy-${index}`,
+    }));
+    const deleteDocuments = jest.fn().mockResolvedValue({ taskUid: 41 });
+    const search = jest
+      .fn()
+      .mockResolvedValueOnce({ hits: [{ messageId: stalledPage[0].messageId }] })
+      .mockResolvedValueOnce({ hits: [] })
+      .mockResolvedValue({ hits: stalledPage });
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn(),
+      search,
+      deleteDocuments,
+    });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('[indexSync] messages cleanup made no progress');
+    expect(deleteDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  test('creates missing indexes immediately inside the distributed job', async () => {
+    const missingIndexError = Object.assign(new Error('Index not found'), {
+      code: 'index_not_found',
+    });
+    const createFlowWithHandler = jest.fn().mockRejectedValue(missingIndexError);
+    const { FlowStateManager } = require('@librechat/api');
+    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
+    mockGetLogStores.mockReturnValueOnce({});
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(mockRunDistributedJob).toHaveBeenCalledTimes(1);
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+  });
+
+  test('propagates a missing FlowState without starting index sync', async () => {
+    const createFlowWithHandler = jest
+      .fn()
+      .mockRejectedValue(new Error('Flow state not found after retry'));
+    const { FlowStateManager } = require('@librechat/api');
+    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
+    mockGetLogStores.mockReturnValueOnce({});
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow('Flow state not found after retry');
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
   });
 
   test('triggers sync when unindexed messages exceed syncThreshold', async () => {
@@ -379,7 +556,7 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock settings update scenario
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
-      updateSettings: jest.fn().mockResolvedValue({}),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
@@ -422,7 +599,7 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock settings update scenario
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
-      updateSettings: jest.fn().mockResolvedValue({}),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
@@ -467,7 +644,7 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock settings update scenario
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: [] }), // No user field
-      updateSettings: jest.fn().mockResolvedValue({}),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
       search: jest.fn().mockResolvedValue({ hits: [] }),
     });
 
