@@ -140,7 +140,10 @@
     "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
     "migrate:code-file-duplicates:dry-run": "node config/migrate-code-file-duplicates.js --dry-run",
     "migrate:code-file-duplicates": "node config/migrate-code-file-duplicates.js",
-    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50"
+    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50",
+    "lighthouse": "npm run e2e:prepare && npm run lighthouse:run",
+    "lighthouse:run": "playwright test --config=e2e/playwright.config.lighthouse.ts",
+    "lighthouse:regression": "cross-env LIGHTHOUSE_REGRESSION=serial-reads npm run lighthouse:run"
   },
   "repository": {
     "type": "git",
@@ -158,6 +161,7 @@
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^9.20.0",
+    "@lhci/cli": "0.15.1",
     "@playwright/test": "^1.62.1",
     "@types/react-virtualized": "^9.22.0",
     "brace-expansion": "^2.1.2",
@@ -178,6 +182,7 @@
     "globals": "^15.14.0",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
+    "lighthouse": "12.6.1",
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",

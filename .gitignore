@@ -189,3 +189,7 @@ CLAUDE.md
 .gsd
 codedb.snapshot
 scripts/activity-labels/results/
+
+!e2e/lighthouse/librechat.yaml
+/.lighthouseci/
+/e2e/lighthouse/.test-results/
