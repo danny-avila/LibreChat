@@ -41,6 +41,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://render.com/deploy?repo=https://github.com/danny-avila/LibreChat">
+  <img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render" height="30">
+</a>
 </p>
 
 <p align="center">

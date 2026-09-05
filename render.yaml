@@ -1,0 +1,69 @@
+projects:
+  - name: librechat
+    environments:
+      - name: production
+        services:
+          - type: web
+            name: librechat
+            runtime: docker
+            # starter's 512MB caps the Node heap near 258MB, which a logged-in
+            # session exhausts within minutes.
+            plan: standard
+            # Both services must share a region to reach each other privately.
+            region: oregon
+            dockerfilePath: ./Dockerfile
+            # /health answers before startup finishes, while POSTs are still rejected.
+            healthCheckPath: /readyz
+            autoDeployTrigger: commit
+            dockerCommand: sh /app/scripts/render-start.sh
+            disk:
+              name: librechat-data
+              mountPath: /app/data
+              sizeGB: 1
+            envVars:
+              - key: MONGO_HOSTPORT
+                fromService:
+                  name: librechat-mongo
+                  type: pserv
+                  property: hostport
+              - key: MONGO_USERNAME
+                fromService:
+                  name: librechat-mongo
+                  type: pserv
+                  envVarKey: MONGO_INITDB_ROOT_USERNAME
+              - key: MONGO_PASSWORD
+                fromService:
+                  name: librechat-mongo
+                  type: pserv
+                  envVarKey: MONGO_INITDB_ROOT_PASSWORD
+              - key: LIBRECHAT_TEMP_CREDENTIALS_PATH
+                value: /app/data/.env.temp
+              # Needed to create the first account. Set this to false afterwards, or
+              # anyone who finds the URL can register.
+              - key: ALLOW_REGISTRATION
+                value: 'true'
+              - key: JWT_SECRET
+                generateValue: true
+              - key: JWT_REFRESH_SECRET
+                generateValue: true
+              - key: OPENAI_API_KEY
+                sync: false
+
+          - type: pserv
+            name: librechat-mongo
+            runtime: image
+            plan: starter
+            region: oregon
+            image:
+              url: docker.io/library/mongo:8.0.20
+            envVars:
+              # The mongo image only creates this user while /data/db is empty,
+              # so adding authentication to an existing deploy needs a new disk.
+              - key: MONGO_INITDB_ROOT_USERNAME
+                value: librechat
+              - key: MONGO_INITDB_ROOT_PASSWORD
+                generateValue: true
+            disk:
+              name: mongo-data
+              mountPath: /data/db
+              sizeGB: 1
