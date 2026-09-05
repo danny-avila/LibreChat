@@ -551,6 +551,38 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(initializeParams.skillAuthoringAvailable).toBe(true);
   });
 
+  it('keeps an explicit skills disable over the model-spec default', async () => {
+    const endpointOption = makeEndpointOption();
+    endpointOption.spec = 'spec-skills';
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+      skills_enabled: false,
+      skills: [],
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.body.ephemeralAgent = { skills: false };
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    req.config.modelSpecs = {
+      list: [{ name: 'spec-skills', skills: true }],
+    };
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption,
+    });
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.agent.skills_enabled).toBe(false);
+    expect(initializeParams.agent.skills).toEqual([]);
+  });
+
   it('enables standalone authoring without exposing the persisted agent skill catalog', async () => {
     const endpointOption = makeEndpointOption();
     endpointOption.agent = Promise.resolve({

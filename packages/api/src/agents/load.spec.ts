@@ -1,5 +1,6 @@
 import { EModelEndpoint, parseEphemeralAgentId } from 'librechat-data-provider';
 import type { LoadAgentDeps } from './load';
+import { loadAddedAgent } from './added';
 import { loadEphemeralAgent } from './load';
 import { resolveSender } from './sender';
 
@@ -98,5 +99,109 @@ describe('loadEphemeralAgent → resolveSender parity', () => {
     });
     expect(sender).toBe('My Opus');
     expect(sender).toBe(parseEphemeralAgentId(agent?.id ?? '')?.sender);
+  });
+});
+
+describe('loadEphemeralAgent model-spec defaults', () => {
+  const modelSpec = {
+    name: 'tool-defaults',
+    label: 'Tool Defaults',
+    preset: { endpoint: 'agents', model: 'gpt-4' },
+    mcpServers: ['spec-server'],
+    webSearch: true,
+    fileSearch: true,
+    executeCode: true,
+    memory: true,
+    askUserQuestion: true,
+    skills: true,
+  };
+  const explicitDisabledSelections = {
+    mcp: [],
+    web_search: false,
+    file_search: false,
+    execute_code: false,
+    memory: false,
+    ask_user_question: false,
+    skills: false,
+  };
+
+  test('explicit request selections override optional defaults but retain model-spec MCP pins', async () => {
+    const getMCPServerTools = jest.fn(async () => ({ spec_tool: {} }));
+    const agent = await loadEphemeralAgent(
+      {
+        req: {
+          user: { id: 'user-1' },
+          config: {
+            modelSpecs: { list: [modelSpec] },
+          },
+          body: {
+            ephemeralAgent: explicitDisabledSelections,
+          },
+        } as unknown as Parameters<typeof loadEphemeralAgent>[0]['req'],
+        spec: 'tool-defaults',
+        endpoint: 'agents',
+        model_parameters: { model: 'gpt-4' } as never,
+      },
+      { ...deps, getMCPServerTools },
+    );
+
+    expect(agent?.tools).toEqual(['spec_tool']);
+    expect(agent?.skills_enabled).toBe(false);
+    expect(agent?.skills).toEqual([]);
+    expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'spec-server', undefined);
+  });
+
+  test('model-spec defaults apply when the request omits selections', async () => {
+    const getMCPServerTools = jest.fn(async () => ({ spec_tool: {} }));
+    const agent = await loadEphemeralAgent(
+      {
+        req: {
+          user: { id: 'user-1' },
+          config: { modelSpecs: { list: [modelSpec] } },
+          body: { ephemeralAgent: {} },
+        } as unknown as Parameters<typeof loadEphemeralAgent>[0]['req'],
+        spec: 'tool-defaults',
+        endpoint: 'agents',
+        model_parameters: { model: 'gpt-4' } as never,
+      },
+      { ...deps, getMCPServerTools },
+    );
+
+    expect(agent?.tools).toEqual([
+      'execute_code',
+      'file_search',
+      'web_search',
+      'memory',
+      'ask_user_question',
+      'spec_tool',
+    ]);
+    expect(agent?.skills_enabled).toBe(true);
+    expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'spec-server', undefined);
+  });
+
+  test('added agents override optional defaults but retain model-spec MCP pins', async () => {
+    const getMCPServerTools = jest.fn(async () => ({ spec_tool: {} }));
+    const agent = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user-1' },
+          config: {
+            modelSpecs: { list: [modelSpec] },
+          },
+        },
+        conversation: {
+          endpoint: 'agents',
+          model: 'gpt-4',
+          spec: 'tool-defaults',
+          ephemeralAgent: explicitDisabledSelections,
+        } as never,
+      },
+      { ...deps, getMCPServerTools },
+    );
+
+    expect(agent?.tools).toEqual(['spec_tool']);
+    expect(agent?.skills_enabled).toBe(false);
+    expect(agent?.skills).toEqual([]);
+    expect(getMCPServerTools).toHaveBeenCalledWith('user-1', 'spec-server', undefined);
   });
 });

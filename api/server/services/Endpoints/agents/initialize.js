@@ -548,6 +548,7 @@ const initializeClient = async ({
     primaryAgent &&
     isEphemeralAgentId(primaryAgent.id) &&
     selectedModelSpec &&
+    req.body?.ephemeralAgent?.skills === undefined &&
     Object.hasOwn(selectedModelSpec, 'skills')
   ) {
     if (selectedModelSpec.skills === true) {

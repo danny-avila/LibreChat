@@ -99,22 +99,22 @@ export async function loadEphemeralAgent(
     ephemeralAgent.mcp = [...mcpServers];
   }
   const tools: string[] = [];
-  if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
+  if ((ephemeralAgent?.execute_code ?? modelSpec?.executeCode) === true) {
     tools.push(Tools.execute_code);
   }
-  if (ephemeralAgent?.file_search === true || modelSpec?.fileSearch === true) {
+  if ((ephemeralAgent?.file_search ?? modelSpec?.fileSearch) === true) {
     tools.push(Tools.file_search);
   }
-  if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
+  if ((ephemeralAgent?.web_search ?? modelSpec?.webSearch) === true) {
     tools.push(Tools.web_search);
   }
-  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+  if ((ephemeralAgent?.memory ?? modelSpec?.memory) === true) {
     tools.push(Tools.memory);
   }
   /** Same downstream gating as persisted agents applies: `createRun` only
    *  equips the tool when the request is HITL-capable, the agent is not a
    *  subagent, and the admin hasn't excluded it (filteredTools/includedTools). */
-  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+  if ((ephemeralAgent?.ask_user_question ?? modelSpec?.askUserQuestion) === true) {
     tools.push(ASK_USER_QUESTION_TOOL_NAME);
   }
 
@@ -206,7 +206,12 @@ export async function loadEphemeralAgent(
   if (modelSpec?.subagents) {
     result.subagents = modelSpec.subagents;
   }
-  if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+  if (ephemeralAgent?.skills !== undefined) {
+    result.skills_enabled = ephemeralAgent.skills;
+    if (ephemeralAgent.skills === false) {
+      result.skills = [];
+    }
+  } else if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
     if (modelSpec.skills === true) {
       result.skills_enabled = true;
     } else if (modelSpec.skills === false) {
