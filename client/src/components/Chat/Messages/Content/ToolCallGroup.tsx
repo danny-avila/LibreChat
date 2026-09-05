@@ -23,6 +23,7 @@ import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import { StackedToolIcons } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
+import { ROW_GLYPH_SLOT } from './rows';
 import store from '~/store';
 
 interface ToolMeta {
@@ -356,7 +357,8 @@ export default function ToolCallGroup({
            *  rather than "tools". */
           <div
             className={cn(
-              'flex size-4 shrink-0 items-center justify-center text-text-secondary',
+              ROW_GLYPH_SLOT,
+              'text-text-secondary',
               !allCompleted && isSubmitting && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
@@ -364,12 +366,14 @@ export default function ToolCallGroup({
             <CategoryIcon size={14} />
           </div>
         ) : (
-          <StackedToolIcons
-            toolNames={iconToolNames}
-            mcpIconMap={mcpIconMap}
-            maxIcons={4}
-            isAnimating={!allCompleted && isSubmitting}
-          />
+          <div className={ROW_GLYPH_SLOT} aria-hidden="true">
+            <StackedToolIcons
+              toolNames={iconToolNames}
+              mcpIconMap={mcpIconMap}
+              maxIcons={4}
+              isAnimating={!allCompleted && isSubmitting}
+            />
+          </div>
         )}
         <span
           className={cn(

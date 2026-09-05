@@ -13,6 +13,7 @@ import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
+import { ROW_GLYPH_SLOT } from './rows';
 import cn from '~/utils/cn';
 import store from '~/store';
 
@@ -257,11 +258,13 @@ export default function WebSearch({
               : completedText
           }
         >
-          {hasSourceData ? (
-            <SourceFaviconStack sources={allSources} />
-          ) : (
-            <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-          )}
+          <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+            {hasSourceData ? (
+              <SourceFaviconStack sources={allSources} />
+            ) : (
+              <Globe className="size-4 shrink-0 text-text-secondary" />
+            )}
+          </span>
           <span className="min-w-0 truncate font-medium">{completedText}</span>
           {hasSourceData && (
             <ChevronDown
@@ -309,12 +312,14 @@ export default function WebSearch({
   }
 
   return (
-    <div className="my-1 flex items-center gap-2.5">
+    <div className="my-1 flex items-center gap-2">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {genericProgressText}
       </span>
-      {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
-      <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+      <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+        {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
+        <Globe className="size-4 shrink-0 text-text-secondary" />
+      </span>
       <span className="tool-status-text shimmer min-w-0 truncate font-medium text-text-secondary">
         {progressText}
       </span>

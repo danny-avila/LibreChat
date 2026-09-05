@@ -12,8 +12,8 @@ import {
 } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { getActivityLabelText } from '~/utils/activityLabels';
-import { AttachmentGroup, EmptyText } from './Parts';
-import { TOOL_ROW_CLASSES } from './rows';
+import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import { AttachmentGroup } from './Parts';
 import { cn } from '~/utils';
 
 /** Matches `EXPAND_TRANSITION` so the panel and the label ticker resolve on
@@ -57,18 +57,15 @@ function schedulePostPaint(callback: () => void): () => void {
 }
 
 /** The header's icon slot. Its only job is geometric: every other row in the
- *  transcript opens with a 16px glyph and an 8px gap, so a summary rendered
- *  without one sits 24px to the left of the rows it replaces — the fold then
- *  moves its own text sideways at the moment the reader is trying to follow
- *  it. */
+ *  transcript opens with the same glyph slot and an 8px gap, so a summary
+ *  rendered without one sits to the left of the rows it replaces — the fold
+ *  then moves its own text sideways at the moment the reader is trying to
+ *  follow it. */
 function PhaseGlyph({ failed }: { failed: boolean }) {
   const Icon = failed ? TriangleAlert : Check;
   return (
     <span
-      className={cn(
-        'flex size-4 shrink-0 items-center justify-center',
-        failed ? 'text-text-warning' : 'text-text-secondary',
-      )}
+      className={cn(ROW_GLYPH_SLOT, failed ? 'text-text-warning' : 'text-text-secondary')}
       aria-hidden="true"
     >
       <Icon size={14} />
@@ -275,11 +272,17 @@ export default function ActivityPhaseGroup({
    *  starts and the cursor gives way to a row again. A cursor in a bare
    *  `Container` (20px, no margins) was 12px shorter than the tool row
    *  (`my-1.5 h-5`), so everything beneath the card stepped up on every
-   *  absorb and back down on every call. The cursor takes the row's exact box
-   *  and a 2px inset centers the 12px dot on the 16px glyph rail. */
+   *  absorb and back down on every call. The cursor takes the row's exact box,
+   *  and the dot sits in the row's glyph slot. `.result-thinking` draws the
+   *  dot as an absolutely positioned pseudo-element 11px above its line —
+   *  right for the streaming-markdown cursor, wrong here — so `after:!static`
+   *  puts that one pseudo-element back in flow for the slot to center; the
+   *  `!` is what outranks the dot rule's three-class selector. */
   const cursor = showCursor ? (
-    <div className={cn(TOOL_ROW_CLASSES, 'ps-0.5')} data-testid="activity-phase-cursor">
-      <EmptyText />
+    <div className={TOOL_ROW_CLASSES} data-testid="activity-phase-cursor">
+      <span className={cn(ROW_GLYPH_SLOT, 'submitting')} aria-hidden="true">
+        <span className="result-thinking block after:!static" />
+      </span>
     </div>
   ) : null;
   const media =
