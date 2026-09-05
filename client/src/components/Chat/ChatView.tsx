@@ -1,10 +1,10 @@
-import { memo, useCallback } from 'react';
+import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
-import type { TChatProject, TMessage } from 'librechat-data-provider';
+import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
   useAddedResponse,
@@ -50,19 +50,12 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const fileMap = useFileMapContext();
 
   const {
-    data: messagesTree = null,
+    data: messages = null,
     isLoading,
     isFetching,
   } = useGetMessagesByConvoId(
     conversationId ?? '',
     {
-      select: useCallback(
-        (data: TMessage[]) => {
-          const dataTree = buildTree({ messages: data, fileMap });
-          return dataTree?.length === 0 ? null : (dataTree ?? null);
-        },
-        [fileMap],
-      ),
       enabled: !!conversationId && conversationId !== Constants.SEARCH,
       /** Refetch stale caches on mount: navigation invalidates (not removes)
        * messages now, so a warm conversation renders instantly from cache and
@@ -71,6 +64,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     },
     { isStreaming: isSubmitting },
   );
+  const messagesTree = useMemo(() => {
+    const dataTree = buildTree({ messages, fileMap });
+    return dataTree?.length === 0 ? null : (dataTree ?? null);
+  }, [messages, fileMap]);
 
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();
@@ -104,7 +101,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   } else if ((isLoading || isNavigating) && !isLandingPage) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
-    content = <MessagesView messagesTree={messagesTree} />;
+    content = <MessagesView messagesTree={messagesTree} messages={messages} />;
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }
