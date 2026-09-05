@@ -460,13 +460,30 @@ html.high-contrast.dark :focus-visible {
   outline: 3px solid rgb(var(--text-primary));
   outline-offset: 2px;
 }
-/* `.select-item` blanks its own outline with `!important`, leaving the navigated
- * option marked only by a `surface-hover` fill at 1.48:1 on white and 1.93:1 on
- * black. Hover stays deliberately soft in these palettes, so the cue has to be a
- * perimeter, and it has to match that `!important` to land. Inset so it reads
- * inside the popover's own border. */
+/* Selection and navigation are conveyed by a fill alone almost everywhere, and
+ * these palettes keep fills light on purpose so the label on them can clear AAA
+ * (see the `surface-active` note in `themes/highContrast.ts`). The cue is
+ * therefore a perimeter: `text-primary` is 21:1 against either canvas, and it
+ * is what discharges WCAG 1.4.11 for the fill.
+ *
+ * Three families need it. `.select-item` blanks its own outline with
+ * `!important`, so this has to match that to land. Ariakit marks the navigated
+ * row of every other menu with `data-active-item`; those items only carried a
+ * `surface-hover` fill at 1.48:1 on white. And any row painted with the
+ * selected-surface role marks itself with that fill and nothing else. Inset so
+ * the ring reads inside the row's own radius; `span` is excluded because the
+ * one inline user of the role is a highlighted passage that wraps across lines
+ * and would box every fragment. */
 html.high-contrast .select-item[data-active-item],
-html.high-contrast .select-item:focus-visible {
+html.high-contrast .select-item:focus-visible,
+html.high-contrast
+  :is(
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio'],
+    [role='option']
+  )[data-active-item],
+html.high-contrast :is(.bg-surface-active, .bg-surface-active-alt):not(span) {
   outline: 3px solid rgb(var(--text-primary)) !important;
   outline-offset: -3px;
 }

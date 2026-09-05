@@ -31,8 +31,6 @@ function hexToRgb(value: string): Rgb {
 
 /** WCAG 1.4.6 enhanced contrast, the reason these modes exist. */
 const WCAG_AAA_NORMAL = 7;
-/** WCAG 1.4.3, the floor a fill that must also satisfy 1.4.11 can still carry. */
-const WCAG_AA_NORMAL = 4.5;
 /** WCAG 1.4.11 non-text contrast, for borders, rings, marks and fills. */
 const WCAG_NON_TEXT = 3;
 
@@ -58,14 +56,12 @@ const surfaces: Array<keyof IThemeRGB> = [
   'rgb-header-button-hover',
 ];
 
-/** The selected state. Dozens of call sites convey it with this fill alone, and
- *  every ink token collapses to one colour here, so the fill has to satisfy
- *  WCAG 1.4.11 on its own. That caps the label it can carry: see the note on
- *  these tokens in `highContrast.ts` for why AAA is unreachable for both. */
+/** The selected state. The fill no longer discharges WCAG 1.4.11 by itself: the
+ *  contrast block rings every selected row and navigated menu item in
+ *  `text-primary` at 21:1 (`html.high-contrast :is(...)` in
+ *  `client/src/style.css`). That is what lets the fill stay light enough to
+ *  carry an AAA label, which a fill dark enough to mark itself could not. */
 const activeFills: Array<keyof IThemeRGB> = ['rgb-surface-active', 'rgb-surface-active-alt'];
-
-/** The canvas each mode's active fill has to stand out from. */
-const canvasSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-primary', 'rgb-presentation'];
 
 const textTokens: Array<keyof IThemeRGB> = [
   'rgb-text-primary',
@@ -187,9 +183,8 @@ describe.each([
     ).toEqual([]);
   });
 
-  it('makes the selected state visible without dropping its label below AA', () => {
-    expect(below(theme, WCAG_NON_TEXT, activeFills, canvasSurfaces)).toEqual([]);
-    expect(below(theme, WCAG_AA_NORMAL, textTokens, activeFills)).toEqual([]);
+  it('keeps the selected fill light enough for an AAA label', () => {
+    expect(below(theme, WCAG_AAA_NORMAL, textTokens, activeFills)).toEqual([]);
   });
 
   /** The standard palettes are deliberately not held to this: their dark

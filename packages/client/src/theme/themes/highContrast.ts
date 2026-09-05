@@ -58,13 +58,15 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-header-button-hover': '212 212 212', // #d4d4d4
 
   // Surface colors
-  /** Selected state, so WCAG 1.4.11 applies: 3.36:1 and 4.29:1 against the
-   *  canvas. Their black label lands at 6.25:1 and 4.89:1, short of AAA, which
-   *  is the unavoidable trade. Below L 0.3 a fill clears the 3:1 state floor and
-   *  caps its own label below 7:1; above it the label clears AAA and the state
-   *  disappears. 1.4.11 is Level AA and 1.4.6 is Level AAA, so the state wins. */
-  'rgb-surface-active': '140 140 140', // #8c8c8c
-  'rgb-surface-active-alt': '122 122 122', // #7a7a7a
+  /** Selected state. The fill does not carry WCAG 1.4.11 on its own: the
+   *  contrast block in `client/src/style.css` rings every selected row and
+   *  navigated menu item in `text-primary`, which is 21:1 against either canvas.
+   *  That perimeter is what frees these fills to stay light, so a selected row's
+   *  black label clears AAA (15.8:1 and 14.6:1) instead of the 6.25:1 a fill
+   *  dark enough to mark itself used to cap it at. `-alt` meets `surface-hover`,
+   *  the same place the standard light palette puts it. */
+  'rgb-surface-active': '227 227 227', // #e3e3e3
+  'rgb-surface-active-alt': '212 212 212', // #d4d4d4
   'rgb-surface-hover': '212 212 212', // #d4d4d4
   'rgb-surface-hover-alt': '184 184 184', // #b8b8b8
   'rgb-surface-composer-hover': '212 212 212', // #d4d4d4
@@ -191,13 +193,12 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-header-button-hover': '61 61 61', // #3d3d3d
 
   // Surface colors
-  /** Selected state, so WCAG 1.4.11 applies: 3.14:1 and 3.83:1 against the
-   *  canvas. Their white label lands at 6.69:1 and 5.49:1, short of AAA, which
-   *  is the unavoidable trade. Above L 0.1 a fill clears the 3:1 state floor and
-   *  caps its own label below 7:1; below it the label clears AAA and the state
-   *  disappears. 1.4.11 is Level AA and 1.4.6 is Level AAA, so the state wins. */
-  'rgb-surface-active': '92 92 92', // #5c5c5c
-  'rgb-surface-active-alt': '105 105 105', // #696969
+  /** Selected state, the mirror of the light note: the perimeter marks the row,
+   *  so these step off the canvas only as far as an AAA white label allows —
+   *  14.2:1 and 10.9:1, against the 6.69:1 and 5.49:1 a self-marking fill used
+   *  to force. `-alt` meets `surface-hover`, as it does in the light palette. */
+  'rgb-surface-active': '43 43 43', // #2b2b2b
+  'rgb-surface-active-alt': '61 61 61', // #3d3d3d
   'rgb-surface-hover': '61 61 61', // #3d3d3d
   'rgb-surface-hover-alt': '87 87 87', // #575757
   'rgb-surface-composer-hover': '61 61 61', // #3d3d3d
