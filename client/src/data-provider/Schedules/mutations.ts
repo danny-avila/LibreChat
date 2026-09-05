@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
 import type {
+  TUser,
   TSchedule,
   TConversation,
   TCreateSchedule,
@@ -9,8 +10,8 @@ import type {
   TScheduleRunNowResponse,
 } from 'librechat-data-provider';
 import type { QueryClient, UseMutationOptions } from '@tanstack/react-query';
+import { extendActiveJobsGrace, queueTitleGeneration } from '~/data-provider/SSE/queries';
 import { upsertConvoInAllQueries, getResponseStatus } from '~/utils';
-import { extendActiveJobsGrace } from '~/data-provider/SSE/queries';
 
 export const useCreateScheduleMutation = (
   options?: UseMutationOptions<TSchedule, Error, TCreateSchedule>,
@@ -100,6 +101,11 @@ const isTerminalProbeFailure = (error: unknown): boolean => {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Who this cache belongs to. Both sign-in and sign-out empty it wholesale, so a
+ *  watch outliving either has no business writing to whatever replaced it. */
+const cacheOwner = (queryClient: QueryClient): string | undefined =>
+  queryClient.getQueryData<TUser>([QueryKeys.user])?.id;
+
 /**
  * Puts a manual run's chat in the sidebar once the server actually has it.
  *
@@ -120,8 +126,15 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
  * every cache exactly as it found it.
  */
 async function trackStartedRun(queryClient: QueryClient, conversationId: string): Promise<void> {
+  const startedFor = cacheOwner(queryClient);
   for (const delay of ADMISSION_DELAYS_MS) {
     await wait(delay);
+    /** Minutes can pass in here, and signing out or signing in as someone else
+     *  empties the cache in between. Re-check before probing and again before
+     *  writing, or a late response files one user's chat in another's sidebar. */
+    if (cacheOwner(queryClient) !== startedFor) {
+      return;
+    }
     let conversation: TConversation;
     try {
       conversation = await dataService.getConversationById(conversationId);
@@ -130,6 +143,9 @@ async function trackStartedRun(queryClient: QueryClient, conversationId: string)
         return;
       }
       continue;
+    }
+    if (cacheOwner(queryClient) !== startedFor) {
+      return;
     }
     /** Warms the key the chat route reads, so opening the row it just added does
      *  not have to ask again. Absent-only: anything already cached under this id
@@ -145,6 +161,12 @@ async function trackStartedRun(queryClient: QueryClient, conversationId: string)
      *  than at the click, which is before one does. */
     extendActiveJobsGrace();
     queryClient.invalidateQueries([QueryKeys.activeJobs]);
+    /** A conversation admitted mid-run has not been titled yet, so the row lands
+     *  as "New Chat". The foreground paths hand that to the title queue, which
+     *  owns the timing the server was configured for; a scheduled run has no
+     *  foreground path, so hand it over here rather than leaving the placeholder
+     *  until an unrelated refetch. */
+    queueTitleGeneration(conversationId);
     return;
   }
 }
