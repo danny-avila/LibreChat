@@ -42,6 +42,14 @@ jest.mock('~/hooks/Chat', () => ({
   useGetAddedConvo: () => () => null,
 }));
 
+jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
+  __esModule: true,
+  default: ({ file, onDelete }: { file: { file_id?: string }; onDelete?: () => void }) =>
+    onDelete ? (
+      <button type="button" aria-label={`remove-${file.file_id}`} onClick={onDelete} />
+    ) : null,
+}));
+
 jest.mock('../Container', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -235,6 +243,92 @@ describe('EditMessage', () => {
 
     expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
     expect(screen.getByRole('button', { name: 'com_ui_update_rerun' })).toBeEnabled();
+  });
+
+  it('reruns with an attachment removed without requiring a text edit', async () => {
+    const user = userEvent.setup();
+    const ask = jest.fn();
+    const attachedMessage = {
+      ...message,
+      files: [
+        {
+          file_id: 'file-1',
+          filename: 'Presentation.pdf',
+          filepath: '/files/file-1',
+          type: 'application/pdf',
+        },
+      ],
+    } as TMessage;
+
+    renderEditor({ ask, editedMessage: attachedMessage });
+
+    await user.click(screen.getByRole('button', { name: 'remove-file-1' }));
+    await user.click(screen.getByRole('button', { name: 'com_ui_update_rerun' }));
+
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({ text: attachedMessage.text }),
+        expect.objectContaining({ overrideFiles: [] }),
+      ),
+    );
+  });
+
+  it('saves an attachment removal and updates the local message', async () => {
+    const user = userEvent.setup();
+    const attachedMessage = {
+      ...message,
+      files: [
+        {
+          file_id: 'file-1',
+          filename: 'Presentation.pdf',
+          filepath: '/files/file-1',
+          type: 'application/pdf',
+        },
+        {
+          file_id: 'file-2',
+          filename: 'Notes.txt',
+          filepath: '/files/file-2',
+          type: 'text/plain',
+        },
+      ],
+    } as TMessage;
+    const concurrentFile = {
+      file_id: 'file-3',
+      filename: 'Concurrent.txt',
+      filepath: '/files/file-3',
+      type: 'text/plain',
+    };
+    mockGetMessages.mockReturnValue([attachedMessage]);
+    mockMutateAsync.mockImplementation(async () => {
+      mockGetMessages.mockReturnValue([
+        { ...attachedMessage, files: [...(attachedMessage.files ?? []), concurrentFile] },
+      ]);
+      return {};
+    });
+
+    renderEditor({ editedMessage: attachedMessage });
+
+    await user.click(screen.getByRole('button', { name: 'remove-file-1' }));
+    await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        conversationId: attachedMessage.conversationId,
+        removedFileIds: ['file-1'],
+        model: 'test-model',
+        text: attachedMessage.text,
+        messageId: attachedMessage.messageId,
+      }),
+    );
+    expect(mockSetMessages).toHaveBeenCalledWith([
+      expect.objectContaining({
+        messageId: attachedMessage.messageId,
+        files: [
+          expect.objectContaining({ file_id: 'file-2' }),
+          expect.objectContaining({ file_id: 'file-3' }),
+        ],
+      }),
+    ]);
   });
 
   it('keeps the editor open with the draft when a rerun is refused mid-stream', async () => {

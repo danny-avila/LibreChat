@@ -323,6 +323,7 @@ export type TUpdateMessageRequest = {
   messageId: string;
   model: string;
   text: string;
+  removedFileIds?: string[];
 };
 
 export type TUpdateMessageContent = {

@@ -656,6 +656,48 @@ describe('Message Operations', () => {
       }
     });
 
+    it('atomically removes requested files without replacing concurrent attachments', async () => {
+      const removedFile = { file_id: 'file-1', filename: 'Removed.txt' };
+      const retainedFile = { file_id: 'file-2', filename: 'Retained.txt' };
+      const legacyFile = { filename: 'Legacy.txt' };
+      const concurrentFile = { file_id: 'file-3', filename: 'Concurrent.txt' };
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        files: [removedFile, retainedFile, legacyFile],
+      });
+
+      let injectedConcurrentFile = false;
+      const findOneAndUpdate = rejectUpdateArrays(async () => {
+        if (injectedConcurrentFile) {
+          return;
+        }
+        injectedConcurrentFile = true;
+        await Message.updateOne(
+          { messageId: 'msg123', user: 'user123' },
+          { $push: { files: concurrentFile } },
+        );
+      });
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: 'Human-edited text',
+        removedFileIds: ['file-1'],
+        userSubmittedPaths: ['/text'],
+      });
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.text).toBe('Human-edited text');
+      expect(updatedMessage?.files).toEqual([retainedFile, legacyFile, concurrentFile]);
+      expect(updatedMessage?.userSubmittedPaths).toContain('/text');
+      expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(findOneAndUpdate.mock.calls[0][1]).toEqual(
+        expect.objectContaining({
+          $set: expect.objectContaining({ text: 'Human-edited text' }),
+          $pull: { files: { file_id: { $in: ['file-1'] } } },
+        }),
+      );
+    });
+
     it('atomically caps repeated provenance unions and promotes overflow to whole-message provenance', async () => {
       await saveMessage(mockCtx, {
         ...mockMessageData,

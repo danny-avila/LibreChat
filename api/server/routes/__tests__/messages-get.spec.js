@@ -863,6 +863,89 @@ describe('message route conversation ownership filters', () => {
     });
   });
 
+  it('uses explicit client removals without deriving them from concurrently changed files', async () => {
+    const firstFile = { file_id: 'file-1', filename: 'Presentation.pdf' };
+    const secondFile = { file_id: 'file-2', filename: 'Notes.txt' };
+    const concurrentFile = { file_id: 'file-3', filename: 'Concurrent.txt' };
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'convo-1',
+        isCreatedByUser: true,
+        files: [firstFile, secondFile, concurrentFile],
+      },
+    ]);
+    updateMessage.mockResolvedValue({ messageId: 'message-1' });
+
+    const response = await request(app)
+      .put('/api/messages/convo-1/message-1')
+      .send({
+        text: 'Updated prompt',
+        model: 'test-model',
+        removedFileIds: ['file-1'],
+      });
+
+    expect(response.status).toBe(200);
+    expect(getMessages).toHaveBeenCalledWith(
+      { messageId: 'message-1', user: authenticatedUserId },
+      'conversationId content tokenCount quotes isCreatedByUser userSubmittedPaths',
+    );
+    expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
+      messageId: 'message-1',
+      text: 'Updated prompt',
+      tokenCount: 10,
+      removedFileIds: ['file-1'],
+      userSubmittedPaths: ['/text'],
+    });
+  });
+
+  it.each([null, 'file-1', [''], ['file-1', 'file-1'], [1]])(
+    'rejects invalid removedFileIds: %p',
+    async (removedFileIds) => {
+      getMessages.mockResolvedValue([
+        {
+          conversationId: 'convo-1',
+          isCreatedByUser: true,
+        },
+      ]);
+
+      const response = await request(app)
+        .put('/api/messages/convo-1/message-1')
+        .send({ text: 'Updated prompt', model: 'test-model', removedFileIds });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Invalid removedFileIds' });
+      expect(updateMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ removedFileIds: [] }, { removedFileIds: ['already-removed'] }])(
+    'preserves a valid idempotent removedFileIds value: $removedFileIds',
+    async ({ removedFileIds }) => {
+      getMessages.mockResolvedValue([
+        {
+          conversationId: 'convo-1',
+          isCreatedByUser: true,
+        },
+      ]);
+      updateMessage.mockResolvedValue({ messageId: 'message-1' });
+
+      const response = await request(app).put('/api/messages/convo-1/message-1').send({
+        text: 'Updated prompt',
+        model: 'test-model',
+        removedFileIds,
+      });
+
+      expect(response.status).toBe(200);
+      expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
+        messageId: 'message-1',
+        text: 'Updated prompt',
+        tokenCount: 10,
+        removedFileIds,
+        userSubmittedPaths: ['/text'],
+      });
+    },
+  );
+
   it('filters the finalized indexed edit without rescanning persisted siblings', async () => {
     const finding = {
       detectorId: 'pii-pattern',

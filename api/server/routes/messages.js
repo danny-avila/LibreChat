@@ -578,13 +578,22 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     if (await rejectSubagentThreadWrite(req, res, message.conversationId)) {
       return;
     }
-    const { text, index, model } = req.body;
+    const { text, index, model, removedFileIds } = req.body;
 
     if (index !== undefined && (typeof index !== 'number' || index < 0)) {
       return res.status(400).json({ error: 'Invalid index' });
     }
 
     if (index === undefined) {
+      if (
+        removedFileIds !== undefined &&
+        (!Array.isArray(removedFileIds) ||
+          removedFileIds.some((fileId) => typeof fileId !== 'string' || fileId.length === 0) ||
+          new Set(removedFileIds).size !== removedFileIds.length)
+      ) {
+        return res.status(400).json({ error: 'Invalid removedFileIds' });
+      }
+
       assertStoredMessageMutationAllowed(req.config?.filters, { text });
 
       /** A user turn's persisted `quotes` are re-prepended into the prompt on
@@ -605,6 +614,7 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
         messageId,
         text,
         tokenCount,
+        ...(removedFileIds !== undefined && { removedFileIds }),
         userSubmittedPaths: mergeUserSubmittedPaths(message.userSubmittedPaths, '/text'),
       });
       return res.status(200).json(result);

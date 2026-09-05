@@ -291,6 +291,7 @@ async function findOneAndMergeMessageProvenance(
   userSubmittedPaths: readonly string[],
   userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
   options: { upsert: boolean; stampModelOutputOnInsert?: boolean; unsetContextMeta?: boolean },
+  removedFileIds: readonly string[] = [],
 ) {
   const safeUpdate = { ...update };
   delete safeUpdate._id;
@@ -332,6 +333,9 @@ async function findOneAndMergeMessageProvenance(
         filter,
         {
           $set: { ...safeUpdate, ...provenance },
+          ...(removedFileIds.length > 0 && {
+            $pull: { files: { file_id: { $in: removedFileIds } } },
+          }),
           ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
         },
         { upsert: options.upsert && current == null, new: true },
@@ -652,7 +656,7 @@ export interface MessageMethods {
   }): Promise<boolean>;
   updateMessage(
     userId: string,
-    message: Partial<IMessage> & { newMessageId?: string },
+    message: Partial<IMessage> & { newMessageId?: string; removedFileIds?: string[] },
     metadata?: { context?: string },
   ): Promise<Partial<IMessage>>;
   claimSubagentTaskResult(params: {
@@ -1619,12 +1623,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
    */
   async function updateMessage(
     userId: string,
-    message: { messageId: string; [key: string]: unknown },
+    message: { messageId: string; removedFileIds?: string[]; [key: string]: unknown },
     metadata?: { context?: string },
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const { messageId, ...update } = message;
+      const { messageId, removedFileIds = [], ...update } = message;
       const submittedPaths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
       const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
         update.userSubmittedMessageFieldPaths,
@@ -1640,8 +1644,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               submittedPaths,
               submittedMessageFields,
               { upsert: false },
+              removedFileIds,
             )
-          : await Message.findOneAndUpdate({ messageId, user: userId }, update, { new: true });
+          : await Message.findOneAndUpdate(
+              { messageId, user: userId },
+              removedFileIds.length > 0
+                ? {
+                    $set: update,
+                    $pull: { files: { file_id: { $in: removedFileIds } } },
+                  }
+                : update,
+              { new: true },
+            );
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
