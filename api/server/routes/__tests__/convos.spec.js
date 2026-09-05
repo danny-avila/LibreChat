@@ -248,6 +248,19 @@ describe('Convos Routes', () => {
       });
     });
 
+    it('reports how many conversations were imported and skipped', async () => {
+      importConversations.mockResolvedValue({ imported: 42, failed: 3 });
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({
+        message: 'Conversation(s) imported successfully',
+        imported: 42,
+        failed: 3,
+      });
+    });
+
     it('returns only metadata-safe filter details for a blocked import', async () => {
       const error = Object.assign(new Error('blocked'), {
         code: 'content_filter_block',

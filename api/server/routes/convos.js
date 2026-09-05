@@ -726,7 +726,7 @@ router.post(
   async (req, res) => {
     try {
       /* TODO: optimize to return imported conversations and add manually */
-      await importConversations({
+      const summary = await importConversations({
         filepath: req.file.path,
         requestUserId: req.user.id,
         userRole: req.user.role,
@@ -736,7 +736,7 @@ router.post(
           ? {}
           : { legacyPii: req.config.messageFilter.pii }),
       });
-      res.status(201).json({ message: 'Conversation(s) imported successfully' });
+      res.status(201).json({ message: 'Conversation(s) imported successfully', ...summary });
     } catch (error) {
       if (isContentFilterError(error)) {
         return res.status(error.statusCode).json(error.body);

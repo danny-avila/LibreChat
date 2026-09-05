@@ -171,6 +171,25 @@ class ImportBatchBuilder {
   }
 
   /**
+   * Captures how much of the batch has been staged so far.
+   * @returns {{ conversations: number, messages: number }} A checkpoint token.
+   */
+  checkpoint() {
+    return { conversations: this.conversations.length, messages: this.messages.length };
+  }
+
+  /**
+   * Discards everything staged after the given checkpoint, so a conversation that
+   * fails partway through can be dropped without losing the ones before it.
+   * @param {{ conversations: number, messages: number }} checkpoint - Token from {@link checkpoint}.
+   * @returns {void}
+   */
+  rollback(checkpoint) {
+    this.conversations.length = checkpoint.conversations;
+    this.messages.length = checkpoint.messages;
+  }
+
+  /**
    * Saves the batch of conversations and messages to the DB.
    * Also increments tag counts for any existing tags.
    * @returns {Promise<void>} A promise that resolves when the batch is saved.

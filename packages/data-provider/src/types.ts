@@ -761,6 +761,14 @@ export type TImportResponse = {
    * The message associated with the response.
    */
   message: string;
+  /**
+   * Number of conversations written to the database.
+   */
+  imported?: number;
+  /**
+   * Number of conversations in the file that could not be read and were skipped.
+   */
+  failed?: number;
 };
 
 /** Prompts */

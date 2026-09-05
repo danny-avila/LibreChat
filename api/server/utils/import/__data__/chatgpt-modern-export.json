@@ -1,0 +1,178 @@
+[
+  {
+    "title": "Deploying the staging cluster",
+    "create_time": 1756000000.123456,
+    "update_time": 1756000400.654321,
+    "mapping": {
+      "client-created-root": {
+        "id": "client-created-root",
+        "message": null,
+        "parent": null,
+        "children": ["ctx-node"]
+      },
+      "ctx-node": {
+        "id": "ctx-node",
+        "message": {
+          "id": "ctx-node",
+          "author": { "role": "user", "name": null, "metadata": {} },
+          "create_time": null,
+          "update_time": null,
+          "content": {
+            "content_type": "user_editable_context",
+            "user_profile": "The user is an SRE.",
+            "user_instructions": "Answer concisely."
+          },
+          "status": "finished_successfully",
+          "weight": 0,
+          "metadata": {
+            "is_visually_hidden_from_conversation": true,
+            "is_user_system_message": true
+          },
+          "recipient": "all",
+          "channel": null
+        },
+        "parent": "client-created-root",
+        "children": ["user-1"]
+      },
+      "user-1": {
+        "id": "user-1",
+        "message": {
+          "id": "user-1",
+          "author": { "role": "user", "name": null, "metadata": {} },
+          "create_time": 1756000001.0,
+          "update_time": null,
+          "content": { "content_type": "text", "parts": ["How do I roll back the deploy?"] },
+          "status": "finished_successfully",
+          "weight": 1.0,
+          "metadata": { "request_id": "abc123", "timestamp_": "absolute" },
+          "recipient": "all",
+          "channel": null
+        },
+        "parent": "ctx-node",
+        "children": ["assistant-1"]
+      },
+      "assistant-1": {
+        "id": "assistant-1",
+        "message": {
+          "id": "assistant-1",
+          "author": { "role": "assistant", "name": null, "metadata": {} },
+          "create_time": 1756000002.0,
+          "update_time": null,
+          "content": { "content_type": "text", "parts": ["Run `helm rollback staging`."] },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": { "finish_details": { "type": "stop" }, "is_complete": true },
+          "recipient": "all",
+          "channel": "final"
+        },
+        "parent": "user-1",
+        "children": ["user-2"]
+      },
+      "user-2": {
+        "id": "user-2",
+        "message": {
+          "id": "user-2",
+          "author": { "role": "user", "name": null, "metadata": {} },
+          "create_time": 1756000003.0,
+          "update_time": null,
+          "content": { "content_type": "text", "parts": ["And if that fails?"] },
+          "status": "finished_successfully",
+          "weight": 1.0,
+          "metadata": {},
+          "recipient": "all",
+          "channel": null
+        },
+        "parent": "assistant-1",
+        "children": ["assistant-2"]
+      },
+      "assistant-2": {
+        "id": "assistant-2",
+        "message": {
+          "id": "assistant-2",
+          "author": { "role": "assistant", "name": null, "metadata": {} },
+          "create_time": 1756000004.0,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["Restore from the last known-good chart."]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1.0,
+          "metadata": { "model_slug": "o4-mini", "is_complete": true },
+          "recipient": "all",
+          "channel": "final"
+        },
+        "parent": "user-2",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "assistant-2",
+    "conversation_id": "6b0f0d9c-0000-4000-8000-000000000001",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "is_starred": null,
+    "safe_urls": [],
+    "blocked_urls": [],
+    "default_model_slug": "gpt-5-thinking",
+    "conversation_origin": null,
+    "voice": null,
+    "async_status": null,
+    "disabled_tool_ids": [],
+    "is_do_not_remember": false,
+    "memory_scope": "global_enabled",
+    "id": "6b0f0d9c-0000-4000-8000-000000000001"
+  },
+  {
+    "title": "Corrupted entry",
+    "create_time": 1756000500.0,
+    "update_time": 1756000500.0,
+    "conversation_id": "6b0f0d9c-0000-4000-8000-000000000002",
+    "default_model_slug": "gpt-5",
+    "id": "6b0f0d9c-0000-4000-8000-000000000002"
+  },
+  {
+    "title": "Weeknight pasta",
+    "create_time": 1756001000.0,
+    "update_time": 1756001100.0,
+    "mapping": {
+      "root-2": { "id": "root-2", "message": null, "parent": null, "children": ["user-3"] },
+      "user-3": {
+        "id": "user-3",
+        "message": {
+          "id": "user-3",
+          "author": { "role": "user", "name": null, "metadata": {} },
+          "create_time": 1756001001.0,
+          "content": { "content_type": "text", "parts": ["Something with anchovies?"] },
+          "status": "finished_successfully",
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "root-2",
+        "children": ["assistant-3"]
+      },
+      "assistant-3": {
+        "id": "assistant-3",
+        "message": {
+          "id": "assistant-3",
+          "author": { "role": "assistant", "name": null, "metadata": {} },
+          "create_time": 1756001002.0,
+          "content": { "content_type": "text", "parts": ["Puttanesca."] },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "metadata": {},
+          "recipient": "all"
+        },
+        "parent": "user-3",
+        "children": []
+      }
+    },
+    "current_node": "assistant-3",
+    "conversation_id": "6b0f0d9c-0000-4000-8000-000000000003",
+    "default_model_slug": "gpt-5",
+    "id": "6b0f0d9c-0000-4000-8000-000000000003"
+  }
+]

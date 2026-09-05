@@ -850,6 +850,148 @@ describe('importChatGptConvo', () => {
       'db unavailable',
     );
   });
+
+  describe('newer ChatGPT export format', () => {
+    const modernExport = () =>
+      JSON.parse(
+        fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-modern-export.json'), 'utf8'),
+      );
+
+    const importModernExport = async (jsonData) => {
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+      jest.spyOn(importBatchBuilder, 'saveMessage');
+      jest.spyOn(importBatchBuilder, 'finishConversation');
+
+      const importer = getImporter(jsonData);
+      const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+      return {
+        summary,
+        importBatchBuilder,
+        savedMessages: importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]),
+      };
+    };
+
+    it('should fall back to the conversation-level model when a message has no model_slug', async () => {
+      const { savedMessages } = await importModernExport(modernExport());
+
+      const firstReply = savedMessages.find((msg) => msg.text === 'Run `helm rollback staging`.');
+      expect(firstReply.model).toBe('gpt-5-thinking');
+      expect(firstReply.sender).toBe('GPT-5-thinking');
+    });
+
+    it('should prefer a per-message model_slug over the conversation-level model', async () => {
+      const { savedMessages } = await importModernExport(modernExport());
+
+      const secondReply = savedMessages.find(
+        (msg) => msg.text === 'Restore from the last known-good chart.',
+      );
+      expect(secondReply.model).toBe('o4-mini');
+    });
+
+    it('should skip hidden context messages and re-parent replies through them', async () => {
+      const { savedMessages } = await importModernExport(modernExport());
+
+      expect(savedMessages.some((msg) => msg.text.includes('user_editable_context'))).toBe(false);
+      expect(savedMessages.some((msg) => msg.text.includes('The user is an SRE.'))).toBe(false);
+
+      const firstQuestion = savedMessages.find(
+        (msg) => msg.text === 'How do I roll back the deploy?',
+      );
+      expect(firstQuestion.parentMessageId).toBe(Constants.NO_PARENT);
+    });
+
+    it('should import the readable conversations and skip only the malformed one', async () => {
+      const { summary, savedMessages, importBatchBuilder } =
+        await importModernExport(modernExport());
+
+      expect(summary).toEqual({ imported: 2, failed: 1 });
+      expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(2);
+      expect(savedMessages).toHaveLength(6);
+      expect(savedMessages.some((msg) => msg.text === 'Puttanesca.')).toBe(true);
+    });
+
+    it('should not persist messages staged by a conversation that failed partway', async () => {
+      const jsonData = modernExport();
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+      const realFinish = importBatchBuilder.finishConversation.bind(importBatchBuilder);
+      jest
+        .spyOn(importBatchBuilder, 'finishConversation')
+        .mockImplementationOnce(() => {
+          throw new Error('content policy rejected this conversation');
+        })
+        .mockImplementation(realFinish);
+
+      const importer = getImporter(jsonData);
+      const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+      expect(summary).toEqual({ imported: 1, failed: 2 });
+      expect(importBatchBuilder.conversations).toHaveLength(1);
+      expect(importBatchBuilder.messages).toHaveLength(2);
+      expect(
+        importBatchBuilder.messages.every(
+          (msg) => msg.conversationId === importBatchBuilder.conversations[0].conversationId,
+        ),
+      ).toBe(true);
+    });
+
+    it('should throw when no conversation in the file could be imported', async () => {
+      const jsonData = [{ title: 'Corrupted entry', create_time: 1756000500, mapping: 'corrupt' }];
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+      jest.spyOn(importBatchBuilder, 'saveBatch');
+
+      const importer = getImporter(jsonData);
+      await expect(importer(jsonData, requestUserId, () => importBatchBuilder)).rejects.toThrow(
+        'None of the 1 conversation(s) in this file could be imported',
+      );
+      expect(importBatchBuilder.saveBatch).not.toHaveBeenCalled();
+    });
+
+    it('should skip a malformed first entry rather than rejecting the whole file', async () => {
+      const [readable, corrupt, alsoReadable] = modernExport();
+      const jsonData = [corrupt, readable, alsoReadable];
+
+      const { summary, savedMessages } = await importModernExport(jsonData);
+
+      expect(summary).toEqual({ imported: 2, failed: 1 });
+      expect(savedMessages.some((msg) => msg.text === 'Puttanesca.')).toBe(true);
+    });
+
+    it('should keep the conversation on the model its messages were imported with', async () => {
+      const { importBatchBuilder } = await importModernExport(modernExport());
+
+      const [conversation] = importBatchBuilder.conversations;
+      expect(conversation.title).toBe('Deploying the staging cluster');
+      expect(conversation.model).toBe('gpt-5-thinking');
+    });
+
+    it('should not persist an invalid date when create_time is unparseable', async () => {
+      const jsonData = modernExport().slice(0, 1);
+      jsonData[0].create_time = 'not-a-timestamp';
+      jsonData[0].mapping['user-1'].message.create_time = 'also-not-a-timestamp';
+
+      const { savedMessages, importBatchBuilder } = await importModernExport(jsonData);
+
+      for (const message of savedMessages) {
+        expect(Number.isNaN(message.createdAt.getTime())).toBe(false);
+      }
+      expect(Number.isNaN(importBatchBuilder.conversations[0].createdAt.getTime())).toBe(false);
+    });
+
+    it('should throw for an export file with no conversations instead of reporting success', async () => {
+      const requestUserId = 'user-123';
+      const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+      jest.spyOn(importBatchBuilder, 'saveBatch');
+
+      const importer = getImporter([]);
+      await expect(importer([], requestUserId, () => importBatchBuilder)).rejects.toThrow(
+        'No conversations found in this file',
+      );
+      expect(importBatchBuilder.saveBatch).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('importLibreChatConvo', () => {
@@ -1404,6 +1546,33 @@ describe('importChatBotUiConvo', () => {
 
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
+
+  it('should report the number of conversations it actually imported', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'chatbotui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'custom-user-456';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(summary).toEqual({ imported: jsonData.history.length, failed: 0 });
+    expect(summary.imported).toBeGreaterThan(1);
+  });
+
+  it('should throw for an export whose history is empty rather than reporting a success', async () => {
+    const jsonData = { version: 1, history: [], folders: [], prompts: [] };
+    const requestUserId = 'custom-user-456';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
+    const importer = getImporter(jsonData);
+    await expect(importer(jsonData, requestUserId, () => importBatchBuilder)).rejects.toThrow(
+      'No conversations found in this file',
+    );
+    expect(importBatchBuilder.saveBatch).not.toHaveBeenCalled();
+  });
 });
 
 describe('getImporter', () => {
@@ -1421,6 +1590,18 @@ describe('getImporter', () => {
 
   it('should route empty arrays to the ChatGPT importer without throwing', () => {
     expect(() => getImporter([])).not.toThrow();
+  });
+
+  it('should recognize a ChatGPT export whose first entry is malformed', () => {
+    const jsonData = [{ title: 'Corrupted entry' }, { title: 'Readable', mapping: {} }];
+
+    expect(getImporter(jsonData)).toBe(getImporter([{ mapping: {} }]));
+  });
+
+  it('should recognize a Claude export whose first entry is malformed', () => {
+    const jsonData = [{ name: 'Corrupted entry' }, { name: 'Readable', chat_messages: [] }];
+
+    expect(getImporter(jsonData)).toBe(getImporter([{ chat_messages: [] }]));
   });
 });
 
@@ -2083,5 +2264,95 @@ describe('importClaudeConvo', () => {
       {},
       expect.any(String),
     );
+  });
+
+  it('should count a conversation with no chat_messages list as failed', async () => {
+    const jsonData = [
+      { uuid: 'conv-missing', name: 'Missing list', created_at: '2025-01-15T10:00:00.000Z' },
+      {
+        uuid: 'conv-ok',
+        name: 'Readable',
+        created_at: '2025-01-15T11:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T11:00:01.000Z',
+            content: [{ type: 'text', text: 'Still here' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(summary).toEqual({ imported: 1, failed: 1 });
+    expect(importBatchBuilder.conversations).toHaveLength(1);
+  });
+
+  it('should not persist an invalid date when created_at is unparseable', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-bad-date',
+        name: 'Bad date',
+        created_at: 'not-a-date',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: 'also-not-a-date',
+            content: [{ type: 'text', text: 'Hello' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(Number.isNaN(importBatchBuilder.messages[0].createdAt.getTime())).toBe(false);
+    expect(Number.isNaN(importBatchBuilder.conversations[0].createdAt.getTime())).toBe(false);
+  });
+
+  it('should keep importing after an unreadable conversation', async () => {
+    const jsonData = [
+      {
+        uuid: 'conv-broken',
+        name: 'Broken',
+        created_at: '2025-01-15T10:00:00.000Z',
+        chat_messages: 'not-an-array',
+      },
+      {
+        uuid: 'conv-ok',
+        name: 'Readable',
+        created_at: '2025-01-15T11:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'msg-1',
+            sender: 'human',
+            created_at: '2025-01-15T11:00:01.000Z',
+            content: [{ type: 'text', text: 'Still here' }],
+          },
+        ],
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(jsonData);
+    const summary = await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    expect(summary).toEqual({ imported: 1, failed: 1 });
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(1);
+    expect(importBatchBuilder.conversations).toHaveLength(1);
   });
 });

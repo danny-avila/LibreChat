@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { Import } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TStartupConfig } from 'librechat-data-provider';
 import { Spinner, useToastContext, Label, Button } from '@librechat/client';
+import type { TStartupConfig, TImportResponse } from 'librechat-data-provider';
 import { startupConfigKey, useUploadConversationsMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -15,13 +15,22 @@ function ImportConversations() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleSuccess = useCallback(() => {
-    showToast({
-      message: localize('com_ui_import_conversation_success'),
-      status: NotificationSeverity.SUCCESS,
-    });
-    setIsUploading(false);
-  }, [localize, showToast]);
+  const handleSuccess = useCallback(
+    (data: TImportResponse) => {
+      const failed = data?.failed ?? 0;
+      showToast({
+        message: failed
+          ? localize('com_ui_import_conversation_partial', {
+              0: data?.imported ?? 0,
+              1: failed,
+            })
+          : localize('com_ui_import_conversation_success'),
+        status: failed ? NotificationSeverity.WARNING : NotificationSeverity.SUCCESS,
+      });
+      setIsUploading(false);
+    },
+    [localize, showToast],
+  );
 
   const handleError = useCallback(
     (error: unknown) => {
