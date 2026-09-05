@@ -101,6 +101,7 @@ function AgentSelect({
         avatar_action: null,
         stateful_code_environment: fullAgent.stateful_code_environment ?? 'user',
         code_environment_id: fullAgent.code_environment_id,
+        git_identity: fullAgent.git_identity,
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {

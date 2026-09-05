@@ -2133,6 +2133,7 @@ async function loadToolsForExecution({
           ? createAttachedWorkspaceBashTool({
               authHeaders,
               baseUrl: codeExecutionContext.baseUrl,
+              gitIdentity: agent?.git_identity,
             })
           : createBashExecutionTool({
               authHeaders,

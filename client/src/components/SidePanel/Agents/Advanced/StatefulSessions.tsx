@@ -17,6 +17,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
   CircleHelpIcon,
+  Input,
 } from '@librechat/client';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
@@ -36,7 +37,7 @@ export default function StatefulSessions() {
   const { user } = useAuthContext();
   const { agentsConfig } = useGetAgentsConfig();
   const methods = useFormContext<AgentForm>();
-  const { setValue, watch } = methods;
+  const { register, setValue, watch } = methods;
 
   const enabled = watch(AgentCapabilities.stateful_code_sessions) ?? false;
   const codeEnabled = watch(AgentCapabilities.execute_code);
@@ -170,6 +171,27 @@ export default function StatefulSessions() {
           <p className="text-xs text-text-tertiary">
             {localize('com_nav_info_stateful_code_environment')}
           </p>
+          <div className="space-y-2 border-t border-border-light pt-3">
+            <div className="text-xs font-medium text-text-secondary">
+              {localize('com_ui_agent_git_identity')}
+            </div>
+            <Input
+              {...register('git_identity.name')}
+              maxLength={128}
+              placeholder={localize('com_ui_agent_git_name')}
+              aria-label={localize('com_ui_agent_git_name')}
+            />
+            <Input
+              {...register('git_identity.email')}
+              type="email"
+              maxLength={254}
+              placeholder={localize('com_ui_agent_git_email')}
+              aria-label={localize('com_ui_agent_git_email')}
+            />
+            <p className="text-xs text-text-tertiary">
+              {localize('com_nav_info_agent_git_identity')}
+            </p>
+          </div>
         </div>
       )}
     </div>

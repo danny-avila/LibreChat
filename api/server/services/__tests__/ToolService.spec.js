@@ -2661,6 +2661,7 @@ describe('ToolService - Action Capability Gating', () => {
           tools: [Tools.execute_code],
           stateful_code_sessions: true,
           stateful_code_environment: 'agent-user',
+          git_identity: { name: 'LibreChat Agent', email: 'agent@example.com' },
         },
         toolNames: [AgentConstants.BASH_TOOL],
         toolRegistry,
@@ -2670,6 +2671,7 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockCreateAttachedWorkspaceBashTool).toHaveBeenCalledWith({
         authHeaders: expect.any(Function),
         baseUrl: 'http://attached-code.test/v1',
+        gitIdentity: { name: 'LibreChat Agent', email: 'agent@example.com' },
       });
       expect(result.loadedTools).toContainEqual({ name: AgentConstants.BASH_TOOL });
     });

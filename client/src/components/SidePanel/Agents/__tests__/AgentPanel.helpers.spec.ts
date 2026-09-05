@@ -160,6 +160,27 @@ describe('composeAgentUpdatePayload', () => {
     expect(payload.code_environment_id).toBeUndefined();
   });
 
+  it('normalizes a configured Git identity', () => {
+    const form = createForm();
+    form.git_identity = { name: '  Coding Agent  ', email: '  agent@example.com  ' };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toEqual({
+      name: 'Coding Agent',
+      email: 'agent@example.com',
+    });
+  });
+
+  it('omits an empty Git identity', () => {
+    const form = createForm();
+    form.git_identity = { name: '', email: '' };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toBeUndefined();
+  });
+
   it('persists standalone skill authoring separately from catalog access', () => {
     const form = createForm();
     form.skills = [];

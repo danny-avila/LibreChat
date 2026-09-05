@@ -86,6 +86,24 @@ describe('createAttachedWorkspaceBashTool', () => {
     expect(request.command).toBe(`bash -c 'printf "%s" "$1"' -- 'a'"'"'b; echo unsafe'`);
   });
 
+  test('injects the configured agent Git identity without writing machine Git configuration', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      gitIdentity: { name: "Agent O'Brien", email: 'agent@example.com' },
+      fetchImpl,
+    });
+
+    await bashTool.func({ command: 'git commit -m "Implement feature"' }, undefined, {});
+
+    const request = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    expect(request.command).toBe(
+      `export GIT_AUTHOR_NAME='Agent O'"'"'Brien' GIT_AUTHOR_EMAIL='agent@example.com' GIT_COMMITTER_NAME='Agent O'"'"'Brien' GIT_COMMITTER_EMAIL='agent@example.com'; git commit -m "Implement feature"`,
+    );
+    expect(request.command).not.toContain('git config');
+  });
+
   test('reports termination, timeouts, and truncation without hiding stderr', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () =>
       commandResponse({

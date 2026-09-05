@@ -307,6 +307,13 @@ export type AgentSubagentsConfig = {
   graphs?: AgentSubagentGraph[];
 };
 
+export type AgentGitIdentity = {
+  /** Commit author and committer display name. */
+  name: string;
+  /** Commit author and committer email address. */
+  email: string;
+};
+
 export type Agent = {
   _id?: string;
   id: string;
@@ -339,6 +346,8 @@ export type Agent = {
   stateful_code_environment?: StatefulCodeEnvironment;
   /** Operator-configured managed or attached stateful execution environment. */
   code_environment_id?: string | null;
+  /** Non-secret Git authorship injected into this agent's sandboxed commands. */
+  git_identity?: AgentGitIdentity;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -399,6 +408,7 @@ export type AgentCreateParams = {
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
   | 'code_environment_id'
+  | 'git_identity'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -432,6 +442,7 @@ export type AgentUpdateParams = {
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
   | 'code_environment_id'
+  | 'git_identity'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
