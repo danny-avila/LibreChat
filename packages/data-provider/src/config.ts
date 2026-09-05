@@ -2004,6 +2004,13 @@ export type TRumConfig = {
 
 export type StartupConfigContext = 'share';
 
+/**
+ * Per-endpoint dropParams for the startup config. Most endpoints (e.g. `custom`) map a
+ * provider name directly to its dropParams. `azureOpenAI` instead maps a provider name to
+ * a per-model dropParams lookup, since each Azure group can drop different parameters.
+ */
+export type EndpointsDropParamsMap = Record<string, string[] | Record<string, string[]>>;
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -2101,6 +2108,7 @@ export type TStartupConfig = {
     buildDate?: string | null;
   };
   fileUploadSseEnabled?: boolean;
+  endpointsDropParamsMap?: EndpointsDropParamsMap;
 };
 
 export type TSharedLinkStartupInterface = Pick<
@@ -3185,6 +3193,10 @@ export enum ViolationTypes {
    * Registration violations.
    */
   REGISTRATIONS = 'registrations',
+  /**
+   * Shared link retrieval limit violations.
+   */
+  SHARE_LIMIT = 'share_limit',
 }
 
 /**

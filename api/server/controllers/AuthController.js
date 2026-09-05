@@ -19,7 +19,13 @@ const {
   setAuthTokens,
   registerUser,
 } = require('~/server/services/AuthService');
-const { deleteAllUserSessions, getUserById, findSession, updateUser } = require('~/models');
+const {
+  deleteAllUserSessions,
+  getUserById,
+  findSession,
+  updateUser,
+  deleteTokens,
+} = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getRefreshTokenBridge } = require('~/server/services/RefreshTokenBridge');
 const {
@@ -52,6 +58,18 @@ const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
     const { status, message } = response;
+    /** Consume the invite only once the account exists. `registerUser` returns the same
+     * 200 whether it created a user or found the email already in use, so the decision
+     * rests on `userCreated` rather than the status. A failure to delete leaves a
+     * usable invite, which is recoverable; failing the response here would tell a user
+     * whose account was just created that registration failed, which is not. */
+    if (response.userCreated === true && req.invite?.token != null) {
+      try {
+        await deleteTokens({ token: req.invite.token });
+      } catch (error) {
+        logger.error('[registrationController] Failed to consume invite after registration', error);
+      }
+    }
     res.status(status).send({ message });
   } catch (err) {
     logger.error('[registrationController]', err);

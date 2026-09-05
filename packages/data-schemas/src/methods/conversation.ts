@@ -257,6 +257,8 @@ export interface ConversationMethods {
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
+      /** Same-tenant persisted agent already resolved by the request layer. */
+      initialAgentId?: string | null;
       /** `_id`s of messages this save just wrote. When present, they are appended with
        *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
        *  every save without this option still rebuilds the array from the database. */
@@ -2124,6 +2126,7 @@ export function createConversationMethods(
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
+      initialAgentId?: string | null;
       appendMessageIds?: Types.ObjectId[];
     },
   ) {
@@ -2137,12 +2140,14 @@ export function createConversationMethods(
 
       const appendMessageIds = metadata?.appendMessageIds;
       const update: Record<string, unknown> = { ...convo, user: userId };
+      delete update.initial_agent_id;
       if (appendMessageIds == null) {
         update.messages = await getMessages({ conversationId, user: userId }, '_id');
       } else {
         delete update.messages;
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
+      delete unsetFields.initial_agent_id;
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
         const chatProjectId = typeof update.chatProjectId === 'string' ? update.chatProjectId : '';
@@ -2229,6 +2234,14 @@ export function createConversationMethods(
         timestampOptions.timestamps = false;
       }
 
+      const canUpsert = metadata?.noUpsert !== true;
+      const initialAgentId =
+        canUpsert &&
+        typeof metadata?.initialAgentId === 'string' &&
+        metadata.initialAgentId.trim() !== ''
+          ? metadata.initialAgentId
+          : null;
+
       const buildOperation = (setFields: Record<string, unknown>) => {
         const operation: Record<string, unknown> = { $set: setFields };
         if (appendMessageIds != null && appendMessageIds.length > 0) {
@@ -2241,14 +2254,14 @@ export function createConversationMethods(
           ? (createdAtOnInsert ??
             (!preserveUpdatedAt && update.updatedAt instanceof Date ? update.updatedAt : undefined))
           : createdAtOnInsert;
-        if (createdAtForInsert) {
-          operation.$setOnInsert = { createdAt: createdAtForInsert };
-        }
+        operation.$setOnInsert = {
+          initial_agent_id: initialAgentId,
+          ...(createdAtForInsert ? { createdAt: createdAtForInsert } : {}),
+        };
         return operation;
       };
 
       const baseFilter = { conversationId, user: userId };
-      const canUpsert = metadata?.noUpsert !== true;
       const runUpdate = (
         filter: Record<string, unknown>,
         operation: Record<string, unknown>,
@@ -2507,6 +2520,7 @@ export function createConversationMethods(
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
         const sanitized = { ...convo };
+        delete sanitized.initial_agent_id;
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
           if (ownedProjects.has(`${sanitized.user}:${sanitized.chatProjectId}`)) {
             affectedProjectStats.set(`${sanitized.user}:${sanitized.chatProjectId}`, {
@@ -2536,7 +2550,10 @@ export function createConversationMethods(
               conversationId: sanitized.conversationId,
               user: sanitized.user,
             },
-            update: sanitized,
+            update: {
+              $set: sanitized,
+              $setOnInsert: { initial_agent_id: null },
+            },
             upsert: true,
             timestamps: false,
           },

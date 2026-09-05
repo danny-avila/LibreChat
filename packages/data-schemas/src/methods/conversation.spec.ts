@@ -174,6 +174,48 @@ describe('Conversation Operations', () => {
       expect(savedConvo?.title).toBe('Test Conversation');
     });
 
+    it('sets immutable agent attribution from server metadata only on insert', async () => {
+      await saveConvo(
+        mockCtx,
+        {
+          ...mockConversationData,
+          agent_id: 'agent-a',
+          initial_agent_id: 'forged-agent',
+        },
+        { initialAgentId: 'agent-a' },
+      );
+      await saveConvo(
+        mockCtx,
+        {
+          conversationId: mockConversationData.conversationId,
+          agent_id: 'agent-b',
+          initial_agent_id: 'forged-agent-b',
+        },
+        { initialAgentId: 'agent-b' },
+      );
+
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select('+initial_agent_id')
+        .lean();
+      expect(saved?.initial_agent_id).toBe('agent-a');
+      expect(saved?.agent_id).toBe('agent-b');
+    });
+
+    it('stores explicit null attribution for a new non-agent conversation', async () => {
+      await saveConvo(mockCtx, mockConversationData);
+
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select('+initial_agent_id')
+        .lean();
+      expect(saved).toHaveProperty('initial_agent_id', null);
+    });
+
     it('should query messages when saving a conversation', async () => {
       // Mock messages as ObjectIds
       const mockMessages = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
@@ -273,6 +315,24 @@ describe('Conversation Operations', () => {
 
       const refreshedProject = await ChatProject.findById(project._id).lean<IChatProject>();
       expect(refreshedProject?.conversationCount).toBe(1);
+    });
+
+    it('bulkSaveConvos strips supplied attribution and stores explicit null on insert', async () => {
+      const conversationId = uuidv4();
+
+      await methods.bulkSaveConvos([
+        {
+          conversationId,
+          user: mockCtx.userId,
+          endpoint: EModelEndpoint.openAI,
+          initial_agent_id: 'forged-agent',
+        },
+      ]);
+
+      const saved = await Conversation.findOne({ conversationId, user: mockCtx.userId })
+        .select('+initial_agent_id')
+        .lean();
+      expect(saved).toHaveProperty('initial_agent_id', null);
     });
 
     it('refreshes both projects when a save moves a conversation between them', async () => {

@@ -44,6 +44,11 @@ const convoSchema: Schema<IConversation> = new Schema(
     agent_id: {
       type: String,
     },
+    initial_agent_id: {
+      type: String,
+      default: undefined,
+      select: false,
+    },
     subagentThread: {
       type: {
         rootConversationId: { type: String, required: true },
@@ -371,6 +376,10 @@ convoSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1, tenantId: 1 }, { unique: true });
 convoSchema.index({ tenantId: 1, isTemporary: 1, createdAt: -1, _id: -1 });
+/** Insights attributes new conversations by an immutable primary agent and falls back
+ * to the mutable agent field only for legacy rows where the primary field is absent. */
+convoSchema.index({ tenantId: 1, isTemporary: 1, initial_agent_id: 1, createdAt: -1, _id: -1 });
+convoSchema.index({ tenantId: 1, isTemporary: 1, agent_id: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ user: 1, _id: 1 });
 convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });

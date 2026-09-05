@@ -264,6 +264,8 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  /** Immutable primary persisted-agent attribution for Insights. */
+  initial_agent_id?: string | null;
   subagentThread?: TSubagentThreadLineage;
   /** Internal execution fence. Excluded from ordinary conversation reads. */
   subagentThreadLease?: ISubagentThreadLease;
