@@ -9,8 +9,8 @@ import type {
   TScheduleRunNowResponse,
 } from 'librechat-data-provider';
 import type { QueryClient, UseMutationOptions } from '@tanstack/react-query';
+import { upsertConvoInAllQueries, getResponseStatus } from '~/utils';
 import { extendActiveJobsGrace } from '~/data-provider/SSE/queries';
-import { upsertConvoInAllQueries, isNotFoundError } from '~/utils';
 
 export const useCreateScheduleMutation = (
   options?: UseMutationOptions<TSchedule, Error, TCreateSchedule>,
@@ -68,14 +68,35 @@ export const useDeleteScheduleMutation = (
 };
 
 /**
- * Waits before each probe, so the first one is not spent on a conversation that
- * cannot exist yet. Admission is normally a second or two, but a failed dispatch
- * is retried with exponential backoff, so the wait has a long tail: eight probes
- * over roughly forty seconds cover the ordinary case without turning one click
- * into an open-ended poll. A run admitted after that is left to the next list
- * refetch rather than watched forever.
+ * Waits before each probe, so the first is not spent on a conversation that
+ * cannot exist yet. Admission is normally a second or two, but a dispatch that
+ * keeps failing is retried, and the budget has to outlast that or the watch
+ * gives up on a run the server is still going to admit: the trigger engine
+ * allows eight attempts backing off from a second and doubling, which is about
+ * two minutes of retries in the worst case. Roughly five minutes of probes
+ * covers that window twice over in eleven requests.
+ *
+ * It does not cover everything, deliberately. A dispatch refused with a long
+ * `Retry-After` can be re-driven hours later, and holding a watch open for that
+ * is worse than what already happens without one — the chat arrives with the
+ * next list refetch, which is what an automatic occurrence relies on anyway.
  */
-const ADMISSION_DELAYS_MS = [750, 1_500, 3_000, 6_000, 8_000, 8_000, 8_000, 8_000];
+const ADMISSION_DELAYS_MS = [
+  750, 1_500, 3_000, 6_000, 10_000, 15_000, 30_000, 45_000, 60_000, 60_000, 60_000,
+];
+
+/**
+ * Whether a failed probe has answered the question for good. A 404 has not: the
+ * run has not started yet, which is the whole reason for waiting. Neither has a
+ * 5xx or a request that never got a response — those are the probe failing, not
+ * the run, and the durable delivery is still free to admit. A different 4xx is a
+ * real answer: waiting longer will not make this client able to read that
+ * conversation.
+ */
+const isTerminalProbeFailure = (error: unknown): boolean => {
+  const status = getResponseStatus(error);
+  return status != null && status >= 400 && status < 500 && status !== 404;
+};
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -90,9 +111,8 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
  * admission probe: a 200 means the chat is listable now, and carries the server's
  * own row rather than a guess assembled from the client's cached schedule.
  *
- * A 404 is the run not having started yet; any other failure is not, and ends the
- * watch rather than spending the budget on a request that is not going to change
- * its answer.
+ * A probe that fails keeps the watch alive unless the failure settles the matter;
+ * see {@link isTerminalProbeFailure}.
  *
  * Deliberately detached from the caller: the sidebar has to gain the chat whether
  * or not the panel the run was started from is still mounted. Bounded, and it
@@ -106,10 +126,10 @@ async function trackStartedRun(queryClient: QueryClient, conversationId: string)
     try {
       conversation = await dataService.getConversationById(conversationId);
     } catch (error) {
-      if (isNotFoundError(error)) {
-        continue;
+      if (isTerminalProbeFailure(error)) {
+        return;
       }
-      return;
+      continue;
     }
     /** Warms the key the chat route reads, so opening the row it just added does
      *  not have to ask again. Absent-only: anything already cached under this id
