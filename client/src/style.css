@@ -488,13 +488,10 @@ html[data-input-modality='keyboard'].high-contrast
   outline: 3px solid rgb(var(--text-primary)) !important;
   outline-offset: 2px !important;
 }
-/* WCAG 1.4.1: prose links must not be distinguished by colour alone. App chrome
- * is deliberately excluded, since a nav row is not a link in running text. */
-html.high-contrast .markdown a,
-html.high-contrast .prose a {
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-}
+/* The WCAG 1.4.1 link treatment moved to
+ * `packages/client/src/theme/highContrast.css` with the other rules that
+ * complete the exported palettes: `text-link` is a shared role, so a package
+ * primitive rendering a link needs the same non-colour cue. */
 /* The whole `@tailwindcss/typography` variable block is hard-coded hex, and
  * message content carries `prose dark:prose-invert`, so the invert half is what
  * dark mode reads. Both halves are remapped: the light set puts prose links at

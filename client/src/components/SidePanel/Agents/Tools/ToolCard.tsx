@@ -108,7 +108,7 @@ function ToolCardImpl({
       className={cn(
         'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border',
         selected
-          ? 'border-emerald-500/60 bg-emerald-500/[0.06] shadow-sm'
+          ? 'border-status-success bg-status-success/10 shadow-sm'
           : 'border-border-light bg-transparent hover:border-border-medium hover:bg-surface-tertiary hover:shadow-sm',
       )}
     >

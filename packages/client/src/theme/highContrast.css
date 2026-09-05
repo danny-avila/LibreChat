@@ -45,6 +45,31 @@ html.high-contrast :is(.bg-surface-active, .bg-surface-active-alt):not(span) {
 }
 
 /**
+ * The one inline user of the selected-surface role is a highlighted source
+ * passage, which the perimeter above skips: an outline would box each wrapped
+ * fragment separately. It still needs a cue, so it inverts instead — the same
+ * treatment the mode gives `::selection`, 21:1 and with no geometry to wrap.
+ */
+html.high-contrast span:is(.bg-surface-active, .bg-surface-active-alt) {
+  background-color: rgb(var(--text-primary));
+  color: rgb(var(--surface-primary));
+}
+
+/**
+ * WCAG 1.4.1: a link in running text must not be told apart by colour alone,
+ * and `link` against `text-primary` is under 3:1 in both palettes. Prose links
+ * plus anything carrying the shared `text-link` role, which is how the auth
+ * resend actions and in-dialog help links are styled — including the ones
+ * rendered as a `button`. App chrome stays excluded: a nav row is not a link in
+ * running text, and it is identified by its own position and perimeter.
+ */
+html.high-contrast :is(.markdown, .prose) a,
+html.high-contrast .text-link {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/**
  * Radix tab triggers mark selection with a `surface-tertiary` fill, which is the
  * plain canvas in both palettes — a selected tab computes to the same colour as
  * its unselected siblings, leaving the current section unmarked. Same remedy,

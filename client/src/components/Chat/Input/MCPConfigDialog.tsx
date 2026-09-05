@@ -115,7 +115,7 @@ export default function MCPConfigDialog({
                 />
                 {details.description && (
                   <p
-                    className="text-xs text-text-secondary [&_a]:text-link [&_a]:hover:text-link-hover"
+                    className="text-xs text-text-secondary [&_a]:text-link [&_a]:underline [&_a]:hover:text-link-hover"
                     dangerouslySetInnerHTML={{ __html: sanitize(details.description) }}
                   />
                 )}
