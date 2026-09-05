@@ -17,6 +17,15 @@ function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegexLike[])
 }
 
 /**
+ * Files already routed to an internal tool are not serialized as raw provider
+ * attachments. Provider MIME allowlists therefore must not discard them before
+ * agent resource priming. Size/total limits still apply to these files.
+ */
+function isToolManagedFile(file: IMongoFile): boolean {
+  return file.embedded === true || file.metadata?.codeEnvRef != null;
+}
+
+/**
  * Filters out files based on endpoint configuration including:
  * - Disabled status
  * - File size limits
@@ -85,7 +94,7 @@ export function filterFilesByEndpointRuntimeConfig(
   /** Filter by MIME type */
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
     filteredFiles = filteredFiles.filter((file) => {
-      return isMimeTypeSupported(file.type, supportedMimeTypes);
+      return isToolManagedFile(file) || isMimeTypeSupported(file.type, supportedMimeTypes);
     });
   }
 
