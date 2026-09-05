@@ -357,6 +357,41 @@ describe('high contrast mermaid palette', () => {
     });
   });
 
+  /** Eight branch slots against a seven-slot ramp. The contract is that no two
+   *  branches share a colour and none of them disappears into the canvas, which
+   *  is exactly what wrapping the eighth slot back to the first would break. */
+  it('gives every Git branch a distinct, visible colour', () => {
+    for (const isDarkMode of [false, true]) {
+      const vars = contrastMermaidVariables(isDarkMode, true)!;
+      const branches = Array.from({ length: 8 }, (_, index) => vars[`git${index}`]);
+
+      expect(new Set(branches).size).toBe(8);
+      expect(branches).not.toContain(vars.background);
+      /** The first seven are the palette's categorical ramp, the same one the
+       *  pie slots draw from; the eighth falls back to the ink. */
+      expect(branches.slice(0, 7)).toEqual(
+        Array.from({ length: 7 }, (_, index) => vars[`pie${index + 1}`]),
+      );
+      expect(branches[7]).toBe(vars.textColor);
+      /** Branch labels are drawn on the branch colour, not on the canvas, and
+       *  the ramp sits on the far side of the canvas, so the canvas is the
+       *  readable label here. */
+      expect(Array.from({ length: 8 }, (_, index) => vars[`gitBranchLabel${index}`])).toEqual(
+        Array(8).fill(vars.background),
+      );
+      expect(Array.from({ length: 8 }, (_, index) => vars[`gitInv${index}`])).toEqual(
+        Array(8).fill(vars.textColor),
+      );
+      expect(vars).toMatchObject({
+        commitLabelColor: vars.textColor,
+        commitLabelBackground: vars.background,
+        tagLabelColor: vars.textColor,
+        tagLabelBackground: vars.background,
+        tagLabelBorder: isDarkMode ? '#ffffff' : '#000000',
+      });
+    }
+  });
+
   it('themes artifact render errors with the semantic destructive color', () => {
     const light = getMermaidFiles('invalid', false, true);
     const lightComponent = light['/components/ui/MermaidDiagram.tsx'];

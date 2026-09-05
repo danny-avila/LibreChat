@@ -108,6 +108,27 @@ const seriesVariables = (slots: string[]): Record<string, string> => {
 };
 
 /**
+ * Mermaid keeps a Git branch palette (`git0`-`git7`) separate from the pie and
+ * Gantt ones, so the base theme's bright green, yellow, cyan and white survive
+ * into a contrast mode unless these slots are populated too.
+ *
+ * Eight slots against a seven-slot ramp. Wrapping would give branch 8 the same
+ * colour as branch 1, which is the one thing a categorical scale must not do,
+ * so the last slot takes the ink instead: 21:1 on the canvas and outside the
+ * ramp, therefore distinct from all seven. `gitBranchLabel*` is the label drawn
+ * ON the branch colour, so it takes the canvas rather than the ink — the ramp
+ * lives on the far side of the canvas precisely so the branches are visible.
+ */
+const gitVariables = (slots: string[], canvas: string, ink: string): Record<string, string> =>
+  Object.fromEntries(
+    Array.from({ length: 8 }, (_, index) => [
+      [`git${index}`, slots[index] ?? ink],
+      [`gitBranchLabel${index}`, canvas],
+      [`gitInv${index}`, ink],
+    ]).flat(),
+  );
+
+/**
  * Mermaid's built-in `neutral` and `dark` themes carry their own palette, which
  * no app token can reach, so a diagram keeps mid-grey nodes and mid-grey edges
  * in a contrast mode. These variables put the diagram on the canvas with ink
@@ -186,6 +207,12 @@ export const contrastMermaidVariables = (
      * beyond the seventh wrap, which mermaid's own palettes do as well.
      */
     ...seriesVariables(series),
+    ...gitVariables(series, canvas, ink),
+    commitLabelColor: ink,
+    commitLabelBackground: canvas,
+    tagLabelColor: ink,
+    tagLabelBackground: canvas,
+    tagLabelBorder: tokenHex(palette['rgb-border-medium'], ink),
     pieStrokeColor: ink,
     pieOuterStrokeColor: ink,
     pieTitleTextColor: ink,

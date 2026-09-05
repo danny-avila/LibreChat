@@ -114,13 +114,21 @@ const createHighContrastEditorTheme = (
       'editorLineNumber.foreground': color('rgb-text-secondary'),
       'editorLineNumber.activeForeground': color('rgb-text-primary'),
       'editorCursor.foreground': color('rgb-ring-primary'),
-      'editor.selectionBackground': color('rgb-surface-active'),
-      'editor.inactiveSelectionBackground': color('rgb-surface-active-alt'),
-      'editor.selectionHighlightBackground': color('rgb-surface-active'),
+      /** These palettes have no mid-tones, so a focused selection inverts the
+       *  canvas exactly as `::selection` does in `client/src/style.css` — 21:1,
+       *  and the only treatment that works without the perimeter the selected
+       *  surfaces rely on elsewhere. The weaker emphases (unfocused selection,
+       *  matching occurrences, other find hits) share `surface-hover-alt` so
+       *  they never outshout the focused one; the current find match is told
+       *  apart by its ink `findMatchBorder`. */
+      'editor.selectionBackground': color('rgb-text-primary'),
+      'editor.selectionForeground': color('rgb-surface-primary'),
+      'editor.inactiveSelectionBackground': color('rgb-surface-hover-alt'),
+      'editor.selectionHighlightBackground': color('rgb-surface-hover-alt'),
       'editor.lineHighlightBackground': color('rgb-surface-hover'),
-      'editor.findMatchBackground': color('rgb-surface-active'),
+      'editor.findMatchBackground': color('rgb-surface-hover-alt'),
       'editor.findMatchBorder': color('rgb-border-heavy'),
-      'editor.findMatchHighlightBackground': color('rgb-surface-active-alt'),
+      'editor.findMatchHighlightBackground': color('rgb-surface-hover-alt'),
       'editorWidget.background': color('rgb-surface-dialog'),
       'editorWidget.border': color('rgb-border-medium'),
       'input.background': color('rgb-surface-primary'),

@@ -9,9 +9,18 @@ import { Button } from './Button';
 
 declare global {
   interface Window {
-    lastThemeChange?: number;
+    /** Last accepted change per appearance control. Global rather than a ref so
+     *  the throttle survives the selector remounting, which the auth routes do
+     *  on every navigation between login, register and verification. */
+    lastThemeChange?: Record<string, number>;
   }
 }
+
+/** Ctrl+Shift+T auto-repeats while held, which is what this throttle is for.
+ *  Keyed per control, because the scheme and contrast toggles are independent
+ *  settings: going from plain light to high-contrast dark is one flip of each,
+ *  and a shared window would silently swallow the second click. */
+const CHANGE_THROTTLE_MS = 500;
 
 type ThemeType = 'system' | 'dark' | 'light' | 'high-contrast-light' | 'high-contrast-dark';
 
@@ -120,12 +129,14 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.
   const localize = useLocalize();
 
   const changeTheme = useCallback(
-    (value: string) => {
+    (value: string, control: string) => {
       const now = Date.now();
-      if (typeof window.lastThemeChange === 'number' && now - window.lastThemeChange < 500) {
+      const changes = window.lastThemeChange ?? {};
+      const last = changes[control];
+      if (typeof last === 'number' && now - last < CHANGE_THROTTLE_MS) {
         return;
       }
-      window.lastThemeChange = now;
+      window.lastThemeChange = { ...changes, [control]: now };
 
       setTheme(value);
       if (isHighContrast(value)) {
@@ -145,6 +156,12 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.
     [setTheme, localize],
   );
 
+  const changeScheme = useCallback((value: string) => changeTheme(value, 'scheme'), [changeTheme]);
+  const changeContrast = useCallback(
+    (value: string) => changeTheme(value, 'contrast'),
+    [changeTheme],
+  );
+
   useEffect(() => {
     if (announcement) {
       const timeout = setTimeout(() => setAnnouncement(''), 1000);
@@ -153,14 +170,14 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.
   }, [announcement]);
 
   if (returnThemeOnly === true) {
-    return <Theme theme={theme} highContrast={highContrast} onChange={changeTheme} />;
+    return <Theme theme={theme} highContrast={highContrast} onChange={changeScheme} />;
   }
 
   return (
     <div className="flex flex-col items-center justify-center bg-surface-primary pt-6 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4 flex items-center">
-        <Theme theme={theme} highContrast={highContrast} onChange={changeTheme} />
-        <ContrastToggle theme={theme} highContrast={highContrast} onChange={changeTheme} />
+        <Theme theme={theme} highContrast={highContrast} onChange={changeScheme} />
+        <ContrastToggle theme={theme} highContrast={highContrast} onChange={changeContrast} />
       </div>
       <div role="alert" aria-live="assertive" aria-atomic="true" className="sr-only">
         {announcement}

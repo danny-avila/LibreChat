@@ -16,6 +16,7 @@ import {
   validateThemeDefinition,
 } from '../registry';
 import applyTheme, { applyResolvedTheme, themeOwnedProperties } from '../utils/applyTheme';
+import '../highContrast.css';
 
 const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';

@@ -460,53 +460,12 @@ html.high-contrast.dark :focus-visible {
   outline: 3px solid rgb(var(--text-primary));
   outline-offset: 2px;
 }
-/* Selection and navigation are conveyed by a fill alone almost everywhere, and
- * these palettes keep fills light on purpose so the label on them can clear AAA
- * (see the `surface-active` note in `themes/highContrast.ts`). The cue is
- * therefore a perimeter: `text-primary` is 21:1 against either canvas, and it
- * is what discharges WCAG 1.4.11 for the fill.
- *
- * Three families need it. `.select-item` blanks its own outline with
- * `!important`, so this has to match that to land. Ariakit marks the navigated
- * row of every other menu with `data-active-item`; those items only carried a
- * `surface-hover` fill at 1.48:1 on white. And any row painted with the
- * selected-surface role marks itself with that fill and nothing else. Inset so
- * the ring reads inside the row's own radius; `span` is excluded because the
- * one inline user of the role is a highlighted passage that wraps across lines
- * and would box every fragment. */
-html.high-contrast .select-item[data-active-item],
-html.high-contrast .select-item:focus-visible,
-html.high-contrast
-  :is(
-    [role='menuitem'],
-    [role='menuitemcheckbox'],
-    [role='menuitemradio'],
-    [role='option']
-  )[data-active-item],
-html.high-contrast :is(.bg-surface-active, .bg-surface-active-alt):not(span) {
-  outline: 3px solid rgb(var(--text-primary)) !important;
-  outline-offset: -3px;
-}
-/* Radix tab triggers mark selection with a `surface-tertiary` fill, which is the
- * plain canvas in both contrast palettes — the selected settings tab computed to
- * the same rgb(0 0 0) as its unselected siblings, so the current section was
- * unmarked. Same remedy as `.select-item` above: a perimeter, inset so it reads
- * inside the row's own radius. */
-html.high-contrast [role='tab'][data-state='active'] {
-  outline: 3px solid rgb(var(--text-primary));
-  outline-offset: -3px;
-}
-/* Placeholder text is real text, so it answers to WCAG 1.4.3 like any other.
- * Tailwind's preflight paints `::placeholder` with the raw `gray-400` #999696,
- * which is what every field that forgets a `placeholder:` utility inherits:
- * 4.06:1 on the black canvas and 3.08:1 on the white one, both under the floor.
- * Setting it here catches those fields rather than the handful that remembered,
- * and matches the utilities that did, since every text role is pure ink in
- * these palettes. */
-html.high-contrast ::placeholder {
-  color: rgb(var(--text-secondary));
-  opacity: 1;
-}
+/* Selection perimeters and placeholder ink used to live here, but they complete
+ * the exported palettes rather than this app: a package primitive rendered by
+ * an external consumer of `ThemeProvider` needs them too, and the published
+ * stylesheet is built only from package-owned CSS. They now ship from
+ * `packages/client/src/theme/highContrast.css`, which `main.jsx` pulls in with
+ * `@librechat/client/style.css`. What stays below is genuinely SPA-only. */
 html[data-input-modality='keyboard'].high-contrast
   :where(
     input:not([type]),

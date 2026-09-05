@@ -11,6 +11,7 @@ import {
   wrapAsFencedCodeBlock,
   TOOL_ARTIFACT_TYPES,
 } from '~/utils/artifacts';
+import { withOfficeContrast } from '~/utils/officePreview';
 import { getMarkdownFiles } from '~/utils/markdown';
 import { getMermaidFiles } from '~/utils/mermaid';
 
@@ -50,14 +51,20 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
      * `bufferToOfficeHtml` and shipped it as `attachment.text`. Hand it
      * to the Sandpack `static` template's `index.html` slot directly —
      * no wrapping, no transformation, no client-side parsing libs. The
-     * empty-text gate in `detectArtifactTypeFromFile` guarantees we
+     * contrast override is injected client-side because the document is
+     * generated server-side with no knowledge of the viewer's appearance
+     * mode. The empty-text gate in `detectArtifactTypeFromFile` guarantees we
      * never reach this branch with an empty content payload. */
     if (
       type === TOOL_ARTIFACT_TYPES.DOCX ||
       type === TOOL_ARTIFACT_TYPES.SPREADSHEET ||
       type === TOOL_ARTIFACT_TYPES.PRESENTATION
     ) {
-      return ['index.html', { 'index.html': artifact.content ?? '' }];
+      const content = artifact.content ?? '';
+      return [
+        'index.html',
+        { 'index.html': highContrast ? withOfficeContrast(content, isDarkMode) : content },
+      ];
     }
 
     const fileKey = getArtifactFilename(artifact.type ?? '', artifact.language);

@@ -215,6 +215,8 @@ describe('ArtifactCodeEditor', () => {
         colors: expect.objectContaining({
           'editor.background': toHexColor(highContrastLightTheme, 'rgb-surface-primary-alt'),
           'editor.foreground': toHexColor(highContrastLightTheme, 'rgb-syntax-text'),
+          'editor.selectionBackground': toHexColor(highContrastLightTheme, 'rgb-text-primary'),
+          'editor.selectionForeground': toHexColor(highContrastLightTheme, 'rgb-surface-primary'),
         }),
         rules: expect.arrayContaining([
           expect.objectContaining({
@@ -232,6 +234,8 @@ describe('ArtifactCodeEditor', () => {
         colors: expect.objectContaining({
           'editor.background': toHexColor(highContrastDarkTheme, 'rgb-presentation'),
           'editor.foreground': toHexColor(highContrastDarkTheme, 'rgb-syntax-text'),
+          'editor.selectionBackground': toHexColor(highContrastDarkTheme, 'rgb-text-primary'),
+          'editor.selectionForeground': toHexColor(highContrastDarkTheme, 'rgb-surface-primary'),
         }),
       }),
     );

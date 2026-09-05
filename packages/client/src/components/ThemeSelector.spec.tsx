@@ -163,4 +163,25 @@ describe('ThemeSelector contrast toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_toggle_high_contrast' }));
     expect(setTheme).toHaveBeenCalledWith('light');
   });
+
+  /** The two controls are independent settings, so a single gesture that flips
+   *  both — plain light to high-contrast dark — has to land twice. A throttle
+   *  shared across the pair swallowed whichever click came second. */
+  it('accepts both controls inside one throttle window', () => {
+    const { setTheme } = renderAuthControls('light');
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_toggle_theme' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_toggle_high_contrast' }));
+    expect(setTheme).toHaveBeenNthCalledWith(1, 'dark');
+    expect(setTheme).toHaveBeenNthCalledWith(2, 'high-contrast-light');
+  });
+
+  /** The throttle still does its job within a control: Ctrl+Shift+T auto-repeats
+   *  while held, and a held key must not stream theme writes. */
+  it('still throttles repeats of the same control', () => {
+    const { setTheme } = renderAuthControls('light');
+    const toggle = screen.getByRole('button', { name: 'com_ui_toggle_high_contrast' });
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(setTheme).toHaveBeenCalledTimes(1);
+  });
 });
