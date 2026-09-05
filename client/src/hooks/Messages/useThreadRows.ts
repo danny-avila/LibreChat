@@ -3,17 +3,17 @@ import { useStore } from 'jotai';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { ThreadIndex, ThreadRow } from '~/utils/thread';
 import {
-  siblingIdxFamily,
-  siblingKey,
-  useSiblingIndexes,
-} from '~/components/Chat/Messages/Thread/state';
-import {
   ROOT_KEY,
   buildThreadIndex,
   changedParentKeys,
   reconcileSiblingIdx,
   resolveThreadRows,
 } from '~/utils/thread';
+import {
+  siblingIdxFamily,
+  siblingKey,
+  useSiblingIndexes,
+} from '~/components/Chat/Messages/Thread/state';
 
 const EMPTY_KEYS: string[] = [];
 
