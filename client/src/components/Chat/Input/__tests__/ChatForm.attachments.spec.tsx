@@ -6,8 +6,8 @@ import { RecoilRoot, useRecoilState } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { BrowserRouter as Router } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryKeys, FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
@@ -172,6 +172,34 @@ describe('ChatForm attachments', () => {
 
     await waitFor(() => expect(sendButton()).toBeEnabled());
     expect(textarea).toHaveValue('hi');
+  }, 20000);
+
+  test('does not steal focus when clicking the nested attachment icon', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    const trigger = screen.getByRole('button', { name: 'Attach File Options' });
+    expect(trigger).toBeEnabled();
+    const icon = trigger.querySelector('svg');
+    expect(icon).not.toBeNull();
+    const focus = jest.spyOn(textarea, 'focus');
+
+    await userEvent.click(icon as SVGElement);
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(await screen.findByRole('menu', { name: 'Attach File Options' })).toBeInTheDocument();
+  }, 20000);
+
+  test('focuses the textarea when clicking empty composer space', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    const surface = textarea.closest('.rounded-t-3xl');
+    expect(surface).not.toBeNull();
+    const focus = jest.spyOn(textarea, 'focus');
+
+    fireEvent.click(surface as HTMLElement);
+
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(textarea).toHaveFocus();
   }, 20000);
 
   test('enables send for an attachment with no composer text', async () => {

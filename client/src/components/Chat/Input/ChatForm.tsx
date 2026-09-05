@@ -162,7 +162,15 @@ const ChatForm = memo(function ChatForm({
     [requiresKey, invalidAssistant],
   );
 
-  const handleContainerClick = useCallback(() => {
+  const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      event.target instanceof Element &&
+      event.target.closest(
+        'button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="menu"]',
+      )
+    ) {
+      return;
+    }
     /** Check if the device is a touchscreen */
     if (window.matchMedia?.('(pointer: coarse)').matches) {
       return;
