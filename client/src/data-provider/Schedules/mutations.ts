@@ -106,7 +106,11 @@ const isTerminalProbeFailure = (error: unknown): boolean => {
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Who this cache belongs to. Both sign-in and sign-out empty it wholesale, so a
- *  watch outliving either has no business writing to whatever replaced it. */
+ *  watch outliving either has no business writing to whatever replaced it.
+ *
+ *  `undefined` is two different things, and the difference decides the fence: not
+ *  loaded yet, or emptied. Which one it is depends on whether an owner has been
+ *  seen before — see {@link trackStartedRun}. */
 const cacheOwner = (queryClient: QueryClient): string | undefined =>
   queryClient.getQueryData<TUser>([QueryKeys.user])?.id;
 
@@ -130,13 +134,20 @@ const cacheOwner = (queryClient: QueryClient): string | undefined =>
  * every cache exactly as it found it.
  */
 async function trackStartedRun(queryClient: QueryClient, conversationId: string): Promise<void> {
-  const startedFor = cacheOwner(queryClient);
+  /** Bound late when the user query has not resolved yet. Run-now answering 200 is
+   *  itself proof that a session existed at the click, so an empty entry then is a
+   *  cache still loading rather than nobody signed in — reading it as a session
+   *  change would abandon the watch the moment the account's own query arrived. */
+  let startedFor = cacheOwner(queryClient);
   for (const delay of ADMISSION_DELAYS_MS) {
     await wait(delay);
     /** Minutes can pass in here, and signing out or signing in as someone else
      *  empties the cache in between. Re-check before probing and again before
      *  writing, or a late response files one user's chat in another's sidebar. */
-    if (cacheOwner(queryClient) !== startedFor) {
+    const owner = cacheOwner(queryClient);
+    if (startedFor === undefined) {
+      startedFor = owner;
+    } else if (owner !== startedFor) {
       return;
     }
     let conversation: TConversation;
@@ -148,7 +159,7 @@ async function trackStartedRun(queryClient: QueryClient, conversationId: string)
       }
       continue;
     }
-    if (cacheOwner(queryClient) !== startedFor) {
+    if (startedFor !== undefined && cacheOwner(queryClient) !== startedFor) {
       return;
     }
     /** The conversation route serves an archived chat; the list query filters one
