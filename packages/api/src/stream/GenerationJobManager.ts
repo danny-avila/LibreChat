@@ -5792,6 +5792,11 @@ class GenerationJobManagerClass {
             onError?.(GENERATION_RECOVERY_FAILED_ERROR);
             return { subscription: null, resumeState: null, pendingEvents: [] };
           }
+          /** Another replica proved the generation recoverable, but this
+           * attachment's snapshot is still incomplete. Keep the generation
+           * healthy and fail this request closed so its normal retry can read
+           * the durable winner's now-established frontier. */
+          throw new Error('Concurrent recovery succeeded; retry this attachment');
         }
       }
 
