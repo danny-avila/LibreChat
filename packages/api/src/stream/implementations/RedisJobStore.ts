@@ -25,6 +25,7 @@ import type {
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
+  EarlyBufferRecoveryState,
 } from '~/stream/interfaces/IJobStore';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
@@ -616,6 +617,17 @@ const JOB_UPDATE_LUA =
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], runStepsTtl) end ' +
   'end ' +
   'return 1';
+
+const EARLY_BUFFER_RECOVERY_SETTLE_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local raw = redis.call("HGET", KEYS[1], "earlyBufferRecovery") if not raw then return 0 end ' +
+  'local ok, current = pcall(cjson.decode, raw) ' +
+  'if not ok or current.correlationId ~= ARGV[2] or current.outcome then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "earlyBufferRecovery", ARGV[3]) return 1';
+
+const FIRST_SUBSCRIBER_CLAIM_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'return redis.call("HSETNX", KEYS[1], "firstSubscriberAttachedAt", ARGV[2])';
 
 /** Exact provider-segment completion fence. A paused segment finishing after a
  * resume cannot mark the resumed provider drained because its opaque id differs. */
@@ -2284,6 +2296,44 @@ export class RedisJobStore implements IJobStoreV2 {
         expectedCreatedAt ?? observedJob?.createdAt,
       );
     }
+  }
+
+  async settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    correlationId: string,
+    recovery: EarlyBufferRecoveryState,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          EARLY_BUFFER_RECOVERY_SETTLE_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+          correlationId,
+          JSON.stringify(recovery),
+        ),
+      ) === 1
+    );
+  }
+
+  async claimFirstSubscriberAttachment(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          FIRST_SUBSCRIBER_CLAIM_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+          String(attachedAt),
+        ),
+      ) === 1
+    );
   }
 
   async markProviderExecutionDrained(
@@ -4658,6 +4708,24 @@ export class RedisJobStore implements IJobStoreV2 {
       .filter(Boolean);
   }
 
+  async getRecoveryEventStats(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{ eventCount: number; recoverySequences: number[] } | null> {
+    const chunks = await this.getChunks(streamId, expectedCreatedAt);
+    if (chunks.length === 0) {
+      return null;
+    }
+    const recoverySequences: number[] = [];
+    for (const chunk of chunks) {
+      const sequence = (chunk as { recoverySequence?: unknown }).recoverySequence;
+      if (typeof sequence === 'number' && Number.isSafeInteger(sequence) && sequence > 0) {
+        recoverySequences.push(sequence);
+      }
+    }
+    return { eventCount: chunks.length, recoverySequences };
+  }
+
   /**
    * Save run steps for resume state. Uses the paused-window TTL script so a run-step save
    * landing at/after a HITL pause extends to the approval window instead of resetting the
@@ -4916,6 +4984,12 @@ export class RedisJobStore implements IJobStoreV2 {
       completedAt: data.completedAt ? parseInt(data.completedAt, 10) : undefined,
       conversationId: data.conversationId || undefined,
       error: data.error || undefined,
+      earlyBufferRecovery: data.earlyBufferRecovery
+        ? JSON.parse(data.earlyBufferRecovery)
+        : undefined,
+      firstSubscriberAttachedAt: data.firstSubscriberAttachedAt
+        ? parseInt(data.firstSubscriberAttachedAt, 10)
+        : undefined,
       idempotencyClientRequestId: data.idempotencyClientRequestId || undefined,
       recoveredSteerId: data.recoveredSteerId || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,

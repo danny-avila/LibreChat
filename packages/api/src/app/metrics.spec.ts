@@ -11,6 +11,9 @@ import {
   recordAgentStartupMilestone,
   recordAgentStartupResult,
   recordGenerationJob,
+  recordGenerationStreamAttachment,
+  recordGenerationStreamEarlyBufferOverflow,
+  recordGenerationStreamRecovery,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   recordOpenIDUserLookup,
@@ -527,6 +530,9 @@ describe('createMetrics', () => {
     recordGenerationStreamSubscription('redis', 'resume', 'not_found');
     recordGenerationStreamSubscription('redis', 'resume_state', 'missing');
     recordGenerationStreamResumePendingEvents('memory', 3);
+    recordGenerationStreamEarlyBufferOverflow('redis');
+    recordGenerationStreamRecovery('redis', 'redis', 'success', 'none', 0.125, 5001, 2);
+    recordGenerationStreamAttachment('redis', 'bootstrap_slow', 1.5);
 
     const response = await request(app)
       .get('/metrics')
@@ -543,6 +549,21 @@ describe('createMetrics', () => {
     );
     expect(response.text).toMatch(
       /generation_stream_resume_pending_events_total\{store="memory"\} 3/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_early_buffer_overflows_total\{store="redis"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_early_buffer_recoveries_total\{store="redis",source="redis",outcome="success",reason="none"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_early_buffer_reconstructed_events_total\{store="redis",source="redis",outcome="success"\} 5001/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_attachment_outcomes_total\{store="redis",result="bootstrap_slow"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /generation_stream_first_attachment_duration_seconds_count\{store="redis",result="bootstrap_slow"\} 1/,
     );
   });
 

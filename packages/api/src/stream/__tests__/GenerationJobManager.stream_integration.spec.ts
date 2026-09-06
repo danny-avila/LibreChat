@@ -2,14 +2,15 @@
 import type { Redis, Cluster } from 'ioredis';
 import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types';
 import {
+  GenerationJobManagerClass,
+  GENERATION_RECOVERY_FAILED_ERROR,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
+} from '~/stream/GenerationJobManager';
+import {
   ioredisClient as staticRedisClient,
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
-import {
-  GenerationJobManagerClass,
-  TERMINAL_PUBLICATION_RECONNECT_ERROR,
-} from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -1730,48 +1731,106 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
-      const manager = createRedisManager();
-      const streamId = `overflow-redirect-${Date.now()}`;
-      await manager.createJob(streamId, 'user-1');
+    testRedis(
+      'reconstructs over 5,000 pre-attachment events from Redis',
+      async () => {
+        const owner = createRedisManager();
+        const streamId = `overflow-redirect-${Date.now()}`;
+        await owner.createJob(streamId, 'user-1');
 
-      await manager.emitChunk(streamId, {
-        event: 'on_run_step',
-        data: {
-          id: 'step-1',
-          runId: 'run-1',
-          index: 0,
-          stepDetails: { type: 'message_creation' },
-        },
-      });
-      const bigText = 'y'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        await owner.emitChunk(streamId, {
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            runId: 'run-1',
+            index: 0,
+            stepDetails: { type: 'message_creation' },
+          },
         });
-      }
-      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+        for (let i = 0; i < 5_001; i++) {
+          await owner.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: { id: 'step-1', delta: { content: { type: 'text', text: 'y' } } },
+          });
+        }
+        expect(owner.getRuntimeStats().earlyBufferedEvents).toBe(0);
 
-      const errors: string[] = [];
-      const sub = await manager.subscribe(
-        streamId,
-        () => {},
-        undefined,
-        (error) => errors.push(error),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
-      sub?.unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+        const errors: string[] = [];
+        const sub = await owner.subscribe(
+          streamId,
+          () => {},
+          undefined,
+          (error) => errors.push(error),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+        sub?.unsubscribe();
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
-      /** The resume path the client falls back to reconstructs the
-       * discarded output from the durable chunk log. */
-      const resumeState = await manager.getResumeState(streamId);
-      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
+        /** The resume path the client falls back to reconstructs the
+         * discarded output from the durable chunk log. */
+        const recoveryReplica = createRedisManager();
+        const recovered = await recoveryReplica.subscribeWithResume(streamId, () => {});
+        const { resumeState } = recovered;
+        expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
+        expect(
+          (await recoveryReplica.getJobStore().getJob(streamId))?.earlyBufferRecovery,
+        ).toMatchObject({
+          source: 'redis',
+          outcome: 'success',
+          reconstructedEventCount: 5_002,
+        });
+        recovered.subscription?.unsubscribe();
 
-      await manager.destroy();
-    });
+        await recoveryReplica.destroy();
+        await owner.destroy();
+      },
+      60_000,
+    );
+
+    testRedis(
+      'terminally fails overflow recovery when the durable chunk log is missing',
+      async () => {
+        const manager = createRedisManager();
+        const streamId = `overflow-missing-${Date.now()}`;
+        const job = await manager.createJob(streamId, 'user-1');
+
+        const bigText = 'z'.repeat(2 * 1024 * 1024);
+        for (let i = 0; i < 5; i++) {
+          await manager.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+          });
+        }
+
+        const initial = await manager.subscribe(streamId, () => {});
+        initial?.unsubscribe();
+        await ioredisClient!.del(`stream:{${streamId}}:chunks`);
+
+        const errors: string[] = [];
+        const recovered = await manager.subscribeWithResume(
+          streamId,
+          () => {},
+          undefined,
+          (error) => errors.push(error),
+          { expectedCreatedAt: job.createdAt },
+        );
+
+        expect(recovered.subscription).toBeNull();
+        expect(await manager.getJob(streamId)).toMatchObject({
+          status: 'error',
+          error: GENERATION_RECOVERY_FAILED_ERROR,
+          earlyBufferRecovery: {
+            source: 'redis',
+            outcome: 'failure',
+            failureReason: 'durable_state_missing',
+          },
+        });
+        expect(errors).toContain(GENERATION_RECOVERY_FAILED_ERROR);
+
+        await manager.destroy();
+      },
+    );
 
     test('buffers detached events until the cap in in-memory mode', async () => {
       const manager = createInMemoryManager();

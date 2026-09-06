@@ -22,6 +22,7 @@ import type {
   IdempotencyClaimValue,
   IdempotencyClaimResult,
   ParkedSteerClaim,
+  EarlyBufferRecoveryState,
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
@@ -711,6 +712,37 @@ export class InMemoryJobStore implements IJobStoreV2 {
     // Plain field writer. Membership-aware status transitions
     // (running ⇄ requires_action) go solely through transitionStatus.
     Object.assign(job, updates);
+  }
+
+  async settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    correlationId: string,
+    recovery: EarlyBufferRecoveryState,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      job.earlyBufferRecovery?.correlationId !== correlationId ||
+      job.earlyBufferRecovery.outcome != null
+    ) {
+      return false;
+    }
+    job.earlyBufferRecovery = recovery;
+    return true;
+  }
+
+  async claimFirstSubscriberAttachment(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt || job.firstSubscriberAttachedAt != null) {
+      return false;
+    }
+    job.firstSubscriberAttachedAt = attachedAt;
+    return true;
   }
 
   async markProviderExecutionDrained(

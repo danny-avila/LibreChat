@@ -157,6 +157,20 @@ export type GenerationStreamSubscriptionResult =
   | 'error'
   | 'found'
   | 'missing';
+export type GenerationStreamRecoverySource = 'redis' | 'snapshot';
+export type GenerationStreamRecoveryOutcome = 'success' | 'failure' | 'not_attempted';
+export type GenerationStreamRecoveryFailureReason =
+  | 'none'
+  | 'durable_frontier_gap'
+  | 'durable_state_missing'
+  | 'snapshot_missing'
+  | 'subscriber_never_attached'
+  | 'reconstruction_error';
+export type GenerationStreamAttachmentResult =
+  | 'attached'
+  | 'bootstrap_slow'
+  | 'disconnected'
+  | 'never_attached';
 export type RumProxyEndpoint = 'traces' | 'logs' | 'unknown';
 export type RumProxyResult =
   | 'success'
@@ -206,6 +220,20 @@ type GenerationJobMetrics = {
   ) => void;
   recordResumePendingEvents: (store: GenerationJobStore, count: number) => void;
   recordEarlyBufferOverflow: (store: GenerationJobStore) => void;
+  recordRecovery: (
+    store: GenerationJobStore,
+    source: GenerationStreamRecoverySource,
+    outcome: GenerationStreamRecoveryOutcome,
+    reason: GenerationStreamRecoveryFailureReason,
+    durationSeconds: number,
+    eventCount: number,
+    contentCount: number,
+  ) => void;
+  recordAttachment: (
+    store: GenerationJobStore,
+    result: GenerationStreamAttachmentResult,
+    durationSeconds: number,
+  ) => void;
 };
 
 let generationJobMetrics: GenerationJobMetrics = {
@@ -214,6 +242,8 @@ let generationJobMetrics: GenerationJobMetrics = {
   recordSubscription: () => undefined,
   recordResumePendingEvents: () => undefined,
   recordEarlyBufferOverflow: () => undefined,
+  recordRecovery: () => undefined,
+  recordAttachment: () => undefined,
 };
 
 type AgentStartupMetrics = {
@@ -272,6 +302,8 @@ const resetMetricRecorders = (): void => {
     recordSubscription: () => undefined,
     recordResumePendingEvents: () => undefined,
     recordEarlyBufferOverflow: () => undefined,
+    recordRecovery: () => undefined,
+    recordAttachment: () => undefined,
   };
   agentStartupMetrics = {
     recordMilestone: () => undefined,
@@ -314,6 +346,34 @@ export function recordGenerationStreamResumePendingEvents(
 
 export function recordGenerationStreamEarlyBufferOverflow(store: GenerationJobStore): void {
   generationJobMetrics.recordEarlyBufferOverflow(store);
+}
+
+export function recordGenerationStreamRecovery(
+  store: GenerationJobStore,
+  source: GenerationStreamRecoverySource,
+  outcome: GenerationStreamRecoveryOutcome,
+  reason: GenerationStreamRecoveryFailureReason,
+  durationSeconds: number,
+  eventCount: number,
+  contentCount: number,
+): void {
+  generationJobMetrics.recordRecovery(
+    store,
+    source,
+    outcome,
+    reason,
+    durationSeconds,
+    eventCount,
+    contentCount,
+  );
+}
+
+export function recordGenerationStreamAttachment(
+  store: GenerationJobStore,
+  result: GenerationStreamAttachmentResult,
+  durationSeconds: number,
+): void {
+  generationJobMetrics.recordAttachment(store, result, durationSeconds);
 }
 
 export function recordAgentStartupMilestone(
@@ -641,6 +701,50 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
     registers: [registry],
   });
 
+  const generationStreamRecoveries = new Counter({
+    name: 'generation_stream_early_buffer_recoveries_total',
+    help: 'Early-buffer recovery outcomes; success divided by overflows is the recovery ratio',
+    labelNames: ['store', 'source', 'outcome', 'reason'] as const,
+    registers: [registry],
+  });
+
+  const generationStreamRecoveryDuration = new Histogram({
+    name: 'generation_stream_early_buffer_recovery_duration_seconds',
+    help: 'Early-buffer recovery duration by bounded source and outcome',
+    labelNames: ['store', 'source', 'outcome'] as const,
+    buckets: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+    registers: [registry],
+  });
+
+  const generationStreamRecoveryEvents = new Counter({
+    name: 'generation_stream_early_buffer_reconstructed_events_total',
+    help: 'Events observed in early-buffer reconstruction attempts',
+    labelNames: ['store', 'source', 'outcome'] as const,
+    registers: [registry],
+  });
+
+  const generationStreamRecoveryContent = new Counter({
+    name: 'generation_stream_early_buffer_reconstructed_content_total',
+    help: 'Content parts observed in early-buffer reconstruction attempts',
+    labelNames: ['store', 'source', 'outcome'] as const,
+    registers: [registry],
+  });
+
+  const generationStreamAttachments = new Counter({
+    name: 'generation_stream_attachment_outcomes_total',
+    help: 'Generation attachment lifecycle outcomes',
+    labelNames: ['store', 'result'] as const,
+    registers: [registry],
+  });
+
+  const generationStreamFirstAttachmentDuration = new Histogram({
+    name: 'generation_stream_first_attachment_duration_seconds',
+    help: 'Time from generation creation to its first subscriber attachment',
+    labelNames: ['store', 'result'] as const,
+    buckets: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300],
+    registers: [registry],
+  });
+
   const agentStartupMilestoneDuration = new Histogram({
     name: 'agent_startup_milestone_duration_seconds',
     help: 'Cumulative agent chat startup latency from request ingress to each milestone',
@@ -765,6 +869,19 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
     recordResumePendingEvents: (store, count) =>
       generationStreamResumePendingEvents.inc({ store }, count),
     recordEarlyBufferOverflow: (store) => generationStreamEarlyBufferOverflows.inc({ store }),
+    recordRecovery: (store, source, outcome, reason, durationSeconds, eventCount, contentCount) => {
+      const labels = { store, source, outcome };
+      generationStreamRecoveries.inc({ ...labels, reason });
+      generationStreamRecoveryDuration.observe(labels, durationSeconds);
+      generationStreamRecoveryEvents.inc(labels, eventCount);
+      generationStreamRecoveryContent.inc(labels, contentCount);
+    },
+    recordAttachment: (store, result, durationSeconds) => {
+      generationStreamAttachments.inc({ store, result });
+      if (result === 'attached' || result === 'bootstrap_slow') {
+        generationStreamFirstAttachmentDuration.observe({ store, result }, durationSeconds);
+      }
+    },
   };
 
   agentStartupMetrics = {

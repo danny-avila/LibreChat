@@ -102,6 +102,31 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires
  * Missing markers on pre-rollout records are interpreted as protocol v1. */
 export type GenerationProtocolVersion = 1 | 2;
 
+export type EarlyBufferRecoverySource = 'redis' | 'snapshot';
+export type EarlyBufferRecoveryOutcome = 'success' | 'failure' | 'not_attempted';
+export type EarlyBufferRecoveryFailureReason =
+  | 'durable_frontier_gap'
+  | 'durable_state_missing'
+  | 'snapshot_missing'
+  | 'subscriber_never_attached'
+  | 'reconstruction_error';
+
+export interface EarlyBufferRecoveryState {
+  /** Random, non-sensitive identifier used to join overflow and recovery telemetry. */
+  correlationId: string;
+  overflowedAt: number;
+  /** Number of reconstructable events emitted through this runtime at overflow. */
+  durableFrontier: number;
+  source?: EarlyBufferRecoverySource;
+  startedAt?: number;
+  outcome?: EarlyBufferRecoveryOutcome;
+  completedAt?: number;
+  durationMs?: number;
+  reconstructedEventCount?: number;
+  reconstructedContentCount?: number;
+  failureReason?: EarlyBufferRecoveryFailureReason;
+}
+
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
  */
@@ -120,6 +145,10 @@ export interface SerializableJobData {
   completedAt?: number;
   conversationId?: string;
   error?: string;
+  /** Durable accounting for an early-event buffer overflow and its single recovery outcome. */
+  earlyBufferRecovery?: EarlyBufferRecoveryState;
+  /** First subscriber attachment across all replicas. */
+  firstSubscriberAttachedAt?: number;
 
   /** Stable identity of the HTTP submission that created this generation.
    * Internal-only: lets an expired idempotency lease recognize the same live
@@ -951,6 +980,24 @@ export interface IJobStore {
     streamId: string,
     expectedCreatedAt?: number,
   ): Promise<{ content: Agents.MessageContentComplex[] } | null>;
+  /** Rare-path validation metadata for early-buffer recovery. */
+  getRecoveryEventStats?(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{ eventCount: number; recoverySequences: number[] } | null>;
+  /** Atomically records the one terminal outcome for an overflow correlation id. */
+  settleEarlyBufferRecovery?(
+    streamId: string,
+    expectedCreatedAt: number,
+    correlationId: string,
+    recovery: EarlyBufferRecoveryState,
+  ): Promise<boolean>;
+  /** Claims first attachment once across replicas. */
+  claimFirstSubscriberAttachment?(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean>;
   getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 
   /** Legacy stores returned `void`; v2 stores return whether the epoch-fenced
