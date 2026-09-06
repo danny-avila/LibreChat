@@ -3,27 +3,7 @@ import path from 'path';
 import { ProviderId } from 'librechat-data-provider';
 import { getProviderIconDef, providerIcons } from './registry';
 
-const packageAssets = path.resolve(__dirname, 'assets');
-
-const packagedAssetFiles = [
-  'anyscale.png',
-  'apipie.png',
-  'cohere.png',
-  'deepseek.svg',
-  'fireworks.png',
-  'groq.png',
-  'helicone.svg',
-  'huggingface.svg',
-  'mistral.png',
-  'mlx.png',
-  'ollama.png',
-  'openrouter.png',
-  'perplexity.png',
-  'qwen.svg',
-  'shuttleai.png',
-  'together.png',
-  'unify.webp',
-];
+const packageRoot = __dirname;
 
 describe('providerIcons', () => {
   it('has an entry for every ProviderId', () => {
@@ -34,12 +14,9 @@ describe('providerIcons', () => {
   });
 
   it('points every asset entry at a file shipped with the package', () => {
-    for (const fileName of packagedAssetFiles) {
-      expect(fs.existsSync(path.join(packageAssets, fileName))).toBe(true);
-    }
     for (const def of Object.values(providerIcons)) {
       if (def.art.kind === 'asset') {
-        expect(def.art.src).toBeTruthy();
+        expect(fs.existsSync(path.resolve(packageRoot, def.art.src))).toBe(true);
       }
     }
   });
