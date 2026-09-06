@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import {
   LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS,
   LANGFUSE_TRACE_USER_METADATA_FIELDS,
@@ -10,7 +11,6 @@ import type {
   LangfuseTraceConfig,
   DeepPartial,
 } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import { normalizeString } from '~/utils/text';
 
