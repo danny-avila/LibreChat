@@ -7,8 +7,8 @@ import userEvent from '@testing-library/user-event';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryKeys, FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider } from '~/Providers';
@@ -117,7 +117,7 @@ function Harness() {
   );
 }
 
-function renderComposer() {
+function renderComposer({ submitting = false }: { submitting?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -127,7 +127,7 @@ function renderComposer() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot>
+      <RecoilRoot initializeState={({ set }) => set(store.isSubmittingFamily(0), submitting)}>
         <Router>
           <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
             <DndProvider backend={HTML5Backend}>
@@ -211,6 +211,25 @@ describe('ChatForm attachments', () => {
 
     await userEvent.click(sendButton());
 
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('returns focus to the textarea after a during-run hovercard action', async () => {
+    renderComposer({ submitting: true });
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.type(textarea, 'later');
+    /** Ariakit shows a hovercard only after the pointer has travelled, and a
+     *  keydown resets that, so the hover needs real screen-coordinate movement. */
+    const anchor = await screen.findByTestId('during-run-send-button');
+    fireEvent.mouseMove(anchor, { screenX: 10, screenY: 10 });
+    fireEvent.mouseMove(anchor, { screenX: 20, screenY: 20 });
+    const hovercard = await screen.findByRole('dialog');
+    const queue = within(hovercard).getByRole('button', { name: /^Queue\b/ });
+    expect(queue).toBeEnabled();
+
+    await userEvent.click(queue);
+
+    await waitFor(() => expect(textarea).toHaveValue(''));
     expect(textarea).toHaveFocus();
   }, 20000);
 
