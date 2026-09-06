@@ -115,6 +115,19 @@ describe('memories routes', () => {
       expect(createMemory).not.toHaveBeenCalled();
     });
 
+    it('rejects a whitespace-only rename instead of updating the existing memory', async () => {
+      getUserMemories.mockResolvedValue([{ key: 'my_key', value: 'old value', tokenCount: 5 }]);
+      setMemory.mockResolvedValue({ ok: true });
+
+      const response = await request(app)
+        .patch('/api/memories/my_key')
+        .send({ key: ' \t\n ', value: 'updated value' });
+
+      expect(response.status).toBe(400);
+      expect(setMemory).not.toHaveBeenCalled();
+      expect(createMemory).not.toHaveBeenCalled();
+    });
+
     it('trims the new key before validating and renaming', async () => {
       const { deleteMemory } = require('~/models');
       getUserMemories

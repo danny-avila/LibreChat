@@ -326,8 +326,7 @@ router.patch('/:key', updateMemoryMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Key must be a string.' });
   }
 
-  /** Trim to match POST's key normalization; blank/whitespace-only falls back to urlKey */
-  const newKey = typeof bodyKey === 'string' && bodyKey.trim() !== '' ? bodyKey.trim() : urlKey;
+  const newKey = bodyKey === undefined ? urlKey : bodyKey.trim();
 
   if (newKey !== urlKey && !isValidMemoryKey(newKey)) {
     return res.status(400).json({
