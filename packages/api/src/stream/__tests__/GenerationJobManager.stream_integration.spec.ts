@@ -2457,10 +2457,17 @@ describe('GenerationJobManager Integration Tests', () => {
       const subscription = await manager.subscribe(streamId, () => {});
       await jest.advanceTimersByTimeAsync(0);
       expect(claim).toHaveBeenCalledTimes(1);
+      const runtime = (
+        manager as unknown as {
+          runtimeState: Map<string, { onFirstSubscriberLeaseClaim?: (first: boolean) => void }>;
+        }
+      ).runtimeState.get(streamId)!;
+      expect(runtime.onFirstSubscriberLeaseClaim).toBeDefined();
 
       await jest.advanceTimersByTimeAsync(10_000);
 
       expect(claim).toHaveBeenCalledTimes(2);
+      expect(runtime.onFirstSubscriberLeaseClaim).toBeUndefined();
       await expect(jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())).resolves.toBe(
         true,
       );

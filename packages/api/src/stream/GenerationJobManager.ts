@@ -703,6 +703,8 @@ interface RuntimeJobState {
   subscriberStateAttached: boolean;
   subscriberLeaseId: string;
   subscriberLeaseTimer?: ReturnType<typeof setInterval>;
+  /** One-shot telemetry callback retained until a durable first-subscriber claim succeeds. */
+  onFirstSubscriberLeaseClaim?: (firstSubscriber: boolean) => void;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
   /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
@@ -1696,6 +1698,7 @@ class GenerationJobManagerClass {
         )
         .then((firstSubscriber) => {
           runtime.subscriberStateAttached = true;
+          runtime.onFirstSubscriberLeaseClaim?.(firstSubscriber);
           return firstSubscriber;
         })
         .catch((leaseError) => {
@@ -2662,6 +2665,7 @@ class GenerationJobManagerClass {
     if (replacedRuntime) {
       replacedRuntime.startupTelemetry?.end('replaced');
       replacedRuntime.startupTelemetry = undefined;
+      this.stopSubscriberLease(replacedRuntime);
       const durableReceipt = exactPredecessorsByEpoch.get(replacedRuntime.createdAt);
       if (
         durableReceipt == null ||
@@ -5112,8 +5116,26 @@ class GenerationJobManagerClass {
 
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
-      this.startSubscriberLease(streamId, runtime);
       const attachedAt = Date.now();
+      if (!runtime.everHadSubscriber) {
+        const bootstrapSlow = attachedAt - attachmentStartedAt >= SLOW_ATTACHMENT_BOOTSTRAP_MS;
+        runtime.everHadSubscriber = true;
+        runtime.onFirstSubscriberLeaseClaim = (firstSubscriber) => {
+          if (!firstSubscriber) {
+            return;
+          }
+          runtime.onFirstSubscriberLeaseClaim = undefined;
+          recordGenerationStreamAttachment(
+            this.storeLabel,
+            'attached',
+            Math.max(0, attachedAt - runtime.createdAt) / 1000,
+          );
+          if (bootstrapSlow) {
+            recordGenerationStreamAttachment(this.storeLabel, 'bootstrap_slow');
+          }
+        };
+      }
+      this.startSubscriberLease(streamId, runtime);
       const subscriberClaim = (runtime.subscriberStateWrite ?? Promise.resolve())
         .then(async () => {
           const firstSubscriber = await this.jobStore.claimFirstSubscriber(
@@ -5134,22 +5156,9 @@ class GenerationJobManagerClass {
           return false;
         });
       runtime.subscriberStateWrite = subscriberClaim;
-      if (!runtime.everHadSubscriber) {
-        const bootstrapSlow = attachedAt - attachmentStartedAt >= SLOW_ATTACHMENT_BOOTSTRAP_MS;
-        runtime.everHadSubscriber = true;
-        void subscriberClaim.then((firstSubscriber) => {
-          if (firstSubscriber) {
-            recordGenerationStreamAttachment(
-              this.storeLabel,
-              'attached',
-              Math.max(0, attachedAt - runtime.createdAt) / 1000,
-            );
-            if (bootstrapSlow) {
-              recordGenerationStreamAttachment(this.storeLabel, 'bootstrap_slow');
-            }
-          }
-        });
-      }
+      void subscriberClaim.then((firstSubscriber) =>
+        runtime.onFirstSubscriberLeaseClaim?.(firstSubscriber),
+      );
       const attachmentGeneration = runtime.attachmentGeneration;
       const earlyPublicationFence = this.waitForEarlyEventPublications(runtime);
       if (!(await waitWhileAttached(earlyPublicationFence))) {
