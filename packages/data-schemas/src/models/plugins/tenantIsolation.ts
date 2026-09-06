@@ -33,39 +33,64 @@ interface TenantWhereDocument {
   $where?: Record<string, unknown>;
 }
 
+interface TenantSaveDocument extends TenantWhereDocument {
+  get(path: string): unknown;
+  set(path: string, value: unknown): void;
+  unmarkModified(path: string): void;
+}
+
 interface TenantWhereState {
-  readonly injectedTenantId: string;
+  readonly injectedTenantPredicate: unknown;
   readonly hadTenantId: boolean;
   readonly tenantId: unknown;
 }
 
 const tenantWhereStates = new WeakMap<TenantWhereDocument, TenantWhereState>();
 
+interface TenantStampState {
+  readonly injectedTenantId: string;
+  readonly tenantId: unknown;
+}
+
+const tenantStampStates = new WeakMap<TenantSaveDocument, TenantStampState>();
+
 /** Restores the document's own `$where.tenantId` before deriving the next save predicate. */
 function restoreTenantWhere(document: TenantWhereDocument): void {
   const state = tenantWhereStates.get(document);
+  const where = document.$where;
   tenantWhereStates.delete(document);
-  if (!state || document.$where?.tenantId !== state.injectedTenantId) {
+  if (!state || !where || where.tenantId !== state.injectedTenantPredicate) {
     return;
   }
 
   if (state.hadTenantId) {
-    document.$where.tenantId = state.tenantId;
+    where.tenantId = state.tenantId;
     return;
   }
 
-  const { tenantId: _tenantId, ...where } = document.$where;
-  document.$where = Object.keys(where).length > 0 ? where : undefined;
+  const { tenantId: _tenantId, ...rest } = where;
+  document.$where = Object.keys(rest).length > 0 ? rest : undefined;
 }
 
-function applyTenantWhere(document: TenantWhereDocument, tenantId: string): void {
+function applyTenantWhere(document: TenantWhereDocument, tenantPredicate: unknown): void {
   const where = document.$where;
   tenantWhereStates.set(document, {
-    injectedTenantId: tenantId,
+    injectedTenantPredicate: tenantPredicate,
     hadTenantId: where != null && Object.prototype.hasOwnProperty.call(where, 'tenantId'),
     tenantId: where?.tenantId,
   });
-  document.$where = { ...where, tenantId };
+  document.$where = { ...where, tenantId: tenantPredicate };
+}
+
+/** Rolls back a plugin-owned tenant stamp when the corresponding save fails. */
+function restoreTenantStamp(document: TenantSaveDocument): void {
+  const state = tenantStampStates.get(document);
+  tenantStampStates.delete(document);
+  if (!state || document.get('tenantId') !== state.injectedTenantId) {
+    return;
+  }
+  document.set('tenantId', state.tenantId);
+  document.unmarkModified('tenantId');
 }
 
 /**
@@ -149,13 +174,21 @@ export function applyTenantIsolation(schema: Schema): void {
 
   schema.pre('save', function () {
     const scope = resolveTenantScope('Save');
-    const document = this as unknown as TenantWhereDocument;
+    const document = this as unknown as TenantSaveDocument;
     restoreTenantWhere(document);
-    const carriedTenantId = this.get('tenantId');
+    const isNew = this.isNew;
+    const tenantId = this.get('tenantId');
+    const predicate = isNew
+      ? undefined
+      : tenantWritePredicate(scope, this.isModified('tenantId'), tenantId);
     stampTenantOnDocument(scope, this as unknown as TenantDocument);
 
-    if (this.isNew) {
+    if (isNew) {
       return;
+    }
+
+    if (scope.kind === 'scoped' && !tenantId) {
+      tenantStampStates.set(document, { injectedTenantId: scope.tenantId, tenantId });
     }
 
     /**
@@ -164,10 +197,18 @@ export function applyTenantIsolation(schema: Schema): void {
      * hook for adding conditions to that query — its own sharding plugin uses
      * it the same way. A mismatch surfaces as `DocumentNotFoundError`.
      */
-    const predicate = tenantWritePredicate(scope, carriedTenantId);
     if (predicate) {
       applyTenantWhere(document, predicate.tenantId);
     }
+  });
+
+  schema.post('save', function () {
+    tenantStampStates.delete(this as unknown as TenantSaveDocument);
+  });
+
+  schema.post('save', { errorHandler: true }, function (error: Error, _document, next): void {
+    restoreTenantStamp(this as unknown as TenantSaveDocument);
+    next(error);
   });
 
   schema.pre('insertMany', function (next, docs) {

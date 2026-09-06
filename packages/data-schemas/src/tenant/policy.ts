@@ -222,22 +222,32 @@ export function scopeReplacement(
 }
 
 /**
- * The predicate an in-place write must carry to prove it is not crossing
- * tenants — `save()` and `deleteOne()` on an already-persisted document, which
+ * The predicate a `save()` must carry for an already-persisted document, which
  * would otherwise be filtered on identity alone.
  *
- * `carriedTenantId` is the tenant the stored document already had. A document
- * that never carried one cannot be asserted against without refusing
- * legitimate pre-tenancy writes, so it yields no predicate.
+ * The legacy alternatives make pre-tenancy rows claimable while keeping the
+ * claim atomic: once one tenant stamps the row, another tenant's save no longer
+ * matches. `tenantIdModified` reflects caller changes before the save hook
+ * stamps a legacy row.
  */
 export function tenantWritePredicate(
   scope: TenantScope,
-  carriedTenantId: unknown,
-): { tenantId: string } | undefined {
-  if (scope.kind !== 'scoped' || !carriedTenantId) {
+  tenantIdModified: boolean,
+  tenantId: unknown,
+): { tenantId: { $in: [string, null, ''] } } | undefined {
+  if (
+    tenantIdModified &&
+    scope.kind !== 'system' &&
+    (scope.kind !== 'scoped' || tenantId !== scope.tenantId)
+  ) {
+    throw new TenantIsolationError(
+      '[TenantIsolation] Cross-tenant tenantId mutation is not allowed',
+    );
+  }
+  if (scope.kind !== 'scoped') {
     return undefined;
   }
-  return { tenantId: scope.tenantId };
+  return { tenantId: { $in: [scope.tenantId, null, ''] } };
 }
 
 /**

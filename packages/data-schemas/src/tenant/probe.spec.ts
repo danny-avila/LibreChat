@@ -576,6 +576,65 @@ describe('save predicate does not break legitimate writes', () => {
     },
   );
 
+  it('allows only one tenant to claim a legacy document', async () => {
+    const created = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.create({ name: 'legacy-race', parts: [] }),
+    );
+    const [first, second] = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Promise.all([Widget.findById(created._id), Widget.findById(created._id)]),
+    );
+
+    first!.name = 'claimed-a';
+    await asTenant(async () => first!.save());
+
+    second!.name = 'claimed-b';
+    await expect(
+      tenantStorage.run({ tenantId: 'tenant-b' }, async () => second!.save()),
+    ).rejects.toThrow('No document found');
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id).lean(),
+    );
+    expect(fresh).toMatchObject({ name: 'claimed-a', tenantId: TENANT });
+  });
+
+  it('does not trust a projected-out tenantId', async () => {
+    const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      Widget.create({ name: 'projected-foreign', parts: [] }),
+    );
+    const projected = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).select('-tenantId'),
+    );
+    expect(projected!.tenantId).toBeUndefined();
+
+    projected!.name = 'projected-stolen';
+    await expect(asTenant(async () => projected!.save())).rejects.toThrow('No document found');
+    expect(projected!.tenantId).toBeUndefined();
+
+    projected!.name = 'system-recovered';
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => projected!.save());
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(fresh).toMatchObject({ name: 'system-recovered', tenantId: 'tenant-b' });
+  });
+
+  it('rejects tenantId mutation on a persisted document', async () => {
+    const widget = await asTenant(async () => Widget.create({ name: 'tenant-move', parts: [] }));
+
+    widget.tenantId = 'tenant-b';
+    widget.name = 'moved';
+    await expect(asTenant(async () => widget.save())).rejects.toThrow(
+      '[TenantIsolation] Cross-tenant tenantId mutation is not allowed',
+    );
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(widget._id).lean(),
+    );
+    expect(fresh).toMatchObject({ name: 'tenant-move', tenantId: TENANT });
+  });
+
   it('refuses to save a document belonging to another tenant', async () => {
     const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
       Widget.create({ name: 'foreign', parts: [] }),

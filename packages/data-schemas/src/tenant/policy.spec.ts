@@ -256,23 +256,26 @@ describe('scopeReplacement', () => {
 });
 
 describe('tenantWritePredicate', () => {
-  it('asserts the active tenant for a document that carries one', () => {
-    expect(tenantWritePredicate(SCOPED, 'tenant-a')).toEqual({ tenantId: 'tenant-a' });
+  it('matches the active tenant or an explicitly legacy value', () => {
+    expect(tenantWritePredicate(SCOPED, false, undefined)).toEqual({
+      tenantId: { $in: ['tenant-a', null, ''] },
+    });
   });
 
-  it('asserts the active tenant even when the document names another', () => {
-    expect(tenantWritePredicate(SCOPED, 'tenant-b')).toEqual({ tenantId: 'tenant-a' });
+  it('allows a modified tenantId that still names the active tenant', () => {
+    expect(tenantWritePredicate(SCOPED, true, 'tenant-a')).toEqual({
+      tenantId: { $in: ['tenant-a', null, ''] },
+    });
   });
 
-  it('yields nothing for a document without a usable carried tenant', () => {
-    expect(tenantWritePredicate(SCOPED, undefined)).toBeUndefined();
-    expect(tenantWritePredicate(SCOPED, null)).toBeUndefined();
-    expect(tenantWritePredicate(SCOPED, '')).toBeUndefined();
+  it('rejects a cross-tenant tenantId modification outside system scope', () => {
+    expect(() => tenantWritePredicate(SCOPED, true, 'tenant-b')).toThrow(TenantIsolationError);
+    expect(() => tenantWritePredicate(UNSCOPED, true, 'tenant-a')).toThrow(TenantIsolationError);
   });
 
-  it('yields nothing for system or unscoped writes', () => {
-    expect(tenantWritePredicate(SYSTEM, 'tenant-a')).toBeUndefined();
-    expect(tenantWritePredicate(UNSCOPED, 'tenant-a')).toBeUndefined();
+  it('yields nothing for system or unscoped saves', () => {
+    expect(tenantWritePredicate(SYSTEM, true, 'tenant-b')).toBeUndefined();
+    expect(tenantWritePredicate(UNSCOPED, false, undefined)).toBeUndefined();
   });
 });
 
