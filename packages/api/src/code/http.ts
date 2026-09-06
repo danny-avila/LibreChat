@@ -37,6 +37,7 @@ import {
   CodeEnvironmentSettingsValidationError,
   validateCodeEnvironmentUserSettings,
 } from './settings';
+import { resolveCodeWorkerEnrollmentLimit } from './enrollment';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
 type Registry = {
@@ -196,7 +197,6 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   const principalAuthEnabled = deps.principalAuthEnabled ?? isCodeApiJwtAuthEnabled;
   const principalAuthReady = deps.principalAuthReady ?? assertCodeApiJwtSigningReady;
   const principalIsActive = deps.principalIsActive ?? (async () => true);
-  const maxPrincipalEnvironments = deps.maxPrincipalEnvironments ?? 5;
 
   async function list(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -205,10 +205,11 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     let details: AccessibleCodeEnvironmentDetails;
     let appConfig: AppConfig;
+    let deploymentConfig: AppConfig;
     try {
       const principals = await deps.registry.resolvePrincipals?.(principal);
       const resolvedPrincipal = principals == null ? principal : { ...principal, principals };
-      [details, appConfig] = await Promise.all([
+      [details, appConfig, deploymentConfig] = await Promise.all([
         deps.registry.listAccessibleDetails?.(resolvedPrincipal) ??
           Promise.all([
             deps.registry.listAccessible(resolvedPrincipal),
@@ -220,6 +221,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           failClosed: true,
           skipRuntimeAugmentation: true,
         }),
+        deps.getAppConfig({ baseOnly: true }),
       ]);
     } catch (error) {
       logger.error('[codeEnvironments] discovery policy resolution failed:', error);
@@ -241,7 +243,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
           settings: configuration?.settings,
         };
       }),
-      controlPlanes: principalAuthEnabled() ? principalControlPlanes(appConfig) : [],
+      controlPlanes:
+        principalAuthEnabled() &&
+        resolveCodeWorkerEnrollmentLimit(
+          deploymentConfig.endpoints?.agents?.statefulCodeSessions?.principalWorkers,
+          appConfig.endpoints?.agents?.statefulCodeSessions?.principalWorkers,
+          deps.maxPrincipalEnvironments,
+        ) > 0
+          ? principalControlPlanes(appConfig)
+          : [],
     });
   }
 
@@ -394,6 +404,14 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     const controlPlane = configuredPrincipalControlPlane(deploymentConfig, controlPlaneId);
     if (authorizedControlPlane == null || controlPlane == null) {
       return res.status(404).json({ error: 'Principal code control plane was not found' });
+    }
+    const maxPrincipalEnvironments = resolveCodeWorkerEnrollmentLimit(
+      deploymentConfig.endpoints?.agents?.statefulCodeSessions?.principalWorkers,
+      effectiveConfig.endpoints?.agents?.statefulCodeSessions?.principalWorkers,
+      deps.maxPrincipalEnvironments,
+    );
+    if (maxPrincipalEnvironments === 0) {
+      return res.status(403).json({ error: 'Personal code worker enrollment is disabled' });
     }
     const tokenEnv = controlPlane.pairing?.tokenEnv;
     const token = tokenEnv != null ? readSecret(tokenEnv)?.trim() : undefined;

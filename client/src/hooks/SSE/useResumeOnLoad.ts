@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import {
@@ -33,6 +34,7 @@ import {
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
+import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
 
@@ -254,6 +256,7 @@ export default function useResumeOnLoad(
   runIndex = 0,
   messagesLoaded = true,
 ) {
+  const jotaiStore = useStore();
   const queryClient = useQueryClient();
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
@@ -293,21 +296,20 @@ export default function useResumeOnLoad(
    * enter a resume→404→resume loop. A genuinely newer handoff has a different
    * createdAt key and remains eligible. */
   const consumedHandoffGenerationRef = useRef<string | null>(null);
-  const restoreResumeBranch = useRecoilCallback(
-    ({ set }) =>
-      (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
-        const targetMessageId = getResumeBranchTargetMessageId(resumeState, messages);
-        const branchIndexes = getBranchSiblingIndexesForTarget(
-          messages,
-          targetMessageId,
-          activeConversationId,
-        );
+  const restoreResumeBranch = useCallback(
+    (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
+      const targetMessageId = getResumeBranchTargetMessageId(resumeState, messages);
+      const branchIndexes = getBranchSiblingIndexesForTarget(
+        messages,
+        targetMessageId,
+        activeConversationId,
+      );
 
-        for (const { parentMessageId, siblingIdx } of branchIndexes) {
-          set(store.messagesSiblingIdxFamily(parentMessageId), siblingIdx);
-        }
-      },
-    [],
+      for (const { parentMessageId, siblingIdx } of branchIndexes) {
+        jotaiStore.set(siblingIdxFamily(siblingKey(parentMessageId)), siblingIdx);
+      }
+    },
+    [jotaiStore],
   );
 
   /** Restore pending-steer chips for steers the server still has queued

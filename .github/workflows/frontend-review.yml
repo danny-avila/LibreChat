@@ -3,6 +3,7 @@ name: Frontend Unit Tests
 on:
   pull_request:
     paths:
+      - 'e2e/client-build.test.mjs'
       - 'client/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
@@ -16,6 +17,7 @@ on:
     branches:
       - dev
     paths:
+      - 'e2e/client-build.test.mjs'
       - 'client/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
@@ -40,6 +42,22 @@ env:
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
 
 jobs:
+  client-build-regression:
+    name: Client build recovery regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+          cache: npm
+      - run: npm ci
+      - run: google-chrome --version
+      - run: npm run test:client-build
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
+
   # Stage 1.5 of codegraph gating (stage 1 = backend jest, #15132; stage 2 = matrix lanes,
   # #15136). Same mechanism, same record: across 604 finalized shadow receipts the frontend
   # selection has zero structural misses (its one raw MISSED was a chronic flake), over 500

@@ -26,6 +26,7 @@ import type {
   CreateSkillResult,
   UpdateSkillInput,
   ListSkillsByAccessResult,
+  ListSkillsByAccessParams,
   UpdateSkillResult,
   ValidationIssue,
 } from '@librechat/data-schemas';
@@ -34,6 +35,7 @@ import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { getDeploymentSkillIds } from './deployment';
 import { resolveSkillFilePathParam } from './path';
 import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
@@ -53,13 +55,7 @@ export interface SkillsHandlersDeps {
   /** Skill CRUD — from `@librechat/data-schemas` `createMethods` output. */
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
-  listSkillsByAccess: (params: {
-    accessibleIds: Types.ObjectId[];
-    category?: string;
-    search?: string;
-    limit: number;
-    cursor?: string | null;
-  }) => Promise<ListSkillsByAccessResult>;
+  listSkillsByAccess: (params: ListSkillsByAccessParams) => Promise<ListSkillsByAccessResult>;
   updateSkill: (params: {
     id: string;
     expectedVersion: number;
@@ -303,6 +299,10 @@ function blockFilteredSkillContent(
   return false;
 }
 
+type SkillResponseOptions = { includePublicStatus?: boolean };
+
+type SkillListOptions = Pick<ListSkillsByAccessParams, 'manageTenantId' | 'limit' | 'cursor'>;
+
 /**
  * Factory for the typed Express handlers served at `/api/skills`.
  * The legacy `api/server/routes/skills.js` imports this, passes in concrete
@@ -310,10 +310,10 @@ function blockFilteredSkillContent(
  * onto the Express router.
  */
 export function createSkillsHandlers(deps: SkillsHandlersDeps): {
-  list: (req: ServerRequest, res: Response) => Promise<Response>;
+  list: (req: ServerRequest, res: Response, options?: SkillListOptions) => Promise<Response>;
   create: (req: ServerRequest, res: Response) => Promise<Response>;
-  get: (req: ServerRequest, res: Response) => Promise<Response>;
-  patch: (req: ServerRequest, res: Response) => Promise<Response>;
+  get: (req: ServerRequest, res: Response, options?: SkillResponseOptions) => Promise<Response>;
+  patch: (req: ServerRequest, res: Response, options?: SkillResponseOptions) => Promise<Response>;
   delete: (req: ServerRequest, res: Response) => Promise<Response>;
   listFiles: (req: ServerRequest, res: Response) => Promise<Response>;
   downloadFile: (req: ServerRequest, res: Response) => Promise<Response | undefined>;
@@ -350,7 +350,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
     }
   }
 
-  async function listHandler(req: ServerRequest, res: Response) {
+  async function listHandler(req: ServerRequest, res: Response, options?: SkillListOptions) {
     try {
       const user = req.user;
       if (!user || !user.id) {
@@ -364,18 +364,20 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       };
       const parsedLimit = parseLimit(limit);
 
-      const [accessibleIds, publicIds] = await Promise.all([
-        findAccessibleResources({
-          userId: user.id,
-          role: user.role,
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-        findPubliclyAccessibleResources({
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-      ]);
+      const [accessibleIds, publicIds] = options?.manageTenantId
+        ? [getDeploymentSkillIds(), []]
+        : await Promise.all([
+            findAccessibleResources({
+              userId: user.id,
+              role: user.role,
+              resourceType: ResourceType.SKILL,
+              requiredPermissions: PermissionBits.VIEW,
+            }),
+            findPubliclyAccessibleResources({
+              resourceType: ResourceType.SKILL,
+              requiredPermissions: PermissionBits.VIEW,
+            }),
+          ]);
 
       const mergedIds = Array.from(
         new Map([...accessibleIds, ...publicIds].map((id) => [id.toString(), id])).values(),
@@ -385,8 +387,10 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         accessibleIds: mergedIds,
         category: typeof category === 'string' && category.length > 0 ? category : undefined,
         search: typeof search === 'string' && search.length > 0 ? search : undefined,
-        limit: parsedLimit,
-        cursor: typeof cursor === 'string' && cursor.length > 0 ? cursor : null,
+        manageTenantId: options?.manageTenantId,
+        limit: options?.limit ?? parsedLimit,
+        cursor:
+          options?.cursor ?? (typeof cursor === 'string' && cursor.length > 0 ? cursor : null),
       });
 
       const publicSet = new Set(publicIds.map((id) => id.toString()));
@@ -487,7 +491,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
     }
   }
 
-  async function getHandler(req: ServerRequest, res: Response) {
+  async function getHandler(req: ServerRequest, res: Response, options?: SkillResponseOptions) {
     try {
       const { id } = req.params as { id: string };
       // The canAccessSkillResource middleware already resolved the skill via
@@ -502,7 +506,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       if (!skill) {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      const pub = await isSkillPublic(skill._id);
+      const pub = options?.includePublicStatus === false ? false : await isSkillPublic(skill._id);
       return res.status(200).json(serializeSkill(skill, pub));
     } catch (error) {
       logger.error('[GET /skills/:id] Error fetching skill', error);
@@ -510,7 +514,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
     }
   }
 
-  async function patchHandler(req: ServerRequest, res: Response) {
+  async function patchHandler(req: ServerRequest, res: Response, options?: SkillResponseOptions) {
     try {
       const { id } = req.params as { id: string };
       const body = (req.body ?? {}) as TUpdateSkillPayload & { expectedVersion?: number };
@@ -564,7 +568,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       if (result.status === 'not_found') {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      const pub = await isSkillPublic(id);
+      const pub = options?.includePublicStatus === false ? false : await isSkillPublic(id);
       if (result.status === 'conflict') {
         const conflict: TSkillConflictResponse = {
           error: 'skill_version_conflict',
@@ -655,7 +659,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
 
       // SKILL.md is the skill body itself, not a SkillFile document
       if (decodedPath === 'SKILL.md') {
-        const skill = await getSkillById(id);
+        const resolved = (
+          req as ServerRequest & {
+            resourceAccess?: { resourceInfo?: ISkill & { _id: Types.ObjectId } };
+          }
+        ).resourceAccess?.resourceInfo;
+        const skill = resolved ?? (await getSkillById(id));
         if (!skill) {
           return res.status(404).json({ error: 'Skill not found' });
         }

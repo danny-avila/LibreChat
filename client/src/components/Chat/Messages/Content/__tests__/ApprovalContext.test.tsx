@@ -1,6 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
+import { Provider as JotaiProvider, createStore } from 'jotai';
 import type { MutableSnapshot } from 'recoil';
 import ApprovalProvider, { useApprovalContext, useResumeSubmit } from '../ApprovalContext';
 import { ChatContext } from '~/Providers/ChatContext';
@@ -28,6 +29,7 @@ const chatContextValue = {
 
 const createWrapper = (generationCreatedAt: number | null) =>
   function ResumeWrapper({ children }: { children: React.ReactNode }) {
+    const jotaiStore = React.useRef(createStore()).current;
     const initializeState = (snapshot: MutableSnapshot) => {
       if (generationCreatedAt != null) {
         snapshot.set(
@@ -38,9 +40,11 @@ const createWrapper = (generationCreatedAt: number | null) =>
     };
     return (
       <RecoilRoot initializeState={initializeState}>
-        <ChatContext.Provider value={chatContextValue}>
-          <ApprovalProvider>{children}</ApprovalProvider>
-        </ChatContext.Provider>
+        <JotaiProvider store={jotaiStore}>
+          <ChatContext.Provider value={chatContextValue}>
+            <ApprovalProvider>{children}</ApprovalProvider>
+          </ChatContext.Provider>
+        </JotaiProvider>
       </RecoilRoot>
     );
   };

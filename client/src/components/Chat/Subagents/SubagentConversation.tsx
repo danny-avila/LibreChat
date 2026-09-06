@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useAtomValue } from 'jotai';
 import { ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
@@ -13,6 +14,7 @@ import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { showThinkingAtom } from '~/store/showThinking';
 import { useAgentsMapContext } from '~/Providers';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
@@ -113,6 +115,7 @@ function ExternalEventTrigger({
 }
 
 function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; fullWidth: boolean }) {
+  const showThinking = useAtomValue(showThinkingAtom);
   const localize = useLocalize();
   const label = localize(TRIGGER_LABELS[turn.trigger.kind]);
   const content = useMemo<TMessageContentParts[]>(
@@ -152,6 +155,7 @@ function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; full
           messageId={`${turn.taskId}:trigger`}
           conversationId={null}
           isCreatedByUser={true}
+          showThinking={showThinking}
           isLast={false}
           isSubmitting={false}
           isLatestMessage={false}

@@ -249,6 +249,24 @@ function normalizeEventActorContextMeta(contextMeta) {
  * tier and the per-agent map are both passed; the SDK restores each agent from
  * its own entry and falls back to the default tier for the first agent.
  */
+/**
+ * Request values `langfuse.trace.conversationMetadataFields` may export.
+ * The model label rides the trace-only `options.traceContext`: the
+ * initialized agent's `model_parameters` drop it (`extractLibreChatParams`),
+ * and a top-level `modelLabel` option would also rename the assistant in
+ * formatted messages. A module function rather than a method so partial
+ * client contexts (tests, resume) need no prototype.
+ * @param {AgentClient['options'] | undefined} options
+ */
+function buildTraceContext(options) {
+  return {
+    endpoint: options?.endpoint,
+    endpointType: options?.endpointType,
+    modelLabel: options?.traceContext?.modelLabel ?? options?.modelLabel,
+    spec: options?.spec,
+  };
+}
+
 function resolveRunSeeds(client) {
   const prevMeta = client.contextMeta;
   if (prevMeta == null) {
@@ -4391,6 +4409,7 @@ class AgentClient extends BaseClient {
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
+          traceContext: buildTraceContext(this.options),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
           appConfig,
@@ -4925,6 +4944,7 @@ class AgentClient extends BaseClient {
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
+        traceContext: buildTraceContext(this.options),
         tenantId: resolveRequestTenantId(this.options.req ?? {}),
         summarizationConfig: appConfig?.summarization,
         appConfig,
@@ -5433,5 +5453,7 @@ class AgentClient extends BaseClient {
     return 'o200k_base';
   }
 }
+
+AgentClient.buildTraceContext = buildTraceContext;
 
 module.exports = AgentClient;

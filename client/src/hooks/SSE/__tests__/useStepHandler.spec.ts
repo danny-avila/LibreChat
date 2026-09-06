@@ -2711,7 +2711,7 @@ describe('useStepHandler', () => {
       expect(summaryPart).toMatchObject({ summarizing: false });
     });
 
-    it('ON_SUMMARIZE_COMPLETE error removes summarizing parts', () => {
+    it('ON_SUMMARIZE_COMPLETE error finalizes the part in place without splicing it out', () => {
       mockLastAnnouncementTimeRef.current = Date.now();
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -2782,11 +2782,21 @@ describe('useStepHandler', () => {
       expect(mockSetMessages).toHaveBeenCalled();
       const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
       const responseMsg = lastCall.find((m: TMessage) => m.messageId === 'response-msg-1');
+      /**
+       * Failed rounds must keep their slot: splicing shifts every later part
+       * under the index-keyed renderer and breaks the position == step-index
+       * invariant that updateContent writes rely on. The part is finalized in
+       * place with its streamed content preserved.
+       */
       const summaryParts =
         responseMsg?.content?.filter(
           (c: TMessageContentParts) => c.type === ContentTypes.SUMMARY,
         ) ?? [];
-      expect(summaryParts).toHaveLength(0);
+      expect(summaryParts).toHaveLength(1);
+      expect((summaryParts[0] as SummaryContentPart).summarizing).toBe(false);
+      expect((summaryParts[0] as SummaryContentPart).content).toEqual([
+        { type: ContentTypes.TEXT, text: 'partial' },
+      ]);
     });
 
     it('ON_SUMMARIZE_COMPLETE returns early when target message not in messageMap', () => {

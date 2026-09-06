@@ -3,17 +3,34 @@ import {
   Constants,
   EToolResources,
   ResourceType,
+  SkillsScope,
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
+import type { FilterQuery, Model, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
+
+/**
+ * Whether emptying an allowlist has to fall back to disabling skills.
+ *
+ * An explicit `all` or `selected` scope already defines what an empty
+ * allowlist means, so neither is inferred from the array: `all` is the full
+ * catalog on purpose, and `selected` with nothing selected resolves to no
+ * skills on its own. Every other shape is: a missing scope, which is the
+ * legacy form whose meaning came from the array, and an explicit `none`
+ * carrying a true master flag, which the API accepts and which `skillDeps`
+ * reads as standing permission to expose the skill-authoring tools.
+ */
+function requiresSkillsDisable(scope: unknown): boolean {
+  return scope !== SkillsScope.all && scope !== SkillsScope.selected;
+}
 
 /**
  * Mirrors `TOOL_RESOURCE_KEYS` in `@librechat/api` — the subset of
@@ -29,71 +46,57 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.ocr,
 ];
 
-/** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
-function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
-  const cleanEndpoint = (endpoint: string) => ({
-    $cond: [
-      { $isArray: endpoint },
-      {
-        $filter: {
-          input: endpoint,
-          as: 'agentId',
-          cond: { $not: [{ $in: ['$$agentId', agentIds] }] },
-        },
-      },
-      { $cond: [{ $in: [endpoint, agentIds] }, null, endpoint] },
-    ],
-  });
-  const hasEndpoint = (endpoint: string) => ({
-    $cond: [{ $isArray: endpoint }, { $gt: [{ $size: endpoint }, 0] }, { $ne: [endpoint, null] }],
-  });
+/** Graphs read per cleanup pass; bounds application memory the way the server-side update did. */
+export const EDGE_CLEANUP_BATCH = 200;
+/** Consecutive passes that may clean nothing before the loop gives up. */
+const EDGE_CLEANUP_STALLED_PASSES = 5;
+/** Sweeps from the top before the loop gives up on references that keep being added. */
+export const EDGE_CLEANUP_MAX_SWEEPS = 5;
 
-  return [
-    {
-      $set: {
-        edges: {
-          $filter: {
-            input: {
-              $map: {
-                input: { $ifNull: ['$edges', []] },
-                as: 'edge',
-                in: {
-                  $let: {
-                    vars: {
-                      cleanedFrom: cleanEndpoint('$$edge.from'),
-                      cleanedTo: cleanEndpoint('$$edge.to'),
-                    },
-                    in: {
-                      $cond: [
-                        {
-                          $and: [hasEndpoint('$$cleanedFrom'), hasEndpoint('$$cleanedTo')],
-                        },
-                        {
-                          $mergeObjects: [
-                            '$$edge',
-                            {
-                              from: '$$cleanedFrom',
-                              to: '$$cleanedTo',
-                            },
-                          ],
-                        },
-                        null,
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-            as: 'edge',
-            cond: { $ne: ['$$edge', null] },
-          },
-        },
-      },
-    },
-  ];
+type AgentEdge = NonNullable<IAgent['edges']>[number];
+type EdgeEndpoint = AgentEdge['from'];
+
+/** An endpoint with `removed` taken out: a list loses those ids; a single id that is one becomes null. */
+function pruneEndpoint(
+  endpoint: EdgeEndpoint | null | undefined,
+  removed: Set<string>,
+): EdgeEndpoint | null {
+  if (Array.isArray(endpoint)) {
+    return endpoint.filter((id) => !removed.has(id));
+  }
+  return typeof endpoint === 'string' && removed.has(endpoint) ? null : (endpoint ?? null);
 }
 
-/** Removes deleted agent references from active graphs in the requested tenant. */
+function hasEndpoint(endpoint: EdgeEndpoint | null): endpoint is EdgeEndpoint {
+  return Array.isArray(endpoint) ? endpoint.length > 0 : endpoint != null;
+}
+
+/** The edges that survive removing `removed`, with those ids pruned from their endpoints. */
+export function pruneEdges(edges: IAgent['edges'], removed: Set<string>): AgentEdge[] {
+  return (edges ?? []).flatMap((edge) => {
+    const from = pruneEndpoint(edge.from, removed);
+    const to = pruneEndpoint(edge.to, removed);
+    return hasEndpoint(from) && hasEndpoint(to) ? [{ ...edge, from, to }] : [];
+  });
+}
+
+interface GraphEdges {
+  _id: Types.ObjectId;
+  edges?: IAgent['edges'];
+}
+
+/**
+ * Removes deleted agent references from active graphs in the requested tenant.
+ * Graphs are read a page at a time behind an `_id` cursor, and each page's
+ * pruned edges are written back behind a compare-and-set on the edges that were
+ * read, so a concurrent edit is never overwritten. A graph whose edges changed
+ * underneath fails its compare-and-set and is left behind the cursor, so once
+ * the cursor is exhausted one more sweep from the top picks up every miss (and
+ * any reference added meanwhile); the cleanup ends when a sweep from the top
+ * finds nothing, and gives up after a bounded number of sweeps if references
+ * keep being added. This is the plain-operator form of what was an
+ * aggregation-pipeline update, which Amazon DocumentDB rejects.
+ */
 async function removeAgentIdsFromEdges(
   Agent: Model<IAgent>,
   agentIds: string[],
@@ -102,14 +105,51 @@ async function removeAgentIdsFromEdges(
   if (agentIds.length === 0) {
     return;
   }
-
-  await Agent.updateMany(
-    {
-      ...(tenantId !== undefined ? { tenantId } : {}),
-      $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
-    },
-    createEdgeCleanupPipeline(agentIds),
-  );
+  const filter: FilterQuery<IAgent> = {
+    ...(tenantId !== undefined ? { tenantId } : {}),
+    $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
+  };
+  const removed = new Set(agentIds);
+  let stalledPasses = 0;
+  let sweeps = 0;
+  let after: Types.ObjectId | undefined;
+  for (;;) {
+    const graphs = await Agent.find(after == null ? filter : { ...filter, _id: { $gt: after } })
+      .sort({ _id: 1 })
+      .limit(EDGE_CLEANUP_BATCH)
+      .select('_id edges')
+      .lean<GraphEdges[]>();
+    if (graphs.length === 0) {
+      if (after == null) {
+        return;
+      }
+      sweeps += 1;
+      if (sweeps >= EDGE_CLEANUP_MAX_SWEEPS) {
+        throw new Error(
+          `[removeAgentIdsFromEdges] references kept being added during cleanup (${EDGE_CLEANUP_MAX_SWEEPS} sweeps)`,
+        );
+      }
+      after = undefined;
+      continue;
+    }
+    const result = await tenantSafeBulkWrite(
+      Agent,
+      graphs.map((graph) => ({
+        updateOne: {
+          filter: { _id: graph._id, edges: graph.edges },
+          update: { $set: { edges: pruneEdges(graph.edges, removed) } },
+        },
+      })),
+      { ordered: false },
+    );
+    stalledPasses = result.matchedCount === 0 ? stalledPasses + 1 : 0;
+    if (stalledPasses >= EDGE_CLEANUP_STALLED_PASSES) {
+      throw new Error(
+        `[removeAgentIdsFromEdges] graph edges kept changing during cleanup (${EDGE_CLEANUP_STALLED_PASSES} passes without progress)`,
+      );
+    }
+    after = graphs[graphs.length - 1]._id;
+  }
 }
 
 export interface AgentDeps {
@@ -610,9 +650,10 @@ export function createAgentMethods(
         isExternalSkillId,
       );
       agentData.skills = prunedSkills;
-      /** Fail closed when pruning empties a non-empty allowlist — empty +
-       *  enabled means the full catalog, and hygiene must never widen scope. */
-      if (prunedSkills.length === 0) {
+      /** Fail closed when pruning empties a non-empty allowlist: empty +
+       *  enabled means the full catalog, and hygiene must never widen scope.
+       *  See `requiresSkillsDisable` for which scopes opt out. */
+      if (prunedSkills.length === 0 && requiresSkillsDisable(agentData.skills_scope)) {
         agentData.skills_enabled = false;
       }
     }
@@ -755,12 +796,16 @@ export function createAgentMethods(
       /** Self-heal: drop allowlist ids whose skill no longer exists in the
        *  database or the external registry.
        *  A dangling id keeps the allowlist non-empty while scoping the
-       *  runtime catalog to an empty intersection — silently disabling
+       *  runtime catalog to an empty intersection, silently disabling
        *  skills for the agent. When pruning empties a non-empty allowlist,
        *  fail closed and disable skills: empty + enabled means the full
        *  catalog, and hygiene must never widen scope. (An explicit user
        *  `skills: []` submission skips this branch and keeps the
-       *  full-catalog semantics.) */
+       *  full-catalog semantics.)
+       *
+       *  An `all` or `selected` scope opts out, from the payload or the
+       *  stored document, because it already defines what an empty allowlist
+       *  means. See `requiresSkillsDisable`. */
       if (Array.isArray(directUpdates.skills) && directUpdates.skills.length > 0) {
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
@@ -769,7 +814,9 @@ export function createAgentMethods(
         );
         directUpdates.skills = prunedSkills;
         updateData.skills = prunedSkills;
-        if (prunedSkills.length === 0) {
+        const effectiveScope =
+          (directUpdates as Record<string, unknown>).skills_scope ?? currentObject.skills_scope;
+        if (prunedSkills.length === 0 && requiresSkillsDisable(effectiveScope)) {
           directUpdates.skills_enabled = false;
           updateData.skills_enabled = false;
         }
@@ -1403,13 +1450,21 @@ export function createAgentMethods(
         isExternalSkillId,
       );
       revertToVersion.skills = prunedSkills;
-      if (prunedSkills.length === 0) {
+      /** The snapshot carries its own scope, and an All-scoped version keeps
+       *  its allowlist, so failing closed here would restore the version as
+       *  Off. See `requiresSkillsDisable`. */
+      if (prunedSkills.length === 0 && requiresSkillsDisable(revertToVersion.skills_scope)) {
         revertToVersion.skills_enabled = false;
       }
     }
 
     const unsetOnRestore: Record<string, 1> = {};
-    for (const field of ['code_environment_id', 'skills_scope', 'skill_authoring_enabled']) {
+    for (const field of [
+      'code_environment_id',
+      'git_identity',
+      'skills_scope',
+      'skill_authoring_enabled',
+    ]) {
       if (!Object.prototype.hasOwnProperty.call(revertToVersion, field)) {
         unsetOnRestore[field] = 1;
       }

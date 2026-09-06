@@ -4,6 +4,7 @@ import { SquareTerminal } from 'lucide-react';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import { toolPanelSpacingClassName } from '../disclosure';
 import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
@@ -11,6 +12,7 @@ import CodeWindowHeader from './CodeWindowHeader';
 import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
+import { TOOL_ROW_CLASSES } from '../rows';
 import PtcToolTrace from './PtcToolTrace';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
@@ -130,7 +132,7 @@ export default function ExecuteCode({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className={TOOL_ROW_CLASSES}>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -167,7 +169,12 @@ export default function ExecuteCode({
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+          <div
+            className={cn(
+              toolPanelSpacingClassName,
+              'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+            )}
+          >
             {code && <CodeWindowHeader language={lang} code={code} />}
             {code && (
               <pre

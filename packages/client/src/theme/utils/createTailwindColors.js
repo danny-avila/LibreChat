@@ -12,10 +12,9 @@
  * bare `R G B` channel triplets, so `cssVar` wraps them as
  * `rgb(var(--x) / <alpha-value>)`. This makes opacity modifiers work, e.g.
  * `bg-surface-primary/50`. Tokens with an intrinsic alpha use a companion
- * `--x-alpha` variable that is multiplied by Tailwind's opacity modifier.
- * shadcn-compatible tokens still hold HSL triplets, so they are wrapped in
- * `hsl(...)`; any direct `var(--token)` usage in plain CSS must wrap the channel
- * triplet itself, e.g. `color: rgb(var(--text-primary))`.
+ * `--x-alpha` variable that is multiplied by Tailwind's opacity modifier. Every
+ * token is an `R G B` triplet, so a direct `var(--token)` usage in plain CSS
+ * must wrap the channel triplet itself, e.g. `color: rgb(var(--text-primary))`.
  */
 
 const palette = {
@@ -51,7 +50,6 @@ const palette = {
 
 const cssVar = (name) => `rgb(var(${name}) / <alpha-value>)`;
 const cssVarWithAlpha = (name) => `rgb(var(${name}) / calc(var(${name}-alpha, 1) * <alpha-value>))`;
-const hslVar = (name) => `hsl(var(${name}))`;
 
 /**
  * Creates the Tailwind `theme.extend.colors` object backed by CSS variables.
@@ -152,7 +150,7 @@ function createTailwindColors() {
     'series-6': cssVar('--series-6'),
     'series-7': cssVar('--series-7'),
 
-    'switch-unchecked': hslVar('--switch-unchecked'),
+    'switch-unchecked': cssVar('--switch-unchecked'),
   };
 }
 

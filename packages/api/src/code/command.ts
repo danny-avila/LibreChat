@@ -1,6 +1,11 @@
 import { tool } from '@librechat/agents/langchain/tools';
-import { BashExecutionToolDefinition, BashToolOutputReferencesGuide } from '@librechat/agents';
+import {
+  BashExecutionToolDefinition,
+  BashToolOutputReferencesGuide,
+  createBashProgrammaticToolCallingTool,
+} from '@librechat/agents';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
+import type { AgentGitIdentity } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { WorkspaceExecuteCommandResult } from './workspace';
 import type { CodeBridgeFetch } from './bridge';
@@ -59,6 +64,41 @@ function commandWithArguments(command: string, args: string[] | undefined): stri
   return `bash -c ${quoteShellArgument(command)} -- ${args.map(quoteShellArgument).join(' ')}`;
 }
 
+function commandWithGitIdentity(
+  command: string,
+  identity: AgentGitIdentity | null | undefined,
+): string {
+  if (identity == null) return command;
+  const name = identity.name.trim();
+  const email = identity.email.trim();
+  if (
+    name.length === 0 ||
+    name.length > 128 ||
+    email.length === 0 ||
+    email.length > 254 ||
+    /[\0\r\n]/.test(name) ||
+    /[\0\r\n]/.test(email)
+  ) {
+    throw new Error('Invalid agent Git identity');
+  }
+  return `export GIT_AUTHOR_NAME=${quoteShellArgument(name)} GIT_AUTHOR_EMAIL=${quoteShellArgument(email)} GIT_COMMITTER_NAME=${quoteShellArgument(name)} GIT_COMMITTER_EMAIL=${quoteShellArgument(email)}; ${command}`;
+}
+
+/** Apply authorship before the SDK prepares the script and its replay requests. */
+export function createGitIdentityProgrammaticBashTool(
+  options: Parameters<typeof createBashProgrammaticToolCallingTool>[0],
+  identity?: AgentGitIdentity | null,
+): DynamicStructuredTool {
+  const bashTool = createBashProgrammaticToolCallingTool(options);
+  if (identity == null) return bashTool;
+  const execute = bashTool.func.bind(bashTool);
+  bashTool.func = (input, ...args) => {
+    const params = input as { code: string };
+    return execute({ ...params, code: commandWithGitIdentity(params.code, identity) }, ...args);
+  };
+  return bashTool;
+}
+
 function formatCommandResult(result: WorkspaceExecuteCommandResult): string {
   let output = '';
   if (result.stdout.length > 0) output += `stdout:\n${result.stdout}\n`;
@@ -75,11 +115,13 @@ export function createAttachedWorkspaceBashTool({
   baseUrl,
   authHeaders,
   workspaceId = DEFAULT_WORKSPACE_ID,
+  gitIdentity,
   fetchImpl,
 }: {
   baseUrl: string;
   authHeaders: () => Promise<Record<string, string>> | Record<string, string>;
   workspaceId?: string;
+  gitIdentity?: AgentGitIdentity | null;
   fetchImpl?: CodeBridgeFetch;
 }): DynamicStructuredTool {
   return tool(
@@ -87,7 +129,10 @@ export function createAttachedWorkspaceBashTool({
       rawInput: { command: string; args?: string[]; intent?: string },
       config,
     ): Promise<[string, Record<string, never>]> => {
-      const command = commandWithArguments(rawInput.command, rawInput.args);
+      const command = commandWithGitIdentity(
+        commandWithArguments(rawInput.command, rawInput.args),
+        gitIdentity,
+      );
       const result = await executeWorkspaceTool({
         baseURL: baseUrl,
         authHeaders: await authHeaders(),
