@@ -28,7 +28,7 @@ export async function retryWithBackoff<T>(
   operation: () => Promise<T>,
   label: string,
   options: RetryOptions = {},
-): Promise<T | undefined> {
+): Promise<T> {
   const {
     maxAttempts = DEFAULT_OPTIONS.maxAttempts,
     baseDelayMs = DEFAULT_OPTIONS.baseDelayMs,
@@ -75,6 +75,9 @@ export async function retryWithBackoff<T>(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
+  throw new Error(
+    `[retryWithBackoff] ${label} exhausted ${maxAttempts} attempt(s) without an outcome`,
+  );
 }
 
 interface IndexedModel {
@@ -96,7 +99,7 @@ const INDEX_BUILD_ALREADY_IN_PROGRESS = 40333;
 const INDEX_BUILD_IN_PROGRESS_MESSAGE = 'index build in progress';
 const DEFAULT_PEER_BUILD_POLL_MS = 5_000;
 
-function isIndexBuildInProgress(error: unknown): boolean {
+export function isIndexBuildInProgress(error: unknown): boolean {
   const candidate = error as { code?: number; message?: string } | null;
   if (candidate?.code === INDEX_BUILD_ALREADY_IN_PROGRESS) {
     return true;
@@ -120,22 +123,22 @@ async function settleAutomaticIndexBuild(model: IndexedModel): Promise<void> {
 }
 
 /**
- * Builds the model's indexes, waiting while another process (a peer replica
- * booting the same release) holds the collection's single index build slot.
- * A peer's build time is data-dependent, so the wait polls rather than backs
- * off: the process cannot become ready without these indexes, and giving up
- * only restarts it into the same wait. Every other error propagates at once.
+ * Runs one index build, waiting while another process (a peer replica booting
+ * the same release) holds the collection's single index build slot. A peer's
+ * build time is data-dependent, so the wait polls rather than backs off: the
+ * caller cannot become ready without the index, and giving up only restarts it
+ * into the same wait. Every other error propagates at once.
  */
-async function buildIndexesWhenCollectionFree(
-  model: IndexedModel,
+async function buildWhenCollectionFree<T>(
+  build: () => Promise<T>,
   label: string,
   options: IndexBuildOptions,
-): Promise<unknown> {
+): Promise<T> {
   const pollMs = options.peerBuildPollMs ?? DEFAULT_PEER_BUILD_POLL_MS;
   const startedAt = Date.now();
   for (;;) {
     try {
-      return await model.createIndexes();
+      return await build();
     } catch (error: unknown) {
       const elapsedMs = Date.now() - startedAt;
       const deadlineReached =
@@ -144,11 +147,32 @@ async function buildIndexesWhenCollectionFree(
         throw error;
       }
       logger.warn(
-        `[createIndexesWithRetry] ${label} is waiting for another index build on the collection to finish (${Math.round(elapsedMs / 1000)}s elapsed, next attempt in ${pollMs}ms)`,
+        `[buildIndexWithRetry] ${label} is waiting for another index build on the collection to finish (${Math.round(elapsedMs / 1000)}s elapsed, next attempt in ${pollMs}ms)`,
       );
       await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
   }
+}
+
+/**
+ * Runs an index build with peer-build polling and transient-error retry, for a
+ * caller that holds a raw driver collection or a third-party builder rather
+ * than a Mongoose model. `build` is re-invoked until it settles, so it must be
+ * idempotent — which every `createIndex` of an existing spec is.
+ * Use this (or `createIndexesWithRetry`) instead of a raw `createIndex` on
+ * FerretDB or DocumentDB; the static guard in `methods/documentdb.spec.ts`
+ * rejects a raw call outside this module.
+ */
+export async function buildIndexWithRetry<T>(
+  build: () => Promise<T>,
+  label: string,
+  options: IndexBuildOptions = {},
+): Promise<T> {
+  return await retryWithBackoff(
+    () => buildWhenCollectionFree(build, label, options),
+    label,
+    options,
+  );
 }
 
 /**
@@ -160,10 +184,9 @@ export async function createIndexesWithRetry(
   options: IndexBuildOptions = {},
 ): Promise<void> {
   await settleAutomaticIndexBuild(model);
-  const label = `createIndexes(${model.modelName})`;
-  await retryWithBackoff(
-    () => buildIndexesWhenCollectionFree(model, label, options),
-    label,
+  await buildIndexWithRetry(
+    () => model.createIndexes(),
+    `createIndexes(${model.modelName})`,
     options,
   );
 }

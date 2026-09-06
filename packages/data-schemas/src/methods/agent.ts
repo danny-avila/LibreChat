@@ -7,10 +7,11 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
+import type { FilterQuery, Model, ProjectionType, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
@@ -45,71 +46,44 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.ocr,
 ];
 
-/** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
-function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
-  const cleanEndpoint = (endpoint: string) => ({
-    $cond: [
-      { $isArray: endpoint },
-      {
-        $filter: {
-          input: endpoint,
-          as: 'agentId',
-          cond: { $not: [{ $in: ['$$agentId', agentIds] }] },
-        },
-      },
-      { $cond: [{ $in: [endpoint, agentIds] }, null, endpoint] },
-    ],
-  });
-  const hasEndpoint = (endpoint: string) => ({
-    $cond: [{ $isArray: endpoint }, { $gt: [{ $size: endpoint }, 0] }, { $ne: [endpoint, null] }],
-  });
+const EDGE_CLEANUP_ATTEMPTS = 5;
 
-  return [
-    {
-      $set: {
-        edges: {
-          $filter: {
-            input: {
-              $map: {
-                input: { $ifNull: ['$edges', []] },
-                as: 'edge',
-                in: {
-                  $let: {
-                    vars: {
-                      cleanedFrom: cleanEndpoint('$$edge.from'),
-                      cleanedTo: cleanEndpoint('$$edge.to'),
-                    },
-                    in: {
-                      $cond: [
-                        {
-                          $and: [hasEndpoint('$$cleanedFrom'), hasEndpoint('$$cleanedTo')],
-                        },
-                        {
-                          $mergeObjects: [
-                            '$$edge',
-                            {
-                              from: '$$cleanedFrom',
-                              to: '$$cleanedTo',
-                            },
-                          ],
-                        },
-                        null,
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-            as: 'edge',
-            cond: { $ne: ['$$edge', null] },
-          },
-        },
-      },
-    },
-  ];
+type AgentEdge = NonNullable<IAgent['edges']>[number];
+type EdgeEndpoint = AgentEdge['from'];
+
+/** An endpoint with `removed` taken out: a list loses those ids; a single id that is one becomes null. */
+function pruneEndpoint(
+  endpoint: EdgeEndpoint | null | undefined,
+  removed: Set<string>,
+): EdgeEndpoint | null {
+  if (Array.isArray(endpoint)) {
+    return endpoint.filter((id) => !removed.has(id));
+  }
+  return typeof endpoint === 'string' && removed.has(endpoint) ? null : (endpoint ?? null);
 }
 
-/** Removes deleted agent references from active graphs in the requested tenant. */
+function hasEndpoint(endpoint: EdgeEndpoint | null): endpoint is EdgeEndpoint {
+  return Array.isArray(endpoint) ? endpoint.length > 0 : endpoint != null;
+}
+
+/** The edges that survive removing `agentIds`, with those ids pruned from their endpoints. */
+export function pruneEdges(edges: IAgent['edges'], agentIds: string[]): AgentEdge[] {
+  const removed = new Set(agentIds);
+  return (edges ?? []).flatMap((edge) => {
+    const from = pruneEndpoint(edge.from, removed);
+    const to = pruneEndpoint(edge.to, removed);
+    return hasEndpoint(from) && hasEndpoint(to) ? [{ ...edge, from, to }] : [];
+  });
+}
+
+/**
+ * Removes deleted agent references from active graphs in the requested tenant.
+ * Each graph is read and its pruned edges written back behind a compare-and-set
+ * on the edges that were read, so a concurrent edit is never overwritten; a
+ * graph whose edges changed underneath is re-read on the next pass. This is the
+ * plain-operator form of what was an aggregation-pipeline update, which Amazon
+ * DocumentDB rejects.
+ */
 async function removeAgentIdsFromEdges(
   Agent: Model<IAgent>,
   agentIds: string[],
@@ -118,13 +92,33 @@ async function removeAgentIdsFromEdges(
   if (agentIds.length === 0) {
     return;
   }
-
-  await Agent.updateMany(
-    {
-      ...(tenantId !== undefined ? { tenantId } : {}),
-      $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
-    },
-    createEdgeCleanupPipeline(agentIds),
+  const filter: FilterQuery<IAgent> = {
+    ...(tenantId !== undefined ? { tenantId } : {}),
+    $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
+  };
+  for (let attempt = 0; attempt < EDGE_CLEANUP_ATTEMPTS; attempt++) {
+    const graphs = await Agent.find(filter)
+      .select('_id edges')
+      .lean<Pick<IAgent, '_id' | 'edges'>[]>();
+    if (graphs.length === 0) {
+      return;
+    }
+    const result = await tenantSafeBulkWrite(
+      Agent,
+      graphs.map((graph) => ({
+        updateOne: {
+          filter: { _id: graph._id, edges: graph.edges },
+          update: { $set: { edges: pruneEdges(graph.edges, agentIds) } },
+        },
+      })),
+      { ordered: false },
+    );
+    if (result.matchedCount === graphs.length) {
+      return;
+    }
+  }
+  throw new Error(
+    `[removeAgentIdsFromEdges] graph edges kept changing during cleanup (${EDGE_CLEANUP_ATTEMPTS} attempts)`,
   );
 }
 

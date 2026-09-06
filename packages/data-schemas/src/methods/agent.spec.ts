@@ -1265,6 +1265,62 @@ describe('Agent Methods', () => {
       ]);
     });
 
+    test('keeps an edge added to the graph while the cleanup was running', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const graphAgentId = `agent_${uuidv4()}`;
+      const sourceAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const addedAgentId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Agent To Delete',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await createAgent({
+        id: graphAgentId,
+        name: 'Agent Edited During Cleanup',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        edges: [
+          { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' },
+          { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
+        ],
+      });
+      /** Lands a concurrent edit between the cleanup's read and its first write,
+       * through the driver so the cleanup's own compare-and-set is what must
+       * notice it. */
+      const prototype = mongoose.mongo.Collection.prototype;
+      const bulkWrite = prototype.bulkWrite;
+      let edited = false;
+      prototype.bulkWrite = async function (this: mongoose.mongo.Collection, operations, options) {
+        if (!edited && this.collectionName === 'agents') {
+          edited = true;
+          await Agent.updateOne(
+            { id: graphAgentId },
+            { $push: { edges: { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' } } },
+          );
+        }
+        return bulkWrite.call(this, operations, options);
+      };
+
+      try {
+        await deleteAgent({ id: deletedAgentId });
+      } finally {
+        prototype.bulkWrite = bulkWrite;
+      }
+
+      expect(edited).toBe(true);
+      const graphAgent = await getAgent({ id: graphAgentId });
+      expect(graphAgent!.edges).toEqual([
+        { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
+        { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' },
+      ]);
+    });
+
     test('should remove agent from user favorites when agent is deleted', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

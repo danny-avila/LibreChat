@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { Model } from 'mongoose';
 import type { IAgentTriggerDeliveryDocument } from '~/types/triggerDelivery';
+import { buildIndexWithRetry, createIndexesWithRetry } from './retry';
 import triggerDeliverySchema from '~/schema/triggerDelivery';
-import { createIndexesWithRetry } from './retry';
 
 const DB_SETUP_TIMEOUT_MS = 60_000;
 /** Amazon DocumentDB: "Existing index build in progress on the same collection." */
@@ -152,5 +152,75 @@ describe('createIndexesWithRetry on a single-index-build engine', () => {
       'bad index spec',
     );
     expect(attempts).toBe(triggerDeliverySchema.indexes().length);
+  });
+});
+
+describe('buildIndexWithRetry on a raw driver collection', () => {
+  function rawCollection() {
+    modelCounter += 1;
+    return mongoose.connection.db!.collection(`retry_spec_raw_${modelCounter}`);
+  }
+
+  test('keeps polling while another replica holds the collection, then builds', async () => {
+    const collection = rawCollection();
+    const createIndex = collection.createIndex.bind(collection);
+    let remainingRejections = 3;
+    let attempts = 0;
+    collection.createIndex = async (fields, options) => {
+      attempts += 1;
+      if (remainingRejections > 0) {
+        remainingRejections -= 1;
+        throw indexBuildInProgressError();
+      }
+      return createIndex(fields, options);
+    };
+
+    await expect(
+      buildIndexWithRetry(() => collection.createIndex({ key: 1 }, { name: 'key_1' }), 'key_1', {
+        maxAttempts: 1,
+        peerBuildPollMs: 1,
+      }),
+    ).resolves.toBe('key_1');
+    expect(attempts).toBe(4);
+    expect((await collection.indexes()).map((index) => index.name)).toContain('key_1');
+  });
+
+  test('surfaces the conflict once the peer-build deadline passes', async () => {
+    const collection = rawCollection();
+    let attempts = 0;
+    collection.createIndex = async () => {
+      attempts += 1;
+      throw indexBuildInProgressError();
+    };
+
+    await expect(
+      buildIndexWithRetry(() => collection.createIndex({ key: 1 }), 'key_1', {
+        maxAttempts: 1,
+        peerBuildPollMs: 1,
+        peerBuildDeadlineMs: 20,
+      }),
+    ).rejects.toMatchObject({ code: INDEX_BUILD_ALREADY_IN_PROGRESS });
+    expect(attempts).toBeGreaterThan(1);
+  });
+
+  test('still fails fast on errors that are not transient', async () => {
+    const collection = rawCollection();
+    let attempts = 0;
+    collection.createIndex = async () => {
+      attempts += 1;
+      throw new mongoose.mongo.MongoServerError({
+        ok: 0,
+        code: 67,
+        errmsg: 'CannotCreateIndex: bad index spec',
+      });
+    };
+
+    await expect(
+      buildIndexWithRetry(() => collection.createIndex({ key: 1 }), 'key_1', {
+        baseDelayMs: 1,
+        jitter: false,
+      }),
+    ).rejects.toThrow('bad index spec');
+    expect(attempts).toBe(1);
   });
 });

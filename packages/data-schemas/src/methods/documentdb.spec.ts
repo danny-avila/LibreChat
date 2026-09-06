@@ -15,7 +15,11 @@ import ts from 'typescript';
  *
  * The scan walks the TypeScript AST rather than source text, so it also
  * catches a pipeline bound to a variable first, cast with `as`, or nested in a
- * `bulkWrite` operation's `update` property. It covers every backend workspace
+ * `bulkWrite` operation's `update` property. Besides constructs the engine
+ * rejects outright, it holds every index build to the retrying helpers in
+ * `utils/retry.ts`, because the engine admits one build per collection at a
+ * time and a concurrent second build fails silently in any caller that only
+ * logs. It covers every backend workspace
  * that talks to MongoDB — this package, `packages/api`, and `api` — because the
  * regression class is repo-wide and new backend code lands in `packages/api`.
  * If a construct here becomes genuinely necessary, the fix is a compatible
@@ -40,8 +44,125 @@ const UPDATE_METHODS = new Set([
   'replaceOne',
 ]);
 
-/** `$$REMOVE`: `Feature not supported: $$REMOVE`. `$facet`: `Aggregation stage not supported`. */
-const FORBIDDEN_TOKENS = ['$$REMOVE', '$$CURRENT', '$facet', '$graphLookup', '$unionWith'];
+/**
+ * Every operator AWS documents as unsupported in the 5.0 column of "Supported
+ * MongoDB APIs, operations, and data types", grouped as that table groups them.
+ * The first two carry the exact server errors observed live — `$$REMOVE`:
+ * `Feature not supported: $$REMOVE`; `$facet`: `Aggregation stage not
+ * supported`. `$pow`, `$rand`, `$dateFromParts` and `$dateToParts` arrive in
+ * 5.0.1, after the 5.0.0 engine these verdicts were established on. `$set`,
+ * `$unset` and `$count` are legal in one position and rejected in another, so
+ * they have their own detectors below.
+ */
+const FORBIDDEN_TOKENS = [
+  '$$REMOVE',
+  '$$CURRENT',
+  // stages
+  '$facet',
+  '$graphLookup',
+  '$unionWith',
+  '$setWindowFields',
+  '$bucket',
+  '$bucketAuto',
+  '$merge',
+  '$replaceWith',
+  '$sortByCount',
+  '$vectorSearch',
+  '$listSearchIndexes',
+  '$planCacheStats',
+  '$listSessions',
+  '$listLocalSessions',
+  // accumulators
+  '$accumulator',
+  '$rank',
+  '$denseRank',
+  '$documentNumber',
+  '$shift',
+  '$derivative',
+  '$integral',
+  '$expMovingAvg',
+  '$covariancePop',
+  '$covarianceSamp',
+  '$stdDevPop',
+  '$stdDevSamp',
+  '$top',
+  '$topN',
+  '$bottom',
+  '$bottomN',
+  '$firstN',
+  '$lastN',
+  '$maxN',
+  '$minN',
+  '$median',
+  '$percentile',
+  // expressions
+  '$round',
+  '$trunc',
+  '$pow',
+  '$rand',
+  '$sortArray',
+  '$binarySize',
+  '$bsonSize',
+  '$dateTrunc',
+  '$dateFromParts',
+  '$dateToParts',
+  '$isNumber',
+  '$toUUID',
+  '$getField',
+  '$sampleRate',
+  '$sigmoid',
+  '$bitAnd',
+  '$bitNot',
+  '$bitOr',
+  '$bitXor',
+  '$tsIncrement',
+  '$tsSecond',
+  '$acos',
+  '$acosh',
+  '$asin',
+  '$asinh',
+  '$atan',
+  '$atan2',
+  '$atanh',
+  '$cos',
+  '$cosh',
+  '$sin',
+  '$sinh',
+  '$tan',
+  '$tanh',
+  '$degreesToRadians',
+  '$radiansToDegrees',
+  // query and cursor options
+  '$where',
+  'allowDiskUse',
+  'noCursorTimeout',
+];
+
+/** `$set` and `$unset` are update operators everywhere in this codebase and are
+ * supported as such; as pipeline STAGES (the `$addFields` / `$project` aliases)
+ * DocumentDB 5.0 rejects them. A stage is an object that is an element of an
+ * array, which no update-operator position is: an update document is a call
+ * argument or an `update` property, and a `bulkWrite` element keys on its
+ * operation name. */
+const ALIAS_STAGES = new Set(['$set', '$unset']);
+
+/** Index builds. The engine admits one build per collection at a time and
+ * rejects a second with code 40333 (`utils/retry.ts`), so every build must go
+ * through `createIndexesWithRetry` or `buildIndexWithRetry`, which poll for the
+ * slot. A raw call is legal only inside the helper module itself or as the
+ * argument of `buildIndexWithRetry`. */
+const INDEX_BUILD_METHODS = new Set([
+  'createIndex',
+  'createIndexes',
+  'syncIndexes',
+  'ensureIndexes',
+]);
+const INDEX_BUILD_HELPER = 'packages/data-schemas/src/utils/retry.ts';
+const INDEX_BUILD_WRAPPER = 'buildIndexWithRetry';
+/** Meilisearch's client shares the method name and never reaches MongoDB. */
+const NON_MONGO_INDEX_CLIENTS = new Set(['packages/data-schemas/src/models/plugins/mongoMeili.ts']);
+/** Modules that name forbidden operators in order to reject them. */
+const OPERATOR_GUARDS = new Set(['packages/data-schemas/src/tenant/probe.ts']);
 
 function collectSourceFiles(directory: string, found: string[] = []): string[] {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -78,19 +199,68 @@ function unwrapExpression(expression: ts.Expression): ts.Expression {
   return current;
 }
 
-/** Names of variables initialized with array literals, so an indirect
- * `const update = [...]; Model.updateOne(filter, update)` is still caught.
- * Scope-naive by design: a false positive here names a variable that holds an
- * array and is passed as an update, which deserves a look regardless. */
-function collectArrayVariableNames(sourceFile: ts.SourceFile): Set<string> {
+function isArrayType(type: ts.TypeNode | undefined): boolean {
+  if (type == null) {
+    return false;
+  }
+  if (ts.isArrayTypeNode(type)) {
+    return true;
+  }
+  return (
+    ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && type.typeName.text === 'Array'
+  );
+}
+
+/** Whether a function is declared to return an array, or returns an array
+ * literal from its own body (nested functions are not descended into). */
+function returnsArray(fn: ts.FunctionLikeDeclaration): boolean {
+  if (isArrayType(fn.type)) {
+    return true;
+  }
+  if (fn.body == null) {
+    return false;
+  }
+  if (!ts.isBlock(fn.body)) {
+    return ts.isArrayLiteralExpression(unwrapExpression(fn.body));
+  }
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found || ts.isFunctionLike(node)) {
+      return;
+    }
+    if (
+      ts.isReturnStatement(node) &&
+      node.expression != null &&
+      ts.isArrayLiteralExpression(unwrapExpression(node.expression))
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(fn.body, visit);
+  return found;
+}
+
+/** Names of variables initialized with array literals and of functions that
+ * return one, so an indirect `const update = [...]; Model.updateOne(filter,
+ * update)` or a `Model.updateMany(filter, buildPipeline(ids))` is still
+ * caught. Scope-naive by design: a false positive here names something that
+ * holds an array and is passed as an update, which deserves a look regardless. */
+function collectArrayValuedNames(sourceFile: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   const visit = (node: ts.Node): void => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer != null &&
-      ts.isArrayLiteralExpression(unwrapExpression(node.initializer))
-    ) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer != null) {
+      const initializer = unwrapExpression(node.initializer);
+      const arrayValued = ts.isArrayLiteralExpression(initializer)
+        ? true
+        : (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) &&
+          returnsArray(initializer);
+      if (arrayValued) {
+        names.add(node.name.text);
+      }
+    }
+    if (ts.isFunctionDeclaration(node) && node.name != null && returnsArray(node)) {
       names.add(node.name.text);
     }
     ts.forEachChild(node, visit);
@@ -106,6 +276,9 @@ function isArrayValued(expression: ts.Expression, arrayNames: Set<string>): bool
   }
   if (ts.isIdentifier(unwrapped)) {
     return arrayNames.has(unwrapped.text);
+  }
+  if (ts.isCallExpression(unwrapped) && ts.isIdentifier(unwrapped.expression)) {
+    return arrayNames.has(unwrapped.expression.text);
   }
   if (ts.isConditionalExpression(unwrapped)) {
     return (
@@ -125,7 +298,7 @@ function offenseAt(sourceFile: ts.SourceFile, node: ts.Node, label: string): str
  * whether passed directly to an update method or carried inside a `bulkWrite`
  * operation's `update` property. */
 function findPipelineUpdates(sourceFile: ts.SourceFile): string[] {
-  const arrayNames = collectArrayVariableNames(sourceFile);
+  const arrayNames = collectArrayValuedNames(sourceFile);
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
     if (
@@ -159,11 +332,19 @@ function findPipelineUpdates(sourceFile: ts.SourceFile): string[] {
 }
 
 /** Reports forbidden operator tokens in string literals and property names,
- * ignoring prose — the rewrites explain themselves by naming the construct. */
+ * ignoring prose — the rewrites explain themselves by naming the construct —
+ * and type members, which never reach the engine (Mongoose documents declare
+ * a `$where` field). */
 function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
+  if (OPERATOR_GUARDS.has(sourceFile.fileName)) {
+    return [];
+  }
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isStringLiteralLike(node) || ts.isIdentifier(node)) {
+    if (
+      ts.isStringLiteralLike(node) ||
+      (ts.isIdentifier(node) && !ts.isPropertySignature(node.parent))
+    ) {
       for (const token of FORBIDDEN_TOKENS) {
         if (node.text === token || node.text.startsWith(`${token}.`)) {
           offenses.push(offenseAt(sourceFile, node, token));
@@ -212,10 +393,97 @@ function findMixedSelectStrings(sourceFile: ts.SourceFile): string[] {
   return offenses;
 }
 
+function propertyName(property: ts.ObjectLiteralElementLike): string | undefined {
+  const name = property.name;
+  if (name == null || !(ts.isIdentifier(name) || ts.isStringLiteral(name))) {
+    return undefined;
+  }
+  return name.text;
+}
+
+function aliasStageOffenses(sourceFile: ts.SourceFile, element: ts.Expression): string[] {
+  const stage = unwrapExpression(element);
+  if (!ts.isObjectLiteralExpression(stage)) {
+    return [];
+  }
+  return stage.properties
+    .filter((property) => ALIAS_STAGES.has(propertyName(property) ?? ''))
+    .map((property) => offenseAt(sourceFile, property, `${propertyName(property)} stage`));
+}
+
+/** Reports `$set` / `$unset` objects that sit directly inside an array literal —
+ * the pipeline-stage position — wherever the array is built. */
+function findAliasStages(sourceFile: ts.SourceFile): string[] {
+  const offenses: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isArrayLiteralExpression(node)) {
+      offenses.push(...node.elements.flatMap((element) => aliasStageOffenses(sourceFile, element)));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenses;
+}
+
+/** `$count` is a supported STAGE (`{ $count: 'total' }`) but an unsupported
+ * ACCUMULATOR (`{ n: { $count: {} } }`) on 5.0; the two differ by value shape. */
+function findAccumulatorCounts(sourceFile: ts.SourceFile): string[] {
+  const offenses: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      propertyName(node) === '$count' &&
+      ts.isObjectLiteralExpression(unwrapExpression(node.initializer))
+    ) {
+      offenses.push(offenseAt(sourceFile, node, '$count accumulator'));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenses;
+}
+
+function isWrappedIndexBuild(node: ts.Node): boolean {
+  for (let current = node.parent; current != null; current = current.parent) {
+    if (
+      ts.isCallExpression(current) &&
+      ts.isIdentifier(current.expression) &&
+      current.expression.text === INDEX_BUILD_WRAPPER
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Reports every index build that bypasses the retrying helpers. */
+function findRawIndexBuilds(sourceFile: ts.SourceFile): string[] {
+  if (
+    sourceFile.fileName === INDEX_BUILD_HELPER ||
+    NON_MONGO_INDEX_CLIENTS.has(sourceFile.fileName)
+  ) {
+    return [];
+  }
+  const offenses: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      INDEX_BUILD_METHODS.has(node.expression.name.text) &&
+      !isWrappedIndexBuild(node)
+    ) {
+      offenses.push(offenseAt(sourceFile, node, `raw ${node.expression.name.text}`));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenses;
+}
+
 describe('Amazon DocumentDB compatibility', () => {
-  /** Each file is read and parsed once; both detectors walk the same tree. */
+  /** Each file is read and parsed once; every detector walks the same tree. */
   const parsedSources = SCAN_ROOTS.flatMap((root) => collectSourceFiles(root)).map((file) =>
-    parse(path.relative(REPO_ROOT, file), fs.readFileSync(file, 'utf8')),
+    parse(path.relative(REPO_ROOT, file).split(path.sep).join('/'), fs.readFileSync(file, 'utf8')),
   );
 
   it('scans the backend workspaces', () => {
@@ -232,6 +500,18 @@ describe('Amazon DocumentDB compatibility', () => {
 
   it('mixes no bare and un-hide tokens in select strings', () => {
     expect(parsedSources.flatMap(findMixedSelectStrings)).toEqual([]);
+  });
+
+  it('uses no $set or $unset pipeline stages', () => {
+    expect(parsedSources.flatMap(findAliasStages)).toEqual([]);
+  });
+
+  it('uses no $count accumulators', () => {
+    expect(parsedSources.flatMap(findAccumulatorCounts)).toEqual([]);
+  });
+
+  it('builds every index through the retrying helpers', () => {
+    expect(parsedSources.flatMap(findRawIndexBuilds)).toEqual([]);
   });
 
   /** A guard that cannot fail protects nothing, so every shape the detectors
@@ -257,6 +537,18 @@ describe('Amazon DocumentDB compatibility', () => {
         'bulkWrite indirect payload',
         `const update = [{ $set: { a: 1 } }];\nawait Model.bulkWrite([{ updateMany: { filter, update } }]);`,
       ],
+      [
+        'pipeline returned by a declared function',
+        `function pipeline(ids: string[]): PipelineStage[] {\n  return [{ $set: { ids } }];\n}\nModel.updateMany(filter, pipeline(ids));`,
+      ],
+      [
+        'pipeline returned by an arrow with an expression body',
+        `const pipeline = (ids: string[]) => [{ $set: { ids } }];\nModel.updateOne(filter, pipeline(ids));`,
+      ],
+      [
+        'pipeline returned by an untyped function body',
+        `function pipeline() {\n  const stage = { $set: { a: 1 } };\n  return [stage] as PipelineStage[];\n}\nModel.findOneAndUpdate(filter, pipeline());`,
+      ],
     ])('flags a pipeline update: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).not.toEqual([]);
     });
@@ -268,6 +560,10 @@ describe('Amazon DocumentDB compatibility', () => {
         `await Model.bulkWrite([{ updateOne: { filter, update: { $set: { a: 1 } } } }]);`,
       ],
       ['unrelated array variable', `const stages = [{ $match: {} }];\nModel.aggregate(stages);`],
+      [
+        'update document returned by a function',
+        `function update() {\n  return { $set: { a: 1 } };\n}\nModel.updateOne(filter, update());`,
+      ],
     ])('accepts a supported shape: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).toEqual([]);
     });
@@ -289,7 +585,7 @@ describe('Amazon DocumentDB compatibility', () => {
       expect(findMixedSelectStrings(parse('fixture.ts', source))).toEqual([]);
     });
 
-    it('flags forbidden operators in code but not in prose', () => {
+    it('flags forbidden operators in code but not in prose or type members', () => {
       expect(
         findForbiddenTokens(parse('fixture.ts', `const projection = { x: '$$REMOVE' };`)),
       ).not.toEqual([]);
@@ -297,8 +593,64 @@ describe('Amazon DocumentDB compatibility', () => {
         findForbiddenTokens(parse('fixture.ts', `pipeline.push({ $facet: { rows: [] } });`)),
       ).not.toEqual([]);
       expect(
+        findForbiddenTokens(parse('fixture.ts', `const stage = { $setWindowFields: {} };`)),
+      ).not.toEqual([]);
+      expect(
         findForbiddenTokens(parse('fixture.ts', `/** $$REMOVE and $facet are unsupported. */`)),
       ).toEqual([]);
+      expect(
+        findForbiddenTokens(
+          parse('fixture.ts', `interface Doc { $where: Record<string, unknown> }`),
+        ),
+      ).toEqual([]);
+    });
+
+    it.each([
+      ['stage after a match', `Model.aggregate([{ $match: {} }, { $set: { a: 1 } }]);`],
+      ['unset stage held in a variable', `const stages = [{ $unset: 'a' }];`],
+      ['stage appended to a spread scope', `Model.aggregate([...scope, { $set: { a: 1 } }]);`],
+    ])('flags an alias stage: %s', (_shape, source) => {
+      expect(findAliasStages(parse('fixture.ts', source))).not.toEqual([]);
+    });
+
+    it.each([
+      ['classic update operator', `Model.updateOne(filter, { $set: { a: 1 } });`],
+      [
+        'bulkWrite operation payload',
+        `await Model.bulkWrite([{ updateOne: { filter, update: { $set: { a: 1 } } } }]);`,
+      ],
+      ['addFields stage', `Model.aggregate([{ $addFields: { a: 1 } }]);`],
+    ])('accepts a supported $set position: %s', (_shape, source) => {
+      expect(findAliasStages(parse('fixture.ts', source))).toEqual([]);
+    });
+
+    it('flags a $count accumulator but not the $count stage', () => {
+      expect(
+        findAccumulatorCounts(
+          parse('fixture.ts', `Model.aggregate([{ $group: { _id: null, n: { $count: {} } } }]);`),
+        ),
+      ).not.toEqual([]);
+      expect(
+        findAccumulatorCounts(parse('fixture.ts', `Model.aggregate([{ $count: 'total' }]);`)),
+      ).toEqual([]);
+    });
+
+    it.each([
+      ['raw createIndex', `await collection.createIndex({ a: 1 });`],
+      ['raw createIndexes', `await Model.createIndexes();`],
+      ['raw syncIndexes', `await Model.syncIndexes();`],
+    ])('flags an unguarded index build: %s', (_shape, source) => {
+      expect(findRawIndexBuilds(parse('fixture.ts', source))).not.toEqual([]);
+    });
+
+    it.each([
+      [
+        'a build wrapped by the helper',
+        `await buildIndexWithRetry(() => collection.createIndex({ a: 1 }), 'a_1');`,
+      ],
+      ['the model helper', `await createIndexesWithRetry(Model);`],
+    ])('accepts a guarded index build: %s', (_shape, source) => {
+      expect(findRawIndexBuilds(parse('fixture.ts', source))).toEqual([]);
     });
   });
 });
