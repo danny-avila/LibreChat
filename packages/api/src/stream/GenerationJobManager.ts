@@ -4053,10 +4053,19 @@ class GenerationJobManagerClass {
         ? runtime?.earlyBufferOverflow
         : undefined;
     if (runtime != null && unresolvedOverflow != null) {
-      const subscriberActive =
-        runtime.hasSubscriber ||
-        (persistedLifecycle?.createdAt === createdAt &&
-          (await this.jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())));
+      const remoteSubscriberActive =
+        persistedLifecycle?.createdAt === createdAt
+          ? await this.jobStore
+              .hasActiveSubscriber(streamId, createdAt, Date.now())
+              .catch((leaseError) => {
+                logger.error(
+                  '[GenerationJobManager] Failed to read active subscriber leases',
+                  leaseError,
+                );
+                return true;
+              })
+          : false;
+      const subscriberActive = runtime.hasSubscriber || remoteSubscriberActive;
       let unobservedFailureReason: EarlyBufferRecoveryFailureReason | undefined;
       if (!subscriberActive) {
         unobservedFailureReason = generationHadSubscriber
@@ -5089,9 +5098,6 @@ class GenerationJobManagerClass {
       const attachedAt = Date.now();
       const subscriberClaim = (runtime.subscriberStateWrite ?? Promise.resolve())
         .then(async () => {
-          if (runtime.subscriberStateAttached) {
-            return false;
-          }
           const firstSubscriber = await this.jobStore.claimFirstSubscriber(
             streamId,
             runtime.createdAt,
@@ -8259,6 +8265,23 @@ class GenerationJobManagerClass {
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
       return null;
     }
+    const validationRuntime =
+      options?.validateEarlyBufferRecovery === true
+        ? await this.getOrCreateRuntimeState(streamId)
+        : undefined;
+    if (
+      options?.validateEarlyBufferRecovery === true &&
+      (validationRuntime == null || validationRuntime.createdAt !== jobData.createdAt)
+    ) {
+      throw new Error('Generation changed during HITL recovery validation');
+    }
+    if (
+      options?.validateEarlyBufferRecovery === true &&
+      jobData.earlyBufferOverflow?.recoveryOutcome === 'failed'
+    ) {
+      await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, jobData.createdAt);
+      throw new Error(GENERATION_RECOVERY_FAILED_ERROR);
+    }
 
     /** Independent reads (streamId-only): parallel to collapse 3 Redis round trips into 1.
      *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
@@ -8278,12 +8301,13 @@ class GenerationJobManagerClass {
         ? jobData.earlyBufferOverflow
         : undefined;
     if (pendingOverflow != null) {
-      const runtime = await this.getOrCreateRuntimeState(streamId);
-      if (runtime == null || runtime.createdAt !== jobData.createdAt) {
-        throw new Error('Generation changed during HITL recovery validation');
-      }
-      const reconstructedEvents = result?.reconstructedEventCount ?? 0;
-      const durableEvents = result?.durableEventCount ?? 0;
+      const runtime = validationRuntime!;
+      const reconstructedEvents = this._isRedis
+        ? (result?.reconstructedEventCount ?? 0)
+        : runtime.durableEventSequence;
+      const durableEvents = this._isRedis
+        ? (result?.durableEventCount ?? 0)
+        : runtime.durableEventSequence;
       let failureReason: EarlyBufferRecoveryFailureReason | undefined;
       if (result == null) {
         failureReason = 'durable_state_missing';

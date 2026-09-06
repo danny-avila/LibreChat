@@ -1886,6 +1886,102 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('validates an in-memory HITL snapshot with the event frontier', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `overflow-hitl-memory-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const createdAt = (await manager.getJob(streamId))!.createdAt;
+      const bigText = 'i'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      manager.setContentParts(
+        streamId,
+        [{ type: 'text', text: 'complete snapshot' }] as never,
+        createdAt,
+      );
+
+      await expect(
+        manager.getResumeState(streamId, createdAt, { validateEarlyBufferRecovery: true }),
+      ).resolves.toMatchObject({ aggregatedContent: expect.any(Array) });
+      expect((await manager.getJob(streamId))?.metadata.earlyBufferOverflow).toMatchObject({
+        recoveryOutcome: 'success',
+      });
+
+      await manager.destroy();
+    });
+
+    test('rejects a durable failed outcome before exposing HITL state', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `overflow-hitl-failed-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const createdAt = (await manager.getJob(streamId))!.createdAt;
+      const bigText = 'j'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      const overflow = (await manager.getJob(streamId))!.metadata.earlyBufferOverflow!;
+      await (manager.getJobStore() as IJobStoreV2).settleEarlyBufferRecovery(
+        streamId,
+        createdAt,
+        overflow.id,
+        {
+          recoveryMethod: 'snapshot',
+          recoveryOutcome: 'failed',
+          recoveryCompletedAt: Date.now(),
+          recoveryFailureReason: 'snapshot_missing',
+        },
+      );
+
+      await expect(
+        manager.getResumeState(streamId, createdAt, { validateEarlyBufferRecovery: true }),
+      ).rejects.toThrow(GENERATION_RECOVERY_FAILED_ERROR);
+
+      await manager.destroy();
+    });
+
+    test('contains subscriber lease lookup failure during terminal cleanup', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-lease-read-failure-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const bigText = 'k'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      jest.spyOn(jobStore, 'hasActiveSubscriber').mockRejectedValueOnce(new Error('unavailable'));
+
+      await expect(manager.completeJob(streamId)).resolves.toBe(true);
+      expect((await manager.getJob(streamId))?.status).toBe('complete');
+
+      await manager.destroy();
+    });
+
     testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
       const manager = createRedisManager();
       const streamId = `overflow-redirect-${Date.now()}`;
@@ -2245,6 +2341,34 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('Atomic subscribeWithResume', () => {
+    test('renews the subscriber lease after an ambiguous detach failure', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const claim = jest.spyOn(jobStore, 'claimFirstSubscriber');
+      jest
+        .spyOn(jobStore, 'detachSubscriber')
+        .mockRejectedValueOnce(new Error('store unavailable'));
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `subscriber-detach-retry-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const first = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      first?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const second = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(claim).toHaveBeenCalledTimes(2);
+
+      second?.unsubscribe();
+      await manager.destroy();
+    });
+
     test('tracks active subscriber groups across local reattachments', async () => {
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
       const manager = new GenerationJobManagerClass();
