@@ -6320,6 +6320,16 @@ class GenerationJobManagerClass {
           );
           return undefined;
         });
+        if (winningOutcome == null) {
+          const currentJob = await this.jobStore.getJob(streamId);
+          if (currentJob?.createdAt !== runtime.createdAt) {
+            if (currentJob != null) {
+              await this.reconcileFencedRuntimeHandoff(streamId, runtime, currentJob);
+            }
+            recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+            return { subscription: null, resumeState: null, pendingEvents: [] };
+          }
+        }
         if (winningOutcome === 'not_required') {
           return { subscription: null, resumeState: null, pendingEvents: [] };
         }

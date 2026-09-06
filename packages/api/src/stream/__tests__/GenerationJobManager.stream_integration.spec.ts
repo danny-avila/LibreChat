@@ -1886,6 +1886,51 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('reconciles a generation replaced while a recovery error settles', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-replaced-during-error-settlement-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const originalCreatedAt = (await jobStore.getJob(streamId))!.createdAt;
+      const bigText = 'e'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockRejectedValueOnce(new Error('snapshot unavailable'));
+      jest.spyOn(jobStore, 'settleEarlyBufferRecovery').mockImplementationOnce(async () => {
+        await jobStore.createJob(streamId, 'user-1');
+        return false;
+      });
+
+      const errors: string[] = [];
+      const result = await manager.subscribeWithResume(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+        { expectedCreatedAt: originalCreatedAt },
+      );
+      expect(result.subscription).toBeNull();
+      expect(errors).not.toContain(GENERATION_RECOVERY_FAILED_ERROR);
+      expect((await jobStore.getJob(streamId))!.createdAt).toBeGreaterThan(originalCreatedAt);
+
+      await manager.destroy();
+    });
+
     test('validates an in-memory HITL snapshot with the event frontier', async () => {
       const manager = createInMemoryManager();
       const streamId = `overflow-hitl-memory-${Date.now()}`;
