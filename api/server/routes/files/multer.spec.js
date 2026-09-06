@@ -302,6 +302,30 @@ describe('Multer Configuration', () => {
       fileFilter(mockReq, zipFile, cb);
     });
 
+    it('uses a server-selected endpoint before multipart fields are parsed', (done) => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(
+        mergeFileConfig({
+          endpoints: {
+            agents: { supportedMimeTypes: ['text/plain'] },
+            default: { supportedMimeTypes: ['application/pdf'] },
+          },
+        }),
+        'agents',
+      );
+      const textFile = {
+        ...mockFile,
+        originalname: 'notes.txt',
+        mimetype: 'text/plain',
+      };
+
+      fileFilter({ ...mockReq, body: {} }, textFile, (err, result) => {
+        expect(err).toBeNull();
+        expect(result).toBe(true);
+        done();
+      });
+    });
+
     it.each(['application/x-shellscript', 'text/x-shellscript'])(
       'should normalize %s to application/x-sh and accept the upload',
       (reportedType) => {

@@ -35,10 +35,11 @@ const mockFileList = jest.fn((_req, res) => res.status(200).json({ object: 'list
 const mockFileRemove = jest.fn((_req, res) =>
   res.status(200).json({ id: 'file-one', deleted: true }),
 );
+const mockFileUpload = jest.fn((_req, res) => res.status(200).json({ id: 'file-uploaded' }));
 let mockFileDeps;
 const mockCreateAgentManagementFileHandlers = jest.fn((deps) => {
   mockFileDeps = deps;
-  return { list: mockFileList, remove: mockFileRemove };
+  return { upload: mockFileUpload, list: mockFileList, remove: mockFileRemove };
 });
 const mockBrowserCreate = jest.fn();
 const mockBrowserUpdate = jest.fn();
@@ -59,6 +60,7 @@ jest.mock('../middleware', () => ({
 }));
 jest.mock('@librechat/api', () => ({
   mapAgentManagementError: mockMapAgentManagementError,
+  restoreTenantContextFromReq: jest.fn((_req, _res, next) => next()),
   createAgentManagementCreateHandler: mockCreateAgentManagementCreateHandler,
   createAgentManagementDeleteHandler: mockCreateAgentManagementDeleteHandler,
   createAgentManagementFileHandlers: mockCreateAgentManagementFileHandlers,
@@ -68,8 +70,21 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/middleware', () => ({
   checkBan: mockCheckBan,
   configMiddleware: mockConfigMiddleware,
+  createFileLimiters: jest.fn(() => ({
+    fileUploadIpLimiter: jest.fn((_req, _res, next) => next()),
+    fileUploadUserLimiter: jest.fn((_req, _res, next) => next()),
+  })),
   uaParser: mockUaParser,
 }));
+jest.mock('~/server/routes/files/multer', () => ({
+  createMulterInstance: jest.fn().mockResolvedValue({
+    single: jest.fn(() => (req, _res, next) => {
+      req.file = { path: '/tmp/upload', originalname: 'input.txt' };
+      next();
+    }),
+  }),
+}));
+jest.mock('~/server/routes/files/files', () => ({ handleFileUpload: jest.fn() }));
 jest.mock('~/server/controllers/agents/v1', () => ({
   createAgent: mockBrowserCreate,
   updateAgent: mockBrowserUpdate,
@@ -202,5 +217,18 @@ describe('Agent Management route boundary', () => {
     expect(mockFileDeps.getAgentWithVersionCount).toEqual(expect.any(Function));
     expect(mockFileDeps.getFiles).toEqual(expect.any(Function));
     expect(mockFileDeps.removeAgentResourceFiles).toEqual(expect.any(Function));
+  });
+
+  it('loads file configuration and dispatches authenticated multipart uploads', async () => {
+    const response = await request(app)
+      .post('/api/agents/v1/agents/agent-one/files')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ purpose: 'context' });
+
+    expect(response.status).toBe(200);
+    expect(mockConfigMiddleware).toHaveBeenCalledTimes(1);
+    expect(mockFileUpload).toHaveBeenCalledTimes(1);
+    expect(mockFileDeps.processUpload).toEqual(expect.any(Function));
+    expect(mockFileDeps.deleteTempFile).toEqual(expect.any(Function));
   });
 });

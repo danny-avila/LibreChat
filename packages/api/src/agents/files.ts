@@ -13,13 +13,25 @@ import type { AgentManagementProjectionSource } from './management';
 import { mapAgentManagementError } from './management';
 import { checkAccessWithRequestCache } from '../middleware/access';
 
-const FILE_PURPOSES = [
+type AgentUploadPurpose =
+  | EToolResources.context
+  | EToolResources.file_search
+  | EToolResources.execute_code;
+
+type AgentFilePurpose = AgentUploadPurpose | EToolResources.image_edit | EToolResources.ocr;
+
+const UPLOAD_PURPOSES: readonly AgentUploadPurpose[] = [
   EToolResources.context,
   EToolResources.file_search,
   EToolResources.execute_code,
 ] as const;
 
-type AgentFilePurpose = (typeof FILE_PURPOSES)[number];
+const FILE_PURPOSES: readonly AgentFilePurpose[] = [
+  ...UPLOAD_PURPOSES,
+  EToolResources.image_edit,
+  EToolResources.ocr,
+] as const;
+
 type AgentManagementFileRecord = {
   file_id: string;
   filename: string;
@@ -35,6 +47,13 @@ type AgentManagementFile = {
   mime_type: string;
   purposes: AgentFilePurpose[];
   created_at: string | null;
+};
+type AgentManagementUploadBody = {
+  file_id?: string;
+  filename?: string;
+  bytes?: number;
+  type?: string;
+  createdAt?: string | Date;
 };
 type AgentManagementFileAgent = AgentManagementProjectionSource & {
   _id: Types.ObjectId;
@@ -64,6 +83,8 @@ export interface AgentManagementFileDeps {
     agent_id: string;
     files: Array<{ tool_resource: AgentFilePurpose; file_id: string }>;
   }) => Promise<AgentManagementFileAgent>;
+  processUpload: (req: Request, res: Response) => Promise<Response | void>;
+  deleteTempFile: (path: string) => Promise<void>;
 }
 
 function sendError(res: Response, code: Parameters<typeof mapAgentManagementError>[0]) {
@@ -71,12 +92,72 @@ function sendError(res: Response, code: Parameters<typeof mapAgentManagementErro
   return res.status(mapped.status).json(mapped.body);
 }
 
-async function canUseAgents(req: Request, user: IUser, deps: AgentManagementFileDeps) {
+function getUploadErrorCode(status: number): Parameters<typeof mapAgentManagementError>[0] {
+  if (status === 403) {
+    return 'permission_denied';
+  }
+  if (status === 404) {
+    return 'not_found';
+  }
+  if (status >= 400 && status < 500) {
+    return 'invalid_request';
+  }
+  return 'internal_error';
+}
+
+function getUploadCreatedAt(value: string | Date | undefined): string | null {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return null;
+}
+
+/** Restrict the shared browser uploader's response to the management file contract. */
+export function createAgentManagementUploadResponse(
+  res: Response,
+  file: Express.Multer.File,
+  purpose: AgentUploadPurpose,
+): Response {
+  let status = 200;
+  const response = Object.create(res) as Response;
+  response.status = (code: number) => {
+    status = code;
+    return response;
+  };
+  response.json = (body: AgentManagementUploadBody) => {
+    if (status < 200 || status >= 300) {
+      return sendError(res, getUploadErrorCode(status));
+    }
+    if (typeof body.file_id !== 'string' || body.file_id.length === 0) {
+      return sendError(res, 'internal_error');
+    }
+    return res.status(status).json({
+      id: body.file_id,
+      object: 'agent.file',
+      filename: body.filename ?? file.originalname,
+      bytes: body.bytes ?? file.size,
+      mime_type: body.type ?? file.mimetype,
+      purposes: [purpose],
+      created_at: getUploadCreatedAt(body.createdAt),
+    });
+  };
+  return response;
+}
+
+async function canUseAgents(
+  req: Request,
+  user: IUser,
+  permissions: Permissions[],
+  deps: AgentManagementFileDeps,
+) {
   return await checkAccessWithRequestCache({
     req,
     user,
     permissionType: PermissionTypes.AGENTS,
-    permissions: [Permissions.USE],
+    permissions,
     getRoleByName: deps.getRoleByName,
   });
 }
@@ -93,20 +174,12 @@ async function hasManageAgentsCapability(user: IUser, deps: AgentManagementFileD
   }
 }
 
-async function authorizeAgentFileEdit(
-  req: Request,
+async function canEditAgentFiles(
   user: IUser,
   agent: AgentManagementFileAgent,
   deps: AgentManagementFileDeps,
 ) {
-  const [canUse, canManageAll] = await Promise.all([
-    canUseAgents(req, user, deps),
-    hasManageAgentsCapability(user, deps),
-  ]);
-  if (!canUse) {
-    return false;
-  }
-  if (canManageAll) {
+  if (await hasManageAgentsCapability(user, deps)) {
     return true;
   }
   return await deps.checkPermission({
@@ -130,14 +203,18 @@ function getFilePurposes(agent: AgentManagementFileAgent): Map<string, AgentFile
 
 /** Machine-authenticated Agent file listing and unlink handlers. */
 export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps): {
+  upload: (req: Request, res: Response) => Promise<Response>;
   list: (req: Request, res: Response) => Promise<Response>;
   remove: (req: Request, res: Response) => Promise<Response>;
 } {
-  async function getAuthorizedAgent(req: Request, res: Response) {
+  async function getAuthorizedAgent(req: Request, permissions: Permissions[]) {
     const user = req.user as IUser | undefined;
     if (!user?.id || !user.tenantId) {
-      sendError(res, 'permission_denied');
-      return null;
+      return { allowed: false as const, code: 'permission_denied' as const };
+    }
+
+    if (!(await canUseAgents(req, user, permissions, deps))) {
+      return { allowed: false as const, code: 'permission_denied' as const };
     }
 
     const agent = await deps.getAgentWithVersionCount({
@@ -145,21 +222,61 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
       tenantId: user.tenantId,
     });
     if (!agent) {
-      sendError(res, 'not_found');
-      return null;
+      return { allowed: false as const, code: 'not_found' as const };
     }
-    if (!(await authorizeAgentFileEdit(req, user, agent, deps))) {
-      sendError(res, 'permission_denied');
-      return null;
+    if (!(await canEditAgentFiles(user, agent, deps))) {
+      return { allowed: false as const, code: 'permission_denied' as const };
     }
-    return { agent, user, tenantId: user.tenantId };
+    return { allowed: true as const, agent, user, tenantId: user.tenantId };
+  }
+
+  async function cleanupRejectedUpload(req: Request): Promise<boolean> {
+    if (!req.file?.path) {
+      return true;
+    }
+    try {
+      await deps.deleteTempFile(req.file.path);
+      return true;
+    } catch (error) {
+      logger.error('[AgentManagement] Error cleaning up rejected Agent file upload', error);
+      return false;
+    }
+  }
+
+  async function upload(req: Request, res: Response): Promise<Response> {
+    try {
+      const purpose = req.body?.purpose as string | undefined;
+      if (!req.file || !UPLOAD_PURPOSES.includes(purpose as AgentUploadPurpose)) {
+        const cleaned = await cleanupRejectedUpload(req);
+        return sendError(res, cleaned ? 'invalid_request' : 'internal_error');
+      }
+
+      const authorized = await getAuthorizedAgent(req, [Permissions.USE, Permissions.CREATE]);
+      if (!authorized.allowed) {
+        const cleaned = await cleanupRejectedUpload(req);
+        return sendError(res, cleaned ? authorized.code : 'internal_error');
+      }
+
+      req.body = {
+        endpoint: 'agents',
+        agent_id: req.params.id,
+        tool_resource: purpose,
+      };
+      req.headers.accept = 'application/json';
+      await deps.processUpload(req, res);
+      return res;
+    } catch (error) {
+      logger.error('[AgentManagement] Error preparing Agent file upload', error);
+      await cleanupRejectedUpload(req);
+      return sendError(res, 'internal_error');
+    }
   }
 
   async function list(req: Request, res: Response): Promise<Response> {
     try {
-      const authorized = await getAuthorizedAgent(req, res);
-      if (!authorized) {
-        return res;
+      const authorized = await getAuthorizedAgent(req, [Permissions.USE]);
+      if (!authorized.allowed) {
+        return sendError(res, authorized.code);
       }
 
       const purposes = getFilePurposes(authorized.agent);
@@ -195,9 +312,9 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
       if (!fileId) {
         return sendError(res, 'invalid_request');
       }
-      const authorized = await getAuthorizedAgent(req, res);
-      if (!authorized) {
-        return res;
+      const authorized = await getAuthorizedAgent(req, [Permissions.USE, Permissions.CREATE]);
+      if (!authorized.allowed) {
+        return sendError(res, authorized.code);
       }
 
       const purposes = getFilePurposes(authorized.agent).get(fileId) ?? [];
@@ -219,5 +336,5 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
     }
   }
 
-  return { list, remove };
+  return { upload, list, remove };
 }

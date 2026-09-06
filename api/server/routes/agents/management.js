@@ -1,15 +1,20 @@
 const express = require('express');
+const fs = require('fs').promises;
 const {
   createAgentManagementCreateHandler,
   createAgentManagementDeleteHandler,
   createAgentManagementFileHandlers,
+  createAgentManagementUploadResponse,
   createAgentManagementReadHandlers,
   createAgentManagementUpdateHandler,
   mapAgentManagementError,
+  restoreTenantContextFromReq,
 } = require('@librechat/api');
-const { checkBan, configMiddleware } = require('~/server/middleware');
+const { checkBan, configMiddleware, createFileLimiters } = require('~/server/middleware');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
+const { createMulterInstance } = require('~/server/routes/files/multer');
+const { handleFileUpload } = require('~/server/routes/files/files');
 const v1 = require('~/server/controllers/agents/v1');
 const db = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
@@ -48,13 +53,34 @@ const fileHandlers = createAgentManagementFileHandlers({
   checkPermission,
   hasCapability,
   removeAgentResourceFiles: db.removeAgentResourceFiles,
+  processUpload: (req, res) =>
+    handleFileUpload(
+      req,
+      createAgentManagementUploadResponse(res, req.file, req.body.tool_resource),
+    ),
+  deleteTempFile: fs.unlink,
 });
+const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
+let uploadPromise;
+const uploadSingleFile = (req, res, next) => {
+  uploadPromise ??= createMulterInstance({ endpoint: 'agents' });
+  uploadPromise.then((upload) => upload.single('file')(req, res, next)).catch(next);
+};
 
 router.use(requireAgentManagementAuth);
 router.use(checkBan);
 
 router.post('/', configMiddleware, createHandler);
 router.get('/', readHandlers.list);
+router.post(
+  '/:id/files',
+  configMiddleware,
+  fileUploadIpLimiter,
+  fileUploadUserLimiter,
+  uploadSingleFile,
+  restoreTenantContextFromReq,
+  fileHandlers.upload,
+);
 router.get('/:id/files', fileHandlers.list);
 router.delete('/:id/files/:fileId', fileHandlers.remove);
 router.get('/:id', readHandlers.get);

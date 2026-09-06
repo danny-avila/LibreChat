@@ -50,7 +50,7 @@ const normalizeUploadMimeType = (file) => {
  *
  * @param {import('librechat-data-provider').FileConfig | undefined} customFileConfig
  */
-const createFileFilter = (customFileConfig) => {
+const createFileFilter = (customFileConfig, endpointOverride) => {
   /**
    * @param {ServerRequest} req
    * @param {Express.Multer.File}
@@ -67,7 +67,7 @@ const createFileFilter = (customFileConfig) => {
       return cb(null, true);
     }
 
-    const endpoint = req.body.endpoint;
+    const endpoint = endpointOverride ?? req.body.endpoint;
     const endpointType = req.body.endpointType;
     const endpointFileConfig = getEndpointFileConfig({
       fileConfig: customFileConfig,
@@ -88,10 +88,10 @@ const createFileFilter = (customFileConfig) => {
   return fileFilter;
 };
 
-const createMulterInstance = async () => {
+const createMulterInstance = async ({ endpoint } = {}) => {
   const appConfig = await getAppConfig();
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const fileFilter = createFileFilter(fileConfig);
+  const fileFilter = createFileFilter(fileConfig, endpoint);
   return multer({
     storage,
     fileFilter,

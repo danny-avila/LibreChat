@@ -725,7 +725,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+const handleFileUpload = async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
@@ -845,6 +845,9 @@ router.post('/', async (req, res) => {
       sseStream.close();
     }
   }
-});
+};
+
+router.post('/', handleFileUpload);
 
 module.exports = router;
+module.exports.handleFileUpload = handleFileUpload;

@@ -10,7 +10,7 @@ import {
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { AgentManagementFileDeps } from './files';
-import { createAgentManagementFileHandlers } from './files';
+import { createAgentManagementFileHandlers, createAgentManagementUploadResponse } from './files';
 
 jest.mock('@librechat/data-schemas', () => {
   return {
@@ -34,11 +34,13 @@ const agent = {
     context: { file_ids: ['file-context', 'file-shared'] },
     file_search: { file_ids: ['file-search', 'file-shared'] },
     execute_code: { file_ids: ['file-code'] },
+    image_edit: { file_ids: ['file-image'] },
+    ocr: { file_ids: ['file-ocr'] },
   },
 };
 
 function makeRequest(params: Record<string, string>): Request {
-  return { user, params } as unknown as Request;
+  return { user, params, headers: {} } as unknown as Request;
 }
 
 function makeResponse(): Response {
@@ -54,7 +56,12 @@ function makeResponse(): Response {
 function makeDeps(overrides: Partial<AgentManagementFileDeps> = {}): AgentManagementFileDeps {
   return {
     getRoleByName: jest.fn().mockResolvedValue({
-      permissions: { [PermissionTypes.AGENTS]: { [Permissions.USE]: true } },
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+        },
+      },
     } as unknown as IRole),
     getAgentWithVersionCount: jest.fn().mockResolvedValue(agent),
     getFiles: jest.fn().mockResolvedValue([
@@ -69,11 +76,128 @@ function makeDeps(overrides: Partial<AgentManagementFileDeps> = {}): AgentManage
     checkPermission: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(false),
     removeAgentResourceFiles: jest.fn().mockResolvedValue(agent),
+    processUpload: jest.fn().mockResolvedValue(undefined),
+    deleteTempFile: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
 
 describe('Agent Management file handlers', () => {
+  it('projects upload success through the management metadata allowlist', () => {
+    const response = makeResponse();
+    const file = {
+      originalname: 'input.txt',
+      size: 12,
+      mimetype: 'text/plain',
+    } as Express.Multer.File;
+
+    createAgentManagementUploadResponse(response, file, EToolResources.context).status(200).json({
+      file_id: 'file-one',
+      filename: 'stored.txt',
+      filepath: '/private/storage/path',
+      storageKey: 'private-key',
+      tenantId: 'tenant-a',
+      bytes: 10,
+      type: 'text/plain',
+    });
+
+    expect(response.json).toHaveBeenCalledWith({
+      id: 'file-one',
+      object: 'agent.file',
+      filename: 'stored.txt',
+      bytes: 10,
+      mime_type: 'text/plain',
+      purposes: [EToolResources.context],
+      created_at: null,
+    });
+  });
+
+  it('rejects an incomplete shared-uploader success response', () => {
+    const response = makeResponse();
+    const file = {
+      originalname: 'input.txt',
+      size: 12,
+      mimetype: 'text/plain',
+    } as Express.Multer.File;
+
+    createAgentManagementUploadResponse(response, file, EToolResources.context).status(200).json({
+      filename: 'stored.txt',
+    });
+
+    expect(response.status).toHaveBeenCalledWith(500);
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: 'internal_error', message: 'Internal server error' },
+    });
+  });
+
+  it.each([EToolResources.context, EToolResources.file_search, EToolResources.execute_code])(
+    'routes a %s upload through the shared browser pipeline',
+    async (purpose) => {
+      const deps = makeDeps();
+      const response = makeResponse();
+      const request = makeRequest({ id: 'agent-one' });
+      request.body = { purpose };
+      request.file = { path: '/tmp/upload', originalname: 'input.txt' } as Express.Multer.File;
+
+      await createAgentManagementFileHandlers(deps).upload(request, response);
+
+      expect(deps.processUpload).toHaveBeenCalledWith(request, response);
+      expect(request.body).toEqual({
+        endpoint: 'agents',
+        agent_id: 'agent-one',
+        tool_resource: purpose,
+      });
+      expect(request.headers.accept).toBe('application/json');
+      expect(deps.deleteTempFile).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects unsupported purposes and removes the temporary upload', async () => {
+    const deps = makeDeps();
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-one' });
+    request.body = { purpose: 'provider_storage' };
+    request.file = { path: '/tmp/rejected', originalname: 'input.txt' } as Express.Multer.File;
+
+    await createAgentManagementFileHandlers(deps).upload(request, response);
+
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/rejected');
+    expect(deps.processUpload).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(400);
+  });
+
+  it('cleans up an upload rejected by tenant-scoped Agent lookup', async () => {
+    const deps = makeDeps({ getAgentWithVersionCount: jest.fn().mockResolvedValue(null) });
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-other-tenant' });
+    request.body = { purpose: EToolResources.context };
+    request.file = { path: '/tmp/rejected', originalname: 'input.txt' } as Express.Multer.File;
+
+    await createAgentManagementFileHandlers(deps).upload(request, response);
+
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/rejected');
+    expect(deps.processUpload).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(404);
+  });
+
+  it('reports cleanup failures with the management error contract', async () => {
+    const deps = makeDeps({
+      getAgentWithVersionCount: jest.fn().mockResolvedValue(null),
+      deleteTempFile: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+    });
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-other-tenant' });
+    request.body = { purpose: EToolResources.context };
+    request.file = { path: '/tmp/rejected', originalname: 'input.txt' } as Express.Multer.File;
+
+    await createAgentManagementFileHandlers(deps).upload(request, response);
+
+    expect(response.status).toHaveBeenCalledWith(500);
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: 'internal_error', message: 'Internal server error' },
+    });
+  });
+
   it('lists safe file metadata with every attached purpose in the authenticated tenant', async () => {
     const deps = makeDeps();
     const response = makeResponse();
@@ -91,7 +215,14 @@ describe('Agent Management file handlers', () => {
     expect(deps.getFiles).toHaveBeenCalledWith(
       {
         file_id: {
-          $in: ['file-context', 'file-shared', 'file-search', 'file-code'],
+          $in: [
+            'file-context',
+            'file-shared',
+            'file-search',
+            'file-code',
+            'file-image',
+            'file-ocr',
+          ],
         },
         tenantId,
       },
@@ -132,6 +263,50 @@ describe('Agent Management file handlers', () => {
     });
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.json).toHaveBeenCalledWith({ id: 'file-shared', deleted: true });
+  });
+
+  it.each([
+    [EToolResources.image_edit, 'file-image'],
+    [EToolResources.ocr, 'file-ocr'],
+  ])('unlinks legacy %s attachments', async (purpose, fileId) => {
+    const deps = makeDeps();
+    const response = makeResponse();
+
+    await createAgentManagementFileHandlers(deps).remove(
+      makeRequest({ id: 'agent-one', fileId }),
+      response,
+    );
+
+    expect(deps.removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'agent-one',
+      files: [{ tool_resource: purpose, file_id: fileId }],
+    });
+    expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it('checks mutation capability before looking up the agent', async () => {
+    const getAgentWithVersionCount = jest.fn().mockResolvedValue(agent);
+    const deps = makeDeps({
+      getAgentWithVersionCount,
+      getRoleByName: jest.fn().mockResolvedValue({
+        permissions: {
+          [PermissionTypes.AGENTS]: {
+            [Permissions.USE]: true,
+            [Permissions.CREATE]: false,
+          },
+        },
+      } as unknown as IRole),
+    });
+    const response = makeResponse();
+
+    await createAgentManagementFileHandlers(deps).remove(
+      makeRequest({ id: 'agent-one', fileId: 'file-shared' }),
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(getAgentWithVersionCount).not.toHaveBeenCalled();
+    expect(deps.removeAgentResourceFiles).not.toHaveBeenCalled();
   });
 
   it('fails closed when the agent is outside the authenticated tenant', async () => {
