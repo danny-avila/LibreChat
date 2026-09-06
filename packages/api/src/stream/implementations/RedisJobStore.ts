@@ -4078,8 +4078,10 @@ export class RedisJobStore implements IJobStoreV2 {
 
     return {
       content: filtered,
-      reconstructedEventCount: chunks.length,
-      durableEventCount: chunkSnapshot.durableEventCount,
+      ...(options?.durableOnly === true && {
+        reconstructedEventCount: chunks.length,
+        durableEventCount: chunkSnapshot.durableEventCount,
+      }),
     };
   }
 

@@ -1522,8 +1522,10 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     return {
       content: state.contentParts,
-      reconstructedEventCount: state.contentParts.length,
-      durableEventCount: state.contentParts.length,
+      ...(_options?.durableOnly === true && {
+        reconstructedEventCount: state.contentParts.length,
+        durableEventCount: state.contentParts.length,
+      }),
     };
   }
 
