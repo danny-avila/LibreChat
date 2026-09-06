@@ -987,23 +987,6 @@ export interface IJobStore {
     durableEventCount?: number;
   } | null>;
 
-  /** Atomically records the only recovery outcome for one overflow identity. */
-  settleEarlyBufferRecovery?(
-    streamId: string,
-    expectedCreatedAt: number,
-    overflowId: string,
-    settlement: Pick<
-      EarlyBufferOverflowState,
-      'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
-    >,
-  ): Promise<boolean>;
-
-  /** Atomically claims the first subscriber for one generation epoch. */
-  claimFirstSubscriber?(
-    streamId: string,
-    expectedCreatedAt: number,
-    attachedAt: number,
-  ): Promise<boolean>;
   getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 
   /** Legacy stores returned `void`; v2 stores return whether the epoch-fenced
@@ -1329,6 +1312,7 @@ export interface IJobStoreV2 extends IJobStore {
     durableEventCount?: number;
   } | null>;
 
+  /** Atomically records the only recovery outcome for one overflow identity. */
   settleEarlyBufferRecovery(
     streamId: string,
     expectedCreatedAt: number,
@@ -1339,6 +1323,7 @@ export interface IJobStoreV2 extends IJobStore {
     >,
   ): Promise<boolean>;
 
+  /** Atomically claims the first subscriber for one generation epoch. */
   claimFirstSubscriber(
     streamId: string,
     expectedCreatedAt: number,
