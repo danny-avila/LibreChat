@@ -367,17 +367,18 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229) {
         return false;
       }
+      /* Before the typed-text branch: the hint advertises Esc in every answer
+         state, and bailing on nonempty text made it work only while the box
+         was empty. Dismiss exits answer mode; the draft stays where it is. */
+      if (e.key === 'Escape') {
+        dismiss();
+        return true;
+      }
       const composerText = e.currentTarget.value;
       if (composerText.trim().length > 0) {
-        // The composer IS the free-form answer box: Enter submits the typed
-        // text (before useTextarea's submitting-lock can swallow it). Not for
-        // a batch, which answers in its card — its Enter belongs to the normal
-        // send path, so leave the event untouched rather than preventDefault
-        // an event we are about to decline.
-        if (e.key === 'Enter' && !e.shiftKey && !batchMode) {
-          e.preventDefault();
-          return submitText(composerText);
-        }
+        /* Typed answers follow the shared composer binding resolver. ChatForm
+           keeps that path live during a single-question pause, so Enter-to-send,
+           its inverse modifier, and a customized submit chord stay consistent. */
         return false;
       }
       /**
@@ -388,10 +389,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
        * corrupt the free-form answer.
        */
       if (options.length === 0 || !popoverVisible) {
-        if (e.key === 'Escape') {
-          dismiss();
-          return true;
-        }
         return false;
       }
       const digit = Number.parseInt(e.key, 10);
@@ -419,22 +416,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         submit();
         return true;
       }
-      if (e.key === 'Escape') {
-        dismiss();
-        return true;
-      }
       return false;
     },
     [
       active,
       options,
       selected,
-      batchMode,
       multiSelect,
       popoverVisible,
       canSubmit,
       submit,
-      submitText,
       toggleChecked,
       dismiss,
       setSelected,

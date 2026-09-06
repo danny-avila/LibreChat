@@ -38,7 +38,6 @@ export default [
       'packages/data-provider/dist/**/*',
       'packages/data-provider/test_bundle/**/*',
       'packages/data-schemas/dist/**/*',
-      'packages/data-schemas/misc/**/*',
       'data-node/**/*',
       'meili_data/**/*',
       '**/node_modules/**/*',
@@ -192,6 +191,14 @@ export default [
       '**/*.spec.tsx',
       '**/setupTests.js',
     ],
+    settings: {
+      jest: {
+        globalAliases: {
+          describe: ['describeIfFerretDB', 'describeLive'],
+          it: ['itIfFerretDB'],
+        },
+      },
+    },
     languageOptions: {
       globals: {
         ...globals.jest,
@@ -200,6 +207,7 @@ export default [
     },
     rules: {
       // TEST
+      'jest/no-standalone-expect': ['error', { additionalTestBlockFunctions: ['itIfFerretDB'] }],
       'react/display-name': 'off',
       'react/prop-types': 'off',
       'jest/no-commented-out-tests': 'off',
@@ -220,10 +228,9 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    // e2e specs are not part of `client/tsconfig.json`'s program, so typed
-    // linting them errors with "file not found in project"; they still get
-    // the non-type-checked recommended rules from the block above.
-    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
+    // Package, E2E, and root integration tests are not part of the client
+    // TypeScript project. They still get the recommended rules above.
+    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*', 'src/tests/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),
@@ -358,7 +365,11 @@ export default [
       ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions: {
-        project: './packages/data-schemas/tsconfig.json',
+        project: [
+          './packages/data-schemas/tsconfig.json',
+          './packages/data-schemas/misc/ferretdb/tsconfig.json',
+          './packages/data-schemas/misc/documentdb/tsconfig.json',
+        ],
       },
     },
     rules: {

@@ -80,6 +80,7 @@ const EditMessage = ({
         /** Carry the edited user message's quoted excerpts forward so the new
          *  turn sends the same referenced context the pills still show. */
         overrideQuotes: message.quotes,
+        overrideReasoning: message.reasoningOverride ?? null,
         addedConvo: getAddedConvo() || undefined,
       },
     );
@@ -117,6 +118,7 @@ const EditMessage = ({
          *  the regenerated response is primed and given the same context as the first. */
         overrideManualSkills: parentMessage.manualSkills,
         overrideQuotes: parentMessage.quotes,
+        overrideReasoning: parentMessage.reasoningOverride ?? null,
         addedConvo: getAddedConvo() || undefined,
       },
     );

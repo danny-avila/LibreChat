@@ -74,20 +74,29 @@ export async function selectModelSpec(page: Page, label: string) {
   await expect(trigger).toContainText(label);
 }
 
-/** Enable the ephemeral Skills capability from the composer tool menu. */
-export async function enableSkills(page: Page) {
-  await page.getByRole('button', { name: 'Tools Options' }).click();
-  await page.getByTestId('tools-menu-skills').click();
+/** Toggle a built-in tool row on from the composer palette and wait for its chip. */
+async function enableBuiltinTool(page: Page, label: string) {
+  await page.getByRole('button', { name: 'Attach and tools' }).click();
+  const row = page
+    .getByRole('dialog', { name: 'Attach and tools' })
+    .getByRole('button', { name: label, exact: true });
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Skills' })).toBeVisible();
+  await expect(
+    page.getByTestId('composer-active-builtin').filter({ hasText: label }),
+  ).toBeVisible();
 }
 
-/** Enable the ephemeral Memory capability from the composer tool menu. */
+/** Enable the ephemeral Skills capability from the composer palette. */
+export async function enableSkills(page: Page) {
+  await enableBuiltinTool(page, 'Skills');
+}
+
+/** Enable the ephemeral Memory capability from the composer palette. */
 export async function enableMemory(page: Page) {
-  await page.getByRole('button', { name: 'Tools Options' }).click();
-  await page.getByTestId('tools-menu-memory').click();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('checkbox', { name: 'Memory' })).toBeVisible();
+  await enableBuiltinTool(page, 'Memory');
 }
 
 /** The conversation messages container. */
