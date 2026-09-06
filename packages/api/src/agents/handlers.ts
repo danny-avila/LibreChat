@@ -32,9 +32,9 @@ import type {
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
-import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { TextContentFragment } from '~/protection';
 import type { ServerRequest } from '~/types';
 import {
