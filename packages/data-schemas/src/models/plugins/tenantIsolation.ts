@@ -29,6 +29,45 @@ warnOnInvalidStrictSetting();
 
 const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
 
+interface TenantWhereDocument {
+  $where?: Record<string, unknown>;
+}
+
+interface TenantWhereState {
+  readonly injectedTenantId: string;
+  readonly hadTenantId: boolean;
+  readonly tenantId: unknown;
+}
+
+const tenantWhereStates = new WeakMap<TenantWhereDocument, TenantWhereState>();
+
+/** Restores the document's own `$where.tenantId` before deriving the next save predicate. */
+function restoreTenantWhere(document: TenantWhereDocument): void {
+  const state = tenantWhereStates.get(document);
+  tenantWhereStates.delete(document);
+  if (!state || document.$where?.tenantId !== state.injectedTenantId) {
+    return;
+  }
+
+  if (state.hadTenantId) {
+    document.$where.tenantId = state.tenantId;
+    return;
+  }
+
+  const { tenantId: _tenantId, ...where } = document.$where;
+  document.$where = Object.keys(where).length > 0 ? where : undefined;
+}
+
+function applyTenantWhere(document: TenantWhereDocument, tenantId: string): void {
+  const where = document.$where;
+  tenantWhereStates.set(document, {
+    injectedTenantId: tenantId,
+    hadTenantId: where != null && Object.prototype.hasOwnProperty.call(where, 'tenantId'),
+    tenantId: where?.tenantId,
+  });
+  document.$where = { ...where, tenantId };
+}
+
 /**
  * Mongoose schema plugin that enforces tenant-level data isolation.
  *
@@ -110,6 +149,8 @@ export function applyTenantIsolation(schema: Schema): void {
 
   schema.pre('save', function () {
     const scope = resolveTenantScope('Save');
+    const document = this as unknown as TenantWhereDocument;
+    restoreTenantWhere(document);
     const carriedTenantId = this.get('tenantId');
     stampTenantOnDocument(scope, this as unknown as TenantDocument);
 
@@ -125,8 +166,7 @@ export function applyTenantIsolation(schema: Schema): void {
      */
     const predicate = tenantWritePredicate(scope, carriedTenantId);
     if (predicate) {
-      const document = this as unknown as { $where?: Record<string, unknown> };
-      document.$where = { ...document.$where, ...predicate };
+      applyTenantWhere(document, predicate.tenantId);
     }
   });
 

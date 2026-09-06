@@ -547,27 +547,34 @@ describe('system scope', () => {
  * refusing writes that were always legitimate.
  */
 describe('save predicate does not break legitimate writes', () => {
-  it('a document that never carried a tenant still saves', async () => {
-    const created = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
-      Widget.create({ name: 'pre-tenancy', parts: [] }),
-    );
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+  ])(
+    'a document with a %s tenant can be claimed by the active tenant',
+    async (_label, tenantId) => {
+      const created = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        Widget.create({ name: 'pre-tenancy', parts: [], tenantId }),
+      );
 
-    await asTenant(async () => {
-      const widget = await Widget.findById(created._id).where({ tenantId: { $exists: false } });
-      expect(widget).toBeNull();
-    });
+      const widget = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        Widget.findById(created._id),
+      );
+      await asTenant(async () => {
+        const scopedWidget = await Widget.findById(created._id);
+        expect(scopedWidget).toBeNull();
+      });
 
-    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
-      const widget = await Widget.findById(created._id);
       widget!.name = 'renamed';
-      await widget!.save();
-    });
+      await asTenant(async () => widget!.save());
 
-    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
-      Widget.findById(created._id).lean(),
-    );
-    expect(fresh!.name).toBe('renamed');
-  });
+      const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        Widget.findById(created._id).lean(),
+      );
+      expect(fresh!.name).toBe('renamed');
+      expect(fresh!.tenantId).toBe(TENANT);
+    },
+  );
 
   it('refuses to save a document belonging to another tenant', async () => {
     const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
@@ -589,22 +596,44 @@ describe('save predicate does not break legitimate writes', () => {
       Widget.findById(foreign._id).lean(),
     );
     expect(fresh!.name).toBe('foreign');
+
+    smuggled!.name = 'system-recovered';
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => smuggled!.save());
+
+    const recovered = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(recovered!.name).toBe('system-recovered');
   });
 
   it('leaves system-scoped saves unfiltered', async () => {
-    const created = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
-      Widget.create({ name: 'sys-target', parts: [] }),
+    const created = await asTenant(async () => Widget.create({ name: 'sys-target', parts: [] }));
+
+    const widget = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id),
+    );
+    widget!.name = 'tenant-renamed';
+    await asTenant(async () => widget!.save());
+
+    const records = await probe.record(() =>
+      tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
+        widget!.name = 'sys-renamed';
+        await widget!.save();
+      }),
     );
 
+    const updates = records.filter((record) => record.commandName === 'update');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].predicate).not.toContain('tenantId');
+
+    widget!.name = 'sys-renamed-again';
     await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
-      const widget = await Widget.findById(created._id);
-      widget!.name = 'sys-renamed';
       await widget!.save();
     });
 
     const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
       Widget.findById(created._id).lean(),
     );
-    expect(fresh!.name).toBe('sys-renamed');
+    expect(fresh!.name).toBe('sys-renamed-again');
   });
 });

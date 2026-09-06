@@ -264,9 +264,10 @@ describe('tenantWritePredicate', () => {
     expect(tenantWritePredicate(SCOPED, 'tenant-b')).toEqual({ tenantId: 'tenant-a' });
   });
 
-  it('yields nothing for a document that never carried a tenant', () => {
+  it('yields nothing for a document without a usable carried tenant', () => {
     expect(tenantWritePredicate(SCOPED, undefined)).toBeUndefined();
     expect(tenantWritePredicate(SCOPED, null)).toBeUndefined();
+    expect(tenantWritePredicate(SCOPED, '')).toBeUndefined();
   });
 
   it('yields nothing for system or unscoped writes', () => {

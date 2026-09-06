@@ -234,7 +234,7 @@ export function tenantWritePredicate(
   scope: TenantScope,
   carriedTenantId: unknown,
 ): { tenantId: string } | undefined {
-  if (scope.kind !== 'scoped' || carriedTenantId == null) {
+  if (scope.kind !== 'scoped' || !carriedTenantId) {
     return undefined;
   }
   return { tenantId: scope.tenantId };
