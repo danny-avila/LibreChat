@@ -165,19 +165,35 @@ const ChatForm = memo(function ChatForm({
     [requiresKey, invalidAssistant],
   );
 
-  const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    /** Check if the device is a touchscreen */
+  /** Skipped on touchscreens so a tap does not raise the keyboard. */
+  const focusTextArea = useCallback(() => {
     if (window.matchMedia?.('(pointer: coarse)').matches) {
-      return;
-    }
-    /** Ariakit records `document.activeElement` at open time as a menu's disclosure. Stealing
-     * focus from a clicked control makes the textarea that disclosure, so the menu can never
-     * close on textarea interaction (#15624). Only empty composer space focuses the textarea. */
-    if (event.target instanceof Element && event.target.closest(interactiveTargetSelector)) {
       return;
     }
     textAreaRef.current?.focus();
   }, []);
+
+  /** Ariakit records `document.activeElement` at open time as a menu's disclosure. Stealing
+   * focus from a clicked control makes the textarea that disclosure, so the menu can never
+   * close on textarea interaction (#15624). Only empty composer space focuses the textarea;
+   * controls that finish a composer action (send, steer, stop) restore it themselves. */
+  const handleContainerClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (event.target instanceof Element && event.target.closest(interactiveTargetSelector)) {
+        return;
+      }
+      focusTextArea();
+    },
+    [focusTextArea],
+  );
+
+  const handleStop = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      handleStopGenerating(event);
+      focusTextArea();
+    },
+    [handleStopGenerating, focusTextArea],
+  );
 
   const handleFocusOrClick = useCallback(() => {
     if (isCollapsed) {
@@ -507,13 +523,16 @@ const ChatForm = memo(function ChatForm({
           control={methods.control}
           steering={steering}
           getText={() => methods.getValues('text')}
-          onConsumed={() => methods.reset()}
+          onConsumed={() => {
+            methods.reset();
+            focusTextArea();
+          }}
           disabled={filesLoading}
         />
       );
     }
     if (showStopButton) {
-      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
+      return <StopButton stop={handleStop} setShowStopButton={setShowStopButton} />;
     }
     return null;
   })();
@@ -531,6 +550,7 @@ const ChatForm = memo(function ChatForm({
   return (
     <form
       onSubmit={methods.handleSubmit((data) => {
+        focusTextArea();
         // Answer mode: composer text answers the paused run instead of
         // starting a new turn (submitText resets the composer itself).
         // Dismissing the popover — or collapsing a batch, which answers in its
@@ -762,7 +782,10 @@ const ChatForm = memo(function ChatForm({
                       <InterruptSteerButton
                         steering={steering}
                         getText={() => methods.getValues('text')}
-                        onConsumed={() => methods.reset()}
+                        onConsumed={() => {
+                          methods.reset();
+                          focusTextArea();
+                        }}
                         disabled={filesLoading}
                       />
                     </div>
