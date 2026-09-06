@@ -972,6 +972,10 @@ const CONTENT_CLEAR_LUA =
   'return 1';
 
 const CHUNKS_READ_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
+  'return redis.call("XRANGE", KEYS[2], "-", "+")';
+
+const CHUNKS_RECOVERY_READ_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {{}, false} end ' +
   'local entries = redis.call("XRANGE", KEYS[2], "-", "+") ' +
   'local durable = redis.call("HGET", KEYS[1], "durableEventCount") ' +
@@ -3920,7 +3924,11 @@ export class RedisJobStore implements IJobStoreV2 {
     }
 
     // 2. Fall back to Redis chunk reconstruction (cross-instance reconnect)
-    const chunkSnapshot = await this.getChunkSnapshot(streamId, expectedCreatedAt);
+    const chunkSnapshot = await this.getChunkSnapshot(
+      streamId,
+      expectedCreatedAt,
+      options?.durableOnly === true,
+    );
     const { chunks } = chunkSnapshot;
     if (chunkSnapshot.durableEventCount === 0) {
       return null;
@@ -4803,20 +4811,36 @@ export class RedisJobStore implements IJobStoreV2 {
   private async getChunkSnapshot(
     streamId: string,
     expectedCreatedAt?: number,
+    includeDurableEventCount = false,
   ): Promise<{ chunks: unknown[]; durableEventCount: number }> {
     /** A same-replica snapshot read must observe the appends this process has
      * already accepted, or a resume during an active window reconstructs
      * without the buffered tail. Cross-replica readers keep today's contract:
      * the log may trail live emission by up to one window. */
     await this.flushCoalescedAppends(streamId);
-    const rawSnapshot = await this.redis.eval(
-      CHUNKS_READ_LUA,
-      2,
-      KEYS.job(streamId),
-      KEYS.chunks(streamId),
-      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
-    );
-    const [rawEntries, rawDurableEventCount] = Array.isArray(rawSnapshot) ? rawSnapshot : [];
+    let rawEntries: unknown;
+    let rawDurableEventCount: unknown;
+    if (includeDurableEventCount) {
+      const rawSnapshot = await this.redis.eval(
+        CHUNKS_RECOVERY_READ_LUA,
+        2,
+        KEYS.job(streamId),
+        KEYS.chunks(streamId),
+        expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      );
+      [rawEntries, rawDurableEventCount] = Array.isArray(rawSnapshot) ? rawSnapshot : [];
+    } else {
+      rawEntries =
+        expectedCreatedAt == null
+          ? await this.redis.xrange(KEYS.chunks(streamId), '-', '+')
+          : await this.redis.eval(
+              CHUNKS_READ_LUA,
+              2,
+              KEYS.job(streamId),
+              KEYS.chunks(streamId),
+              String(expectedCreatedAt),
+            );
+    }
     const entries = Array.isArray(rawEntries) ? (rawEntries as Array<[string, string[]]>) : [];
 
     const chunks = entries
