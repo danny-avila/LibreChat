@@ -1,6 +1,7 @@
 const { nanoid } = require('nanoid');
 const { checkAccess } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { applyCitationLimits, selectFileCitationSources } = require('@librechat/api');
 const {
   Tools,
   Permissions,
@@ -54,10 +55,11 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
       }
     }
 
-    const selectedSources = selectFileCitationSources(
-      toolArtifact[Tools.file_search].sources,
-      appConfig,
-    );
+    const selectedSources = selectFileCitationSources(toolArtifact[Tools.file_search].sources, {
+      maxCitations: appConfig.endpoints?.[EModelEndpoint.agents]?.maxCitations,
+      maxCitationsPerFile: appConfig.endpoints?.[EModelEndpoint.agents]?.maxCitationsPerFile,
+      minRelevanceScore: appConfig.endpoints?.[EModelEndpoint.agents]?.minRelevanceScore,
+    });
     if (selectedSources.length === 0) {
       return null;
     }
@@ -82,42 +84,6 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
     logger.error('[processFileCitations] Error processing file citations:', error);
     return null;
   }
-}
-
-/** Select the passages used by both model anchors and citation attachments. */
-function selectFileCitationSources(sources, appConfig) {
-  const config = appConfig?.endpoints?.[EModelEndpoint.agents];
-  return applyCitationLimits(
-    sources.filter((source) => source.relevance >= (config?.minRelevanceScore ?? 0.45)),
-    config?.maxCitations ?? 30,
-    config?.maxCitationsPerFile ?? 5,
-  );
-}
-
-/**
- * Apply citation limits to sources
- * @param {Array} sources - All sources
- * @param {number} maxCitations - Maximum total citations
- * @param {number} maxCitationsPerFile - Maximum citations per file
- * @returns {Array} Selected sources
- */
-function applyCitationLimits(sources, maxCitations, maxCitationsPerFile) {
-  const byFile = {};
-  sources.forEach((source) => {
-    if (!byFile[source.fileId]) {
-      byFile[source.fileId] = [];
-    }
-    byFile[source.fileId].push(source);
-  });
-
-  const representatives = [];
-  for (const fileId in byFile) {
-    const fileSources = byFile[fileId].sort((a, b) => b.relevance - a.relevance);
-    const selectedFromFile = fileSources.slice(0, maxCitationsPerFile);
-    representatives.push(...selectedFromFile);
-  }
-
-  return representatives.sort((a, b) => b.relevance - a.relevance).slice(0, maxCitations);
 }
 
 /**

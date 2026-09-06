@@ -1,11 +1,14 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { generateShortLivedToken, logAxiosError } = require('@librechat/api');
-const { Tools, EToolResources } = require('librechat-data-provider');
+const {
+  logAxiosError,
+  selectFileCitationSources,
+  generateShortLivedToken,
+} = require('@librechat/api');
+const { Tools, EModelEndpoint, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
-const { selectFileCitationSources } = require('~/server/services/Files/Citations');
 
 const fileSearchJsonSchema = {
   type: 'object',
@@ -187,7 +190,10 @@ const createFileSearchTool = async ({
         pageRelevance: result.page ? { [result.page]: 1.0 - result.distance } : {},
       }));
 
-      const citationSources = fileCitations ? selectFileCitationSources(sources, appConfig) : [];
+      const citationConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+      const citationSources = fileCitations
+        ? selectFileCitationSources(sources, citationConfig)
+        : [];
       const formattedString = formattedResults
         .map((result, index) => {
           const citationIndex = citationSources.indexOf(sources[index]);
