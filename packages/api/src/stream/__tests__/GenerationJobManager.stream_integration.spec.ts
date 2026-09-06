@@ -1683,6 +1683,12 @@ describe('GenerationJobManager Integration Tests', () => {
         const stats = manager.getRuntimeStats();
         expect(stats.earlyBufferedEvents).toBe(0);
         expect(stats.earlyBufferedBytes).toBe(0);
+        const runtime = (
+          manager as unknown as {
+            runtimeState: Map<string, { earlyDurableAppendPromises: Promise<boolean>[] }>;
+          }
+        ).runtimeState.get(streamId);
+        expect(runtime?.earlyDurableAppendPromises).toHaveLength(0);
 
         await manager.destroy();
       },
@@ -1819,6 +1825,11 @@ describe('GenerationJobManager Integration Tests', () => {
           firstSubscriberAttachedAt: expect.any(Number),
         });
         expect(retained?.earlyBufferRecovery?.outcome).toBeUndefined();
+        await expect(
+          manager
+            .getJobStore()
+            .getContentParts(streamId, job.createdAt, { includeRecoveryStats: true }),
+        ).resolves.toMatchObject({ recoveryStats: { eventCount: 5 } });
 
         await manager.destroy();
       },

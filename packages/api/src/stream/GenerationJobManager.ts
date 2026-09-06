@@ -5760,6 +5760,33 @@ class GenerationJobManagerClass {
     }
     const activeOverflowRecovery = overflowRecovery?.outcome == null ? overflowRecovery : undefined;
 
+    /** The marker may have been installed while the barrier above was pending.
+     * Claim that newly observed recovery before deciding it was unattached. */
+    if (activeOverflowRecovery && !runtime.everHadSubscriber) {
+      const claimedAt = Date.now();
+      try {
+        const claimed = await this.jobStore.claimFirstSubscriberAttachment(
+          streamId,
+          runtime.createdAt,
+          claimedAt,
+        );
+        if (claimed) {
+          runtime.firstAttachmentClaimedAt = claimedAt;
+          runtime.everHadSubscriber = true;
+        } else {
+          const durableJob = await this.jobStore.getJob(streamId);
+          runtime.everHadSubscriber = durableJob?.firstSubscriberAttachedAt != null;
+        }
+      } catch (error) {
+        logger.warn('[GenerationRecovery] Failed to claim newly observed recovery attachment', {
+          correlationId: activeOverflowRecovery.correlationId,
+          error,
+        });
+        recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+    }
+
     if (activeOverflowRecovery && !runtime.everHadSubscriber) {
       const durableOutcome = await this.settleEarlyBufferRecovery(
         streamId,
@@ -6467,7 +6494,10 @@ class GenerationJobManagerClass {
       // The SSE event structure is { event: string, data: unknown, ... }
       // The aggregator expects { event: string, data: unknown } where data is the payload
       if (eventType && eventData !== undefined) {
-        const trackRecoverySequence = !runtime.hasSubscriber && runtime.earlyBufferRecovery == null;
+        const trackRecoverySequence =
+          !runtime.everHadSubscriber &&
+          !runtime.hasSubscriber &&
+          runtime.earlyBufferRecovery == null;
         const recoverySequence = trackRecoverySequence
           ? ++runtime.durableReplaySequence
           : undefined;

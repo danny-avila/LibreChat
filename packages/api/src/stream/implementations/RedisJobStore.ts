@@ -140,6 +140,11 @@ const JOB_CAS_LUA =
   'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
   'local ttl = tonumber(ARGV[5]) ' +
   'local terminal = ARGV[6] == "1" ' +
+  'local preserveRecoverySources = false ' +
+  'if terminal and redis.call("HGET", KEYS[1], "firstSubscriberAttachedAt") then ' +
+  'local recoveryRaw = redis.call("HGET", KEYS[1], "earlyBufferRecovery") ' +
+  'if recoveryRaw then local recoveryOk, recovery = pcall(cjson.decode, recoveryRaw) ' +
+  'preserveRecoverySources = not recoveryOk or type(recovery) ~= "table" or recovery.outcome == nil end end ' +
   'local chunksTtl = tonumber(ARGV[7]) ' +
   'local runStepsTtl = tonumber(ARGV[8]) ' +
   'local parkedTtl = tonumber(ARGV[9]) ' +
@@ -238,8 +243,10 @@ const JOB_CAS_LUA =
   'redis.call("SET", KEYS[7], cjson.encode(parked), "EX", parkedTtl) ' +
   'end ' +
   'redis.call("DEL", KEYS[5], KEYS[6]) ' +
-  'if chunksTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], chunksTtl) end ' +
-  'if runStepsTtl == 0 then redis.call("DEL", KEYS[4]) else redis.call("EXPIRE", KEYS[4], runStepsTtl) end ' +
+  'if preserveRecoverySources then redis.call("EXPIRE", KEYS[3], ttl) ' +
+  'elseif chunksTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], chunksTtl) end ' +
+  'if preserveRecoverySources then redis.call("EXPIRE", KEYS[4], ttl) ' +
+  'elseif runStepsTtl == 0 then redis.call("DEL", KEYS[4]) else redis.call("EXPIRE", KEYS[4], runStepsTtl) end ' +
   'if ARGV[12] == "1" then if #items == 0 then return "[]" end return cjson.encode(items) end ' +
   'else ' +
   'redis.call("EXPIRE", KEYS[3], ttl) ' +
