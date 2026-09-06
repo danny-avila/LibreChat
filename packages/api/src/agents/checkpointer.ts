@@ -817,27 +817,30 @@ const CHECKPOINT_INDEX_BUILD_DEADLINE_MS = 120_000;
  * TTL index missing — checkpoints then never expire. `setup()` is idempotent (an
  * index that already exists is a no-op), so re-running it lets one more build
  * through per pass until every index exists. Every other error is returned for
- * the caller to log, exactly as `setup()` reports it.
+ * the caller to log, exactly as `setup()` reports it — including those reported
+ * beside a conflict that outlasts the deadline.
  */
 export async function setupCheckpointIndexes(
   saver: Pick<MongoDBSaver, 'setup'>,
   options: IndexBuildOptions = {},
 ): Promise<Error[]> {
+  let companions: Error[] = [];
   try {
     return await buildIndexWithRetry(
       async () => {
         const errors = await saver.setup();
         const blocked = errors.find(isIndexBuildInProgress);
-        if (blocked != null) {
-          throw blocked;
+        if (blocked == null) {
+          return errors;
         }
-        return errors;
+        companions = errors.filter((error) => !isIndexBuildInProgress(error));
+        throw blocked;
       },
       'MongoDBSaver.setup()',
       { peerBuildDeadlineMs: CHECKPOINT_INDEX_BUILD_DEADLINE_MS, ...options },
     );
   } catch (error) {
-    return [error instanceof Error ? error : new Error(String(error))];
+    return [...companions, error instanceof Error ? error : new Error(String(error))];
   }
 }
 

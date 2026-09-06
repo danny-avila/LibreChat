@@ -1321,4 +1321,31 @@ describe('setupCheckpointIndexes on a single-index-build engine (mongodb-memory-
       restore();
     }
   });
+
+  it('keeps the failures reported beside a conflict that outlasts the deadline', async () => {
+    const restore = patchCreateIndex(async ({ collectionName }) => {
+      if (collectionName === CHECKPOINTS) {
+        throw indexBuildInProgressError();
+      }
+      throw new mongoose.mongo.MongoServerError({
+        ok: 0,
+        code: 67,
+        errmsg: 'CannotCreateIndex: bad index spec',
+      });
+    });
+    try {
+      const errors = await setupCheckpointIndexes(makeSaver(), {
+        peerBuildPollMs: 1,
+        peerBuildDeadlineMs: 20,
+      });
+
+      expect(errors.map((error) => (error as { code?: number }).code).sort()).toEqual([
+        INDEX_BUILD_ALREADY_IN_PROGRESS,
+        67,
+        67,
+      ]);
+    } finally {
+      restore();
+    }
+  });
 });

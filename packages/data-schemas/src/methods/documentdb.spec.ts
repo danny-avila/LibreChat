@@ -401,8 +401,17 @@ function propertyName(property: ts.ObjectLiteralElementLike): string | undefined
   return name.text;
 }
 
+/** Array methods whose object arguments become elements of the receiver. */
+const ARRAY_APPENDERS = new Set(['push', 'unshift', 'concat']);
+
 function aliasStageOffenses(sourceFile: ts.SourceFile, element: ts.Expression): string[] {
   const stage = unwrapExpression(element);
+  if (ts.isConditionalExpression(stage)) {
+    return [
+      ...aliasStageOffenses(sourceFile, stage.whenTrue),
+      ...aliasStageOffenses(sourceFile, stage.whenFalse),
+    ];
+  }
   if (!ts.isObjectLiteralExpression(stage)) {
     return [];
   }
@@ -411,14 +420,32 @@ function aliasStageOffenses(sourceFile: ts.SourceFile, element: ts.Expression): 
     .map((property) => offenseAt(sourceFile, property, `${propertyName(property)} stage`));
 }
 
-/** Reports `$set` / `$unset` objects that sit directly inside an array literal —
- * the pipeline-stage position — wherever the array is built. */
+/** The expressions that become elements of an array: the elements of a literal,
+ * and the arguments of `push` / `unshift` / `concat`, which is how a pipeline
+ * is assembled dynamically. */
+function arrayElements(node: ts.Node): readonly ts.Expression[] {
+  if (ts.isArrayLiteralExpression(node)) {
+    return node.elements;
+  }
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    ARRAY_APPENDERS.has(node.expression.name.text)
+  ) {
+    return node.arguments;
+  }
+  return [];
+}
+
+/** Reports `$set` / `$unset` objects in element position — inside an array
+ * literal or appended to one, on either side of a conditional — wherever the
+ * pipeline is assembled. */
 function findAliasStages(sourceFile: ts.SourceFile): string[] {
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isArrayLiteralExpression(node)) {
-      offenses.push(...node.elements.flatMap((element) => aliasStageOffenses(sourceFile, element)));
-    }
+    offenses.push(
+      ...arrayElements(node).flatMap((element) => aliasStageOffenses(sourceFile, element)),
+    );
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
@@ -609,6 +636,16 @@ describe('Amazon DocumentDB compatibility', () => {
       ['stage after a match', `Model.aggregate([{ $match: {} }, { $set: { a: 1 } }]);`],
       ['unset stage held in a variable', `const stages = [{ $unset: 'a' }];`],
       ['stage appended to a spread scope', `Model.aggregate([...scope, { $set: { a: 1 } }]);`],
+      [
+        'stage pushed onto a pipeline',
+        `const stages = [];\nstages.push({ $match: {} }, { $set: { a: 1 } });\nModel.aggregate(stages);`,
+      ],
+      ['stage prepended with unshift', `stages.unshift({ $unset: 'a' });`],
+      ['stage concatenated onto a base', `const stages = base.concat({ $set: { a: 1 } });`],
+      [
+        'stage chosen by a conditional element',
+        `Model.aggregate([...scope, flag ? { $set: { a: 1 } } : { $addFields: { a: 1 } }]);`,
+      ],
     ])('flags an alias stage: %s', (_shape, source) => {
       expect(findAliasStages(parse('fixture.ts', source))).not.toEqual([]);
     });
@@ -620,6 +657,10 @@ describe('Amazon DocumentDB compatibility', () => {
         `await Model.bulkWrite([{ updateOne: { filter, update: { $set: { a: 1 } } } }]);`,
       ],
       ['addFields stage', `Model.aggregate([{ $addFields: { a: 1 } }]);`],
+      [
+        'bulk operation pushed onto an operations list',
+        `const operations = [];\noperations.push({ updateOne: { filter, update: { $set: { a: 1 } } } });`,
+      ],
     ])('accepts a supported $set position: %s', (_shape, source) => {
       expect(findAliasStages(parse('fixture.ts', source))).toEqual([]);
     });
