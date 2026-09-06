@@ -149,11 +149,15 @@ function getToolMeta(
      *  folds that marker in as `extraError`, so without it here the group
      *  reported no failed action beside a card showing failure. Correlated the
      *  same way the child is, since provider tool-call ids repeat across agents
-     *  in handoff responses. */
+     *  and execution steps in handoff responses. */
     const backgroundFailed =
       parseBackgroundHandle(tc.output) != null &&
       splitBackgroundAttachments(
-        filterAttachmentsForPart(attachmentsByToolCallId?.[tc.id ?? ''], tc.agentId),
+        filterAttachmentsForPart(
+          attachmentsByToolCallId?.[tc.id ?? ''],
+          tc.agentId,
+          toolCall.stepId,
+        ),
         tc.id,
       ).backgroundStatus === 'error';
     return {

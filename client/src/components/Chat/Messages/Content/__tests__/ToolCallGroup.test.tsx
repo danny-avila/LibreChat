@@ -824,6 +824,54 @@ describe('ToolCallGroup image hoisting', () => {
     ).toBeInTheDocument();
   });
 
+  it('counts background failures per step when provider call IDs repeat', () => {
+    const executions = [
+      { stepId: 'step-success', status: 'completed' },
+      { stepId: 'step-failure', status: 'error' },
+    ];
+    const groupAttachments = executions.map(({ stepId, status }) => ({
+      type: 'background_task_status',
+      messageId: 'message-1',
+      toolCallId: 'call_0',
+      agentId: 'agent-a',
+      stepId,
+      status,
+    })) as unknown as TAttachment[];
+    const props = {
+      ...baseProps,
+      groupAttachments,
+      parts: executions.map(({ stepId }, idx) => ({
+        idx,
+        part: {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: {
+            id: 'call_0',
+            name: 'execute_code',
+            args: '{}',
+            agentId: 'agent-a',
+            stepId,
+            runStepStatus: 'completed',
+            output: JSON.stringify({
+              background_task_id: stepId,
+              tool: 'execute_code',
+              status: 'running',
+              message: 'Use check_background_task to poll.',
+            }),
+          },
+        } as unknown as TMessageContentParts,
+      })),
+    };
+    const { rerender } = renderGroup(props);
+    expect(screen.getByRole('button', { name: /· 1 failed$/ })).toBeInTheDocument();
+
+    rerender(
+      <RecoilRoot>
+        <ToolCallGroup {...props} groupAttachments={[...groupAttachments].reverse()} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByRole('button', { name: /· 1 failed$/ })).toBeInTheDocument();
+  });
+
   it('honors a terminal failed run step whose output reads as benign', () => {
     const closedFailure = {
       type: ContentTypes.TOOL_CALL,
