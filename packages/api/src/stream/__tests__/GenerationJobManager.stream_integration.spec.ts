@@ -2301,7 +2301,7 @@ describe('GenerationJobManager Integration Tests', () => {
         expect(failedJob?.metadata.earlyBufferOverflow).toMatchObject({
           recoveryMethod: 'redis',
           recoveryOutcome: 'failed',
-          recoveryFailureReason: 'durable_state_missing',
+          recoveryFailureReason: 'durable_frontier_gap',
         });
 
         await Promise.all([owner.destroy(), replica.destroy()]);
