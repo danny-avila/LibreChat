@@ -1006,6 +1006,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
             type: Tools.web_search,
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
+            agentId: metadata.agent_id,
             conversationId: metadata.thread_id,
             [Tools.web_search]: { ...output.artifact[Tools.web_search] },
           };

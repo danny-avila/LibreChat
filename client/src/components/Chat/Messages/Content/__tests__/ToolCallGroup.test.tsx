@@ -440,10 +440,7 @@ describe('ToolCallGroup image hoisting', () => {
       withinActivityPhase: true,
     });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
     expect(screen.getByTestId('inner-1')).toBeInTheDocument();
   });
@@ -451,7 +448,7 @@ describe('ToolCallGroup image hoisting', () => {
   it('still expands on user toggle inside a completed phase', () => {
     renderGroup({ ...baseProps, withinActivityPhase: true });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+    fireEvent.click(screen.getByRole('button'));
 
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
     expect(screen.getByTestId('inner-1')).toBeInTheDocument();

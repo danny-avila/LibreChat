@@ -5,7 +5,13 @@ import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import { Button, disclosureChevronVariants } from '@librechat/client';
 import type { MouseEvent, FocusEvent } from 'react';
-import { ThinkingContent, ThinkingButton, ThinkingLabel, FloatingThinkingBar, useInViewport } from './Thinking';
+import {
+  ThinkingContent,
+  ThinkingButton,
+  ThinkingLabel,
+  FloatingThinkingBar,
+  useInViewport,
+} from './Thinking';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import CopyButton from '~/components/Messages/Content/CopyButton';

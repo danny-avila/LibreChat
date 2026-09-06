@@ -20,7 +20,6 @@ import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { TOOL_ROW_CLASSES } from './rows';
-import { logger } from '~/utils';
 import { ToolAuthWarning } from './auth';
 import store from '~/store';
 
@@ -216,14 +215,11 @@ export default function ToolCall({
 
   const handleToggleInfo = useCallback(() => {
     mountBody();
-    setShowInfo((prev) => {
-      const next = !prev;
-      if (next) {
-        onExpand?.();
-      }
-      return next;
-    });
-  }, [mountBody, onExpand]);
+    if (!showInfo) {
+      onExpand?.();
+    }
+    setShowInfo((prev) => !prev);
+  }, [mountBody, onExpand, showInfo]);
 
   const subtitle = useMemo(() => {
     if (isMCPToolCall && mcpServerName) {

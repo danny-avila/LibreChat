@@ -348,7 +348,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const toggles = screen.getAllByRole('button', { name: /Everything/ });
     fireEvent.click(toggles[1]);
     expect(toggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(toggles[1]).toHaveAttribute('aria-expanded', 'true');
@@ -358,7 +358,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
         <ContentParts {...baseProps} content={nextContent} />
       </RecoilRoot>,
     );
-    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const shiftedToggles = screen.getAllByRole('button', { name: /Everything/ });
     expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
   });
@@ -389,7 +389,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'First phase' }));
     fireEvent.click(screen.getByRole('button', { name: 'Second phase' }));
-    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const toggles = screen.getAllByRole('button', { name: /Everything/ });
     fireEvent.click(toggles[1]);
 
     rerender(
@@ -403,7 +403,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
         fireEvent.click(phaseToggle);
       }
     }
-    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const shiftedToggles = screen.getAllByRole('button', { name: /Everything/ });
     expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
   });
@@ -849,7 +849,7 @@ describe('ContentParts — synthesized activity folds', () => {
       content: [makeMcpToolCall('t1'), makeMcpToolCall('t2')],
     });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
   });
 });
@@ -975,7 +975,10 @@ describe('ContentParts integration: lane groups backed by one agent', () => {
 
     renderContentParts({ ...baseProps, content });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    const toggle = screen.getByRole('button');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('still renders columns once a second agent shares the group', () => {

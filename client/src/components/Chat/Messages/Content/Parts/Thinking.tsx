@@ -9,7 +9,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { useAtomValue } from 'jotai';
-import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
+import { Lightbulb, ChevronDown } from 'lucide-react';
 import { Button, MorphIcon, TooltipAnchor } from '@librechat/client';
 import { ChevronUp as ChevronUpNode, ChevronDown as ChevronDownNode } from 'lucide';
 import type { FocusEvent, FC } from 'react';
@@ -255,24 +255,21 @@ export const FloatingThinkingBar = memo(
         <TooltipAnchor
           description={collapseTooltip}
           render={
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               type="button"
               tabIndex={isVisible ? 0 : -1}
               onClick={onClick}
               aria-label={collapseTooltip}
               aria-expanded={isExpanded}
               aria-controls={contentId}
-              className={cn(
-                'flex items-center justify-center rounded-lg p-1.5 text-text-secondary',
-                'hover:bg-surface-hover hover:text-text-primary',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-              )}
             >
               <MorphIcon
                 icon={isExpanded ? ChevronUpNode : ChevronDownNode}
                 className="h-[18px] w-[18px]"
               />
-            </button>
+            </Button>
           }
         />
         {content && (

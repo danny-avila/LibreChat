@@ -60,4 +60,35 @@ describe('createOnSearchResults', () => {
       ]);
     }
   });
+
+  it('keeps repeated search calls owned by their handoff agent through highlights', () => {
+    const snapshots = [];
+    const res = {
+      headersSent: true,
+      write: (event) => snapshots.push(JSON.parse(event.split('\ndata: ')[1])),
+    };
+    for (const agentId of ['agent-a', 'agent-b']) {
+      const callbacks = createOnSearchResults(res);
+      callbacks.onSearchResults(
+        {
+          success: true,
+          data: { organic: [{ link: `https://example.com/${agentId}` }], topStories: [] },
+        },
+        {
+          metadata: { agent_id: agentId, run_id: 'response-1', thread_id: 'conversation-1' },
+          toolCall: { id: 'call_0', name: 'web_search', turn: 0 },
+        },
+      );
+      callbacks.onGetHighlights(`https://example.com/${agentId}`);
+    }
+
+    expect(snapshots.map(({ agentId }) => agentId)).toEqual([
+      'agent-a',
+      'agent-a',
+      'agent-b',
+      'agent-b',
+    ]);
+    expect(snapshots[1].web_search.organic[0].processed).toBe(true);
+    expect(snapshots[3].web_search.organic[0].processed).toBe(true);
+  });
 });
