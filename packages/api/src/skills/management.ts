@@ -231,11 +231,13 @@ export function createSkillManagementHandlers(
         if (!allowed) return sendError(res, 'permission_denied');
         if (permission !== undefined) {
           if (!idSchema.safeParse(req.params.id).success) return sendError(res, 'not_found');
-          const skill = await deps.getSkillById(req.params.id);
+          const [skill, canManage] = await Promise.all([
+            deps.getSkillById(req.params.id),
+            canManageSkills(req),
+          ]);
           const deployment = getDeploymentSkillById(req.params.id);
           if (!skill || (!deployment && skill.tenantId !== req.user.tenantId))
             return sendError(res, 'not_found');
-          const canManage = await canManageSkills(req);
           if (
             !deployment &&
             !canManage &&

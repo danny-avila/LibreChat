@@ -33,6 +33,7 @@ let uploadLimiter: jest.MockedFunction<RequestHandler>;
 let accessible: jest.Mock;
 let publiclyAccessible: jest.Mock;
 let publicStatus: jest.Mock;
+let capabilityCheck: jest.Mock;
 let originalStrict: string | undefined;
 const inTenant = <T>(fn: () => T) => tenantStorage.run({ tenantId }, fn);
 
@@ -79,6 +80,7 @@ beforeEach(async () => {
   accessible = jest.fn(async () => (allowView ? [new Types.ObjectId(skillId)] : []));
   publiclyAccessible = jest.fn(async () => []);
   publicStatus = jest.fn(async () => false);
+  capabilityCheck = jest.fn(async () => canManage);
   const handlers = createSkillsHandlers({
     ...db,
     findAccessibleResources: accessible,
@@ -105,7 +107,7 @@ beforeEach(async () => {
     checkPermission: async ({ requiredPermission }) =>
       requiredPermission === PermissionBits.EDIT ? allowEdit : allowView,
     saveFile,
-    hasCapability: async () => canManage,
+    hasCapability: capabilityCheck,
   });
   app = express();
   app.use(express.json());
@@ -436,4 +438,29 @@ it('fails closed when the upload limiter errors', async () => {
   uploadLimiter.mockImplementationOnce((_req, _res, next) => next(new Error('limiter failure')));
   await request(app).put(`/skills/${skillId}/files/note.txt`).send({ content: 'text' }).expect(500);
   expect(saveFile).not.toHaveBeenCalled();
+});
+
+it('starts independent capability checks while waiting for the tenant-scoped Skill', async () => {
+  let releaseSkill!: (value: null) => void;
+  let capabilityStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    capabilityStarted = resolve;
+  });
+  readSkill.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseSkill = resolve;
+      }),
+  );
+  capabilityCheck.mockImplementationOnce(async () => {
+    capabilityStarted();
+    return true;
+  });
+  const response = request(app)
+    .get(`/skills/${skillId}`)
+    .then((result) => result);
+  await started;
+  expect(readSkill).toHaveBeenCalledTimes(1);
+  releaseSkill(null);
+  expect((await response).status).toBe(404);
 });
