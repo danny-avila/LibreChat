@@ -16,14 +16,22 @@ const createStorage = ({ uniqueTempPath = false } = {}) =>
     destination: function (req, file, cb) {
       const appConfig = req.config;
       const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
-      if (!fs.existsSync(outputPath)) {
-        fs.mkdirSync(outputPath, { recursive: true });
+      try {
+        if (!fs.existsSync(outputPath)) {
+          fs.mkdirSync(outputPath, { recursive: true });
+        }
+      } catch {
+        return cb(createCustomError(500, 'Failed to prepare upload directory'));
       }
       cb(null, outputPath);
     },
     filename: function (req, file, cb) {
       req.file_id = crypto.randomUUID();
-      file.originalname = decodeURIComponent(file.originalname);
+      try {
+        file.originalname = decodeURIComponent(file.originalname);
+      } catch {
+        return cb(createCustomError(400, 'Invalid filename encoding'));
+      }
       const sanitizedFilename = sanitizeFilename(file.originalname);
       const stagedFilename = uniqueTempPath
         ? sanitizeFilename(`${req.file_id}-${sanitizedFilename}`)

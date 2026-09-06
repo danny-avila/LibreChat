@@ -4,6 +4,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const multer = require('multer');
+const express = require('express');
+const request = require('supertest');
+const { ErrorController } = require('@librechat/api');
 const {
   createMulterInstance,
   createStorage,
@@ -119,6 +123,19 @@ describe('Multer Configuration', () => {
         });
 
         storage.getFilename(mockReq, encodedFile, cb);
+      });
+
+      it('returns a controlled error for malformed URI encoding', (done) => {
+        const malformedFile = { ...mockFile, originalname: '%.json' };
+
+        storage.getFilename(mockReq, malformedFile, (err, filename) => {
+          expect(err).toMatchObject({
+            statusCode: 400,
+            body: { message: 'Invalid filename encoding' },
+          });
+          expect(filename).toBeUndefined();
+          done();
+        });
       });
 
       it('should call real sanitizeFilename with properly encoded filename', (done) => {
@@ -573,15 +590,56 @@ describe('Multer Configuration', () => {
       }).not.toThrow();
     });
 
-    it('should handle file system errors when directory creation fails', () => {
-      // Test with a non-existent parent directory to simulate fs issues
-      const invalidPath = '/nonexistent/path/that/should/not/exist';
-      mockReq.config.paths.uploads = invalidPath;
+    it('should report file system errors through the storage callback', (done) => {
+      const mkdir = jest.spyOn(fs, 'mkdirSync').mockImplementationOnce(() => {
+        throw new Error('permission denied');
+      });
 
-      // The current implementation doesn't catch errors, so they're thrown synchronously
-      expect(() => {
-        storage.getDestination(mockReq, mockFile, jest.fn());
-      }).toThrow();
+      storage.getDestination(mockReq, mockFile, (err, destination) => {
+        expect(err).toMatchObject({
+          statusCode: 500,
+          body: { message: 'Failed to prepare upload directory' },
+        });
+        expect(destination).toBeUndefined();
+        mkdir.mockRestore();
+        done();
+      });
+    });
+
+    it('keeps the upload server alive after rejecting a malformed filename', async () => {
+      const app = express();
+      const upload = multer({ storage });
+      app.use((req, res, next) => {
+        req.user = mockReq.user;
+        req.config = mockReq.config;
+        next();
+      });
+      app.post('/upload', upload.single('file'), (req, res) => {
+        res.status(201).json({
+          originalname: req.file.originalname,
+          filename: req.file.filename,
+        });
+      });
+      app.use(ErrorController);
+
+      const malformed = await request(app).post('/upload').attach('file', Buffer.from('{}'), {
+        filename: '%.json',
+        contentType: 'application/json',
+      });
+
+      expect(malformed.status).toBe(400);
+      expect(malformed.body).toEqual({ message: 'Invalid filename encoding' });
+      const outputPath = path.join(tempDir, 'temp', 'test-user-123');
+      expect(fs.readdirSync(outputPath)).toEqual([]);
+
+      const healthy = await request(app).post('/upload').attach('file', Buffer.from('{}'), {
+        filename: 'healthy%20upload.json',
+        contentType: 'application/json',
+      });
+
+      expect(healthy.status).toBe(201);
+      expect(healthy.body.originalname).toBe('healthy upload.json');
+      expect(fs.existsSync(path.join(outputPath, healthy.body.filename))).toBe(true);
     });
 
     it('should handle malformed filenames with real sanitization', (done) => {
