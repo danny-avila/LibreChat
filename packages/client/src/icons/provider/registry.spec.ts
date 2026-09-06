@@ -3,7 +3,7 @@ import path from 'path';
 import { ProviderId } from 'librechat-data-provider';
 import { getProviderIconDef, providerIcons } from './registry';
 
-const packageRoot = __dirname;
+const packageAssets = path.join(__dirname, 'assets');
 
 describe('providerIcons', () => {
   it('has an entry for every ProviderId', () => {
@@ -16,7 +16,11 @@ describe('providerIcons', () => {
   it('points every asset entry at a file shipped with the package', () => {
     for (const def of Object.values(providerIcons)) {
       if (def.art.kind === 'asset') {
-        expect(fs.existsSync(path.resolve(packageRoot, def.art.src))).toBe(true);
+        const assetPath = path.resolve(__dirname, def.art.src);
+        const relativePath = path.relative(packageAssets, assetPath);
+        expect(path.isAbsolute(def.art.src)).toBe(false);
+        expect(relativePath.split(path.sep)).not.toContain('..');
+        expect(fs.statSync(assetPath).isFile()).toBe(true);
       }
     }
   });
