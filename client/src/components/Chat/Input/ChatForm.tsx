@@ -77,6 +77,9 @@ interface ChatFormProps {
   stopGenerating: () => void;
 }
 
+const interactiveTargetSelector =
+  'button, a, input, select, textarea, label, [role="button"], [role="menu"], [role="menuitem"]';
+
 const ChatForm = memo(function ChatForm({
   index,
   placeholder,
@@ -163,16 +166,14 @@ const ChatForm = memo(function ChatForm({
   );
 
   const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (
-      event.target instanceof Element &&
-      event.target.closest(
-        'button, a, input, select, textarea, [role="button"], [role="menuitem"], [role="menu"]',
-      )
-    ) {
-      return;
-    }
     /** Check if the device is a touchscreen */
     if (window.matchMedia?.('(pointer: coarse)').matches) {
+      return;
+    }
+    /** Ariakit records `document.activeElement` at open time as a menu's disclosure. Stealing
+     * focus from a clicked control makes the textarea that disclosure, so the menu can never
+     * close on textarea interaction (#15624). Only empty composer space focuses the textarea. */
+    if (event.target instanceof Element && event.target.closest(interactiveTargetSelector)) {
       return;
     }
     textAreaRef.current?.focus();
@@ -600,6 +601,7 @@ const ChatForm = memo(function ChatForm({
               agentId={conversation?.agent_id}
             />
             <div
+              data-testid="composer-surface"
               onClick={handleContainerClick}
               className={cn(
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',

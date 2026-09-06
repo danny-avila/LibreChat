@@ -189,14 +189,27 @@ describe('ChatForm attachments', () => {
     expect(await screen.findByRole('menu', { name: 'Attach File Options' })).toBeInTheDocument();
   }, 20000);
 
+  test('closes an open menu when the textarea is clicked', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.click(screen.getByRole('button', { name: 'Attach File Options' }));
+    expect(await screen.findByRole('menu', { name: 'Attach File Options' })).toBeInTheDocument();
+
+    await userEvent.click(textarea);
+
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'Attach File Options' })).not.toBeInTheDocument(),
+    );
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
   test('focuses the textarea when clicking empty composer space', async () => {
     renderComposer();
     const textarea = await screen.findByTestId('text-input');
-    const surface = textarea.closest('.rounded-t-3xl');
-    expect(surface).not.toBeNull();
+    const surface = screen.getByTestId('composer-surface');
     const focus = jest.spyOn(textarea, 'focus');
 
-    fireEvent.click(surface as HTMLElement);
+    fireEvent.click(surface);
 
     expect(focus).toHaveBeenCalledTimes(1);
     expect(textarea).toHaveFocus();
