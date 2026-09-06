@@ -1906,11 +1906,19 @@ describe('GenerationJobManager Integration Tests', () => {
         [{ type: 'text', text: 'complete snapshot' }] as never,
         createdAt,
       );
+      const getRuntimeSpy = jest.spyOn(
+        manager as unknown as {
+          getOrCreateRuntimeState: (...args: unknown[]) => Promise<unknown>;
+        },
+        'getOrCreateRuntimeState',
+      );
 
       await expect(
         manager.getResumeState(streamId, createdAt, { validateEarlyBufferRecovery: true }),
       ).resolves.toMatchObject({ aggregatedContent: expect.any(Array) });
+      expect(getRuntimeSpy).toHaveBeenCalledWith(streamId, expect.objectContaining({ createdAt }));
       expect((await manager.getJob(streamId))?.metadata.earlyBufferOverflow).toMatchObject({
+        durableEvents: 4,
         recoveryOutcome: 'success',
       });
 
@@ -1978,6 +1986,56 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await expect(manager.completeJob(streamId)).resolves.toBe(true);
       expect((await manager.getJob(streamId))?.status).toBe('complete');
+      expect((await manager.getJob(streamId))?.metadata.earlyBufferOverflow).not.toHaveProperty(
+        'recoveryOutcome',
+      );
+
+      await manager.destroy();
+    });
+
+    test('removes in-memory capture handlers when another attachment wins recovery', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-recovery-loser-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const bigText = 'l'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      const originalSettle = jobStore.settleEarlyBufferRecovery.bind(jobStore);
+      jest
+        .spyOn(jobStore, 'settleEarlyBufferRecovery')
+        .mockImplementationOnce(async (id, createdAt, recoveryId) => {
+          await originalSettle(id, createdAt, recoveryId, {
+            recoveryMethod: 'snapshot',
+            recoveryOutcome: 'not_required',
+            recoveryCompletedAt: Date.now(),
+          });
+          return false;
+        });
+
+      const result = await manager.subscribeWithResume(streamId, () => {});
+
+      expect(result.subscription).toBeNull();
+      const runtime = (
+        manager as unknown as {
+          runtimeState: Map<string, { resumeCaptureHandlers: Set<unknown> }>;
+        }
+      ).runtimeState.get(streamId);
+      expect(runtime?.resumeCaptureHandlers.size).toBe(0);
 
       await manager.destroy();
     });

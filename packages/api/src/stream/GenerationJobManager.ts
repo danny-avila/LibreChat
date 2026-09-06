@@ -4053,40 +4053,44 @@ class GenerationJobManagerClass {
         ? runtime?.earlyBufferOverflow
         : undefined;
     if (runtime != null && unresolvedOverflow != null) {
-      const remoteSubscriberActive =
-        persistedLifecycle?.createdAt === createdAt
-          ? await this.jobStore
-              .hasActiveSubscriber(streamId, createdAt, Date.now())
-              .catch((leaseError) => {
-                logger.error(
-                  '[GenerationJobManager] Failed to read active subscriber leases',
-                  leaseError,
-                );
-                return true;
-              })
-          : false;
-      const subscriberActive = runtime.hasSubscriber || remoteSubscriberActive;
-      let unobservedFailureReason: EarlyBufferRecoveryFailureReason | undefined;
-      if (!subscriberActive) {
-        unobservedFailureReason = generationHadSubscriber
-          ? 'subscriber_disconnected'
-          : 'subscriber_never_attached';
+      let remoteSubscriberActive: boolean | undefined = false;
+      if (persistedLifecycle?.createdAt === createdAt) {
+        remoteSubscriberActive = await this.jobStore
+          .hasActiveSubscriber(streamId, createdAt, Date.now())
+          .catch((leaseError) => {
+            logger.error(
+              '[GenerationJobManager] Failed to read active subscriber leases',
+              leaseError,
+            );
+            return undefined;
+          });
       }
-      await this.settleEarlyBufferRecovery(
-        streamId,
-        runtime,
-        unresolvedOverflow,
-        subscriberActive ? 'not_required' : 'failed',
-        0,
-        0,
-        0,
-        unobservedFailureReason,
-      ).catch((recoveryError) => {
-        logger.error(
-          '[GenerationJobManager] Failed to settle unobserved early buffer recovery',
-          recoveryError,
-        );
-      });
+      /** A failed lease read is not evidence of an active subscriber. Leave the
+       * overflow unresolved so a later resume must still validate recovery. */
+      if (runtime.hasSubscriber || remoteSubscriberActive != null) {
+        const subscriberActive = runtime.hasSubscriber || remoteSubscriberActive === true;
+        let unobservedFailureReason: EarlyBufferRecoveryFailureReason | undefined;
+        if (!subscriberActive) {
+          unobservedFailureReason = generationHadSubscriber
+            ? 'subscriber_disconnected'
+            : 'subscriber_never_attached';
+        }
+        await this.settleEarlyBufferRecovery(
+          streamId,
+          runtime,
+          unresolvedOverflow,
+          subscriberActive ? 'not_required' : 'failed',
+          0,
+          0,
+          0,
+          unobservedFailureReason,
+        ).catch((recoveryError) => {
+          logger.error(
+            '[GenerationJobManager] Failed to settle unobserved early buffer recovery',
+            recoveryError,
+          );
+        });
+      }
     }
 
     // Error jobs stay durable long enough for late subscribers to receive the
@@ -5479,7 +5483,7 @@ class GenerationJobManagerClass {
     const overflow: EarlyBufferOverflowState = {
       id: randomUUID(),
       occurredAt: Date.now(),
-      durableEvents: runtime.durableEventSequence,
+      durableEvents: this._isRedis ? runtime.durableEventSequence : runtime.emissionSequence,
       droppedEvents,
       droppedBytes,
     };
@@ -5503,7 +5507,9 @@ class GenerationJobManagerClass {
       if (frontierJob?.createdAt !== runtime.createdAt) {
         throw new Error('Early buffer overflow generation was replaced before persistence');
       }
-      overflow.durableEvents = frontierJob.durableEventCount ?? runtime.durableEventSequence;
+      overflow.durableEvents = this._isRedis
+        ? (frontierJob.durableEventCount ?? runtime.durableEventSequence)
+        : runtime.emissionSequence;
       await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
       const persistedJob = await this.jobStore.getJob(streamId);
       if (
@@ -5791,6 +5797,14 @@ class GenerationJobManagerClass {
     const removeCaptureHandler = (): void => {
       runtime.resumeCaptureHandlers.delete(capturePendingEvent);
     };
+    const discardCapturedEvents = (): void => {
+      removeCaptureHandler();
+      capturedPendingEvents.length = 0;
+      pendingEvents.length = 0;
+      unclassifiedEmissions.length = 0;
+      capturedEventSet.clear();
+      snapshotCoveredEventSet.clear();
+    };
     const restoreCapturedEvents = (): void => {
       if (capturedPendingEvents.length === 0) {
         return;
@@ -5929,9 +5943,11 @@ class GenerationJobManagerClass {
             }
           }
           if (winningOutcome === 'not_required') {
+            discardCapturedEvents();
             return { subscription: null, resumeState, pendingEvents: [] };
           }
           if (winningOutcome !== 'success') {
+            discardCapturedEvents();
             await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
             onError?.(GENERATION_RECOVERY_FAILED_ERROR);
             return { subscription: null, resumeState: null, pendingEvents: [] };
@@ -5961,9 +5977,11 @@ class GenerationJobManagerClass {
             }
           }
           if (winningOutcome === 'not_required') {
+            discardCapturedEvents();
             return { subscription: null, resumeState, pendingEvents: [] };
           }
           if (winningOutcome !== 'success') {
+            discardCapturedEvents();
             await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
             onError?.(GENERATION_RECOVERY_FAILED_ERROR);
             return { subscription: null, resumeState: null, pendingEvents: [] };
@@ -8267,7 +8285,7 @@ class GenerationJobManagerClass {
     }
     const validationRuntime =
       options?.validateEarlyBufferRecovery === true
-        ? await this.getOrCreateRuntimeState(streamId)
+        ? await this.getOrCreateRuntimeState(streamId, jobData)
         : undefined;
     if (
       options?.validateEarlyBufferRecovery === true &&
@@ -8304,10 +8322,10 @@ class GenerationJobManagerClass {
       const runtime = validationRuntime!;
       const reconstructedEvents = this._isRedis
         ? (result?.reconstructedEventCount ?? 0)
-        : runtime.durableEventSequence;
+        : runtime.emissionSequence;
       const durableEvents = this._isRedis
         ? (result?.durableEventCount ?? 0)
-        : runtime.durableEventSequence;
+        : runtime.emissionSequence;
       let failureReason: EarlyBufferRecoveryFailureReason | undefined;
       if (result == null) {
         failureReason = 'durable_state_missing';
