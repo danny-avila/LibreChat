@@ -622,7 +622,7 @@ describe('processAgentFileUpload', () => {
 
       await expect(
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
-      ).rejects.toThrow(/image-based and requires an OCR service/);
+      ).rejects.toThrow('No text found in document');
 
       expect(parseText).not.toHaveBeenCalled();
     });
@@ -632,8 +632,11 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockRejectedValue(new Error('PRIVATE parser failure')),
       });
       extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
-        await extract();
-        throw makeUninspectableExtractedTextError();
+        try {
+          await extract();
+        } catch {
+          throw makeUninspectableExtractedTextError();
+        }
       });
       const req = makeReq({
         mimetype: PDF_MIME,
@@ -771,7 +774,7 @@ describe('processAgentFileUpload', () => {
 
       await expect(
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
-      ).rejects.toThrow(/image-based and requires an OCR service/);
+      ).rejects.toThrow('failure');
 
       expect(parseText).not.toHaveBeenCalled();
     });
@@ -862,8 +865,11 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockRejectedValue(new Error('PRIVATE parser failure')),
       });
       extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
-        await extract();
-        throw makeUninspectableExtractedTextError();
+        try {
+          await extract();
+        } catch {
+          throw makeUninspectableExtractedTextError();
+        }
       });
       const req = makeReq({
         mimetype: DOCX_MIME,

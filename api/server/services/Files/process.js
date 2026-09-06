@@ -889,6 +889,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           `[processAgentFileUpload] Document parser failed for ${extractionFileLabel}:`,
           errorMetadata,
         );
+        throw err;
       }
     };
 
