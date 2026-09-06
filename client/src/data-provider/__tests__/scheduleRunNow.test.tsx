@@ -11,6 +11,7 @@ import {
   getActiveJobsRefetchInterval,
 } from '../SSE/queries';
 import { useRunScheduleNowMutation } from '../Schedules/mutations';
+import { resetTrackedRuns } from '../Schedules/admission';
 import * as sseQueries from '../SSE/queries';
 
 const mockRunScheduleNow = jest.fn<Promise<TScheduleRunNowResponse>, [string]>();
@@ -130,6 +131,7 @@ describe('run-now conversation tracking', () => {
     jest.resetAllMocks();
     jest.useFakeTimers();
     resetActiveJobsGrace();
+    resetTrackedRuns();
     mockRunScheduleNow.mockResolvedValue({
       scheduleId: 'schedule-1',
       conversationId: 'run-convo-1',
@@ -328,19 +330,75 @@ describe('run-now conversation tracking', () => {
     queryClient.clear();
   });
 
+  it('keeps its budget when admitted before the owner is known, and lands once it is', async () => {
+    const queryClient = createQueryClient();
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+
+    /** The first probe succeeds with nobody to attribute it to: the user query is
+     *  still loading. That must not end the watch — the same account resolves a
+     *  moment later, and the next probe is the one that gets to write. */
+    await runNow(queryClient);
+    await settleAdmission(1_000);
+    expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
+
+    signIn(queryClient, 'user-a');
+    await settleAdmission(3_000);
+
+    expect(readList(queryClient)[0].conversationId).toBe('run-convo-1');
+    expect(mockGetConversationById).toHaveBeenCalledTimes(2);
+    queryClient.clear();
+  });
+
+  it('refreshes the project rows when the run was filed under a project', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    queryClient.setQueryData([QueryKeys.projects], { pages: [], pageParams: [] });
+    queryClient.setQueryData([QueryKeys.project, 'project-a'], { _id: 'project-a' });
+    mockGetConversationById.mockResolvedValue(serverConversation('project-a'));
+
+    await runNow(queryClient);
+    await settleAdmission();
+
+    expect(queryClient.getQueryState([QueryKeys.projects])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState([QueryKeys.project, 'project-a'])?.isInvalidated).toBe(true);
+    queryClient.clear();
+  });
+
+  it('watches a run once however many times it is announced', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+
+    await runNow(queryClient);
+    await runNow(queryClient);
+    await settleAdmission();
+
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    expect(readList(queryClient).filter((c) => c.conversationId === 'run-convo-1')).toHaveLength(1);
+    queryClient.clear();
+  });
+
   it('refuses the write when the cache is claimed while the owner is still unknown', async () => {
     const queryClient = createQueryClient();
     seedList(queryClient);
     /** Never known at the click, and someone else's session arrives while the
      *  probe is in flight — "loading" and "changed hands" read identically here,
-     *  so the only safe answer is to write nothing. */
-    mockGetConversationById.mockImplementation(async () => {
-      signIn(queryClient, 'user-b');
-      return serverConversation();
-    });
+     *  so the response that was sent for the first account must not be written.
+     *  Every probe after that goes out under the second account, and the server
+     *  enforces ownership on the read, so those answer 404: the watch drains its
+     *  budget and nothing lands. */
+    mockGetConversationById
+      .mockImplementationOnce(async () => {
+        signIn(queryClient, 'user-b');
+        return serverConversation();
+      })
+      .mockRejectedValue(httpError(404, 'Not Found'));
 
     await runNow(queryClient);
-    await settleAdmission();
+    await settleAdmission(ADMISSION_BUDGET_MS);
 
     expect(readList(queryClient).map((convo) => convo.conversationId)).toEqual(['existing-convo']);
     expect(queryClient.getQueryData([QueryKeys.conversation, 'run-convo-1'])).toBeUndefined();
