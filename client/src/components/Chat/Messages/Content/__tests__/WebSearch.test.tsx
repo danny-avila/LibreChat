@@ -4,6 +4,7 @@ import { Tools } from 'librechat-data-provider';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, SearchResultData, ValidSource } from 'librechat-data-provider';
 import { SearchContext } from '~/Providers';
+import { ROW_GLYPH_SLOT } from '../rows';
 import WebSearch from '../WebSearch';
 
 jest.mock('~/hooks', () => ({
@@ -450,6 +451,35 @@ describe('WebSearch', () => {
       );
       expect(chevron).toHaveClass('transition-transform');
       expect(chevron.className).not.toContain('transition-opacity');
+    });
+
+    it('puts both rows glyph on the shared row rail', () => {
+      /** `Part.tsx` routes web search past `ProgressText`, so this renderer
+       *  draws its own glyph and has to take the shared slot itself or its
+       *  favicon stack sits left of every other row under the header. */
+      const searchResults = makeSearchResults({
+        0: { organic: [makeSource('https://example.com', 'Example')] },
+      });
+
+      const { unmount } = renderWebSearch({ searchResults });
+
+      const completedRow = screen.getByRole('button', { name: /Searched the web/ });
+      const completedSlot = completedRow.firstElementChild;
+      expect(completedSlot).toContainElement(screen.getByTestId('favicon'));
+      for (const token of ROW_GLYPH_SLOT.split(' ')) {
+        expect(completedSlot).toHaveClass(token);
+      }
+      unmount();
+
+      renderWebSearch({ isSubmitting: true, isLast: true, initialProgress: 0.5 });
+
+      const streamingSlot = screen.getByTestId('globe-icon').parentElement;
+      for (const token of ROW_GLYPH_SLOT.split(' ')) {
+        expect(streamingSlot).toHaveClass(token);
+      }
+      /** 24px slot plus an 8px gap puts the label where the header's name
+       *  starts; 10px would leave the streaming row 2px off the rail. */
+      expect(streamingSlot?.parentElement).toHaveClass('gap-2');
     });
 
     it('renders searching state during streaming', () => {
