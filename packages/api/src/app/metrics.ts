@@ -158,7 +158,7 @@ export type GenerationStreamSubscriptionResult =
   | 'found'
   | 'missing';
 export type GenerationStreamRecoveryMethod = 'redis' | 'snapshot';
-export type GenerationStreamRecoveryOutcome = 'success' | 'failed';
+export type GenerationStreamRecoveryOutcome = 'success' | 'failed' | 'not_required';
 export type GenerationStreamAttachmentOutcome =
   | 'attached'
   | 'bootstrap_slow'

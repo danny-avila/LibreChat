@@ -1,6 +1,7 @@
 /* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
 import type { Redis, Cluster } from 'ioredis';
 import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types';
+import type { IJobStoreV2 } from '~/stream/interfaces/IJobStore';
 import {
   GenerationJobManagerClass,
   GENERATION_RECOVERY_FAILED_ERROR,
@@ -1845,6 +1846,10 @@ describe('GenerationJobManager Integration Tests', () => {
         const owner = createRedisManager();
         const streamId = `overflow-cross-replica-${Date.now()}`;
         await owner.createJob(streamId, 'user-1');
+        const firstReplica = createRedisManager();
+        /** Cache a pre-overflow runtime so resume must refresh the later
+         * durable marker rather than trust process-local state. */
+        await firstReplica.getJob(streamId);
         /** Created envelopes are published but not durably appendable, so they
          * must not advance the durable recovery frontier. */
         await owner.emitChunk(streamId, {
@@ -1871,7 +1876,6 @@ describe('GenerationJobManager Integration Tests', () => {
           });
         }
 
-        const firstReplica = createRedisManager();
         const first = await firstReplica.subscribeWithResume(streamId, () => {});
         expect(first.resumeState?.aggregatedContent).toHaveLength(1);
         expect(JSON.stringify(first.resumeState?.aggregatedContent)).toContain('5000,');
@@ -1947,6 +1951,54 @@ describe('GenerationJobManager Integration Tests', () => {
           recoveryOutcome: 'failed',
           recoveryFailureReason: 'durable_state_missing',
         });
+
+        await Promise.all([owner.destroy(), replica.destroy()]);
+      },
+    );
+
+    testRedis(
+      'terminalizes a durable failed outcome left running by a crashed replica',
+      async () => {
+        const owner = createRedisManager();
+        const streamId = `overflow-failed-outcome-${Date.now()}`;
+        await owner.createJob(streamId, 'user-1');
+        const bigText = 'f'.repeat(2 * 1024 * 1024);
+        for (let i = 0; i < 5; i++) {
+          await owner.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: {
+              id: 'step-1',
+              delta: { content: { type: 'text', text: bigText } },
+            },
+          });
+        }
+
+        const overflowJob = await owner.getJob(streamId);
+        const overflow = overflowJob?.metadata.earlyBufferOverflow;
+        expect(overflow).toBeDefined();
+        await (owner.getJobStore() as IJobStoreV2).settleEarlyBufferRecovery(
+          streamId,
+          overflowJob!.createdAt,
+          overflow!.id,
+          {
+            recoveryMethod: 'redis',
+            recoveryOutcome: 'failed',
+            recoveryCompletedAt: Date.now(),
+            recoveryFailureReason: 'reconstruction_error',
+          },
+        );
+
+        const replica = createRedisManager();
+        const errors: string[] = [];
+        const result = await replica.subscribeWithResume(
+          streamId,
+          () => {},
+          undefined,
+          (error) => errors.push(error),
+        );
+        expect(result.subscription).toBeNull();
+        expect(errors).toEqual([GENERATION_RECOVERY_FAILED_ERROR]);
+        expect((await replica.getJob(streamId))?.status).toBe('error');
 
         await Promise.all([owner.destroy(), replica.destroy()]);
       },
@@ -2052,6 +2104,37 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('Atomic subscribeWithResume', () => {
+    test('keeps the first-subscriber telemetry claim off the attachment path', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      let releaseClaim!: (claimed: boolean) => void;
+      const pendingClaim = new Promise<boolean>((resolve) => {
+        releaseClaim = resolve;
+      });
+      jest.spyOn(jobStore, 'claimFirstSubscriber').mockReturnValue(pendingClaim);
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `nonblocking-attachment-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const attachment = manager.subscribe(streamId, () => {});
+      const result = await Promise.race([
+        attachment,
+        new Promise<'timed_out'>((resolve) => setTimeout(() => resolve('timed_out'), 50)),
+      ]);
+      expect(result).not.toBe('timed_out');
+      releaseClaim(true);
+      await pendingClaim;
+      if (result !== 'timed_out') {
+        result?.unsubscribe();
+      }
+      await manager.destroy();
+    });
+
     test('should return empty pendingEvents for pre-snapshot buffer events (in-memory)', async () => {
       const manager = createInMemoryManager();
       const streamId = `atomic-drain-${Date.now()}`;

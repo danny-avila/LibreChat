@@ -1,5 +1,5 @@
 export type EarlyBufferRecoveryMethod = 'redis' | 'snapshot';
-export type EarlyBufferRecoveryOutcome = 'success' | 'failed';
+export type EarlyBufferRecoveryOutcome = 'success' | 'failed' | 'not_required';
 export type EarlyBufferRecoveryFailureReason =
   | 'durable_state_missing'
   | 'durable_frontier_gap'
