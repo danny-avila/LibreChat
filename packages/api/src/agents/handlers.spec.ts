@@ -3923,6 +3923,45 @@ describe('createToolExecuteHandler', () => {
       });
     });
 
+    it('does not report a sandbox write as durable when artifact delivery failed', async () => {
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/new.txt: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/new.txt\n',
+        session_id: 'sess-new',
+        files: [],
+        artifact_delivery: {
+          code: 'artifact_delivery_failed' as const,
+          status: 'failed' as const,
+          attempted: 1,
+          delivered: 0,
+          failed: 1,
+        },
+      }));
+      const handler = makeSandboxAuthoringHandler({
+        readSandboxFile,
+        writeSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_sandbox_delivery_failure',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/new.txt',
+            content: 'hello world',
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('could not be persisted');
+      expect(result.errorMessage).toContain('do not retry automatically');
+      expect(result.errorMessage).not.toContain('storage');
+      expect(result.artifact).toBeUndefined();
+    });
+
     it('carries whole file refs into the next authoring call on the same path', async () => {
       /**
        * Regression: the batch-local sandbox context rebuilt each ref from
