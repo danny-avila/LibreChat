@@ -10,8 +10,8 @@ import type { IRole, IUser, SystemCapability } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { AgentManagementProjectionSource } from './management';
-import { mapAgentManagementError } from './management';
 import { checkAccessWithRequestCache } from '../middleware/access';
+import { mapAgentManagementError } from './management';
 
 type AgentUploadPurpose =
   | EToolResources.context
@@ -64,6 +64,7 @@ type AgentUploadConfig = {
   endpoint: string;
   endpointType?: string;
   disabled?: boolean;
+  fileSizeLimit?: number;
   fileLimit?: number;
   totalSizeLimit?: number;
 };
@@ -94,6 +95,7 @@ export interface AgentManagementFileDeps {
   processUpload: (req: Request, res: Response) => Promise<Response | void>;
   deleteTempFile: (path: string) => Promise<void>;
   getUploadConfig: (req: Request, agent: AgentManagementFileAgent) => Promise<AgentUploadConfig>;
+  isUploadPurposeEnabled: (req: Request, purpose: AgentUploadPurpose) => Promise<boolean>;
   runUploadExclusive: <T>(key: string, task: () => Promise<T>) => Promise<T>;
 }
 
@@ -325,16 +327,36 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
       return false;
     }
     const fileIds = [...new Set(currentAgent.tool_resources?.[purpose]?.file_ids ?? [])];
-    if (config.fileLimit && fileIds.length + 1 > config.fileLimit) {
-      return false;
-    }
-    if (!config.totalSizeLimit || fileIds.length === 0) {
-      return !config.totalSizeLimit || (req.file?.size ?? 0) <= config.totalSizeLimit;
+    if (!config.fileLimit && !config.totalSizeLimit) {
+      return true;
     }
     const files =
-      (await deps.getFiles({ file_id: { $in: fileIds }, tenantId }, null, { text: 0 })) ?? [];
+      fileIds.length === 0
+        ? []
+        : ((await deps.getFiles({ file_id: { $in: fileIds }, tenantId }, null, { text: 0 })) ?? []);
+    const persistedFileCount = new Set(files.map((file) => file.file_id)).size;
+    if (config.fileLimit && persistedFileCount + 1 > config.fileLimit) {
+      return false;
+    }
+    if (!config.totalSizeLimit) {
+      return true;
+    }
     const currentBytes = files.reduce((total, file) => total + file.bytes, 0);
     return currentBytes + (req.file?.size ?? 0) <= config.totalSizeLimit;
+  }
+
+  async function isValidUpload(
+    req: Request,
+    purpose: AgentUploadPurpose,
+    config: AgentUploadConfig,
+  ): Promise<boolean> {
+    if (config.fileSizeLimit && (req.file?.size ?? 0) > config.fileSizeLimit) {
+      return false;
+    }
+    if (purpose === EToolResources.file_search && req.file?.mimetype?.startsWith('image')) {
+      return false;
+    }
+    return await deps.isUploadPurposeEnabled(req, purpose);
   }
 
   async function cleanupRejectedUpload(req: Request): Promise<boolean> {
@@ -367,6 +389,10 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
       const queueKey = `${authorized.tenantId}:${req.params.id}:${purpose}`;
       return await deps.runUploadExclusive(queueKey, async () =>
         withUploadQueue(queueKey, async () => {
+          if (!(await isValidUpload(req, purpose as AgentUploadPurpose, authorized.uploadConfig))) {
+            const cleaned = await cleanupRejectedUpload(req);
+            return sendError(res, cleaned ? 'invalid_request' : 'internal_error');
+          }
           if (
             !(await isWithinAggregateLimits(
               req,

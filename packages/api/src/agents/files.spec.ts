@@ -85,6 +85,7 @@ function makeDeps(overrides: Partial<AgentManagementFileDeps> = {}): AgentManage
       fileLimit: 100,
       totalSizeLimit: 1_000_000,
     }),
+    isUploadPurposeEnabled: jest.fn().mockResolvedValue(true),
     runUploadExclusive: async (_key, task) => await task(),
     ...overrides,
   };
@@ -208,6 +209,10 @@ describe('Agent Management file handlers', () => {
   it('reports cleanup failures with the management error contract', async () => {
     const deps = makeDeps({
       deleteTempFile: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+      getFiles: jest.fn().mockResolvedValue([
+        { file_id: 'file-context', bytes: 8 },
+        { file_id: 'file-shared', bytes: 12 },
+      ]),
       getUploadConfig: jest.fn().mockResolvedValue({
         endpoint: 'Moonshot',
         endpointType: 'custom',
@@ -249,6 +254,12 @@ describe('Agent Management file handlers', () => {
     });
     const deps = makeDeps({
       getAgentWithVersionCount,
+      getFiles: jest.fn().mockImplementation(async () =>
+        Array.from({ length: attachedCount }, (_, index) => ({
+          file_id: `file-${index}`,
+          bytes: 1,
+        })),
+      ),
       processUpload,
       getUploadConfig: jest.fn().mockResolvedValue({ endpoint: 'Moonshot', fileLimit: 2 }),
     });
@@ -308,6 +319,77 @@ describe('Agent Management file handlers', () => {
 
     expect(deps.processUpload).not.toHaveBeenCalled();
     expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/too-large-in-aggregate');
+    expect(response.status).toHaveBeenCalledWith(400);
+  });
+
+  it('does not count dangling legacy file references toward the aggregate file limit', async () => {
+    const deps = makeDeps({
+      getAgentWithVersionCount: jest.fn().mockResolvedValue({
+        ...agent,
+        tool_resources: { context: { file_ids: ['file-live', 'file-missing'] } },
+      }),
+      getFiles: jest.fn().mockResolvedValue([{ file_id: 'file-live', bytes: 8 }]),
+      getUploadConfig: jest.fn().mockResolvedValue({ endpoint: 'Moonshot', fileLimit: 2 }),
+    });
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-one' });
+    const handlers = createAgentManagementFileHandlers(deps);
+    await authorizeUpload(handlers, request, response);
+    request.body = { purpose: EToolResources.context };
+    request.file = {
+      path: '/tmp/accepted-with-dangling-reference',
+      originalname: 'input.txt',
+      size: 5,
+    } as Express.Multer.File;
+
+    await handlers.upload(request, response);
+
+    expect(deps.processUpload).toHaveBeenCalledTimes(1);
+    expect(deps.deleteTempFile).not.toHaveBeenCalled();
+  });
+
+  it('rejects provider file-size violations before shared upload processing', async () => {
+    const deps = makeDeps({
+      getUploadConfig: jest.fn().mockResolvedValue({
+        endpoint: 'Moonshot',
+        fileSizeLimit: 4,
+      }),
+    });
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-one' });
+    const handlers = createAgentManagementFileHandlers(deps);
+    await authorizeUpload(handlers, request, response);
+    request.body = { purpose: EToolResources.context };
+    request.file = {
+      path: '/tmp/provider-file-too-large',
+      originalname: 'input.txt',
+      size: 5,
+    } as Express.Multer.File;
+
+    await handlers.upload(request, response);
+
+    expect(deps.processUpload).not.toHaveBeenCalled();
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/provider-file-too-large');
+    expect(response.status).toHaveBeenCalledWith(400);
+  });
+
+  it('rejects disabled Agent upload purposes before shared upload processing', async () => {
+    const deps = makeDeps({ isUploadPurposeEnabled: jest.fn().mockResolvedValue(false) });
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-one' });
+    const handlers = createAgentManagementFileHandlers(deps);
+    await authorizeUpload(handlers, request, response);
+    request.body = { purpose: EToolResources.execute_code };
+    request.file = {
+      path: '/tmp/disabled-purpose',
+      originalname: 'input.txt',
+      size: 5,
+    } as Express.Multer.File;
+
+    await handlers.upload(request, response);
+
+    expect(deps.processUpload).not.toHaveBeenCalled();
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/disabled-purpose');
     expect(response.status).toHaveBeenCalledWith(400);
   });
 

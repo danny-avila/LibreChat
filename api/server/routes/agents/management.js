@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const {
   EModelEndpoint,
+  EToolResources,
+  AgentCapabilities,
   getEndpointFileConfig,
   mergeFileConfig,
   resolveEndpointType,
@@ -24,7 +26,7 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const { createMulterInstance } = require('~/server/routes/files/multer');
 const { handleFileUpload } = require('~/server/routes/files/files');
-const { getEndpointsConfig } = require('~/server/services/Config');
+const { checkCapability, getEndpointsConfig } = require('~/server/services/Config');
 const v1 = require('~/server/controllers/agents/v1');
 const db = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
@@ -152,9 +154,19 @@ const fileHandlers = createAgentManagementFileHandlers({
       endpoint,
       endpointType,
       disabled: endpointConfig.disabled,
+      fileSizeLimit: endpointConfig.fileSizeLimit,
       fileLimit: endpointConfig.fileLimit,
       totalSizeLimit: endpointConfig.totalSizeLimit,
     };
+  },
+  isUploadPurposeEnabled: async (req, purpose) => {
+    if (purpose === EToolResources.execute_code) {
+      return await checkCapability(req, AgentCapabilities.execute_code);
+    }
+    if (purpose === EToolResources.file_search) {
+      return await checkCapability(req, AgentCapabilities.file_search);
+    }
+    return true;
   },
   runUploadExclusive: withAgentUploadLock,
 });

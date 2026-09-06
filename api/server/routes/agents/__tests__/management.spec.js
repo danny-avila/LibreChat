@@ -68,6 +68,7 @@ const mockCreateMulterInstance = jest.fn().mockResolvedValue({
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
   Moonshot: { type: 'custom' },
 });
+const mockCheckCapability = jest.fn().mockResolvedValue(true);
 const mockRedisSet = jest.fn().mockResolvedValue('OK');
 const mockRedisEval = jest.fn().mockResolvedValue(1);
 let mockRateLimitIp = false;
@@ -107,7 +108,10 @@ jest.mock('~/server/routes/files/multer', () => ({
   createMulterInstance: mockCreateMulterInstance,
 }));
 jest.mock('~/server/routes/files/files', () => ({ handleFileUpload: jest.fn() }));
-jest.mock('~/server/services/Config', () => ({ getEndpointsConfig: mockGetEndpointsConfig }));
+jest.mock('~/server/services/Config', () => ({
+  checkCapability: mockCheckCapability,
+  getEndpointsConfig: mockGetEndpointsConfig,
+}));
 jest.mock('~/server/controllers/agents/v1', () => ({
   createAgent: mockBrowserCreate,
   updateAgent: mockBrowserUpdate,
@@ -291,6 +295,7 @@ describe('Agent Management route boundary', () => {
     expect(mockFileDeps.processUpload).toEqual(expect.any(Function));
     expect(mockFileDeps.deleteTempFile).toEqual(expect.any(Function));
     expect(mockFileDeps.getUploadConfig).toEqual(expect.any(Function));
+    expect(mockFileDeps.isUploadPurposeEnabled).toEqual(expect.any(Function));
   });
 
   it('resolves upload limits from the target Agent provider', async () => {
