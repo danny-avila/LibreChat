@@ -166,6 +166,7 @@ const EARLY_EVENT_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const SLOW_ATTACHMENT_BOOTSTRAP_MS = 3_000;
 const SUBSCRIBER_LEASE_TTL_MS = 30_000;
 const SUBSCRIBER_LEASE_REFRESH_MS = 10_000;
+const EARLY_BUFFER_OVERFLOW_PERSISTENCE_TIMEOUT_MS = 3_000;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 type TokenIdempotencyClaim = IdempotencyClaimValue & {
   claimedAt: number;
@@ -703,6 +704,7 @@ interface RuntimeJobState {
   subscriberStateAttached: boolean;
   subscriberLeaseId: string;
   subscriberLeaseTimer?: ReturnType<typeof setInterval>;
+  subscriberLeaseRenewalPending?: boolean;
   /** One-shot telemetry callback retained until a durable first-subscriber claim succeeds. */
   onFirstSubscriberLeaseClaim?: (firstSubscriber: boolean) => void;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
@@ -1682,20 +1684,21 @@ class GenerationJobManagerClass {
       return;
     }
     runtime.subscriberLeaseTimer = setInterval(() => {
-      if (!runtime.hasSubscriber) {
+      if (!runtime.hasSubscriber || runtime.subscriberLeaseRenewalPending === true) {
         return;
       }
-      const refreshedAt = Date.now();
+      runtime.subscriberLeaseRenewalPending = true;
       runtime.subscriberStateWrite = (runtime.subscriberStateWrite ?? Promise.resolve())
-        .then(() =>
-          this.jobStore.claimFirstSubscriber(
+        .then(() => {
+          const refreshedAt = Date.now();
+          return this.jobStore.claimFirstSubscriber(
             streamId,
             runtime.createdAt,
             refreshedAt,
             runtime.subscriberLeaseId,
             refreshedAt + SUBSCRIBER_LEASE_TTL_MS,
-          ),
-        )
+          );
+        })
         .then((firstSubscriber) => {
           runtime.subscriberStateAttached = true;
           runtime.onFirstSubscriberLeaseClaim?.(firstSubscriber);
@@ -1704,6 +1707,9 @@ class GenerationJobManagerClass {
         .catch((leaseError) => {
           logger.error('[GenerationJobManager] Failed to renew subscriber lease', leaseError);
           return false;
+        })
+        .finally(() => {
+          runtime.subscriberLeaseRenewalPending = false;
         });
     }, SUBSCRIBER_LEASE_REFRESH_MS);
     runtime.subscriberLeaseTimer.unref?.();
@@ -5506,8 +5512,8 @@ class GenerationJobManagerClass {
       durableEvents: this._isRedis ? runtime.durableEventSequence : runtime.emissionSequence,
       droppedEvents,
       droppedBytes,
+      persistencePending: true,
     };
-    this.resetEarlyEventBuffer(runtime);
     runtime.earlyEventBufferClosed = true;
     runtime.earlyEventBufferOverflowed = true;
     runtime.earlyBufferOverflow = overflow;
@@ -5522,23 +5528,40 @@ class GenerationJobManagerClass {
       },
     );
     try {
+      /** Publish an admission fence before releasing the local recovery copy.
+       * A replica that observes this marker waits for the finalized frontier;
+       * an attachment that races before it remains covered by normal live
+       * publication because this overflowing event has not been published yet. */
+      await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
       await this.jobStore.flushPendingAppends?.(streamId);
       const frontierJob = await this.jobStore.getJob(streamId);
       if (frontierJob?.createdAt !== runtime.createdAt) {
         throw new Error('Early buffer overflow generation was replaced before persistence');
       }
-      overflow.durableEvents = this._isRedis
-        ? (frontierJob.durableEventCount ?? runtime.durableEventSequence)
-        : runtime.emissionSequence;
-      await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
+      const finalizedOverflow: EarlyBufferOverflowState = {
+        ...overflow,
+        durableEvents: this._isRedis
+          ? (frontierJob.durableEventCount ?? runtime.durableEventSequence)
+          : runtime.emissionSequence,
+        persistencePending: false,
+      };
+      await this.jobStore.updateJob(
+        streamId,
+        { earlyBufferOverflow: finalizedOverflow },
+        runtime.createdAt,
+      );
       const persistedJob = await this.jobStore.getJob(streamId);
       if (
         persistedJob?.createdAt !== runtime.createdAt ||
-        persistedJob.earlyBufferOverflow?.id !== overflow.id
+        persistedJob.earlyBufferOverflow?.id !== overflow.id ||
+        persistedJob.earlyBufferOverflow.persistencePending === true
       ) {
         throw new Error('Early buffer overflow marker was not durably persisted');
       }
+      runtime.earlyBufferOverflow = finalizedOverflow;
+      this.resetEarlyEventBuffer(runtime);
     } catch (err) {
+      this.resetEarlyEventBuffer(runtime);
       logger.error('[GenerationJobManager] Failed to persist early buffer overflow identity', {
         recoveryId: overflow.id,
         store: this.storeLabel,
@@ -5656,6 +5679,29 @@ class GenerationJobManagerClass {
       });
   }
 
+  private async waitForFinalizedEarlyBufferOverflow(
+    streamId: string,
+    jobData: SerializableJobData,
+  ): Promise<SerializableJobData | null> {
+    const overflow = jobData.earlyBufferOverflow;
+    if (overflow?.persistencePending !== true) {
+      return jobData;
+    }
+
+    const deadline = Date.now() + EARLY_BUFFER_OVERFLOW_PERSISTENCE_TIMEOUT_MS;
+    let current: SerializableJobData | null = jobData;
+    while (
+      current?.createdAt === jobData.createdAt &&
+      current.earlyBufferOverflow?.id === overflow.id &&
+      current.earlyBufferOverflow.persistencePending === true &&
+      Date.now() < deadline
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      current = await this.jobStore.getJob(streamId);
+    }
+    return current;
+  }
+
   private async settleEarlyBufferRecovery(
     streamId: string,
     runtime: RuntimeJobState,
@@ -5754,6 +5800,39 @@ class GenerationJobManagerClass {
       recordGenerationStreamSubscription(this.storeLabel, 'resume_state', 'missing');
       recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
       return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
+
+    if (runtime.earlyBufferOverflow?.persistencePending === true) {
+      const pendingMarker = runtime.earlyBufferOverflow;
+      const currentJob = await this.jobStore.getJob(streamId);
+      if (
+        currentJob?.createdAt !== runtime.createdAt ||
+        currentJob.earlyBufferOverflow?.id !== pendingMarker.id
+      ) {
+        recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+      const finalizedJob = await this.waitForFinalizedEarlyBufferOverflow(streamId, currentJob);
+      if (finalizedJob?.createdAt !== runtime.createdAt) {
+        recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+      await this.getOrCreateRuntimeState(streamId, finalizedJob);
+      if (finalizedJob.earlyBufferOverflow?.persistencePending === true) {
+        await this.settleEarlyBufferRecovery(
+          streamId,
+          runtime,
+          pendingMarker,
+          'failed',
+          EARLY_BUFFER_OVERFLOW_PERSISTENCE_TIMEOUT_MS,
+          0,
+          0,
+          'overflow_marker_persistence_failed',
+        );
+        await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+        onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
     }
 
     if (
@@ -8329,9 +8408,22 @@ class GenerationJobManagerClass {
   ): Promise<t.ResumeState | null> {
     const recoveryStartedAt =
       options?.validateEarlyBufferRecovery === true ? Date.now() : undefined;
-    const jobData = await this.jobStore.getJob(streamId);
+    let jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
       return null;
+    }
+    if (jobData.earlyBufferOverflow?.persistencePending === true) {
+      const initialCreatedAt = jobData.createdAt;
+      jobData = await this.waitForFinalizedEarlyBufferOverflow(streamId, jobData);
+      if (!jobData || jobData.createdAt !== initialCreatedAt) {
+        return null;
+      }
+      if (
+        jobData.earlyBufferOverflow?.persistencePending === true &&
+        options?.validateEarlyBufferRecovery !== true
+      ) {
+        return null;
+      }
     }
     const unresolvedOverflowValidation =
       options?.validateEarlyBufferRecovery === true &&
@@ -8377,7 +8469,9 @@ class GenerationJobManagerClass {
         ? (result?.durableEventCount ?? 0)
         : runtime.emissionSequence;
       let failureReason: EarlyBufferRecoveryFailureReason | undefined;
-      if (result == null) {
+      if (pendingOverflow.persistencePending === true) {
+        failureReason = 'overflow_marker_persistence_failed';
+      } else if (result == null) {
         failureReason = 'durable_state_missing';
       } else if (
         durableEvents < pendingOverflow.durableEvents ||

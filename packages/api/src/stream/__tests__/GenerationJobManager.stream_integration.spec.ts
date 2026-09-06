@@ -2534,6 +2534,43 @@ describe('GenerationJobManager Integration Tests', () => {
       jest.useRealTimers();
     });
 
+    test('coalesces subscriber lease renewals while a store write is pending', async () => {
+      jest.useFakeTimers();
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const originalClaim = jobStore.claimFirstSubscriber.bind(jobStore);
+      let releaseRenewal!: (claimed: boolean) => void;
+      const pendingRenewal = new Promise<boolean>((resolve) => {
+        releaseRenewal = resolve;
+      });
+      const claim = jest
+        .spyOn(jobStore, 'claimFirstSubscriber')
+        .mockImplementationOnce(originalClaim)
+        .mockReturnValueOnce(pendingRenewal)
+        .mockImplementation(originalClaim);
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `subscriber-renewal-coalesce-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const subscription = await manager.subscribe(streamId, () => {});
+      await jest.advanceTimersByTimeAsync(30_000);
+
+      expect(claim).toHaveBeenCalledTimes(2);
+      releaseRenewal(false);
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect(claim).toHaveBeenCalledTimes(3);
+      const lastCall = claim.mock.calls[2];
+      expect(lastCall[4] - lastCall[2]).toBe(30_000);
+
+      subscription?.unsubscribe();
+      await manager.destroy();
+      jest.useRealTimers();
+    });
+
     test('stops the predecessor lease timer when a durable generation replaces it', async () => {
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
       const manager = new GenerationJobManagerClass();

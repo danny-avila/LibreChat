@@ -15,6 +15,9 @@ export interface EarlyBufferOverflowState {
   durableEvents: number;
   droppedEvents: number;
   droppedBytes: number;
+  /** True while the owner is flushing accepted durable appends and has not
+   * published the final recovery frontier yet. */
+  persistencePending?: boolean;
   recoveryMethod?: EarlyBufferRecoveryMethod;
   recoveryOutcome?: EarlyBufferRecoveryOutcome;
   recoveryCompletedAt?: number;
