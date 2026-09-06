@@ -391,6 +391,29 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.file_search) {
+      /** The role permission gates the tool the same way `RUN_CODE` gates
+       * `execute_code` in `~/server/controllers/tools.js`. Checked here rather
+       * than inside the loader so a denied user never gets the tool equipped,
+       * instead of getting one that fails when called. */
+      if (options.req?.user != null) {
+        let hasFileSearchAccess = false;
+        try {
+          hasFileSearchAccess = await checkAccess({
+            user: options.req.user,
+            permissionType: PermissionTypes.FILE_SEARCH,
+            permissions: [Permissions.USE],
+            getRoleByName,
+          });
+        } catch (error) {
+          logger.error('[handleTools] FILE_SEARCH permission check failed:', error);
+        }
+        if (!hasFileSearchAccess) {
+          logger.warn(
+            `[${PermissionTypes.FILE_SEARCH}] Forbidden: Insufficient permissions for User ${options.req.user.id}: ${Permissions.USE}`,
+          );
+          continue;
+        }
+      }
       requestedTools[tool] = async () => {
         const { files, toolContext } = await primeSearchFiles({
           ...options,
