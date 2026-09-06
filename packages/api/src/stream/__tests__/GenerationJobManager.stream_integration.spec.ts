@@ -1993,6 +1993,43 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('leaves recovery unresolved when terminal lifecycle lookup fails', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-lifecycle-read-failure-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const bigText = 'u'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      const originalGetJob = jobStore.getJob.bind(jobStore);
+      jest
+        .spyOn(jobStore, 'getJob')
+        .mockImplementationOnce(originalGetJob)
+        .mockRejectedValueOnce(new Error('unavailable'))
+        .mockImplementation(originalGetJob);
+
+      await expect(manager.completeJob(streamId)).resolves.toBe(true);
+      expect((await manager.getJob(streamId))?.metadata.earlyBufferOverflow).not.toHaveProperty(
+        'recoveryOutcome',
+      );
+
+      await manager.destroy();
+    });
+
     test('removes in-memory capture handlers when another attachment wins recovery', async () => {
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
       const manager = new GenerationJobManagerClass();
@@ -2399,6 +2436,90 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('Atomic subscribeWithResume', () => {
+    test('retries a failed first-subscriber lease claim while attached', async () => {
+      jest.useFakeTimers();
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const originalClaim = jobStore.claimFirstSubscriber.bind(jobStore);
+      const claim = jest
+        .spyOn(jobStore, 'claimFirstSubscriber')
+        .mockRejectedValueOnce(new Error('store unavailable'))
+        .mockImplementation(originalClaim);
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `subscriber-claim-retry-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const createdAt = (await jobStore.getJob(streamId))!.createdAt;
+      const subscription = await manager.subscribe(streamId, () => {});
+      await jest.advanceTimersByTimeAsync(0);
+      expect(claim).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      expect(claim).toHaveBeenCalledTimes(2);
+      await expect(jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())).resolves.toBe(
+        true,
+      );
+      subscription?.unsubscribe();
+      await manager.destroy();
+      jest.useRealTimers();
+    });
+
+    test('stops the predecessor lease timer when a durable generation replaces it', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: true,
+      });
+      manager.initialize();
+      const streamId = `subscriber-runtime-replacement-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const subscription = await manager.subscribe(streamId, () => {});
+      const predecessor = (
+        manager as unknown as {
+          runtimeState: Map<string, { subscriberLeaseTimer?: ReturnType<typeof setInterval> }>;
+        }
+      ).runtimeState.get(streamId)!;
+      expect(predecessor.subscriberLeaseTimer).toBeDefined();
+
+      await jobStore.createJob(streamId, 'user-1');
+      await manager.getJob(streamId);
+
+      expect(predecessor.subscriberLeaseTimer).toBeUndefined();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('keeps ordinary HITL resume reads on the cached content path', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `hitl-cached-content-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const createdAt = (await jobStore.getJob(streamId))!.createdAt;
+      const getContentParts = jest.spyOn(jobStore, 'getContentParts');
+
+      await manager.getResumeState(streamId, createdAt, {
+        validateEarlyBufferRecovery: true,
+      });
+
+      expect(getContentParts).toHaveBeenCalledWith(streamId, createdAt, {
+        durableOnly: false,
+      });
+      await manager.destroy();
+    });
+
     test('renews the subscriber lease after an ambiguous detach failure', async () => {
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
       const claim = jest.spyOn(jobStore, 'claimFirstSubscriber');

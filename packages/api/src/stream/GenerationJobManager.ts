@@ -1680,7 +1680,7 @@ class GenerationJobManagerClass {
       return;
     }
     runtime.subscriberLeaseTimer = setInterval(() => {
-      if (!runtime.hasSubscriber || !runtime.subscriberStateAttached) {
+      if (!runtime.hasSubscriber) {
         return;
       }
       const refreshedAt = Date.now();
@@ -1694,6 +1694,10 @@ class GenerationJobManagerClass {
             refreshedAt + SUBSCRIBER_LEASE_TTL_MS,
           ),
         )
+        .then((firstSubscriber) => {
+          runtime.subscriberStateAttached = true;
+          return firstSubscriber;
+        })
         .catch((leaseError) => {
           logger.error('[GenerationJobManager] Failed to renew subscriber lease', leaseError);
           return false;
@@ -2976,6 +2980,7 @@ class GenerationJobManagerClass {
     if (concurrentRuntime) {
       concurrentRuntime.startupTelemetry?.end('replaced');
       concurrentRuntime.startupTelemetry = undefined;
+      this.stopSubscriberLease(concurrentRuntime);
       this.releaseAbortSubscription(concurrentRuntime);
       concurrentRuntime.abortController.abort();
     }
@@ -4041,9 +4046,16 @@ class GenerationJobManagerClass {
     await runtime?.subscriberStateWrite?.catch(() => undefined);
     let cleanupError: unknown;
     let retainTerminalHostEvidence = false;
-    const persistedLifecycle = runtime
-      ? await this.jobStore.getJob(streamId).catch(() => null)
-      : null;
+    let persistedLifecycle: SerializableJobData | null | undefined = null;
+    if (runtime != null) {
+      persistedLifecycle = await this.jobStore.getJob(streamId).catch((lifecycleError) => {
+        logger.error('[GenerationJobManager] Failed to read terminal subscriber lifecycle', {
+          streamId,
+          error: lifecycleError instanceof Error ? lifecycleError.message : String(lifecycleError),
+        });
+        return undefined;
+      });
+    }
     const generationHadSubscriber =
       runtime?.everHadSubscriber === true ||
       (persistedLifecycle?.createdAt === createdAt &&
@@ -4053,7 +4065,8 @@ class GenerationJobManagerClass {
         ? runtime?.earlyBufferOverflow
         : undefined;
     if (runtime != null && unresolvedOverflow != null) {
-      let remoteSubscriberActive: boolean | undefined = false;
+      let remoteSubscriberActive: boolean | undefined =
+        persistedLifecycle === undefined ? undefined : false;
       if (persistedLifecycle?.createdAt === createdAt) {
         remoteSubscriberActive = await this.jobStore
           .hasActiveSubscriber(streamId, createdAt, Date.now())
@@ -5099,6 +5112,7 @@ class GenerationJobManagerClass {
 
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
+      this.startSubscriberLease(streamId, runtime);
       const attachedAt = Date.now();
       const subscriberClaim = (runtime.subscriberStateWrite ?? Promise.resolve())
         .then(async () => {
@@ -5110,9 +5124,6 @@ class GenerationJobManagerClass {
             Date.now() + SUBSCRIBER_LEASE_TTL_MS,
           );
           runtime.subscriberStateAttached = true;
-          if (runtime.hasSubscriber) {
-            this.startSubscriberLease(streamId, runtime);
-          }
           return firstSubscriber;
         })
         .catch((claimError) => {
@@ -8281,6 +8292,10 @@ class GenerationJobManagerClass {
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
       return null;
     }
+    const unresolvedOverflowValidation =
+      options?.validateEarlyBufferRecovery === true &&
+      jobData.earlyBufferOverflow != null &&
+      jobData.earlyBufferOverflow.recoveryOutcome == null;
     const validationRuntime =
       options?.validateEarlyBufferRecovery === true
         ? await this.getOrCreateRuntimeState(streamId, jobData)
@@ -8304,18 +8319,14 @@ class GenerationJobManagerClass {
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
     const [result, runSteps, queuedSteers, claimedSteers] = await Promise.all([
       this.jobStore.getContentParts(streamId, jobData.createdAt, {
-        durableOnly: options?.durableOnly === true || options?.validateEarlyBufferRecovery === true,
+        durableOnly: options?.durableOnly === true || unresolvedOverflowValidation,
       }),
       this.jobStore.getRunSteps(streamId, jobData.createdAt),
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
     ]);
     options?.onContentSnapshot?.(result);
-    const pendingOverflow =
-      options?.validateEarlyBufferRecovery === true &&
-      jobData.earlyBufferOverflow?.recoveryOutcome == null
-        ? jobData.earlyBufferOverflow
-        : undefined;
+    const pendingOverflow = unresolvedOverflowValidation ? jobData.earlyBufferOverflow : undefined;
     if (pendingOverflow != null) {
       const runtime = validationRuntime!;
       const reconstructedEvents = this._isRedis
