@@ -1329,6 +1329,22 @@ export interface IJobStoreV2 extends IJobStore {
     durableEventCount?: number;
   } | null>;
 
+  settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    settlement: Pick<
+      EarlyBufferOverflowState,
+      'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
+    >,
+  ): Promise<boolean>;
+
+  claimFirstSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean>;
+
   /**
    * Get run steps for a job (for resume state).
    *

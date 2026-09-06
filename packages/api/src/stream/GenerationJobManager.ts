@@ -4994,17 +4994,15 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
       if (!runtime.everHadSubscriber) {
         const attachedAt = Date.now();
-        const firstSubscriber = this.jobStore.claimFirstSubscriber
-          ? await this.jobStore
-              .claimFirstSubscriber(streamId, runtime.createdAt, attachedAt)
-              .catch((claimError) => {
-                logger.error(
-                  '[GenerationJobManager] Failed to persist first subscriber attachment',
-                  claimError,
-                );
-                return false;
-              })
-          : true;
+        const firstSubscriber = await this.jobStore
+          .claimFirstSubscriber(streamId, runtime.createdAt, attachedAt)
+          .catch((claimError) => {
+            logger.error(
+              '[GenerationJobManager] Failed to persist first subscriber attachment',
+              claimError,
+            );
+            return false;
+          });
         runtime.everHadSubscriber = true;
         if (firstSubscriber) {
           recordGenerationStreamAttachment(
@@ -5518,22 +5516,12 @@ class GenerationJobManagerClass {
       recoveryCompletedAt: Date.now(),
       ...(failureReason != null && { recoveryFailureReason: failureReason }),
     } as const;
-    let settled = false;
-    if (this.jobStore.settleEarlyBufferRecovery) {
-      settled = await this.jobStore.settleEarlyBufferRecovery(
-        streamId,
-        runtime.createdAt,
-        overflow.id,
-        settlement,
-      );
-    } else if (overflow.recoveryOutcome == null) {
-      await this.jobStore.updateJob(
-        streamId,
-        { earlyBufferOverflow: { ...overflow, ...settlement } },
-        runtime.createdAt,
-      );
-      settled = true;
-    }
+    const settled = await this.jobStore.settleEarlyBufferRecovery(
+      streamId,
+      runtime.createdAt,
+      overflow.id,
+      settlement,
+    );
     if (!settled) {
       const winningJob = await this.jobStore.getJob(streamId);
       const winningOverflow = winningJob?.earlyBufferOverflow;
