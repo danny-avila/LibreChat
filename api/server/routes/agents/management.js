@@ -160,6 +160,9 @@ const fileHandlers = createAgentManagementFileHandlers({
     };
   },
   isUploadPurposeEnabled: async (req, purpose) => {
+    if (purpose === EToolResources.context) {
+      return await checkCapability(req, AgentCapabilities.context);
+    }
     if (purpose === EToolResources.execute_code) {
       return await checkCapability(req, AgentCapabilities.execute_code);
     }

@@ -350,6 +350,9 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
     purpose: AgentUploadPurpose,
     config: AgentUploadConfig,
   ): Promise<boolean> {
+    if (req.file?.size === 0) {
+      return false;
+    }
     if (config.fileSizeLimit && (req.file?.size ?? 0) > config.fileSizeLimit) {
       return false;
     }

@@ -373,25 +373,48 @@ describe('Agent Management file handlers', () => {
     expect(response.status).toHaveBeenCalledWith(400);
   });
 
-  it('rejects disabled Agent upload purposes before shared upload processing', async () => {
-    const deps = makeDeps({ isUploadPurposeEnabled: jest.fn().mockResolvedValue(false) });
+  it('rejects empty files before shared upload processing', async () => {
+    const deps = makeDeps();
     const response = makeResponse();
     const request = makeRequest({ id: 'agent-one' });
     const handlers = createAgentManagementFileHandlers(deps);
     await authorizeUpload(handlers, request, response);
-    request.body = { purpose: EToolResources.execute_code };
+    request.body = { purpose: EToolResources.context };
     request.file = {
-      path: '/tmp/disabled-purpose',
-      originalname: 'input.txt',
-      size: 5,
+      path: '/tmp/empty-file',
+      originalname: 'empty.txt',
+      size: 0,
     } as Express.Multer.File;
 
     await handlers.upload(request, response);
 
     expect(deps.processUpload).not.toHaveBeenCalled();
-    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/disabled-purpose');
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/empty-file');
     expect(response.status).toHaveBeenCalledWith(400);
   });
+
+  it.each([EToolResources.context, EToolResources.execute_code])(
+    'rejects disabled %s Agent uploads before shared processing',
+    async (purpose) => {
+      const deps = makeDeps({ isUploadPurposeEnabled: jest.fn().mockResolvedValue(false) });
+      const response = makeResponse();
+      const request = makeRequest({ id: 'agent-one' });
+      const handlers = createAgentManagementFileHandlers(deps);
+      await authorizeUpload(handlers, request, response);
+      request.body = { purpose };
+      request.file = {
+        path: '/tmp/disabled-purpose',
+        originalname: 'input.txt',
+        size: 5,
+      } as Express.Multer.File;
+
+      await handlers.upload(request, response);
+
+      expect(deps.processUpload).not.toHaveBeenCalled();
+      expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/disabled-purpose');
+      expect(response.status).toHaveBeenCalledWith(400);
+    },
+  );
 
   it('lists safe file metadata with every attached purpose in the authenticated tenant', async () => {
     const deps = makeDeps();
