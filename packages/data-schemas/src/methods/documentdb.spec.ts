@@ -22,6 +22,9 @@ import ts from 'typescript';
  * logs. It covers every backend workspace
  * that talks to MongoDB — this package, `packages/api`, and `api` — because the
  * regression class is repo-wide and new backend code lands in `packages/api`.
+ * Dataflow is followed within a file only — a pipeline imported from another
+ * module is out of reach — and the method sweep and the live cluster run are
+ * the completeness backstops, not this guard.
  * If a construct here becomes genuinely necessary, the fix is a compatible
  * rewrite, not an exception list: `misc/documentdb/audit.documentdb.spec.ts`
  * re-adjudicates any of this against a real cluster.
@@ -269,8 +272,9 @@ function collectArrayValuedNames(sourceFile: ts.SourceFile): Set<string> {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
-      node.initializer != null &&
-      ts.isArrayLiteralExpression(unwrapExpression(node.initializer))
+      (isArrayType(node.type) ||
+        (node.initializer != null &&
+          ts.isArrayLiteralExpression(unwrapExpression(node.initializer))))
     ) {
       names.add(node.name.text);
     }
@@ -667,6 +671,10 @@ describe('Amazon DocumentDB compatibility', () => {
       [
         'pipeline returned through a local variable',
         `function pipeline() {\n  const stages = [{ $addFields: { a: 1 } }];\n  return stages;\n}\nModel.updateMany(filter, pipeline());`,
+      ],
+      [
+        'annotated variable with a builder initializer',
+        `const update: PipelineStage[] = importedBuilder();\nModel.updateMany(filter, update);`,
       ],
     ])('flags a pipeline update: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).not.toEqual([]);

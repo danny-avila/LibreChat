@@ -50,6 +50,8 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
 export const EDGE_CLEANUP_BATCH = 200;
 /** Consecutive passes that may clean nothing before the loop gives up. */
 const EDGE_CLEANUP_STALLED_PASSES = 5;
+/** Sweeps from the top before the loop gives up on references that keep being added. */
+export const EDGE_CLEANUP_MAX_SWEEPS = 5;
 
 type AgentEdge = NonNullable<IAgent['edges']>[number];
 type EdgeEndpoint = AgentEdge['from'];
@@ -69,9 +71,8 @@ function hasEndpoint(endpoint: EdgeEndpoint | null): endpoint is EdgeEndpoint {
   return Array.isArray(endpoint) ? endpoint.length > 0 : endpoint != null;
 }
 
-/** The edges that survive removing `agentIds`, with those ids pruned from their endpoints. */
-export function pruneEdges(edges: IAgent['edges'], agentIds: string[]): AgentEdge[] {
-  const removed = new Set(agentIds);
+/** The edges that survive removing `removed`, with those ids pruned from their endpoints. */
+export function pruneEdges(edges: IAgent['edges'], removed: Set<string>): AgentEdge[] {
   return (edges ?? []).flatMap((edge) => {
     const from = pruneEndpoint(edge.from, removed);
     const to = pruneEndpoint(edge.to, removed);
@@ -92,7 +93,8 @@ interface GraphEdges {
  * underneath fails its compare-and-set and is left behind the cursor, so once
  * the cursor is exhausted one more sweep from the top picks up every miss (and
  * any reference added meanwhile); the cleanup ends when a sweep from the top
- * finds nothing. This is the plain-operator form of what was an
+ * finds nothing, and gives up after a bounded number of sweeps if references
+ * keep being added. This is the plain-operator form of what was an
  * aggregation-pipeline update, which Amazon DocumentDB rejects.
  */
 async function removeAgentIdsFromEdges(
@@ -107,7 +109,9 @@ async function removeAgentIdsFromEdges(
     ...(tenantId !== undefined ? { tenantId } : {}),
     $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
   };
+  const removed = new Set(agentIds);
   let stalledPasses = 0;
+  let sweeps = 0;
   let after: Types.ObjectId | undefined;
   for (;;) {
     const graphs = await Agent.find(after == null ? filter : { ...filter, _id: { $gt: after } })
@@ -119,6 +123,12 @@ async function removeAgentIdsFromEdges(
       if (after == null) {
         return;
       }
+      sweeps += 1;
+      if (sweeps >= EDGE_CLEANUP_MAX_SWEEPS) {
+        throw new Error(
+          `[removeAgentIdsFromEdges] references kept being added during cleanup (${EDGE_CLEANUP_MAX_SWEEPS} sweeps)`,
+        );
+      }
       after = undefined;
       continue;
     }
@@ -127,7 +137,7 @@ async function removeAgentIdsFromEdges(
       graphs.map((graph) => ({
         updateOne: {
           filter: { _id: graph._id, edges: graph.edges },
-          update: { $set: { edges: pruneEdges(graph.edges, agentIds) } },
+          update: { $set: { edges: pruneEdges(graph.edges, removed) } },
         },
       })),
       { ordered: false },
