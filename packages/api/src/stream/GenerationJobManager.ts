@@ -6097,6 +6097,24 @@ class GenerationJobManagerClass {
       if (!liveJob || liveJob.createdAt !== runtime.createdAt) {
         return cancelResumeSubscription();
       }
+      const liveOverflow = liveJob.earlyBufferOverflow;
+      if (liveOverflow != null) {
+        runtime.earlyBufferOverflow = liveOverflow;
+        runtime.earlyEventBufferOverflowed = true;
+        runtime.earlyEventBufferClosed = true;
+        this.resetEarlyEventBuffer(runtime);
+        if (
+          liveOverflow.recoveryOutcome === 'failed' ||
+          pendingOverflow?.id !== liveOverflow.id
+        ) {
+          /** The owner can discard its local buffer before the durable marker
+           * write becomes visible here. This final pre-activation read closes
+           * that window: retire the paused attachment and rebuild its snapshot
+           * through the durable-only recovery path now reflected in `runtime`. */
+          cancelResumeSubscription();
+          return this.subscribeWithResume(streamId, onChunk, onDone, onError, options);
+        }
+      }
       if (!resumeState?.pendingAction) {
         if (
           liveJob?.status === 'requires_action' &&

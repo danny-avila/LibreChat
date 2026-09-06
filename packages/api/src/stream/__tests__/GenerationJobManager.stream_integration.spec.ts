@@ -2174,6 +2174,47 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    testRedis('refreshes an overflow marker before activating a resume attachment', async () => {
+      const owner = createRedisManager();
+      const streamId = `overflow-marker-attachment-race-${Date.now()}`;
+      await owner.createJob(streamId, 'user-1');
+      const bigText = 'v'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await owner.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+
+      const replica = createRedisManager();
+      const replicaStore = replica.getJobStore();
+      const originalGetJob = replicaStore.getJob.bind(replicaStore);
+      let jobReads = 0;
+      jest.spyOn(replicaStore, 'getJob').mockImplementation(async (id) => {
+        const job = await originalGetJob(id);
+        jobReads++;
+        if (jobReads <= 4 && job != null) {
+          return { ...job, earlyBufferOverflow: undefined };
+        }
+        return job;
+      });
+
+      const result = await replica.subscribeWithResume(streamId, () => {});
+
+      expect(jobReads).toBeGreaterThan(4);
+      expect(JSON.stringify(result.resumeState?.aggregatedContent ?? [])).toContain('vvvv');
+      expect((await originalGetJob(streamId))?.earlyBufferOverflow).toMatchObject({
+        recoveryMethod: 'redis',
+        recoveryOutcome: 'success',
+      });
+      result.subscription?.unsubscribe();
+
+      await Promise.all([owner.destroy(), replica.destroy()]);
+    });
+
     testRedis(
       'reconstructs more than 5,000 pre-attachment events across replica reconnects (Redis)',
       async () => {

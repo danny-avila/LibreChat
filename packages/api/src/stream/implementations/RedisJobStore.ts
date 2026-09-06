@@ -864,7 +864,8 @@ const CHUNK_APPEND_LUA =
   'if claimTtl > 0 then redis.call("PEXPIRE", KEYS[5], claimTtl) end end end ' +
   'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
   'local durable = redis.call("HGET", KEYS[2], "durableEventCount") ' +
-  'if not durable then durable = redis.call("XLEN", KEYS[1]) - 1 end ' +
+  'local priorLength = redis.call("XLEN", KEYS[1]) - 1 ' +
+  'if not durable or tonumber(durable) < priorLength then durable = priorLength end ' +
   'redis.call("HSET", KEYS[2], "durableEventCount", tonumber(durable) + 1) ' +
   'if currentStatus == "running" then ' +
   'redis.call("HSET", KEYS[2], "lastActiveAt", ARGV[6]) end ' +
@@ -913,7 +914,8 @@ const CHUNK_APPEND_BATCH_LUA =
   'else redis.call("SET", KEYS[8], currentCreatedAt, "EX", epochTarget) end ' +
   'for i = 6, #ARGV do redis.call("XADD", KEYS[1], "*", "event", ARGV[i]) end ' +
   'local durable = redis.call("HGET", KEYS[2], "durableEventCount") ' +
-  'if not durable then durable = redis.call("XLEN", KEYS[1]) - (#ARGV - 5) end ' +
+  'local priorLength = redis.call("XLEN", KEYS[1]) - (#ARGV - 5) ' +
+  'if not durable or tonumber(durable) < priorLength then durable = priorLength end ' +
   'redis.call("HSET", KEYS[2], "durableEventCount", tonumber(durable) + (#ARGV - 5)) ' +
   'if currentStatus == "running" then ' +
   'redis.call("HSET", KEYS[2], "lastActiveAt", ARGV[3]) end ' +
