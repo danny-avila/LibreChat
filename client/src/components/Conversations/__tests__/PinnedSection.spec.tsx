@@ -564,6 +564,37 @@ describe('PinnedSection unified list', () => {
     );
   });
 
+  it('preserves newly reconciled keys while an older arrangement remains active', () => {
+    mockPinnedOrder = ['model:6:openAI:new-favorite', 'convo:c1', 'convo:c2'];
+    mockFavoritesData.isLoaded = false;
+    const conversations = [pinnedConvo('c1', 'First'), pinnedConvo('c2', 'Second')];
+    const tree = () => (
+      <DndProvider backend={HTML5Backend}>
+        <PinnedSection
+          conversations={conversations}
+          toggleNav={jest.fn()}
+          membershipComplete
+          membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
+        />
+      </DndProvider>
+    );
+    const { rerender } = render(tree());
+    fireEvent.keyDown(screen.getByText('First'), { key: 'ArrowDown', altKey: true });
+
+    mockFavoritesData.favorites = [{ model: 'new-favorite', endpoint: 'openAI' }];
+    mockFavoritesData.isLoaded = true;
+    mockFavoritesData.dataUpdatedAt = MEMBERSHIP_FETCHED_AT;
+    rerender(tree());
+    fireEvent.keyDown(screen.getByText('First'), { key: 'ArrowUp', altKey: true });
+
+    expect(mockUpdatePinnedOrder).toHaveBeenLastCalledWith(
+      ['model:6:openAI:new-favorite', 'convo:c1', 'convo:c2'],
+      expect.anything(),
+    );
+    act(() => mockUpdatePinnedOrder.mock.calls[1][1].onSettled());
+    expect(itemLabels()).toEqual(['new-favorite', 'First', 'Second']);
+  });
+
   /* An optimistic favorite removal leaves the earlier GET's success standing,
    * so pruning then would drop the ordering key of a write that has not landed
    * and cannot be recovered if it fails. */

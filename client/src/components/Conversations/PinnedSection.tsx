@@ -426,6 +426,7 @@ const PinnedSection = ({
   /* The live list the drag mutates; keyed ordering only, so a refetch under a
    * drag cannot clobber the in-flight arrangement. */
   const dragEntriesRef = useRef<PinnedEntry[]>(orderedEntries);
+  const dragMembershipRef = useRef(naturalEntries);
   const [liveEntries, setLiveEntries] = useState<PinnedEntry[] | null>(null);
   const [announcement, setAnnouncement] = useState('');
   /** `RenameForm` has no blur cancellation, so a second row's form can open
@@ -450,6 +451,7 @@ const PinnedSection = ({
 
   if (orderedEntries !== dragEntriesRef.current && liveEntries === null) {
     dragEntriesRef.current = orderedEntries;
+    dragMembershipRef.current = naturalEntries;
   }
 
   const displayEntries = liveEntries ?? orderedEntries;
@@ -558,10 +560,13 @@ const PinnedSection = ({
        * or conversation another tab pinned in between. Until both membership
        * sources catch up, merging keeps those keys. */
       const membershipCurrent = membershipComplete && membershipUpdatedAt >= orderUpdatedAt;
+      /* Reconciled membership can arrive while the live arrangement is frozen.
+       * Its keys are not necessarily represented by that older snapshot. */
       const canPrune =
         membershipCurrent &&
         favoritesData.isLoaded &&
-        favoritesData.dataUpdatedAt >= orderUpdatedAt;
+        favoritesData.dataUpdatedAt >= orderUpdatedAt &&
+        dragMembershipRef.current === naturalEntries;
       const nextOrder = canPrune ? visibleKeys : mergeVisibleOrder(storedOrder ?? [], visibleKeys);
 
       updatePinnedOrder.mutate(nextOrder, {
@@ -593,6 +598,7 @@ const PinnedSection = ({
       membershipComplete,
       membershipUpdatedAt,
       orderUpdatedAt,
+      naturalEntries,
       favoritesData.isLoaded,
       favoritesData.dataUpdatedAt,
       showToast,
