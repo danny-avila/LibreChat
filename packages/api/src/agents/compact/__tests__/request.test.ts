@@ -10,7 +10,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));
 
-/** No Redis in unit tests, so the lock degrades to its documented no-op lease. */
+/** No Redis in unit tests, so the lock uses its process-local lease. */
 const mockCompactConversation = jest.fn();
 jest.mock('../summary', () => {
   const actual = jest.requireActual('../summary');
@@ -32,6 +32,7 @@ jest.mock('~/middleware/concurrency', () => {
 });
 
 import { handleCompactRequest, CompactErrorCodes } from '../request';
+import { withConversationStartLock } from '../lock';
 import { NothingToCompactError, PartialCompactionError } from '../summary';
 import { ContentFilterError } from '~/middleware/contentFilter';
 import type { ProtectionFinding } from '~/protection/types';
@@ -115,6 +116,17 @@ function makeDeps(overrides: Partial<CompactRequestDeps> = {}): CompactRequestDe
     upsertBalanceFields: jest.fn().mockResolvedValue(null),
     ...overrides,
   } as unknown as CompactRequestDeps;
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 const res = {} as Parameters<typeof handleCompactRequest>[0]['res'];
@@ -387,6 +399,63 @@ describe('handleCompactRequest', () => {
     expect(deps.deleteMessages).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
     );
+  });
+
+  it('blocks turn registration while persistence still holds the conversation lease', async () => {
+    const saveConvoEntered = deferred<void>();
+    const allowSaveConvo = deferred<void>();
+    const deps = makeDeps({
+      saveConvo: jest.fn(async () => {
+        saveConvoEntered.resolve(undefined);
+        await allowSaveConvo.promise;
+        return { conversationId: 'convo_1' };
+      }),
+    });
+
+    const compaction = handleCompactRequest({ req: makeReq(), res }, deps);
+    await saveConvoEntered.promise;
+
+    let registrationCalled = false;
+    const registrationError = await withConversationStartLock('convo_1', async () => {
+      registrationCalled = true;
+      return 'registered';
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    allowSaveConvo.resolve(undefined);
+    const result = await compaction;
+
+    expect(registrationError).toMatchObject({
+      statusCode: 409,
+      code: 'CONVERSATION_BUSY',
+    });
+    expect(registrationCalled).toBe(false);
+    expect(result.status).toBe(201);
+
+    await expect(withConversationStartLock('convo_1', async () => 'registered')).resolves.toBe(
+      'registered',
+    );
+  });
+
+  it('refuses compaction while a normal turn registration holds the lease', async () => {
+    const registrationEntered = deferred<void>();
+    const allowRegistration = deferred<void>();
+    const registration = withConversationStartLock('convo_1', async () => {
+      registrationEntered.resolve(undefined);
+      await allowRegistration.promise;
+      return 'registered';
+    });
+    await registrationEntered.promise;
+
+    const deps = makeDeps();
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    allowRegistration.resolve(undefined);
+    await expect(registration).resolves.toBe('registered');
+    expect(result).toMatchObject({ status: 409, code: CompactErrorCodes.ALREADY_RUNNING });
+    expect(mockCompactConversation).not.toHaveBeenCalled();
   });
 
   it('rolls the summary back when the conversation update fails', async () => {

@@ -51,10 +51,6 @@ import { checkBalance } from '~/middleware/checkBalance';
 import { resolveSender } from '~/agents/sender';
 import { acquireCompactionLock } from './lock';
 
-/** Ceiling on how long a stale lease can wedge a conversation if the process
- *  dies mid-compaction. Comfortably above the summary call's own timeout. */
-const COMPACT_LOCK_TTL_MS = 180_000;
-
 export const CompactErrorCodes = {
   NOTHING_TO_COMPACT: 'NOTHING_TO_COMPACT',
   COMPACTION_DISABLED: 'COMPACTION_DISABLED',
@@ -332,7 +328,14 @@ export async function handleCompactRequest(
     };
   }
 
-  const lock = await acquireCompactionLock(conversationId, COMPACT_LOCK_TTL_MS);
+  const lock = await acquireCompactionLock(conversationId).catch(() => undefined);
+  if (lock === undefined) {
+    return {
+      status: 503,
+      error: 'Conversation coordination is unavailable. Please retry.',
+      code: CompactErrorCodes.FAILED,
+    };
+  }
   if (!lock) {
     return {
       status: 409,

@@ -3,6 +3,9 @@ import { logger } from '@librechat/data-schemas';
 import { CacheKeys } from 'librechat-data-provider';
 import { cacheConfig, instrumentIORedisClient, ioredisClient } from '~/cache';
 
+/** Renewed for as long as compaction or turn registration holds the lease. */
+const CONVERSATION_LOCK_TTL_MS = 180_000;
+
 /** Releases only when this caller still owns the lease, so a lock that expired
  *  and was re-taken by someone else is never dropped by the previous holder. */
 const RELEASE_IF_OWNER =
@@ -12,7 +15,7 @@ const RELEASE_IF_OWNER =
 const RENEW_IF_OWNER =
   'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) end return 0';
 
-/** Conversations this process is compacting right now. */
+/** Conversations this process is compacting or registering a turn for. */
 const inFlight = new Set<string>();
 
 export interface CompactionLock {
@@ -21,12 +24,11 @@ export interface CompactionLock {
 }
 
 /**
- * Claims a conversation for the duration of one compaction.
+ * Claims a conversation for compaction or normal turn registration.
  *
  * Uses `SET NX PX` with an ownership token, the same primitive the MCP catalog
  * and leader election use: a `get`-then-`set` pair has no compare-and-set
- * semantics, so two compactions arriving together would both see an empty key
- * and both proceed. Returns `null` when another holder has the conversation.
+ * semantics, so competing operations could both proceed. Returns `null` when busy.
  *
  * Without Redis the claim falls back to a process-local set. Node interleaves
  * async handlers at every `await`, so two requests for the same conversation
@@ -35,10 +37,9 @@ export interface CompactionLock {
  */
 export async function acquireCompactionLock(
   conversationId: string,
-  ttlMs: number,
+  ttlMs: number = CONVERSATION_LOCK_TTL_MS,
 ): Promise<CompactionLock | null> {
-  /** Checked first on every path: it also guards the window where Redis is
-   *  configured but unreachable and the claim below fails open. */
+  /** Claim locally before the first await, including while Redis is pending. */
   if (inFlight.has(conversationId)) {
     return null;
   }
@@ -47,8 +48,15 @@ export async function acquireCompactionLock(
     inFlight.delete(conversationId);
   };
 
-  if (!cacheConfig.USE_REDIS || !ioredisClient) {
+  if (!cacheConfig.USE_REDIS) {
     return { release: async () => releaseLocal() };
+  }
+  if (!ioredisClient) {
+    releaseLocal();
+    throw Object.assign(new Error('Conversation coordination is unavailable. Please retry.'), {
+      statusCode: 503,
+      code: 'CONVERSATION_LOCK_UNAVAILABLE',
+    });
   }
   const key = `${CacheKeys.PENDING_REQ}:compact:${conversationId}`;
   const token = randomUUID();
@@ -59,11 +67,12 @@ export async function acquireCompactionLock(
       return null;
     }
   } catch (error) {
-    /** Fail open, as the concurrency limiter does: a cache outage should not
-     *  make compaction unavailable, and the post-call tail check still keeps a
-     *  raced summary from being persisted. */
-    logger.error('[compact] Could not claim the compaction lock', error);
-    return { release: async () => releaseLocal() };
+    releaseLocal();
+    logger.error('[compact] Could not claim the conversation lock', error);
+    throw Object.assign(new Error('Conversation coordination is unavailable. Please retry.'), {
+      statusCode: 503,
+      code: 'CONVERSATION_LOCK_UNAVAILABLE',
+    });
   }
   /**
    * The TTL starts before the message reads, hydration, tokenization and the
@@ -94,4 +103,23 @@ export async function acquireCompactionLock(
       }
     },
   };
+}
+
+/** Hands the lease off to the registered job before allowing a compaction. */
+export async function withConversationStartLock<T>(
+  conversationId: string,
+  start: () => Promise<T>,
+): Promise<T> {
+  const lock = await acquireCompactionLock(conversationId);
+  if (!lock) {
+    throw Object.assign(
+      new Error('Conversation is busy. Please retry after the current operation completes.'),
+      { statusCode: 409, code: 'CONVERSATION_BUSY' },
+    );
+  }
+  try {
+    return await start();
+  } finally {
+    await lock.release();
+  }
 }

@@ -250,6 +250,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  withConversationStartLock: jest.requireActual('@librechat/api').withConversationStartLock,
   sendEvent: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
@@ -388,8 +389,8 @@ jest.mock('~/server/services/Agents/triggers', () => ({
   verifyAgentQueuedTurnExecutionAdmission: (...args) =>
     mockVerifyAgentQueuedTurnExecutionAdmission(...args),
 }));
-
 const AgentController = require('../request');
+const { withConversationStartLock } = require('@librechat/api');
 const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
@@ -514,6 +515,48 @@ describe('ResumableAgentController resume metadata', () => {
     mockGetAgentEventActorDetachedAction.mockResolvedValue(null);
     mockClaimAgentEventActorSuspension.mockResolvedValue({ status: 'claimed' });
     mockSettleAgentEventActorSuspension.mockResolvedValue({ status: 'settled' });
+  });
+  it('rejects registration while compaction owns the conversation lease', async () => {
+    const conversationId = 'conversation-123';
+    const clientRequestId = 'held-lease-request';
+    const initializeClient = jest.fn();
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Start while compaction is saving.',
+        messageId: 'user-message',
+        clientRequestId,
+        conversationId,
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const ownedClaim = wonGenerationClaim({ streamId: conversationId, conversationId });
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(ownedClaim);
+
+    await withConversationStartLock(conversationId, async () => {
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+    });
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 409,
+        code: 'CONVERSATION_BUSY',
+        generationProtocolVersion: 1,
+      }),
+    );
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
+      'user-123',
+      clientRequestId,
+      conversationId,
+      expect.objectContaining({ claimToken: 'claim-token' }),
+    );
   });
 
   it.each([

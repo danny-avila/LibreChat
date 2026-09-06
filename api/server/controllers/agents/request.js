@@ -13,6 +13,7 @@ const {
   buildMessageFiles,
   getReferencedQuotes,
   resolveTitleTiming,
+  withConversationStartLock,
   GenerationJobManager,
   filterPersistableAbortContent,
   decrementPendingRequest,
@@ -1445,70 +1446,72 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       conversationId,
       req._agentEventTriggerProjection,
     );
-    const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
-      startupTelemetry,
-      ...(recoveredSteerId && { recoveredSteerId }),
-      ...(recoveredSteerPayload && { recoveredSteerPayload }),
-      ...(expectedPredecessorCreatedAt != null && { expectedPredecessorCreatedAt }),
-      ...(isTriggerContinuation && { rejectActivePredecessor: true }),
-      ...(ownedIdempotencyClaim?.claimToken && {
-        idempotencyClientRequestId: clientRequestId,
-        idempotencyClaimToken: ownedIdempotencyClaim.claimToken,
-      }),
-      initialMetadata: {
-        conversationId,
-        generationProtocolVersion,
-        endpoint: endpointOption.endpoint,
-        iconURL: endpointIconURL,
-        model: responseModel,
-        // Recorded HERE because this process owns the generation: the steer
-        // route may land on a different replica whose own SDK probe would
-        // answer for the wrong process during a rolling deploy.
-        preemptCapable: isSteerPreemptSupported(),
-        // Same owner-recorded pattern: this build's drain merges queued steer
-        // quotes into the injected turn. Admission on another replica must
-        // not store/acknowledge quotes an older owner would drop.
-        steerQuotesCapable: true,
-        // Persist the originating agent so a HITL resume can refuse to rebuild this
-        // paused run on a different agent (see resume.js).
-        agent_id: endpointOption.agent_id ?? req.body?.agent_id,
-        // Persist temporary-chat state so a HITL resume keeps the resumed response
-        // non-persisted instead of trusting the resume request to re-send the flag.
-        isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
-        ...(agentEventDelivery != null && {
-          agentEventDeliveryKey: agentEventDelivery.deliveryKey,
-          ...(internalDetachedCompletion == null
-            ? {}
-            : {
-                agentEventInvocationKey: internalDetachedCompletion.invocationId,
-                agentEventInvocationGenerationCreatedAt:
-                  internalDetachedCompletion.generationCreatedAt,
+    const job = await withConversationStartLock(conversationId, () =>
+      GenerationJobManager.createJob(streamId, userId, conversationId, {
+        startupTelemetry,
+        ...(recoveredSteerId && { recoveredSteerId }),
+        ...(recoveredSteerPayload && { recoveredSteerPayload }),
+        ...(expectedPredecessorCreatedAt != null && { expectedPredecessorCreatedAt }),
+        ...(isTriggerContinuation && { rejectActivePredecessor: true }),
+        ...(ownedIdempotencyClaim?.claimToken && {
+          idempotencyClientRequestId: clientRequestId,
+          idempotencyClaimToken: ownedIdempotencyClaim.claimToken,
+        }),
+        initialMetadata: {
+          conversationId,
+          generationProtocolVersion,
+          endpoint: endpointOption.endpoint,
+          iconURL: endpointIconURL,
+          model: responseModel,
+          // Recorded HERE because this process owns the generation: the steer
+          // route may land on a different replica whose own SDK probe would
+          // answer for the wrong process during a rolling deploy.
+          preemptCapable: isSteerPreemptSupported(),
+          // Same owner-recorded pattern: this build's drain merges queued steer
+          // quotes into the injected turn. Admission on another replica must
+          // not store/acknowledge quotes an older owner would drop.
+          steerQuotesCapable: true,
+          // Persist the originating agent so a HITL resume can refuse to rebuild this
+          // paused run on a different agent (see resume.js).
+          agent_id: endpointOption.agent_id ?? req.body?.agent_id,
+          // Persist temporary-chat state so a HITL resume keeps the resumed response
+          // non-persisted instead of trusting the resume request to re-send the flag.
+          isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
+          ...(agentEventDelivery != null && {
+            agentEventDeliveryKey: agentEventDelivery.deliveryKey,
+            ...(internalDetachedCompletion == null
+              ? {}
+              : {
+                  agentEventInvocationKey: internalDetachedCompletion.invocationId,
+                  agentEventInvocationGenerationCreatedAt:
+                    internalDetachedCompletion.generationCreatedAt,
+                }),
+            agentEventBindingId: boundEventBindingId,
+            ...(agentEventDelivery.expectedAction != null && {
+              agentEventExpectedAction: agentEventDelivery.expectedAction,
+              ...(GenerationJobManager.isRedis && {
+                agentEventDetachedActionProducerRequired: true,
               }),
-          agentEventBindingId: boundEventBindingId,
-          ...(agentEventDelivery.expectedAction != null && {
-            agentEventExpectedAction: agentEventDelivery.expectedAction,
-            ...(GenerationJobManager.isRedis && {
-              agentEventDetachedActionProducerRequired: true,
             }),
           }),
-        }),
-        ...(isRegenerate && { isRegenerate: true }),
-        ...(scheduleId
-          ? {
-              scheduleId,
-              scheduledFor,
-              preserveForScheduleReconcile: true,
-              ...(Number.isSafeInteger(scheduleConfigRevision) && {
-                scheduleConfigRevision,
-              }),
-              ...(req._isManualScheduledFire === true && { scheduleManual: true }),
-            }
-          : {}),
-        responseMessageId: preallocatedResponseMessageId,
-        mcpRequestBody,
-        userMessage: preliminaryUserMessage,
-      },
-    });
+          ...(isRegenerate && { isRegenerate: true }),
+          ...(scheduleId
+            ? {
+                scheduleId,
+                scheduledFor,
+                preserveForScheduleReconcile: true,
+                ...(Number.isSafeInteger(scheduleConfigRevision) && {
+                  scheduleConfigRevision,
+                }),
+                ...(req._isManualScheduledFire === true && { scheduleManual: true }),
+              }
+            : {}),
+          responseMessageId: preallocatedResponseMessageId,
+          mcpRequestBody,
+          userMessage: preliminaryUserMessage,
+        },
+      }),
+    );
     startupTelemetry?.mark('job_created');
     generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
     jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
