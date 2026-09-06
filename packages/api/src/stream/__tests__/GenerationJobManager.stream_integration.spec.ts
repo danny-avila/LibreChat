@@ -2230,6 +2230,12 @@ describe('GenerationJobManager Integration Tests', () => {
       });
       result.subscription?.unsubscribe();
 
+      const followup = await replica.subscribeWithResume(streamId, () => {});
+      expect(JSON.stringify(followup.resumeState?.aggregatedContent ?? [])).toContain(
+        'durable-before-marker',
+      );
+      followup.subscription?.unsubscribe();
+
       await Promise.all([owner.destroy(), replica.destroy()]);
     });
 

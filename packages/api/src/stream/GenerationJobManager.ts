@@ -5766,6 +5766,7 @@ class GenerationJobManagerClass {
       return { subscription: null, resumeState: null, pendingEvents: [] };
     }
 
+    const snapshotOverflowId = runtime.earlyBufferOverflow?.id;
     const pendingOverflow =
       runtime.earlyBufferOverflow?.recoveryOutcome == null &&
       !runtime.finalEvent &&
@@ -6103,10 +6104,7 @@ class GenerationJobManagerClass {
         runtime.earlyEventBufferOverflowed = true;
         runtime.earlyEventBufferClosed = true;
         this.resetEarlyEventBuffer(runtime);
-        if (
-          liveOverflow.recoveryOutcome === 'failed' ||
-          pendingOverflow?.id !== liveOverflow.id
-        ) {
+        if (liveOverflow.recoveryOutcome === 'failed' || snapshotOverflowId !== liveOverflow.id) {
           /** The owner can discard its local buffer before the durable marker
            * write becomes visible here. This final pre-activation read closes
            * that window: retire the paused attachment and rebuild its snapshot
