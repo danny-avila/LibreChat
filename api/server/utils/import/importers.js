@@ -59,8 +59,11 @@ function sanitizeImportedMessage(message) {
   const text = castPersistedImportedText(message.text);
   const content = normalizeImportedArray(message.content);
   const attachments = normalizeImportedArray(message.attachments);
+  const importable = { ...message };
+  /** Server-private run state never comes from an import. */
+  delete importable.contextMeta;
   return {
-    ...message,
+    ...importable,
     isUserSubmitted: true,
     ...(text !== message.text && { text }),
     ...(sanitizeTextMarkers &&

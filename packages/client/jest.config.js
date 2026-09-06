@@ -27,7 +27,7 @@ export default {
     '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(@tanstack|lucide-react|@dicebear|@ariakit/react-components|@ariakit/react-utils|@ariakit/react-store|@ariakit/components|@ariakit/store|@ariakit/utils)/)',
+    'node_modules/(?!(@tanstack|lucide-react|lucide|morphicons|@dicebear|@ariakit/react-components|@ariakit/react-utils|@ariakit/react-store|@ariakit/components|@ariakit/store|@ariakit/utils)/)',
   ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
 };

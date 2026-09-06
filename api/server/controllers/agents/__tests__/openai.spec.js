@@ -194,6 +194,9 @@ jest.mock('@librechat/api', () => ({
    *  export or the call throws before the assertions run. */
   stripActivityLabelParts: jest.fn((payload) => payload),
   writeSSE: jest.fn(),
+  createOwnedToolEndHandler: jest.fn(
+    (...args) => new (require('@librechat/agents').ToolEndHandler)(...args),
+  ),
   createRun: jest.fn().mockResolvedValue({
     processStream: mockProcessStream,
   }),
@@ -203,7 +206,7 @@ jest.mock('@librechat/api', () => ({
   buildAgentContextAttachmentsByAgentId: (...args) =>
     mockBuildAgentContextAttachmentsByAgentId(...args),
   createChunk: jest.fn().mockReturnValue({}),
-  buildToolSet: jest.fn().mockReturnValue(new Set()),
+  buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
@@ -625,7 +628,11 @@ describe('OpenAIChatCompletionController', () => {
     );
     const { createRun } = require('@librechat/api');
     expect(createRun).toHaveBeenCalledWith(
-      expect.objectContaining({ initialSessions: mockInitialSessions }),
+      expect.objectContaining({
+        initialSessions: mockInitialSessions,
+        user: expect.objectContaining({ id: 'user-123' }),
+        traceContext: { endpoint: 'agents' },
+      }),
     );
     expect(createSubagentUsageSink).toHaveBeenCalledWith(expect.any(Array));
   });
@@ -1332,9 +1339,10 @@ describe('OpenAIChatCompletionController', () => {
       req.user = {
         id: 'user-123',
         role: 'USER',
-        tenantId: 'tenant-123',
+        tenantId: 'stale-user-tenant',
         federatedTokens: { access_token: 'secret' },
       };
+      req.tenantId = 'request-tenant';
       const requestBody = {
         ...req.body,
         ephemeralAgent: { skills: true },
@@ -1350,7 +1358,10 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
         expect.objectContaining({
           protocol: 'chat.completions',
-          principal: req.user,
+          principal: {
+            ...req.user,
+            tenantId: 'request-tenant',
+          },
           payload: requestBody,
           requestId: expect.any(String),
           receivedAt: expect.any(Number),

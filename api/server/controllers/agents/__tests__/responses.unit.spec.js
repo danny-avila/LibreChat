@@ -203,6 +203,9 @@ jest.mock('@librechat/api', () => ({
    *  before SDK formatting; the mock must expose it like any other used
    *  export or the call throws before the assertions run. */
   stripActivityLabelParts: jest.fn((payload) => payload),
+  createOwnedToolEndHandler: jest.fn(
+    (...args) => new (require('@librechat/agents').ToolEndHandler)(...args),
+  ),
   collectReachableAgents: (roots) => {
     const agents = [];
     const pending = [...roots];
@@ -223,7 +226,7 @@ jest.mock('@librechat/api', () => ({
   }),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
-  buildToolSet: jest.fn().mockReturnValue(new Set()),
+  buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
@@ -289,6 +292,7 @@ jest.mock('@librechat/api', () => ({
     alwaysApplyDedupedFromManual: 0,
   }),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
+  resolveRecursionLimit: jest.fn().mockReturnValue(50),
   // Responses API
   writeDone: jest.fn(),
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
@@ -705,7 +709,26 @@ describe('createResponse controller', () => {
     );
     const { createRun } = require('@librechat/api');
     expect(createRun).toHaveBeenCalledWith(
-      expect.objectContaining({ initialSessions: mockInitialSessions }),
+      expect.objectContaining({
+        initialSessions: mockInitialSessions,
+        user: expect.objectContaining({ id: 'user-123' }),
+        traceContext: { endpoint: 'agents' },
+      }),
+    );
+  });
+
+  it('invokes the graph with the resolved recursion limit rather than the SDK default', async () => {
+    const api = require('@librechat/api');
+    const processStream = jest.fn().mockResolvedValue(undefined);
+    api.createRun.mockResolvedValueOnce({ processStream });
+    api.resolveRecursionLimit.mockReturnValueOnce(123);
+
+    await createResponse(req, res);
+
+    expect(processStream).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ recursionLimit: 123 }),
+      expect.anything(),
     );
   });
 
@@ -799,9 +822,10 @@ describe('createResponse controller', () => {
       req.user = {
         id: 'user-123',
         role: 'USER',
-        tenantId: 'tenant-123',
+        tenantId: 'stale-user-tenant',
         federatedTokens: { access_token: 'secret' },
       };
+      req.tenantId = 'request-tenant';
       const requestBody = {
         ...req.body,
         ephemeralAgent: { skills: true },
@@ -818,7 +842,10 @@ describe('createResponse controller', () => {
       expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
         expect.objectContaining({
           protocol: 'responses',
-          principal: req.user,
+          principal: {
+            ...req.user,
+            tenantId: 'request-tenant',
+          },
           payload: requestBody,
           requestId: expect.any(String),
           receivedAt: expect.any(Number),

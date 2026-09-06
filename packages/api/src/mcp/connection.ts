@@ -1158,6 +1158,30 @@ export class MCPConnection extends EventEmitter {
     return this.requestHeaders;
   }
 
+  /**
+   * Replaces only the runtime bearer, leaving the rest of the per-request headers
+   * a tool call installed intact. Runtime headers outrank the ones baked into the
+   * transport (see `buildFetchInit`), so a credential refreshed mid-connection has
+   * to land here as well or the stale `authorization` from the last tool call would
+   * keep winning on the retry.
+   */
+  setAuthorizationHeader(accessToken: string): void {
+    this.requestHeaders = {
+      ...(this.requestHeaders ?? {}),
+      authorization: `Bearer ${accessToken}`,
+    };
+  }
+
+  /**
+   * Halts reconnect attempts for a credential this connection cannot refresh on its
+   * own. Retrying would replay the rejected bearer through every backoff step and
+   * spend the circuit breaker's cycle budget; the connection is instead left for its
+   * next borrower to dispose and rebuild with a live credential.
+   */
+  stopReconnecting(): void {
+    this.shouldStopReconnecting = true;
+  }
+
   constructor(params: MCPConnectionParams) {
     super();
     this.options = params.serverConfig;

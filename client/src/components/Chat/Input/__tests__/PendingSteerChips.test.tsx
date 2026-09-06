@@ -17,9 +17,15 @@ const mockRestoreToComposer = jest.fn(() => true);
 const mockEditToComposer = jest.fn();
 const mockShowToast = jest.fn();
 
-jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
+// SteerMenu (rendered under PendingSteerChips) uses MorphIcon; map icon
+// identity so inverted Zap/Clock ternaries fail tests instead of going silent.
+jest.mock('@librechat/client', () => {
+  const { createSteerMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    useToastContext: () => ({ showToast: mockShowToast }),
+    MorphIcon: createSteerMorphIconMock(),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -139,6 +145,24 @@ describe('PendingSteerChips — ambiguous delivery retry', () => {
       { quotes: undefined, manualSkills: undefined },
       { preempt: false, createdAt: 1, generationProtocolVersion: 2 },
     );
+  });
+
+  it('uses semantic destructive roles for a failed steer', () => {
+    renderChips([], {
+      steers: [
+        {
+          steerId: 'failed-steer',
+          text: 'failed message',
+          status: 'failed',
+          createdAt: 1,
+        },
+      ],
+    });
+
+    const row = screen.getByTestId('steer-message-row');
+    expect(row).toHaveClass('border-border-destructive');
+    expect(row.querySelector('svg')).toHaveClass('text-text-destructive');
+    expect(screen.getByText('com_ui_steer_failed')).toHaveClass('text-text-destructive');
   });
 });
 

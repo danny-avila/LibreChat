@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -13,7 +13,7 @@ const {
   createRun,
   createChunk,
   applyContextToAgent,
-  buildToolSet,
+  buildRunToolSet,
   buildInitialToolSessions,
   buildAgentScopedContext,
   buildInlineMemoryContext,
@@ -56,6 +56,7 @@ const {
   getUserFacingProviderError,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   resolveAgentScopedSkillIds,
@@ -806,7 +807,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       const openaiMessages = convertMessages(request.messages);
 
-      const toolSet = buildToolSet(primaryConfig);
+      const toolSet = buildRunToolSet(
+        primaryConfig,
+        handoffAgentConfigs.values(),
+        undefined,
+        openaiMessages,
+        true,
+      );
       const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
@@ -995,7 +1002,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         },
         on_run_step_completed: createHandler(),
         // Use proper ToolEndHandler for processing artifacts (images, file citations, code output)
-        on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+        on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
         on_chain_stream: createHandler(),
         on_chain_end: createHandler(),
         on_agent_update: createHandler(),
@@ -1065,7 +1072,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         signal: execution.signal,
         customHandlers: handlers,
         requestBody: mcpRequestBody,
-        user: { id: userId },
+        user: { ...createSafeUser(req.user), id: userId },
+        traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
@@ -1203,7 +1211,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       protocol: 'chat.completions',
       requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
       receivedAt,
-      principal: req.user,
+      principal: req.tenantId == null ? req.user : { ...req.user, tenantId: req.tenantId },
       payload: validation.request,
     });
   } catch (error) {

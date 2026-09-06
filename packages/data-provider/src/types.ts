@@ -10,6 +10,7 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
+import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
 import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
@@ -532,6 +533,49 @@ export type TPublicCodeEnvironment = {
   type: 'managed' | 'attached';
   default?: boolean;
   pairingAvailable?: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeEnvironmentSummary = {
+  resourceId: string;
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  canEdit?: boolean;
+  canDelete: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeControlPlane = {
+  id: string;
+  name: string;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+};
+
+export type TCodeEnvironmentsResponse = {
+  environments: TCodeEnvironmentSummary[];
+  controlPlanes: TCodeControlPlane[];
+};
+
+export type TCodeEnvironmentPairingResponse = {
+  environment: TCodeEnvironmentSummary;
+  pairing: {
+    workerId: string;
+    code: string;
+    expiresAt: string;
+    endpoint: string;
+  };
+};
+
+export type TCodeEnvironmentStatusResponse = {
+  environmentId: string;
+  status: 'offline' | 'starting' | 'ready';
+  leaseExpiresInMs?: number;
+  sandboxProfile?: string;
+  runtimes?: string[];
+  operations?: string[];
 };
 
 export type TConfig = {

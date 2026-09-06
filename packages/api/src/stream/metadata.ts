@@ -107,5 +107,8 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.compactionSemanticIndex) {
     patch.compactionSemanticIndex = metadata.compactionSemanticIndex;
   }
+  if (metadata.contextMeta) {
+    patch.contextMeta = metadata.contextMeta;
+  }
   return patch;
 }

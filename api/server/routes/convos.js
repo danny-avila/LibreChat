@@ -3,6 +3,7 @@ const express = require('express');
 const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
+  normalizeLimit,
   deleteAgentCheckpoints,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
@@ -141,7 +142,7 @@ const isValidProjectFilter = (projectId) =>
   !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
 
 router.get('/', async (req, res) => {
-  const limit = parseInt(req.query.limit, 10) || 25;
+  const limit = normalizeLimit(req.query.limit);
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const pinned = isEnabled(req.query.pinned);

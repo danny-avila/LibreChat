@@ -1417,6 +1417,73 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / limit clamping', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    /** `parseInt('-1') || 25` kept the -1, and `.limit(-1 + 1)` is `.limit(0)`, which
+     * MongoDB reads as "no limit" — one request drained the caller's whole list. */
+    it('clamps a negative limit instead of forwarding it', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '-1' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 1 }),
+      );
+    });
+
+    it('caps an oversized limit at the page ceiling', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '999999999' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 100 }),
+      );
+    });
+
+    it('raises a zero limit to a single row', async () => {
+      const response = await request(app).get('/api/convos').query({ limit: '0' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 1 }),
+      );
+    });
+
+    it.each([
+      ['absent', undefined],
+      ['non-numeric', 'all'],
+    ])('falls back to the default page size when the limit is %s', async (_label, limit) => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query(limit === undefined ? {} : { limit });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 25 }),
+      );
+    });
+
+    /** Express parses a repeated key into an array, which `parseInt` silently reads as
+     * its first element's digits rather than rejecting. */
+    it('clamps a repeated limit parameter', async () => {
+      const response = await request(app).get('/api/convos?limit=999999&limit=5');
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ limit: 100 }),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';

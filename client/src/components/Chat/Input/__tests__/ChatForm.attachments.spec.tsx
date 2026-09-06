@@ -6,9 +6,9 @@ import { RecoilRoot, useRecoilState } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { BrowserRouter as Router } from 'react-router-dom';
-import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, FileSources, EModelEndpoint } from 'librechat-data-provider';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider } from '~/Providers';
@@ -117,7 +117,10 @@ function Harness() {
   );
 }
 
-function renderComposer() {
+function renderComposer({
+  submitting = false,
+  quotes = [],
+}: { submitting?: boolean; quotes?: string[] } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -127,7 +130,12 @@ function renderComposer() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot>
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.isSubmittingFamily(0), submitting);
+          set(store.pendingQuotesByConvoId(conversation.conversationId ?? ''), quotes);
+        }}
+      >
         <Router>
           <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
             <DndProvider backend={HTML5Backend}>
@@ -172,6 +180,142 @@ describe('ChatForm attachments', () => {
 
     await waitFor(() => expect(sendButton()).toBeEnabled());
     expect(textarea).toHaveValue('hi');
+  }, 20000);
+
+  test('does not steal focus when clicking the nested attachment icon', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    const trigger = screen.getByRole('button', { name: 'Attach File Options' });
+    expect(trigger).toBeEnabled();
+    const icon = trigger.querySelector('svg');
+    expect(icon).not.toBeNull();
+    const focus = jest.spyOn(textarea, 'focus');
+
+    await userEvent.click(icon as SVGElement);
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(await screen.findByRole('menu', { name: 'Attach File Options' })).toBeInTheDocument();
+  }, 20000);
+
+  test('closes an open menu when the textarea is clicked', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.click(screen.getByRole('button', { name: 'Attach File Options' }));
+    expect(await screen.findByRole('menu', { name: 'Attach File Options' })).toBeInTheDocument();
+
+    await userEvent.click(textarea);
+
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { name: 'Attach File Options' })).not.toBeInTheDocument(),
+    );
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('still returns focus to the textarea after a plain control click', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.type(textarea, 'hi');
+    expect(sendButton()).toBeEnabled();
+
+    await userEvent.click(sendButton());
+
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('returns focus to the textarea after a during-run hovercard action', async () => {
+    renderComposer({ submitting: true });
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.type(textarea, 'later');
+    /** Ariakit shows a hovercard only after the pointer has travelled, and a
+     *  keydown resets that, so the hover needs real screen-coordinate movement. */
+    const anchor = await screen.findByTestId('during-run-send-button');
+    fireEvent.mouseMove(anchor, { screenX: 10, screenY: 10 });
+    fireEvent.mouseMove(anchor, { screenX: 20, screenY: 20 });
+    const hovercard = await screen.findByRole('dialog');
+    const queue = within(hovercard).getByRole('button', { name: /^Queue\b/ });
+    expect(queue).toBeEnabled();
+
+    await userEvent.click(queue);
+
+    await waitFor(() => expect(textarea).toHaveValue(''));
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('returns focus to the textarea after the primary during-run submit', async () => {
+    renderComposer({ submitting: true });
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.type(textarea, 'later');
+
+    await userEvent.click(await screen.findByTestId('during-run-send-button'));
+
+    await waitFor(() => expect(textarea).toHaveValue(''));
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('returns focus to the textarea when removing a quote collapses the popup', async () => {
+    renderComposer({ quotes: ['alpha', 'beta'] });
+    const textarea = await screen.findByTestId('text-input');
+    // Hover opens this disclosure too; test the click path without a synthetic hover toggle.
+    await userEvent.click(screen.getByRole('button', { name: '2 selections' }), {
+      skipHover: true,
+    });
+    const popup = await screen.findByRole('dialog');
+
+    await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
+
+    await waitFor(() => expect(screen.queryByTestId('quote-selections-popup')).toBeNull());
+    expect(screen.getByText('beta')).toBeInTheDocument();
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('keeps focus inside the popup when removing a quote leaves several', async () => {
+    renderComposer({ quotes: ['alpha', 'beta', 'gamma'] });
+    await screen.findByTestId('text-input');
+    // Hover opens this disclosure too; test the click path without a synthetic hover toggle.
+    await userEvent.click(screen.getByRole('button', { name: '3 selections' }), {
+      skipHover: true,
+    });
+    const popup = await screen.findByRole('dialog');
+
+    await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
+
+    await waitFor(() => expect(within(popup).getAllByRole('button')).toHaveLength(2));
+    expect(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]).toHaveFocus();
+  }, 20000);
+
+  test('does not raise the keyboard when a quote removal collapses the popup on touch', async () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = jest
+      .fn()
+      .mockReturnValue({ matches: true }) as unknown as typeof matchMedia;
+    try {
+      renderComposer({ quotes: ['alpha', 'beta'] });
+      const textarea = await screen.findByTestId('text-input');
+      // Hover opens this disclosure too; test the click path without a synthetic hover toggle.
+      await userEvent.click(screen.getByRole('button', { name: '2 selections' }), {
+        skipHover: true,
+      });
+      const popup = await screen.findByRole('dialog');
+
+      await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
+
+      await waitFor(() => expect(screen.queryByTestId('quote-selections-popup')).toBeNull());
+      expect(textarea).not.toHaveFocus();
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  }, 20000);
+
+  test('focuses the textarea when clicking empty composer space', async () => {
+    renderComposer();
+    const textarea = await screen.findByTestId('text-input');
+    const surface = screen.getByTestId('composer-surface');
+    const focus = jest.spyOn(textarea, 'focus');
+
+    fireEvent.click(surface);
+
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(textarea).toHaveFocus();
   }, 20000);
 
   test('enables send for an attachment with no composer text', async () => {

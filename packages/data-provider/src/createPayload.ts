@@ -35,7 +35,9 @@ export default function createPayload(submission: t.TSubmission) {
   };
 
   const endpoint = _e as s.EModelEndpoint;
-  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
+  /** Custom endpoint names are user-defined and may contain `/`, which would
+   * otherwise split into extra path segments and miss the `/:endpoint` route. */
+  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${encodeURIComponent(endpoint)}`;
   if (s.isAssistantsEndpoint(endpoint)) {
     server =
       EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +

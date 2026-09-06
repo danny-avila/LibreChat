@@ -12,6 +12,9 @@ jest.mock('~/utils', () => ({
   groupSequentialToolCalls: jest.fn(),
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
   getPartKeyIndex: jest.requireActual('~/utils/messages').getPartKeyIndex,
+  /** Real implementations: the media helpers are pure and drive the phase
+   * card's attachment row, so stubbing them would make that path inert here. */
+  ...jest.requireActual<typeof import('~/utils/media')>('~/utils/media'),
 }));
 
 jest.mock('~/Providers', () => {
@@ -33,12 +36,19 @@ jest.mock('~/Providers', () => {
      * the component's own catch swallowed it, so the sources path was dead here
      * while the suite still passed. */
     useSearchContext: () => ({ searchResults: undefined }),
+    MediaContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    },
+    useMediaContext: () => ({ attachmentsByName: undefined }),
   };
 });
 
 jest.mock('../Parts', () => ({
   EmptyText: ({ underHeaderIcon }: { underHeaderIcon?: boolean }) => (
     <div data-testid="empty-text" data-under-header-icon={String(underHeaderIcon === true)} />
+  ),
+  AttachmentGroup: ({ attachments }: { attachments?: unknown[] }) => (
+    <div data-testid="attachment-group" data-count={String(attachments?.length ?? 0)} />
   ),
   AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
     <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />
@@ -164,6 +174,7 @@ const baseProps = {
   isSubmitting: false,
   isLatestMessage: false,
   isCreatedByUser: false,
+  showThinking: false,
   content: [],
 };
 
@@ -255,11 +266,19 @@ describe('ContentParts — interim skill cards', () => {
   });
 
   it('renders pending skill cards above parallel content', () => {
+    /** Two agents, so the group renders as columns at all. */
     const parallelContent: TMessageContentParts[] = [
       {
         type: ContentTypes.TEXT,
-        text: 'parallel',
-        groupId: 'group-1',
+        text: 'primary',
+        agentId: 'agent_a',
+        groupId: 1,
+      } as unknown as TMessageContentParts,
+      {
+        type: ContentTypes.TEXT,
+        text: 'added',
+        agentId: 'agent_b____1',
+        groupId: 1,
       } as unknown as TMessageContentParts,
     ];
     render(<ContentParts {...baseProps} content={parallelContent} manualSkills={['pptx']} />);
@@ -411,15 +430,17 @@ describe('ContentParts — post-steer author re-attribution', () => {
   });
 
   it('provides resume attribution to the parallel renderer for its sequential stretches', () => {
-    const parallelText = {
-      type: ContentTypes.TEXT,
-      text: 'column',
-      groupId: 1,
-    } as unknown as TMessageContentParts;
+    const laneText = (agentId: string) =>
+      ({
+        type: ContentTypes.TEXT,
+        text: `column ${agentId}`,
+        agentId,
+        groupId: 1,
+      }) as unknown as TMessageContentParts;
     render(
       <ContentParts
         {...baseProps}
-        content={[parallelText, steerPart, textPart('resumed')]}
+        content={[laneText('agent_a'), laneText('agent_b____1'), steerPart, textPart('resumed')]}
         authorHeader={header}
       />,
     );
@@ -553,18 +574,21 @@ describe('ContentParts — activity phase state', () => {
       activity_count: 2,
       pending: false,
     } as unknown as TMessageContentParts;
-    const parallel = {
-      type: ContentTypes.TEXT,
-      text: 'lane result',
-      groupId: 1,
-    } as unknown as TMessageContentParts;
+    const lane = (agentId: string) =>
+      ({
+        type: ContentTypes.TEXT,
+        text: `lane result ${agentId}`,
+        agentId,
+        groupId: 1,
+      }) as unknown as TMessageContentParts;
 
     render(
       <ContentParts
         {...baseProps}
         content={[
           { type: ContentTypes.TEXT, text: 'before' } as unknown as TMessageContentParts,
-          parallel,
+          lane('agent_a'),
+          lane('agent_b____1'),
           phase,
         ]}
       />,

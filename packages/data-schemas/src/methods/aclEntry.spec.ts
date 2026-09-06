@@ -1683,19 +1683,23 @@ describe('AclEntry Model Tests', () => {
    * coverage independent of the higher-level parity and behavior specs.
    */
   describe('permissionBitSupersets', () => {
-    test('requiredBits=0 matches every permBits value in [0, 15]', () => {
+    test('requiredBits=0 matches every permBits value in [0, 31]', () => {
       const result = permissionBitSupersets(0);
-      expect(result).toHaveLength(16);
-      expect([...result].sort((a, b) => a - b)).toEqual([
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-      ]);
+      expect(result).toHaveLength(32);
+      expect([...result].sort((a, b) => a - b)).toEqual(
+        Array.from({ length: 32 }, (_, value) => value),
+      );
     });
 
-    test('requiredBits=15 (all four bits) matches only [15]', () => {
+    test('all permission bits match only the upper bound', () => {
       const result = permissionBitSupersets(
-        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+        PermissionBits.VIEW |
+          PermissionBits.EDIT |
+          PermissionBits.DELETE |
+          PermissionBits.SHARE |
+          PermissionBits.VIEW_INSIGHTS,
       );
-      expect([...result].sort((a, b) => a - b)).toEqual([15]);
+      expect([...result].sort((a, b) => a - b)).toEqual([31]);
     });
 
     test('every returned value is a bitwise superset of requiredBits', () => {
@@ -1704,6 +1708,8 @@ describe('AclEntry Model Tests', () => {
         PermissionBits.EDIT,
         PermissionBits.DELETE,
         PermissionBits.SHARE,
+        PermissionBits.VIEW_INSIGHTS,
+        PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS,
         PermissionBits.VIEW | PermissionBits.EDIT,
         PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE,
       ]) {
@@ -1717,12 +1723,12 @@ describe('AclEntry Model Tests', () => {
     test('returns exactly the values satisfying $bitsAllSet semantics', () => {
       /**
        * Parity check against the literal definition: for every required mask,
-       * the returned set must equal the set of all v in [0,15] whose bits
+       * the returned set must equal the set of all v in [0,31] whose bits
        * include `required`.
        */
-      for (let required = 0; required <= 15; required++) {
+      for (let required = 0; required <= 31; required++) {
         const expected: number[] = [];
-        for (let v = 0; v <= 15; v++) {
+        for (let v = 0; v <= 31; v++) {
           if ((v & required) === required) {
             expected.push(v);
           }
@@ -1759,7 +1765,11 @@ describe('AclEntry Model Tests', () => {
      */
     describe('rejection of out-of-range inputs (cache-growth safety)', () => {
       const MAX =
-        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+        PermissionBits.VIEW |
+        PermissionBits.EDIT |
+        PermissionBits.DELETE |
+        PermissionBits.SHARE |
+        PermissionBits.VIEW_INSIGHTS;
       const FIRST_TRUNCATED_32_BIT_VALUE = 2 ** 32;
       const SHARED_EMPTY = permissionBitSupersets(MAX + 1);
 
@@ -1793,11 +1803,11 @@ describe('AclEntry Model Tests', () => {
 
       test('rejects inputs with bits above MAX_PERM_BITS even if some in-range bits are set', () => {
         /**
-         * `permBits = 17 = 0b10001` has VIEW set AND bit 4 (out of range). A
-         * stored `permBits` can never be both ≤ 15 and have bit 4 set, so the
+         * `permBits = 33 = 0b100001` has VIEW set and an out-of-range bit. A
+         * stored `permBits` can never be both ≤ 31 and have bit 5 set, so the
          * match set is necessarily empty — reject before caching.
          */
-        expect(permissionBitSupersets(MAX + PermissionBits.VIEW)).toBe(SHARED_EMPTY);
+        expect(permissionBitSupersets(MAX + 1 + PermissionBits.VIEW)).toBe(SHARED_EMPTY);
       });
 
       test('does NOT cache rejected inputs (reference identity)', () => {
@@ -1867,7 +1877,11 @@ describe('AclEntry Model Tests', () => {
    */
   describe('permBits schema bounds', () => {
     const MAX_PERM_BITS =
-      PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+      PermissionBits.VIEW |
+      PermissionBits.EDIT |
+      PermissionBits.DELETE |
+      PermissionBits.SHARE |
+      PermissionBits.VIEW_INSIGHTS;
 
     test('accepts permBits at the upper bound (all enum bits set)', async () => {
       const resource = new mongoose.Types.ObjectId();

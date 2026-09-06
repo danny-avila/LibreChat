@@ -1,6 +1,8 @@
+import { useCallback, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import {
   AgentCapabilities,
+  agentGitIdentitySchema,
   STATEFUL_CODE_ENVIRONMENTS,
   resolveStatefulCodeEnvironment,
   resolveAllowedStatefulCodeEnvironments,
@@ -17,6 +19,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
   CircleHelpIcon,
+  Input,
 } from '@librechat/client';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
@@ -36,7 +39,14 @@ export default function StatefulSessions() {
   const { user } = useAuthContext();
   const { agentsConfig } = useGetAgentsConfig();
   const methods = useFormContext<AgentForm>();
-  const { setValue, watch } = methods;
+  const {
+    register,
+    unregister,
+    getValues,
+    setValue,
+    watch,
+    formState: { errors },
+  } = methods;
 
   const enabled = watch(AgentCapabilities.stateful_code_sessions) ?? false;
   const codeEnabled = watch(AgentCapabilities.execute_code);
@@ -45,6 +55,32 @@ export default function StatefulSessions() {
   const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
   const executionEnvironments = agentsConfig?.statefulCodeSessions?.environments ?? [];
   const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(configuredEnvironments);
+  const effectiveExecutionEnvironment = codeEnvironmentId
+    ? executionEnvironments.find((candidate) => candidate.id === codeEnvironmentId)
+    : executionEnvironments.find((candidate) => candidate.default === true);
+  const showGitIdentity =
+    codeEnabled && enabled && effectiveExecutionEnvironment?.type === 'attached';
+  const releaseIdentity = useCallback(() => {
+    const identity = getValues('git_identity');
+    const empty = !identity?.name?.trim() && !identity?.email?.trim();
+    unregister('git_identity', {
+      keepValue: empty || agentGitIdentitySchema.safeParse(identity).success,
+      keepDefaultValue: true,
+    });
+  }, [getValues, unregister]);
+  useEffect(() => {
+    if (!showGitIdentity) releaseIdentity();
+  }, [showGitIdentity, releaseIdentity]);
+  useEffect(() => releaseIdentity, [releaseIdentity]);
+  const validateGitIdentity = (_value: string | undefined, values: AgentForm) => {
+    const identity = values.git_identity;
+    const empty = !identity?.name?.trim() && !identity?.email?.trim();
+    return (
+      empty ||
+      agentGitIdentitySchema.safeParse(identity).success ||
+      localize('com_ui_agent_git_identity_both_required')
+    );
+  };
 
   const handleChange = (value: boolean) => {
     setValue(AgentCapabilities.stateful_code_sessions, value, { shouldDirty: true });
@@ -170,6 +206,40 @@ export default function StatefulSessions() {
           <p className="text-xs text-text-tertiary">
             {localize('com_nav_info_stateful_code_environment')}
           </p>
+          {showGitIdentity && (
+            <div className="space-y-2 border-t border-border-light pt-3">
+              <div className="text-xs font-medium text-text-secondary">
+                {localize('com_ui_agent_git_identity')}
+              </div>
+              <Input
+                {...register('git_identity.name', {
+                  validate: validateGitIdentity,
+                  deps: ['git_identity.email'],
+                })}
+                maxLength={128}
+                placeholder={localize('com_ui_agent_git_name')}
+                aria-label={localize('com_ui_agent_git_name')}
+              />
+              <Input
+                {...register('git_identity.email', {
+                  validate: validateGitIdentity,
+                  deps: ['git_identity.name'],
+                })}
+                type="email"
+                maxLength={254}
+                placeholder={localize('com_ui_agent_git_email')}
+                aria-label={localize('com_ui_agent_git_email')}
+              />
+              {(errors.git_identity?.name || errors.git_identity?.email) && (
+                <p className="text-xs text-text-destructive" role="alert">
+                  {localize('com_ui_agent_git_identity_both_required')}
+                </p>
+              )}
+              <p className="text-xs text-text-tertiary">
+                {localize('com_nav_info_agent_git_identity')}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

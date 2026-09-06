@@ -1657,27 +1657,28 @@ function statefulCodeResponses(operation, toolNames) {
   }
 
   const commands = {
-    write: `printf ${STATEFUL_CODE_VALUE} > /mnt/data/librechat-bridge-state.txt && cat /mnt/data/librechat-bridge-state.txt`,
-    read: 'cat /mnt/data/librechat-bridge-state.txt',
+    write: `printf ${STATEFUL_CODE_VALUE} > librechat-bridge-state.txt && cat librechat-bridge-state.txt`,
+    read: 'cat librechat-bridge-state.txt',
   };
   const command = commands[operation];
   if (!command) {
     return { responses: [`E2E stateful code failed: unsupported operation ${operation}`] };
   }
 
+  const toolCallId = `call_e2e_stateful_code_${operation}`;
   return {
     responses: ['', ''],
     toolCalls: [
       {
-        id: `call_e2e_stateful_code_${operation}`,
+        id: toolCallId,
         name: BASH_TOOL_NAME,
         args: { command },
         type: 'tool_call',
       },
     ],
     resolveOnStream: (streamMessages) => {
-      const toolText = findLastToolMessageText(streamMessages, STATEFUL_CODE_VALUE);
-      if (!toolText) {
+      const toolMessage = findLastToolMessage(streamMessages, toolCallId);
+      if (!getContentText(toolMessage?.content).includes(STATEFUL_CODE_VALUE)) {
         return null;
       }
       return { responses: [`E2E stateful code ${operation} observed ${STATEFUL_CODE_VALUE}`] };
@@ -1833,6 +1834,16 @@ function findToolMessage(messages, toolCallId) {
   return (messages ?? []).find(
     (message) => messageType(message) === 'tool' && message?.tool_call_id === toolCallId,
   );
+}
+
+function findLastToolMessage(messages, toolCallId) {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (messageType(message) === 'tool' && message?.tool_call_id === toolCallId) {
+      return message;
+    }
+  }
+  return undefined;
 }
 
 function deferredHitlCallId(label, phase) {

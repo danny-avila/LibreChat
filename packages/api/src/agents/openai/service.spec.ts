@@ -19,7 +19,7 @@ type CreateRunArgs = {
   appConfig?: Record<string, unknown>;
   requestBody?: Record<string, unknown>;
 };
-type ProcessStreamConfig = { configurable?: Record<string, unknown> };
+type ProcessStreamConfig = { configurable?: Record<string, unknown>; recursionLimit?: number };
 
 function createMockReq(
   user?: Record<string, unknown>,
@@ -124,6 +124,19 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
     expect(streamConfig.configurable?.user).toMatchObject({ id: 'user-123', role: 'ADMIN' });
     expect(streamConfig.configurable?.user_id).toBe('user-123');
+  });
+
+  it('invokes the graph with the same resolved recursion limit the step-budget hook uses', async () => {
+    deps.appConfig = { endpoints: { agents: { recursionLimit: 123 } } };
+
+    await createAgentChatCompletion(
+      createMockReq({ id: 'user-123', role: 'USER' }),
+      createMockRes(),
+      deps,
+    );
+
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    expect(streamConfig.recursionLimit).toBe(123);
   });
 
   it('falls back to a bare id when no authenticated user is attached', async () => {

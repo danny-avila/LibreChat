@@ -101,3 +101,44 @@ export function getUserFacingProviderError(error: unknown, protectionEnabled: bo
   }
   return stripLangChainTroubleshootingUrl(error.message) || GENERIC_PROVIDER_ERROR;
 }
+
+/**
+ * LangGraph's stable machine identifier for "the graph ran out of supersteps".
+ * Set as `lc_error_code` on the `GraphRecursionError` thrown by the Pregel loop
+ * when `loop.status === 'out_of_steps'`.
+ */
+const GRAPH_RECURSION_LIMIT_CODE = 'GRAPH_RECURSION_LIMIT';
+
+/** Bounded `cause` walk: a graph error may be rethrown wrapped by an outer node. */
+const MAX_CAUSE_DEPTH = 4;
+
+/**
+ * Whether `error` is the agent graph exhausting its per-turn step budget
+ * (`recursionLimit`), as opposed to anything actually going wrong.
+ *
+ * This is a normal terminal condition, not a failure: the turn is persisted as
+ * `unfinished` with `Constants.TOOL_CALL_LIMIT_FINISH_REASON` so the UI can offer
+ * to continue, instead of surfacing a red error bubble the user cannot act on.
+ *
+ * Both markers are checked because they fail independently. `lc_error_code` is the
+ * documented contract but is only present on errors constructed with the fields
+ * argument, while `name` is assigned in the constructor body and therefore survives
+ * class-name minification. Either one alone is sufficient evidence.
+ */
+export function isStepLimitError(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && current != null; depth++) {
+    if (typeof current !== 'object') {
+      return false;
+    }
+    const candidate = current as { lc_error_code?: unknown; name?: unknown; cause?: unknown };
+    if (
+      candidate.lc_error_code === GRAPH_RECURSION_LIMIT_CODE ||
+      candidate.name === 'GraphRecursionError'
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
+}

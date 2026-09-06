@@ -9,10 +9,12 @@ import {
   QueryKeys,
   ErrorTypes,
   StepEvents,
+  StepTypes,
   apiBaseUrl,
   SteerEvents,
   dataService,
   ContentTypes,
+  ToolCallTypes,
   ActivityLabelEvents,
   ReasoningLabelEvents,
   UsageEvents,
@@ -454,6 +456,26 @@ const isOAuthStepEvent = (data: unknown) => {
   }
 
   return false;
+};
+
+const getStepEventId = (event: unknown): string | undefined => {
+  if (event == null || typeof event !== 'object' || !('data' in event)) {
+    return undefined;
+  }
+  const data = event.data;
+  if (data == null || typeof data !== 'object') {
+    return undefined;
+  }
+  if ('id' in data && typeof data.id === 'string') {
+    return data.id;
+  }
+  const result = 'result' in data ? data.result : undefined;
+  return result != null &&
+    typeof result === 'object' &&
+    'id' in result &&
+    typeof result.id === 'string'
+    ? result.id
+    : undefined;
 };
 
 const replaceNewConversationUrl = (conversationId: string) => {
@@ -1351,6 +1373,53 @@ export default function useResumableSSE(
           stepHandler(event, submission);
         }
       };
+      const applyPendingOAuthPrompt = (
+        prompt: Agents.PendingMCPOAuthPrompt,
+        submission: EventSubmission,
+      ) => {
+        const toolCall: Agents.ToolCall = {
+          id: prompt.toolCallId,
+          name: prompt.toolName,
+          args: '',
+          type: ToolCallTypes.TOOL_CALL,
+        };
+        const toolCallDelta: Agents.ToolCallChunk = {
+          id: prompt.toolCallId,
+          name: prompt.toolName,
+          args: '',
+        };
+        stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: {
+              id: prompt.stepId,
+              runId: prompt.runId,
+              index: prompt.index,
+              type: StepTypes.TOOL_CALLS,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [toolCall],
+              },
+            },
+          },
+          submission,
+        );
+        stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_DELTA,
+            data: {
+              id: prompt.stepId,
+              delta: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [toolCallDelta],
+                auth: prompt.authURL,
+                expires_at: prompt.expiresAt,
+              },
+            },
+          },
+          submission,
+        );
+      };
 
       /**
        * Maps a pending action onto the in-flight response message so the
@@ -2111,8 +2180,13 @@ export default function useResumableSSE(
               resumeSubmission,
             );
 
+            const pendingOAuthPrompts = data.resumeState?.pendingOAuthPrompts ?? [];
+            const pendingOAuthStepIds = new Set(pendingOAuthPrompts.map((prompt) => prompt.stepId));
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {
+                if (pendingOAuthStepIds.has(runStep.id)) {
+                  continue;
+                }
                 stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, resumeSubmission);
               }
             }
@@ -2217,6 +2291,10 @@ export default function useResumableSSE(
               }
             }
 
+            for (const prompt of pendingOAuthPrompts) {
+              applyPendingOAuthPrompt(prompt, resumeSubmission);
+            }
+
             /**
              * Re-pause on reconnect: the run is parked on a human-review
              * interrupt. Re-apply the pending action so the approval / ask-user
@@ -2268,6 +2346,14 @@ export default function useResumableSSE(
                 `Replaying ${data.resumeState.replayEvents.length} resume events`,
               );
               for (const replayEvent of data.resumeState.replayEvents) {
+                const replayStepId = getStepEventId(replayEvent);
+                if (
+                  replayStepId != null &&
+                  pendingOAuthStepIds.has(replayStepId) &&
+                  isOAuthStepEvent(replayEvent)
+                ) {
+                  continue;
+                }
                 if (replayEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
                   contextHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {

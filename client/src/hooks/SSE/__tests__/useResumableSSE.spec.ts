@@ -5,6 +5,7 @@ import {
   LocalStorageKeys,
   QueryKeys,
   StepEvents,
+  StepTypes,
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
@@ -3254,6 +3255,97 @@ describe('useResumableSSE', () => {
           messageId: 'follow-up-response',
           parentMessageId: 'follow-up-user',
         }),
+      }),
+    );
+
+    unmount();
+  });
+
+  it('hydrates a projected pending OAuth prompt once against the resumed response', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      index: 0,
+      type: StepTypes.TOOL_CALLS,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+        },
+      },
+    };
+
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+            responseMessageId: 'resumed-response',
+            userMessage: {
+              messageId: 'resumed-user',
+              conversationId: CONV_ID,
+              text: 'Use Google Workspace',
+            },
+            pendingOAuthPrompts: [
+              {
+                stepId: 'step-oauth',
+                runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+                index: 0,
+                toolCallId: 'call-oauth',
+                toolName: 'oauth_mcp_Google-Workspace',
+                authURL: 'https://auth.example.com/oauth',
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(2);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      {
+        event: StepEvents.ON_RUN_STEP,
+        data: expect.objectContaining({
+          id: 'step-oauth',
+          runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+          index: 0,
+        }),
+      },
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({ messageId: 'resumed-response' }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      {
+        event: StepEvents.ON_RUN_STEP_DELTA,
+        data: expect.objectContaining({
+          id: 'step-oauth',
+          delta: expect.objectContaining({ auth: 'https://auth.example.com/oauth' }),
+        }),
+      },
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({ messageId: 'resumed-response' }),
       }),
     );
 
