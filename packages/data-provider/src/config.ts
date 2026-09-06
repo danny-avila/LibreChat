@@ -1147,6 +1147,10 @@ export const codeEnvironmentUserSettingsSchema = z
 
 export type CodeEnvironmentUserSettings = z.infer<typeof codeEnvironmentUserSettingsSchema>;
 
+export type CodeWorkerEnrollmentPolicy = NonNullable<
+  NonNullable<z.infer<typeof agentsEndpointSchema>['statefulCodeSessions']>['principalWorkers']
+>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1187,6 +1191,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       statefulCodeSessions: z
         .object({
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+          /** Server-only personal worker enrollment policy. Effective principal
+           * policy may tighten, but never raise, the deployment ceiling. */
+          principalWorkers: z
+            .object({
+              enabled: z.boolean().optional(),
+              /** Defaults to five. Zero disables enrollment; existing machines remain usable. */
+              maxPerUser: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+            })
+            .optional(),
           /** Operator-managed execution environments. Attached entries route to a
            * Code API deployment backed by an outbound librechat-code worker. */
           environments: z

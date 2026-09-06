@@ -449,6 +449,28 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each([0, 5, 1000])('accepts a personal worker ceiling of %i', (maxPerUser) => {
+    const principalWorkers = { enabled: true, maxPerUser };
+    const result = agentsEndpointSchema.parse({
+      statefulCodeSessions: { allowedEnvironments: ['user'], principalWorkers },
+    });
+    expect(result.statefulCodeSessions?.principalWorkers).toEqual(principalWorkers);
+  });
+
+  it.each([-1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid personal worker ceiling %s',
+    (maxPerUser) => {
+      expect(
+        agentsEndpointSchema.safeParse({
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            principalWorkers: { maxPerUser },
+          },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it('accepts uniquely named execution environments with exactly one default', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: {

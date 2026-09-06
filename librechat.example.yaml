@@ -566,6 +566,14 @@ endpoints:
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
+  #     # Personal BYOM enrollment. Requires allowPrincipalWorkers on a control plane.
+  #     # Omitted values default to enabled and five registered environments per user.
+  #     # Principal config overrides may tighten, but cannot raise, this ceiling.
+  #     # Lowering the limit, or disabling enrollment, does not revoke existing machines.
+  #     # This counts registered environments across control planes, not online workers.
+  #     principalWorkers:
+  #       enabled: true
+  #       maxPerUser: 25
   #     # Route an agent to an operator-managed Code API or to a Code API whose
   #     # `remote-bridge` backend leases work to an outbound @librechat/code worker.
   #     environments:
