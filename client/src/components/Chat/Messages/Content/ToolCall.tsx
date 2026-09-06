@@ -53,6 +53,7 @@ export default function ToolCall({
   runStepDurationMs?: PartMetadata['runStepDurationMs'];
 }) {
   const localize = useLocalize();
+  const [oauthError, setOAuthError] = useState<string | null>(null);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
@@ -142,6 +143,7 @@ export default function ToolCall({
     if (!auth) {
       return;
     }
+    setOAuthError(null);
     try {
       if (isMCPToolCall && mcpServerName) {
         await dataService.bindMCPOAuth(mcpServerName);
@@ -150,9 +152,11 @@ export default function ToolCall({
       }
     } catch (e) {
       logger.error('Failed to bind OAuth CSRF cookie', e);
+      setOAuthError(localize('com_ui_oauth_error_generic'));
+      return;
     }
     window.open(auth, '_blank', 'noopener,noreferrer');
-  }, [auth, isMCPToolCall, mcpServerName, actionId]);
+  }, [auth, isMCPToolCall, mcpServerName, actionId, localize]);
 
   const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
   /**
@@ -337,6 +341,11 @@ export default function ToolCall({
               {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
             </Button>
           </div>
+          {oauthError && (
+            <p role="alert" className="text-sm text-text-destructive">
+              {oauthError}
+            </p>
+          )}
           <ToolAuthWarning />
         </div>
       )}
