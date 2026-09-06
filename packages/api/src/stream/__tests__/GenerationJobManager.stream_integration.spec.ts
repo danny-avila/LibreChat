@@ -2178,16 +2178,32 @@ describe('GenerationJobManager Integration Tests', () => {
       const owner = createRedisManager();
       const streamId = `overflow-marker-attachment-race-${Date.now()}`;
       await owner.createJob(streamId, 'user-1');
-      const bigText = 'v'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await owner.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await owner.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await owner.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: 'durable-before-marker' } },
+        },
+      });
+      const ownerRuntime = (
+        owner as unknown as {
+          runtimeState: Map<string, unknown>;
+        }
+      ).runtimeState.get(streamId)!;
+      await (
+        owner as unknown as {
+          overflowEarlyEventBuffer: (id: string, runtime: unknown) => Promise<void>;
+        }
+      ).overflowEarlyEventBuffer(streamId, ownerRuntime);
 
       const replica = createRedisManager();
       const replicaStore = replica.getJobStore();
@@ -2205,7 +2221,9 @@ describe('GenerationJobManager Integration Tests', () => {
       const result = await replica.subscribeWithResume(streamId, () => {});
 
       expect(jobReads).toBeGreaterThan(4);
-      expect(JSON.stringify(result.resumeState?.aggregatedContent ?? [])).toContain('vvvv');
+      expect(JSON.stringify(result.resumeState?.aggregatedContent ?? [])).toContain(
+        'durable-before-marker',
+      );
       expect((await originalGetJob(streamId))?.earlyBufferOverflow).toMatchObject({
         recoveryMethod: 'redis',
         recoveryOutcome: 'success',
