@@ -1,14 +1,20 @@
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
+import type { AuthUserDocCacheStore } from '~/auth/userDocCache';
 import type { PinnedOrderHandlersDeps } from './pinned';
 import type { ServerRequest } from '~/types';
+import {
+  getCachedAuthUserDoc,
+  invalidateCachedAuthUserDoc,
+  setCachedAuthUserDoc,
+} from '~/auth/userDocCache';
 import { createPinnedOrderHandlers } from './pinned';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-const makeRes = () => {
+const makeRes = (onJson?: () => void) => {
   const res = {
     statusCode: 0,
     body: undefined as unknown,
@@ -17,6 +23,7 @@ const makeRes = () => {
       return res;
     },
     json(payload: unknown) {
+      onJson?.();
       res.body = payload;
       return res;
     },
@@ -32,6 +39,21 @@ const makeReq = (body: unknown, userId: string | typeof ANONYMOUS = 'user-1') =>
     user: userId === ANONYMOUS ? undefined : ({ id: userId } as IUser),
   }) as unknown as ServerRequest;
 
+const makeAuthUserDocCacheStore = () => {
+  const values = new Map<string, unknown>();
+  const store: AuthUserDocCacheStore & { values: Map<string, unknown> } = {
+    values,
+    get: async <T>(key: string) => values.get(key) as T | undefined,
+    set: async (key: string, value: unknown) => {
+      values.set(key, value);
+    },
+    delete: async (key: string) => {
+      values.delete(key);
+    },
+  };
+  return store;
+};
+
 const setup = (overrides: Partial<PinnedOrderHandlersDeps> = {}) => {
   const stored: Record<string, string[]> = { 'user-1': ['convo:a', 'agent:b'] };
   const deps: PinnedOrderHandlersDeps = {
@@ -45,6 +67,7 @@ const setup = (overrides: Partial<PinnedOrderHandlersDeps> = {}) => {
       stored[userId] = updateData.pinnedOrder ?? stored[userId];
       return { pinnedOrder: stored[userId] } as IUser;
     }),
+    invalidateCachedAuthUserDoc: jest.fn(async (_userId: string) => undefined),
     ...overrides,
   };
   return { deps, handlers: createPinnedOrderHandlers(deps), stored };
@@ -104,6 +127,29 @@ describe('createPinnedOrderHandlers', () => {
       expect(res.statusCode).toBe(200);
       expect(stored['user-1']).toEqual(['agent:b', 'convo:a']);
       expect(res.body).toEqual(['agent:b', 'convo:a']);
+    });
+
+    it('invalidates cached auth user state after persisting a new order', async () => {
+      const store = makeAuthUserDocCacheStore();
+      await setCachedAuthUserDoc(store, 'auth-user-doc-key', {
+        id: 'user-1',
+        pinnedOrder: ['convo:stale'],
+      });
+      expect(await getCachedAuthUserDoc(store, 'auth-user-doc-key')).toEqual(
+        expect.objectContaining({ pinnedOrder: ['convo:stale'] }),
+      );
+
+      const { handlers } = setup({
+        invalidateCachedAuthUserDoc: (userId) => invalidateCachedAuthUserDoc(store, { userId }),
+      });
+      const res = makeRes(() => {
+        expect(store.values.has('auth-user-doc-key')).toBe(false);
+      });
+      await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['convo:fresh'] }), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual(['convo:fresh']);
+      expect(await getCachedAuthUserDoc(store, 'auth-user-doc-key')).toBeUndefined();
     });
 
     /* `updateUser` returns a document without the deselected field, so the
@@ -197,14 +243,15 @@ describe('createPinnedOrderHandlers', () => {
     });
 
     it('returns 404 when the user is gone', async () => {
-      const { handlers } = setup({ updateUser: async () => null });
+      const { handlers, deps } = setup({ updateUser: async () => null });
       const res = makeRes();
       await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['convo:a'] }), res);
       expect(res.statusCode).toBe(404);
+      expect(deps.invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
     });
 
     it('returns 500 when the write throws', async () => {
-      const { handlers } = setup({
+      const { handlers, deps } = setup({
         updateUser: async () => {
           throw new Error('boom');
         },
@@ -212,6 +259,7 @@ describe('createPinnedOrderHandlers', () => {
       const res = makeRes();
       await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['convo:a'] }), res);
       expect(res.statusCode).toBe(500);
+      expect(deps.invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
     });
   });
 

@@ -81,6 +81,14 @@ export const useUpdateFavoritesMutation = () => {
           queryClient.setQueryData([QueryKeys.favorites], context.previousFavorites);
         }
       },
+      onSettled: () => {
+        if (
+          queryClient.isMutating({ mutationKey: [MutationKeys.updateFavorites] }) === 1 &&
+          queryClient.getQueryState([QueryKeys.favorites])?.isInvalidated
+        ) {
+          return queryClient.invalidateQueries([QueryKeys.favorites]);
+        }
+      },
     },
   );
 };
@@ -96,6 +104,22 @@ export const useGetPinnedOrderQuery = (
   return useQuery<string[], Error>([QueryKeys.pinnedOrder], () => dataService.getPinnedOrder(), {
     ...reconcile,
     ...config,
+    onSuccess: (order) => {
+      /* Completion timestamps cannot date a server snapshot. Discard reads
+       * that overlapped this order and start membership reconciliation after
+       * it, before a reorder can treat the membership as authoritative. */
+      for (const key of [QueryKeys.favorites, QueryKeys.pinnedConversations]) {
+        void queryClient.cancelQueries([key]);
+        const favoritesWritePending =
+          key === QueryKeys.favorites &&
+          queryClient.isMutating({ mutationKey: [MutationKeys.updateFavorites] }) > 0;
+        void queryClient.invalidateQueries({
+          queryKey: [key],
+          refetchType: favoritesWritePending ? 'none' : 'active',
+        });
+      }
+      config?.onSuccess?.(order);
+    },
   });
 };
 

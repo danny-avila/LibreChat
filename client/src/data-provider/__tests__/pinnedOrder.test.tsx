@@ -3,7 +3,14 @@ import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useGetPinnedOrderQuery, useUpdatePinnedOrderMutation } from '../Favorites';
+import type { ConversationListResponse, TUserFavorite } from 'librechat-data-provider';
+import {
+  useGetFavoritesQuery,
+  useGetPinnedOrderQuery,
+  useUpdateFavoritesMutation,
+  useUpdatePinnedOrderMutation,
+} from '../Favorites';
+import { usePinnedConversationsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -13,6 +20,9 @@ jest.mock('librechat-data-provider', () => {
       ...actual.dataService,
       getPinnedOrder: jest.fn(),
       updatePinnedOrder: jest.fn(),
+      getFavorites: jest.fn(),
+      updateFavorites: jest.fn(),
+      listConversations: jest.fn(),
     },
   };
 });
@@ -23,6 +33,9 @@ const updatePinnedOrder = dataService.updatePinnedOrder as jest.MockedFunction<
 const getPinnedOrder = dataService.getPinnedOrder as jest.MockedFunction<
   typeof dataService.getPinnedOrder
 >;
+const getFavorites = jest.mocked(dataService.getFavorites);
+const updateFavorites = jest.mocked(dataService.updateFavorites);
+const listConversations = jest.mocked(dataService.listConversations);
 
 /** Resolves/rejects on command so two writes can be held in flight at once. */
 const deferred = <T,>() => {
@@ -481,5 +494,90 @@ describe('useUpdatePinnedOrderMutation', () => {
 
     await waitFor(() => expect(getPinnedOrder).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(second.result.current.data).toEqual(['c', 'b', 'a']));
+  });
+});
+
+describe('pinned order membership reconciliation', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it('discards delayed membership snapshots that began before the order arrived', async () => {
+    const order = deferred<string[]>();
+    const oldFavorites = deferred<TUserFavorite[]>();
+    const oldPins = deferred<ConversationListResponse>();
+    const favorites = [{ model: 'new-favorite', endpoint: 'openAI' }];
+    const pins: ConversationListResponse['conversations'] = [
+      {
+        conversationId: 'new-pin',
+        title: 'New pin',
+        pinned: true,
+        endpoint: null,
+        createdAt: '2026-09-06T00:00:00.000Z',
+        updatedAt: '2026-09-06T00:00:00.000Z',
+      },
+    ];
+    getPinnedOrder.mockReturnValue(order.promise);
+    getFavorites.mockReturnValueOnce(oldFavorites.promise).mockResolvedValue(favorites);
+    listConversations
+      .mockReturnValueOnce(oldPins.promise)
+      .mockResolvedValue({ conversations: pins, nextCursor: null });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(
+      () => ({
+        favorites: useGetFavoritesQuery(),
+        pins: usePinnedConversationsQuery(),
+        order: useGetPinnedOrderQuery(),
+      }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    await waitFor(() => expect(getFavorites).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listConversations).toHaveBeenCalledTimes(1));
+
+    await act(async () => order.resolve(['model:6:openAI:new-favorite', 'convo:new-pin']));
+    await waitFor(() => expect(result.current.favorites.data).toEqual(favorites));
+    await waitFor(() => expect(result.current.pins.data?.conversations).toEqual(pins));
+
+    await act(async () => {
+      oldFavorites.resolve([]);
+      oldPins.resolve({ conversations: [], nextCursor: null });
+    });
+    expect(result.current.favorites.data).toEqual(favorites);
+    expect(result.current.pins.data?.conversations).toEqual(pins);
+  });
+
+  it('defers favorites reconciliation until a pending membership write settles', async () => {
+    const order = deferred<string[]>();
+    const write = deferred<TUserFavorite[]>();
+    const favorites = [{ model: 'new-favorite', endpoint: 'openAI' }];
+    getPinnedOrder.mockReturnValue(order.promise);
+    getFavorites.mockResolvedValueOnce([]).mockResolvedValue(favorites);
+    updateFavorites.mockReturnValue(write.promise);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(
+      () => ({
+        favorites: useGetFavoritesQuery(),
+        order: useGetPinnedOrderQuery(),
+        write: useUpdateFavoritesMutation(),
+      }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    await waitFor(() => expect(result.current.favorites.isSuccess).toBe(true));
+    await act(async () => result.current.write.mutate(favorites));
+    await act(async () => order.resolve(['model:6:openAI:new-favorite']));
+    await waitFor(() => expect(result.current.order.isSuccess).toBe(true));
+    expect(getFavorites).toHaveBeenCalledTimes(1);
+    expect(result.current.favorites.data).toEqual(favorites);
+
+    await act(async () => write.resolve(favorites));
+    await waitFor(() => expect(result.current.write.isSuccess).toBe(true));
+    expect(getFavorites).toHaveBeenCalledTimes(2);
+    expect(result.current.favorites.data).toEqual(favorites);
   });
 });

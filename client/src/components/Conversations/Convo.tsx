@@ -193,7 +193,14 @@ function Conversation({
       { conversationId, pinned: false },
       {
         onSuccess: () => {
-          successor?.focus();
+          const activeElement = document.activeElement;
+          const focusInRow = row?.contains(activeElement) === true;
+          const rowRemovedFocus =
+            row?.isConnected === false &&
+            (activeElement === document.body || activeElement === document.documentElement);
+          if (successor?.isConnected && (focusInRow || rowRemovedFocus)) {
+            successor.focus();
+          }
         },
         onError: () => {
           showToast({

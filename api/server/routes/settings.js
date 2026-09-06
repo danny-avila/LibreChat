@@ -1,5 +1,10 @@
 const express = require('express');
-const { createToolFavoritesHandlers, createPinnedOrderHandlers } = require('@librechat/api');
+const { CacheKeys } = require('librechat-data-provider');
+const {
+  createToolFavoritesHandlers,
+  createPinnedOrderHandlers,
+  invalidateCachedAuthUserDoc,
+} = require('@librechat/api');
 const {
   updateFavoritesController,
   getFavoritesController,
@@ -9,6 +14,7 @@ const {
   updateSkillStatesController,
 } = require('~/server/controllers/SkillStatesController');
 const { requireJwtAuth } = require('~/server/middleware');
+const { getLogStores } = require('~/cache');
 const {
   getToolFavorites,
   addToolFavorite,
@@ -25,7 +31,13 @@ const toolFavorites = createToolFavoritesHandlers({
   removeToolFavorite,
 });
 
-const pinnedOrder = createPinnedOrderHandlers({ getUserById, updateUser });
+const authUserDocCacheStore = getLogStores(CacheKeys.AUTH_USER_DOC);
+const pinnedOrder = createPinnedOrderHandlers({
+  getUserById,
+  updateUser,
+  invalidateCachedAuthUserDoc: (userId) =>
+    invalidateCachedAuthUserDoc(authUserDocCacheStore, { userId }),
+});
 
 router.get('/favorites/tools', requireJwtAuth, toolFavorites.listToolFavorites);
 router.put('/favorites/tools/:itemType/:itemId', requireJwtAuth, toolFavorites.addToolFavorite);

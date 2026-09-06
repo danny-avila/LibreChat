@@ -20,6 +20,7 @@ export interface PinnedOrderHandlersDeps {
   /** User read/write — from `@librechat/data-schemas` `createMethods` output. */
   getUserById: (userId: string, fieldsToSelect?: string) => Promise<IUser | null>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  invalidateCachedAuthUserDoc: (userId: string) => Promise<void>;
 }
 
 function validatePinnedOrder(pinnedOrder: unknown, res: Response): string[] | null {
@@ -95,12 +96,12 @@ export function createPinnedOrderHandlers(deps: PinnedOrderHandlersDeps): {
     if (validated == null) {
       return res;
     }
-
     try {
       const user = await deps.updateUser(userId, { pinnedOrder: validated });
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
+      await deps.invalidateCachedAuthUserDoc(userId);
       /* The field is deselected at schema level, so the updated document does
        * not carry it back. What was just stored is what to answer with. */
       return res.status(200).json(validated);

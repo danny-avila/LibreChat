@@ -131,7 +131,7 @@ export const usePinnedConversationsQuery = (
 
   return useQuery<ConversationListResponse>(
     queryKey,
-    async () => {
+    async ({ signal }) => {
       const conversations: ConversationListResponse['conversations'] = [];
       let cursor: string | undefined;
 
@@ -145,6 +145,7 @@ export const usePinnedConversationsQuery = (
             cursor,
           });
         } catch (error) {
+          signal?.throwIfAborted();
           /** A page failing partway through the drain must not throw away the pins
            * already loaded: publish them so the retry, which starts the drain over,
            * renders against the partial set instead of an empty section. */
@@ -156,6 +157,7 @@ export const usePinnedConversationsQuery = (
           }
           throw error;
         }
+        signal?.throwIfAborted();
         conversations.push(...page.conversations);
         cursor = page.nextCursor ?? undefined;
       } while (cursor);

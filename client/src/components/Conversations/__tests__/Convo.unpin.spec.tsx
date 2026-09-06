@@ -142,6 +142,45 @@ describe('pinned conversation row unpin', () => {
      * and land on something actually focusable rather than the row div. */
     expect(document.activeElement).toBe(screen.getByLabelText('open Second'));
   });
+  it('does not steal focus when focus moves away before deferred success', () => {
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    renderPinnedSection([pinned('c1', 'First'), pinned('c2', 'Second')]);
+
+    activateUnpin(0);
+    elsewhere.focus();
+    act(() => {
+      pinCalls[0].options?.onSuccess?.();
+    });
+
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+
+  it('restores focus when the focused row is removed before deferred success', () => {
+    const first = pinned('c1', 'First');
+    const second = pinned('c2', 'Second');
+    const { rerender } = renderPinnedSection([first, second]);
+
+    activateUnpin(0);
+    rerender(
+      <DndProvider backend={HTML5Backend}>
+        <div role="region" data-pinned-section="" aria-label="com_ui_pinned">
+          <Conversation
+            key={second.conversationId}
+            conversation={second}
+            retainView={jest.fn()}
+            toggleNav={jest.fn()}
+          />
+        </div>
+      </DndProvider>,
+    );
+    act(() => {
+      pinCalls[0].options?.onSuccess?.();
+    });
+
+    expect(document.activeElement).toBe(screen.getByLabelText('open Second'));
+  });
 
   it('falls back to the row above when the last row is unpinned', () => {
     renderPinnedSection([pinned('c1', 'First'), pinned('c2', 'Second')]);
