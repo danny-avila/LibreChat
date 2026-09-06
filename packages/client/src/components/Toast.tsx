@@ -59,9 +59,9 @@ export function Toast(): JSX.Element {
           {persistent && (
             <RadixToast.Close
               aria-label={localize('com_ui_close')}
-              className="mt-1 flex-shrink-0 flex-grow-0 rounded-sm opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+              className="ml-2 inline-flex flex-shrink-0 flex-grow-0 items-center justify-center self-center rounded-sm opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
             >
-              <X className="icon-sm" />
+              <X className="h-4 w-4" strokeWidth={3} />
             </RadixToast.Close>
           )}
         </div>
