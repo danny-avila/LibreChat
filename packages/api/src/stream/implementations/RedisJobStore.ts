@@ -633,8 +633,14 @@ const SETTLE_EARLY_BUFFER_RECOVERY_LUA =
 /** Generation-scoped single-winner first-subscriber claim. */
 const CLAIM_FIRST_SUBSCRIBER_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'redis.call("HINCRBY", KEYS[1], "activeSubscriberCount", 1) ' +
   'if redis.call("HEXISTS", KEYS[1], "firstSubscriberAttachedAt") == 1 then return 0 end ' +
   'redis.call("HSET", KEYS[1], "firstSubscriberAttachedAt", ARGV[2]) return 1';
+
+const DETACH_SUBSCRIBER_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local active = tonumber(redis.call("HGET", KEYS[1], "activeSubscriberCount") or "0") ' +
+  'if active > 0 then redis.call("HINCRBY", KEYS[1], "activeSubscriberCount", -1) end return 1';
 
 /** Exact provider-segment completion fence. A paused segment finishing after a
  * resume cannot mark the resumed provider drained because its opaque id differs. */
@@ -853,6 +859,9 @@ const CHUNK_APPEND_LUA =
   'if #kept > 0 then redis.call("RPUSH", KEYS[5], unpack(kept)) ' +
   'if claimTtl > 0 then redis.call("PEXPIRE", KEYS[5], claimTtl) end end end ' +
   'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
+  'local durable = redis.call("HGET", KEYS[2], "durableEventCount") ' +
+  'if not durable then durable = redis.call("XLEN", KEYS[1]) - 1 end ' +
+  'redis.call("HSET", KEYS[2], "durableEventCount", tonumber(durable) + 1) ' +
   'if currentStatus == "running" then ' +
   'redis.call("HSET", KEYS[2], "lastActiveAt", ARGV[6]) end ' +
   'local cur = redis.call("TTL", KEYS[1]) ' +
@@ -899,6 +908,9 @@ const CHUNK_APPEND_BATCH_LUA =
   'if epochTtl >= 0 and epochTtl < epochTarget then redis.call("EXPIRE", KEYS[8], epochTarget) end ' +
   'else redis.call("SET", KEYS[8], currentCreatedAt, "EX", epochTarget) end ' +
   'for i = 6, #ARGV do redis.call("XADD", KEYS[1], "*", "event", ARGV[i]) end ' +
+  'local durable = redis.call("HGET", KEYS[2], "durableEventCount") ' +
+  'if not durable then durable = redis.call("XLEN", KEYS[1]) - (#ARGV - 5) end ' +
+  'redis.call("HSET", KEYS[2], "durableEventCount", tonumber(durable) + (#ARGV - 5)) ' +
   'if currentStatus == "running" then ' +
   'redis.call("HSET", KEYS[2], "lastActiveAt", ARGV[3]) end ' +
   'local cur = redis.call("TTL", KEYS[1]) ' +
@@ -2348,6 +2360,10 @@ export class RedisJobStore implements IJobStoreV2 {
         ),
       ) === 1
     );
+  }
+
+  async detachSubscriber(streamId: string, expectedCreatedAt: number): Promise<void> {
+    await this.redis.eval(DETACH_SUBSCRIBER_LUA, 1, KEYS.job(streamId), String(expectedCreatedAt));
   }
 
   async markProviderExecutionDrained(
@@ -5041,6 +5057,10 @@ export class RedisJobStore implements IJobStoreV2 {
       firstSubscriberAttachedAt: data.firstSubscriberAttachedAt
         ? parseInt(data.firstSubscriberAttachedAt, 10)
         : undefined,
+      activeSubscriberCount: data.activeSubscriberCount
+        ? parseInt(data.activeSubscriberCount, 10)
+        : undefined,
+      durableEventCount: data.durableEventCount ? parseInt(data.durableEventCount, 10) : undefined,
       idempotencyClientRequestId: data.idempotencyClientRequestId || undefined,
       recoveredSteerId: data.recoveredSteerId || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,

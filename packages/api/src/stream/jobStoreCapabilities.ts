@@ -32,6 +32,7 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
   'discardSteerLeftover',
   'settleEarlyBufferRecovery',
   'claimFirstSubscriber',
+  'detachSubscriber',
 ] as const satisfies ReadonlyArray<keyof IJobStoreV2>;
 
 export type JobStoreV2RequiredMethod = (typeof JOB_STORE_V2_REQUIRED_METHODS)[number];

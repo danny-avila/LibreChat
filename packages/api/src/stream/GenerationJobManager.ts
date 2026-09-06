@@ -695,8 +695,10 @@ interface RuntimeJobState {
   outstandingCoalescedReceipts?: number;
   hasSubscriber: boolean;
   everHadSubscriber: boolean;
-  /** Non-blocking durable first-subscriber claim, awaited only during cleanup. */
-  firstSubscriberClaim?: Promise<boolean>;
+  /** Ordered, non-blocking durable subscriber lifecycle writes. */
+  subscriberStateWrite?: Promise<unknown>;
+  /** Whether this runtime's local subscriber group is represented durably. */
+  subscriberStateAttached: boolean;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
   /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
@@ -1615,6 +1617,21 @@ class GenerationJobManagerClass {
       runtime.attachmentGeneration++;
       runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
 
+      runtime.subscriberStateWrite = (runtime.subscriberStateWrite ?? Promise.resolve())
+        .then(async () => {
+          if (!runtime.subscriberStateAttached) {
+            return;
+          }
+          await this.jobStore.detachSubscriber(streamId, runtime.createdAt);
+          runtime.subscriberStateAttached = false;
+        })
+        .catch((detachError) => {
+          logger.error(
+            '[GenerationJobManager] Failed to persist subscriber detachment',
+            detachError,
+          );
+        });
+
       // Terminal delivery closes the SSE subscription too, but it is not a user
       // disconnect. Running partial-response handlers here can overwrite the
       // already-saved final response as unfinished.
@@ -1626,7 +1643,10 @@ class GenerationJobManagerClass {
         recordGenerationStreamAttachment(this.storeLabel, 'disconnected');
       }
 
-      const cleanup = this.persistSubscriberCleanup(streamId, runtime);
+      const cleanup = Promise.all([
+        runtime.subscriberStateWrite,
+        this.persistSubscriberCleanup(streamId, runtime),
+      ]).then(() => undefined);
       this.subscriberCleanupPromises.add(cleanup);
       void cleanup.then(
         () => this.subscriberCleanupPromises.delete(cleanup),
@@ -2636,6 +2656,7 @@ class GenerationJobManagerClass {
       inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
       everHadSubscriber: false,
+      subscriberStateAttached: false,
       attachmentGeneration: 0,
     };
     this.runtimeState.set(streamId, runtime);
@@ -2943,10 +2964,11 @@ class GenerationJobManagerClass {
       resumeCaptureHandlers: new Set(),
       localErrorHandlers: new Set(),
       emissionSequence: 0,
-      durableEventSequence: 0,
+      durableEventSequence: jobData.durableEventCount ?? 0,
       inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
       everHadSubscriber: false,
+      subscriberStateAttached: false,
       attachmentGeneration: 0,
       finalEvent,
       errorEvent: jobData.error,
@@ -3967,7 +3989,7 @@ class GenerationJobManagerClass {
       this.runtimeState.get(streamId) === claimedRuntime
         ? claimedRuntime
         : undefined;
-    await runtime?.firstSubscriberClaim?.catch(() => false);
+    await runtime?.subscriberStateWrite?.catch(() => undefined);
     let cleanupError: unknown;
     let retainTerminalHostEvidence = false;
     const persistedLifecycle = runtime
@@ -3982,10 +4004,13 @@ class GenerationJobManagerClass {
         ? runtime?.earlyBufferOverflow
         : undefined;
     if (runtime != null && unresolvedOverflow != null) {
-      const attachedElsewhere = generationHadSubscriber && !runtime.everHadSubscriber;
+      const subscriberActive =
+        runtime.hasSubscriber ||
+        (persistedLifecycle?.createdAt === createdAt &&
+          (persistedLifecycle.activeSubscriberCount ?? 0) > 0);
       let unobservedFailureReason: EarlyBufferRecoveryFailureReason | undefined;
-      if (!attachedElsewhere && !runtime.hasSubscriber) {
-        unobservedFailureReason = runtime.everHadSubscriber
+      if (!subscriberActive) {
+        unobservedFailureReason = generationHadSubscriber
           ? 'subscriber_disconnected'
           : 'subscriber_never_attached';
       }
@@ -3993,8 +4018,8 @@ class GenerationJobManagerClass {
         streamId,
         runtime,
         unresolvedOverflow,
-        attachedElsewhere || runtime.hasSubscriber ? 'not_required' : 'failed',
-        Date.now() - unresolvedOverflow.occurredAt,
+        subscriberActive ? 'not_required' : 'failed',
+        0,
         0,
         0,
         unobservedFailureReason,
@@ -5011,21 +5036,32 @@ class GenerationJobManagerClass {
 
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
-      if (!runtime.everHadSubscriber) {
-        const attachedAt = Date.now();
-        const bootstrapSlow = attachedAt - attachmentStartedAt >= SLOW_ATTACHMENT_BOOTSTRAP_MS;
-        const firstSubscriberClaim = this.jobStore
-          .claimFirstSubscriber(streamId, runtime.createdAt, attachedAt)
-          .catch((claimError) => {
-            logger.error(
-              '[GenerationJobManager] Failed to persist first subscriber attachment',
-              claimError,
-            );
+      const attachedAt = Date.now();
+      const subscriberClaim = (runtime.subscriberStateWrite ?? Promise.resolve())
+        .then(async () => {
+          if (runtime.subscriberStateAttached) {
             return false;
-          });
-        runtime.firstSubscriberClaim = firstSubscriberClaim;
+          }
+          const firstSubscriber = await this.jobStore.claimFirstSubscriber(
+            streamId,
+            runtime.createdAt,
+            attachedAt,
+          );
+          runtime.subscriberStateAttached = true;
+          return firstSubscriber;
+        })
+        .catch((claimError) => {
+          logger.error(
+            '[GenerationJobManager] Failed to persist subscriber attachment',
+            claimError,
+          );
+          return false;
+        });
+      runtime.subscriberStateWrite = subscriberClaim;
+      if (!runtime.everHadSubscriber) {
+        const bootstrapSlow = attachedAt - attachmentStartedAt >= SLOW_ATTACHMENT_BOOTSTRAP_MS;
         runtime.everHadSubscriber = true;
-        void firstSubscriberClaim.then((firstSubscriber) => {
+        void subscriberClaim.then((firstSubscriber) => {
           if (firstSubscriber) {
             recordGenerationStreamAttachment(
               this.storeLabel,
@@ -5400,6 +5436,11 @@ class GenerationJobManagerClass {
     );
     try {
       await this.jobStore.flushPendingAppends?.(streamId);
+      const frontierJob = await this.jobStore.getJob(streamId);
+      if (frontierJob?.createdAt !== runtime.createdAt) {
+        throw new Error('Early buffer overflow generation was replaced before persistence');
+      }
+      overflow.durableEvents = frontierJob.durableEventCount ?? runtime.durableEventSequence;
       await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
       const persistedJob = await this.jobStore.getJob(streamId);
       if (
@@ -5626,7 +5667,11 @@ class GenerationJobManagerClass {
       return { subscription: null, resumeState: null, pendingEvents: [] };
     }
 
-    if (runtime.earlyBufferOverflow?.recoveryOutcome === 'failed') {
+    if (
+      runtime.earlyBufferOverflow?.recoveryOutcome === 'failed' &&
+      !runtime.finalEvent &&
+      !runtime.errorEvent
+    ) {
       await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
       onError?.(GENERATION_RECOVERY_FAILED_ERROR);
       return { subscription: null, resumeState: null, pendingEvents: [] };

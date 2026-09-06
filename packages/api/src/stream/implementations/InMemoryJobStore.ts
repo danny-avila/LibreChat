@@ -1557,11 +1557,21 @@ export class InMemoryJobStore implements IJobStoreV2 {
     attachedAt: number,
   ): Promise<boolean> {
     const job = this.jobs.get(streamId);
-    if (job?.createdAt !== expectedCreatedAt || job.firstSubscriberAttachedAt != null) {
+    if (job?.createdAt !== expectedCreatedAt) {
       return false;
     }
-    job.firstSubscriberAttachedAt = attachedAt;
-    return true;
+    job.activeSubscriberCount = (job.activeSubscriberCount ?? 0) + 1;
+    const firstSubscriber = job.firstSubscriberAttachedAt == null;
+    job.firstSubscriberAttachedAt ??= attachedAt;
+    return firstSubscriber;
+  }
+
+  async detachSubscriber(streamId: string, expectedCreatedAt: number): Promise<void> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt) {
+      return;
+    }
+    job.activeSubscriberCount = Math.max(0, (job.activeSubscriberCount ?? 0) - 1);
   }
 
   /**

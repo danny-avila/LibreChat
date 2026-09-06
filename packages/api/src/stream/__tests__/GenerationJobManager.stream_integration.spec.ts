@@ -1788,6 +1788,59 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('replays a completed result after the overflow reconnect was forced', async () => {
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-complete-reconnect-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const bigText = 'z'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+
+      const reconnectErrors: string[] = [];
+      await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => reconnectErrors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(reconnectErrors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+
+      const finalEvent = {
+        final: true,
+        conversation: { conversationId: streamId },
+        responseMessage: { text: 'complete' },
+      } as ServerSentEvent;
+      await manager.emitDone(streamId, finalEvent);
+      await manager.completeJob(streamId);
+
+      const terminalEvents: ServerSentEvent[] = [];
+      const resumed = await manager.subscribeWithResume(
+        streamId,
+        () => {},
+        (event) => terminalEvents.push(event),
+      );
+      resumed.subscription?.activate();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(terminalEvents).toEqual([finalEvent]);
+      resumed.subscription?.unsubscribe();
+      await manager.destroy();
+    });
+
     testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
       const manager = createRedisManager();
       const streamId = `overflow-redirect-${Date.now()}`;
@@ -1867,7 +1920,7 @@ describe('GenerationJobManager Integration Tests', () => {
           },
         });
         for (let i = 0; i < 5_001; i++) {
-          await owner.emitChunk(streamId, {
+          await firstReplica.emitChunk(streamId, {
             event: 'on_message_delta',
             data: {
               id: 'step-1',
@@ -1881,11 +1934,15 @@ describe('GenerationJobManager Integration Tests', () => {
         expect(JSON.stringify(first.resumeState?.aggregatedContent)).toContain('5000,');
         first.subscription?.activate();
         first.subscription?.unsubscribe();
+        await new Promise((resolve) => setTimeout(resolve, 50));
         const firstAttachedAt = await ioredisClient!.hget(
           `stream:{${streamId}}:job`,
           'firstSubscriberAttachedAt',
         );
         expect(firstAttachedAt).not.toBeNull();
+        expect(await ioredisClient!.hget(`stream:{${streamId}}:job`, 'activeSubscriberCount')).toBe(
+          '0',
+        );
 
         await owner.emitChunk(streamId, {
           event: 'on_message_delta',
@@ -1898,6 +1955,10 @@ describe('GenerationJobManager Integration Tests', () => {
         const secondReplica = createRedisManager();
         const second = await secondReplica.subscribeWithResume(streamId, () => {});
         expect(JSON.stringify(second.resumeState?.aggregatedContent)).toContain('after-disconnect');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(await ioredisClient!.hget(`stream:{${streamId}}:job`, 'activeSubscriberCount')).toBe(
+          '1',
+        );
         second.subscription?.unsubscribe();
         expect(
           await ioredisClient!.hget(`stream:{${streamId}}:job`, 'firstSubscriberAttachedAt'),
@@ -1905,6 +1966,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
         const recoveredJob = await secondReplica.getJob(streamId);
         expect(recoveredJob?.metadata.earlyBufferOverflow).toMatchObject({
+          durableEvents: 5_002,
           recoveryMethod: 'redis',
           recoveryOutcome: 'success',
         });
@@ -2104,6 +2166,32 @@ describe('GenerationJobManager Integration Tests', () => {
   });
 
   describe('Atomic subscribeWithResume', () => {
+    test('tracks active subscriber groups across local reattachments', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `subscriber-lifecycle-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const first = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect((await jobStore.getJob(streamId))?.activeSubscriberCount).toBe(1);
+      first?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect((await jobStore.getJob(streamId))?.activeSubscriberCount).toBe(0);
+
+      const second = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect((await jobStore.getJob(streamId))?.activeSubscriberCount).toBe(1);
+      second?.unsubscribe();
+      await manager.destroy();
+    });
+
     test('keeps the first-subscriber telemetry claim off the attachment path', async () => {
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
       let releaseClaim!: (claimed: boolean) => void;
