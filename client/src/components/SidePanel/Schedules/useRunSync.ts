@@ -31,12 +31,16 @@ const runState = (schedule: TSchedule): string => {
  * and the list's own five-minute staleness leaves it out of a tab that stays
  * focused. This panel's query is already polling for the cards, and it names the
  * chats each schedule is producing and has produced, read from the run rows rather
- * than inferred from the schedule. Every chat it names that has not been seen is
- * handed to the admission watch Run Now uses, which is idempotent per id.
+ * than inferred from the schedule. Every chat it names is handed to the admission
+ * watch Run Now uses on every observation: that watch is the one place that
+ * decides whether an id is already landed, in flight, or — having given up on a
+ * delivery deferred past its budget — worth trying again on a later announcement.
  *
- * The first observation is recorded in silence, except for occurrences still
- * running: a panel opened long after a run must not go and fetch history, but a
- * run in flight when it opens is exactly the chat the sidebar may lack.
+ * The exception is history. A panel opened long after a run must not go and fetch
+ * chats that were listed before it opened, so whatever the first observation names
+ * that is not actually generating — the last settled occurrence, and a pause that
+ * may sit on its approval indefinitely — is never handed over. A pause resolving
+ * later still re-reads the list, below.
  *
  * When a run's state moves — one settles, a pause resolves — the list is re-read
  * once for the order and title its settlement changed. Because the state includes
@@ -45,15 +49,15 @@ const runState = (schedule: TSchedule): string => {
  */
 export default function useRunSync(schedules?: TSchedule[]): void {
   const queryClient = useQueryClient();
-  const seen = useRef<Set<string> | null>(null);
+  const history = useRef<Set<string> | null>(null);
   const states = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (schedules == null) {
       return;
     }
-    const first = seen.current == null;
-    const known = (seen.current ??= new Set());
+    const first = history.current == null;
+    const skip = (history.current ??= new Set());
     let moved = false;
     for (const schedule of schedules) {
       const state = runState(schedule);
@@ -62,13 +66,20 @@ export default function useRunSync(schedules?: TSchedule[]): void {
       if (!first && before !== undefined && before !== state) {
         moved = true;
       }
-      const inFlight = new Set((schedule.activeRuns ?? []).map((run) => run.conversationId));
-      for (const conversationId of namedChats(schedule)) {
-        if (known.has(conversationId)) {
-          continue;
+      if (first) {
+        const generating = new Set(
+          (schedule.activeRuns ?? [])
+            .filter((run) => run.status === 'started')
+            .map((run) => run.conversationId),
+        );
+        for (const conversationId of namedChats(schedule)) {
+          if (!generating.has(conversationId)) {
+            skip.add(conversationId);
+          }
         }
-        known.add(conversationId);
-        if (!first || inFlight.has(conversationId)) {
+      }
+      for (const conversationId of namedChats(schedule)) {
+        if (!skip.has(conversationId)) {
           void trackScheduledRun(queryClient, conversationId);
         }
       }

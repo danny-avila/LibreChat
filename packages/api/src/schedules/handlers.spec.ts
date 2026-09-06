@@ -767,7 +767,7 @@ describe('active run projection', () => {
 
   it('names the chat a running occurrence is producing', async () => {
     const wire = await listWith([run({ conversationId: 'convo-1' })]);
-    expect(wire.activeRuns).toEqual([{ conversationId: 'convo-1' }]);
+    expect(wire.activeRuns).toEqual([{ conversationId: 'convo-1', status: 'started' }]);
   });
 
   it('projects nothing for a reservation that has not been dispatched', async () => {
@@ -785,7 +785,10 @@ describe('active run projection', () => {
       run({ conversationId: 'paused', status: 'requires_action' }),
       run({ conversationId: 'running' }),
     ]);
-    expect(wire.activeRuns).toEqual([{ conversationId: 'paused' }, { conversationId: 'running' }]);
+    expect(wire.activeRuns).toEqual([
+      { conversationId: 'paused', status: 'requires_action' },
+      { conversationId: 'running', status: 'started' },
+    ]);
   });
 
   it('files each occurrence under its own schedule', async () => {
@@ -807,7 +810,7 @@ describe('active run projection', () => {
       captured.body as { schedules: Array<{ activeRuns?: Array<{ conversationId: string }> }> }
     ).schedules;
     expect(first.activeRuns).toBeUndefined();
-    expect(second.activeRuns).toEqual([{ conversationId: 'convo-2' }]);
+    expect(second.activeRuns).toEqual([{ conversationId: 'convo-2', status: 'started' }]);
   });
 
   it('scopes the single-schedule read to the caller before ownership is known', async () => {
@@ -825,7 +828,7 @@ describe('active run projection', () => {
     expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1');
     expect(deps.methods.getActiveRunsForSchedule).not.toHaveBeenCalled();
     expect((captured.body as { activeRuns?: unknown }).activeRuns).toEqual([
-      { conversationId: 'mine' },
+      { conversationId: 'mine', status: 'started' },
     ]);
   });
 });

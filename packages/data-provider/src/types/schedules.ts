@@ -142,7 +142,12 @@ export type TSchedule = {
    * deliberately withheld from a run whose schedule was edited mid-flight. This is
    * the signal a client has that a chat is on its way, and the id to fetch it by.
    */
-  activeRuns?: Array<{ conversationId: string }>;
+  activeRuns?: Array<{
+    conversationId: string;
+    /** `started` is generating; `requires_action` is paused on an approval and may
+     *  stay that way indefinitely, so only the former is "in flight" to a client. */
+    status: ScheduleRunStatus;
+  }>;
   runCount: number;
   failureCount: number;
   configRevision?: number;

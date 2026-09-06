@@ -241,7 +241,7 @@ export type WireSchedule = Pick<
   | 'updatedAt'
 > & {
   /** See `TSchedule.activeRuns`: the running occurrences, from their own run rows. */
-  activeRuns?: Array<{ conversationId: string }>;
+  activeRuns?: Array<{ conversationId: string; status: IScheduleRun['status'] }>;
 };
 
 /**
@@ -251,9 +251,9 @@ export type WireSchedule = Pick<
  */
 export function toWireActiveRuns(
   runs: readonly IScheduleRun[],
-): Array<{ conversationId: string }> | undefined {
+): Array<{ conversationId: string; status: IScheduleRun['status'] }> | undefined {
   const chats = runs.flatMap((run) =>
-    run.conversationId != null ? [{ conversationId: run.conversationId }] : [],
+    run.conversationId != null ? [{ conversationId: run.conversationId, status: run.status }] : [],
   );
   return chats.length > 0 ? chats : undefined;
 }

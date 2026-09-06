@@ -40,8 +40,14 @@ const schedule: TSchedule = {
 /** The list naming the chat a running occurrence is producing. */
 const running = (conversationId = 'run-convo-1', overrides?: Partial<TSchedule>): TSchedule => ({
   ...schedule,
-  activeRuns: [{ conversationId }],
+  activeRuns: [{ conversationId, status: 'started' }],
   ...overrides,
+});
+
+/** A run parked on an approval; it can sit there indefinitely. */
+const paused = (conversationId: string): NonNullable<TSchedule['activeRuns']>[number] => ({
+  conversationId,
+  status: 'requires_action',
 });
 
 /** The list after a run settled — the only trace a run short enough to start and
@@ -175,15 +181,16 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
-  it('fetches every concurrent occurrence, a pause and a run alike', async () => {
+  it('fetches every concurrent occurrence that appears, a pause and a run alike', async () => {
     const queryClient = createQueryClient();
     mockGetConversationById.mockImplementation(async (id) => serverConversation(id));
-    renderWith(queryClient, [
-      running('paused-convo', {
-        activeRuns: [{ conversationId: 'paused-convo' }, { conversationId: 'run-convo-1' }],
+    const { rerender } = renderWith(queryClient, [schedule]);
+
+    rerender([
+      running('run-convo-1', {
+        activeRuns: [paused('paused-convo'), { conversationId: 'run-convo-1', status: 'started' }],
       }),
     ]);
-
     await admit();
 
     expect(listIds(queryClient)).toEqual(
@@ -192,14 +199,42 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
-  it('does not fetch history on the first observation, only runs in flight', async () => {
+  it('fetches only what is generating on the first observation, never history', async () => {
     const queryClient = createQueryClient();
-    renderWith(queryClient, [settled('old-convo'), { ...running(), id: 'schedule-2' }]);
+    /** Settled long ago, parked on an approval, and actually running: only the
+     *  last is a chat the sidebar may lack. */
+    renderWith(queryClient, [
+      settled('old-convo'),
+      { ...schedule, id: 'schedule-2', activeRuns: [paused('paused-convo')] },
+      { ...running(), id: 'schedule-3' },
+    ]);
 
     await admit();
 
     expect(mockGetConversationById).toHaveBeenCalledTimes(1);
     expect(mockGetConversationById).toHaveBeenCalledWith('run-convo-1');
+    queryClient.clear();
+  });
+
+  it('announces a run again once its watch has given up', async () => {
+    const queryClient = createQueryClient();
+    mockGetConversationById.mockRejectedValue(
+      Object.assign(new Error('Not Found'), { isAxiosError: true, response: { status: 404 } }),
+    );
+    const { rerender } = renderWith(queryClient, [schedule]);
+    rerender([running()]);
+    /** Deferred past the whole budget: the watch forgets the id so a later
+     *  announcement can try again — which is only useful if this hook makes one. */
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(600_000);
+    });
+    expect(listIds(queryClient)).toEqual(['existing']);
+
+    mockGetConversationById.mockResolvedValue(serverConversation());
+    rerender([running()]);
+    await admit();
+
+    expect(listIds(queryClient)).toEqual(['run-convo-1', 'existing']);
     queryClient.clear();
   });
 
