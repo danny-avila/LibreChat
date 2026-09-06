@@ -21,6 +21,7 @@ import {
   resolveReasoningSettingForTarget,
 } from 'librechat-data-provider';
 import type {
+  Agent,
   TMessage,
   TSubmission,
   TConversation,
@@ -47,12 +48,12 @@ import {
 } from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
+import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
-import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 
 /** A revalidating cache younger than this is locally authoritative (the run
  * that just streamed wrote it) and stays sendable; older ones wait for the
@@ -465,8 +466,11 @@ export default function useChatFunctions({
     }
     if (reasoningOverride != null) {
       const isAgent = isAgentsEndpoint(endpoint);
+      const agentId = isAgent ? conversation?.agent_id : undefined;
       const savedAgent =
-        isAgent && conversation?.agent_id ? agentsMap?.[conversation.agent_id] : undefined;
+        agentId != null
+          ? (queryClient.getQueryData<Agent>([QueryKeys.agent, agentId]) ?? agentsMap?.[agentId])
+          : undefined;
       const effectiveEndpoint = isAgent ? savedAgent?.provider : endpoint;
       const effectiveModel = isAgent ? savedAgent?.model : conversation?.model;
       const effectiveEndpointType = getEndpointField(endpointsConfig, effectiveEndpoint, 'type');

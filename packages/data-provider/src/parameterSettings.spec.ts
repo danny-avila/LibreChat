@@ -8,6 +8,7 @@ import {
   resolveDropParamsUIKeys,
 } from './parameterSettings';
 import { BedrockProviders, EModelEndpoint, Providers } from './types';
+import { ReasoningEffort } from './schemas';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
 const anthropicParams = paramSettings[EModelEndpoint.anthropic] as SettingDefinition[];
@@ -292,9 +293,12 @@ describe('isReasoningOverrideSupported', () => {
       range: { min: -1, positiveMin: 128, max: 32768, step: 128 },
     } as SettingDefinition;
 
-    expect(isReasoningOverrideSupported({ key: 'reasoning_effort', value: 'high' }, setting)).toBe(
-      false,
-    );
+    expect(
+      isReasoningOverrideSupported(
+        { key: 'reasoning_effort', value: ReasoningEffort.high },
+        setting,
+      ),
+    ).toBe(false);
     expect(isReasoningOverrideSupported({ key: 'thinkingBudget', value: 64000 }, setting)).toBe(
       false,
     );

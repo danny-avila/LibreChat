@@ -108,6 +108,7 @@ const ChatForm = memo(function ChatForm({
   const measuredRowCountRef = useRef(1);
 
   const SpeechToText = useRecoilValue(store.speechToText);
+  const autoSendText = useRecoilValue(store.autoSendText);
   const speechSettingsInitialized = useRecoilValue(store.speechSettingsInitialized);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const enterToSend = useRecoilValue(store.enterToSend);
@@ -409,6 +410,8 @@ const ChatForm = memo(function ChatForm({
        resume succeeds. A transient failure must leave the transcript intact. */
     deferComposerReset: dictationAnswerModeActive,
     disabled: speechDisabled,
+    autoSendText,
+    speechToText: SpeechToText,
   });
   const uploadingCount = useMemo(() => {
     let count = 0;

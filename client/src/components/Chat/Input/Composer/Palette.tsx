@@ -7,8 +7,8 @@ import React, {
   useCallback,
   useLayoutEffect,
 } from 'react';
-import * as Ariakit from '@ariakit/react';
 import { useSetAtom } from 'jotai';
+import * as Ariakit from '@ariakit/react';
 import { AutoSizer, List } from 'react-virtualized';
 import { Star, Plus, Search, ChevronDown } from 'lucide-react';
 import { FileUpload, IconButton, TooltipAnchor } from '@librechat/client';
@@ -30,9 +30,9 @@ import useElementSize from '~/hooks/Generic/useElementSize';
 import useRecentFiles from '~/hooks/Input/useRecentFiles';
 import useAttachItems from '~/hooks/Input/useAttachItems';
 import { isMacPlatform } from '~/utils/shortcuts';
+import { composerLiftFamily } from './state';
 import { getFileType, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { composerLiftFamily } from './state';
 
 const HEADER_HEIGHT = 26;
 const ROW_HEIGHT = 34;

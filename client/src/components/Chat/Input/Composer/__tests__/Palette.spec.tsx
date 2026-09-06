@@ -1,13 +1,13 @@
 import React from 'react';
-import { getDefaultStore } from 'jotai';
 import { RecoilRoot } from 'recoil';
+import { getDefaultStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { PaletteEntry } from '~/hooks/Input/usePaletteEntries';
 import type { AttachEntry } from '~/hooks/Input/useAttachItems';
-import Palette from '../Palette';
 import { composerLiftFamily } from '../state';
+import Palette from '../Palette';
 
 /**
  * The palette's row model: what the list is made of, in what order, and what a

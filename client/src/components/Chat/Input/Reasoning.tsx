@@ -20,8 +20,8 @@ import type {
   TReasoningOverride,
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
-import { useGetAgentByIdQuery, useGetEndpointsQuery } from '~/data-provider';
 import { getReasoningStateKey, pendingReasoningOverrideFamily } from './Composer/state';
+import { useGetAgentByIdQuery, useGetEndpointsQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
 import { formatTokens } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -290,23 +290,15 @@ export function useComposerReasoning({
     ? `${isAgent ? conversation?.agent_id : provider}:${model}:${settingFingerprint}`
     : null;
   const previousTarget = useRef(targetFingerprint);
-  const ownsControl = index === 0;
   const explicitlyUnavailable =
     enabled === false ||
     hasAddedConversation ||
     isAssistantsEndpoint(endpoint) ||
     endpointsConfig[provider]?.customParams?.reasoningFormat === ReasoningParameterFormat.disabled;
   const available =
-    ownsControl &&
-    enabled === true &&
-    !explicitlyUnavailable &&
-    (!isAgent || agent != null) &&
-    setting != null;
+    enabled === true && !explicitlyUnavailable && (!isAgent || agent != null) && setting != null;
 
   useEffect(() => {
-    if (!ownsControl) {
-      return;
-    }
     let targetChanged = false;
     if (targetFingerprint != null) {
       if (previousTarget.current == null) {
@@ -324,15 +316,7 @@ export function useComposerReasoning({
     ) {
       setValue(undefined);
     }
-  }, [
-    explicitlyUnavailable,
-    ownsControl,
-    setValue,
-    setting,
-    targetFingerprint,
-    targetResolved,
-    value,
-  ]);
+  }, [explicitlyUnavailable, setValue, setting, targetFingerprint, targetResolved, value]);
 
   if (!available || setting == null) {
     return null;

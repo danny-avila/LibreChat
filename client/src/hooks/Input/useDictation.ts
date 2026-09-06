@@ -1,5 +1,4 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import type { TAskFunction } from '~/common';
 import useGetAudioSettings from './useGetAudioSettings';
@@ -7,7 +6,6 @@ import { useChatFormContext } from '~/Providers';
 import useSpeechToText from './useSpeechToText';
 import { globalAudioId } from '~/common';
 import useLocalize from '../useLocalize';
-import store from '~/store';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 
@@ -45,6 +43,8 @@ export default function useDictation({
   filesLoading = false,
   deferComposerReset = false,
   disabled = false,
+  autoSendText,
+  speechToText,
 }: {
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
@@ -58,13 +58,15 @@ export default function useDictation({
   deferComposerReset?: boolean;
   /** Host-owned speech and composer gates, including settings hydration. */
   disabled?: boolean;
+  /** Host-owned Auto Send Text preference. */
+  autoSendText: number;
+  /** Host-owned Speech to Text preference. */
+  speechToText: boolean;
 }): Dictation {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
-  const autoSendText = useRecoilValue(store.autoSendText);
-  const speechToText = useRecoilValue(store.speechToText);
   /** The Auto Send Text setting, which submits a plain recording once its
    *  transcript settles. A stop that was never asked to send still honours it. */
   const autoSendEnabled = autoSendText > -1;

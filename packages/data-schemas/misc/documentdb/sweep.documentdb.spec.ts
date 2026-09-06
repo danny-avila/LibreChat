@@ -299,7 +299,7 @@ function replaceValue(node: unknown, target: string, replacement: unknown): unkn
 /** Repairs synthesized arguments from a validation error's own message, so the
  * retry reaches the database instead of being reported `not-driven`. Returns
  * the repaired arguments, or null when the error is not machine-repairable. */
-function adaptArgs(args: unknown[], error: unknown, paramNames: string[] = []): unknown[] | null {
+function adaptArgs(args: unknown[], error: unknown): unknown[] | null {
   const message = String((error as { message?: string })?.message ?? '');
   let match = /Cast to (?:\[)?ObjectId(?:\])? failed for value "+?\[?'?"?([^"'\]]+)/.exec(message);
   if (match != null) {

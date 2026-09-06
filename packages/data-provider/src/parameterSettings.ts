@@ -1,3 +1,5 @@
+import type { SettingDefinition, SettingsConfiguration } from './generate';
+import type { TReasoningOverride } from './schemas';
 import {
   Verbosity,
   ImageDetail,
@@ -17,10 +19,8 @@ import {
   anthropicSettings,
 } from './types';
 import { supportsAdaptiveThinking, supportsPromptCache } from './bedrock';
-import { clampSettingRange } from './generate';
-import type { SettingDefinition, SettingsConfiguration } from './generate';
 import { getModelKey, getSettingsKeys } from './schemas';
-import type { TReasoningOverride } from './schemas';
+import { clampSettingRange } from './generate';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {

@@ -1,9 +1,6 @@
-import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
 import type { TAskFunction } from '~/common';
 import useDictation from '../useDictation';
-import store from '~/store';
 
 /**
  * The engines only report a completed transcription when Auto Send Text is
@@ -62,6 +59,7 @@ const ask = jest.fn(() => true) as unknown as jest.Mock & TAskFunction;
 
 function setup({
   autoSendText = -1,
+  speechToText = true,
   draft = '',
   isSubmitting = false,
   filesLoading = false,
@@ -69,6 +67,7 @@ function setup({
   disabled = false,
 }: {
   autoSendText?: number;
+  speechToText?: boolean;
   draft?: string;
   isSubmitting?: boolean;
   filesLoading?: boolean;
@@ -86,30 +85,19 @@ function setup({
     }),
     getValues: jest.fn(() => text),
   };
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot
-      initializeState={({ set }) => {
-        set(store.autoSendText, autoSendText);
-        set(store.speechToText, true);
-      }}
-    >
-      {children}
-    </RecoilRoot>
-  );
-  const view = renderHook(
-    () => {
-      const dictationOptions = {
-        ask: ask as unknown as TAskFunction,
-        methods: methods as never,
-        isSubmitting,
-        filesLoading: uploading,
-        deferComposerReset,
-        disabled,
-      };
-      return useDictation(dictationOptions);
-    },
-    { wrapper },
-  );
+  const view = renderHook(() => {
+    const dictationOptions = {
+      ask: ask as unknown as TAskFunction,
+      methods: methods as never,
+      isSubmitting,
+      filesLoading: uploading,
+      deferComposerReset,
+      disabled,
+      autoSendText,
+      speechToText,
+    };
+    return useDictation(dictationOptions);
+  });
   return {
     ...view,
     methods,

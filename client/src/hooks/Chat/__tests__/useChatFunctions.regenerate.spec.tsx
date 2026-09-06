@@ -1,7 +1,8 @@
 import { renderHook, act } from '@testing-library/react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type {
+  Agent,
   TConversation,
   TMessage,
   TSubmission,
@@ -19,7 +20,10 @@ const mockGetEphemeralAgent = jest.fn(() => null);
 const mockSetFilesToDelete = jest.fn();
 const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
-const mockGetQueryData = jest.fn(() => ({}));
+const mockAgentQueryData: { current?: Agent } = {};
+const mockGetQueryData = jest.fn((queryKey: readonly unknown[]) =>
+  queryKey[0] === QueryKeys.agent ? mockAgentQueryData.current : {},
+);
 const mockLoggerWarn = jest.fn();
 
 jest.mock('react-router-dom', () => ({
@@ -124,6 +128,7 @@ function renderAsk(
     endpoint?: TConversation['endpoint'];
     isSubmitting?: boolean;
     reasoningOverride?: TReasoningOverride;
+    agentId?: string;
   } = {},
 ) {
   const setMessages = jest.fn();
@@ -132,6 +137,9 @@ function renderAsk(
   const immutableConversation = conversation(conversationId);
   if ('endpoint' in options) {
     immutableConversation.endpoint = options.endpoint ?? null;
+  }
+  if (options.agentId != null) {
+    immutableConversation.agent_id = options.agentId;
   }
   const reasoningStore = createStore();
   reasoningStore.set(pendingReasoningOverrideFamily(conversationId), options.reasoningOverride);
@@ -157,7 +165,7 @@ function renderAsk(
 describe('useChatFunctions ask', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetQueryData.mockReturnValue({});
+    mockAgentQueryData.current = undefined;
   });
 
   it('refuses to send to an existing conversation before its history loads', () => {
@@ -325,12 +333,36 @@ describe('useChatFunctions ask', () => {
     expect(submission.userMessage.reasoningOverride).toEqual(override);
     expect(reasoningStore.get(pendingReasoningOverrideFamily('conversation-1'))).toBeUndefined();
   });
+  it('uses hydrated per-agent query data when the agent catalog is unavailable', () => {
+    const agentId = 'agent-uncatalogued';
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+    mockAgentQueryData.current = {
+      id: agentId,
+      provider: 'openAI',
+      model: 'gpt-5.1',
+    } as Agent;
+    const { result, setSubmission, reasoningStore } = renderAsk([], 'conversation-uncatalogued', {
+      agentId,
+      reasoningOverride: override,
+    });
+
+    act(() => {
+      result.current.ask({ text: 'Think carefully' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+    expect(
+      reasoningStore.get(pendingReasoningOverrideFamily('conversation-uncatalogued')),
+    ).toBeUndefined();
+    expect(mockGetQueryData).toHaveBeenCalledWith([QueryKeys.agent, agentId]);
+  });
 });
 
 describe('useChatFunctions regenerate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetQueryData.mockReturnValue({});
+    mockAgentQueryData.current = undefined;
   });
 
   it('keys a non-tail regenerate to the selected assistant response', () => {
@@ -422,7 +454,7 @@ describe('useChatFunctions regenerate', () => {
 describe('useChatFunctions ask attachments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetQueryData.mockReturnValue({});
+    mockAgentQueryData.current = undefined;
   });
 
   /** The server titles an attachment-only turn from the submitted filenames

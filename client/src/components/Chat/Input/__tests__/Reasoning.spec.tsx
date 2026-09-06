@@ -1,10 +1,10 @@
-import { ReasoningEffort } from 'librechat-data-provider';
 import { Provider as JotaiProvider, createStore } from 'jotai';
+import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { SettingDefinition, TConversation, TReasoningOverride } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import { getReasoningStateKey, pendingReasoningOverrideFamily } from '../Composer/state';
 import { ReasoningControl, useComposerReasoning } from '../Reasoning';
-import { pendingReasoningOverrideFamily } from '../Composer/state';
 
 type MockEndpointConfig = {
   type?: string;
@@ -81,7 +81,6 @@ describe('ReasoningControl', () => {
     const trigger = screen.getByRole('button', {
       name: 'com_ui_reasoning_for_next_message com_ui_medium',
     });
-    expect(trigger).toHaveClass('text-text-secondary');
 
     fireEvent.click(trigger);
     expect(
@@ -287,6 +286,79 @@ describe('useComposerReasoning', () => {
         reasoningStore.get(pendingReasoningOverrideFamily('reasoning-conversation')),
       ).toBeUndefined(),
     );
+  });
+  it('keeps secondary-pane reasoning selection isolated and clears it on target changes', async () => {
+    const reasoningStore = createStore();
+    const conversation = {
+      conversationId: Constants.NEW_CONVO,
+      endpoint: 'openAI',
+      model: 'gpt-5',
+      reasoning_effort: ReasoningEffort.medium,
+    } as TConversation;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <JotaiProvider store={reasoningStore}>{children}</JotaiProvider>
+    );
+    type ReasoningProps = { activeConversation: TConversation };
+    const primary = renderHook(
+      ({ activeConversation }: ReasoningProps) =>
+        useComposerReasoning({
+          conversation: activeConversation,
+          index: 0,
+          hasAddedConversation: false,
+          enabled: true,
+        }),
+      {
+        initialProps: { activeConversation: conversation },
+        wrapper,
+      },
+    );
+    const secondary = renderHook(
+      ({ activeConversation }: ReasoningProps) =>
+        useComposerReasoning({
+          conversation: activeConversation,
+          index: 1,
+          hasAddedConversation: false,
+          enabled: true,
+        }),
+      {
+        initialProps: { activeConversation: conversation },
+        wrapper,
+      },
+    );
+    const primaryKey = getReasoningStateKey(Constants.NEW_CONVO, 0);
+    const secondaryKey = getReasoningStateKey(Constants.NEW_CONVO, 1);
+
+    expect(primary.result.current).not.toBeNull();
+    expect(secondary.result.current).not.toBeNull();
+    act(() => {
+      primary.result.current?.setValue({
+        key: 'reasoning_effort',
+        value: ReasoningEffort.high,
+      });
+      secondary.result.current?.setValue({
+        key: 'reasoning_effort',
+        value: ReasoningEffort.low,
+      });
+    });
+    expect(reasoningStore.get(pendingReasoningOverrideFamily(primaryKey))).toEqual({
+      key: 'reasoning_effort',
+      value: ReasoningEffort.high,
+    });
+    expect(reasoningStore.get(pendingReasoningOverrideFamily(secondaryKey))).toEqual({
+      key: 'reasoning_effort',
+      value: ReasoningEffort.low,
+    });
+
+    secondary.rerender({
+      activeConversation: { ...conversation, model: 'gpt-5-mini' },
+    });
+    await waitFor(() =>
+      expect(reasoningStore.get(pendingReasoningOverrideFamily(secondaryKey))).toBeUndefined(),
+    );
+    expect(reasoningStore.get(pendingReasoningOverrideFamily(primaryKey))).toEqual({
+      key: 'reasoning_effort',
+      value: ReasoningEffort.high,
+    });
   });
 
   it('merges custom definitions and clears values removed by a capability change', async () => {

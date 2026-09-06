@@ -41,14 +41,14 @@ import {
   preserveStreamedContentIdentity,
 } from '~/utils';
 import {
+  getReasoningStateKey,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
+import {
   startupConfigKey,
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
-import {
-  getReasoningStateKey,
-  pendingReasoningOverrideFamily,
-} from '~/components/Chat/Input/Composer/state';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';

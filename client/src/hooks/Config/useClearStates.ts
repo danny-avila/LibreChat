@@ -1,16 +1,15 @@
 import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
-import { showSkillsPopoverFamily } from '~/components/Chat/Input/skillsState';
 import {
   getReasoningStateKey,
   pendingReasoningOverrideFamily,
   removePendingReasoningOverride,
 } from '~/components/Chat/Input/Composer/state';
+import { showSkillsPopoverFamily } from '~/components/Chat/Input/skillsState';
 import { clearLocalStorage } from '~/utils/localStorage';
 import store from '~/store';
 
 export default function useClearStates() {
-  const reasoningStore = useStore();
   const clearConversations = store.useClearConvoState();
   const clearSubmissions = store.useClearSubmissionState();
   const jotaiStore = useStore();
@@ -43,7 +42,7 @@ export default function useClearStates() {
           reset(store.pendingManualSkillsByConvoId(key.toString()));
           reset(store.pendingQuotesByConvoId(key.toString()));
           const newConversationKey = getReasoningStateKey(null, key);
-          reasoningStore.set(pendingReasoningOverrideFamily(newConversationKey), undefined);
+          jotaiStore.set(pendingReasoningOverrideFamily(newConversationKey), undefined);
           removePendingReasoningOverride(newConversationKey);
           /**
            * Pending skill/quote queues are keyed by the conversation id the
@@ -56,7 +55,7 @@ export default function useClearStates() {
             reset(store.pendingManualSkillsByConvoId(convoId));
             reset(store.pendingQuotesByConvoId(convoId));
             const reasoningStateKey = getReasoningStateKey(convoId, key);
-            reasoningStore.set(pendingReasoningOverrideFamily(reasoningStateKey), undefined);
+            jotaiStore.set(pendingReasoningOverrideFamily(reasoningStateKey), undefined);
             removePendingReasoningOverride(reasoningStateKey);
           }
           reset(store.activePromptByIndex(key));
@@ -70,7 +69,7 @@ export default function useClearStates() {
 
         clearLocalStorage(skipFirst);
       },
-    [clearConversations, clearSubmissions, jotaiStore, reasoningStore],
+    [clearConversations, clearSubmissions, jotaiStore],
   );
 
   return clearStates;

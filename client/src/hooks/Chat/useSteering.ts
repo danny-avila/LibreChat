@@ -46,11 +46,11 @@ import {
   insertQueuedOrigin,
   mergeRestagedQuotes,
 } from '~/utils';
-import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
 import {
   getReasoningStateKey,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
+import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useLatestMessage } from '~/hooks/Messages';
@@ -240,7 +240,8 @@ export function hasLiveToolApproval(
       return false;
     }
     const toolCall = part[ContentTypes.TOOL_CALL] as
-      { approval?: unknown; output?: string | null } | undefined;
+      | { approval?: unknown; output?: string | null }
+      | undefined;
     return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
   });
 }
