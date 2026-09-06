@@ -162,22 +162,37 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       return;
     }
     lastAnswerableRef.current = null;
-    if (!previous || previous.conversationId !== conversationId) {
+    /** Recovery is keyed by the stash's own conversation, not by what this
+     *  hook happened to observe. Navigating away mid-resume clears the ref
+     *  while the stash rightly stays put, and the settle then lands with
+     *  nobody watching that exit — so coming back is the last chance to hand
+     *  the message over, and gating on the ref stranded it in the atom. */
+    const stashed = Object.entries(releasedComposerText).find(
+      ([, stash]) => stash.conversationId === conversationId,
+    );
+    if (!stashed) {
       return;
     }
-    const released = releasedComposerText[previous.actionId];
-    if (released == null) {
-      return;
-    }
-    if (!previous.submitting || formContext?.getValues('text') === previous.composerText) {
-      formContext?.setValue('text', released);
+    const [actionId, stash] = stashed;
+    const composerText = formContext?.getValues('text') ?? '';
+    /** Only the exit this hook armed knows what the composer held when the
+     *  resume started. On a revisit the composer is whatever the route
+     *  restored, so an empty one is the only target that cannot clobber
+     *  something newer. Either way the entry goes: anything the user typed
+     *  since is newer than the stash. */
+    const restorable =
+      previous != null && previous.actionId === actionId
+        ? !previous.submitting || composerText === previous.composerText
+        : composerText === '';
+    if (restorable) {
+      formContext?.setValue('text', stash.text);
     }
     setReleasedComposerText((current) => {
-      if (current[previous.actionId] == null) {
+      if (current[actionId] == null) {
         return current;
       }
       const next = { ...current };
-      delete next[previous.actionId];
+      delete next[actionId];
       return next;
     });
   }, [
@@ -246,7 +261,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
            *  saving between expanding and collapsing. */
           const released = releasedComposerText[liveAsk.actionId];
           if (released) {
-            formContext?.setValue('text', released);
+            formContext?.setValue('text', released.text);
             setReleasedComposerText((current) => {
               if (current[liveAsk.actionId] == null) {
                 return current;
@@ -290,7 +305,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
           if (released) {
             setReleasedComposerText((current) => ({
               ...current,
-              [liveAsk.actionId]: released,
+              [liveAsk.actionId]: { conversationId: conversationId ?? null, text: released },
             }));
           }
           formContext?.setValue('text', answerText);
@@ -308,6 +323,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     }
   }, [
     liveAsk,
+    conversationId,
     batchMode,
     saveDrafts,
     formContext,
@@ -394,7 +410,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
           const released = releasedComposerTextRef.current[submittedActionId];
           if (currentScope.formContext?.getValues('text') === submittedComposerText) {
             if (released) {
-              currentScope.formContext.setValue('text', released);
+              currentScope.formContext.setValue('text', released.text);
             } else if (consumedComposerText || (wasActive && saveDrafts)) {
               currentScope.formContext.reset();
             }

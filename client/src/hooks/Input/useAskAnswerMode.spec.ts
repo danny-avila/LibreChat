@@ -268,7 +268,9 @@ describe('useAskAnswerMode', () => {
   );
 
   it('preserves newer composer edits when an in-flight question expires', () => {
-    jotaiStore.set(releasedComposerTextAtom, { a1: 'an older message' });
+    jotaiStore.set(releasedComposerTextAtom, {
+      a1: { conversationId: 'conversation-1', text: 'an older message' },
+    });
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
     const { rerender } = renderHook(() => useAskAnswerMode('conversation-1'), {
       wrapper: JotaiWrapper,
@@ -284,7 +286,9 @@ describe('useAskAnswerMode', () => {
   });
 
   it('does not restore a departed conversation stash into a different composer', () => {
-    jotaiStore.set(releasedComposerTextAtom, { a1: 'message for conversation A' });
+    jotaiStore.set(releasedComposerTextAtom, {
+      a1: { conversationId: 'conversation-1', text: 'message for conversation A' },
+    });
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
     const { rerender } = renderHook(({ id }) => useAskAnswerMode(id), {
       initialProps: { id: 'conversation-1' },
@@ -295,8 +299,36 @@ describe('useAskAnswerMode', () => {
 
     expect(mockSetComposerText).not.toHaveBeenCalled();
     expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({
-      a1: 'message for conversation A',
+      a1: { conversationId: 'conversation-1', text: 'message for conversation A' },
     });
+  });
+
+  it('hands a stash back when its conversation is revisited after the answer settled', () => {
+    /** Navigating away mid-resume leaves nobody watching the exit, so the
+     *  settle drops the question without restoring anything. The stash has to
+     *  survive until its own conversation comes back, or the ordinary unsent
+     *  message is unreachable for the rest of the session. */
+    jotaiStore.set(releasedComposerTextAtom, {
+      a1: { conversationId: 'conversation-1', text: 'message for conversation A' },
+    });
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    mockAskStatus = 'submitting';
+    const { rerender } = renderHook(({ id }) => useAskAnswerMode(id), {
+      initialProps: { id: 'conversation-1' },
+      wrapper: JotaiWrapper,
+    });
+    mockUseGetMessages.mockReturnValue({ data: null });
+    rerender({ id: 'conversation-2' });
+    expect(mockSetComposerText).not.toHaveBeenCalled();
+
+    /** Drafts are off, so the revisited composer opens empty — the only state
+     *  in which handing the stash back cannot overwrite something newer. */
+    mockGetComposerText.mockReturnValue('');
+    mockAskStatus = 'submitted';
+    rerender({ id: 'conversation-1' });
+
+    expect(mockSetComposerText).toHaveBeenLastCalledWith('text', 'message for conversation A');
+    expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({});
   });
 
   it('hands the released composer text back when the answer is submitted', () => {
@@ -304,7 +336,9 @@ describe('useAskAnswerMode', () => {
      *  message was typed in the released composer, then the question was moved
      *  back. Submitting from there never goes through `collapse`, so the
      *  message has to be restored here or it dies with the question. */
-    jotaiStore.set(releasedComposerTextAtom, { a1: 'an ordinary unsent message' });
+    jotaiStore.set(releasedComposerTextAtom, {
+      a1: { conversationId: 'conversation-1', text: 'an ordinary unsent message' },
+    });
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
     mockSubmitAskAnswer.mockImplementation(
       (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
@@ -328,7 +362,9 @@ describe('useAskAnswerMode', () => {
     /** Only the free-text path sets `consumedComposerText`, so gating the
      *  restore on it discarded the stash whenever the user answered by
      *  clicking an option (or skipping) instead of typing. */
-    jotaiStore.set(releasedComposerTextAtom, { a1: 'an ordinary unsent message' });
+    jotaiStore.set(releasedComposerTextAtom, {
+      a1: { conversationId: 'conversation-1', text: 'an ordinary unsent message' },
+    });
     const askWithOptions = {
       actionId: 'a1',
       question: {
