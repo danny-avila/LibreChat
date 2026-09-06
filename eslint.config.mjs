@@ -392,7 +392,7 @@ export default [
     },
   },
   {
-    files: ['packages/api/**/*.{ts,js}', 'api/**/*.{ts,js}'],
+    files: ['packages/data-schemas/**/*.ts', 'packages/api/**/*.{ts,js}', 'api/**/*.{ts,js}'],
     ignores: ['**/*.spec.{ts,js}', '**/*.test.{ts,js}'],
     rules: {
       'no-restricted-syntax': ['error', ...tenantModelRestrictions],
