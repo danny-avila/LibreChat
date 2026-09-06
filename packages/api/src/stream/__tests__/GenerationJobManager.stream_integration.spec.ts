@@ -2308,6 +2308,55 @@ describe('GenerationJobManager Integration Tests', () => {
       },
     );
 
+    testRedis('replays a durable terminal payload with unresolved overflow (Redis)', async () => {
+      const owner = createRedisManager();
+      const streamId = `overflow-durable-terminal-${Date.now()}`;
+      const job = await owner.createJob(streamId, 'user-1');
+      const bigText = 't'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await owner.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      const claim = await owner.claimTerminalJob(streamId, 'complete', undefined, job.createdAt, {
+        persistencePending: true,
+      });
+      expect(claim).not.toBeNull();
+      const finalEvent = {
+        final: true,
+        conversation: { conversationId: streamId },
+        responseMessage: { text: 'complete' },
+      } as ServerSentEvent;
+      await owner.publishTerminalClaim(claim!, finalEvent);
+      expect((await owner.getJob(streamId))?.metadata.earlyBufferOverflow).not.toHaveProperty(
+        'recoveryOutcome',
+      );
+
+      const replica = createRedisManager();
+      const terminalEvents: ServerSentEvent[] = [];
+      const errors: string[] = [];
+      const resumed = await replica.subscribeWithResume(
+        streamId,
+        () => {},
+        (event) => terminalEvents.push(event),
+        (error) => errors.push(error),
+        { expectedCreatedAt: job.createdAt },
+      );
+      resumed.subscription?.activate();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(terminalEvents).toEqual([finalEvent]);
+      expect(errors).toEqual([]);
+      expect((await replica.getJob(streamId))?.status).toBe('complete');
+
+      resumed.subscription?.unsubscribe();
+      await Promise.all([owner.destroy(), replica.destroy()]);
+    });
+
     testRedis('validates overflow recovery before exposing HITL resume state', async () => {
       const manager = createRedisManager();
       const streamId = `overflow-hitl-validation-${Date.now()}`;

@@ -5767,7 +5767,9 @@ class GenerationJobManagerClass {
     }
 
     const pendingOverflow =
-      runtime.earlyBufferOverflow?.recoveryOutcome == null
+      runtime.earlyBufferOverflow?.recoveryOutcome == null &&
+      !runtime.finalEvent &&
+      !runtime.errorEvent
         ? runtime.earlyBufferOverflow
         : undefined;
     const recoveryStartedAt = pendingOverflow == null ? undefined : Date.now();
