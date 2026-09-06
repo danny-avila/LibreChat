@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ISchedule } from '@librechat/data-schemas';
+import type { ISchedule, IScheduleRun } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { SchedulesHandlersDeps } from './handlers';
 import type { ServerRequest } from '~/types';
@@ -154,6 +154,8 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
     markScheduleDeleting: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
     updateScheduleById: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
     armSchedule: jest.fn(async () => undefined),
+    getActiveRunsForUser: jest.fn(async () => []),
+    getActiveRunsForSchedule: jest.fn(async () => []),
   };
   return {
     methods: methods as unknown as SchedulesHandlersDeps['methods'],
@@ -734,6 +736,76 @@ describe('deferred deletion retry', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(captured.body).toEqual(expect.objectContaining({ schedules: [] }));
+  });
+});
+
+describe('active run projection', () => {
+  const schedule = { id: 'sched-1', user: 'user-1', name: 'Digest' } as unknown as ISchedule;
+  const run = (over: Partial<IScheduleRun>): IScheduleRun =>
+    ({
+      scheduleId: 'sched-1',
+      user: 'user-1',
+      scheduledFor: new Date('2026-09-06T09:00:00Z'),
+      status: 'started',
+      ...over,
+    }) as unknown as IScheduleRun;
+
+  async function listWith(runs: IScheduleRun[]) {
+    const deps = makeCreateDeps();
+    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => [schedule]);
+    (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => runs);
+    (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => []);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).listSchedules(
+      { user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    return (captured.body as { schedules: Array<{ activeRun?: { conversationId: string } }> })
+      .schedules[0];
+  }
+
+  it('names the chat a running occurrence is producing', async () => {
+    const wire = await listWith([run({ conversationId: 'convo-1' })]);
+    expect(wire.activeRun).toEqual({ conversationId: 'convo-1' });
+  });
+
+  it('projects nothing for a reservation that has not been dispatched', async () => {
+    const wire = await listWith([run({})]);
+    expect(wire.activeRun).toBeUndefined();
+  });
+
+  it('projects nothing when no occurrence is running', async () => {
+    const wire = await listWith([]);
+    expect(wire.activeRun).toBeUndefined();
+  });
+
+  it('prefers the occurrence that fired last when a pause and a run coexist', async () => {
+    const wire = await listWith([
+      run({
+        conversationId: 'paused',
+        status: 'requires_action',
+        firedAt: new Date('2026-09-05T09:00:00Z'),
+      }),
+      run({ conversationId: 'running', firedAt: new Date('2026-09-06T09:00:00Z') }),
+    ]);
+    expect(wire.activeRun).toEqual({ conversationId: 'running' });
+  });
+
+  it("reads the single-schedule route from that schedule's own rows", async () => {
+    const deps = makeCreateDeps();
+    (deps.methods.getScheduleById as jest.Mock) = jest.fn(async () => schedule);
+    (deps.methods.getActiveRunsForSchedule as jest.Mock) = jest.fn(async () => [
+      run({ conversationId: 'convo-1' }),
+    ]);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).getSchedule(
+      { params: { id: 'sched-1' }, user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    expect(deps.methods.getActiveRunsForSchedule).toHaveBeenCalledWith('sched-1');
+    expect((captured.body as { activeRun?: unknown }).activeRun).toEqual({
+      conversationId: 'convo-1',
+    });
   });
 });
 

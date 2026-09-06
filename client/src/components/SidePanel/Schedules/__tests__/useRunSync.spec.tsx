@@ -1,10 +1,24 @@
 import React from 'react';
-import { renderHook } from '@testing-library/react';
 import { QueryKeys } from 'librechat-data-provider';
+import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TSchedule, TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import { resetTrackedRuns } from '~/data-provider/Schedules/admission';
 import useRunSync from '../useRunSync';
+
+const mockGetConversationById = jest.fn<Promise<TConversation>, [string]>();
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getConversationById: (id: string) => mockGetConversationById(id),
+    },
+  };
+});
 
 const schedule: TSchedule = {
   id: 'schedule-1',
@@ -23,25 +37,30 @@ const schedule: TSchedule = {
   updatedAt: '2026-09-01T00:00:00.000Z',
 };
 
-/** What a fire actually changes: the occurrence advances to the next one. The
- *  schedule's `lastRun` is untouched until the run settles. */
-const fired = (overrides?: Partial<TSchedule>): TSchedule => ({
+/** The list naming the chat a running occurrence is producing. */
+const running = (conversationId = 'run-convo-1', overrides?: Partial<TSchedule>): TSchedule => ({
   ...schedule,
-  nextRunAt: '2026-09-06T09:00:00.000Z',
+  activeRun: { conversationId },
   ...overrides,
 });
 
-const withRun = (overrides: Partial<TSchedule['lastRun']> & { status: 'started' | 'success' }) => ({
-  ...schedule,
-  lastRun: { firedAt: '2026-09-04T09:00:00.000Z', ...overrides },
-});
+const serverConversation = (conversationId = 'run-convo-1'): TConversation =>
+  ({
+    conversationId,
+    title: 'Overnight activity summary',
+    endpoint: 'agents',
+    agent_id: 'agent-1',
+    createdAt: '2026-09-05T09:00:01.000Z',
+    updatedAt: '2026-09-05T09:00:01.000Z',
+  }) as TConversation;
 
-const listKey = [QueryKeys.allConversations, { projectId: 'project-a' }];
+const listKey = [QueryKeys.allConversations];
 
 function createQueryClient() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, cacheTime: Infinity } },
   });
+  queryClient.setQueryData([QueryKeys.user], { id: 'user-1' });
   queryClient.setQueryData(listKey, {
     pages: [{ conversations: [{ conversationId: 'existing' } as TConversation], nextCursor: null }],
     pageParams: [],
@@ -54,6 +73,12 @@ const createWrapper = (queryClient: QueryClient) =>
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   };
 
+const listIds = (queryClient: QueryClient) =>
+  (
+    queryClient.getQueryData<{ pages: Array<{ conversations: TConversation[] }> }>(listKey)
+      ?.pages[0].conversations ?? []
+  ).map((convo) => convo.conversationId);
+
 const isStale = (queryClient: QueryClient) =>
   queryClient.getQueryState(listKey)?.isInvalidated === true;
 
@@ -63,56 +88,90 @@ const renderWith = (queryClient: QueryClient, initial?: TSchedule[]) =>
     initialProps: initial,
   });
 
+/** Lets the admission watch reach its first probe. */
+const admit = async () => {
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(3_000);
+  });
+};
+
 describe('useRunSync', () => {
-  it('refreshes when an occurrence fires, which only moves nextRunAt', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+    jest.useFakeTimers();
+    resetTrackedRuns();
+    mockGetConversationById.mockResolvedValue(serverConversation());
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('puts a running occurrence’s chat in the sidebar', async () => {
     const queryClient = createQueryClient();
-    const { rerender } = renderWith(queryClient, [schedule]);
+    renderWith(queryClient, [running()]);
+
+    await admit();
+
+    expect(listIds(queryClient)).toEqual(['run-convo-1', 'existing']);
+    queryClient.clear();
+  });
+
+  it('watches a run once, however many polls list it', async () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [running()]);
+    rerender([running()]);
+    rerender([running()]);
+
+    await admit();
+
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    queryClient.clear();
+  });
+
+  it('re-reads the list when the run settles, so the chat takes its final order', async () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [running()]);
+    await admit();
     expect(isStale(queryClient)).toBe(false);
 
-    rerender([fired()]);
+    rerender([schedule]);
 
     expect(isStale(queryClient)).toBe(true);
     queryClient.clear();
   });
 
-  it('refreshes again when the run settles, so the chat takes its generated title', () => {
+  it('sees a settlement through an edit made while the run was in flight', async () => {
     const queryClient = createQueryClient();
-    const running = fired();
-    const { rerender } = renderWith(queryClient, [running]);
+    const { rerender } = renderWith(queryClient, [running()]);
+    await admit();
+
+    /** The edit bumps configRevision, which fences the schedule's own `lastRun`
+     *  projection; the run row is what this reads, and it is gone regardless. */
+    rerender([running('run-convo-1', { name: 'Renamed', configRevision: 2 })]);
     expect(isStale(queryClient)).toBe(false);
 
-    rerender([{ ...running, ...withRun({ status: 'success', conversationId: 'run-convo-1' }) }]);
-
+    rerender([{ ...schedule, name: 'Renamed', configRevision: 2 }]);
     expect(isStale(queryClient)).toBe(true);
     queryClient.clear();
   });
 
-  it('records the first observation in silence', () => {
+  it('records the first observation in silence', async () => {
     const queryClient = createQueryClient();
-    renderWith(queryClient, [withRun({ status: 'success', conversationId: 'run-convo-1' })]);
+    renderWith(queryClient, [schedule]);
+    await admit();
 
     expect(isStale(queryClient)).toBe(false);
+    expect(mockGetConversationById).not.toHaveBeenCalled();
     queryClient.clear();
   });
 
-  it('leaves the list alone when nothing about a run moved', () => {
-    const queryClient = createQueryClient();
-    const settled = withRun({ status: 'success', conversationId: 'run-convo-1' });
-    const { rerender } = renderWith(queryClient, [settled]);
-
-    rerender([{ ...settled, name: 'Renamed', enabled: false }]);
-
-    expect(isStale(queryClient)).toBe(false);
-    queryClient.clear();
-  });
-
-  it('does not refresh for a schedule it is seeing for the first time', () => {
+  it('leaves the list alone when nothing about a run moved', async () => {
     const queryClient = createQueryClient();
     const { rerender } = renderWith(queryClient, [schedule]);
 
     rerender([
-      schedule,
-      { ...withRun({ status: 'success', conversationId: 'run-convo-2' }), id: 'schedule-2' },
+      { ...schedule, name: 'Renamed', enabled: false, nextRunAt: '2026-09-06T09:00:00.000Z' },
     ]);
 
     expect(isStale(queryClient)).toBe(false);
@@ -123,7 +182,7 @@ describe('useRunSync', () => {
     const queryClient = createQueryClient();
     const { rerender } = renderWith(queryClient, undefined);
 
-    rerender([withRun({ status: 'success', conversationId: 'run-convo-1' })]);
+    rerender([schedule]);
 
     expect(isStale(queryClient)).toBe(false);
     queryClient.clear();
