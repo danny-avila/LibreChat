@@ -2,6 +2,7 @@ const express = require('express');
 const {
   createAgentManagementCreateHandler,
   createAgentManagementDeleteHandler,
+  createAgentManagementFileHandlers,
   createAgentManagementReadHandlers,
   createAgentManagementUpdateHandler,
   mapAgentManagementError,
@@ -40,12 +41,22 @@ const deleteHandler = createAgentManagementDeleteHandler({
   hasCapability,
   deleteAgent: db.deleteAgent,
 });
+const fileHandlers = createAgentManagementFileHandlers({
+  getRoleByName: db.getRoleByName,
+  getAgentWithVersionCount: db.getAgentWithVersionCount,
+  getFiles: db.getFiles,
+  checkPermission,
+  hasCapability,
+  removeAgentResourceFiles: db.removeAgentResourceFiles,
+});
 
 router.use(requireAgentManagementAuth);
 router.use(checkBan);
 
 router.post('/', configMiddleware, createHandler);
 router.get('/', readHandlers.list);
+router.get('/:id/files', fileHandlers.list);
+router.delete('/:id/files/:fileId', fileHandlers.remove);
 router.get('/:id', readHandlers.get);
 router.patch('/:id', configMiddleware, updateHandler);
 router.delete('/:id', deleteHandler);

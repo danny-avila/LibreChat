@@ -19,6 +19,7 @@ export * from './errors';
 export * from './eventRetention';
 export * from './envelope';
 export * from './execution';
+export * from './files';
 export * from './handlers';
 export * from './guard';
 export * from './harvest';

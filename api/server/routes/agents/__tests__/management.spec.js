@@ -31,6 +31,15 @@ const mockCreateAgentManagementDeleteHandler = jest.fn((deps) => {
   mockDeleteDeps = deps;
   return mockDelete;
 });
+const mockFileList = jest.fn((_req, res) => res.status(200).json({ object: 'list', data: [] }));
+const mockFileRemove = jest.fn((_req, res) =>
+  res.status(200).json({ id: 'file-one', deleted: true }),
+);
+let mockFileDeps;
+const mockCreateAgentManagementFileHandlers = jest.fn((deps) => {
+  mockFileDeps = deps;
+  return { list: mockFileList, remove: mockFileRemove };
+});
 const mockBrowserCreate = jest.fn();
 const mockBrowserUpdate = jest.fn();
 const mockCheckBan = jest.fn((_req, _res, next) => next());
@@ -52,6 +61,7 @@ jest.mock('@librechat/api', () => ({
   mapAgentManagementError: mockMapAgentManagementError,
   createAgentManagementCreateHandler: mockCreateAgentManagementCreateHandler,
   createAgentManagementDeleteHandler: mockCreateAgentManagementDeleteHandler,
+  createAgentManagementFileHandlers: mockCreateAgentManagementFileHandlers,
   createAgentManagementReadHandlers: mockCreateAgentManagementReadHandlers,
   createAgentManagementUpdateHandler: mockCreateAgentManagementUpdateHandler,
 }));
@@ -73,6 +83,8 @@ jest.mock('~/models', () => ({
   getRoleByName: jest.fn(),
   getAgentWithVersionCount: jest.fn(),
   getAgentManagementListByAccess: jest.fn(),
+  getFiles: jest.fn(),
+  removeAgentResourceFiles: jest.fn(),
   deleteAgent: jest.fn(),
 }));
 
@@ -173,5 +185,22 @@ describe('Agent Management route boundary', () => {
     expect(mockDeleteDeps.checkPermission).toEqual(expect.any(Function));
     expect(mockDeleteDeps.hasCapability).toEqual(expect.any(Function));
     expect(mockDeleteDeps.deleteAgent).toEqual(expect.any(Function));
+  });
+
+  it('dispatches authenticated Agent file list and unlink requests', async () => {
+    const listResponse = await request(app)
+      .get('/api/agents/v1/agents/agent-one/files')
+      .set('Authorization', 'Bearer valid-token');
+    const deleteResponse = await request(app)
+      .delete('/api/agents/v1/agents/agent-one/files/file-one')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(listResponse.status).toBe(200);
+    expect(deleteResponse.status).toBe(200);
+    expect(mockFileList).toHaveBeenCalledTimes(1);
+    expect(mockFileRemove).toHaveBeenCalledTimes(1);
+    expect(mockFileDeps.getAgentWithVersionCount).toEqual(expect.any(Function));
+    expect(mockFileDeps.getFiles).toEqual(expect.any(Function));
+    expect(mockFileDeps.removeAgentResourceFiles).toEqual(expect.any(Function));
   });
 });
