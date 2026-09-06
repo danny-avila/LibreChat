@@ -656,7 +656,7 @@ const ChatForm = memo(function ChatForm({
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <PendingManualSkillsChips conversationId={conversationId} />
               {quotesEnabled && (
-                <PendingQuoteChips conversationId={conversationId} textAreaRef={textAreaRef} />
+                <PendingQuoteChips conversationId={conversationId} focusComposer={focusTextArea} />
               )}
               {steering.enabled && (
                 <PendingSteerChips

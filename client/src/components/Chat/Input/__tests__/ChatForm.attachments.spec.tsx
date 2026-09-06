@@ -274,7 +274,27 @@ describe('ChatForm attachments', () => {
     await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
 
     await waitFor(() => expect(within(popup).getAllByRole('button')).toHaveLength(2));
-    expect(popup).toHaveFocus();
+    expect(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]).toHaveFocus();
+  }, 20000);
+
+  test('does not raise the keyboard when a quote removal collapses the popup on touch', async () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = jest
+      .fn()
+      .mockReturnValue({ matches: true }) as unknown as typeof matchMedia;
+    try {
+      renderComposer({ quotes: ['alpha', 'beta'] });
+      const textarea = await screen.findByTestId('text-input');
+      await userEvent.click(screen.getByRole('button', { name: '2 selections' }));
+      const popup = await screen.findByTestId('quote-selections-popup');
+
+      await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
+
+      await waitFor(() => expect(screen.queryByTestId('quote-selections-popup')).toBeNull());
+      expect(textarea).not.toHaveFocus();
+    } finally {
+      window.matchMedia = matchMedia;
+    }
   }, 20000);
 
   test('focuses the textarea when clicking empty composer space', async () => {
