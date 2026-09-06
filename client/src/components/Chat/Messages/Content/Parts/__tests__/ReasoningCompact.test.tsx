@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { ReasoningCompact } from '../Reasoning';
+import { ROW_GLYPH_SLOT } from '../../rows';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -52,6 +53,22 @@ describe('ReasoningCompact', () => {
     );
     expect(chevron).toHaveClass('transition-transform');
     expect(chevron.className).not.toContain('transition-opacity');
+  });
+
+  it('takes the shared glyph slot so it lands on the row rail', () => {
+    /** Every other row under a message header centers its glyph in the 24px
+     *  slot, including the `ThinkingLabel` marker that stands in for this
+     *  exact row when a projection has no text. Bare, the bulb sat on the
+     *  pre-rail axis and the label 8px left of its neighbours. */
+    render(<ReasoningCompact reasoning="A useful thought" label="Thoughts" showThinking={false} />);
+
+    const slot = screen.getByTestId('thoughts-icon').parentElement;
+    for (const token of ROW_GLYPH_SLOT.split(' ')) {
+      expect(slot).toHaveClass(token);
+    }
+    /** 24px slot plus the row's 8px gap is what puts the label where the
+     *  header's name starts. */
+    expect(screen.getByRole('button', { name: 'Thoughts' })).toHaveClass('gap-2');
   });
 
   it('removes the extra top margin when Thoughts follows a tool', () => {
