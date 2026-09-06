@@ -18,6 +18,7 @@ import CopyButton from '~/components/Messages/Content/CopyButton';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
+import { ROW_GLYPH_SLOT } from '../rows';
 import { cn } from '~/utils';
 
 const stripThinkTags = (reasoning: string): string =>
@@ -365,7 +366,16 @@ export const ReasoningCompact = memo(
             aria-controls={contentId}
             className="group/disclosure h-auto min-w-0 flex-1 justify-start gap-2 rounded-none p-0 font-normal text-text-secondary hover:bg-transparent"
           >
-            <Lightbulb className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            {/* The one row this feature adds under a message header, so it
+                takes the same 24px glyph slot as the tool cards, the group
+                header, the phase check and `ThinkingLabel` — the projection
+                marker that stands in for this very row. Bare, its bulb sat
+                on the pre-rail axis and its label 8px left of every
+                neighbour, including an unavailable thought in the same
+                group. */}
+            <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+              <Lightbulb className="size-4 shrink-0 text-text-secondary" />
+            </span>
             <span className="tool-status-text font-medium">{label}</span>
             <ChevronDown
               className={cn(
