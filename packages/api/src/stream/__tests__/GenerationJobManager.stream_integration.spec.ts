@@ -1817,7 +1817,7 @@ describe('GenerationJobManager Integration Tests', () => {
         );
 
         expect(recovered.subscription).toBeNull();
-        expect(await manager.getJob(streamId)).toMatchObject({
+        expect(await manager.getJobStore().getJob(streamId)).toMatchObject({
           status: 'error',
           error: GENERATION_RECOVERY_FAILED_ERROR,
           earlyBufferRecovery: {
