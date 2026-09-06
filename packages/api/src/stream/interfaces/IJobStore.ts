@@ -107,6 +107,7 @@ export type EarlyBufferRecoveryOutcome = 'success' | 'failure' | 'not_attempted'
 export type EarlyBufferRecoveryFailureReason =
   | 'durable_frontier_gap'
   | 'durable_state_missing'
+  | 'overflow_marker_persistence_failed'
   | 'snapshot_missing'
   | 'subscriber_never_attached'
   | 'reconstruction_error';
@@ -125,6 +126,12 @@ export interface EarlyBufferRecoveryState {
   reconstructedEventCount?: number;
   reconstructedContentCount?: number;
   failureReason?: EarlyBufferRecoveryFailureReason;
+}
+
+export interface EarlyBufferRecoverySettlement {
+  recovery: EarlyBufferRecoveryState;
+  /** True only for the replica that recorded the terminal outcome. */
+  committed: boolean;
 }
 
 /**
@@ -991,7 +998,7 @@ export interface IJobStore {
     expectedCreatedAt: number,
     correlationId: string,
     recovery: EarlyBufferRecoveryState,
-  ): Promise<boolean>;
+  ): Promise<EarlyBufferRecoverySettlement | null>;
   /** Claims first attachment once across replicas. */
   claimFirstSubscriberAttachment?(
     streamId: string,

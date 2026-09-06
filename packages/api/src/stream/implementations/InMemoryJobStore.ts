@@ -23,6 +23,7 @@ import type {
   IdempotencyClaimResult,
   ParkedSteerClaim,
   EarlyBufferRecoveryState,
+  EarlyBufferRecoverySettlement,
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
@@ -719,17 +720,19 @@ export class InMemoryJobStore implements IJobStoreV2 {
     expectedCreatedAt: number,
     correlationId: string,
     recovery: EarlyBufferRecoveryState,
-  ): Promise<boolean> {
+  ): Promise<EarlyBufferRecoverySettlement | null> {
     const job = this.jobs.get(streamId);
     if (
       job?.createdAt !== expectedCreatedAt ||
-      job.earlyBufferRecovery?.correlationId !== correlationId ||
-      job.earlyBufferRecovery.outcome != null
+      job.earlyBufferRecovery?.correlationId !== correlationId
     ) {
-      return false;
+      return null;
+    }
+    if (job.earlyBufferRecovery.outcome != null) {
+      return { recovery: job.earlyBufferRecovery, committed: false };
     }
     job.earlyBufferRecovery = recovery;
-    return true;
+    return { recovery, committed: true };
   }
 
   async claimFirstSubscriberAttachment(

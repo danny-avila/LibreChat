@@ -672,6 +672,7 @@ interface RuntimeJobState {
   earlyEventBufferOverflowed?: true;
   earlyBufferRecovery?: EarlyBufferRecoveryState;
   earlyBufferRecoveryWrite?: Promise<void>;
+  earlyBufferRecoveryPersistenceFailed?: true;
   /** Recovery-only sequence for events persisted in the Redis chunk log. */
   durableReplaySequence: number;
   /** Pre-attachment append receipts used to prove the overflow frontier was durable. */
@@ -3954,6 +3955,7 @@ class GenerationJobManagerClass {
      * first-subscriber field before reconstructing, so only a genuinely
      * never-attached generation can win the not-attempted outcome. */
     if (runtime && this.runtimeState.get(streamId) === runtime && !runtime.everHadSubscriber) {
+      await runtime.earlyBufferRecoveryWrite;
       const durableJob = await this.jobStore.getJob(streamId).catch(() => null);
       if (durableJob != null && durableJob.firstSubscriberAttachedAt == null) {
         recordGenerationStreamAttachment(this.storeLabel, 'never_attached', 0);
@@ -5345,13 +5347,72 @@ class GenerationJobManagerClass {
     runtime.earlyEventBufferClosed = true;
     runtime.earlyEventBufferOverflowed = true;
     runtime.earlyBufferRecoveryWrite = (async () => {
-      await Promise.all(appendReceipts);
+      const appendResults = await Promise.all(appendReceipts);
+      if (appendResults.some((appended) => !appended)) {
+        throw new Error('One or more pre-overflow chunk appends were not committed');
+      }
       await this.jobStore.flushPendingAppends?.(streamId);
       await this.jobStore.updateJob(streamId, { earlyBufferRecovery: recovery }, runtime.createdAt);
     })().catch((error) => {
+      runtime.earlyBufferRecoveryPersistenceFailed = true;
       logger.error('[GenerationRecovery] Failed to persist overflow marker', {
         correlationId: recovery.correlationId,
         error,
+      });
+      setImmediate(() => {
+        void (async () => {
+          const failureReason = 'overflow_marker_persistence_failed' as const;
+          const durableOutcome = await this.settleEarlyBufferRecovery(
+            streamId,
+            runtime,
+            recovery,
+            'failure',
+            failureReason,
+            0,
+            0,
+          );
+          if (durableOutcome?.outcome === 'success') {
+            return;
+          }
+          if (durableOutcome == null) {
+            const completedAt = Date.now();
+            runtime.earlyBufferRecovery = {
+              ...recovery,
+              source: this._isRedis ? 'redis' : 'snapshot',
+              startedAt: recovery.overflowedAt,
+              outcome: 'failure',
+              failureReason,
+              completedAt,
+              durationMs: Math.max(0, completedAt - recovery.overflowedAt),
+              reconstructedEventCount: 0,
+              reconstructedContentCount: 0,
+            };
+            recordGenerationStreamRecovery(
+              this.storeLabel,
+              this._isRedis ? 'redis' : 'snapshot',
+              'failure',
+              failureReason,
+              Math.max(0, completedAt - recovery.overflowedAt) / 1000,
+              0,
+              0,
+            );
+            logger.info('[GenerationRecovery] Recovery outcome', {
+              correlationId: recovery.correlationId,
+              source: this._isRedis ? 'redis' : 'snapshot',
+              outcome: 'failure',
+              failureReason,
+              durationMs: Math.max(0, completedAt - recovery.overflowedAt),
+              reconstructedEventCount: 0,
+              reconstructedContentCount: 0,
+            });
+          }
+          await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+        })().catch((terminalError) => {
+          logger.error('[GenerationRecovery] Failed to terminalize overflow marker error', {
+            correlationId: recovery.correlationId,
+            error: terminalError,
+          });
+        });
       });
     });
     recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
@@ -5372,9 +5433,9 @@ class GenerationJobManagerClass {
     failureReason: EarlyBufferRecoveryFailureReason | undefined,
     reconstructedEventCount: number,
     reconstructedContentCount: number,
-  ): Promise<void> {
+  ): Promise<EarlyBufferRecoveryState | undefined> {
     if (recovery.outcome != null || runtime.earlyBufferRecovery?.outcome != null) {
-      return;
+      return runtime.earlyBufferRecovery;
     }
     const completedAt = Date.now();
     const settled: EarlyBufferRecoveryState = {
@@ -5387,18 +5448,16 @@ class GenerationJobManagerClass {
       ...(failureReason && { failureReason }),
     };
     try {
-      const committed = this.jobStore.settleEarlyBufferRecovery
+      const settlement = this.jobStore.settleEarlyBufferRecovery
         ? await this.jobStore.settleEarlyBufferRecovery(
             streamId,
             runtime.createdAt,
             recovery.correlationId,
             settled,
           )
-        : true;
-      if (!committed) {
-        runtime.earlyBufferRecovery =
-          (await this.jobStore.getJob(streamId))?.earlyBufferRecovery ?? recovery;
-        return;
+        : { recovery: settled, committed: true };
+      if (settlement == null) {
+        return undefined;
       }
       if (!this.jobStore.settleEarlyBufferRecovery) {
         await this.jobStore.updateJob(
@@ -5407,13 +5466,16 @@ class GenerationJobManagerClass {
           runtime.createdAt,
         );
       }
-      runtime.earlyBufferRecovery = settled;
+      runtime.earlyBufferRecovery = settlement.recovery;
+      if (!settlement.committed) {
+        return settlement.recovery;
+      }
     } catch (error) {
       logger.error('[GenerationRecovery] Failed to persist recovery outcome', {
         correlationId: recovery.correlationId,
         error,
       });
-      return;
+      return undefined;
     }
     const source = settled.source ?? (this._isRedis ? 'redis' : 'snapshot');
     recordGenerationStreamRecovery(
@@ -5434,6 +5496,7 @@ class GenerationJobManagerClass {
       reconstructedContentCount,
       ...(failureReason && { failureReason }),
     });
+    return settled;
   }
 
   private recoveryFrontierHasNoGaps(sequences: readonly number[], frontier: number): boolean {
@@ -5576,6 +5639,11 @@ class GenerationJobManagerClass {
     }
 
     await runtime.earlyBufferRecoveryWrite;
+    if (runtime.earlyBufferRecoveryPersistenceFailed) {
+      recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
+      onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+      return { subscription: null, resumeState: null, pendingEvents: [] };
+    }
     let overflowRecovery = runtime.earlyBufferRecovery;
     if (overflowRecovery && overflowRecovery.outcome == null) {
       const startedRecovery: EarlyBufferRecoveryState = {
@@ -5969,7 +6037,7 @@ class GenerationJobManagerClass {
         }
 
         if (failureReason) {
-          await this.settleEarlyBufferRecovery(
+          const durableOutcome = await this.settleEarlyBufferRecovery(
             streamId,
             runtime,
             activeOverflowRecovery,
@@ -5978,9 +6046,11 @@ class GenerationJobManagerClass {
             reconstructedEventCount,
             reconstructedContentCount,
           );
-          runtime.abortController.abort();
-          await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
-          return cancelResumeSubscription();
+          if (durableOutcome?.outcome !== 'success') {
+            runtime.abortController.abort();
+            await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+            return cancelResumeSubscription();
+          }
         }
 
         await this.settleEarlyBufferRecovery(

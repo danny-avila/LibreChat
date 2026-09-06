@@ -26,6 +26,7 @@ import type {
   SteerReceiptInput,
   ParkedSteerClaim,
   EarlyBufferRecoveryState,
+  EarlyBufferRecoverySettlement,
 } from '~/stream/interfaces/IJobStore';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
@@ -619,11 +620,12 @@ const JOB_UPDATE_LUA =
   'return 1';
 
 const EARLY_BUFFER_RECOVERY_SETTLE_LUA =
-  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
-  'local raw = redis.call("HGET", KEYS[1], "earlyBufferRecovery") if not raw then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return nil end ' +
+  'local raw = redis.call("HGET", KEYS[1], "earlyBufferRecovery") if not raw then return nil end ' +
   'local ok, current = pcall(cjson.decode, raw) ' +
-  'if not ok or current.correlationId ~= ARGV[2] or current.outcome then return 0 end ' +
-  'redis.call("HSET", KEYS[1], "earlyBufferRecovery", ARGV[3]) return 1';
+  'if not ok or current.correlationId ~= ARGV[2] then return nil end ' +
+  'if current.outcome then return {raw, "0"} end ' +
+  'redis.call("HSET", KEYS[1], "earlyBufferRecovery", ARGV[3]) return {ARGV[3], "1"}';
 
 const FIRST_SUBSCRIBER_CLAIM_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
@@ -2303,19 +2305,22 @@ export class RedisJobStore implements IJobStoreV2 {
     expectedCreatedAt: number,
     correlationId: string,
     recovery: EarlyBufferRecoveryState,
-  ): Promise<boolean> {
-    return (
-      Number(
-        await this.redis.eval(
-          EARLY_BUFFER_RECOVERY_SETTLE_LUA,
-          1,
-          KEYS.job(streamId),
-          String(expectedCreatedAt),
-          correlationId,
-          JSON.stringify(recovery),
-        ),
-      ) === 1
+  ): Promise<EarlyBufferRecoverySettlement | null> {
+    const settled = await this.redis.eval(
+      EARLY_BUFFER_RECOVERY_SETTLE_LUA,
+      1,
+      KEYS.job(streamId),
+      String(expectedCreatedAt),
+      correlationId,
+      JSON.stringify(recovery),
     );
+    if (!Array.isArray(settled) || typeof settled[0] !== 'string') {
+      return null;
+    }
+    return {
+      recovery: JSON.parse(settled[0]) as EarlyBufferRecoveryState,
+      committed: String(settled[1]) === '1',
+    };
   }
 
   async claimFirstSubscriberAttachment(
@@ -4718,7 +4723,7 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     const recoverySequences: number[] = [];
     for (const chunk of chunks) {
-      const sequence = (chunk as { recoverySequence?: unknown }).recoverySequence;
+      const sequence = (chunk as { recoverySequence?: number }).recoverySequence;
       if (typeof sequence === 'number' && Number.isSafeInteger(sequence) && sequence > 0) {
         recoverySequences.push(sequence);
       }

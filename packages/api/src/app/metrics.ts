@@ -163,6 +163,7 @@ export type GenerationStreamRecoveryFailureReason =
   | 'none'
   | 'durable_frontier_gap'
   | 'durable_state_missing'
+  | 'overflow_marker_persistence_failed'
   | 'snapshot_missing'
   | 'subscriber_never_attached'
   | 'reconstruction_error';
