@@ -10,6 +10,8 @@ import type { IJobStore, IJobStoreV2 } from './interfaces/IJobStore';
  */
 export const JOB_STORE_V2_REQUIRED_METHODS = [
   'acknowledgeReplacedJobs',
+  'settleEarlyBufferRecovery',
+  'claimFirstSubscriberAttachment',
   'markProviderExecutionDrained',
   'beginProviderExecution',
   'getCleanupBlockingJobIdsByUser',
@@ -37,7 +39,13 @@ export type JobStoreV2RequiredMethod = (typeof JOB_STORE_V2_REQUIRED_METHODS)[nu
 type MethodKeys<T> = {
   [Key in keyof T]-?: NonNullable<T[Key]> extends (...args: never[]) => unknown ? Key : never;
 }[keyof T];
-type V2OnlyMethod = Exclude<MethodKeys<IJobStoreV2>, keyof IJobStore>;
+type RequiredKeys<T> = {
+  [Key in keyof T]-?: object extends Pick<T, Key> ? never : Key;
+}[keyof T];
+type RequiredMethodKeys<T> = Extract<MethodKeys<T>, RequiredKeys<T>>;
+type V2OnlyMethod =
+  | Exclude<MethodKeys<IJobStoreV2>, keyof IJobStore>
+  | Exclude<RequiredMethodKeys<IJobStoreV2>, RequiredMethodKeys<IJobStore>>;
 type SameUnion<Left, Right> = [Left] extends [Right]
   ? [Right] extends [Left]
     ? true

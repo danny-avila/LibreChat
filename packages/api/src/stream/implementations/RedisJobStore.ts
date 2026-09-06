@@ -24,6 +24,7 @@ import type {
   TerminalSteerAdmissionResult,
   SteerReceipt,
   SteerReceiptInput,
+  ContentPartsReadOptions,
   ParkedSteerClaim,
   EarlyBufferRecoveryState,
   EarlyBufferRecoverySettlement,
@@ -3782,12 +3783,15 @@ export class RedisJobStore implements IJobStoreV2 {
   async getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions,
   ): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {
     // 1. Prefer the HOST content array (same-instance fast path): it already
     // contains host-authored steer parts the SDK graph never sees.
-    const hostEntry = this.getLocalEntry(this.localContentParts, streamId, expectedCreatedAt);
+    const hostEntry = options?.includeRecoveryStats
+      ? undefined
+      : this.getLocalEntry(this.localContentParts, streamId, expectedCreatedAt);
     if (hostEntry) {
       const hostParts = hostEntry.value.deref();
       if (hostParts && hostParts.length > 0) {
@@ -3802,7 +3806,9 @@ export class RedisJobStore implements IJobStoreV2 {
     // lacks host-authored steer parts, so overlay them from the chunk log —
     // insert (not assign): the graph array is UNSHIFTED, while recorded steer
     // indices are host-view positions that already account for prior steers.
-    const graphEntry = this.getLocalEntry(this.localGraphCache, streamId, expectedCreatedAt);
+    const graphEntry = options?.includeRecoveryStats
+      ? undefined
+      : this.getLocalEntry(this.localGraphCache, streamId, expectedCreatedAt);
     if (graphEntry) {
       const graph = graphEntry.value.deref();
       if (graph) {
@@ -4032,6 +4038,17 @@ export class RedisJobStore implements IJobStoreV2 {
 
     return {
       content: filtered,
+      ...(options?.includeRecoveryStats && {
+        recoveryStats: {
+          eventCount: chunks.length,
+          recoverySequences: chunks.flatMap((chunk) => {
+            const sequence = (chunk as { recoverySequence?: number }).recoverySequence;
+            return typeof sequence === 'number' && Number.isSafeInteger(sequence) && sequence > 0
+              ? [sequence]
+              : [];
+          }),
+        },
+      }),
     };
   }
 
@@ -4711,24 +4728,6 @@ export class RedisJobStore implements IJobStoreV2 {
         return null;
       })
       .filter(Boolean);
-  }
-
-  async getRecoveryEventStats(
-    streamId: string,
-    expectedCreatedAt?: number,
-  ): Promise<{ eventCount: number; recoverySequences: number[] } | null> {
-    const chunks = await this.getChunks(streamId, expectedCreatedAt);
-    if (chunks.length === 0) {
-      return null;
-    }
-    const recoverySequences: number[] = [];
-    for (const chunk of chunks) {
-      const sequence = (chunk as { recoverySequence?: number }).recoverySequence;
-      if (typeof sequence === 'number' && Number.isSafeInteger(sequence) && sequence > 0) {
-        recoverySequences.push(sequence);
-      }
-    }
-    return { eventCount: chunks.length, recoverySequences };
   }
 
   /**

@@ -134,6 +134,21 @@ export interface EarlyBufferRecoverySettlement {
   committed: boolean;
 }
 
+export interface RecoveryEventStats {
+  eventCount: number;
+  recoverySequences: number[];
+}
+
+export interface ContentPartsReadOptions {
+  /** Force durable reconstruction and return its validation frontier in the same read. */
+  includeRecoveryStats?: boolean;
+}
+
+export interface ContentPartsResult {
+  content: Agents.MessageContentComplex[];
+  recoveryStats?: RecoveryEventStats;
+}
+
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
  */
@@ -933,6 +948,7 @@ export interface IJobStore {
     updates: Partial<SerializableJobData>,
     expectedCreatedAt?: number,
   ): Promise<void>;
+
   transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
 
   claimIdempotencyKey(
@@ -986,12 +1002,8 @@ export interface IJobStore {
   getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
-  ): Promise<{ content: Agents.MessageContentComplex[] } | null>;
-  /** Rare-path validation metadata for early-buffer recovery. */
-  getRecoveryEventStats?(
-    streamId: string,
-    expectedCreatedAt?: number,
-  ): Promise<{ eventCount: number; recoverySequences: number[] } | null>;
+    options?: ContentPartsReadOptions,
+  ): Promise<ContentPartsResult | null>;
   /** Atomically records the one terminal outcome for an overflow correlation id. */
   settleEarlyBufferRecovery?(
     streamId: string,
@@ -1093,6 +1105,21 @@ export interface IJobStoreV2 extends IJobStore {
     updates: Partial<SerializableJobData>,
     expectedCreatedAt?: number,
   ): Promise<void>;
+
+  /** Atomically records or returns the existing terminal recovery outcome. */
+  settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    correlationId: string,
+    recovery: EarlyBufferRecoveryState,
+  ): Promise<EarlyBufferRecoverySettlement | null>;
+
+  /** Claims first attachment once across replicas. */
+  claimFirstSubscriberAttachment(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean>;
 
   /** Atomically marks only the exact provider segment as fully unwound. */
   markProviderExecutionDrained(
@@ -1323,9 +1350,8 @@ export interface IJobStoreV2 extends IJobStore {
   getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
-  ): Promise<{
-    content: Agents.MessageContentComplex[];
-  } | null>;
+    options?: ContentPartsReadOptions,
+  ): Promise<ContentPartsResult | null>;
 
   /**
    * Get run steps for a job (for resume state).

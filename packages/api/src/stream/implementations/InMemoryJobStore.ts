@@ -21,6 +21,7 @@ import type {
   JobStatusTransition,
   IdempotencyClaimValue,
   IdempotencyClaimResult,
+  ContentPartsReadOptions,
   ParkedSteerClaim,
   EarlyBufferRecoveryState,
   EarlyBufferRecoverySettlement,
@@ -1522,6 +1523,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
   async getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
+    _options?: ContentPartsReadOptions,
   ): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {

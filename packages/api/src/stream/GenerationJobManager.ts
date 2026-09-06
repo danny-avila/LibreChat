@@ -33,6 +33,8 @@ import type {
   DetachedAgentEventActionStoreMode,
   EarlyBufferRecoveryState,
   EarlyBufferRecoveryFailureReason,
+  ContentPartsReadOptions,
+  RecoveryEventStats,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { RecoveredSteerPayload } from './SteerRecovery';
@@ -161,6 +163,10 @@ const EARLY_EVENT_BUFFER_MAX_EVENTS = 5_000;
 const EARLY_EVENT_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const ATTACHMENT_BOOTSTRAP_SLOW_MS = 1_000;
 export const GENERATION_RECOVERY_FAILED_ERROR = 'generation_recovery_failed';
+const RECOVERY_STATS = Symbol('generation-recovery-stats');
+type ResumeStateWithRecoveryStats = t.ResumeState & {
+  [RECOVERY_STATS]?: RecoveryEventStats;
+};
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 type TokenIdempotencyClaim = IdempotencyClaimValue & {
   claimedAt: number;
@@ -696,6 +702,8 @@ interface RuntimeJobState {
   outstandingCoalescedReceipts?: number;
   hasSubscriber: boolean;
   everHadSubscriber: boolean;
+  /** Durable first-attachment claim acquired before overflow reconstruction. */
+  firstAttachmentClaimedAt?: number;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
   /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
@@ -3673,6 +3681,12 @@ class GenerationJobManagerClass {
       throw new Error('A failed pause-persistence claim must be a non-pending error terminal');
     }
     const observedRuntime = this.runtimeState.get(streamId);
+    if (status === 'complete' && observedRuntime?.earlyBufferRecoveryWrite) {
+      await observedRuntime.earlyBufferRecoveryWrite;
+      if (observedRuntime.earlyBufferRecoveryPersistenceFailed) {
+        return null;
+      }
+    }
     const targetCreatedAt = expectedCreatedAt ?? observedRuntime?.createdAt;
     let jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (targetCreatedAt != null && jobData.createdAt !== targetCreatedAt)) {
@@ -4966,7 +4980,8 @@ class GenerationJobManagerClass {
 
     const isFirst = this.eventTransport.isFirstSubscriber(streamId);
 
-    const isFirstAttachment = !runtime.everHadSubscriber;
+    const isFirstAttachment =
+      runtime.firstAttachmentClaimedAt != null || !runtime.everHadSubscriber;
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
       runtime.everHadSubscriber = true;
@@ -5104,14 +5119,15 @@ class GenerationJobManagerClass {
 
     if (isFirstAttachment) {
       const attachedAt = Date.now();
-      let claimedFirstAttachment = true;
+      let claimedFirstAttachment = runtime.firstAttachmentClaimedAt != null;
       try {
-        claimedFirstAttachment =
-          (await this.jobStore.claimFirstSubscriberAttachment?.(
+        if (!claimedFirstAttachment) {
+          claimedFirstAttachment = await this.jobStore.claimFirstSubscriberAttachment(
             streamId,
             runtime.createdAt,
             attachedAt,
-          )) ?? true;
+          );
+        }
       } catch (err) {
         claimedFirstAttachment = false;
         logger.warn(
@@ -5120,6 +5136,7 @@ class GenerationJobManagerClass {
         );
       }
       if (claimedFirstAttachment) {
+        runtime.firstAttachmentClaimedAt = undefined;
         const bootstrapDurationMs = attachedAt - attachmentStartedAt;
         recordGenerationStreamAttachment(
           this.storeLabel,
@@ -5448,23 +5465,14 @@ class GenerationJobManagerClass {
       ...(failureReason && { failureReason }),
     };
     try {
-      const settlement = this.jobStore.settleEarlyBufferRecovery
-        ? await this.jobStore.settleEarlyBufferRecovery(
-            streamId,
-            runtime.createdAt,
-            recovery.correlationId,
-            settled,
-          )
-        : { recovery: settled, committed: true };
+      const settlement = await this.jobStore.settleEarlyBufferRecovery(
+        streamId,
+        runtime.createdAt,
+        recovery.correlationId,
+        settled,
+      );
       if (settlement == null) {
         return undefined;
-      }
-      if (!this.jobStore.settleEarlyBufferRecovery) {
-        await this.jobStore.updateJob(
-          streamId,
-          { earlyBufferRecovery: settled },
-          runtime.createdAt,
-        );
       }
       runtime.earlyBufferRecovery = settlement.recovery;
       if (!settlement.committed) {
@@ -5638,6 +5646,31 @@ class GenerationJobManagerClass {
       return { subscription: null, resumeState: null, pendingEvents: [] };
     }
 
+    const pendingOverflowAtEntry =
+      runtime.earlyBufferRecovery?.outcome == null ? runtime.earlyBufferRecovery : undefined;
+    if (pendingOverflowAtEntry && !runtime.everHadSubscriber) {
+      const claimedAt = Date.now();
+      try {
+        const claimed = await this.jobStore.claimFirstSubscriberAttachment(
+          streamId,
+          runtime.createdAt,
+          claimedAt,
+        );
+        if (claimed) {
+          runtime.firstAttachmentClaimedAt = claimedAt;
+          runtime.everHadSubscriber = true;
+        } else {
+          const durableJob = await this.jobStore.getJob(streamId);
+          runtime.everHadSubscriber = durableJob?.firstSubscriberAttachedAt != null;
+        }
+      } catch (error) {
+        logger.warn('[GenerationRecovery] Failed to claim recovery attachment', {
+          correlationId: pendingOverflowAtEntry.correlationId,
+          error,
+        });
+      }
+    }
+
     await runtime.earlyBufferRecoveryWrite;
     if (runtime.earlyBufferRecoveryPersistenceFailed) {
       recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
@@ -5660,6 +5693,23 @@ class GenerationJobManagerClass {
       });
     }
     const activeOverflowRecovery = overflowRecovery?.outcome == null ? overflowRecovery : undefined;
+
+    if (activeOverflowRecovery && !runtime.everHadSubscriber) {
+      const durableOutcome = await this.settleEarlyBufferRecovery(
+        streamId,
+        runtime,
+        activeOverflowRecovery,
+        'failure',
+        'reconstruction_error',
+        0,
+        0,
+      );
+      if (durableOutcome?.outcome !== 'success') {
+        await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+        onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
+    }
 
     const capturedPendingEvents: t.ServerSentEvent[] = [];
     const pendingEvents: t.ServerSentEvent[] = [];
@@ -5767,7 +5817,9 @@ class GenerationJobManagerClass {
         }
       } else {
         [resumeState, jobData] = await Promise.all([
-          this.getResumeState(streamId, options?.expectedCreatedAt),
+          this.getResumeState(streamId, options?.expectedCreatedAt, {
+            includeRecoveryStats: activeOverflowRecovery != null,
+          }),
           this.jobStore.getJob(streamId),
         ]);
       }
@@ -6019,7 +6071,7 @@ class GenerationJobManagerClass {
           if (resumeState == null) {
             failureReason = this._isRedis ? 'durable_state_missing' : 'snapshot_missing';
           } else if (this._isRedis) {
-            const stats = await this.jobStore.getRecoveryEventStats?.(streamId, runtime.createdAt);
+            const stats = (resumeState as ResumeStateWithRecoveryStats)[RECOVERY_STATS];
             reconstructedEventCount = stats?.eventCount ?? 0;
             if (stats == null) {
               failureReason = 'durable_state_missing';
@@ -8055,6 +8107,7 @@ class GenerationJobManagerClass {
   async getResumeState(
     streamId: string,
     expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions,
   ): Promise<t.ResumeState | null> {
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
@@ -8065,7 +8118,7 @@ class GenerationJobManagerClass {
      *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
     const [result, runSteps, queuedSteers, claimedSteers] = await Promise.all([
-      this.jobStore.getContentParts(streamId, jobData.createdAt),
+      this.jobStore.getContentParts(streamId, jobData.createdAt, options),
       this.jobStore.getRunSteps(streamId, jobData.createdAt),
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
@@ -8149,7 +8202,7 @@ class GenerationJobManagerClass {
       collectedUsageLength: collectedUsage?.length ?? 0,
     });
 
-    return {
+    const resumeState = {
       runSteps: effectiveRunSteps,
       aggregatedContent,
       userMessage: jobData.userMessage,
@@ -8173,6 +8226,10 @@ class GenerationJobManagerClass {
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     } satisfies t.ResumeState;
+    if (result?.recoveryStats) {
+      Object.defineProperty(resumeState, RECOVERY_STATS, { value: result.recoveryStats });
+    }
+    return resumeState;
   }
 
   /**
