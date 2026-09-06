@@ -13,6 +13,7 @@ import {
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
 import { cn } from '~/utils';
 
@@ -285,9 +286,17 @@ export default function ActivityPhaseGroup({
       </span>
     </div>
   ) : null;
+  /** `AttachmentGroup` drops `web_search` attachments, and the nested segment
+   *  renders with `hideAttachments` so its own `WebSearch` row stands down
+   *  for this hoist — so without `SearchVerticals` here a phase containing a
+   *  search would swallow its images, products and places instead of lifting
+   *  them out of the fold. Mirrors `ToolCallGroup`'s own hoist. */
   const media =
     attachments != null && attachments.length > 0 ? (
-      <AttachmentGroup attachments={attachments} />
+      <>
+        <SearchVerticals attachments={attachments} />
+        <AttachmentGroup attachments={attachments} />
+      </>
     ) : null;
   if (!label) {
     return (

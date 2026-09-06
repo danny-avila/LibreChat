@@ -1,6 +1,6 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, Tools } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ActivityPhaseGroup from '../ActivityPhaseGroup';
 
@@ -16,6 +16,7 @@ jest.mock('~/hooks', () => {
   const expandCollapse = jest.requireActual('~/hooks/Messages/useExpandCollapse');
   const lazyCollapseBody = jest.requireActual('~/hooks/Messages/useLazyCollapseBody');
   return {
+    useLocalize: () => (key: string) => key,
     useExpandCollapse: expandCollapse.default,
     useLazyCollapseBody: lazyCollapseBody.default,
     EXPAND_TRANSITION: expandCollapse.EXPAND_TRANSITION,
@@ -39,6 +40,22 @@ const makeLabelPart = (
 
 const labelPart = makeLabelPart(LABEL);
 const nextLabelPart = makeLabelPart(NEXT_LABEL);
+
+/** A completed web search inside the phase: `AttachmentGroup` discards the
+ *  `web_search` type, so only `SearchVerticals` can surface these. */
+const searchAttachment = {
+  type: Tools.web_search,
+  [Tools.web_search]: {
+    images: [
+      {
+        title: 'A pictured result',
+        imageUrl: 'https://example.com/pic.png',
+        thumbnailUrl: 'https://example.com/thumb.png',
+        link: 'https://example.com/page',
+      },
+    ],
+  },
+} as unknown as TAttachment;
 
 describe('ActivityPhaseGroup', () => {
   let frames: Array<FrameRequestCallback | undefined>;
@@ -365,5 +382,22 @@ describe('ActivityPhaseGroup', () => {
 
     fireEvent.transitionEnd(screen.getByTestId('activity-phase-panel'));
     expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+  });
+
+  test('hoists a folded search call verticals out of the card', () => {
+    /** The nested segment renders with `hideAttachments`, standing its own
+     *  `WebSearch` verticals down for this hoist, and `AttachmentGroup` drops
+     *  `web_search` attachments outright — so the card is the only surface
+     *  left for a folded search's images, products and places. */
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent attachments={[searchAttachment]}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const image = screen.getByRole('link', { name: 'A pictured result' });
+    expect(image).toHaveAttribute('href', 'https://example.com/page');
+    /** Outside the fold: collapsing the card must not take the media with it. */
+    expect(screen.getByTestId('activity-phase-panel')).not.toContainElement(image);
   });
 });

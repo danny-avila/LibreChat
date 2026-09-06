@@ -658,6 +658,20 @@ export default function ToolCallGroup({
                   if (part.type === ContentTypes.THINK) {
                     const think = part.think;
                     const reasoning = typeof think === 'string' ? think : (think?.value ?? '');
+                    /** A detached-subagent projection carries an empty THINK
+                     *  part flagged `reasoning_unavailable`, which `Part`
+                     *  renders as a `ReasoningMarker`. `ReasoningCompact` has
+                     *  no text to show and returns null, so the marker has to
+                     *  keep going through the standalone path or it vanishes
+                     *  the moment its call joins a group. */
+                    if (reasoning.trim() === '' && part.reasoning_unavailable === true) {
+                      return renderPart(
+                        part,
+                        idx,
+                        isLast && idx === lastContentIdx,
+                        handleToolExpand,
+                      );
+                    }
                     const streaming = isSubmitting && idx === lastContentIdx;
                     const isAfterTool =
                       partIndex > 0 && parts[partIndex - 1]?.part.type === ContentTypes.TOOL_CALL;

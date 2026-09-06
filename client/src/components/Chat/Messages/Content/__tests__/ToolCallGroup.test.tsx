@@ -506,6 +506,30 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.getByTestId('compact-reasoning')).toHaveAttribute('data-after-tool', 'true');
   });
 
+  it('delegates an unavailable-reasoning part to the standalone renderer', () => {
+    /** A detached-subagent projection has no text to compact, so `Part`'s
+     *  `ReasoningMarker` is the only thing that stands for it. Rendering it
+     *  as a compact row drops the marker the moment the call joins a group. */
+    const unavailablePart = {
+      type: ContentTypes.THINK,
+      [ContentTypes.THINK]: '',
+      reasoning_unavailable: true,
+    } as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('t1'), idx: 0 },
+        { part: unavailablePart, idx: 1 },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Fetch_image/ }));
+
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('compact-reasoning')).not.toBeInTheDocument();
+  });
+
   it('unmounts tool bodies after a collapsed group finishes transitioning', () => {
     renderGroup(baseProps);
 
