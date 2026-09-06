@@ -232,6 +232,30 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
+  it('re-reads the list when a schedule created elsewhere arrives already settled', async () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [schedule]);
+
+    /** Made in another tab, fired, and finished — all before this poll first
+     *  listed it. There is no earlier state to compare against; idle is the
+     *  baseline, and this is not idle. */
+    rerender([schedule, { ...settled('elsewhere-convo'), id: 'schedule-2' }]);
+
+    expect(isStale(queryClient)).toBe(true);
+    expect(mockGetConversationById).not.toHaveBeenCalled();
+    queryClient.clear();
+  });
+
+  it('leaves the list alone when a schedule created elsewhere arrives idle', () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [schedule]);
+
+    rerender([schedule, { ...schedule, id: 'schedule-2' }]);
+
+    expect(isStale(queryClient)).toBe(false);
+    queryClient.clear();
+  });
+
   it('records the first observation in silence', async () => {
     const queryClient = createQueryClient();
     renderWith(queryClient, [schedule]);

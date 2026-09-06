@@ -4,7 +4,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { TSchedule } from 'librechat-data-provider';
 import { trackScheduledRun } from '~/data-provider/Schedules/admission';
 
-const inFlightChats = (schedule: TSchedule): string[] =>
+type Occurrences = Pick<TSchedule, 'inFlight' | 'lastRun'>;
+
+const inFlightChats = (schedule: Pick<TSchedule, 'inFlight'>): string[] =>
   (schedule.inFlight ?? []).map((run) => run.conversationId);
 
 /** Everything about a schedule's occurrences that should send the list back to
@@ -12,11 +14,16 @@ const inFlightChats = (schedule: TSchedule): string[] =>
  *  ended. A run short enough to start and settle between two polls is never seen
  *  generating; it is still seen settled, and the refetch that follows brings its
  *  chat with the server's own row. */
-const runState = (schedule: TSchedule): string => {
+const runState = (schedule: Occurrences): string => {
   const { lastRun } = schedule;
   const live = inFlightChats(schedule).sort().join(',');
   return `${live}|${lastRun?.conversationId ?? ''}:${lastRun?.status ?? ''}`;
 };
+
+/** What a schedule this client has never seen is compared against. One created
+ *  elsewhere that arrives with its first run already settled is news the list
+ *  should hear; one that arrives with no run yet is not. */
+const IDLE_STATE = runState({});
 
 /**
  * Puts an automatic occurrence's chat in the sidebar, the same way Run Now does.
@@ -33,8 +40,9 @@ const runState = (schedule: TSchedule): string => {
  * ever handed over, so a settled run whose generation never wrote a conversation
  * is never watched, let alone watched again.
  *
- * When a run's state moves — one settles, or its schedule is deleted from under it
- * — the list is re-read once for the chat, order and title the settlement changed.
+ * When a run's state moves — one settles, its schedule is deleted from under it,
+ * or a schedule created elsewhere arrives with a run already behind it — the list
+ * is re-read once for the chat, order and title the settlement changed.
  * Because the state includes the generating occurrences, an owner editing the
  * schedule mid-flight (which fences the `lastRun` projection) still cannot hide a
  * settlement. The first observation is recorded in silence: a panel opened long
@@ -60,7 +68,9 @@ export default function useRunSync(schedules?: TSchedule[]): void {
     if (previous == null) {
       return;
     }
-    const moved = [...previous].some(([id, state]) => current.get(id) !== state);
+    const moved =
+      [...previous].some(([id, state]) => current.get(id) !== state) ||
+      [...current].some(([id, state]) => !previous.has(id) && state !== IDLE_STATE);
     if (moved) {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
     }

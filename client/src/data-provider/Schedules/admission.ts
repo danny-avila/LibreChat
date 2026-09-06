@@ -56,9 +56,31 @@ const cacheOwner = (queryClient: QueryClient): string | undefined =>
  */
 const tracked = new Set<string>();
 
-/** @internal Test seam. */
+/**
+ * How many landed runs to remember. A panel that stays mounted sees a new id per
+ * occurrence for as long as schedules keep firing, and a run is only announced
+ * while it is in flight — none is still in flight by the time this many have
+ * started after it — so the oldest entries can go without a watch ever running
+ * twice for the same run.
+ */
+const TRACKED_RUN_LIMIT = 256;
+
+function forgetOldestTracked(): void {
+  while (tracked.size > TRACKED_RUN_LIMIT) {
+    const [oldest] = tracked;
+    if (oldest === undefined) {
+      return;
+    }
+    tracked.delete(oldest);
+  }
+}
+
+/** @internal Test seams. */
 export function resetTrackedRuns(): void {
   tracked.clear();
+}
+export function trackedRunCount(): number {
+  return tracked.size;
 }
 
 /**
@@ -162,6 +184,7 @@ export async function trackScheduledRun(
     return;
   }
   tracked.add(conversationId);
+  forgetOldestTracked();
   const landed = await admit(queryClient, conversationId);
   if (!landed) {
     tracked.delete(conversationId);

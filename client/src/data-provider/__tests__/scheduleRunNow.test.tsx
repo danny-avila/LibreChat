@@ -10,8 +10,8 @@ import {
   resetActiveJobsGrace,
   getActiveJobsRefetchInterval,
 } from '../SSE/queries';
+import { resetTrackedRuns, trackScheduledRun, trackedRunCount } from '../Schedules/admission';
 import { useRunScheduleNowMutation } from '../Schedules/mutations';
-import { resetTrackedRuns } from '../Schedules/admission';
 import * as sseQueries from '../SSE/queries';
 
 const mockRunScheduleNow = jest.fn<Promise<TScheduleRunNowResponse>, [string]>();
@@ -378,6 +378,25 @@ describe('run-now conversation tracking', () => {
 
     expect(mockGetConversationById).toHaveBeenCalledTimes(1);
     expect(readList(queryClient).filter((c) => c.conversationId === 'run-convo-1')).toHaveLength(1);
+    queryClient.clear();
+  });
+
+  it('remembers only the most recent landed runs, so a long-lived panel stays bounded', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockImplementation(async (id) => ({
+      ...serverConversation(),
+      conversationId: id,
+    }));
+
+    for (let i = 0; i < 300; i += 1) {
+      void trackScheduledRun(queryClient, `run-${i}`);
+    }
+    await settleAdmission();
+
+    expect(trackedRunCount()).toBe(256);
+    expect(readList(queryClient)).toHaveLength(301);
     queryClient.clear();
   });
 
