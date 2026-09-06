@@ -196,7 +196,8 @@
         "fast-uri": "3.1.6",
         "fflate": "0.7.5",
         "@opentelemetry/propagator-jaeger@<2.9.0": "2.9.0",
-        "svgo@>=1.0.0 <2.8.3": "2.8.3"
+        "svgo@>=1.0.0 <2.8.3": "2.8.3",
+        "sanitize-html": "2.17.7"
     },
     "nodemonConfig": {
         "ignore": [

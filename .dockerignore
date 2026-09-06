@@ -23,3 +23,10 @@ packages/*/dist
 
 Dockerfile.bak
 *.bak
+
+# The image is built with npm (package-lock.json). Shipping the bun lockfile
+# only gives AWS Inspector a second, unused dependency manifest to scan --
+# that is how fflate@0.7.4 (CVE-2026-45820) was reported against a build that
+# actually installs fflate 0.7.5.
+bun.lock
+bun.lockb
