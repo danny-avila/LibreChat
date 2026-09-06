@@ -750,6 +750,8 @@ export type UpsertSkillFileInput = {
 };
 
 export type ListSkillsByAccessParams = {
+  /** Trusted capability-authorized tenant scope; never accept directly from client input. */
+  manageTenantId?: string;
   accessibleIds: Types.ObjectId[];
   category?: string;
   search?: string;
@@ -1092,11 +1094,14 @@ export function createSkillMethods(
   const { ObjectId } = mongoose.Types;
 
   function buildSkillFilter(
-    params: Pick<ListSkillsByAccessParams, 'accessibleIds' | 'category' | 'search'>,
+    params: Pick<
+      ListSkillsByAccessParams,
+      'accessibleIds' | 'category' | 'search' | 'manageTenantId'
+    >,
   ): FilterQuery<ISkillDocument> {
-    const filter: FilterQuery<ISkillDocument> = {
-      _id: { $in: params.accessibleIds },
-    };
+    const filter: FilterQuery<ISkillDocument> = params.manageTenantId
+      ? { tenantId: params.manageTenantId }
+      : { _id: { $in: params.accessibleIds } };
     if (params.category && params.category.length > 0) {
       filter.category = params.category;
     }

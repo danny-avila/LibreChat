@@ -279,6 +279,7 @@ it('rejects raw downloads and malformed pagination', async () => {
 it('preserves the resource-management capability without bypassing tenant isolation', async () => {
   allowEdit = false;
   canManage = true;
+  allowView = false;
   const response = await request(app)
     .patch(`/skills/${skillId}`)
     .send({ expectedVersion: 1, body: 'Managed update' })
@@ -298,6 +299,11 @@ it('preserves the resource-management capability without bypassing tenant isolat
     .patch(`/skills/${skill._id}`)
     .send({ expectedVersion: 1, body: 'x' })
     .expect(404);
+  const list = await request(app).get('/skills').expect(200);
+  expect(list.body.data.map((row: { id: string }) => row.id)).toEqual([skillId]);
+  canManage = false;
+  const denied = await request(app).get('/skills').expect(200);
+  expect(denied.body.data).toEqual([]);
 });
 
 it('reuses the authorized Skill on detail reads', async () => {
@@ -330,4 +336,25 @@ it('returns safe errors for storage failures', async () => {
   expect(result.body).toEqual({
     error: { code: 'internal_error', message: 'Internal server error' },
   });
+});
+
+it('reuses the authorized Skill for SKILL.md reads', async () => {
+  const response = await request(app).get(`/skills/${skillId}/files/SKILL.md`).expect(200);
+  expect(response.body.content).toBe('Original instructions');
+  expect(readSkill).toHaveBeenCalledTimes(1);
+});
+it.each(['1e2', '0x10'])('honors normalized pagination for limit=%s', async (limit) => {
+  canManage = true;
+  await inTenant(() =>
+    db.createSkill({
+      name: 'second-skill',
+      description: 'Second skill for pagination validation.',
+      body: 'Instructions',
+      author,
+      authorName: 'Test',
+      tenantId,
+    }),
+  );
+  const response = await request(app).get(`/skills?limit=${limit}`).expect(200);
+  expect(response.body.data).toHaveLength(2);
 });

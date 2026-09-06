@@ -26,6 +26,7 @@ import type {
   CreateSkillResult,
   UpdateSkillInput,
   ListSkillsByAccessResult,
+  ListSkillsByAccessParams,
   UpdateSkillResult,
   ValidationIssue,
 } from '@librechat/data-schemas';
@@ -53,13 +54,7 @@ export interface SkillsHandlersDeps {
   /** Skill CRUD — from `@librechat/data-schemas` `createMethods` output. */
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
-  listSkillsByAccess: (params: {
-    accessibleIds: Types.ObjectId[];
-    category?: string;
-    search?: string;
-    limit: number;
-    cursor?: string | null;
-  }) => Promise<ListSkillsByAccessResult>;
+  listSkillsByAccess: (params: ListSkillsByAccessParams) => Promise<ListSkillsByAccessResult>;
   updateSkill: (params: {
     id: string;
     expectedVersion: number;
@@ -303,6 +298,8 @@ function blockFilteredSkillContent(
   return false;
 }
 
+type SkillListOptions = Pick<ListSkillsByAccessParams, 'manageTenantId' | 'limit' | 'cursor'>;
+
 /**
  * Factory for the typed Express handlers served at `/api/skills`.
  * The legacy `api/server/routes/skills.js` imports this, passes in concrete
@@ -310,7 +307,7 @@ function blockFilteredSkillContent(
  * onto the Express router.
  */
 export function createSkillsHandlers(deps: SkillsHandlersDeps): {
-  list: (req: ServerRequest, res: Response) => Promise<Response>;
+  list: (req: ServerRequest, res: Response, options?: SkillListOptions) => Promise<Response>;
   create: (req: ServerRequest, res: Response) => Promise<Response>;
   get: (req: ServerRequest, res: Response) => Promise<Response>;
   patch: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -350,7 +347,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
     }
   }
 
-  async function listHandler(req: ServerRequest, res: Response) {
+  async function listHandler(req: ServerRequest, res: Response, options?: SkillListOptions) {
     try {
       const user = req.user;
       if (!user || !user.id) {
@@ -385,8 +382,10 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         accessibleIds: mergedIds,
         category: typeof category === 'string' && category.length > 0 ? category : undefined,
         search: typeof search === 'string' && search.length > 0 ? search : undefined,
-        limit: parsedLimit,
-        cursor: typeof cursor === 'string' && cursor.length > 0 ? cursor : null,
+        manageTenantId: options?.manageTenantId,
+        limit: options?.limit ?? parsedLimit,
+        cursor:
+          options?.cursor ?? (typeof cursor === 'string' && cursor.length > 0 ? cursor : null),
       });
 
       const publicSet = new Set(publicIds.map((id) => id.toString()));
@@ -655,7 +654,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
 
       // SKILL.md is the skill body itself, not a SkillFile document
       if (decodedPath === 'SKILL.md') {
-        const skill = await getSkillById(id);
+        const resolved = (
+          req as ServerRequest & {
+            resourceAccess?: { resourceInfo?: ISkill & { _id: Types.ObjectId } };
+          }
+        ).resourceAccess?.resourceInfo;
+        const skill = resolved ?? (await getSkillById(id));
         if (!skill) {
           return res.status(404).json({ error: 'Skill not found' });
         }

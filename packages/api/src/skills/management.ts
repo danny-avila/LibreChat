@@ -174,6 +174,15 @@ export function createSkillManagementHandlers(
   'list' | 'get' | 'update' | 'listFiles' | 'getFile' | 'updateFile',
   (request: Request, res: Response) => Promise<Response>
 > {
+  async function canManageSkills(req: ManagementRequest): Promise<boolean> {
+    if (!req.user) return false;
+    const capability = ResourceCapabilityMap[ResourceType.SKILL];
+    try {
+      return capability != null && (await deps.hasCapability(req.user, capability));
+    } catch {
+      return false;
+    }
+  }
   function wrap(
     permission: PermissionBits | undefined,
     operation: (req: ManagementRequest, res: Response) => Promise<Response>,
@@ -197,13 +206,7 @@ export function createSkillManagementHandlers(
           const deployment = getDeploymentSkillById(req.params.id);
           if (!skill || (!deployment && skill.tenantId !== req.user.tenantId))
             return sendError(res, 'not_found');
-          let canManage = false;
-          const capability = ResourceCapabilityMap[ResourceType.SKILL];
-          try {
-            canManage = capability != null && (await deps.hasCapability(req.user, capability));
-          } catch {
-            canManage = false;
-          }
+          const canManage = await canManageSkills(req);
           if (
             !deployment &&
             !canManage &&
@@ -231,25 +234,35 @@ export function createSkillManagementHandlers(
     list: wrap(undefined, async (req, res) => {
       const parsed = listSchema.safeParse(req.query);
       if (!parsed.success) return sendError(res, 'invalid_request', parsed.error);
-      return runHandler(req, res, deps.handlers.list, (body) => {
-        const result = z
-          .object({
-            skills: z.array(z.unknown()),
-            has_more: z.boolean(),
-            after: z.string().nullable(),
-          })
-          .parse(body);
-        const data = result.skills.map((skill) => projectSkill(skill, false));
-        const ids = result.skills.map((skill) => z.object({ _id: idSchema }).parse(skill)._id);
-        return {
-          object: 'list',
-          data,
-          first_id: ids[0] ?? null,
-          last_id: ids[ids.length - 1] ?? null,
-          has_more: result.has_more,
-          after: result.after,
-        };
-      });
+      const manageTenantId = (await canManageSkills(req)) ? req.user?.tenantId : undefined;
+      return runHandler(
+        req,
+        res,
+        (request, response) =>
+          deps.handlers.list(request, response, {
+            ...parsed.data,
+            manageTenantId,
+          }),
+        (body) => {
+          const result = z
+            .object({
+              skills: z.array(z.unknown()),
+              has_more: z.boolean(),
+              after: z.string().nullable(),
+            })
+            .parse(body);
+          const data = result.skills.map((skill) => projectSkill(skill, false));
+          const ids = result.skills.map((skill) => z.object({ _id: idSchema }).parse(skill)._id);
+          return {
+            object: 'list',
+            data,
+            first_id: ids[0] ?? null,
+            last_id: ids[ids.length - 1] ?? null,
+            has_more: result.has_more,
+            after: result.after,
+          };
+        },
+      );
     }),
     get: wrap(PermissionBits.VIEW, (req, res) =>
       runHandler(req, res, deps.handlers.get, (body) => projectSkill(body, true)),

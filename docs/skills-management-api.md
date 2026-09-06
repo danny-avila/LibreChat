@@ -38,7 +38,8 @@ Text-file writes accept `{ "content": "replacement text" }`, capped at 1 MiB of 
 Use a relative path such as `references/guide.md`. Absolute paths, traversal, and NUL bytes are
 rejected. Update `SKILL.md` through the Skill's `body` field with `expectedVersion`, not the file
 endpoint. File writes use replacement semantics without a version precondition; serialize writers
-to the same path. Storage selection stays server-controlled. File JSON reads omit content for
+to the same path. After a file write, read the Skill again before a versioned metadata/body update: file writes also
+increment the parent version. Storage selection stays server-controlled. File JSON reads omit content for
 binary or oversized files; raw download mode is not supported on this surface.
 
 Git-synced and deployment-provided Skills are readable but cannot be changed through this API.
