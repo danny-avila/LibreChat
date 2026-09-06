@@ -5934,7 +5934,6 @@ class GenerationJobManagerClass {
             const currentJob = await this.jobStore.getJob(streamId);
             if (currentJob?.createdAt !== runtime.createdAt) {
               removeCaptureHandler();
-              subscription?.unsubscribe();
               if (currentJob != null) {
                 await this.reconcileFencedRuntimeHandoff(streamId, runtime, currentJob);
               }
@@ -5968,7 +5967,6 @@ class GenerationJobManagerClass {
             const currentJob = await this.jobStore.getJob(streamId);
             if (currentJob?.createdAt !== runtime.createdAt) {
               removeCaptureHandler();
-              subscription?.unsubscribe();
               if (currentJob != null) {
                 await this.reconcileFencedRuntimeHandoff(streamId, runtime, currentJob);
               }

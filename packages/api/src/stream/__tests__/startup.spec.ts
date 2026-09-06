@@ -1404,7 +1404,7 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(getJob).toHaveBeenCalledTimes(1);
       expect(onError).not.toHaveBeenCalled();
       expect(onAllSubscribersLeft).not.toHaveBeenCalled();
-      expect(jest.getTimerCount()).toBe(timerCountBeforeFence);
+      expect(jest.getTimerCount()).toBe(timerCountBeforeFence - 1);
 
       releaseLookup?.();
       await jest.advanceTimersByTimeAsync(0);
