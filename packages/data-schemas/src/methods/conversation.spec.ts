@@ -328,13 +328,8 @@ describe('Conversation Operations', () => {
       expect(convo?.lastSeenAt == null).toBe(true);
     });
 
-    it('leaves a read conversation alone when an older response persists last', async () => {
-      /* Two responses in flight: the older one reaching the write last must neither walk the
-         stamp backwards nor relight a conversation whose newest reply was already read. */
+    it('advances past a future stamp when a save host clock is behind', async () => {
       await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
-      const stamped = await Conversation.findOne<IConversation>({
-        conversationId: mockConversationData.conversationId,
-      });
       const newer = new Date(Date.now() + 60_000);
       const seenAt = new Date(Date.now() + 90_000);
       await Conversation.updateOne(
@@ -347,9 +342,8 @@ describe('Conversation Operations', () => {
       const convo = await Conversation.findOne<IConversation>({
         conversationId: mockConversationData.conversationId,
       });
-      expect(stamped?.lastResponseAt).toBeInstanceOf(Date);
-      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
-      expect(convo?.lastSeenAt?.getTime()).toBe(seenAt.getTime());
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThan(newer.getTime());
+      expect(convo?.lastSeenAt).toBeUndefined();
     });
 
     it('leaves the reply stamp alone for a save that does not carry one', async () => {
@@ -2194,7 +2188,7 @@ describe('Conversation Operations', () => {
       expect(convo?.updatedAt?.getTime()).toBeGreaterThan(createdAt.getTime());
     });
 
-    it('clears a catch-up the new reply outranks', async () => {
+    it('clears a catch-up and manual marker when the real reply advances the stamp', async () => {
       /* `/seen` can accept the previous reply while this one is being persisted, and a
          replica's clock can date that catch-up ahead: the stamp and the clear are one write. */
       await Conversation.create({
@@ -2202,6 +2196,7 @@ describe('Conversation Operations', () => {
         user: 'user123',
         endpoint: EModelEndpoint.openAI,
         lastResponseAt: new Date('2026-08-16T09:00:00.000Z'),
+        lastResponseIsManual: true,
         lastSeenAt: new Date(Date.now() + 5_000),
       });
 
@@ -2211,10 +2206,10 @@ describe('Conversation Operations', () => {
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
       expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseIsManual).toBeUndefined();
       expect(convo?.lastSeenAt == null).toBe(true);
     });
-
-    it('leaves a read conversation alone when its stored reply is already newer', async () => {
+    it('advances past a future reply stamp when this host clock is behind', async () => {
       const newer = new Date(Date.now() + 60_000);
       const seenAt = new Date(Date.now() + 90_000);
       await Conversation.create({
@@ -2230,8 +2225,8 @@ describe('Conversation Operations', () => {
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
-      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
-      expect(convo?.lastSeenAt?.getTime()).toBe(seenAt.getTime());
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThan(newer.getTime());
+      expect(convo?.lastSeenAt).toBeUndefined();
     });
 
     it('does not stamp another user’s conversation', async () => {
@@ -2271,6 +2266,7 @@ describe('Conversation Operations', () => {
       }).lean<IConversation>();
       expect(convo?.lastSeenAt).toBeUndefined();
       expect(convo?.lastResponseAt?.toISOString()).toBe('2026-08-16T10:00:00.000Z');
+      expect(convo?.lastResponseIsManual).toBeUndefined();
     });
 
     it('returns the stamp it settled on so the client never invents one', async () => {
@@ -2281,13 +2277,13 @@ describe('Conversation Operations', () => {
         user: 'user123',
         endpoint: EModelEndpoint.openAI,
       });
-
       const result = await markConvoUnread('user123', mockConversationData.conversationId);
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
       expect(result.lastResponseAt?.toISOString()).toBe(convo?.lastResponseAt?.toISOString());
+      expect(result.lastResponseIsManual).toBe(true);
     });
 
     it('reports nothing modified for a conversation the user does not own', async () => {
@@ -2315,11 +2311,9 @@ describe('Conversation Operations', () => {
       const result = await markConvoUnread('user123', mockConversationData.conversationId);
 
       expect(result.lastResponseAt?.toISOString()).toBe(responded.toISOString());
+      expect(result.lastResponseIsManual).toBe(false);
     });
-
-    it('marks a never-replied conversation with its own activity date so the dot lights', async () => {
-      /* Copied verbatim rather than invented: an inventible "now" is indistinguishable from a
-         reply, and the client would announce a chime for a reply that does not exist. */
+    it('marks a never-replied conversation with a monotonic manual marker so the dot lights', async () => {
       const created = await Conversation.create({
         conversationId: mockConversationData.conversationId,
         user: 'user123',
@@ -2331,7 +2325,10 @@ describe('Conversation Operations', () => {
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
-      expect(convo?.lastResponseAt?.getTime()).toBe(created.updatedAt?.getTime());
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(
+        created.updatedAt?.getTime() ?? 0,
+      );
+      expect(convo?.lastResponseIsManual).toBe(true);
       expect(convo?.lastSeenAt).toBeUndefined();
     });
 
@@ -2373,9 +2370,8 @@ describe('Conversation Operations', () => {
       expect(convo?.lastSeenAt).toBeInstanceOf(Date);
     });
   });
-
   describe('unseen-reply fields', () => {
-    it('returns lastResponseAt and lastSeenAt from the cursor listing', async () => {
+    it('returns lastResponseAt, manual marker, and lastSeenAt from the cursor listing', async () => {
       const lastResponseAt = new Date('2026-08-16T10:00:00.000Z');
       const lastSeenAt = new Date('2026-08-16T09:00:00.000Z');
       await Conversation.create({
@@ -2383,12 +2379,14 @@ describe('Conversation Operations', () => {
         user: 'user123',
         endpoint: EModelEndpoint.openAI,
         lastResponseAt,
+        lastResponseIsManual: true,
         lastSeenAt,
       });
 
       const { conversations } = await getConvosByCursor('user123');
       expect(conversations).toHaveLength(1);
       expect(conversations[0].lastResponseAt?.toISOString()).toBe(lastResponseAt.toISOString());
+      expect(conversations[0].lastResponseIsManual).toBe(true);
       expect(conversations[0].lastSeenAt?.toISOString()).toBe(lastSeenAt.toISOString());
     });
 

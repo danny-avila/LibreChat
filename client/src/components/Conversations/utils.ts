@@ -38,6 +38,7 @@ export function areConversationListItemFieldsEqual(
     /* Marking a conversation seen deliberately leaves `updatedAt` alone so the sidebar order
        holds, which means these have to be compared in their own right. */
     prevConversation.lastResponseAt === nextConversation.lastResponseAt &&
+    prevConversation.lastResponseIsManual === nextConversation.lastResponseIsManual &&
     prevConversation.lastSeenAt === nextConversation.lastSeenAt
   );
 }

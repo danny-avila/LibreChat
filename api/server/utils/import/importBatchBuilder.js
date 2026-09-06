@@ -178,6 +178,7 @@ class ImportBatchBuilder {
     /* A fork or duplicate starts its own unread history; carrying the source
        conversation's catch-up state over would light a dot on a never-read copy. */
     delete convo.lastResponseAt;
+    delete convo.lastResponseIsManual;
     delete convo.lastSeenAt;
     this.conversations.push(convo);
 

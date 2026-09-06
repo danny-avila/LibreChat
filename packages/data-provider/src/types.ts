@@ -472,6 +472,8 @@ export type TMarkConversationUnreadResponse = {
   modified: boolean;
   /** The stamp the server settled on, so the client never has to invent its own marker. */
   lastResponseAt?: string;
+  /** True only when the settled stamp is the synthetic mark-unread marker. */
+  lastResponseIsManual?: boolean;
 };
 
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {

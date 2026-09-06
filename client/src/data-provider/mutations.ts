@@ -454,13 +454,13 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
            state apart from a newer reply that arrived while the request was open. A never-
-           replied conversation borrows its own activity date, exactly as the server's marker
-           does, so the row does not read as a real reply for the moment before the answer
-           lands. */
+           replied conversation gets an explicit manual marker; replied conversations retain
+           their real stamp but are still made unread. */
         const optimisticResponseAt =
           previous?.lastResponseAt ?? previous?.updatedAt ?? new Date().toISOString();
         const context = {
           lastResponseAt: previous?.lastResponseAt,
+          lastResponseIsManual: previous?.lastResponseIsManual,
           lastSeenAt: previous?.lastSeenAt,
           optimisticResponseAt,
           token: claimUnreadWrite(vars.conversationId),
@@ -469,6 +469,8 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt: convo.lastResponseAt ?? optimisticResponseAt,
+          lastResponseIsManual:
+            convo.lastResponseAt == null || convo.lastResponseIsManual === true ? true : undefined,
           lastSeenAt: undefined,
         }));
         return context;
@@ -495,6 +497,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
             ...convo,
             lastResponseAt: context?.lastResponseAt,
+            lastResponseIsManual: context?.lastResponseIsManual,
             lastSeenAt: context?.lastSeenAt,
           }));
           return;
@@ -532,12 +535,20 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const lastResponseAt = keepsCached
           ? cachedResponseAt
           : (serverResponseAt ?? cachedResponseAt);
-        if (cached?.lastSeenAt === undefined && cachedResponseAt === lastResponseAt) {
+        const lastResponseIsManual = keepsCached
+          ? cached?.lastResponseIsManual
+          : data.lastResponseIsManual;
+        if (
+          cached?.lastSeenAt === undefined &&
+          cachedResponseAt === lastResponseAt &&
+          cached?.lastResponseIsManual === lastResponseIsManual
+        ) {
           return;
         }
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt,
+          lastResponseIsManual,
           lastSeenAt: undefined,
         }));
       },
@@ -563,6 +574,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
           ...convo,
           lastResponseAt: context?.lastResponseAt,
+          lastResponseIsManual: context?.lastResponseIsManual,
           lastSeenAt: context?.lastSeenAt,
         }));
       },

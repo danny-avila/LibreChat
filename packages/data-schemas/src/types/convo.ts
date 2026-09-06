@@ -320,6 +320,8 @@ export interface IConversation extends Document {
   tenantId?: string;
   /** Set only when an assistant message is persisted, never by title generation or metadata edits. */
   lastResponseAt?: Date;
+  /** True only while `lastResponseAt` is the synthetic marker from "mark unread". */
+  lastResponseIsManual?: boolean;
   /** Set when the user has the newest message on screen; compared against `lastResponseAt`. */
   lastSeenAt?: Date;
 }

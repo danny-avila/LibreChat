@@ -905,10 +905,11 @@ describe('Conversation Utilities', () => {
         expect(data!.pages[0].conversations[0].isShared).toBe(false);
       });
 
-      it('updateConvoInAllQueries keeps the unseen timestamps when a caller replaces the convo', () => {
+      it('updateConvoInAllQueries keeps the unseen fields when a caller replaces the convo', () => {
         updateConvoInAllQueries(queryClient, 'a', (c) => ({
           ...c,
           lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastResponseIsManual: true,
           lastSeenAt: '2026-08-16T09:00:00.000Z',
         }));
         // SSE/rename style update that swaps in a payload without the unseen fields.
@@ -924,6 +925,7 @@ describe('Conversation Utilities', () => {
 
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
         expect(data!.pages[0].conversations[0].lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
+        expect(data!.pages[0].conversations[0].lastResponseIsManual).toBe(true);
         expect(data!.pages[0].conversations[0].lastSeenAt).toBe('2026-08-16T09:00:00.000Z');
       });
 

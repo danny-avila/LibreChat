@@ -13,37 +13,15 @@ export type UnseenConversation = {
   /** The reply that made it unseen; a later one to the same chat is its own arrival. */
   lastResponseAt: string;
   /** The indicator comes from "mark as unread" on a conversation that has never been replied
-   *  to, so the stamp is the manual flag rather than a reply the alerts should announce. */
+   * to, so the stamp is the manual flag rather than a reply the alerts should announce. */
   flagged: boolean;
-};
-
-/**
- * Whether a stamp is the manual-unread marker rather than a real reply.
- *
- * "Mark as unread" copies the conversation's own `updatedAt` into the stamp and leaves the
- * activity date alone (`timestamps: false` server-side), so the two being exactly equal is the
- * marker's signature: a reply writes its stamp separately from the activity date it bumps, and
- * the two never land on the same millisecond. Both values come from the server, so the
- * comparison is skew-free, and unlike a time window it holds however recently the conversation
- * was last active.
- */
-const isManualFlagStamp = (lastResponseAt: string, updatedAt: string | undefined): boolean => {
-  if (updatedAt == null) {
-    return false;
-  }
-  const stamp = Date.parse(lastResponseAt);
-  const activity = Date.parse(updatedAt);
-  if (Number.isNaN(stamp) || Number.isNaN(activity)) {
-    return false;
-  }
-  return stamp === activity;
 };
 
 export type ReplyReadState = {
   unseen: UnseenConversation[];
-  /** The reply stamp of every replied-to conversation in cache, seen rows included. The alerts
-   *  baseline on it: a seen conversation marked unread from another device re-enters `unseen`
-   *  carrying the stamp it always had, which only this record can tell from a new reply. */
+  /** The reply stamp of every replied-to conversation in cache, seen rows included. The alerts'
+   * baseline on it: a seen conversation marked unread from another device re-enters `unseen`
+   * carrying the stamp it always had, which only this record can tell from a new reply. */
   stamps: Array<[conversationId: string, lastResponseAt: string]>;
 };
 
@@ -146,14 +124,9 @@ const readReplyState = (
     if (!lastResponseAt) {
       continue;
     }
-    const flagged = isManualFlagStamp(lastResponseAt, convo.updatedAt);
-    /* A manual marker is deliberately left out of the baseline. The reply that later lands on
-       a conversation flagged before it ever had one is stamped with `$max`, so a marker
-       written in the same moment as that reply's own precomputed stamp is the value that
-       survives the write: baselining it would make the arrival look like a stamp this tab had
-       already accounted for, and the reply would pass without a chime or a notification.
-       Flagged rows never announce anything themselves, so withholding one can only defer an
-       announcement to the real reply. */
+    const flagged = convo.lastResponseIsManual === true;
+    /* Manual markers are state, not replies. Keep them out of the alert baseline so the first
+       real reply after a mark-unread remains an arrival even when it shares a millisecond. */
     if (!flagged) {
       stamps.push([conversationId, lastResponseAt]);
     }
@@ -191,9 +164,9 @@ const identityOf = (state: ReplyReadState | null): string =>
  *
  * Derived from the conversation list already in cache, so it costs no request of its own and
  * needs no count endpoint. A reply lifts its conversation, so an unseen one normally sits on the
- * first page. "Mark as unread" is the exception: it deliberately leaves `updatedAt` alone, so an
- * old conversation flagged by hand stays where it was and is counted only once its page is
- * loaded. Its own row still shows the indicator; only this aggregate waits.
+ * first page. "Mark as unread" is the exception: it deliberately leaves `updatedAt` alone, and
+ * its explicit manual marker is counted only once its page is loaded. Its own row still shows the
+ * indicator; only this aggregate waits.
  *
  * Subscribing to the query cache (rather than mounting a second list query) avoids duplicating
  * the sidebar's fetch. Cache events are filtered by key before any recomputation, because they

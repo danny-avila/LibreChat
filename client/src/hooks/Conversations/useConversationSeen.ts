@@ -36,61 +36,94 @@ export default function useConversationSeen(
   const measureRef = useRef(measureNearBottom);
   measureRef.current = measureNearBottom;
   const pendingFrameRef = useRef<number | null>(null);
+  /** The list stamp observed when the current messages fetch began. A later stamp must not be
+   * credited by that fetch merely because it arrived before the success notification. */
+  const fetchStartStampRef = useRef<Map<string, string | undefined>>(new Map());
+  /** A list stamp can arrive after a successful, but stale, messages query. Keep one
+   * revalidation in flight per stamp rather than starting another request for every cache event. */
+  const requestedMessagesRef = useRef<Map<string, string>>(new Map());
+  /** Set only after the messages success event has had two frames to commit and paint. */
+  const renderedMessagesRef = useRef<Map<string, string>>(new Map());
   /** The last reply each conversation was acknowledged for. A failed write rolls the cache
-   *  back to unseen, which is itself a cache event this hook listens to, so without this the
-   *  rejection would immediately re-arm the trigger and spin requests for as long as the
-   *  network keeps refusing them. Re-armed by a genuinely newer reply, or by refocusing. */
+   * back to unseen, which is itself a cache event this hook listens to, so without this the
+   * rejection would immediately re-arm the trigger and spin requests for as long as the
+   * network keeps refusing them. Re-armed by a genuinely newer reply, or by refocusing. */
   const attemptedRef = useRef<Map<string, string | undefined>>(new Map());
 
-  const markSeenIfCaughtUp = useCallback(() => {
-    if (!conversationId || conversationId === Constants.NEW_CONVO) {
-      return;
-    }
-    if (!isNearBottomRef.current || !document.hasFocus()) {
-      return;
-    }
-    /* A warm-cache open renders the old tree while the messages query revalidates in the
-       background, and that tree's end marker reports the bottom of a reply the user has not
-       seen. Acknowledging then would clear the indicator for a message that never rendered,
-       so the check waits out the fetch; its success is a cache event the subscription below
-       turns into the re-check.
-       A failed revalidation returns the query to `idle` while keeping the stale tree on
-       screen, so waiting for the fetch to stop is not enough: the acknowledgement waits for a
-       fetch that actually succeeded. A query with no state at all is the direct-URL open,
-       whose own load is covered by the same subscription. */
-    const messagesQueryState = queryClient.getQueryState([QueryKeys.messages, conversationId]);
-    if (messagesQueryState != null && messagesQueryState.fetchStatus !== 'idle') {
-      return;
-    }
-    if (messagesQueryState?.status === 'error') {
-      return;
-    }
-    const cached = findConvoInAllQueries(queryClient, conversationId);
-    if (!isConversationUnseen(cached)) {
-      return;
-    }
-    const { lastResponseAt } = cached ?? {};
-    if (
-      attemptedRef.current.has(conversationId) &&
-      attemptedRef.current.get(conversationId) === lastResponseAt
-    ) {
-      return;
-    }
-    attemptedRef.current.set(conversationId, lastResponseAt);
-    /* Names the reply that is actually on screen: the server acknowledges that one and no
-       newer, so a reply persisted from another device mid-request stays unseen. */
-    markSeen({ conversationId, lastResponseAt });
-  }, [conversationId, queryClient, markSeen]);
+  const markSeenIfCaughtUp = useCallback(
+    (retryMessages = false) => {
+      if (!conversationId || conversationId === Constants.NEW_CONVO) {
+        return;
+      }
+      if (!isNearBottomRef.current || !document.hasFocus()) {
+        return;
+      }
+      const cached = findConvoInAllQueries(queryClient, conversationId);
+      if (!isConversationUnseen(cached)) {
+        return;
+      }
+      const { lastResponseAt } = cached ?? {};
+      if (!lastResponseAt) {
+        return;
+      }
+
+      /* A list/point cache can resolve before the active messages query mounts, or after its
+       * cached tree has gone stale. Neither case proves that the reply was rendered. Every real
+       * reply therefore waits for a successful messages fetch and its post-render measurement. */
+      const messagesKey = [QueryKeys.messages, conversationId];
+      const messagesQueryState = queryClient.getQueryState(messagesKey);
+      if (messagesQueryState == null) {
+        return;
+      }
+      if (messagesQueryState.status === 'error') {
+        if (retryMessages && requestedMessagesRef.current.get(conversationId) !== lastResponseAt) {
+          requestedMessagesRef.current.set(conversationId, lastResponseAt);
+          void queryClient.invalidateQueries(messagesKey).catch(() => undefined);
+        }
+        return;
+      }
+      if (messagesQueryState.fetchStatus !== 'idle') {
+        return;
+      }
+
+      const renderedStamp = renderedMessagesRef.current.get(conversationId);
+      if (renderedStamp !== lastResponseAt) {
+        if (requestedMessagesRef.current.get(conversationId) === lastResponseAt) {
+          /* The requested fetch succeeded, but its cache event has not painted yet. */
+          return;
+        }
+        requestedMessagesRef.current.set(conversationId, lastResponseAt);
+        void queryClient.invalidateQueries(messagesKey).catch(() => undefined);
+        return;
+      }
+
+      if (
+        attemptedRef.current.has(conversationId) &&
+        attemptedRef.current.get(conversationId) === lastResponseAt
+      ) {
+        return;
+      }
+      attemptedRef.current.set(conversationId, lastResponseAt);
+      /* Names the reply that is actually on screen: the server acknowledges that one and no
+       * newer, so a reply persisted from another device mid-request stays unseen. */
+      markSeen({ conversationId, lastResponseAt });
+    },
+    [conversationId, queryClient, markSeen],
+  );
 
   /** Refocusing is a deliberate return to the conversation, and a human-paced one, so it is
-   *  the right moment to let a write that failed while offline try again. */
+   *  the right moment to let a write or message refresh that failed while offline try again. */
   const retryOnFocus = useCallback(() => {
     if (consumeFocusSuppression()) {
       return;
     }
     attemptedRef.current.clear();
-    markSeenIfCaughtUp();
-  }, [markSeenIfCaughtUp]);
+    if (conversationId) {
+      requestedMessagesRef.current.delete(conversationId);
+      fetchStartStampRef.current.delete(conversationId);
+    }
+    markSeenIfCaughtUp(true);
+  }, [conversationId, markSeenIfCaughtUp]);
 
   /** Stable across renders so the memoized scroll observer is not torn down on every check. */
   const reportNearBottom = useCallback(
@@ -102,14 +135,17 @@ export default function useConversationSeen(
   );
 
   /* A fresh conversation's scroll position is unknown until its observer reports; inheriting
-     "near bottom" from the previous conversation would mark it seen sight unseen.
-     Arriving also re-arms the attempt guard for this conversation: leaving and coming back is
-     a deliberate, human-paced return, the same reason refocusing re-arms it, and the hook
-     outlives the route so a write that failed here would otherwise stay suppressed. */
+   * "near bottom" from the previous conversation would mark it seen sight unseen.
+   * Arriving also re-arms the attempt guard for this conversation: leaving and coming back is
+   * a deliberate, human-paced return, the same reason refocusing re-arms it, and the hook
+   * outlives the route so a write that failed here would otherwise stay suppressed. */
   useEffect(() => {
     isNearBottomRef.current = false;
     if (conversationId) {
       attemptedRef.current.delete(conversationId);
+      requestedMessagesRef.current.delete(conversationId);
+      fetchStartStampRef.current.delete(conversationId);
+      renderedMessagesRef.current.delete(conversationId);
     }
   }, [conversationId]);
 
@@ -126,33 +162,51 @@ export default function useConversationSeen(
   }, [retryOnFocus]);
 
   useEffect(() => {
+    if (!conversationId || conversationId === Constants.NEW_CONVO) {
+      return;
+    }
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       /* Every root the lookup reads. An old pin lives only in the pinned cache, and a
-         conversation opened by URL can be in neither list, resolving into its own point query
-         after the messages have already reported the bottom; that arrival is then the last
-         trigger left to notice the conversation at all. */
+       * conversation opened by URL can be in neither list, resolving into its own point query
+       * after the messages have already reported the bottom; that arrival is then the last
+       * trigger left to notice the conversation at all. */
       const root = event?.query?.queryKey?.[0];
-      /* Only a messages fetch actually resolving: it is what the revalidation guard above
-         waits for, and it means the reply is in cache with its render committing. Streamed
-         tokens also land in this cache, but through `setQueryData`, which marks its success
-         action manual; re-checking on each of those would scan the lists once per token. */
+      /* Only a messages fetch belonging to this conversation can establish that its reply
+       * rendered. Streamed tokens also land in this cache, but through `setQueryData`, which
+       * marks its success action manual; re-checking on each of those would scan the lists once
+       * per token. */
       if (root === QueryKeys.messages) {
-        if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) {
+        const messageConversationId = event?.query?.queryKey?.[1];
+        if (messageConversationId !== conversationId || event.type !== 'updated') {
           return;
         }
-        /* Deferred past the commit, because this event fires while the refreshed tree is
-           still uncommitted: the near-bottom flag describes the old tree, and the end
-           observer only reports on threshold crossings, so a taller reply would be
-           acknowledged from a position it has already scrolled away and an unchanged one
-           would never re-report at all. Two frames on, the paint has happened and the
-           position is re-measured against the tree the user actually sees; without a
-           measurer the flag is the best answer left. */
+        if (event.action.type === 'fetch') {
+          fetchStartStampRef.current.set(
+            conversationId,
+            findConvoInAllQueries(queryClient, conversationId)?.lastResponseAt,
+          );
+          return;
+        }
+        if (event.action.type !== 'success' || event.action.manual) {
+          return;
+        }
+        const stampAtFetchStart = fetchStartStampRef.current.get(conversationId);
+        /* Capture the stamp from fetch start, not success: a newer reply can reach the list while
+         * this request is in flight, and that reply was not part of the fetched/rendered tree. */
         if (pendingFrameRef.current != null) {
           window.cancelAnimationFrame(pendingFrameRef.current);
         }
         pendingFrameRef.current = window.requestAnimationFrame(() => {
           pendingFrameRef.current = window.requestAnimationFrame(() => {
             pendingFrameRef.current = null;
+            const cached = findConvoInAllQueries(queryClient, conversationId);
+            if (
+              stampAtFetchStart &&
+              cached?.lastResponseAt === stampAtFetchStart &&
+              isConversationUnseen(cached)
+            ) {
+              renderedMessagesRef.current.set(conversationId, stampAtFetchStart);
+            }
             const measured = measureRef.current?.() ?? null;
             if (measured != null) {
               isNearBottomRef.current = measured;
@@ -169,7 +223,7 @@ export default function useConversationSeen(
       ) {
         return;
       }
-      markSeenIfCaughtUp();
+      markSeenIfCaughtUp(true);
     });
     return () => {
       unsubscribe();
@@ -178,7 +232,7 @@ export default function useConversationSeen(
         pendingFrameRef.current = null;
       }
     };
-  }, [queryClient, markSeenIfCaughtUp]);
+  }, [conversationId, queryClient, markSeenIfCaughtUp]);
 
   return reportNearBottom;
 }

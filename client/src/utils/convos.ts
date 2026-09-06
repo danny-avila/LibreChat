@@ -506,7 +506,9 @@ export function upsertConvoInAllQueries(
   }
 
   const cachedPin = findPinnedConversation(queryClient, conversationId);
-  const listConvo = cachedPin ? preserveListFlags(nextConvo, cachedPin) : nextConvo;
+  const listConvo = cachedPin
+    ? preserveReadState(preserveListFlags(nextConvo, cachedPin), cachedPin)
+    : nextConvo;
 
   /* Root-level SSE updates and resumable settlement go through upsert, not
      update. Merge into any already-cached pin so that path cannot leave the
@@ -726,6 +728,7 @@ export function applyServerReplyStamp(
     (convo) => ({
       ...convo,
       lastResponseAt,
+      lastResponseIsManual: undefined,
       lastSeenAt: advances ? undefined : convo.lastSeenAt,
       updatedAt: updatedAt ?? convo.updatedAt,
     }),
@@ -753,13 +756,32 @@ function preserveListFlags(next: TConversation, found: TConversation): TConversa
   return merged;
 }
 
+const preserveReadState = (next: TConversation, found: TConversation): TConversation => {
+  const merged = { ...next };
+  if (!('lastResponseAt' in next)) {
+    merged.lastResponseAt = found.lastResponseAt;
+  }
+  if (!('lastResponseIsManual' in next)) {
+    merged.lastResponseIsManual = found.lastResponseIsManual;
+  }
+  if (!('lastSeenAt' in next)) {
+    merged.lastSeenAt = found.lastSeenAt;
+  }
+  return merged;
+};
+
 /**
  * Read state the sidebar owns for the same reason: `lastResponseAt` is stamped by the server as
- * a reply persists and `lastSeenAt` by the seen mutation, neither of which reaches the chat's
- * own conversation state. Stripped rather than carried, so `updateConvoInAllQueries` falls back
- * to whatever the list caches already hold.
+ * a reply persists, `lastResponseIsManual` records synthetic unread markers, and `lastSeenAt`
+ * by the seen mutation, none of which reaches the chat's own conversation state. Stripped rather
+ * than carried, so `updateConvoInAllQueries` falls back to whatever the list caches already hold.
  */
-const chatOwnedStaleFields = [...listFlags, 'lastResponseAt', 'lastSeenAt'] as const;
+const chatOwnedStaleFields = [
+  ...listFlags,
+  'lastResponseAt',
+  'lastResponseIsManual',
+  'lastSeenAt',
+] as const;
 
 /**
  * A chat's conversation state snapshots the sidebar's fields when the chat is opened and never
@@ -807,7 +829,7 @@ function updatePinnedConvosQuery(
       }
       const found = oldData.conversations[index];
       const updated = updater(found);
-      const merged = updated && preserveListFlags(updated, found);
+      const merged = updated && preserveReadState(preserveListFlags(updated, found), found);
       if (!merged || merged.pinned !== true) {
         return {
           ...oldData,
@@ -948,13 +970,15 @@ export function updateConvoInAllQueries(
       /** Callers that swap in a server response or the chat's own state wholesale (rename,
        * pin, SSE updates) omit the sidebar-only flags, which would otherwise drop the
        * shared badge and push a pinned chat back into the date groups. The unseen-reply
-       * timestamps are absent from those payloads too, but they are carried on key presence
-       * rather than on value: a present-but-undefined stamp is an explicit clear
-       * (mark-unread, optimistic rollback). */
+       * fields are absent from those payloads too, but they are carried on key presence rather
+       * than on value: a present-but-undefined field is an explicit clear. */
       const next = updater(found);
       const merged: TConversation = { ...preserveListFlags(next, found) };
       if (!('lastResponseAt' in next)) {
         merged.lastResponseAt = found.lastResponseAt;
+      }
+      if (!('lastResponseIsManual' in next)) {
+        merged.lastResponseIsManual = found.lastResponseIsManual;
       }
       if (!('lastSeenAt' in next)) {
         merged.lastSeenAt = found.lastSeenAt;

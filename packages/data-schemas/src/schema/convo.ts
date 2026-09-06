@@ -387,6 +387,10 @@ const convoSchema: Schema<IConversation> = new Schema(
     lastResponseAt: {
       type: Date,
     },
+    /** True only for the synthetic unread marker; real replies clear this field. */
+    lastResponseIsManual: {
+      type: Boolean,
+    },
     lastSeenAt: {
       type: Date,
     },

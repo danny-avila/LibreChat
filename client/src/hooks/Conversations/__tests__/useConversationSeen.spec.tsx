@@ -93,6 +93,12 @@ function setup(
   return { ...view, queryClient };
 }
 
+async function renderMessages(queryClient: QueryClient, conversationId = CONVO_ID) {
+  await act(async () => {
+    await queryClient.fetchQuery([QueryKeys.messages, conversationId], async () => []);
+  });
+}
+
 describe('useConversationSeen', () => {
   let hasFocus: jest.SpyInstance;
 
@@ -105,16 +111,20 @@ describe('useConversationSeen', () => {
     hasFocus.mockRestore();
   });
 
-  it('records the conversation as seen once the newest message is reached', () => {
-    const { result } = setup({ lastResponseAt: RESPONDED_AT });
+  it('records the conversation as seen once the newest message is reached', async () => {
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
     mockMarkSeen.mockClear();
 
     act(() => result.current(true));
+    expect(mockMarkSeen).not.toHaveBeenCalled();
 
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
-      lastResponseAt: RESPONDED_AT,
-    });
+    await renderMessages(queryClient);
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
   });
 
   it('sends nothing while the user is scrolled away from the newest message', () => {
@@ -158,7 +168,7 @@ describe('useConversationSeen', () => {
     expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 
-  it('marks seen when a reply lands while the user sits at the newest message', () => {
+  it('marks seen when a reply lands while the user sits at the newest message', async () => {
     /* Mirrors the real order: the user is at the bottom of a conversation with no reply yet,
        the run finishes and stamps the list cache, then the submission flips. The conversation
        the user is actively watching must not sprout a dot, and the reply is acknowledged
@@ -178,17 +188,21 @@ describe('useConversationSeen', () => {
       seedUnseen(queryClient);
     });
     rerender({ id: CONVO_ID, submitting: false });
+    expect(mockMarkSeen).not.toHaveBeenCalled();
 
+    await renderMessages(queryClient);
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
     expect(mockMarkSeen).toHaveBeenCalledTimes(1);
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
-      lastResponseAt: RESPONDED_AT,
-    });
   });
 
-  it('marks seen once the list cache loads with the conversation still unread', () => {
+  it('marks seen once the list cache loads with the conversation still unread', async () => {
     /* Direct-URL open: the initial intersection fires before the list query resolves,
-       so nothing marks seen until the cache itself reports the conversation. */
+       so nothing marks seen until both the message tree and list cache report the conversation. */
     const { result, queryClient } = setup(null);
 
     act(() => result.current(true));
@@ -197,11 +211,110 @@ describe('useConversationSeen', () => {
     act(() => {
       seedUnseen(queryClient);
     });
+    expect(mockMarkSeen).not.toHaveBeenCalled();
 
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
+    await renderMessages(queryClient);
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+  });
+
+  it('refreshes idle messages before acknowledging a list-only remote reply', async () => {
+    /* A focused list refetch can discover a reply while the active messages query still reports
+       successful old data. The old end marker must not be enough to acknowledge that stamp. */
+    const { result, queryClient } = setup({
       lastResponseAt: RESPONDED_AT,
+      lastSeenAt: RESPONDED_AT,
     });
+    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'old-reply' }]);
+    act(() => result.current(true));
+    mockMarkSeen.mockClear();
+
+    const invalidateMessages = jest.spyOn(queryClient, 'invalidateQueries');
+    act(() => {
+      seedUnseen(queryClient, RESPONDED_LATER_AT);
+    });
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+    expect(invalidateMessages).toHaveBeenCalledWith([QueryKeys.messages, CONVO_ID]);
+
+    await act(async () => {
+      await queryClient.fetchQuery([QueryKeys.messages, CONVO_ID], async () => [
+        { messageId: 'new-reply' },
+      ]);
+    });
+
+    /* The successful fetch is not enough by itself: acknowledgement waits for the post-render
+       measurement scheduled by the messages cache event. */
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_LATER_AT,
+      }),
+    );
+    expect(invalidateMessages).toHaveBeenCalledTimes(1);
+
+    /* Repeated list notifications for the same stamp do not start another messages request. */
+    act(() => {
+      seedUnseen(queryClient, RESPONDED_LATER_AT);
+    });
+    expect(invalidateMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a successful messages event for another conversation', async () => {
+    const { result, queryClient } = setup({
+      lastResponseAt: RESPONDED_AT,
+      lastSeenAt: RESPONDED_AT,
+    });
+    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'old-reply' }]);
+    act(() => result.current(true));
+    mockMarkSeen.mockClear();
+
+    act(() => {
+      seedUnseen(queryClient, RESPONDED_LATER_AT);
+    });
+
+    await act(async () => {
+      await queryClient.fetchQuery([QueryKeys.messages, OTHER_CONVO_ID], async () => [
+        { messageId: 'other-reply' },
+      ]);
+    });
+
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+  });
+
+  it('keeps a list-only reply unseen when its messages refresh fails', async () => {
+    const { result, queryClient } = setup({
+      lastResponseAt: RESPONDED_AT,
+      lastSeenAt: RESPONDED_AT,
+    });
+    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'old-reply' }]);
+    act(() => result.current(true));
+    mockMarkSeen.mockClear();
+
+    const invalidateMessages = jest.spyOn(queryClient, 'invalidateQueries');
+    act(() => {
+      seedUnseen(queryClient, RESPONDED_LATER_AT);
+    });
+
+    await act(async () => {
+      await expect(
+        queryClient.fetchQuery([QueryKeys.messages, CONVO_ID], () =>
+          Promise.reject(new Error('network down')),
+        ),
+      ).rejects.toThrow('network down');
+    });
+
+    expect(invalidateMessages).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+    act(() => {
+      seedUnseen(queryClient, RESPONDED_LATER_AT);
+    });
+    expect(invalidateMessages).toHaveBeenCalledTimes(1);
   });
 
   it('waits out a messages revalidation before acknowledging', async () => {
@@ -291,41 +404,50 @@ describe('useConversationSeen', () => {
     expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 
-  it('does not re-send the same acknowledgement when a failed write re-arms the cache', () => {
+  it('does not re-send the same acknowledgement when a failed write re-arms the cache', async () => {
     /* A rejected `/seen` rolls the row back to unseen, and that rollback is itself a cache
        event this hook listens to. Without a guard an offline tab would spin requests for as
-       long as the network kept refusing them. */
+       long as the network keeps refusing them. */
     const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
-    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
+    mockMarkSeen.mockClear();
 
     act(() => {
       seedUnseen(queryClient);
     });
 
-    expect(mockMarkSeen).toHaveBeenCalledTimes(1);
+    expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 
-  it('acknowledges again once a genuinely newer reply arrives', () => {
+  it('acknowledges again once a genuinely newer reply arrives', async () => {
     const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
     mockMarkSeen.mockClear();
 
     act(() => {
       seedUnseen(queryClient, RESPONDED_LATER_AT);
     });
+    expect(mockMarkSeen).not.toHaveBeenCalled();
 
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
-      lastResponseAt: RESPONDED_LATER_AT,
-    });
+    await renderMessages(queryClient);
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_LATER_AT,
+      }),
+    );
   });
 
-  it('acknowledges once the point query for a directly opened conversation resolves', () => {
-    /* An old conversation opened by URL can be in neither list; its messages report the bottom
-       before the point query lands, so that arrival is the last trigger left. */
+  it('acknowledges once the point query for a directly opened conversation resolves', async () => {
+    /* An old conversation opened by URL can be in neither list; the initial intersection and
+       point query can both arrive before the messages query, so acknowledgement waits for the
+       rendered tree. */
     const { result, queryClient } = setup(null);
 
     act(() => result.current(true));
@@ -339,36 +461,47 @@ describe('useConversationSeen', () => {
       });
     });
 
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
-      lastResponseAt: RESPONDED_AT,
-    });
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+    await renderMessages(queryClient);
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
   });
 
-  it('re-arms a failed acknowledgement when the route leaves and returns', () => {
+  it('re-arms a failed acknowledgement when the route leaves and returns', async () => {
     /* The hook outlives the route, so without this a write that failed here would stay
        suppressed until the window happened to blur and refocus. */
-    const { result, rerender } = setup({ lastResponseAt: RESPONDED_AT });
+    const { result, rerender, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
     mockMarkSeen.mockClear();
 
     rerender({ id: OTHER_CONVO_ID, submitting: false });
     rerender({ id: CONVO_ID, submitting: false });
     act(() => result.current(true));
+    await renderMessages(queryClient);
 
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
-      lastResponseAt: RESPONDED_AT,
-    });
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
   });
 
-  it('ignores the focus a notification click raises on its way elsewhere', () => {
+  it('ignores the focus a notification click raises on its way elsewhere', async () => {
     /* The click is navigation to another conversation; the one still open behind it was never
        read and must keep its indicator. */
-    const { result } = setup({ lastResponseAt: RESPONDED_AT });
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
     mockMarkSeen.mockClear();
 
     act(() => {
@@ -381,10 +514,12 @@ describe('useConversationSeen', () => {
     expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 
-  it('acknowledges on the next genuine focus after a suppressed one', () => {
-    const { result } = setup({ lastResponseAt: RESPONDED_AT });
+  it('acknowledges on the next genuine focus after a suppressed one', async () => {
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
     mockMarkSeen.mockClear();
 
     act(() => {
@@ -403,13 +538,15 @@ describe('useConversationSeen', () => {
     });
   });
 
-  it('expires a suppression whose focus event never arrived', () => {
+  it('expires a suppression whose focus event never arrived', async () => {
     /* `window.focus()` is a request: a browser that leaves the window in the background raises
        no focus event, and an unbounded flag would then be spent on the next genuine focus,
        withholding that conversation's acknowledgement for no reason. */
-    const { result } = setup({ lastResponseAt: RESPONDED_AT });
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
     mockMarkSeen.mockClear();
 
     const now = jest.spyOn(Date, 'now');
@@ -434,10 +571,12 @@ describe('useConversationSeen', () => {
     });
   });
 
-  it('retries a failed acknowledgement when the user returns to the tab', () => {
-    const { result } = setup({ lastResponseAt: RESPONDED_AT });
+  it('retries a failed acknowledgement when the user returns to the tab', async () => {
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
 
     act(() => result.current(true));
+    await renderMessages(queryClient);
+    await waitFor(() => expect(mockMarkSeen).toHaveBeenCalledTimes(1));
     mockMarkSeen.mockClear();
 
     act(() => {

@@ -72,6 +72,11 @@ const MEILI_SEARCH_LIMIT = 1000;
 /** Ceiling for a single conversation page; the sidebar's largest request is 100. */
 const MAX_CONVO_PAGE_SIZE = 100;
 const DEFAULT_CONVO_PAGE_SIZE = 25;
+const nextMonotonicStamp = (previous?: Date): Date => {
+  const previousMs = previous?.getTime() ?? 0;
+  return new Date(Math.max(Date.now(), Number.isFinite(previousMs) ? previousMs + 1 : 0));
+};
+
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
@@ -278,9 +283,7 @@ export interface ConversationMethods {
        *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
        *  every save without this option still rebuilds the array from the database. */
       appendMessageIds?: Types.ObjectId[];
-      /** Stamp `lastResponseAt` at write time: this save carries a persisted assistant reply.
-       *  Assigned inside `saveConvo`, past its own awaited reads, so a catch-up recorded while
-       *  one of them is in flight cannot outrank the reply through `$max`. */
+      /** Advance the reply version and clear the catch-up after persisting an assistant reply. */
       stampReply?: boolean;
     },
   ): Promise<IConversation | { message: string } | null>;
@@ -500,7 +503,7 @@ export interface ConversationMethods {
   markConvoUnread(
     user: string,
     conversationId: string,
-  ): Promise<{ modified: boolean; lastResponseAt?: Date }>;
+  ): Promise<{ modified: boolean; lastResponseAt?: Date; lastResponseIsManual?: boolean }>;
   stampConvoLastResponse(user: string, conversationId: string): Promise<void>;
   deleteConvos(
     user: string,
@@ -528,6 +531,48 @@ export function createConversationMethods(
 ): ConversationMethods {
   let legacyReceiptExpiryCursor: Types.ObjectId | undefined;
 
+  /**
+   * Stamps a real assistant reply with a strictly increasing server value.
+   *
+   * The read and write are a classic compare-and-set pair so this remains compatible with
+   * DocumentDB: concurrent writers that read the same value retry against the winner and use
+   * `max(now, previous + 1ms)`. Only a successful write supplies a reply stamp.
+   */
+  async function stampReplyWithCas(
+    Conversation: Model<IConversation>,
+    filter: FilterQuery<IConversation>,
+    projection?: Record<string, 0 | 1>,
+  ): Promise<{ stamp: Date; conversation: Partial<IConversation> } | null> {
+    for (;;) {
+      const current = await Conversation.findOne(filter)
+        .select({ lastResponseAt: 1 })
+        .lean<Pick<IConversation, 'lastResponseAt'> | null>();
+      if (!current) {
+        return null;
+      }
+      const previous = current.lastResponseAt;
+      const stamp = nextMonotonicStamp(previous);
+      const casFilter: FilterQuery<IConversation> =
+        previous == null
+          ? {
+              ...filter,
+              $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
+            }
+          : { ...filter, lastResponseAt: previous };
+      const stamped = await Conversation.findOneAndUpdate(
+        casFilter,
+        {
+          $set: { lastResponseAt: stamp },
+          $unset: { lastSeenAt: '', lastResponseIsManual: '' },
+          $max: { updatedAt: stamp },
+        },
+        { new: true, projection, timestamps: false },
+      ).lean<Partial<IConversation> | null>();
+      if (stamped) {
+        return { stamp, conversation: stamped };
+      }
+    }
+  }
   function getMessageMethods() {
     if (!deps) {
       throw new Error('Message methods not injected into conversation methods');
@@ -2190,6 +2235,9 @@ export function createConversationMethods(
       const update: Record<string, unknown> = { ...convo, user: userId };
       delete update.isTemporary;
       delete update.expiredAt;
+      /* Read-state fields are server-owned. A stale marker must never be reintroduced by a
+       * metadata save after a real reply cleared it. */
+      delete update.lastResponseIsManual;
       delete update.initial_agent_id;
       stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
@@ -2198,6 +2246,7 @@ export function createConversationMethods(
         delete update.messages;
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
+      delete unsetFields.lastResponseIsManual;
       delete unsetFields.initial_agent_id;
       stripActorCheckpointFields(unsetFields);
 
@@ -2326,9 +2375,13 @@ export function createConversationMethods(
           const { lastResponseAt, ...withoutReplyStamp } = setFields;
           operation.$set = withoutReplyStamp;
           operation.$max = { lastResponseAt };
+          operation.$unset = { lastResponseIsManual: '' };
         }
         if (Object.keys(unsetFields).length > 0) {
-          operation.$unset = unsetFields;
+          operation.$unset = {
+            ...(operation.$unset as Record<string, unknown> | undefined),
+            ...unsetFields,
+          };
         }
         const createdAtForInsert = updatesArchiveState
           ? (createdAtOnInsert ??
@@ -2448,39 +2501,27 @@ export function createConversationMethods(
         }
       }
 
-      /* The reply stamp is a write of its own, and a conditional one.
-       *
-       * `/seen` acknowledges the reply the client had on screen, matching on the stored
-       * `lastResponseAt`: while the save above is in flight it can still match the previous
-       * reply and record a catch-up later than any timestamp this function could have
-       * captured, which would leave the reply just persisted reading as already seen. Setting
-       * the stamp and clearing that catch-up in one update closes the gap, because a reply the
-       * user cannot have read yet is by definition unseen and the open tab re-acknowledges it
-       * as soon as it renders.
-       *
-       * The filter is what keeps it safe under concurrency: only a write that actually moves
-       * the stamp forward clears the catch-up, so an older response persisting last neither
-       * walks the stamp backwards nor relights a conversation whose newest reply was read.
-       * Classic operators only, for the DocumentDB targets. */
+      /* Advance the version and clear the previous catch-up atomically. The database CAS orders
+       * concurrent replies even when their application hosts disagree about wall-clock time. */
       if (metadata?.stampReply === true) {
-        const replyStamp = new Date();
-        const stamped = await Conversation.updateOne(
+        const stamped = await stampReplyWithCas(
+          Conversation,
+          { _id: conversation._id },
           {
-            _id: conversation._id,
-            $or: [
-              { lastResponseAt: null },
-              { lastResponseAt: { $exists: false } },
-              { lastResponseAt: { $lt: replyStamp } },
-            ],
+            lastResponseAt: 1,
+            lastResponseIsManual: 1,
+            updatedAt: 1,
           },
-          { $set: { lastResponseAt: replyStamp }, $unset: { lastSeenAt: '' } },
-          { timestamps: false },
         );
-        if (stamped.modifiedCount > 0) {
+        if (stamped) {
           /* The caller hands this document to the client as the turn's conversation, and the
-             seen acknowledgement is bound to the stamp it carries. */
-          conversation.lastResponseAt = replyStamp;
+           * seen acknowledgement is bound to the stamp it carries. */
+          conversation.lastResponseAt = stamped.stamp;
+          conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
           conversation.lastSeenAt = undefined;
+          if (stamped.conversation.updatedAt) {
+            conversation.updatedAt = stamped.conversation.updatedAt;
+          }
         }
       }
 
@@ -2957,7 +2998,7 @@ export function createConversationMethods(
 
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned lastResponseAt lastSeenAt',
+          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned lastResponseAt lastResponseIsManual lastSeenAt',
         )
         .sort(sortObj)
         .limit(pageSize + 1)
@@ -3445,65 +3486,49 @@ export function createConversationMethods(
    * Flags a conversation as unread again: the user explicitly wants the indicator back.
    *
    * A conversation that has never been replied to has no stamp for the dot to compare against,
-   * so the flag stamps one. It is the conversation's own `updatedAt`, copied verbatim: an
-   * invented "now" would be indistinguishable from a reply, and the client would announce a
-   * chime and a desktop notification for a reply that does not exist. Equal timestamps are the
-   * signal instead of a time window, so it holds however recent the conversation is, and a
-   * marker in the past can never outrank a real reply landing at the same moment.
+   * so the flag stamps a strictly monotonic server value and records its source explicitly.
+   * A real reply racing this write either wins first (and the clear-only path preserves it) or
+   * sees the synthetic stamp and advances past it while clearing the marker.
    *
    * Classic operators only. Pipeline-form updates (and `$$REMOVE`) are unsupported on every
-   * DocumentDB engine this project targets, which `misc/documentdb/documentdb-compat.md`
-   * records after three of them had to be rewritten. The conditional stamp is therefore a
-   * filtered write: the first attempt only matches a conversation that has never been replied
-   * to; anything already carrying a reply falls through to clearing the catch-up alone.
-   * `timestamps: false` keeps flagging from reordering the sidebar, and the resulting stamp is
-   * returned so the caller never has to invent one.
+   * DocumentDB engine this project targets.
    */
   async function markConvoUnread(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const projection = { lastResponseAt: 1 };
-      /* The marker has to equal the activity date the row actually carries when it lands, so
-         the write matches on the value that was read: another tab saving a user turn between
-         the two would otherwise leave a marker one activity behind, which every client reads
-         as a real reply. A miss is re-read and retried; a conversation that has since been
-         replied to falls through to the clear-only path below. */
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const existing = await Conversation.findOne({
+      const projection = { lastResponseAt: 1, lastResponseIsManual: 1 };
+      const stamped = await Conversation.findOneAndUpdate(
+        {
           conversationId,
           user,
           $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
-        })
-          .select({ updatedAt: 1 })
-          .lean<Pick<IConversation, 'updatedAt'>>();
-        if (!existing) {
-          break;
-        }
-        const marker = existing.updatedAt ?? new Date();
-        const stamped = await Conversation.findOneAndUpdate(
-          {
-            conversationId,
-            user,
-            $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
-            ...(existing.updatedAt != null ? { updatedAt: existing.updatedAt } : {}),
-          },
-          { $set: { lastResponseAt: marker }, $unset: { lastSeenAt: '' } },
-          { timestamps: false, new: true, projection },
-        ).lean<Pick<IConversation, 'lastResponseAt'>>();
-
-        if (stamped) {
-          return { modified: true, lastResponseAt: stamped.lastResponseAt };
-        }
+        },
+        {
+          $set: { lastResponseAt: new Date(), lastResponseIsManual: true },
+          $unset: { lastSeenAt: '' },
+        },
+        { timestamps: false, new: true, projection },
+      ).lean<Pick<IConversation, 'lastResponseAt' | 'lastResponseIsManual'>>();
+      if (stamped) {
+        return {
+          modified: true,
+          lastResponseAt: stamped.lastResponseAt,
+          lastResponseIsManual: stamped.lastResponseIsManual === true,
+        };
       }
 
       const cleared = await Conversation.findOneAndUpdate(
         { conversationId, user },
         { $unset: { lastSeenAt: '' } },
         { timestamps: false, new: true, projection },
-      ).lean<Pick<IConversation, 'lastResponseAt'>>();
+      ).lean<Pick<IConversation, 'lastResponseAt' | 'lastResponseIsManual'>>();
 
       return cleared
-        ? { modified: true, lastResponseAt: cleared.lastResponseAt }
+        ? {
+            modified: true,
+            lastResponseAt: cleared.lastResponseAt,
+            lastResponseIsManual: cleared.lastResponseIsManual === true,
+          }
         : { modified: false };
     } catch (error) {
       logger.error('[markConvoUnread] Error marking conversation unread', error);
@@ -3516,11 +3541,9 @@ export function createConversationMethods(
    * (assistants threads, resumed runs, terminal abort re-saves) rather than through
    * BaseClient's saveConvo payload.
    *
-   * The same conditional write `saveConvo` uses: the stamp and the clear of the catch-up it
-   * outranks are one update, so a `/seen` that matched the previous reply while this one was
-   * being persisted cannot leave the new reply reading as already seen, and only a write that
-   * actually moves the stamp forward clears anything. A concurrent direct save that arrives
-   * with an older stamp matches nothing and leaves the newer state alone.
+   * The same compare-and-set write `saveConvo` uses advances the reply version and clears the
+   * previous catch-up atomically. Every persisted reply advances beyond the stored version,
+   * including concurrent replies and replies from hosts whose clocks are behind.
    *
    * `updatedAt` moves with it, exactly as BaseClient's reply path already does: a new reply is
    * real activity and belongs at the top of the sidebar. It is also what the away poll pages
@@ -3530,33 +3553,21 @@ export function createConversationMethods(
   async function stampConvoLastResponse(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const replyStamp = new Date();
-      const stamped = await Conversation.findOneAndUpdate(
-        {
-          conversationId,
-          user,
-          $or: [
-            { lastResponseAt: null },
-            { lastResponseAt: { $exists: false } },
-            { lastResponseAt: { $lt: replyStamp } },
-          ],
-        },
-        { $set: { lastResponseAt: replyStamp }, $unset: { lastSeenAt: '' } },
-        {
-          new: true,
-          projection: { conversationId: 1, chatProjectId: 1, createdAt: 1, updatedAt: 1 },
-        },
-      ).lean<Pick<IConversation, 'conversationId' | 'chatProjectId' | 'createdAt' | 'updatedAt'>>();
+      const stamped = await stampReplyWithCas(
+        Conversation,
+        { conversationId, user },
+        { conversationId: 1, chatProjectId: 1, createdAt: 1, updatedAt: 1 },
+      );
 
       /* Moving `updatedAt` is only half of what `saveConvo` does for a project chat: the
        * workspace sorts on `ChatProject.lastConversationAt`, so a reply landing through one of
        * the direct-save paths would lift the conversation while leaving its project behind. */
-      if (stamped?.chatProjectId) {
+      if (stamped?.conversation.chatProjectId) {
         await updateChatProjectLastConversationForUser(
           mongoose,
           user,
-          stamped.chatProjectId,
-          stamped,
+          stamped.conversation.chatProjectId,
+          stamped.conversation as IConversation,
         );
       }
     } catch (error) {

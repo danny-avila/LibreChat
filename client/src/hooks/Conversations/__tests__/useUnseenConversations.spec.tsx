@@ -1,5 +1,7 @@
 import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
+import { updateConvoInAllQueries } from '~/utils';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import useUnseenConversations from '../useUnseenConversations';
@@ -125,10 +127,7 @@ describe('useUnseenConversations', () => {
     ]);
   });
 
-  it('tags the manual-unread marker of a never-replied conversation', () => {
-    /* "Mark as unread" copies the conversation's own activity date into the stamp and leaves
-       `updatedAt` alone, so the two being equal is the marker; a reply writes its stamp
-       separately from the activity date it bumps. */
+  it('tags the explicit manual marker of a never-replied conversation', () => {
     const { result, queryClient } = setup();
 
     act(() => {
@@ -140,6 +139,7 @@ describe('useUnseenConversations', () => {
             title: 'F',
             updatedAt: RESPONDED_AT,
             lastResponseAt: RESPONDED_AT,
+            lastResponseIsManual: true,
           },
           {
             conversationId: 'replied-a',
@@ -181,12 +181,28 @@ describe('useUnseenConversations', () => {
             title: 'F',
             updatedAt: RESPONDED_AT,
             lastResponseAt: RESPONDED_AT,
+            lastResponseIsManual: true,
           },
         ]),
       );
     });
 
     expect(result.current?.unseen).toHaveLength(1);
+    act(() => {
+      updateConvoInAllQueries(
+        queryClient,
+        'flagged-a',
+        (convo) =>
+          ({
+            conversationId: convo.conversationId,
+            title: 'Renamed',
+          }) as TConversation,
+      );
+    });
+    expect(result.current?.unseen[0]).toMatchObject({
+      conversationId: 'flagged-a',
+      flagged: true,
+    });
     expect(result.current?.stamps).toEqual([]);
 
     /* The reply arrives, stamped apart from the activity date it moved. */
