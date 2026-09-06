@@ -1008,14 +1008,14 @@ export interface IJobStore {
   ): void;
   getContentParts(
     streamId: string,
-    expectedCreatedAt?: number,
-    options?: ContentPartsReadOptions,
-  ): Promise<ContentPartsResult | null>;
-  getContentParts(
-    streamId: string,
     expectedCreatedAt: number | undefined,
     options: ContentPartsRecoveryReadOptions,
   ): Promise<ContentPartsRecoveryResult | null>;
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions,
+  ): Promise<ContentPartsResult | null>;
   /** Atomically records the one terminal outcome for an overflow correlation id. */
   settleEarlyBufferRecovery?(
     streamId: string,
@@ -1361,14 +1361,14 @@ export interface IJobStoreV2 extends IJobStore {
    */
   getContentParts(
     streamId: string,
-    expectedCreatedAt?: number,
-    options?: ContentPartsReadOptions,
-  ): Promise<ContentPartsResult | null>;
-  getContentParts(
-    streamId: string,
     expectedCreatedAt: number | undefined,
     options: ContentPartsRecoveryReadOptions,
   ): Promise<ContentPartsRecoveryResult | null>;
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions,
+  ): Promise<ContentPartsResult | null>;
 
   /**
    * Get run steps for a job (for resume state).

@@ -3785,15 +3785,15 @@ export class RedisJobStore implements IJobStoreV2 {
 
   async getContentParts(
     streamId: string,
-    expectedCreatedAt?: number,
-    options?: ContentPartsReadOptions,
-  ): Promise<ContentPartsResult | null>;
-
-  async getContentParts(
-    streamId: string,
     expectedCreatedAt: number | undefined,
     options: ContentPartsRecoveryReadOptions,
   ): Promise<ContentPartsRecoveryResult | null>;
+
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions,
+  ): Promise<ContentPartsResult | null>;
 
   async getContentParts(
     streamId: string,
