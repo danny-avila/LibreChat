@@ -78,9 +78,16 @@ export default function CreateSkillDialog({
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        localize('com_ui_skill_create_error');
+      const data = (
+        error as {
+          response?: {
+            data?: { error?: string; issues?: { field: string; message: string }[] };
+          };
+        }
+      )?.response?.data;
+      const message = data?.issues?.length
+        ? data.issues.map((issue) => `${issue.field}: ${issue.message}`).join('; ')
+        : data?.error || localize('com_ui_skill_create_error');
       showToast({ status: 'error', message });
     },
   });
@@ -166,6 +173,8 @@ export default function CreateSkillDialog({
               maxRows={4}
               placeholder={localize('com_ui_skill_description_placeholder')}
               aria-label={localize('com_ui_description')}
+              aria-invalid={errors.description ? 'true' : 'false'}
+              aria-describedby={errors.description ? 'create-skill-description-error' : undefined}
               className="w-full resize-none rounded-xl border border-border-medium bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
               {...register('description', {
                 required: localize('com_ui_skill_description_required'),
@@ -177,6 +186,15 @@ export default function CreateSkillDialog({
                 },
               })}
             />
+            {errors.description && (
+              <p
+                id="create-skill-description-error"
+                className="mt-1 text-sm text-text-destructive"
+                role="alert"
+              >
+                {errors.description.message}
+              </p>
+            )}
           </div>
 
           {/* Instructions (body) */}
@@ -204,9 +222,10 @@ export default function CreateSkillDialog({
               type="submit"
               variant="submit"
               disabled={submitDisabled}
+              aria-busy={createSkill.isLoading}
               className={cn(submitDisabled && 'opacity-50')}
             >
-              {localize('com_ui_create')}
+              {localize(createSkill.isLoading ? 'com_ui_creating' : 'com_ui_create')}
             </Button>
           </div>
         </form>
