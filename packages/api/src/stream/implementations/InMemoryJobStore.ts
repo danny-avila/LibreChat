@@ -22,6 +22,9 @@ import type {
   IdempotencyClaimValue,
   IdempotencyClaimResult,
   ContentPartsReadOptions,
+  ContentPartsRecoveryReadOptions,
+  ContentPartsRecoveryResult,
+  ContentPartsResult,
   ParkedSteerClaim,
   EarlyBufferRecoveryState,
   EarlyBufferRecoverySettlement,
@@ -1523,10 +1526,20 @@ export class InMemoryJobStore implements IJobStoreV2 {
   async getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
-    _options?: ContentPartsReadOptions,
-  ): Promise<{
-    content: Agents.MessageContentComplex[];
-  } | null> {
+    options?: ContentPartsReadOptions,
+  ): Promise<ContentPartsResult | null>;
+
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt: number | undefined,
+    options: ContentPartsRecoveryReadOptions,
+  ): Promise<ContentPartsRecoveryResult | null>;
+
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions | ContentPartsRecoveryReadOptions,
+  ): Promise<ContentPartsResult | ContentPartsRecoveryResult | null> {
     if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
       return null;
     }
@@ -1536,6 +1549,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     return {
       content: state.contentParts,
+      ...(options?.includeRecoveryStats && {
+        recoveryStats: { eventCount: 0, recoverySequences: [] },
+      }),
     };
   }
 

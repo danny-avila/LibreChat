@@ -1832,6 +1832,147 @@ describe('GenerationJobManager Integration Tests', () => {
       },
     );
 
+    testRedis(
+      'retains a completed job while an attached overflow recovery is pending',
+      async () => {
+        const manager = createRedisManager();
+        const streamId = `overflow-terminal-race-${Date.now()}`;
+        const job = await manager.createJob(streamId, 'user-1');
+        const overflowedAt = Date.now();
+
+        await manager.getJobStore().updateJob(
+          streamId,
+          {
+            firstSubscriberAttachedAt: overflowedAt,
+            earlyBufferRecovery: {
+              correlationId: 'terminal-race-correlation',
+              overflowedAt,
+              durableFrontier: 0,
+            },
+          },
+          job.createdAt,
+        );
+
+        await expect(manager.completeJob(streamId, undefined, job.createdAt)).resolves.toBe(true);
+        expect(await manager.getJobStore().getJob(streamId)).toMatchObject({
+          status: 'complete',
+          firstSubscriberAttachedAt: overflowedAt,
+          earlyBufferRecovery: { correlationId: 'terminal-race-correlation' },
+        });
+
+        await manager.destroy();
+      },
+    );
+
+    testRedis('keeps a transient recovery attachment claim failure retryable', async () => {
+      const owner = createRedisManager();
+      const recoveryReplica = createRedisManager();
+      const streamId = `overflow-claim-retry-${Date.now()}`;
+      const job = await owner.createJob(streamId, 'user-1');
+      await owner.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await owner.getJobStore().updateJob(
+        streamId,
+        {
+          earlyBufferRecovery: {
+            correlationId: 'claim-retry-correlation',
+            overflowedAt: Date.now(),
+            durableFrontier: 0,
+          },
+        },
+        job.createdAt,
+      );
+
+      const claim = jest
+        .spyOn(recoveryReplica.getJobStore(), 'claimFirstSubscriberAttachment')
+        .mockRejectedValueOnce(new Error('transient claim timeout'));
+      const first = await recoveryReplica.subscribeWithResume(streamId, () => {});
+      expect(first.subscription).toBeNull();
+      expect(await recoveryReplica.getJobStore().getJob(streamId)).toMatchObject({
+        status: 'running',
+        earlyBufferRecovery: { outcome: undefined },
+      });
+
+      const retried = await recoveryReplica.subscribeWithResume(streamId, () => {});
+      expect(retried.subscription).not.toBeNull();
+      expect(await recoveryReplica.getJobStore().getJob(streamId)).toMatchObject({
+        earlyBufferRecovery: { outcome: 'success' },
+      });
+      expect(claim).toHaveBeenCalledTimes(2);
+
+      retried.subscription?.unsubscribe();
+      await recoveryReplica.destroy();
+      await owner.destroy();
+    });
+
+    testRedis('rejects and aborts when another replica wins recovery with failure', async () => {
+      const owner = createRedisManager();
+      const services = createStreamServices({ useRedis: true, redisClient: ioredisClient! });
+      const recoveryReplica = new GenerationJobManagerClass();
+      recoveryReplica.configure(services);
+      recoveryReplica.initialize();
+      const streamId = `overflow-settlement-race-${Date.now()}`;
+      const job = await owner.createJob(streamId, 'user-1');
+      await owner.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await owner.getJobStore().updateJob(
+        streamId,
+        {
+          earlyBufferRecovery: {
+            correlationId: 'settlement-race-correlation',
+            overflowedAt: Date.now(),
+            durableFrontier: 0,
+          },
+        },
+        job.createdAt,
+      );
+
+      const store = recoveryReplica.getJobStore();
+      const settle = store.settleEarlyBufferRecovery.bind(store);
+      jest
+        .spyOn(store, 'settleEarlyBufferRecovery')
+        .mockImplementationOnce(async (id, createdAt, correlationId, recovery) => {
+          await settle(id, createdAt, correlationId, {
+            ...recovery,
+            outcome: 'failure',
+            failureReason: 'reconstruction_error',
+          });
+          return settle(id, createdAt, correlationId, recovery);
+        });
+      const abort = jest.spyOn(services.eventTransport, 'emitAbort');
+      const errors: string[] = [];
+      const recovered = await recoveryReplica.subscribeWithResume(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+
+      expect(recovered.subscription).toBeNull();
+      expect(errors).toEqual([GENERATION_RECOVERY_FAILED_ERROR]);
+      expect(abort).toHaveBeenCalledWith(streamId, job.createdAt);
+      expect(await store.getJob(streamId)).toMatchObject({
+        earlyBufferRecovery: { outcome: 'failure' },
+      });
+
+      await recoveryReplica.destroy();
+      await owner.destroy();
+    });
+
     test('buffers detached events until the cap in in-memory mode', async () => {
       const manager = createInMemoryManager();
       const streamId = `buf-below-cap-${Date.now()}`;

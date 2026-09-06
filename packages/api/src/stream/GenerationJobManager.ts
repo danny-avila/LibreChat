@@ -34,6 +34,7 @@ import type {
   EarlyBufferRecoveryState,
   EarlyBufferRecoveryFailureReason,
   ContentPartsReadOptions,
+  ContentPartsRecoveryReadOptions,
   RecoveryEventStats,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
@@ -4042,6 +4043,11 @@ class GenerationJobManagerClass {
           terminalJob?.providerDrained !== false &&
           terminalJob?.preserveForScheduleReconcile !== true &&
           terminalJob?.terminalHostActionPending !== true &&
+          !(
+            terminalJob?.firstSubscriberAttachedAt != null &&
+            terminalJob.earlyBufferRecovery != null &&
+            terminalJob.earlyBufferRecovery.outcome == null
+          ) &&
           (terminalJob?.createdAt !== createdAt || terminalJob.terminalPersistencePending !== true)
         ) {
           // A same-stream replacement created after the claim makes this a safe
@@ -5423,6 +5429,7 @@ class GenerationJobManagerClass {
               reconstructedContentCount: 0,
             });
           }
+          this.abortRecoveryGeneration(streamId, runtime, recovery);
           await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
         })().catch((terminalError) => {
           logger.error('[GenerationRecovery] Failed to terminalize overflow marker error', {
@@ -5505,6 +5512,26 @@ class GenerationJobManagerClass {
       ...(failureReason && { failureReason }),
     });
     return settled;
+  }
+
+  /** Stop the provider-owning replica as soon as durable recovery becomes terminal. */
+  private abortRecoveryGeneration(
+    streamId: string,
+    runtime: RuntimeJobState,
+    recovery: EarlyBufferRecoveryState,
+  ): void {
+    try {
+      this.eventTransport.emitAbort?.(streamId, runtime.createdAt);
+    } catch (error) {
+      logger.error('[GenerationRecovery] Failed to publish recovery abort', {
+        correlationId: recovery.correlationId,
+        error,
+      });
+    }
+    if (this.runtimeState.get(streamId) === runtime) {
+      this.releaseAbortSubscription(runtime);
+    }
+    runtime.abortController.abort();
   }
 
   private recoveryFrontierHasNoGaps(sequences: readonly number[], frontier: number): boolean {
@@ -5668,6 +5695,8 @@ class GenerationJobManagerClass {
           correlationId: pendingOverflowAtEntry.correlationId,
           error,
         });
+        recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
+        return { subscription: null, resumeState: null, pendingEvents: [] };
       }
     }
 
@@ -5705,6 +5734,7 @@ class GenerationJobManagerClass {
         0,
       );
       if (durableOutcome?.outcome !== 'success') {
+        this.abortRecoveryGeneration(streamId, runtime, activeOverflowRecovery);
         await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
         onError?.(GENERATION_RECOVERY_FAILED_ERROR);
         return { subscription: null, resumeState: null, pendingEvents: [] };
@@ -5817,9 +5847,11 @@ class GenerationJobManagerClass {
         }
       } else {
         [resumeState, jobData] = await Promise.all([
-          this.getResumeState(streamId, options?.expectedCreatedAt, {
-            includeRecoveryStats: activeOverflowRecovery != null,
-          }),
+          activeOverflowRecovery != null
+            ? this.getResumeState(streamId, options?.expectedCreatedAt, {
+                includeRecoveryStats: true,
+              })
+            : this.getResumeState(streamId, options?.expectedCreatedAt),
           this.jobStore.getJob(streamId),
         ]);
       }
@@ -6099,15 +6131,15 @@ class GenerationJobManagerClass {
             reconstructedContentCount,
           );
           if (durableOutcome?.outcome !== 'success') {
-            runtime.abortController.abort();
             const canceled = cancelResumeSubscription();
+            this.abortRecoveryGeneration(streamId, runtime, activeOverflowRecovery);
             await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
             onError?.(GENERATION_RECOVERY_FAILED_ERROR);
             return canceled;
           }
         }
 
-        await this.settleEarlyBufferRecovery(
+        const durableOutcome = await this.settleEarlyBufferRecovery(
           streamId,
           runtime,
           activeOverflowRecovery,
@@ -6116,6 +6148,13 @@ class GenerationJobManagerClass {
           reconstructedEventCount,
           reconstructedContentCount,
         );
+        if (durableOutcome?.outcome !== 'success') {
+          const canceled = cancelResumeSubscription();
+          this.abortRecoveryGeneration(streamId, runtime, activeOverflowRecovery);
+          await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+          onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+          return canceled;
+        }
       }
 
       // Reconciliation is complete. Events that arrive after this point already belong to the
@@ -8107,7 +8146,7 @@ class GenerationJobManagerClass {
   async getResumeState(
     streamId: string,
     expectedCreatedAt?: number,
-    options?: ContentPartsReadOptions,
+    options?: ContentPartsReadOptions | ContentPartsRecoveryReadOptions,
   ): Promise<t.ResumeState | null> {
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
@@ -8117,8 +8156,11 @@ class GenerationJobManagerClass {
     /** Independent reads (streamId-only): parallel to collapse 3 Redis round trips into 1.
      *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
+    const contentPartsRead = options?.includeRecoveryStats
+      ? this.jobStore.getContentParts(streamId, jobData.createdAt, { includeRecoveryStats: true })
+      : this.jobStore.getContentParts(streamId, jobData.createdAt);
     const [result, runSteps, queuedSteers, claimedSteers] = await Promise.all([
-      this.jobStore.getContentParts(streamId, jobData.createdAt, options),
+      contentPartsRead,
       this.jobStore.getRunSteps(streamId, jobData.createdAt),
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
@@ -8226,7 +8268,7 @@ class GenerationJobManagerClass {
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     } satisfies t.ResumeState;
-    if (result?.recoveryStats) {
+    if (result && 'recoveryStats' in result) {
       Object.defineProperty(resumeState, RECOVERY_STATS, { value: result.recoveryStats });
     }
     return resumeState;

@@ -140,13 +140,20 @@ export interface RecoveryEventStats {
 }
 
 export interface ContentPartsReadOptions {
+  includeRecoveryStats?: false;
+}
+
+export interface ContentPartsRecoveryReadOptions {
   /** Force durable reconstruction and return its validation frontier in the same read. */
-  includeRecoveryStats?: boolean;
+  includeRecoveryStats: true;
 }
 
 export interface ContentPartsResult {
   content: Agents.MessageContentComplex[];
-  recoveryStats?: RecoveryEventStats;
+}
+
+export interface ContentPartsRecoveryResult extends ContentPartsResult {
+  recoveryStats: RecoveryEventStats;
 }
 
 /**
@@ -1004,6 +1011,11 @@ export interface IJobStore {
     expectedCreatedAt?: number,
     options?: ContentPartsReadOptions,
   ): Promise<ContentPartsResult | null>;
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt: number | undefined,
+    options: ContentPartsRecoveryReadOptions,
+  ): Promise<ContentPartsRecoveryResult | null>;
   /** Atomically records the one terminal outcome for an overflow correlation id. */
   settleEarlyBufferRecovery?(
     streamId: string,
@@ -1352,6 +1364,11 @@ export interface IJobStoreV2 extends IJobStore {
     expectedCreatedAt?: number,
     options?: ContentPartsReadOptions,
   ): Promise<ContentPartsResult | null>;
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt: number | undefined,
+    options: ContentPartsRecoveryReadOptions,
+  ): Promise<ContentPartsRecoveryResult | null>;
 
   /**
    * Get run steps for a job (for resume state).

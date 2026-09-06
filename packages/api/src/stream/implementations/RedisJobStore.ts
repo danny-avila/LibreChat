@@ -25,6 +25,9 @@ import type {
   SteerReceipt,
   SteerReceiptInput,
   ContentPartsReadOptions,
+  ContentPartsRecoveryReadOptions,
+  ContentPartsRecoveryResult,
+  ContentPartsResult,
   ParkedSteerClaim,
   EarlyBufferRecoveryState,
   EarlyBufferRecoverySettlement,
@@ -3784,9 +3787,19 @@ export class RedisJobStore implements IJobStoreV2 {
     streamId: string,
     expectedCreatedAt?: number,
     options?: ContentPartsReadOptions,
-  ): Promise<{
-    content: Agents.MessageContentComplex[];
-  } | null> {
+  ): Promise<ContentPartsResult | null>;
+
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt: number | undefined,
+    options: ContentPartsRecoveryReadOptions,
+  ): Promise<ContentPartsRecoveryResult | null>;
+
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+    options?: ContentPartsReadOptions | ContentPartsRecoveryReadOptions,
+  ): Promise<ContentPartsResult | ContentPartsRecoveryResult | null> {
     // 1. Prefer the HOST content array (same-instance fast path): it already
     // contains host-authored steer parts the SDK graph never sees.
     const hostEntry = options?.includeRecoveryStats
