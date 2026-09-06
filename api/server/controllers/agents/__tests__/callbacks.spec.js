@@ -519,7 +519,8 @@ describe('createToolEndCallback', () => {
         {
           run_id: 'run456',
           thread_id: 'thread789',
-          agent_id: 'agent-a',
+          agent_id: 'outer-agent',
+          executingAgentId: 'agent-a',
           stepId: 'step-memory-1',
         },
       );

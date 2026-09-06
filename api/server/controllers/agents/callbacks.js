@@ -43,7 +43,7 @@ function isCodeArtifactToolOutput(output) {
 }
 
 function getAttachmentOwnership(metadata) {
-  const agentId = metadata?.agent_id ?? metadata?.agentId;
+  const agentId = metadata?.executingAgentId ?? metadata?.agentId ?? metadata?.agent_id;
   const stepId = metadata?.stepId;
   return {
     ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),

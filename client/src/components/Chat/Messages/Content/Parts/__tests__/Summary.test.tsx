@@ -6,35 +6,10 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-jest.mock('jotai', () => ({
-  useAtomValue: () => 'text-sm',
-}));
-
-jest.mock('~/store/fontSize', () => ({
-  fontSizeAtom: {},
-}));
-
 const mockMessageContext = { current: { isSubmitting: false, isLatestMessage: false } };
 
 jest.mock('~/Providers', () => ({
   useMessageContext: () => mockMessageContext.current,
-}));
-
-jest.mock('@librechat/client', () => ({
-  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
-    <button type="button" {...props}>
-      {children}
-    </button>
-  ),
-  Clipboard: () => <span />,
-  CheckMark: () => <span />,
-  TooltipAnchor: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-}));
-
-jest.mock('lucide-react', () => ({
-  ScrollText: () => <span />,
-  ChevronDown: () => <span />,
-  ChevronUp: () => <span />,
 }));
 
 const partialSummary = [{ type: 'text', text: 'Half a summary before the error' }] as never;
