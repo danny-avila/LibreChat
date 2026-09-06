@@ -39,7 +39,13 @@ const CLOSE_DELAY_MS = 120;
  * once the message is sent (the excerpts then re-render as `MessageQuotes` on
  * the user bubble, or inside the steer bubble for a mid-run injection).
  */
-function PendingQuoteChips({ conversationId }: { conversationId: string }) {
+function PendingQuoteChips({
+  conversationId,
+  textAreaRef,
+}: {
+  conversationId: string;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
+}) {
   const localize = useLocalize();
   const quotes = useRecoilValue(store.pendingQuotesByConvoId(conversationId));
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
@@ -73,9 +79,20 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
   useEffect(() => cancelClose, [cancelClose]);
 
   const clearAll = useCallback(() => setQuotes([]), [setQuotes]);
+  /** The clicked remove button unmounts with its row, and the composer surface
+   * does not refocus the textarea for clicks inside popup content, so restore
+   * focus here: to the textarea once the popup collapses, otherwise to the popup
+   * so keyboard users stay inside it. */
   const removeAt = useCallback(
-    (index: number) => setQuotes((prev) => prev.filter((_, i) => i !== index)),
-    [setQuotes],
+    (index: number) => {
+      setQuotes((prev) => prev.filter((_, i) => i !== index));
+      if (quotes.length <= 2) {
+        textAreaRef?.current?.focus();
+        return;
+      }
+      popover.getState().contentElement?.focus();
+    },
+    [setQuotes, quotes.length, popover, textAreaRef],
   );
 
   if (quotes.length === 0) {

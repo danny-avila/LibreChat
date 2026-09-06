@@ -117,7 +117,10 @@ function Harness() {
   );
 }
 
-function renderComposer({ submitting = false }: { submitting?: boolean } = {}) {
+function renderComposer({
+  submitting = false,
+  quotes = [],
+}: { submitting?: boolean; quotes?: string[] } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -127,7 +130,12 @@ function renderComposer({ submitting = false }: { submitting?: boolean } = {}) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RecoilRoot initializeState={({ set }) => set(store.isSubmittingFamily(0), submitting)}>
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.isSubmittingFamily(0), submitting);
+          set(store.pendingQuotesByConvoId(conversation.conversationId ?? ''), quotes);
+        }}
+      >
         <Router>
           <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
             <DndProvider backend={HTML5Backend}>
@@ -231,6 +239,42 @@ describe('ChatForm attachments', () => {
 
     await waitFor(() => expect(textarea).toHaveValue(''));
     expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('returns focus to the textarea after the primary during-run submit', async () => {
+    renderComposer({ submitting: true });
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.type(textarea, 'later');
+
+    await userEvent.click(await screen.findByTestId('during-run-send-button'));
+
+    await waitFor(() => expect(textarea).toHaveValue(''));
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('returns focus to the textarea when removing a quote collapses the popup', async () => {
+    renderComposer({ quotes: ['alpha', 'beta'] });
+    const textarea = await screen.findByTestId('text-input');
+    await userEvent.click(screen.getByRole('button', { name: '2 selections' }));
+    const popup = await screen.findByTestId('quote-selections-popup');
+
+    await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
+
+    await waitFor(() => expect(screen.queryByTestId('quote-selections-popup')).toBeNull());
+    expect(screen.getByText('beta')).toBeInTheDocument();
+    expect(textarea).toHaveFocus();
+  }, 20000);
+
+  test('keeps focus inside the popup when removing a quote leaves several', async () => {
+    renderComposer({ quotes: ['alpha', 'beta', 'gamma'] });
+    await screen.findByTestId('text-input');
+    await userEvent.click(screen.getByRole('button', { name: '3 selections' }));
+    const popup = await screen.findByTestId('quote-selections-popup');
+
+    await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
+
+    await waitFor(() => expect(within(popup).getAllByRole('button')).toHaveLength(2));
+    expect(popup).toHaveFocus();
   }, 20000);
 
   test('focuses the textarea when clicking empty composer space', async () => {

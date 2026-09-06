@@ -655,7 +655,9 @@ const ChatForm = memo(function ChatForm({
               {project ? <ProjectLandingChip project={project} /> : null}
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <PendingManualSkillsChips conversationId={conversationId} />
-              {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
+              {quotesEnabled && (
+                <PendingQuoteChips conversationId={conversationId} textAreaRef={textAreaRef} />
+              )}
               {steering.enabled && (
                 <PendingSteerChips
                   conversationId={conversationId}
