@@ -9,7 +9,7 @@ import {
   hasDurableAgentInterruptCheckpoint,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
-  deleteAgentCheckpoints,
+  deleteAgentCheckpointScopes,
   forkAgentEventCheckpoint,
   captureAgentEventCheckpoint,
   LazyMongoSaver,
@@ -618,39 +618,39 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     await expect(deleteAgentCheckpoint(undefined, MONGO_CFG)).resolves.toBeUndefined();
   });
 
-  it('deleteAgentCheckpoints bulk-prunes exactly the given threads (checkpoints AND writes)', async () => {
-    // The bulk path behind conversation deletion / delete-all / account deletion:
-    // one $in deleteMany per collection instead of two round-trips per thread.
+  it('bulk-deletes only an owned generation scope when thread IDs collide', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
-    const threadA = `convo-${new mongoose.Types.ObjectId().toString()}`;
-    const threadB = `convo-${new mongoose.Types.ObjectId().toString()}`;
-    const threadC = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const threadId = `collision-${new mongoose.Types.ObjectId().toString()}`;
+    const ownedNamespace = 'owned.generation+(1)';
+    await seedInterruptCheckpoint(saver!, threadId, ownedNamespace);
+    await seedInterruptCheckpoint(saver!, threadId, `${ownedNamespace}|subgraph`);
+    await seedInterruptCheckpoint(saver!, threadId, 'foreign-generation');
+    await seedInterruptCheckpoint(saver!, threadId, '');
 
-    await seedInterruptCheckpoint(saver!, threadA);
-    await seedInterruptCheckpoint(saver!, threadB);
-    await seedInterruptCheckpoint(saver!, threadC);
+    await deleteAgentCheckpointScopes(
+      [
+        { threadId, checkpointNamespace: ownedNamespace },
+        { threadId, checkpointNamespace: ownedNamespace },
+      ],
+      MONGO_CFG,
+    );
 
-    // Falsy entries are skipped rather than widening the delete.
-    await deleteAgentCheckpoints([threadA, undefined, threadB, null], MONGO_CFG);
-
-    expect(await saver!.getTuple(readConfig(threadA))).toBeUndefined();
-    expect(await saver!.getTuple(readConfig(threadB))).toBeUndefined();
-    expect(await saver!.getTuple(readConfig(threadC))).toBeDefined();
-
-    const db = mongoose.connection.db!;
-    const writesFilter = { thread_id: { $in: [threadA, threadB] } };
-    expect(await db.collection('agent_checkpoints').countDocuments(writesFilter)).toBe(0);
-    expect(await db.collection('agent_checkpoint_writes').countDocuments(writesFilter)).toBe(0);
-    // The untouched thread keeps its interrupt write row.
+    expect(await saver!.getTuple(readConfig(threadId, ownedNamespace))).toBeUndefined();
     expect(
-      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadC }),
-    ).toBe(1);
-  });
-
-  it('deleteAgentCheckpoints is a no-op for an empty or all-falsy list', async () => {
-    await expect(deleteAgentCheckpoints([], MONGO_CFG)).resolves.toBeUndefined();
-    await expect(deleteAgentCheckpoints([undefined, null], MONGO_CFG)).resolves.toBeUndefined();
-    await expect(deleteAgentCheckpoints(undefined, MONGO_CFG)).resolves.toBeUndefined();
+      await saver!.getTuple(readConfig(threadId, `${ownedNamespace}|subgraph`)),
+    ).toBeUndefined();
+    expect(await saver!.getTuple(readConfig(threadId, 'foreign-generation'))).toBeDefined();
+    expect(await saver!.getTuple(readConfig(threadId, ''))).toBeDefined();
+    const db = mongoose.connection.db!;
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({
+        thread_id: threadId,
+        checkpoint_ns: { $in: [ownedNamespace, `${ownedNamespace}|subgraph`] },
+      }),
+    ).toBe(0);
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
+    ).toBe(2);
   });
 });
 

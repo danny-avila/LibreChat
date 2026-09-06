@@ -13,6 +13,7 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IndexBuildOptions } from '@librechat/data-schemas';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import type { GenerationJob } from '../types/stream';
 
 /**
  * LangGraph reserves `checkpoint_ns` for nested graph namespaces and forcibly
@@ -573,6 +574,34 @@ export interface AgentCheckpointGeneration {
   checkpointIds: string[];
 }
 
+export interface AgentCheckpointScope {
+  threadId: string;
+  checkpointNamespace: string;
+}
+
+export function getOwnedAgentCheckpointScope(
+  job: Pick<GenerationJob, 'metadata'> | null | undefined,
+  userId: string,
+  tenantId?: string,
+): AgentCheckpointScope | undefined {
+  const metadata = job?.metadata;
+  if (
+    metadata?.userId !== userId ||
+    (metadata.tenantId ?? undefined) !== (tenantId ?? undefined) ||
+    metadata.generationProtocolVersion !== 2 ||
+    typeof metadata.conversationId !== 'string' ||
+    metadata.conversationId.length === 0 ||
+    typeof metadata.checkpointNamespace !== 'string' ||
+    metadata.checkpointNamespace.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    threadId: metadata.conversationId,
+    checkpointNamespace: metadata.checkpointNamespace,
+  };
+}
+
 /**
  * Apply defaults to the YAML `endpoints.agents.checkpointer` block. Mirrors
  * {@link resolveRecursionLimit} — the schema stays descriptive, defaults live here.
@@ -1050,26 +1079,20 @@ export async function deleteAgentCheckpoint(
   }
 }
 
-/**
- * Bulk variant of {@link deleteAgentCheckpoint} for terminal transitions that cover MANY
- * threads at once — deleting conversations, "delete all", account deletion. One indexed
- * `deleteMany` per collection instead of two round-trips per thread. Deletes through the
- * same live mongoose connection the saver is built on, using the same resolved collection
- * names; like the single-thread variant it no-ops in memory mode or before Mongo is
- * connected, and never throws (the conversations are already gone — the Mongo TTL remains
- * the backstop for anything this misses).
- *
- * @param threadIds - LangGraph `thread_id`s (LibreChat conversationIds); falsy entries skipped.
- */
-export async function deleteAgentCheckpoints(
-  threadIds: Array<string | null | undefined> | undefined,
+export async function deleteAgentCheckpointScopes(
+  scopes: readonly AgentCheckpointScope[],
   cfg?: TCheckpointerConfig,
 ): Promise<void> {
-  const ids = (threadIds ?? []).filter((id): id is string => Boolean(id));
-  if (ids.length === 0) {
+  const exactScopes = new Map<string, AgentCheckpointScope>();
+  for (const scope of scopes) {
+    if (scope.threadId.length === 0 || scope.checkpointNamespace.length === 0) {
+      continue;
+    }
+    exactScopes.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
+  }
+  if (exactScopes.size === 0) {
     return;
   }
-  // Reuse the saver gate: memory mode / no connection ⇒ nothing durable to delete.
   const saver = await getAgentCheckpointer(cfg);
   if (!saver) {
     return;
@@ -1080,15 +1103,19 @@ export async function deleteAgentCheckpoints(
     if (!db) {
       return;
     }
+    const filter = {
+      $or: [...exactScopes.values()].map(({ threadId, checkpointNamespace }) => ({
+        thread_id: threadId,
+        checkpoint_ns: generationNamespaceFilter(checkpointNamespace),
+      })),
+    };
     await Promise.all([
-      db.collection(resolved.checkpointCollectionName).deleteMany({ thread_id: { $in: ids } }),
-      db
-        .collection(resolved.checkpointWritesCollectionName)
-        .deleteMany({ thread_id: { $in: ids } }),
+      db.collection(resolved.checkpointCollectionName).deleteMany(filter),
+      db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
     ]);
   } catch (err) {
     logger.warn(
-      `[checkpointer] Failed to bulk-delete checkpoints for ${ids.length} thread(s):`,
+      `[checkpointer] Failed to delete ${exactScopes.size} checkpoint generation scope(s):`,
       err,
     );
   }

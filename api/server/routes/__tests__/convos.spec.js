@@ -10,6 +10,8 @@ const {
   messageIpLimiter,
   messageUserLimiter,
   subagentActivityHandlerInputs,
+  checkpointRows,
+  resetCheckpointRows,
 } = require(MOCKS);
 
 const priorLimitMessageIp = process.env.LIMIT_MESSAGE_IP;
@@ -61,7 +63,7 @@ describe('Convos Routes', () => {
     saveConvo,
   } = require('~/models');
   const {
-    deleteAgentCheckpoints,
+    deleteAgentCheckpointScopes,
     deleteAllSharedLinksWithCleanup,
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
@@ -111,6 +113,7 @@ describe('Convos Routes', () => {
     generationJobManager.abortJob.mockResolvedValue({ success: true });
     generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([]);
     generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([]);
+    resetCheckpointRows();
   });
 
   it('binds the activity subscription adapter to the subagent task store', () => {
@@ -456,18 +459,34 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /all', () => {
-    it('prunes the deleted conversations’ agent checkpoints (bulk, ids from deleteConvos)', async () => {
-      // HITL: a paused conversation's durable checkpoint must not outlive the conversation.
+    it('prunes the deleted conversations’ owned generation checkpoint scopes', async () => {
+      // Generation-scoped checkpoints are removed eagerly after their ownership is proven.
       const conversationIds = ['conv-a', 'conv-b'];
-      deleteConvos.mockResolvedValue({ deletedCount: 2, conversationIds });
+      deleteConvos.mockImplementation(async (_userId, _filter, options) => {
+        await options.beforeDelete(conversationIds);
+        return { deletedCount: 2, conversationIds };
+      });
       deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
       deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
+      generationJobManager.getJob.mockImplementation(async (conversationId) => ({
+        metadata: {
+          userId: 'test-user-123',
+          conversationId,
+          checkpointNamespace: `generation:${conversationId}`,
+          generationProtocolVersion: 2,
+        },
+        status: 'complete',
+        createdAt: Date.now(),
+      }));
 
       const response = await request(app).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
-      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
+      expect(deleteAgentCheckpointScopes).toHaveBeenCalledTimes(1);
+      expect(deleteAgentCheckpointScopes.mock.calls[0][0]).toEqual([
+        { threadId: 'conv-a', checkpointNamespace: 'generation:conv-a' },
+        { threadId: 'conv-b', checkpointNamespace: 'generation:conv-b' },
+      ]);
       /** The deletion runs inside the owner admission fence, not around it. */
       expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
       const [fencedUserId, fencedTenantId] =
@@ -548,7 +567,16 @@ describe('Convos Routes', () => {
         .mockResolvedValueOnce(['resp-gap']);
       generationJobManager.getJob.mockImplementation(async (streamId) =>
         streamId === 'resp-gap'
-          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          ? {
+              metadata: {
+                userId: 'test-user-123',
+                conversationId: 'gap-conversation',
+                checkpointNamespace: 'generation:gap',
+                generationProtocolVersion: 2,
+              },
+              status: 'running',
+              createdAt,
+            }
           : null,
       );
       deleteConvos
@@ -577,10 +605,10 @@ describe('Convos Routes', () => {
       });
       expect(deleteConvos).toHaveBeenCalledTimes(2);
       expect(deleteMessages).toHaveBeenCalledWith({ user: 'test-user-123' });
-      expect(deleteAgentCheckpoints.mock.calls.map((call) => call[0])).toEqual([
-        ['original'],
-        ['gap-conversation'],
-      ]);
+      expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith(
+        [{ threadId: 'gap-conversation', checkpointNamespace: 'generation:gap' }],
+        undefined,
+      );
     });
 
     it('retries owner message cleanup after conversations were already removed', async () => {
@@ -596,7 +624,7 @@ describe('Convos Routes', () => {
 
       expect(first.status).toBe(500);
       expect(retry.status).toBe(201);
-      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(['original']);
+      expect(deleteAgentCheckpointScopes).not.toHaveBeenCalled();
       expect(deleteConvos).toHaveBeenNthCalledWith(
         2,
         'test-user-123',
@@ -685,7 +713,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(deleteConvos).not.toHaveBeenCalled();
-      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpointScopes).not.toHaveBeenCalled();
       expect(deleteToolCalls).not.toHaveBeenCalled();
       expect(deleteAllSharedLinksWithCleanup).not.toHaveBeenCalled();
     });
@@ -889,7 +917,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(generationJobManager.getJob).toHaveBeenCalledTimes(3);
-      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpointScopes).not.toHaveBeenCalled();
     });
 
     it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
@@ -997,6 +1025,92 @@ describe('Convos Routes', () => {
       });
     });
 
+    it('preserves foreign and legacy checkpoints when conversation IDs collide', async () => {
+      const conversationIds = ['conversation-1', 'child-conversation'];
+      const jobs = {
+        'resp-owned': {
+          metadata: {
+            userId: 'test-user-123',
+            conversationId: 'conversation-1',
+            checkpointNamespace: 'owned.root+generation',
+            generationProtocolVersion: 2,
+          },
+        },
+        'task-owned-child': {
+          metadata: {
+            userId: 'test-user-123',
+            conversationId: 'child-conversation',
+            checkpointNamespace: 'owned.child(generation)',
+            generationProtocolVersion: 2,
+          },
+        },
+        'resp-foreign-user': {
+          metadata: {
+            userId: 'foreign-user',
+            conversationId: 'conversation-1',
+            checkpointNamespace: 'foreign-user-generation',
+            generationProtocolVersion: 2,
+          },
+        },
+        'resp-foreign-tenant': {
+          metadata: {
+            userId: 'test-user-123',
+            tenantId: 'foreign-tenant',
+            conversationId: 'conversation-1',
+            checkpointNamespace: 'foreign-tenant-generation',
+            generationProtocolVersion: 2,
+          },
+        },
+        'resp-legacy': {
+          metadata: {
+            userId: 'test-user-123',
+            conversationId: 'conversation-1',
+            checkpointNamespace: '',
+            generationProtocolVersion: 1,
+          },
+        },
+      };
+      resetCheckpointRows([
+        { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation' },
+        { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation|subgraph' },
+        { threadId: 'child-conversation', checkpointNamespace: 'owned.child(generation)' },
+        { threadId: 'conversation-1', checkpointNamespace: 'foreign-user-generation' },
+        { threadId: 'conversation-1', checkpointNamespace: 'foreign-tenant-generation' },
+        { threadId: 'conversation-1', checkpointNamespace: '' },
+      ]);
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue(
+        Object.keys(jobs),
+      );
+      generationJobManager.getJob.mockImplementation(async (streamId) => {
+        const job = jobs[streamId];
+        return job == null ? null : { ...job, status: 'complete', createdAt: Date.now() };
+      });
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(conversationIds);
+        return { deletedCount: 2, conversationIds };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(checkpointRows).toEqual([
+        { threadId: 'conversation-1', checkpointNamespace: 'foreign-user-generation' },
+        { threadId: 'conversation-1', checkpointNamespace: 'foreign-tenant-generation' },
+        { threadId: 'conversation-1', checkpointNamespace: '' },
+      ]);
+      const scopedReceipts = deleteAgentCheckpointScopes.mock.calls[0][0];
+      expect(
+        [...new Set(scopedReceipts.map((scope) => JSON.stringify(scope)))].map((scope) =>
+          JSON.parse(scope),
+        ),
+      ).toEqual([
+        { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation' },
+        { threadId: 'child-conversation', checkpointNamespace: 'owned.child(generation)' },
+      ]);
+    });
+
     it('waits for terminal response-id runs whose provider writes are undrained', async () => {
       const createdAt = Date.now();
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
@@ -1099,7 +1213,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.text).toBe('Error clearing conversations');
-      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpointScopes).not.toHaveBeenCalled();
     });
 
     it('fails closed when remnant message cleanup is unavailable', async () => {
@@ -1117,7 +1231,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.text).toBe('Error clearing conversations');
-      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpointScopes).not.toHaveBeenCalled();
     });
 
     it('does not prune generation persistence when provider stop is unconfirmed', async () => {

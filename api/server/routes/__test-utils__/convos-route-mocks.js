@@ -13,6 +13,32 @@ const moderateText = jest.fn((req, _res, next) => {
 });
 const messageIpLimiter = jest.fn((_req, _res, next) => next());
 const messageUserLimiter = jest.fn((_req, _res, next) => next());
+const checkpointRows = [];
+const deleteAgentCheckpoints = jest.fn(async (threadIds = []) => {
+  for (let index = checkpointRows.length - 1; index >= 0; index -= 1) {
+    if (threadIds.includes(checkpointRows[index].threadId)) {
+      checkpointRows.splice(index, 1);
+    }
+  }
+});
+const deleteAgentCheckpointScopes = jest.fn(async (scopes = []) => {
+  for (let index = checkpointRows.length - 1; index >= 0; index -= 1) {
+    const row = checkpointRows[index];
+    const matches = scopes.some(
+      (scope) =>
+        row.threadId === scope.threadId &&
+        (row.checkpointNamespace === scope.checkpointNamespace ||
+          row.checkpointNamespace.startsWith(`${scope.checkpointNamespace}|`)),
+    );
+    if (matches) {
+      checkpointRows.splice(index, 1);
+    }
+  }
+});
+
+function resetCheckpointRows(rows = []) {
+  checkpointRows.splice(0, checkpointRows.length, ...rows);
+}
 
 module.exports = {
   archiveAllHandler,
@@ -22,6 +48,8 @@ module.exports = {
   moderatedTexts,
   messageIpLimiter,
   messageUserLimiter,
+  checkpointRows,
+  resetCheckpointRows,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -96,6 +124,24 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ threads: [] }),
     ),
     GenerationJobManager: generationJobManager,
+    getOwnedAgentCheckpointScope: jest.fn((job, userId, tenantId) => {
+      const metadata = job?.metadata;
+      if (
+        metadata?.userId !== userId ||
+        (metadata.tenantId ?? undefined) !== (tenantId ?? undefined) ||
+        metadata.generationProtocolVersion !== 2 ||
+        typeof metadata.conversationId !== 'string' ||
+        metadata.conversationId.length === 0 ||
+        typeof metadata.checkpointNamespace !== 'string' ||
+        metadata.checkpointNamespace.length === 0
+      ) {
+        return undefined;
+      }
+      return {
+        threadId: metadata.conversationId,
+        checkpointNamespace: metadata.checkpointNamespace,
+      };
+    }),
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',
     ),
@@ -105,7 +151,8 @@ module.exports = {
     }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
-    deleteAgentCheckpoints: jest.fn(),
+    deleteAgentCheckpoints,
+    deleteAgentCheckpointScopes,
     isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
     ...overrides,
   }),

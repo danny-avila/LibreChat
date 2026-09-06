@@ -10,7 +10,9 @@ const {
   normalizeHttpError,
   getWebSearchInstallEntries,
   getWebSearchUninstallFields,
-  deleteAgentCheckpoints,
+  deleteAgentCheckpointScopes,
+  getOwnedAgentCheckpointScope,
+  isStopConfirmed,
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
 } = require('@librechat/api');
@@ -420,11 +422,31 @@ const deleteUserController = async (req, res) => {
       user.id,
       user.tenantId,
     );
-    await Promise.all(
-      activeAgentRuns.map((streamId) =>
-        GenerationJobManager.abortJob(streamId, { awaitProviderDrain: true }),
+    const activeAgentJobs = await Promise.all(
+      activeAgentRuns.map(async (streamId) => ({
+        streamId,
+        job: await GenerationJobManager.getJob(streamId),
+      })),
+    );
+    const ownedAgentJobs = activeAgentJobs.filter(
+      ({ job }) =>
+        job?.metadata?.userId === user.id &&
+        (job.metadata.tenantId ?? undefined) === (user.tenantId ?? undefined),
+    );
+    const checkpointScopes = ownedAgentJobs
+      .map(({ job }) => getOwnedAgentCheckpointScope(job, user.id, user.tenantId))
+      .filter(Boolean);
+    const stopResults = await Promise.all(
+      ownedAgentJobs.map(({ streamId, job }) =>
+        GenerationJobManager.abortJob(streamId, {
+          expectedCreatedAt: job.createdAt,
+          awaitProviderDrain: true,
+        }),
       ),
     );
+    if (stopResults.some((result) => !isStopConfirmed(result))) {
+      throw new Error('Agent generations could not be confirmed stopped');
+    }
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
@@ -433,9 +455,7 @@ const deleteUserController = async (req, res) => {
     await db.deleteBalances({ user: user._id });
     await db.deletePresets(user.id);
     try {
-      const convoDeletion = await db.deleteConvos(user.id);
-      // HITL: prune the deleted conversations' durable checkpoints — a paused run's
-      // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+      await db.deleteConvos(user.id);
       const appConfig =
         req.config ??
         (await getAppConfig({
@@ -443,8 +463,9 @@ const deleteUserController = async (req, res) => {
           userId: req.user?.id,
           tenantId: req.user?.tenantId,
         }));
-      await deleteAgentCheckpoints(
-        convoDeletion?.conversationIds,
+      /** Legacy generations have no owner-bound namespace and remain for TTL cleanup. */
+      await deleteAgentCheckpointScopes(
+        checkpointScopes,
         appConfig?.endpoints?.agents?.checkpointer,
       );
     } catch (error) {

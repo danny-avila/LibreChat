@@ -2,7 +2,16 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const mockGetActiveJobIdsForUser = jest.fn().mockResolvedValue([]);
+const mockGetAgentJob = jest.fn().mockResolvedValue(null);
 const mockAbortJob = jest.fn().mockResolvedValue({ success: true });
+const mockDeleteAgentCheckpointScopes = jest.fn().mockResolvedValue(undefined);
+const mockDeleteAgentCheckpoints = jest.fn(async (threadIds = []) => {
+  const filter = { thread_id: { $in: threadIds } };
+  await Promise.all([
+    mongoose.connection.db.collection('agent_checkpoints').deleteMany(filter),
+    mongoose.connection.db.collection('agent_checkpoint_writes').deleteMany(filter),
+  ]);
+});
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
 const mockPrepareAgentTriggerUserPurge = jest.fn().mockResolvedValue(undefined);
 const mockCancelAgentTriggerUserPurge = jest.fn().mockResolvedValue(true);
@@ -94,8 +103,11 @@ jest.mock('@librechat/api', () => ({
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
   GenerationJobManager: {
     getCleanupBlockingJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
+    getJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
+  deleteAgentCheckpoints: (...args) => mockDeleteAgentCheckpoints(...args),
+  deleteAgentCheckpointScopes: (...args) => mockDeleteAgentCheckpointScopes(...args),
 }));
 
 jest.mock('~/server/services/Agents/triggers', () => ({
@@ -270,6 +282,10 @@ describe('verifyEmailController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuiesceUserSchedules.mockResolvedValue(true);
+    mockGetActiveJobIdsForUser.mockResolvedValue([]);
+    mockGetAgentJob.mockResolvedValue(null);
+    mockAbortJob.mockResolvedValue({ success: true });
+    mockDeleteAgentCheckpointScopes.mockResolvedValue(undefined);
   });
 
   it('returns the generic verification error message from service failures', async () => {
@@ -510,6 +526,11 @@ describe('deleteUserController', () => {
   it('aborts generations admitted before the deletion fence before erasing messages', async () => {
     const userId = new mongoose.Types.ObjectId();
     mockGetActiveJobIdsForUser.mockResolvedValueOnce(['stream-1', 'stream-2']);
+    mockGetAgentJob.mockImplementation(async (streamId) => ({
+      metadata: { userId: userId.toString(), tenantId: 'tenant-1' },
+      streamId,
+      createdAt: 123,
+    }));
     const req = {
       user: {
         id: userId.toString(),
@@ -522,17 +543,155 @@ describe('deleteUserController', () => {
     await deleteUserController(req, mockRes);
 
     expect(mockGetActiveJobIdsForUser).toHaveBeenCalledWith(userId.toString(), 'tenant-1');
-    expect(mockAbortJob).toHaveBeenCalledWith('stream-1', { awaitProviderDrain: true });
-    expect(mockAbortJob).toHaveBeenCalledWith('stream-2', { awaitProviderDrain: true });
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-1', {
+      expectedCreatedAt: 123,
+      awaitProviderDrain: true,
+    });
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-2', {
+      expectedCreatedAt: 123,
+      awaitProviderDrain: true,
+    });
     expect(mockAbortJob.mock.invocationCallOrder[1]).toBeLessThan(
       deleteMessages.mock.invocationCallOrder[0],
     );
+  });
+
+  it('prunes only account checkpoint receipts bound to the deleted user and tenant', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const userIdString = userId.toString();
+    const checkpointDocuments = [
+      'owned-generation',
+      'owned-generation|subgraph',
+      'foreign-user-generation',
+      'foreign-tenant-generation',
+      '',
+    ].map((checkpointNamespace) => ({
+      thread_id: 'collision-id',
+      checkpoint_ns: checkpointNamespace,
+    }));
+    await mongoose.connection.db.collection('agent_checkpoints').insertMany(checkpointDocuments);
+    await mongoose.connection.db
+      .collection('agent_checkpoint_writes')
+      .insertMany(checkpointDocuments);
+    mockDeleteAgentCheckpointScopes.mockImplementationOnce((...args) =>
+      jest.requireActual('@librechat/api').deleteAgentCheckpointScopes(...args),
+    );
+    deleteConvos.mockResolvedValueOnce({ deletedCount: 1, conversationIds: ['collision-id'] });
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce([
+      'owned-run',
+      'foreign-user-run',
+      'foreign-tenant-run',
+      'legacy-run',
+    ]);
+    mockGetAgentJob.mockImplementation(async (streamId) => {
+      const metadata = {
+        'owned-run': {
+          userId: userIdString,
+          tenantId: 'tenant-1',
+          conversationId: 'collision-id',
+          checkpointNamespace: 'owned-generation',
+          generationProtocolVersion: 2,
+        },
+        'foreign-user-run': {
+          userId: 'foreign-user',
+          tenantId: 'tenant-1',
+          conversationId: 'collision-id',
+          checkpointNamespace: 'foreign-user-generation',
+          generationProtocolVersion: 2,
+        },
+        'foreign-tenant-run': {
+          userId: userIdString,
+          tenantId: 'foreign-tenant',
+          conversationId: 'collision-id',
+          checkpointNamespace: 'foreign-tenant-generation',
+          generationProtocolVersion: 2,
+        },
+        'legacy-run': {
+          userId: userIdString,
+          tenantId: 'tenant-1',
+          conversationId: 'collision-id',
+          checkpointNamespace: '',
+          generationProtocolVersion: 1,
+        },
+      }[streamId];
+      return { metadata, streamId, createdAt: 123 };
+    });
+    const req = {
+      user: {
+        id: userIdString,
+        _id: userId,
+        email: 'account@test.com',
+        tenantId: 'tenant-1',
+      },
+      config: {},
+    };
+
+    await deleteUserController(req, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(200);
+    expect(
+      await mongoose.connection.db
+        .collection('agent_checkpoints')
+        .find({ thread_id: 'collision-id' })
+        .project({ _id: 0, checkpoint_ns: 1 })
+        .sort({ checkpoint_ns: 1 })
+        .toArray(),
+    ).toEqual([
+      { checkpoint_ns: '' },
+      { checkpoint_ns: 'foreign-tenant-generation' },
+      { checkpoint_ns: 'foreign-user-generation' },
+    ]);
+    expect(mockAbortJob.mock.calls.map(([streamId]) => streamId)).toEqual([
+      'owned-run',
+      'legacy-run',
+    ]);
+    expect(mockDeleteAgentCheckpointScopes).toHaveBeenCalledWith(
+      [{ threadId: 'collision-id', checkpointNamespace: 'owned-generation' }],
+      undefined,
+    );
+  });
+
+  it('fails closed when an account generation is replaced before abort', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const userIdString = userId.toString();
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['replaced-run']);
+    mockGetAgentJob.mockResolvedValueOnce({
+      metadata: { userId: userIdString, tenantId: 'tenant-1' },
+      streamId: 'replaced-run',
+      createdAt: 123,
+    });
+    mockAbortJob.mockResolvedValueOnce({ success: false, failureReason: 'generation_replaced' });
+
+    await deleteUserController(
+      {
+        user: {
+          id: userIdString,
+          _id: userId,
+          email: 'account@test.com',
+          tenantId: 'tenant-1',
+        },
+      },
+      mockRes,
+    );
+
+    expect(mockAbortJob).toHaveBeenCalledWith('replaced-run', {
+      expectedCreatedAt: 123,
+      awaitProviderDrain: true,
+    });
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(deleteMessages).not.toHaveBeenCalled();
+    expect(mockDeleteAgentCheckpointScopes).not.toHaveBeenCalled();
   });
 
   it('fails closed and releases deletion fences when a provider cannot confirm drain', async () => {
     const userId = new mongoose.Types.ObjectId();
     const userIdString = userId.toString();
     mockGetActiveJobIdsForUser.mockResolvedValueOnce(['stream-still-writing']);
+    mockGetAgentJob.mockResolvedValueOnce({
+      metadata: { userId: userIdString, tenantId: 'tenant-1' },
+      streamId: 'stream-still-writing',
+      createdAt: 123,
+    });
     mockAbortJob.mockRejectedValueOnce(new Error('provider drain timed out'));
     const req = {
       user: {
