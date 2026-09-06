@@ -6,7 +6,7 @@ import treePerfConfig from './playwright.config.tree-perf';
 
 /**
  * Runs the branch-sensitive mock specs against the vite dev server with the
- * flat thread renderer defaulted ON, so the prototype is checked against the
+ * flat thread renderer pinned ON, so the flat path is checked against the
  * same scenarios the recursive renderer passes.
  */
 
