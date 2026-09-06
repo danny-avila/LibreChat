@@ -6048,8 +6048,10 @@ class GenerationJobManagerClass {
           );
           if (durableOutcome?.outcome !== 'success') {
             runtime.abortController.abort();
+            const canceled = cancelResumeSubscription();
             await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
-            return cancelResumeSubscription();
+            onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+            return canceled;
           }
         }
 
