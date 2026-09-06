@@ -40,14 +40,8 @@ const schedule: TSchedule = {
 /** The list naming the chat a running occurrence is producing. */
 const running = (conversationId = 'run-convo-1', overrides?: Partial<TSchedule>): TSchedule => ({
   ...schedule,
-  activeRuns: [{ conversationId, status: 'started' }],
+  inFlight: [{ conversationId }],
   ...overrides,
-});
-
-/** A run parked on an approval; it can sit there indefinitely. */
-const paused = (conversationId: string): NonNullable<TSchedule['activeRuns']>[number] => ({
-  conversationId,
-  status: 'requires_action',
 });
 
 /** The list after a run settled — the only trace a run short enough to start and
@@ -170,49 +164,49 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
-  it('fetches a run that started and settled between two polls', async () => {
+  it('re-reads the list for a run that started and settled between two polls', async () => {
     const queryClient = createQueryClient();
     const { rerender } = renderWith(queryClient, [schedule]);
 
     rerender([settled()]);
     await admit();
 
-    expect(listIds(queryClient)).toEqual(['run-convo-1', 'existing']);
+    /** Never seen generating, so never handed to the watch — the refetch brings the
+     *  server's own row, and a settled run whose generation never wrote a chat
+     *  (a 404 for good) is not probed at all, let alone again. */
+    expect(isStale(queryClient)).toBe(true);
+    expect(mockGetConversationById).not.toHaveBeenCalled();
     queryClient.clear();
   });
 
-  it('fetches every concurrent occurrence that appears, a pause and a run alike', async () => {
+  it('fetches every generating occurrence a schedule names', async () => {
     const queryClient = createQueryClient();
     mockGetConversationById.mockImplementation(async (id) => serverConversation(id));
-    const { rerender } = renderWith(queryClient, [schedule]);
-
-    rerender([
+    renderWith(queryClient, [
       running('run-convo-1', {
-        activeRuns: [paused('paused-convo'), { conversationId: 'run-convo-1', status: 'started' }],
+        inFlight: [{ conversationId: 'run-convo-1' }, { conversationId: 'run-convo-2' }],
       }),
     ]);
+
     await admit();
 
     expect(listIds(queryClient)).toEqual(
-      expect.arrayContaining(['paused-convo', 'run-convo-1', 'existing']),
+      expect.arrayContaining(['run-convo-1', 'run-convo-2', 'existing']),
     );
     queryClient.clear();
   });
 
-  it('fetches only what is generating on the first observation, never history', async () => {
+  it('re-reads the list when a schedule with a run is deleted from under it', async () => {
     const queryClient = createQueryClient();
-    /** Settled long ago, parked on an approval, and actually running: only the
-     *  last is a chat the sidebar may lack. */
-    renderWith(queryClient, [
-      settled('old-convo'),
-      { ...schedule, id: 'schedule-2', activeRuns: [paused('paused-convo')] },
-      { ...running(), id: 'schedule-3' },
-    ]);
-
+    const { rerender } = renderWith(queryClient, [running(), { ...schedule, id: 'schedule-2' }]);
     await admit();
+    expect(isStale(queryClient)).toBe(false);
 
-    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
-    expect(mockGetConversationById).toHaveBeenCalledWith('run-convo-1');
+    /** Deleting aborts and settles the run, and the schedule leaves the list; the
+     *  chat's final state is only visible if the vanishing counts as a move. */
+    rerender([{ ...schedule, id: 'schedule-2' }]);
+
+    expect(isStale(queryClient)).toBe(true);
     queryClient.clear();
   });
 

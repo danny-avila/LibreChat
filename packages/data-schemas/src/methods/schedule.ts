@@ -289,7 +289,10 @@ export type ScheduleMethods = {
   ) => Promise<void>;
   markScheduleDeleting: (id: string, userId: string | Types.ObjectId) => Promise<ISchedule | null>;
   getActiveRunsForSchedule: (scheduleId: string) => Promise<IScheduleRun[]>;
-  getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
+  getActiveRunsForUser: (
+    userId: string | Types.ObjectId,
+    statuses?: readonly ScheduleRunStatus[],
+  ) => Promise<IScheduleRun[]>;
   suspendUserSchedulesForDeletion: (
     userId: string | Types.ObjectId,
     token: string,
@@ -1756,10 +1759,19 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       .lean<IScheduleRun[]>();
   }
 
-  /** In-flight runs across all of a user's schedules — for account-deletion quiescing. */
-  async function getActiveRunsForUser(userId: string | Types.ObjectId): Promise<IScheduleRun[]> {
+  /**
+   * In-flight runs across all of a user's schedules — for account-deletion quiescing,
+   * and, narrowed to `started`, for the schedules list. The narrowing matters there:
+   * this collection is indexed by status, not by user, and `started` rows are bounded
+   * globally by the capacity slots while `requires_action` rows can accumulate for as
+   * long as an approval waits.
+   */
+  async function getActiveRunsForUser(
+    userId: string | Types.ObjectId,
+    statuses: readonly ScheduleRunStatus[] = ACTIVE_RUN_STATUSES,
+  ): Promise<IScheduleRun[]> {
     return ScheduleRun()
-      .find({ user: userId, status: { $in: ACTIVE_RUN_STATUSES } })
+      .find({ user: userId, status: { $in: statuses } })
       .lean<IScheduleRun[]>();
   }
 

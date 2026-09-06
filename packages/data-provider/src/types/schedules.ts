@@ -136,18 +136,14 @@ export type TSchedule = {
   nextRunAt?: string;
   lastRun?: TScheduleLastRun;
   /**
-   * The occurrences running right now — a `requires_action` pause does not block
-   * the next one, so there can be two. Read from their own run rows, not from
+   * The occurrences generating right now. Read from their own run rows, not from
    * `lastRun`, which is projected only when a run settles, pauses or skips and is
    * deliberately withheld from a run whose schedule was edited mid-flight. This is
    * the signal a client has that a chat is on its way, and the id to fetch it by.
+   * A run parked on an approval is not here: its chat was listed long ago, and the
+   * rows can accumulate for as long as approvals wait.
    */
-  activeRuns?: Array<{
-    conversationId: string;
-    /** `started` is generating; `requires_action` is paused on an approval and may
-     *  stay that way indefinitely, so only the former is "in flight" to a client. */
-    status: ScheduleRunStatus;
-  }>;
+  inFlight?: Array<{ conversationId: string }>;
   runCount: number;
   failureCount: number;
   configRevision?: number;

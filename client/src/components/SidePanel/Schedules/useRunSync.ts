@@ -4,23 +4,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { TSchedule } from 'librechat-data-provider';
 import { trackScheduledRun } from '~/data-provider/Schedules/admission';
 
-/** The chats a schedule names: those its running occurrences are producing, and
- *  the one its last occurrence produced. A run short enough to start and settle
- *  between two polls is never seen running; it is still seen settled. */
-const namedChats = (schedule: TSchedule): string[] => {
-  const ids = (schedule.activeRuns ?? []).map((run) => run.conversationId);
-  if (schedule.lastRun?.conversationId != null) {
-    ids.push(schedule.lastRun.conversationId);
-  }
-  return ids;
-};
+const inFlightChats = (schedule: TSchedule): string[] =>
+  (schedule.inFlight ?? []).map((run) => run.conversationId);
 
 /** Everything about a schedule's occurrences that should send the list back to
- *  the server when it moves: which runs are live, and how the last one ended. */
+ *  the server when it moves: which runs are generating, and how the last one
+ *  ended. A run short enough to start and settle between two polls is never seen
+ *  generating; it is still seen settled, and the refetch that follows brings its
+ *  chat with the server's own row. */
 const runState = (schedule: TSchedule): string => {
-  const live = (schedule.activeRuns ?? []).map((run) => run.conversationId).sort();
   const { lastRun } = schedule;
-  return `${live.join(',')}|${lastRun?.conversationId ?? ''}:${lastRun?.status ?? ''}`;
+  const live = inFlightChats(schedule).sort().join(',');
+  return `${live}|${lastRun?.conversationId ?? ''}:${lastRun?.status ?? ''}`;
 };
 
 /**
@@ -30,60 +25,42 @@ const runState = (schedule: TSchedule): string => {
  * no submission, stream or event handler ever tells the sidebar its chat exists —
  * and the list's own five-minute staleness leaves it out of a tab that stays
  * focused. This panel's query is already polling for the cards, and it names the
- * chats each schedule is producing and has produced, read from the run rows rather
- * than inferred from the schedule. Every chat it names is handed to the admission
- * watch Run Now uses on every observation: that watch is the one place that
- * decides whether an id is already landed, in flight, or — having given up on a
- * delivery deferred past its budget — worth trying again on a later announcement.
+ * chat each generating occurrence is producing, read from the run's own row rather
+ * than inferred from the schedule. Every one is handed to the admission watch Run
+ * Now uses, on every observation: that watch is the one place that decides whether
+ * an id is landed, in flight, or — having given up on a delivery deferred past its
+ * budget — worth trying again on a later announcement. Only generating runs are
+ * ever handed over, so a settled run whose generation never wrote a conversation
+ * is never watched, let alone watched again.
  *
- * The exception is history. A panel opened long after a run must not go and fetch
- * chats that were listed before it opened, so whatever the first observation names
- * that is not actually generating — the last settled occurrence, and a pause that
- * may sit on its approval indefinitely — is never handed over. A pause resolving
- * later still re-reads the list, below.
- *
- * When a run's state moves — one settles, a pause resolves — the list is re-read
- * once for the order and title its settlement changed. Because the state includes
- * the live occurrences, an owner editing the schedule mid-flight (which fences the
- * `lastRun` projection) still cannot hide a settlement.
+ * When a run's state moves — one settles, or its schedule is deleted from under it
+ * — the list is re-read once for the chat, order and title the settlement changed.
+ * Because the state includes the generating occurrences, an owner editing the
+ * schedule mid-flight (which fences the `lastRun` projection) still cannot hide a
+ * settlement. The first observation is recorded in silence: a panel opened long
+ * after a run must not refetch a list that has held its chat all along.
  */
 export default function useRunSync(schedules?: TSchedule[]): void {
   const queryClient = useQueryClient();
-  const history = useRef<Set<string> | null>(null);
-  const states = useRef<Map<string, string>>(new Map());
+  const states = useRef<Map<string, string> | null>(null);
 
   useEffect(() => {
     if (schedules == null) {
       return;
     }
-    const first = history.current == null;
-    const skip = (history.current ??= new Set());
-    let moved = false;
+    const previous = states.current;
+    const current = new Map<string, string>();
     for (const schedule of schedules) {
-      const state = runState(schedule);
-      const before = states.current.get(schedule.id);
-      states.current.set(schedule.id, state);
-      if (!first && before !== undefined && before !== state) {
-        moved = true;
-      }
-      if (first) {
-        const generating = new Set(
-          (schedule.activeRuns ?? [])
-            .filter((run) => run.status === 'started')
-            .map((run) => run.conversationId),
-        );
-        for (const conversationId of namedChats(schedule)) {
-          if (!generating.has(conversationId)) {
-            skip.add(conversationId);
-          }
-        }
-      }
-      for (const conversationId of namedChats(schedule)) {
-        if (!skip.has(conversationId)) {
-          void trackScheduledRun(queryClient, conversationId);
-        }
+      current.set(schedule.id, runState(schedule));
+      for (const conversationId of inFlightChats(schedule)) {
+        void trackScheduledRun(queryClient, conversationId);
       }
     }
+    states.current = current;
+    if (previous == null) {
+      return;
+    }
+    const moved = [...previous].some(([id, state]) => current.get(id) !== state);
     if (moved) {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
     }

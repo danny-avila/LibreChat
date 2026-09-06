@@ -739,7 +739,7 @@ describe('deferred deletion retry', () => {
   });
 });
 
-describe('active run projection', () => {
+describe('in-flight run projection', () => {
   const schedule = { id: 'sched-1', user: 'user-1', name: 'Digest' } as unknown as ISchedule;
   const run = (over: Partial<IScheduleRun>): IScheduleRun =>
     ({
@@ -749,10 +749,11 @@ describe('active run projection', () => {
       status: 'started',
       ...over,
     }) as unknown as IScheduleRun;
+  type Wire = { inFlight?: Array<{ conversationId: string }> };
 
-  async function listWith(runs: IScheduleRun[]) {
+  async function listWith(runs: IScheduleRun[], schedules: ISchedule[] = [schedule]) {
     const deps = makeCreateDeps();
-    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => [schedule]);
+    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => schedules);
     (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => runs);
     (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => []);
     const { res, captured } = makeRes();
@@ -760,57 +761,38 @@ describe('active run projection', () => {
       { user: { id: 'user-1' } } as unknown as ServerRequest,
       res,
     );
-    return (
-      captured.body as { schedules: Array<{ activeRuns?: Array<{ conversationId: string }> }> }
-    ).schedules[0];
+    return { deps, schedules: (captured.body as { schedules: Wire[] }).schedules };
   }
 
-  it('names the chat a running occurrence is producing', async () => {
-    const wire = await listWith([run({ conversationId: 'convo-1' })]);
-    expect(wire.activeRuns).toEqual([{ conversationId: 'convo-1', status: 'started' }]);
+  it('names the chat a generating occurrence is producing', async () => {
+    const { schedules } = await listWith([run({ conversationId: 'convo-1' })]);
+    expect(schedules[0].inFlight).toEqual([{ conversationId: 'convo-1' }]);
+  });
+
+  it('asks only for generating occurrences, never the parked ones', async () => {
+    // Indexed by status rather than user, and `requires_action` rows accumulate for
+    // as long as approvals wait; `started` rows are bounded by the capacity slots.
+    const { deps } = await listWith([]);
+    expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1', ['started']);
   });
 
   it('projects nothing for a reservation that has not been dispatched', async () => {
-    const wire = await listWith([run({})]);
-    expect(wire.activeRuns).toBeUndefined();
+    const { schedules } = await listWith([run({})]);
+    expect(schedules[0].inFlight).toBeUndefined();
   });
 
-  it('projects nothing when no occurrence is running', async () => {
-    const wire = await listWith([]);
-    expect(wire.activeRuns).toBeUndefined();
-  });
-
-  it('keeps every concurrent occurrence: a pause does not block the next run', async () => {
-    const wire = await listWith([
-      run({ conversationId: 'paused', status: 'requires_action' }),
-      run({ conversationId: 'running' }),
-    ]);
-    expect(wire.activeRuns).toEqual([
-      { conversationId: 'paused', status: 'requires_action' },
-      { conversationId: 'running', status: 'started' },
-    ]);
+  it('projects nothing when no occurrence is generating', async () => {
+    const { schedules } = await listWith([]);
+    expect(schedules[0].inFlight).toBeUndefined();
   });
 
   it('files each occurrence under its own schedule', async () => {
-    const deps = makeCreateDeps();
-    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => [
-      schedule,
-      { ...schedule, id: 'sched-2' },
-    ]);
-    (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => [
-      run({ conversationId: 'convo-2', scheduleId: 'sched-2' }),
-    ]);
-    (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => []);
-    const { res, captured } = makeRes();
-    await createSchedulesHandlers(deps).listSchedules(
-      { user: { id: 'user-1' } } as unknown as ServerRequest,
-      res,
+    const { schedules } = await listWith(
+      [run({ conversationId: 'convo-2', scheduleId: 'sched-2' })],
+      [schedule, { ...schedule, id: 'sched-2' }],
     );
-    const [first, second] = (
-      captured.body as { schedules: Array<{ activeRuns?: Array<{ conversationId: string }> }> }
-    ).schedules;
-    expect(first.activeRuns).toBeUndefined();
-    expect(second.activeRuns).toEqual([{ conversationId: 'convo-2', status: 'started' }]);
+    expect(schedules[0].inFlight).toBeUndefined();
+    expect(schedules[1].inFlight).toEqual([{ conversationId: 'convo-2' }]);
   });
 
   it('scopes the single-schedule read to the caller before ownership is known', async () => {
@@ -825,11 +807,9 @@ describe('active run projection', () => {
       { params: { id: 'sched-1' }, user: { id: 'user-1' } } as unknown as ServerRequest,
       res,
     );
-    expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1');
+    expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1', ['started']);
     expect(deps.methods.getActiveRunsForSchedule).not.toHaveBeenCalled();
-    expect((captured.body as { activeRuns?: unknown }).activeRuns).toEqual([
-      { conversationId: 'mine', status: 'started' },
-    ]);
+    expect((captured.body as Wire).inFlight).toEqual([{ conversationId: 'mine' }]);
   });
 });
 
