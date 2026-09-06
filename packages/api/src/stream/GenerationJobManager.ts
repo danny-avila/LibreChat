@@ -5365,6 +5365,16 @@ class GenerationJobManagerClass {
     runtime.earlyEventBufferClosed = true;
     runtime.earlyEventBufferOverflowed = true;
     runtime.earlyBufferOverflow = overflow;
+    recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
+    logger.warn(
+      '[GenerationJobManager] Early event buffer overflow; late subscriber recovery required',
+      {
+        recoveryId: overflow.id,
+        store: this.storeLabel,
+        droppedEvents,
+        droppedBytes,
+      },
+    );
     try {
       await this.jobStore.flushPendingAppends?.(streamId);
       await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
@@ -5376,7 +5386,11 @@ class GenerationJobManagerClass {
         throw new Error('Early buffer overflow marker was not durably persisted');
       }
     } catch (err) {
-      logger.error('[GenerationJobManager] Failed to persist early buffer overflow identity', err);
+      logger.error('[GenerationJobManager] Failed to persist early buffer overflow identity', {
+        recoveryId: overflow.id,
+        store: this.storeLabel,
+        error: err instanceof Error ? err.message : String(err),
+      });
       const settlement = {
         recoveryMethod: this._isRedis ? ('redis' as const) : ('snapshot' as const),
         recoveryOutcome: 'failed' as const,
@@ -5402,16 +5416,6 @@ class GenerationJobManagerClass {
       );
       throw new Error(GENERATION_RECOVERY_FAILED_ERROR, { cause: err });
     }
-    recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
-    logger.warn(
-      '[GenerationJobManager] Early event buffer overflow; late subscriber recovery required',
-      {
-        recoveryId: overflow.id,
-        store: this.storeLabel,
-        droppedEvents,
-        droppedBytes,
-      },
-    );
   }
 
   /**
