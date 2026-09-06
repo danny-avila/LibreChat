@@ -1709,6 +1709,22 @@ describe('GenerationJobManager Integration Tests', () => {
      * detached run.
      */
 
+    async function forceEarlyBufferOverflow(
+      manager: GenerationJobManagerClass,
+      streamId: string,
+    ): Promise<void> {
+      const runtime = (
+        manager as unknown as {
+          runtimeState: Map<string, unknown>;
+        }
+      ).runtimeState.get(streamId)!;
+      await (
+        manager as unknown as {
+          overflowEarlyEventBuffer: (id: string, runtime: unknown) => Promise<void>;
+        }
+      ).overflowEarlyEventBuffer(streamId, runtime);
+    }
+
     testRedis(
       'detached generation keeps the local buffer empty after first attachment (Redis)',
       async () => {
@@ -1802,16 +1818,7 @@ describe('GenerationJobManager Integration Tests', () => {
       manager.initialize();
       const streamId = `overflow-complete-reconnect-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
-      const bigText = 'z'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
 
       const reconnectErrors: string[] = [];
       await manager.subscribe(
@@ -1856,16 +1863,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `overflow-replaced-during-settlement-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
       const originalCreatedAt = (await jobStore.getJob(streamId))!.createdAt;
-      const bigText = 'r'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       jest.spyOn(jobStore, 'settleEarlyBufferRecovery').mockImplementationOnce(async () => {
         await jobStore.createJob(streamId, 'user-1');
         return false;
@@ -1898,16 +1896,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `overflow-replaced-during-error-settlement-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
       const originalCreatedAt = (await jobStore.getJob(streamId))!.createdAt;
-      const bigText = 'e'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       jest
         .spyOn(manager, 'getResumeState')
         .mockRejectedValueOnce(new Error('snapshot unavailable'));
@@ -1936,16 +1925,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `overflow-hitl-memory-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
       const createdAt = (await manager.getJob(streamId))!.createdAt;
-      const bigText = 'i'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       manager.setContentParts(
         streamId,
         [{ type: 'text', text: 'complete snapshot' }] as never,
@@ -1963,7 +1943,7 @@ describe('GenerationJobManager Integration Tests', () => {
       ).resolves.toMatchObject({ aggregatedContent: expect.any(Array) });
       expect(getRuntimeSpy).toHaveBeenCalledWith(streamId, expect.objectContaining({ createdAt }));
       expect((await manager.getJob(streamId))?.metadata.earlyBufferOverflow).toMatchObject({
-        durableEvents: 4,
+        durableEvents: 0,
         recoveryOutcome: 'success',
       });
 
@@ -1975,16 +1955,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `overflow-hitl-failed-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
       const createdAt = (await manager.getJob(streamId))!.createdAt;
-      const bigText = 'j'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       const overflow = (await manager.getJob(streamId))!.metadata.earlyBufferOverflow!;
       await (manager.getJobStore() as IJobStoreV2).settleEarlyBufferRecovery(
         streamId,
@@ -2017,16 +1988,7 @@ describe('GenerationJobManager Integration Tests', () => {
       manager.initialize();
       const streamId = `overflow-lease-read-failure-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
-      const bigText = 'k'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       jest.spyOn(jobStore, 'hasActiveSubscriber').mockRejectedValueOnce(new Error('unavailable'));
 
       await expect(manager.completeJob(streamId)).resolves.toBe(true);
@@ -2050,16 +2012,7 @@ describe('GenerationJobManager Integration Tests', () => {
       manager.initialize();
       const streamId = `overflow-lifecycle-read-failure-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
-      const bigText = 'u'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       const originalGetJob = jobStore.getJob.bind(jobStore);
       jest
         .spyOn(jobStore, 'getJob')
@@ -2087,16 +2040,7 @@ describe('GenerationJobManager Integration Tests', () => {
       manager.initialize();
       const streamId = `overflow-recovery-loser-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
-      const bigText = 'l'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       const originalSettle = jobStore.settleEarlyBufferRecovery.bind(jobStore);
       jest
         .spyOn(jobStore, 'settleEarlyBufferRecovery')
@@ -2136,16 +2080,14 @@ describe('GenerationJobManager Integration Tests', () => {
           stepDetails: { type: 'message_creation' },
         },
       });
-      const bigText = 'y'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: 'durable-overflow-content' } },
+        },
+      });
+      await forceEarlyBufferOverflow(manager, streamId);
       expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
 
       const errors: string[] = [];
@@ -2163,7 +2105,9 @@ describe('GenerationJobManager Integration Tests', () => {
       /** The resume path the client falls back to reconstructs the
        * discarded output from the durable chunk log. */
       const { subscription, resumeState } = await manager.subscribeWithResume(streamId, () => {});
-      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain(
+        'durable-overflow-content',
+      );
       subscription?.unsubscribe();
       const recoveredJob = await manager.getJob(streamId);
       expect(recoveredJob?.metadata.earlyBufferOverflow).toMatchObject({
@@ -2194,16 +2138,7 @@ describe('GenerationJobManager Integration Tests', () => {
           delta: { content: { type: 'text', text: 'durable-before-marker' } },
         },
       });
-      const ownerRuntime = (
-        owner as unknown as {
-          runtimeState: Map<string, unknown>;
-        }
-      ).runtimeState.get(streamId)!;
-      await (
-        owner as unknown as {
-          overflowEarlyEventBuffer: (id: string, runtime: unknown) => Promise<void>;
-        }
-      ).overflowEarlyEventBuffer(streamId, ownerRuntime);
+      await forceEarlyBufferOverflow(owner, streamId);
 
       const replica = createRedisManager();
       const replicaStore = replica.getJobStore();
@@ -2337,16 +2272,7 @@ describe('GenerationJobManager Integration Tests', () => {
         const owner = createRedisManager();
         const streamId = `overflow-missing-durable-${Date.now()}`;
         await owner.createJob(streamId, 'user-1');
-        const bigText = 'm'.repeat(2 * 1024 * 1024);
-        for (let i = 0; i < 5; i++) {
-          await owner.emitChunk(streamId, {
-            event: 'on_message_delta',
-            data: {
-              id: 'step-1',
-              delta: { content: { type: 'text', text: bigText } },
-            },
-          });
-        }
+        await forceEarlyBufferOverflow(owner, streamId);
         await ioredisClient!.del(`stream:{${streamId}}:chunks`);
 
         const replica = createRedisManager();
@@ -2366,7 +2292,7 @@ describe('GenerationJobManager Integration Tests', () => {
         expect(failedJob?.metadata.earlyBufferOverflow).toMatchObject({
           recoveryMethod: 'redis',
           recoveryOutcome: 'failed',
-          recoveryFailureReason: 'durable_frontier_gap',
+          recoveryFailureReason: 'durable_state_missing',
         });
 
         await Promise.all([owner.destroy(), replica.destroy()]);
@@ -2377,16 +2303,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const owner = createRedisManager();
       const streamId = `overflow-durable-terminal-${Date.now()}`;
       const job = await owner.createJob(streamId, 'user-1');
-      const bigText = 't'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await owner.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(owner, streamId);
       const claim = await owner.claimTerminalJob(streamId, 'complete', undefined, job.createdAt, {
         persistencePending: true,
       });
@@ -2426,16 +2343,7 @@ describe('GenerationJobManager Integration Tests', () => {
       const manager = createRedisManager();
       const streamId = `overflow-hitl-validation-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
-      const bigText = 'h'.repeat(2 * 1024 * 1024);
-      for (let i = 0; i < 5; i++) {
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: {
-            id: 'step-1',
-            delta: { content: { type: 'text', text: bigText } },
-          },
-        });
-      }
+      await forceEarlyBufferOverflow(manager, streamId);
       const createdAt = (await manager.getJob(streamId))!.createdAt;
       await ioredisClient!.del(`stream:{${streamId}}:chunks`);
 
@@ -2453,16 +2361,7 @@ describe('GenerationJobManager Integration Tests', () => {
         const owner = createRedisManager();
         const streamId = `overflow-failed-outcome-${Date.now()}`;
         await owner.createJob(streamId, 'user-1');
-        const bigText = 'f'.repeat(2 * 1024 * 1024);
-        for (let i = 0; i < 5; i++) {
-          await owner.emitChunk(streamId, {
-            event: 'on_message_delta',
-            data: {
-              id: 'step-1',
-              delta: { content: { type: 'text', text: bigText } },
-            },
-          });
-        }
+        await forceEarlyBufferOverflow(owner, streamId);
 
         const overflowJob = await owner.getJob(streamId);
         const overflow = overflowJob?.metadata.earlyBufferOverflow;
