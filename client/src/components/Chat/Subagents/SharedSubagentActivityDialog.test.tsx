@@ -1,5 +1,4 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
@@ -7,6 +6,7 @@ import SubagentCall from '~/components/Chat/Messages/Content/Parts/SubagentCall'
 import SharedSubagentActivityDialog from './SharedSubagentActivityDialog';
 import { MessageContext } from '~/Providers/MessageContext';
 import { ShareContext } from '~/Providers/ShareContext';
+import { ChatSurfaceHarness } from 'test/harness';
 
 const mockUseSubagentThreadQuery = jest.fn();
 
@@ -31,6 +31,9 @@ jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => [] }));
 
 jest.mock('./SubagentActivity', () => ({
   __esModule: true,
+  SubagentActivityScrollSurface: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="shared-scroll-surface">{children}</div>
+  ),
   default: ({
     activity,
   }: {
@@ -40,6 +43,30 @@ jest.mock('./SubagentActivity', () => ({
       <span>{activity.title}</span>
       {activity.items.map((item, index) => (
         <span key={index}>{item.text ?? item.type}</span>
+      ))}
+    </div>
+  ),
+}));
+
+jest.mock('./SubagentConversation', () => ({
+  __esModule: true,
+  default: ({
+    turns,
+  }: {
+    turns: Array<{
+      taskId: string;
+      trigger: { summary: string };
+      activity: { items: Array<{ type: string; text?: string }> };
+    }>;
+  }) => (
+    <div data-testid="subagent-conversation">
+      {turns.map((turn) => (
+        <div key={turn.taskId}>
+          {turn.trigger.summary}
+          {turn.activity.items.map((item, index) => (
+            <span key={index}>{item.text ?? item.type}</span>
+          ))}
+        </div>
       ))}
     </div>
   ),
@@ -65,7 +92,7 @@ function renderSharedCall(input: {
   detached?: boolean;
 }) {
   return render(
-    <RecoilRoot>
+    <ChatSurfaceHarness>
       <ShareContext.Provider value={{ isSharedConvo: true, shareId: 'share-1' }}>
         <MessageContext.Provider
           value={{
@@ -88,7 +115,7 @@ function renderSharedCall(input: {
           <SharedSubagentActivityDialog shareId="share-1" />
         </MessageContext.Provider>
       </ShareContext.Provider>
-    </RecoilRoot>,
+    </ChatSurfaceHarness>,
   );
 }
 

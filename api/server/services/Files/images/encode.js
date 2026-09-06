@@ -95,6 +95,8 @@ const blobStorageSources = new Set([
  * @param {Providers | EModelEndpoint | string} [params.provider] - The provider for the image
  * @param {string} [params.endpoint] - Optional: The endpoint for the image
  * @param {number} [params.mcpImageSizeLimit] - Byte limit for uploaded MCP image payloads
+ * @param {string} [params.imageDetail] - Optional: Detail level resolved by the caller, used
+ *   where the request body carries no conversation-level setting (the agents route).
  * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
@@ -160,7 +162,7 @@ async function encodeAndFormat(req, files, params, mode) {
     promises.push(preparePayload(req, file));
   }
 
-  const detail = req.body.imageDetail ?? ImageDetail.auto;
+  const detail = params.imageDetail ?? req.body.imageDetail ?? ImageDetail.auto;
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);

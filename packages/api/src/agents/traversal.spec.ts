@@ -3,6 +3,9 @@ import { collectReachableAgents } from './traversal';
 interface TestAgent {
   id: string;
   subagentAgentConfigs?: Array<TestAgent | null>;
+  lazySubagentConfigs?: Array<TestAgent | null>;
+  subagentGraphMemberMetadata?: Array<TestAgent | null>;
+  subagentGraphConfigs?: Array<{ memberConfigs: Array<TestAgent | null> }>;
 }
 
 describe('collectReachableAgents', () => {
@@ -22,5 +25,21 @@ describe('collectReachableAgents', () => {
     second.subagentAgentConfigs = [first, null];
 
     expect(collectReachableAgents([first])).toEqual([first, second]);
+  });
+
+  it('collects every effective topology route exactly once', () => {
+    const eager: TestAgent = { id: 'eager' };
+    const lazy: TestAgent = { id: 'lazy' };
+    const graphMember: TestAgent = { id: 'graph-member' };
+    const graphMetadata: TestAgent = { id: 'graph-metadata' };
+    const root: TestAgent = {
+      id: 'root',
+      subagentAgentConfigs: [eager],
+      lazySubagentConfigs: [lazy],
+      subagentGraphMemberMetadata: [graphMetadata],
+      subagentGraphConfigs: [{ memberConfigs: [graphMember, eager] }],
+    };
+
+    expect(collectReachableAgents([root])).toEqual([root, eager, lazy, graphMetadata, graphMember]);
   });
 });

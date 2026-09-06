@@ -1,8 +1,8 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
@@ -17,16 +17,26 @@ import {
   useFocusChatEffect,
 } from '~/hooks';
 import {
+  cn,
+  getModelSpec,
+  hasIncompleteFiles,
+  removeFocusRings,
+  getComposerDraftId,
+  getFilesDraftCached,
+  isPastedTextFileMarked,
+} from '~/utils';
+import {
   useChatContext,
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
+import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
 import { useGetStartupConfig } from '~/data-provider';
@@ -41,9 +51,9 @@ import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
 import AudioRecorder from './AudioRecorder';
+import AutoPlayAudio from './AutoPlayAudio';
 import CollapseChat from './CollapseChat';
 import QuoteButton from './QuoteButton';
-import StreamAudio from './StreamAudio';
 import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -196,6 +206,31 @@ const ChatForm = memo(function ChatForm({
     // when the question resolves.
     draftId: answerMode.draftId,
   });
+
+  const pastedTextEdit = usePastedTextEdit({ index, files, setFiles, textAreaRef });
+
+  /** Provenance, not the filename, decides which chips are pastes: a user can deliberately
+   * upload a `pasted-text.txt`. Restored provenance comes from the files draft; marks made
+   * this session are read live from the registry, so new pastes need no recompute. */
+  const pastedTextFileIds = useMemo(() => {
+    const draftId = getComposerDraftId(index, conversationId, isSubmitting);
+    const draftIds = getFilesDraftCached(draftId).pastedTextIds ?? [];
+    return new Set<string>(draftIds);
+  }, [index, conversationId, isSubmitting]);
+  const isPastedTextFile = useCallback(
+    (file: ExtendedFile) =>
+      pastedTextFileIds.has(file.file_id) ||
+      (file.temp_file_id != null && pastedTextFileIds.has(file.temp_file_id)) ||
+      isPastedTextFileMarked(file.file_id) ||
+      isPastedTextFileMarked(file.temp_file_id),
+    [pastedTextFileIds],
+  );
+  /** The chip's actions hide while a replacement upload or inline move is in flight, so the
+   * same original cannot be acted on twice. */
+  const isPasteActionPending = useCallback(
+    (file: ExtendedFile) => pastedTextEdit.isActionPending(file.file_id),
+    [pastedTextEdit],
+  );
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
@@ -559,11 +594,12 @@ const ChatForm = memo(function ChatForm({
             <div
               onClick={handleContainerClick}
               className={cn(
-                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
-                isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
-                isTemporary
-                  ? 'border-violet-800/60 bg-violet-950/10'
-                  : 'border-border-light bg-surface-chat',
+                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
+                composerSurfaceClasses(),
+                isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
+                /* Temporary-chat accent is a ChatForm-only override, not part of
+                   the shared composer-surface decision. */
+                isTemporary && 'border-violet-800/60 bg-violet-950/10',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}
@@ -586,10 +622,20 @@ const ChatForm = memo(function ChatForm({
                 setBadges={setBadges}
               />
               <FileFormChat
+                index={index}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
+                isPastedTextFile={isPastedTextFile}
+                isPasteActionPending={isPasteActionPending}
+                onEditPastedText={pastedTextEdit.openEditor}
+                onMovePastedTextInline={pastedTextEdit.moveInline}
+              />
+              <PastedTextDialog
+                edit={pastedTextEdit.editing}
+                onClose={pastedTextEdit.closeEditor}
+                onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
@@ -724,7 +770,7 @@ const ChatForm = memo(function ChatForm({
                       )}
                 </div>
               </div>
-              {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+              {TextToSpeech && automaticPlayback && <AutoPlayAudio index={index} />}
             </div>
           </div>
         </div>

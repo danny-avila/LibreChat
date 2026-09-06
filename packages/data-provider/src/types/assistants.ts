@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
@@ -337,6 +337,8 @@ export type Agent = {
   stateful_code_sessions?: boolean;
   /** Stateful workspace sharing scope. Defaults to one workspace per user. */
   stateful_code_environment?: StatefulCodeEnvironment;
+  /** Operator-configured managed or attached stateful execution environment. */
+  code_environment_id?: string | null;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -366,6 +368,10 @@ export type Agent = {
   /** Master toggle for skill use on this agent. `true` = active (full catalog unless
    *  `skills` narrows it). `false`/undefined = inactive (no skills available). */
   skills_enabled?: boolean;
+  /** Enables runtime skill creation without exposing an existing skill catalog. */
+  skill_authoring_enabled?: boolean;
+  /** Explicit catalog exposure while skills are enabled. Missing preserves legacy semantics. */
+  skills_scope?: SkillsScope;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;
   /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
@@ -392,6 +398,7 @@ export type AgentCreateParams = {
   | 'hide_sequential_outputs'
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
+  | 'code_environment_id'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -399,6 +406,8 @@ export type AgentCreateParams = {
   | 'tool_options'
   | 'skills'
   | 'skills_enabled'
+  | 'skill_authoring_enabled'
+  | 'skills_scope'
   | 'subagents'
   | 'memory_scope'
 >;
@@ -422,6 +431,7 @@ export type AgentUpdateParams = {
   | 'hide_sequential_outputs'
   | 'stateful_code_sessions'
   | 'stateful_code_environment'
+  | 'code_environment_id'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -429,6 +439,8 @@ export type AgentUpdateParams = {
   | 'tool_options'
   | 'skills'
   | 'skills_enabled'
+  | 'skill_authoring_enabled'
+  | 'skills_scope'
   | 'subagents'
   | 'memory_scope'
 >;
@@ -726,6 +738,9 @@ export type TMessageContentParts =
       reasoning_label_revision?: number;
       /** Whether the reasoning step can still produce a newer label. */
       reasoning_label_status?: 'streaming' | 'complete';
+      /** The reasoning happened but its text is not available to this view
+       *  (e.g. detached subagent projections retain only a marker). */
+      reasoning_unavailable?: boolean;
     } & ContentMetadata)
   | (SteerContentPart & ContentMetadata)
   | ({

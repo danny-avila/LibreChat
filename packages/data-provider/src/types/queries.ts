@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type { RerankerTypes, SearchProviders, ScraperProviders } from '../config';
 import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
@@ -152,6 +153,9 @@ export type VerifyToolAuthResponse = {
   authenticated: boolean;
   message?: string | s.AuthType;
   authTypes?: [string, s.AuthType][];
+  searchProvider?: SearchProviders;
+  scraperProvider?: ScraperProviders;
+  rerankerType?: RerankerTypes;
 };
 
 export type GetToolCallParams = { conversationId: string };

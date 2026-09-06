@@ -16,6 +16,7 @@ const {
   invalidateCachedAuthUserDoc,
   setCachedAuthUserDoc,
   getHttpsProxyAgent,
+  isAccessTokenJwt,
   math,
 } = require('@librechat/api');
 const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
@@ -30,15 +31,26 @@ function decodeJwtExpiry(token) {
   }
 }
 
-const getOpenIdJwtAudience = () => {
-  const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
+const parseOpenIdAudiences = () =>
+  (process.env.OPENID_AUDIENCE ?? '')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
-  const audiences = [process.env.OPENID_CLIENT_ID, ...parsedAudience].filter(Boolean);
+
+const getOpenIdJwtAudience = () => {
+  const audiences = [process.env.OPENID_CLIENT_ID, ...parseOpenIdAudiences()].filter(Boolean);
   const uniqueAudiences = [...new Set(audiences)];
 
   return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
+};
+
+/** The configured audiences a reused bearer is weighed against when deciding whether it is an access token */
+const getOpenIdAudienceConfig = () => {
+  const clientId = process.env.OPENID_CLIENT_ID;
+  return {
+    clientId,
+    resources: new Set(parseOpenIdAudiences().filter((audience) => audience !== clientId)),
+  };
 };
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -117,6 +129,8 @@ const openIdJwtLogin = (openIdConfig) => {
   if (requestAgent) {
     jwksRsaOptions.requestAgent = requestAgent;
   }
+
+  const audienceConfig = getOpenIdAudienceConfig();
 
   return new JwtStrategy(
     {
@@ -233,7 +247,27 @@ const openIdJwtLogin = (openIdConfig) => {
             refreshToken = refreshToken || parsedCookies.refreshToken;
           }
 
-          const resolvedAccessToken = accessToken || rawToken;
+          /**
+           * The raw bearer only stands in for a missing stored access token when it is
+           * identifiable as one. It cleared this strategy's audience check, but an ID token
+           * clears the same check, and an ID token used as the OBO assertion is rejected by the
+           * IdP (Entra answers `AADSTS240002`). An unrecognised token is left unset so
+           * `isOpenIDTokenValid` fails closed with an actionable error instead.
+           */
+          let reusableRawToken;
+          if (!accessToken) {
+            reusableRawToken = isAccessTokenJwt(rawToken, payload, audienceConfig)
+              ? rawToken
+              : undefined;
+            if (!reusableRawToken) {
+              /** Per-request on the reuse path, so the actionable warning is left to the consumer that actually needs the credential */
+              logger.debug(
+                '[openIdJwtLogin] No stored OpenID access token, and the request bearer is not identifiable as one; leaving it unset',
+              );
+            }
+          }
+
+          const resolvedAccessToken = accessToken || reusableRawToken;
           user.federatedTokens = {
             access_token: resolvedAccessToken,
             id_token: idToken,

@@ -14,6 +14,7 @@ import {
   AgentUpdate,
   EmptyText,
   Reasoning,
+  ReasoningMarker,
   Summary,
   Text,
   SkillCall,
@@ -83,6 +84,7 @@ const Part = memo(function Part({
         quotes={part.quotes}
         steerId={part.steerId}
         createdAt={part.createdAt}
+        isSubmitting={isSubmitting}
       />
     );
   }
@@ -144,6 +146,9 @@ const Part = memo(function Part({
     const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
     if (typeof reasoning !== 'string') {
       return null;
+    }
+    if (reasoning.trim() === '' && part.reasoning_unavailable === true) {
+      return <ReasoningMarker label={part.reasoning_label} />;
     }
     return (
       <Reasoning

@@ -76,6 +76,19 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   };
   expiresAt?: Date;
   expiredAt?: Date | null;
+  /**
+   * Consecutive failed retention-sweep deletions. The sweep backs off
+   * between attempts and parks the file once this reaches the configured
+   * cap, so a file whose backing storage refuses deletion cannot occupy
+   * the sweep's bounded queue. Absent until the first failure.
+   */
+  deletionAttempts?: number;
+  /**
+   * Earliest time the retention sweep may retry this file, and the only
+   * thing holding it back. Set alongside `deletionAttempts` on every
+   * failure; absent until the first one.
+   */
+  deletionRetryAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;

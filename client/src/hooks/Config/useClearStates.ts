@@ -1,10 +1,13 @@
+import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
+import { showSkillsPopoverFamily } from '~/components/Chat/Input/skillsState';
 import { clearLocalStorage } from '~/utils/localStorage';
 import store from '~/store';
 
 export default function useClearStates() {
   const clearConversations = store.useClearConvoState();
   const clearSubmissions = store.useClearSubmissionState();
+  const jotaiStore = useStore();
 
   const clearStates = useRecoilCallback(
     ({ reset, snapshot }) =>
@@ -30,7 +33,7 @@ export default function useClearStates() {
           reset(store.showMentionPopoverFamily(key));
           reset(store.showPlusPopoverFamily(key));
           reset(store.showPromptsPopoverFamily(key));
-          reset(store.showSkillsPopoverFamily(key));
+          jotaiStore.set(showSkillsPopoverFamily(key), false);
           reset(store.pendingManualSkillsByConvoId(key.toString()));
           reset(store.pendingQuotesByConvoId(key.toString()));
           /**
@@ -55,7 +58,7 @@ export default function useClearStates() {
 
         clearLocalStorage(skipFirst);
       },
-    [],
+    [clearConversations, clearSubmissions, jotaiStore],
   );
 
   return clearStates;

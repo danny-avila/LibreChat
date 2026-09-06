@@ -2,9 +2,9 @@ import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
 import { buildTree } from 'librechat-data-provider';
 import { useParams, useNavigate } from 'react-router-dom';
-import { CalendarDays, Settings, MessageSquarePlus } from 'lucide-react';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
+import { CalendarDays, ExternalLink, RefreshCw, Settings, MessageSquarePlus } from 'lucide-react';
 import {
   Spinner,
   Button,
@@ -21,12 +21,13 @@ import {
 } from '@librechat/client';
 import SharedSubagentActivityDialog from '~/components/Chat/Subagents/SharedSubagentActivityDialog';
 import { cn, DEFAULT_APP_TITLE, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import { useLocalize, useDocumentTitle, useAuthContext } from '~/hooks';
 import { ThemeSelector, LangSelector } from '~/components/Appearance';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
-import { useLocalize, useDocumentTitle } from '~/hooks';
+import AppChatSurface from '../Chat/Surface';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';
@@ -39,10 +40,13 @@ function SharedView() {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const { isAuthReady } = useAuthContext();
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
-  const { data: config } = useGetSharedStartupConfig(shareId);
-  const { data, isLoading, refetch } = useGetSharedMessages(shareId ?? '');
+  const { data: config } = useGetSharedStartupConfig(shareId, { enabled: isAuthReady });
+  const { data, isLoading, isFetching, refetch } = useGetSharedMessages(shareId ?? '', {
+    enabled: isAuthReady,
+  });
   const dataTree = data && buildTree({ messages: data.messages });
   const messagesTree = dataTree?.length === 0 ? null : (dataTree ?? null);
 
@@ -170,7 +174,7 @@ function SharedView() {
   );
 
   let content: JSX.Element;
-  if (isLoading) {
+  if (!isAuthReady || isLoading) {
     content = (
       <div className="flex h-screen items-center justify-center">
         <Spinner className="" />
@@ -188,6 +192,8 @@ function SharedView() {
           onLangChange={handleLangChange}
           settingsLabel={localize('com_nav_settings')}
           continueLabel={localize('com_ui_continue_chat')}
+          langfuseSessionLabel={localize('com_ui_langfuse_view_session')}
+          langfuseSessionUrl={data.langfuseSessionUrl}
           onContinue={handleContinue}
           isContinuing={forkShare.isLoading}
         />
@@ -198,9 +204,12 @@ function SharedView() {
     );
   } else {
     content = (
-      <div className="flex h-screen items-center justify-center">
-        {localize('com_ui_shared_link_not_found')}
-      </div>
+      <SharedLinkUnavailable
+        message={localize('com_ui_shared_link_not_found')}
+        retryLabel={localize('com_ui_retry')}
+        isRetrying={isFetching}
+        onRetry={() => void refetch()}
+      />
     );
   }
 
@@ -235,13 +244,41 @@ function SharedView() {
 
   return (
     <ShareContext.Provider value={{ isSharedConvo: true, shareId }}>
-      <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
-        <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
-          {artifactsContainer}
-        </main>
-      </div>
-      <SharedSubagentActivityDialog shareId={shareId} />
+      <AppChatSurface>
+        <div className="relative flex h-screen w-full overflow-hidden dark:bg-surface-secondary">
+          <main className="relative flex w-full grow overflow-hidden dark:bg-surface-secondary">
+            {artifactsContainer}
+          </main>
+        </div>
+        <SharedSubagentActivityDialog shareId={shareId} />
+      </AppChatSurface>
     </ShareContext.Provider>
+  );
+}
+
+export function SharedLinkUnavailable({
+  message,
+  retryLabel,
+  isRetrying,
+  onRetry,
+}: {
+  message: string;
+  retryLabel: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4 px-4 text-center">
+      <p>{message}</p>
+      <Button type="button" variant="outline" onClick={onRetry} disabled={isRetrying}>
+        {isRetrying ? (
+          <Spinner className="size-4" />
+        ) : (
+          <RefreshCw className="size-4" aria-hidden="true" />
+        )}
+        {retryLabel}
+      </Button>
+    </div>
   );
 }
 
@@ -275,19 +312,23 @@ interface ShareHeaderProps {
   langcode: string;
   settingsLabel: string;
   continueLabel: string;
+  langfuseSessionLabel: string;
+  langfuseSessionUrl?: string;
   isContinuing: boolean;
   onContinue: () => void;
   onThemeChange: (value: string) => void;
   onLangChange: (value: string) => void;
 }
 
-function ShareHeader({
+export function ShareHeader({
   title,
   formattedDate,
   theme,
   langcode,
   settingsLabel,
   continueLabel,
+  langfuseSessionLabel,
+  langfuseSessionUrl,
   isContinuing,
   onContinue,
   onThemeChange,
@@ -318,7 +359,19 @@ function ShareHeader({
             )}
           </div>
 
-          <div className="flex items-center gap-2 md:self-start">
+          <div className="flex flex-wrap items-center justify-end gap-2 md:flex-nowrap md:self-start">
+            {langfuseSessionUrl && (
+              <Button
+                asChild
+                variant="outline"
+                className="gap-2 rounded-full border-border-medium px-4 py-2 text-sm text-text-primary"
+              >
+                <a href={langfuseSessionUrl} target="_blank" rel="noopener noreferrer">
+                  <span>{langfuseSessionLabel}</span>
+                  <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
+                </a>
+              </Button>
+            )}
             <Button
               type="button"
               variant="submit"

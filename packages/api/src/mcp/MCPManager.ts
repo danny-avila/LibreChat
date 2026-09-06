@@ -4,7 +4,8 @@ import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -12,6 +13,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
   isUserSourced,
@@ -31,6 +33,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isAbortError } from '~/utils/errors';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
@@ -46,6 +49,8 @@ function createOboToolCallErrorMessage(
     failureSuffix = 'Please retry.';
   } else if (error.reason === 'exchange_failed') {
     failureSuffix = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
+  } else if (error.reason === 'session_refresh_failed') {
+    failureSuffix = 'Please sign in again.';
   }
 
   return `${logPrefix} ${error.userMessage} Cannot execute tool ${toolName}. ${failureSuffix}`;
@@ -261,11 +266,33 @@ export class MCPManager extends UserConnectionManager {
    */
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
+    const registry = MCPServersRegistry.getInstance();
+    const serverConfig = await registry.getServerConfig(serverName, user?.id, args.configServers);
+
+    if (!serverConfig) {
+      logger.warn('[MCP][Discovery] Server configuration not found');
+      return { tools: null, oauthRequired: false, oauthUrl: null };
+    }
 
     try {
-      const existingAppConnection = await this.appConnections?.get(serverName);
-      if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot();
+      const useAppConnection =
+        canUseAppConnection(serverConfig) &&
+        (await registry.isAppServerConfig(serverName, serverConfig));
+      const existingAppConnection = useAppConnection
+        ? await this.appConnections?.get(serverName)
+        : null;
+      /** Cancels the shared connection's health probe and `tools/list` for THIS caller only —
+       *  an aborted probe reports false without touching the shared connection's state. Combines
+       *  the budget with the caller's own signal so cancelling the request also stops the work. */
+      const budgetSignal =
+        existingAppConnection != null
+          ? createDeadlineAbortSignal(args.deadlineMs, args.signal)
+          : undefined;
+      if (existingAppConnection && (await existingAppConnection.isConnected(budgetSignal))) {
+        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(
+          args.deadlineMs,
+          budgetSignal,
+        );
         return {
           tools: snapshot.complete ? snapshot.tools : null,
           oauthRequired: false,
@@ -276,14 +303,16 @@ export class MCPManager extends UserConnectionManager {
       logger.debug('[MCP][Discovery] App connection unavailable; trying discovery mode');
     }
 
-    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
-      serverName,
-      user?.id,
-      args.configServers,
-    );
-
-    if (!serverConfig) {
-      logger.warn('[MCP][Discovery] Server configuration not found');
+    /** A probe aborted by the caller is not a dead server: falling through here would open a
+     *  fresh connection on behalf of a request that no longer exists (or a budget already
+     *  spent), and the fallback keeps running after the caller has gone. */
+    if (
+      args.signal?.aborted === true ||
+      (args.deadlineMs != null && Date.now() >= args.deadlineMs)
+    ) {
+      logger.debug(
+        '[MCP][Discovery] Caller cancelled or budget spent; skipping discovery fallback',
+      );
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
@@ -298,7 +327,6 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const registry = MCPServersRegistry.getInstance();
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
@@ -347,6 +375,8 @@ export class MCPManager extends UserConnectionManager {
         requestBody: args.requestBody,
         graphTokenResolver: args.graphTokenResolver,
         connectionTimeout: args.connectionTimeout,
+        deadlineMs: args.deadlineMs,
+        signal: args.signal,
       });
       return finalizeDiscoveryResult(result);
     }
@@ -367,8 +397,11 @@ export class MCPManager extends UserConnectionManager {
       requestBody: args.requestBody,
       graphTokenResolver: args.graphTokenResolver,
       connectionTimeout: args.connectionTimeout,
+      deadlineMs: args.deadlineMs,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
+      upstreamTokenProvider: args.upstreamTokenProvider,
+      oboIdentityContext: args.oboIdentityContext,
     });
 
     return finalizeDiscoveryResult(result);
@@ -418,12 +451,18 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
     serverConfig?: t.ParsedServerConfig,
+    options?: { deadlineMs?: number; signal?: AbortSignal },
   ): Promise<{
     tools: t.LCAvailableTools | null;
     publicationGeneration?: string;
     publicationRevision?: string;
   }> {
     try {
+      const signal = createDeadlineAbortSignal(options?.deadlineMs, options?.signal);
+      const readToolCatalog = (connection: MCPConnection) =>
+        options == null
+          ? MCPServerInspector.getToolCatalog(serverName, connection)
+          : MCPServerInspector.getToolCatalog(serverName, connection, options.deadlineMs, signal);
       const registry = MCPServersRegistry.getInstance();
       const effectiveConfig = serverConfig ?? (await registry.getServerConfig(serverName, userId));
       const useAppConnection =
@@ -434,7 +473,7 @@ export class MCPManager extends UserConnectionManager {
         ? await this.appConnections?.get(serverName)
         : null;
       if (existingAppConnection != null) {
-        return MCPServerInspector.getToolCatalog(serverName, existingAppConnection);
+        return readToolCatalog(existingAppConnection);
       }
 
       let awaitedRecovery: Promise<void> | undefined;
@@ -475,12 +514,12 @@ export class MCPManager extends UserConnectionManager {
         if (recovery && recovery !== awaitedRecovery) {
           awaitedRecovery = recovery;
           await this.releaseConnection(connection);
-          await this.waitForConnectionRecovery(recovery);
+          await this.waitForConnectionRecovery(recovery, signal);
           continue;
         }
 
         try {
-          const { tools } = await MCPServerInspector.getToolCatalog(serverName, connection);
+          const { tools } = await readToolCatalog(connection);
           const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
           if (
             publicationGeneration != null &&
@@ -788,6 +827,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
+    upstreamTokenProvider,
+    oboIdentityContext,
   }: {
     user?: IUser;
     serverName: string;
@@ -807,6 +848,8 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
+    upstreamTokenProvider?: UpstreamTokenProvider;
+    oboIdentityContext?: AuthIdentityContext;
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -866,6 +909,8 @@ Please follow these instructions when using tools from the respective MCP server
             oauthEnd,
             oboTokenResolver,
             oboTrustChecker,
+            upstreamTokenProvider,
+            oboIdentityContext,
             graphTokenResolver,
             signal: options?.signal,
             customUserVars,
@@ -955,9 +1000,27 @@ Please follow these instructions when using tools from the respective MCP server
         const resolvedHeaders: Record<string, string> =
           'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
 
-        /** Refresh OBO token on each tool call to ensure it's current */
         const oboConfig = rawConfig.obo;
-        if (oboConfig && oboTokenResolver && user) {
+        const usesObo = Boolean(oboConfig && oboTokenResolver && user);
+
+        /**
+         * Resolves the downstream token for this call and installs it as the request
+         * bearer. `forceRefresh` bypasses the resolver's cache, which is what a
+         * rejected credential needs: a revoked or scope-invalidated token is still
+         * inside its cached lifetime, so a cached read returns the same dead bearer.
+         */
+        const applyOboAuthorization = async (forceRefresh: boolean): Promise<void> => {
+          if (!oboConfig || !oboTokenResolver || !user) {
+            return;
+          }
+          if (!upstreamTokenProvider) {
+            throw new McpError(
+              ErrorCode.InternalError,
+              `${logPrefix} Internal: upstreamTokenProvider not plumbed for OBO tool call. ` +
+                'OBO requires a live upstream-token closure; the caller must construct one via ' +
+                'createOpenIDSessionTokenProvider() and forward it through callTool().',
+            );
+          }
           const oboTrusted = oboTrustChecker
             ? await oboTrustChecker({
                 source: rawConfig.source,
@@ -976,7 +1039,14 @@ Please follow these instructions when using tools from the respective MCP server
           }
           let oboTokens: MCPOAuthTokens;
           try {
-            oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+            oboTokens = await resolveOboToken(
+              user,
+              oboConfig,
+              oboTokenResolver,
+              upstreamTokenProvider,
+              oboIdentityContext,
+              forceRefresh,
+            );
           } catch (error) {
             if (error instanceof OboTokenResolutionError) {
               throw new McpError(
@@ -994,7 +1064,18 @@ Please follow these instructions when using tools from the respective MCP server
             );
           }
           resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
-        }
+          /**
+           * Runtime request headers do not reach a legacy SSE connection's event
+           * stream — `eventSourceInit.fetch` bypasses `createFetchFunction` and sends
+           * the headers `constructTransport` captured from `oauthTokens`. Without
+           * this the next transport rebuild re-bakes the rejected bearer, 401s, and
+           * retires a connection that had already recovered.
+           */
+          connection!.setOAuthTokens(oboTokens);
+        };
+
+        /** Resolve the current OBO token for this tool call; the resolver may serve cached tokens. */
+        await applyOboAuthorization(false);
         if (
           userId &&
           user &&
@@ -1091,41 +1172,58 @@ Please follow these instructions when using tools from the respective MCP server
         try {
           result = await requestTool();
         } catch (error) {
-          const requestOAuthHandler = attachSharedOAuthHandler;
-          if (!requestOAuthHandler || !userId) {
-            throw error;
-          }
-
-          if (!connection.isOAuthAuthenticationError(error)) {
-            throw error;
-          }
-
-          try {
-            await waitForRecoveryWithoutLease(() =>
-              this.recoverOAuthConnection(
-                connection!,
-                error,
-                serverName,
-                userId,
-                requestOAuthHandler,
-                oauthStart,
-                oauthEnd,
-                flowManager,
-                options?.signal,
-                !recoveryTakeoverConsumed,
-              ),
+          /**
+           * An OBO server rejecting the bearer mid-session is recoverable here and
+           * nowhere else: the downstream token is minted from the upstream session
+           * this request still holds, and `attachSharedOAuthHandler` is never set for
+           * an OBO-only config, so the OAuth recovery below would rethrow untouched.
+           * Without this the rejected token is re-served from cache on every later
+           * call until it expires.
+           */
+          if (usesObo && connection.isOAuthAuthenticationError(error)) {
+            logger.info(
+              `${logPrefix}[${toolName}] OBO token rejected by server; re-exchanging and retrying once`,
             );
-          } catch (recoveryError) {
-            if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
-              throw recoveryError;
+            await applyOboAuthorization(true);
+            connection.setRequestHeaders(resolvedHeaders);
+            result = await requestTool();
+          } else {
+            const requestOAuthHandler = attachSharedOAuthHandler;
+            if (!requestOAuthHandler || !userId) {
+              throw error;
             }
-            if (options?.signal?.aborted) {
-              throw recoveryError;
+
+            if (!connection.isOAuthAuthenticationError(error)) {
+              throw error;
             }
-            logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
-            throw error;
+
+            try {
+              await waitForRecoveryWithoutLease(() =>
+                this.recoverOAuthConnection(
+                  connection!,
+                  error,
+                  serverName,
+                  userId,
+                  requestOAuthHandler,
+                  oauthStart,
+                  oauthEnd,
+                  flowManager,
+                  options?.signal,
+                  !recoveryTakeoverConsumed,
+                ),
+              );
+            } catch (recoveryError) {
+              if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+                throw recoveryError;
+              }
+              if (options?.signal?.aborted) {
+                throw recoveryError;
+              }
+              logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
+              throw error;
+            }
+            result = await requestTool();
           }
-          result = await requestTool();
         }
         const hasPersistentUserConnections =
           !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
@@ -1138,6 +1236,14 @@ Please follow these instructions when using tools from the respective MCP server
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
           continue;
+        }
+        /** A user Stop aborts the in-flight request; that rejection is the
+         *  cancellation working, not a fault, so it stays out of the error log.
+         *  The error must look like an abort too — a real failure can reject in
+         *  the same tick as the Stop and has to stay visible. */
+        if (options?.signal?.aborted === true && isAbortError(error)) {
+          logger.debug(`${logPrefix}[${toolName}] Tool call cancelled by user abort`);
+          throw error;
         }
         // Log with context and re-throw or handle as needed
         logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);

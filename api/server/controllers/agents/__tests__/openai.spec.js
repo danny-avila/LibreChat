@@ -26,6 +26,27 @@ const mockCompletionUsage = {
   subagent: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 },
 };
 const mockBuildCompletionUsage = jest.fn().mockReturnValue(mockCompletionUsage);
+const mockEnrollAgentExecution = jest.fn();
+let mockExecution;
+
+function resetMockExecution() {
+  const controller = new AbortController();
+  mockExecution = {
+    signal: controller.signal,
+    abort: jest.fn((reason) => controller.abort(reason)),
+    track: jest.fn((promise) => promise),
+    beginProviderExecution: jest.fn(async () => {
+      if (controller.signal.aborted) {
+        throw Object.assign(new Error('request disconnected'), {
+          code: 'RUN_REPLACED',
+          status: 409,
+        });
+      }
+    }),
+    settle: jest.fn().mockResolvedValue(undefined),
+  };
+  mockEnrollAgentExecution.mockResolvedValue(mockExecution);
+}
 const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
 const mockGetSafeErrorMetadata = jest.fn((error) => {
   const status = error?.status ?? error?.statusCode ?? error?.response?.status;
@@ -152,6 +173,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  createAgentExecutionContext: (context) => context,
   collectReachableAgents: (roots) => {
     const agents = [];
     const pending = [...roots];
@@ -181,7 +203,7 @@ jest.mock('@librechat/api', () => ({
   buildAgentContextAttachmentsByAgentId: (...args) =>
     mockBuildAgentContextAttachmentsByAgentId(...args),
   createChunk: jest.fn().mockReturnValue({}),
-  buildToolSet: jest.fn().mockReturnValue(new Set()),
+  buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
@@ -257,6 +279,14 @@ jest.mock('@librechat/api', () => ({
   hasModelBoundContentProtection: mockHasModelBoundContentProtection,
   isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
   getSafeErrorMetadata: mockGetSafeErrorMetadata,
+  /** Mirrors the real helper's contract: generic copy under content protection, otherwise the
+   *  provider's own message. Stripping of LangChain's docs URL is covered in its own unit test. */
+  getUserFacingProviderError: (error, protectionEnabled) => {
+    if (protectionEnabled) {
+      return 'An error occurred while processing the request';
+    }
+    return error instanceof Error ? error.message : 'An error occurred';
+  },
   contentFilterBlockResponse: jest.fn().mockReturnValue({
     error: 'content_filter_block',
     message: 'Submitted content was blocked.',
@@ -274,6 +304,53 @@ jest.mock('@librechat/api', () => ({
     userMCPAuthMap: undefined,
   }),
   resolveSubagentGraphs: jest.fn().mockResolvedValue(undefined),
+  executeAgentRun: async ({
+    envelope,
+    runId,
+    conversationId,
+    connection,
+    isPrincipalActive,
+    execute,
+    handleExecutionError,
+    beforeSettle,
+  }) => {
+    let execution;
+    let executionError;
+    let closed = connection?.isClosed() ?? false;
+    const removeCloseListener =
+      connection?.onClose(() => {
+        closed = true;
+        execution?.abort();
+      }) ?? (() => undefined);
+    try {
+      execution = await mockEnrollAgentExecution({
+        runId,
+        userId: envelope.principal.userId,
+        conversationId,
+        agentId: envelope.payload.model,
+        protocol: envelope.protocol,
+        isPrincipalActive,
+      });
+      if (closed || connection?.isClosed() === true) execution.abort();
+      await execution.beginProviderExecution();
+      return await execute(execution);
+    } catch (error) {
+      executionError = error;
+      if (handleExecutionError) return await handleExecutionError(error);
+      throw error;
+    } finally {
+      removeCloseListener();
+      if (execution) {
+        await beforeSettle?.(execution, executionError);
+        await execution.settle(executionError);
+      }
+    }
+  },
+  waitForAgentExecutionWrites: async (writes) => {
+    const results = await Promise.allSettled(writes);
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
+  },
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -365,6 +442,7 @@ jest.mock('~/models', () => ({
   getConvoFiles: jest.fn().mockResolvedValue([]),
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   getConvo: jest.fn().mockResolvedValue(null),
+  isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
 describe('OpenAIChatCompletionController', () => {
@@ -373,6 +451,7 @@ describe('OpenAIChatCompletionController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetMockExecution();
 
     const controller = require('../openai');
     OpenAIChatCompletionController = controller.OpenAIChatCompletionController;
@@ -389,7 +468,8 @@ describe('OpenAIChatCompletionController', () => {
           agents: { allowedProviders: ['openAI'] },
         },
       },
-      on: jest.fn(),
+      once: jest.fn(),
+      off: jest.fn(),
     };
 
     res = {
@@ -399,7 +479,83 @@ describe('OpenAIChatCompletionController', () => {
       flushHeaders: jest.fn(),
       end: jest.fn(),
       write: jest.fn(),
+      once: jest.fn(),
+      off: jest.fn(),
     };
+  });
+
+  it('enrolls, starts, and settles the remote execution lifecycle', async () => {
+    await OpenAIChatCompletionController(req, res);
+
+    expect(mockEnrollAgentExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: 'chatcmpl-mock-nanoid-123',
+        userId: 'user-123',
+        agentId: 'agent-123',
+        protocol: 'chat.completions',
+      }),
+    );
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
+    expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
+      require('@librechat/api').initializeAgent.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
+      mockProcessStream.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.settle).toHaveBeenCalledWith(undefined);
+    expect(res.once).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(res.off).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it('covers artifact writes when provider execution fails', async () => {
+    const providerError = new Error('provider aborted');
+    const artifactWrite = Promise.resolve(null);
+    const { createToolEndCallback } = require('~/server/controllers/agents/callbacks');
+    createToolEndCallback.mockImplementationOnce(({ artifactPromises }) => {
+      artifactPromises.push(artifactWrite);
+      return jest.fn();
+    });
+    mockProcessStream.mockRejectedValueOnce(providerError);
+
+    await OpenAIChatCompletionController(req, res);
+
+    expect(mockExecution.track).toHaveBeenCalledWith(expect.any(Promise));
+    expect(mockExecution.track.mock.invocationCallOrder[0]).toBeLessThan(
+      mockExecution.settle.mock.invocationCallOrder[0],
+    );
+    expect(mockExecution.settle).toHaveBeenCalledWith(providerError);
+  });
+
+  it('does not initialize a provider after disconnecting during enrollment', async () => {
+    let finishEnrollment;
+    mockEnrollAgentExecution.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishEnrollment = resolve;
+        }),
+    );
+
+    const request = OpenAIChatCompletionController(req, res);
+    await Promise.resolve();
+    res.once.mock.calls[0][1]();
+    finishEnrollment(mockExecution);
+    await request;
+
+    expect(mockExecution.abort).toHaveBeenCalledTimes(1);
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
+    expect(require('@librechat/api').initializeAgent).not.toHaveBeenCalled();
+    expect(mockExecution.settle).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'RUN_REPLACED' }),
+    );
+  });
+
+  it('does not treat a consumed request stream as a response disconnect', async () => {
+    req.destroyed = true;
+
+    await OpenAIChatCompletionController(req, res);
+
+    expect(mockExecution.abort).not.toHaveBeenCalled();
+    expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
   });
 
   it('resolves saved graph subagents for remote chat-completion runs', async () => {
@@ -1176,9 +1332,10 @@ describe('OpenAIChatCompletionController', () => {
       req.user = {
         id: 'user-123',
         role: 'USER',
-        tenantId: 'tenant-123',
+        tenantId: 'stale-user-tenant',
         federatedTokens: { access_token: 'secret' },
       };
+      req.tenantId = 'request-tenant';
       const requestBody = {
         ...req.body,
         ephemeralAgent: { skills: true },
@@ -1194,7 +1351,10 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
         expect.objectContaining({
           protocol: 'chat.completions',
-          principal: req.user,
+          principal: {
+            ...req.user,
+            tenantId: 'request-tenant',
+          },
           payload: requestBody,
           requestId: expect.any(String),
           receivedAt: expect.any(Number),
@@ -1203,6 +1363,15 @@ describe('OpenAIChatCompletionController', () => {
       expect(mockCreateAgentRunEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
         initializeAgent.mock.invocationCallOrder[0],
       );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtime: expect.objectContaining({
+            turnStartedAt: mockCreateAgentRunEnvelope.mock.results[0].value.receivedAt,
+          }),
+        }),
+        expect.anything(),
+      );
+      expect(req.turnStartedAt).toBe(mockCreateAgentRunEnvelope.mock.results[0].value.receivedAt);
       expect(req.body).not.toBe(requestBody);
       expect(req.body).toEqual(requestBody);
       expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(

@@ -6,6 +6,7 @@ import {
 } from 'librechat-data-provider';
 import type { Action } from 'librechat-data-provider';
 import type { AgentItem, AgentItemKind } from './types';
+import { isFileBackedCapabilityEnabled } from './capabilities';
 
 export interface FormSelection {
   execute_code: boolean;
@@ -35,12 +36,14 @@ export function itemKey(item: Pick<AgentItem, 'kind' | 'id'>): string {
 function isBuiltinSelected(item: AgentItem, form: FormSelection): boolean {
   if (item.kind !== 'builtin') return false;
   switch (item.id) {
+    /** File-backed built-ins share their on/off rule with removal and persistence
+     *  (see `capabilities.ts`), so the three cannot drift apart again. */
     case 'execute_code':
-      return form.execute_code || form.code_files.length > 0;
+      return isFileBackedCapabilityEnabled(form.execute_code, form.code_files.length);
     case 'web_search':
       return form.web_search;
     case 'file_search':
-      return form.file_search || form.knowledge_files.length > 0;
+      return isFileBackedCapabilityEnabled(form.file_search, form.knowledge_files.length);
     case 'memory':
       return form.memory;
     case 'artifacts':

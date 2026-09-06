@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useRecoilValue, useResetRecoilState } from 'recoil';
+import { useAtom } from 'jotai';
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
-import { activeSubagentPanel } from '~/store/subagents';
+import { SubagentActivityScrollSurface } from './SubagentActivity';
+import SubagentConversation from './SubagentConversation';
 import { adaptLivePersistedActivity } from './adapters';
-import SubagentActivity from './SubagentActivity';
+import { activeSubagentPanel } from './state';
 import { useLocalize } from '~/hooks';
 
 /** Public-share fallback for subagent activity already embedded in the shared message payload. */
 export default function SharedSubagentActivityDialog({ shareId }: { shareId?: string }) {
   const localize = useLocalize();
-  const selected = useRecoilValue(activeSubagentPanel);
-  const resetSelection = useResetRecoilState(activeSubagentPanel);
+  const [selected, setSelected] = useAtom(activeSubagentPanel);
+  const resetSelection = useCallback(() => setSelected(null), [setSelected]);
   const selection = selected?.host === 'share' && selected.shareId === shareId ? selected : null;
   const restoreSelectionRef = useRef(selection);
   if (selection != null) restoreSelectionRef.current = selection;
@@ -67,14 +68,23 @@ export default function SharedSubagentActivityDialog({ shareId }: { shareId?: st
             {activity.title}
           </OGDialogTitle>
         </OGDialogHeader>
-        <SubagentActivity
-          activityId={
-            selection == null
-              ? undefined
-              : `${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`
-          }
-          activity={activity}
-        />
+        <SubagentActivityScrollSurface padded={false}>
+          <SubagentConversation
+            turns={[
+              {
+                taskId:
+                  selection == null
+                    ? 'shared-subagent'
+                    : `${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`,
+                trigger: {
+                  kind: 'parent_dispatch',
+                  summary: selection?.prompt ?? '',
+                },
+                activity,
+              },
+            ]}
+          />
+        </SubagentActivityScrollSurface>
       </OGDialogContent>
     </OGDialog>
   );

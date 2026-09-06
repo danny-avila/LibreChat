@@ -59,9 +59,12 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     prepareAgentTriggerUserPurge: jest.fn().mockResolvedValue(undefined),
     cancelAgentTriggerUserPurge: jest.fn().mockResolvedValue(true),
     purgeAgentTriggerDeliveriesForUser: jest.fn().mockResolvedValue(undefined),
+    revokeUserCodeEnvironmentWorkers: jest.fn().mockResolvedValue(0),
     deleteUserById: jest
       .fn()
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
+    deleteUserCodeEnvironments: jest.fn().mockResolvedValue(0),
+    invalidateCodeEnvironmentConfigCache: jest.fn().mockResolvedValue(undefined),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -435,7 +438,7 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.countUsers).not.toHaveBeenCalled();
     });
 
-    it('cascades cleanup of Config and AclEntries', async () => {
+    it('cascades cleanup of Config, code environments, and AclEntries', async () => {
       const result: UserDeleteResult = {
         deletedCount: 1,
         message: 'User was deleted successfully.',
@@ -448,6 +451,8 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(deps.deleteConfig).toHaveBeenCalledWith(PrincipalType.USER, validUserId);
+      expect(deps.deleteUserCodeEnvironments).toHaveBeenCalledWith(expect.any(Types.ObjectId));
+      expect(deps.invalidateCodeEnvironmentConfigCache).toHaveBeenCalledWith(undefined);
       expect(deps.deleteAclEntries).toHaveBeenCalledWith({
         principalType: PrincipalType.USER,
         principalId: expect.any(Types.ObjectId),
@@ -472,6 +477,19 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith({ message: 'User was deleted successfully.' });
     });
 
+    it('preserves code environment records when revocation marking fails', async () => {
+      const deps = createDeps({
+        revokeUserCodeEnvironmentWorkers: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(deps.deleteUserById).toHaveBeenCalledWith(validUserId);
+      expect(deps.deleteUserCodeEnvironments).not.toHaveBeenCalled();
+    });
+
     it('does not cascade when user is not found', async () => {
       const result: UserDeleteResult = { deletedCount: 0, message: '' };
       const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
@@ -482,6 +500,7 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(deps.deleteConfig).not.toHaveBeenCalled();
+      expect(deps.deleteUserCodeEnvironments).not.toHaveBeenCalled();
       expect(deps.deleteAclEntries).not.toHaveBeenCalled();
       expect(deps.purgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
       expect(deps.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(
@@ -579,12 +598,18 @@ describe('createAdminUsersHandlers', () => {
       const drainOrder = (deps.drainAgentTriggerDeliveriesForUser as jest.Mock).mock
         .invocationCallOrder[0];
       const deleteOrder = (deps.deleteUserById as jest.Mock).mock.invocationCallOrder[0];
+      const revokeCodeOrder = (deps.revokeUserCodeEnvironmentWorkers as jest.Mock).mock
+        .invocationCallOrder[0];
+      const deleteCodeOrder = (deps.deleteUserCodeEnvironments as jest.Mock).mock
+        .invocationCallOrder[0];
       const purgeOrder = (deps.purgeAgentTriggerDeliveriesForUser as jest.Mock).mock
         .invocationCallOrder[0];
       expect(beginOrder).toBeLessThan(drainOrder);
       expect(beginOrder).toBeLessThan(prepareOrder);
       expect(prepareOrder).toBeLessThan(drainOrder);
       expect(drainOrder).toBeLessThan(deleteOrder);
+      expect(deleteOrder).toBeLessThan(revokeCodeOrder);
+      expect(revokeCodeOrder).toBeLessThan(deleteCodeOrder);
       expect(deleteOrder).toBeLessThan(purgeOrder);
     });
 

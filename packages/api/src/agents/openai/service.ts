@@ -25,6 +25,7 @@ import type {
   MessageFilterConfig,
   MessageFilterPiiConfig,
   StatefulCodeEnvironment,
+  TAgentsEndpoint,
 } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
@@ -43,6 +44,7 @@ import type {
   TextContentFragment,
   FileContentInput,
 } from '~/protection';
+import type { InitializeAgentParams as CoreInitializeAgentParams } from '../initialize';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
 import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
@@ -70,18 +72,11 @@ import {
 import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import { contentFilterUninspectableResponse } from '~/protection/files';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
+import { getUserFacingProviderError } from '../errors';
 import { collectReachableAgents } from '../traversal';
+import { resolveRecursionLimit } from '../config';
 import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
-
-const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
-
-function getUserFacingProviderError(error: unknown, protectionEnabled: boolean): string {
-  if (protectionEnabled) {
-    return GENERIC_PROVIDER_ERROR;
-  }
-  return error instanceof Error ? error.message : 'An error occurred';
-}
 
 /**
  * Dependencies for the chat completion service
@@ -171,6 +166,7 @@ interface InitializedAgent {
   subagentAgentConfigs?: InitializedAgent[];
   /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
   intentToolNames?: string[];
+  recursion_limit?: number;
   [key: string]: unknown;
 }
 
@@ -185,7 +181,7 @@ interface InitializeAgentParams {
   parentMessageId?: string | null;
   requestBody?: MCPRuntimeRequestBody;
   requestFiles?: unknown[];
-  loadTools?: LoadToolsFn;
+  loadTools?: NonNullable<CoreInitializeAgentParams['loadTools']>;
   endpointOption?: Record<string, unknown>;
   allowedProviders: Set<string>;
   isInitialAgent?: boolean;
@@ -691,6 +687,17 @@ export async function createAgentChatCompletion(
     const backgroundToolsAvailable = capabilityEnabled(AgentCapabilities.run_in_background);
     /** Same gate for the injected `intent` label param. */
     const toolIntentsAvailable = capabilityEnabled(AgentCapabilities.tool_intents);
+    const loadTools: InitializeAgentParams['loadTools'] = deps.loadAgentTools
+      ? async (params) => {
+          const result = await deps.loadAgentTools!({
+            req,
+            res,
+            ...params,
+            requestBody: mcpRequestBody,
+          });
+          return result as Awaited<ReturnType<NonNullable<CoreInitializeAgentParams['loadTools']>>>;
+        }
+      : undefined;
 
     // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
@@ -700,7 +707,7 @@ export async function createAgentChatCompletion(
       conversationId,
       parentMessageId: request.parent_message_id,
       requestBody: mcpRequestBody,
-      loadTools: deps.loadAgentTools,
+      loadTools,
       endpointOption: {
         endpoint: agent.provider,
         model_parameters: agent.model_parameters ?? {},
@@ -815,6 +822,10 @@ export async function createAgentChatCompletion(
                 ? { intentToolNames: initializedAgent.intentToolNames }
                 : {}),
             },
+            recursionLimit: resolveRecursionLimit(
+              agentsConfig as Partial<TAgentsEndpoint> | undefined,
+              initializedAgent,
+            ),
             signal: abortController.signal,
             streamMode: 'values',
             version: 'v2',

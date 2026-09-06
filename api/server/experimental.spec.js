@@ -45,6 +45,19 @@ describe('Experimental server configuration', () => {
     expect(source.match(/initializeScheduleErasureSweep\(\);/g)).toHaveLength(1);
   });
 
+  it('starts code-environment lifecycle reconciliation after Mongo connects in each worker', () => {
+    const connectIndex = source.indexOf('await connectDb();');
+    const reconcileIndex = source.indexOf('startCodeEnvironmentLifecycleReconciler({ mongoose });');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(reconcileIndex).toBeGreaterThan(connectIndex);
+    expect(listenIndex).toBeGreaterThan(reconcileIndex);
+    expect(
+      source.match(/startCodeEnvironmentLifecycleReconciler\(\{ mongoose \}\);/g),
+    ).toHaveLength(1);
+  });
+
   it('never arms the full schedule engine in a clustered worker', () => {
     // The clustered entrypoint runs erasure-only maintenance: arming the engine here
     // would claim/fire/absence-reconcile runs whose peer generations it cannot see.
@@ -66,6 +79,20 @@ describe('Experimental server configuration', () => {
     expect(redisReadyIndex).toBeGreaterThan(-1);
     expect(routingIndex).toBeGreaterThan(redisReadyIndex);
     expect(listenIndex).toBeGreaterThan(routingIndex);
+  });
+
+  it('projects base-only event rollout barriers before accepting requests', () => {
+    const baseConfigIndex = source.indexOf(
+      'const baseAppConfig = await getAppConfig({ baseOnly: true });',
+    );
+    const eventRuntimeIndex = source.indexOf(
+      'configureAgentEventRuntime(baseAppConfig?.endpoints?.agents?.eventDriven);',
+    );
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(baseConfigIndex).toBeGreaterThan(-1);
+    expect(eventRuntimeIndex).toBeGreaterThan(baseConfigIndex);
+    expect(listenIndex).toBeGreaterThan(eventRuntimeIndex);
   });
 
   it('matches the standard server pre-authentication tenant routes', () => {

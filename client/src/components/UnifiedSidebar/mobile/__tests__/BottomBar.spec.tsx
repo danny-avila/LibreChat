@@ -21,6 +21,8 @@ jest.mock('@librechat/client', () => ({
     children: React.ReactNode;
     asChild?: boolean;
   }) => <div {...props}>{children}</div>,
+  /** The real `useNewChat` pulls the file-deletion mutation, which reads the toast context. */
+  useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
 jest.mock('~/Providers', () => ({

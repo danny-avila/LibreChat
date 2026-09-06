@@ -93,8 +93,13 @@ const shrinkStringField = <T extends SubagentActivityItem>(
 
 const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentActivityItem => {
   if (serializedBytes([item]) <= MAX_ACTIVITY_BYTES) return item;
-  if (item.type === 'writing') return shrinkStringField(item, 'text', 'textTruncated');
-  if (item.type === 'reasoning') return item;
+  if (item.type === 'writing' || item.type === 'reasoning') {
+    return shrinkStringField(item, 'text', 'textTruncated');
+  }
+  if (item.type === 'activity_label') {
+    const withoutAssociations = { ...item, toolCallIds: undefined, agentIds: undefined };
+    return shrinkStringField(withoutAssociations, 'label', 'labelTruncated');
+  }
 
   // Preserve the terminal output as long as possible: discard oversized input
   // first, then trim output and finally public identity fields if a provider
@@ -108,21 +113,183 @@ const fitNewestItemToSerializedBudget = (item: SubagentActivityItem): SubagentAc
   return shrinkStringField(tool, 'toolCallId');
 };
 
-const visibleContent = (value: unknown): { text: string; hasReasoning: boolean } => {
-  if (typeof value === 'string') return { text: value, hasReasoning: false };
-  if (!Array.isArray(value)) return { text: '', hasReasoning: false };
+const boundActivity = (items: SubagentActivityItem[], sourceTruncated: boolean): Projection => {
+  let activity = items;
+  let truncated = sourceTruncated;
+  if (activity.length > MAX_ACTIVITY_ITEMS) {
+    activity = activity.slice(-MAX_ACTIVITY_ITEMS);
+    truncated = true;
+  }
+  while (activity.length > 1 && serializedBytes(activity) > MAX_ACTIVITY_BYTES) {
+    activity.shift();
+    truncated = true;
+  }
+  if (activity.length === 1 && serializedBytes(activity) > MAX_ACTIVITY_BYTES) {
+    activity[0] = fitNewestItemToSerializedBudget(activity[0]);
+    truncated = true;
+  }
+  return { activity, truncated };
+};
+
+const visibleStatus = (value: unknown): 'running' | 'completed' | 'failed' | 'cancelled' => {
+  if (value === 'completed' || value === 'failed' || value === 'cancelled') return value;
+  return 'running';
+};
+
+const finiteNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const stringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const result = value.filter((candidate): candidate is string => typeof candidate === 'string');
+  return result.length === 0 ? undefined : result;
+};
+
+/**
+ * Validates the storage-bounded ordinary message-content projection. This is
+ * the durable fallback for runs that persisted normal LibreChat content but
+ * did not write a separate private subagent transcript.
+ */
+export function projectPersistedMessageActivity(
+  value: unknown,
+  sourceTruncated = false,
+): Projection {
+  if (!Array.isArray(value)) return { activity: [], truncated: sourceTruncated };
+  let truncated = sourceTruncated;
+  const activity = value.flatMap((candidate): SubagentActivityItem[] => {
+    if (!isRecord(candidate) || typeof candidate.type !== 'string') {
+      truncated = true;
+      return [];
+    }
+    if (candidate.type === 'writing') {
+      if (typeof candidate.text !== 'string') {
+        truncated = true;
+        return [];
+      }
+      return [
+        {
+          type: 'writing',
+          text: candidate.text,
+          ...(candidate.textTruncated === true ? { textTruncated: true } : {}),
+        },
+      ];
+    }
+    if (candidate.type === 'reasoning') {
+      return [
+        {
+          type: 'reasoning',
+          ...(typeof candidate.text === 'string' && candidate.text !== ''
+            ? { text: candidate.text }
+            : {}),
+          ...(candidate.textTruncated === true ? { textTruncated: true } : {}),
+        },
+      ];
+    }
+    if (candidate.type === 'activity_label') {
+      if (typeof candidate.label !== 'string') {
+        truncated = true;
+        return [];
+      }
+      const toolCallIds = stringArray(candidate.toolCallIds);
+      const agentIds = stringArray(candidate.agentIds);
+      const activityStartIndex = finiteNumber(candidate.activityStartIndex);
+      const activityEndIndex = finiteNumber(candidate.activityEndIndex);
+      const activityCount = finiteNumber(candidate.activityCount);
+      return [
+        {
+          type: 'activity_label',
+          label: candidate.label,
+          ...(candidate.labelType === 'phase' ? { labelType: 'phase' as const } : {}),
+          ...(toolCallIds == null ? {} : { toolCallIds }),
+          ...(activityStartIndex == null ? {} : { activityStartIndex }),
+          ...(activityEndIndex == null ? {} : { activityEndIndex }),
+          ...(activityCount == null ? {} : { activityCount }),
+          ...(agentIds == null ? {} : { agentIds }),
+          ...(candidate.status === 'ok' ||
+          candidate.status === 'partial' ||
+          candidate.status === 'failed'
+            ? { status: candidate.status }
+            : {}),
+          ...(typeof candidate.pending === 'boolean' ? { pending: candidate.pending } : {}),
+          ...(candidate.labelTruncated === true ? { labelTruncated: true } : {}),
+        },
+      ];
+    }
+    if (candidate.type !== 'tool') {
+      truncated = true;
+      return [];
+    }
+    if (typeof candidate.toolCallId !== 'string' || typeof candidate.name !== 'string') {
+      truncated = true;
+      return [];
+    }
+    const completed =
+      finiteNumber(candidate.progress) != null && finiteNumber(candidate.progress)! >= 1;
+    const output = typeof candidate.output === 'string' ? candidate.output : undefined;
+    const runStepStatus = visibleStatus(candidate.runStepStatus);
+    let status: MutableToolActivity['status'] = runStepStatus;
+    if (candidate.runStepStatus == null) {
+      status = completed || output != null ? 'completed' : 'running';
+    }
+    return [
+      {
+        type: 'tool',
+        toolCallId: candidate.toolCallId,
+        name: candidate.name,
+        ...(typeof candidate.input === 'string' && candidate.input !== ''
+          ? { input: candidate.input }
+          : {}),
+        ...(output == null || output === '' ? {} : { output }),
+        status,
+        ...(candidate.inputValidationError === true ? { inputValidationError: true } : {}),
+        ...(candidate.inputTruncated === true ? { inputTruncated: true } : {}),
+        ...(candidate.outputTruncated === true ? { outputTruncated: true } : {}),
+      },
+    ];
+  });
+  return boundActivity(activity, truncated);
+}
+
+/** Validates a storage-bounded, settlement-time public activity projection. */
+export function projectPersistedMessageActivityJson(
+  activityJson: string,
+  sourceTruncated = false,
+): Projection {
+  try {
+    return projectPersistedMessageActivity(JSON.parse(activityJson) as unknown, sourceTruncated);
+  } catch {
+    return { activity: [], truncated: true };
+  }
+}
+
+const reasoningBlockText = (block: Record<string, unknown>): string => {
+  if (typeof block.reasoning === 'string') return block.reasoning;
+  if (typeof block.thinking === 'string') return block.thinking;
+  if (typeof block.text === 'string') return block.text;
+  return '';
+};
+
+const visibleContent = (
+  value: unknown,
+): { text: string; hasReasoning: boolean; reasoning: string } => {
+  if (typeof value === 'string') return { text: value, hasReasoning: false, reasoning: '' };
+  if (!Array.isArray(value)) return { text: '', hasReasoning: false, reasoning: '' };
   const text: string[] = [];
+  const reasoning: string[] = [];
   let hasReasoning = false;
   for (const block of value) {
     if (!isRecord(block) || typeof block.type !== 'string') continue;
     if ((block.type === 'text' || block.type === 'text-plain') && typeof block.text === 'string') {
       text.push(block.text);
     } else if (block.type === 'reasoning' || block.type === 'thinking') {
-      // Preserve the user-visible lifecycle marker, never the model's hidden reasoning payload.
+      /** The same user reads this exact reasoning in the main chat view, so the
+       *  bounded projection keeps its text rather than only a lifecycle marker. */
       hasReasoning = true;
+      const blockText = reasoningBlockText(block);
+      if (blockText !== '') reasoning.push(blockText);
     }
   }
-  return { text: text.join(''), hasReasoning };
+  return { text: text.join(''), hasReasoning, reasoning: reasoning.join('\n\n') };
 };
 
 const readToolCalls = (data: Record<string, unknown>): unknown[] => {
@@ -174,9 +341,9 @@ const uniqueToolActivityId = (
 
 /**
  * Converts one server-private LangChain transcript into a bounded public
- * activity projection. Only visible text and declared tool calls/results are
- * retained; response metadata, artifacts, runtime fields, and reasoning text
- * are intentionally ignored.
+ * activity projection. Visible text, bounded reasoning text, and declared
+ * tool calls/results are retained; response metadata, artifacts, and runtime
+ * fields are intentionally ignored.
  */
 export function projectSubagentActivity(
   messagesJson: string | undefined,
@@ -237,7 +404,14 @@ export function projectSubagentActivity(
     const { data } = stored;
     if (stored.type === 'ai' || stored.type === 'assistant') {
       const content = visibleContent(data.content);
-      if (content.hasReasoning) append({ type: 'reasoning' });
+      if (content.hasReasoning) {
+        const reasoning = truncateUtf8(content.reasoning, MAX_ACTIVITY_TEXT_BYTES);
+        append({
+          type: 'reasoning',
+          ...(reasoning.value === '' ? {} : { text: reasoning.value }),
+          ...(reasoning.truncated ? { textTruncated: true } : {}),
+        });
+      }
       if (content.text !== '') {
         const text = truncateUtf8(content.text, MAX_ACTIVITY_TEXT_BYTES);
         append({
@@ -292,20 +466,8 @@ export function projectSubagentActivity(
     append(orphan);
   }
 
-  let boundedActivity = activity.filter((entry) => entry.active).map((entry) => entry.item);
-  if (boundedActivity.length > MAX_ACTIVITY_ITEMS) {
-    boundedActivity = boundedActivity.slice(-MAX_ACTIVITY_ITEMS);
-    truncated = true;
-  }
-  while (boundedActivity.length > 1 && serializedBytes(boundedActivity) > MAX_ACTIVITY_BYTES) {
-    boundedActivity.shift();
-    truncated = true;
-  }
-  if (boundedActivity.length === 1 && serializedBytes(boundedActivity) > MAX_ACTIVITY_BYTES) {
-    boundedActivity[0] = fitNewestItemToSerializedBudget(boundedActivity[0]);
-    truncated = true;
-  }
-  return { activity: boundedActivity, truncated };
+  const boundedActivity = activity.filter((entry) => entry.active).map((entry) => entry.item);
+  return boundActivity(boundedActivity, truncated);
 }
 
 export const SUBAGENT_ACTIVITY_LIMITS = {

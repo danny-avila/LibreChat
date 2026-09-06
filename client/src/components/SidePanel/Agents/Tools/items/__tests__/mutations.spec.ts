@@ -1,7 +1,7 @@
-import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
+import { SkillsScope, AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
 import type { AgentItem } from '../types';
 import { makePlugin, makeSkill, makeMcpServer, makeAction } from 'test/itemFactories';
-import { computeToggleAction, skillsEnabledTransition } from '../mutations';
+import { computeToggleAction, skillsSelectionTransition } from '../mutations';
 
 const builtinCode: AgentItem = {
   kind: 'builtin',
@@ -131,25 +131,34 @@ describe('computeToggleAction', () => {
   });
 });
 
-describe('skillsEnabledTransition', () => {
-  test('a non-empty selection turns the master flag on when it is off', () => {
-    expect(skillsEnabledTransition(['s1'], undefined)).toBe(true);
-    expect(skillsEnabledTransition(['s1'], false)).toBe(true);
-    expect(skillsEnabledTransition(['s1', 's2'], false)).toBe(true);
+describe('skillsSelectionTransition', () => {
+  test('a non-empty selection enables skills and selects the allowlist scope', () => {
+    expect(skillsSelectionTransition(['s1'], undefined, undefined, undefined)).toEqual({
+      enabled: true,
+      authoringEnabled: false,
+      scope: SkillsScope.selected,
+    });
+    expect(skillsSelectionTransition(['s1', 's2'], false, true, SkillsScope.none)).toEqual({
+      enabled: true,
+      authoringEnabled: false,
+      scope: SkillsScope.selected,
+    });
   });
 
-  test('a non-empty selection leaves an already-on flag alone', () => {
-    expect(skillsEnabledTransition(['s1'], true)).toBeUndefined();
-    expect(skillsEnabledTransition(['s1', 's2'], true)).toBeUndefined();
+  test('an existing matching selection state needs no writes', () => {
+    expect(skillsSelectionTransition(['s1'], true, false, SkillsScope.selected)).toEqual({});
   });
 
-  test('clearing the selection turns the master flag off', () => {
-    expect(skillsEnabledTransition([], true)).toBe(false);
-  });
-
-  test('an empty selection leaves an off flag alone', () => {
-    expect(skillsEnabledTransition([], false)).toBeUndefined();
-    expect(skillsEnabledTransition([], undefined)).toBeUndefined();
+  test('clearing the selection keeps the capability enabled in authoring-only mode', () => {
+    expect(skillsSelectionTransition([], true, false, SkillsScope.selected)).toEqual({
+      enabled: false,
+      authoringEnabled: true,
+      scope: SkillsScope.none,
+    });
+    expect(skillsSelectionTransition([], false, false, undefined)).toEqual({
+      authoringEnabled: true,
+      scope: SkillsScope.none,
+    });
   });
 });
 

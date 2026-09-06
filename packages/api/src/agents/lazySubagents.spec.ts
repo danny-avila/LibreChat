@@ -1,3 +1,4 @@
+import { SkillsScope } from 'librechat-data-provider';
 import { getLazySubagentConfigId } from './lazySubagents';
 
 const agent = {
@@ -57,6 +58,22 @@ describe('getLazySubagentConfigId', () => {
   it('includes the persisted version in the descriptor identity', () => {
     expect(getLazySubagentConfigId({ ...agent, version: 5 })).not.toBe(
       getLazySubagentConfigId(agent),
+    );
+  });
+
+  it('changes when the persisted skill catalog scope changes', () => {
+    expect(
+      getLazySubagentConfigId({
+        ...agent,
+        skills_enabled: true,
+        skills_scope: SkillsScope.none,
+      }),
+    ).not.toBe(
+      getLazySubagentConfigId({
+        ...agent,
+        skills_enabled: true,
+        skills_scope: SkillsScope.all,
+      }),
     );
   });
 });
