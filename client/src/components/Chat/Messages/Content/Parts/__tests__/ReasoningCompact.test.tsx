@@ -36,7 +36,7 @@ jest.mock('lucide-react', () => ({
 
 describe('ReasoningCompact', () => {
   it('reveals its own Thoughts chevron instantly on row hover or focus', () => {
-    render(<ReasoningCompact reasoning="A useful thought" label="Thoughts" />);
+    render(<ReasoningCompact reasoning="A useful thought" label="Thoughts" showThinking={false} />);
 
     const button = screen.getByRole('button', { name: 'Thoughts' });
     const chevron = screen.getByTestId('thoughts-chevron');
@@ -55,7 +55,14 @@ describe('ReasoningCompact', () => {
   });
 
   it('removes the extra top margin when Thoughts follows a tool', () => {
-    render(<ReasoningCompact reasoning="A useful thought" label="Thoughts" isAfterTool />);
+    render(
+      <ReasoningCompact
+        reasoning="A useful thought"
+        label="Thoughts"
+        isAfterTool
+        showThinking={false}
+      />,
+    );
 
     const row = screen
       .getByRole('button', { name: 'Thoughts' })
@@ -69,9 +76,27 @@ describe('ReasoningCompact', () => {
     /** Collapsed is the default whenever thoughts are hidden, and a streaming
      *  THINK part re-renders on every delta, so keeping the whole text mounted
      *  behind the invisible panel cost layout work for nothing. */
-    render(<ReasoningCompact reasoning="A long stream of reasoning" label="Thoughts" />);
+    render(
+      <ReasoningCompact
+        reasoning="A long stream of reasoning"
+        label="Thoughts"
+        showThinking={false}
+      />,
+    );
 
     expect(screen.getByRole('button', { name: 'Thoughts' })).toBeInTheDocument();
     expect(screen.queryByText('A long stream of reasoning')).not.toBeInTheDocument();
+  });
+
+  it('opens from the host preference rather than the app store', () => {
+    render(
+      <ReasoningCompact
+        reasoning="A long stream of reasoning"
+        label="Thoughts"
+        showThinking={true}
+      />,
+    );
+
+    expect(screen.getByText('A long stream of reasoning')).toBeInTheDocument();
   });
 });

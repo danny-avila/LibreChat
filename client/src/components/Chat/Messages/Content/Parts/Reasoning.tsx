@@ -273,6 +273,10 @@ Reasoning.displayName = 'Reasoning';
 type ReasoningCompactProps = {
   reasoning: string;
   label: string;
+  /** The host's thoughts-visible preference, supplied by the group rather
+   *  than read from the app store, so a grouped thought stays movable with
+   *  the feature that renders it. */
+  showThinking: boolean;
   isAfterTool?: boolean;
   /** True while this is the reasoning part currently streaming. Drives the
    *  collapsed grok-style live peek. */
@@ -287,11 +291,16 @@ type ReasoningCompactProps = {
  * a floating collapse + copy bar inside the rounded content panel.
  */
 export const ReasoningCompact = memo(
-  ({ reasoning, label, isAfterTool = false, isStreaming = false }: ReasoningCompactProps) => {
+  ({
+    reasoning,
+    label,
+    showThinking,
+    isAfterTool = false,
+    isStreaming = false,
+  }: ReasoningCompactProps) => {
     const contentId = useId();
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
-    const showThinking = useAtomValue(showThinkingAtom);
     const [isExpanded, setIsExpanded] = useState(showThinking);
     const [isBarVisible, setIsBarVisible] = useState(false);
     const [isCopied, setIsCopied] = useState(false);

@@ -672,6 +672,7 @@ export default function ToolCallGroup({
                         key={`reasoning-${idx}`}
                         reasoning={reasoning}
                         label={label}
+                        showThinking={showThinking}
                         isAfterTool={isAfterTool}
                         isStreaming={streaming}
                       />
