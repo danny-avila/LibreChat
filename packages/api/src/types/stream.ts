@@ -9,6 +9,7 @@ import type {
   AgentEventSuspensionProjection,
   AgentTriggerExpectedAction,
 } from '../agents/triggers/types';
+import type { EarlyBufferOverflowState } from '~/stream/interfaces/IJobStore';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';
@@ -23,6 +24,7 @@ export interface GenerationJobMetadata {
   checkpointNamespace?: string;
   /** Immutable generation protocol. Missing on legacy records means v1. */
   generationProtocolVersion?: 1 | 2;
+  earlyBufferOverflow?: EarlyBufferOverflowState;
   /** User message data for rebuilding submission on reconnect */
   userMessage?: Agents.UserMessageMeta;
   /** Response message ID for tracking */

@@ -25,6 +25,7 @@ import type {
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
+  EarlyBufferOverflowState,
 } from '~/stream/interfaces/IJobStore';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
@@ -616,6 +617,18 @@ const JOB_UPDATE_LUA =
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], runStepsTtl) end ' +
   'end ' +
   'return 1';
+
+/** Single-winner recovery outcome for one generation-scoped overflow. */
+const SETTLE_EARLY_BUFFER_RECOVERY_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local raw = redis.call("HGET", KEYS[1], "earlyBufferOverflow") ' +
+  'if not raw then return 0 end local ok, overflow = pcall(cjson.decode, raw) ' +
+  'if not ok or type(overflow) ~= "table" or overflow.id ~= ARGV[2] ' +
+  'or overflow.recoveryOutcome ~= nil then return 0 end ' +
+  'local settlementOk, settlement = pcall(cjson.decode, ARGV[3]) ' +
+  'if not settlementOk or type(settlement) ~= "table" then return 0 end ' +
+  'for key, value in pairs(settlement) do overflow[key] = value end ' +
+  'redis.call("HSET", KEYS[1], "earlyBufferOverflow", cjson.encode(overflow)) return 1';
 
 /** Exact provider-segment completion fence. A paused segment finishing after a
  * resume cannot mark the resumed provider drained because its opaque id differs. */
@@ -1756,7 +1769,10 @@ interface LocalCacheEntry<T> {
 interface PendingChunkAppendBatch {
   expectedCreatedAt?: number;
   events: string[];
-  settlers: Array<{ resolve: (appended: boolean) => void; reject: (err: unknown) => void }>;
+  settlers: Array<{
+    resolve: (appended: boolean) => void;
+    reject: (err: unknown) => void;
+  }>;
   bytes: number;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -1961,7 +1977,9 @@ export class RedisJobStore implements IJobStoreV2 {
       createdAt: Date.now(),
       generationProtocolVersion,
       ...(conversationId !== undefined && { conversationId }),
-      ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
+      ...(idempotencyClientRequestId !== undefined && {
+        idempotencyClientRequestId,
+      }),
       ...(recoveredSteerId !== undefined && { recoveredSteerId }),
       providerAbortReady: false,
       ...(providerExecutionId != null && { providerDrained: true }),
@@ -2057,7 +2075,9 @@ export class RedisJobStore implements IJobStoreV2 {
           currentStatus === 'requires_action',
         verified: previousOwner[8] !== '0',
         ...(currentStatus !== undefined && { status: currentStatus }),
-        ...(currentConversationId !== undefined && { conversationId: currentConversationId }),
+        ...(currentConversationId !== undefined && {
+          conversationId: currentConversationId,
+        }),
       });
     }
     const previousUserId =
@@ -2284,6 +2304,26 @@ export class RedisJobStore implements IJobStoreV2 {
         expectedCreatedAt ?? observedJob?.createdAt,
       );
     }
+  }
+
+  async settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    settlement: Pick<
+      EarlyBufferOverflowState,
+      'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
+    >,
+  ): Promise<boolean> {
+    const settled = await this.redis.eval(
+      SETTLE_EARLY_BUFFER_RECOVERY_LUA,
+      1,
+      KEYS.job(streamId),
+      String(expectedCreatedAt),
+      overflowId,
+      JSON.stringify(settlement),
+    );
+    return settled === 1;
   }
 
   async markProviderExecutionDrained(
@@ -2624,7 +2664,10 @@ export class RedisJobStore implements IJobStoreV2 {
     // status + patch become HSET pairs; serializeJob skips undefined, so
     // cleared fields go through HDEL (`clear`) instead.
     const fields = Object.entries(
-      this.serializeJob({ status: to, ...(persistedPatch ?? {}) } as SerializableJobData),
+      this.serializeJob({
+        status: to,
+        ...(persistedPatch ?? {}),
+      } as SerializableJobData),
     ).flat();
     const clearFields = (clear ?? []).map(String);
 
@@ -2743,7 +2786,10 @@ export class RedisJobStore implements IJobStoreV2 {
       return { claimed: true, existing: value };
     }
     try {
-      return { claimed: false, existing: JSON.parse(result as string) as IdempotencyClaimValue };
+      return {
+        claimed: false,
+        existing: JSON.parse(result as string) as IdempotencyClaimValue,
+      };
     } catch {
       // An unreadable existing owner is outcome-ambiguous. Never turn store
       // corruption into a duplicate generation by pretending the key is free.
@@ -2951,7 +2997,10 @@ export class RedisJobStore implements IJobStoreV2 {
     if (members.length === 0) {
       return [];
     }
-    const indexed = members.map((member) => ({ member, ...parseTerminalHostActionMember(member) }));
+    const indexed = members.map((member) => ({
+      member,
+      ...parseTerminalHostActionMember(member),
+    }));
     const jobs = await Promise.all(indexed.map(({ streamId }) => this.getJob(streamId)));
     // The durable hash field is the source of truth; a stale set entry (job reaped, or the
     // marker/generation already replaced) is filtered out. Bare legacy members
@@ -3123,13 +3172,17 @@ export class RedisJobStore implements IJobStoreV2 {
 
           // Job no longer exists (TTL expired) - remove from set
           if (!job) {
-            const currentJob = await this.reconcileJobMembership(streamId, { initialJob: null });
+            const currentJob = await this.reconcileJobMembership(streamId, {
+              initialJob: null,
+            });
             this.clearLocalStateUnlessActive(streamId, currentJob);
             return 1;
           }
 
           if (job.status === 'requires_action') {
-            const currentJob = await this.reconcileJobMembership(streamId, { initialJob: job });
+            const currentJob = await this.reconcileJobMembership(streamId, {
+              initialJob: job,
+            });
             if (
               currentJob !== undefined &&
               (!currentJob || currentJob.createdAt === job.createdAt)
@@ -3202,7 +3255,9 @@ export class RedisJobStore implements IJobStoreV2 {
           const job = await this.getJob(streamId);
 
           if (!job) {
-            const currentJob = await this.reconcileJobMembership(streamId, { initialJob: null });
+            const currentJob = await this.reconcileJobMembership(streamId, {
+              initialJob: null,
+            });
             this.clearLocalStateUnlessActive(streamId, currentJob);
             return 1;
           }
@@ -3236,7 +3291,9 @@ export class RedisJobStore implements IJobStoreV2 {
               patch: {
                 completedAt: now,
                 error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
-                ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
+                ...(job.agentEventDeliveryKey != null && {
+                  terminalHostActionPending: true,
+                }),
               },
               clear: [
                 'pendingAction',
@@ -3520,14 +3577,20 @@ export class RedisJobStore implements IJobStoreV2 {
         continue;
       }
       if (event.event === 'on_steer_applied') {
-        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        const steerData = event.data as {
+          index?: number;
+          part?: Agents.MessageContentComplex;
+        };
         if (typeof steerData.index === 'number' && steerData.part != null) {
           steers.push({ index: steerData.index, part: steerData.part });
         }
         continue;
       }
       if (event.event === 'on_activity_label') {
-        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        const labelData = event.data as {
+          index?: number;
+          part?: Agents.MessageContentComplex;
+        };
         if (typeof labelData.index === 'number' && labelData.part != null) {
           labelsByIndex.set(labelData.index, labelData.part);
         }
@@ -3727,12 +3790,17 @@ export class RedisJobStore implements IJobStoreV2 {
   async getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
+    options?: { durableOnly?: boolean },
   ): Promise<{
     content: Agents.MessageContentComplex[];
+    reconstructedEventCount?: number;
+    durableEventCount?: number;
   } | null> {
     // 1. Prefer the HOST content array (same-instance fast path): it already
     // contains host-authored steer parts the SDK graph never sees.
-    const hostEntry = this.getLocalEntry(this.localContentParts, streamId, expectedCreatedAt);
+    const hostEntry = options?.durableOnly
+      ? undefined
+      : this.getLocalEntry(this.localContentParts, streamId, expectedCreatedAt);
     if (hostEntry) {
       const hostParts = hostEntry.value.deref();
       if (hostParts && hostParts.length > 0) {
@@ -3747,7 +3815,9 @@ export class RedisJobStore implements IJobStoreV2 {
     // lacks host-authored steer parts, so overlay them from the chunk log —
     // insert (not assign): the graph array is UNSHIFTED, while recorded steer
     // indices are host-view positions that already account for prior steers.
-    const graphEntry = this.getLocalEntry(this.localGraphCache, streamId, expectedCreatedAt);
+    const graphEntry = options?.durableOnly
+      ? undefined
+      : this.getLocalEntry(this.localGraphCache, streamId, expectedCreatedAt);
     if (graphEntry) {
       const graph = graphEntry.value.deref();
       if (graph) {
@@ -3766,8 +3836,9 @@ export class RedisJobStore implements IJobStoreV2 {
     }
 
     // 2. Fall back to Redis chunk reconstruction (cross-instance reconnect)
-    const chunks = await this.getChunks(streamId, expectedCreatedAt);
-    if (chunks.length === 0) {
+    const chunkSnapshot = await this.getChunkSnapshot(streamId, expectedCreatedAt);
+    const { chunks } = chunkSnapshot;
+    if (chunkSnapshot.durableEventCount === 0) {
       return null;
     }
 
@@ -3807,7 +3878,10 @@ export class RedisJobStore implements IJobStoreV2 {
       // injection were emitted with already-shifted indices, so both sources
       // land disjoint.
       if (event.event === 'on_steer_applied') {
-        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        const steerData = event.data as {
+          index?: number;
+          part?: Agents.MessageContentComplex;
+        };
         if (typeof steerData.index === 'number' && steerData.part != null) {
           contentParts[steerData.index] = steerData.part;
         }
@@ -3818,7 +3892,10 @@ export class RedisJobStore implements IJobStoreV2 {
       // fixed index. The event fires twice per slot (counts placeholder,
       // then resolved label); chronological replay makes the last write win.
       if (event.event === 'on_activity_label') {
-        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        const labelData = event.data as {
+          index?: number;
+          part?: Agents.MessageContentComplex;
+        };
         if (typeof labelData.index === 'number' && labelData.part != null) {
           contentParts[labelData.index] = labelData.part;
         }
@@ -3977,6 +4054,8 @@ export class RedisJobStore implements IJobStoreV2 {
 
     return {
       content: filtered,
+      reconstructedEventCount: chunks.length,
+      durableEventCount: chunkSnapshot.durableEventCount,
     };
   }
 
@@ -4549,7 +4628,13 @@ export class RedisJobStore implements IJobStoreV2 {
       pending = undefined;
     }
     if (!pending) {
-      pending = { expectedCreatedAt, events: [], settlers: [], bytes: 0, timer: null };
+      pending = {
+        expectedCreatedAt,
+        events: [],
+        settlers: [],
+        bytes: 0,
+        timer: null,
+      };
       this.pendingAppends.set(streamId, pending);
     }
 
@@ -4626,6 +4711,13 @@ export class RedisJobStore implements IJobStoreV2 {
    * Get all chunks from Redis Stream.
    */
   private async getChunks(streamId: string, expectedCreatedAt?: number): Promise<unknown[]> {
+    return (await this.getChunkSnapshot(streamId, expectedCreatedAt)).chunks;
+  }
+
+  private async getChunkSnapshot(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{ chunks: unknown[]; durableEventCount: number }> {
     /** A same-replica snapshot read must observe the appends this process has
      * already accepted, or a resume during an active window reconstructs
      * without the buffered tail. Cross-replica readers keep today's contract:
@@ -4643,7 +4735,7 @@ export class RedisJobStore implements IJobStoreV2 {
           );
     const entries = Array.isArray(rawEntries) ? (rawEntries as Array<[string, string[]]>) : [];
 
-    return entries
+    const chunks = entries
       .map(([, fields]) => {
         const eventIdx = fields.indexOf('event');
         if (eventIdx >= 0 && eventIdx + 1 < fields.length) {
@@ -4656,6 +4748,7 @@ export class RedisJobStore implements IJobStoreV2 {
         return null;
       })
       .filter(Boolean);
+    return { chunks, durableEventCount: entries.length };
   }
 
   /**
@@ -4916,6 +5009,9 @@ export class RedisJobStore implements IJobStoreV2 {
       completedAt: data.completedAt ? parseInt(data.completedAt, 10) : undefined,
       conversationId: data.conversationId || undefined,
       error: data.error || undefined,
+      earlyBufferOverflow: data.earlyBufferOverflow
+        ? (JSON.parse(data.earlyBufferOverflow) as EarlyBufferOverflowState)
+        : undefined,
       idempotencyClientRequestId: data.idempotencyClientRequestId || undefined,
       recoveredSteerId: data.recoveredSteerId || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,

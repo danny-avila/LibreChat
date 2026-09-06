@@ -31,12 +31,23 @@ import type {
   PreemptMessage,
   SteerQueueItem,
   DetachedAgentEventActionStoreMode,
+  EarlyBufferOverflowState,
+  EarlyBufferRecoveryFailureReason,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { RecoveredSteerPayload } from './SteerRecovery';
 import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
+import {
+  recordGenerationStreamEarlyBufferOverflow,
+  recordGenerationStreamResumePendingEvents,
+  recordGenerationStreamSubscription,
+  recordGenerationStreamAttachment,
+  recordGenerationStreamRecovery,
+  setGenerationJobsInFlight,
+  recordGenerationJob,
+} from '~/app/metrics';
 import {
   GenerationPublicationFencedError,
   JobCreationSupersededError,
@@ -47,13 +58,6 @@ import {
   PROVIDER_DRAIN_TIMEOUT_MS,
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
-import {
-  recordGenerationStreamEarlyBufferOverflow,
-  recordGenerationStreamResumePendingEvents,
-  recordGenerationStreamSubscription,
-  setGenerationJobsInFlight,
-  recordGenerationJob,
-} from '~/app/metrics';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
@@ -144,6 +148,7 @@ const SHUTTING_DOWN_ERROR = 'Generation job manager is shutting down';
  * this as an application-level generation error. */
 export const TERMINAL_PUBLICATION_RECONNECT_ERROR =
   'Terminal publication failed; reconnect to load the durable result';
+export const GENERATION_RECOVERY_FAILED_ERROR = 'generation_recovery_failed';
 /** Upper bound for a terminal owner's required persistence barrier. A crashed
  * owner leaves the durable pending bit behind; the next read or subscriber
  * promotes it to conservative reconciliation after this window. */
@@ -155,6 +160,7 @@ const TERMINAL_PERSISTENCE_TIMEOUT_MS = 30_000;
  * durable chunk log, in-memory reconnects recover from the resume snapshot. */
 const EARLY_EVENT_BUFFER_MAX_EVENTS = 5_000;
 const EARLY_EVENT_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
+const SLOW_ATTACHMENT_BOOTSTRAP_MS = 3_000;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 type TokenIdempotencyClaim = IdempotencyClaimValue & {
   claimedAt: number;
@@ -664,6 +670,7 @@ interface RuntimeJobState {
    * consumed it. Non-resume attachments are redirected to the resume path,
    * which reconstructs the discarded output from durable/snapshot state. */
   earlyEventBufferOverflowed?: true;
+  earlyBufferOverflow?: EarlyBufferOverflowState;
   earlyEventSequencePromises: Array<Promise<void | number>>;
   /** Initial subscribers eligible to receive the local pre-attachment replay. */
   earlyReplayHandlers: Set<t.ChunkHandler>;
@@ -682,6 +689,7 @@ interface RuntimeJobState {
   /** Coalesced delta publications emitted but not yet settled by a window flush. */
   outstandingCoalescedReceipts?: number;
   hasSubscriber: boolean;
+  everHadSubscriber: boolean;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
   /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
@@ -1607,6 +1615,10 @@ class GenerationJobManagerClass {
         return;
       }
 
+      if (runtime.everHadSubscriber) {
+        recordGenerationStreamAttachment(this.storeLabel, 'disconnected');
+      }
+
       const cleanup = this.persistSubscriberCleanup(streamId, runtime);
       this.subscriberCleanupPromises.add(cleanup);
       void cleanup.then(
@@ -2283,7 +2295,9 @@ class GenerationJobManagerClass {
     const { steerQuotesCapable, ...storedMetadata } = sanitizedMetadata;
     const initialMetadata = {
       ...storedMetadata,
-      ...(steerQuotesCapable === true && { steerQuotesExecutionId: creationAttemptId }),
+      ...(steerQuotesCapable === true && {
+        steerQuotesExecutionId: creationAttemptId,
+      }),
       providerExecutionId: creationAttemptId,
       providerDrained: true,
     };
@@ -2613,6 +2627,7 @@ class GenerationJobManagerClass {
       emissionSequence: 0,
       inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
+      everHadSubscriber: false,
       attachmentGeneration: 0,
     };
     this.runtimeState.set(streamId, runtime);
@@ -2778,6 +2793,7 @@ class GenerationJobManagerClass {
         conversationId: jobData.conversationId,
         checkpointNamespace: jobData.checkpointNamespace,
         generationProtocolVersion: jobData.generationProtocolVersion,
+        earlyBufferOverflow: jobData.earlyBufferOverflow,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
         isRegenerate: jobData.isRegenerate,
@@ -2915,9 +2931,15 @@ class GenerationJobManagerClass {
       emissionSequence: 0,
       inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
+      everHadSubscriber: false,
       attachmentGeneration: 0,
       finalEvent,
       errorEvent: jobData.error,
+      earlyBufferOverflow: jobData.earlyBufferOverflow,
+      ...(jobData.earlyBufferOverflow != null && {
+        earlyEventBufferClosed: true,
+        earlyEventBufferOverflowed: true,
+      }),
     };
 
     this.runtimeState.set(streamId, runtime);
@@ -3403,7 +3425,11 @@ class GenerationJobManagerClass {
           return { claimed: true, existing: value, source: 'primary' };
         }
         if (isClaimTakeoverOf(expectedClaim, observedPrimary)) {
-          return { claimed: false, existing: observedPrimary, source: 'primary' };
+          return {
+            claimed: false,
+            existing: observedPrimary,
+            source: 'primary',
+          };
         }
       }
       throw error;
@@ -3634,7 +3660,10 @@ class GenerationJobManagerClass {
     status: TerminalJobClaim['status'],
     error?: string,
     expectedCreatedAt?: number,
-    options: { persistencePending?: boolean; failedPauseActionId?: string } = {},
+    options: {
+      persistencePending?: boolean;
+      failedPauseActionId?: string;
+    } = {},
   ): Promise<TerminalJobClaim | null> {
     if (
       options.failedPauseActionId != null &&
@@ -3703,7 +3732,9 @@ class GenerationJobManagerClass {
       ...(sourceStatus === 'requires_action' && {
         ...(failedPauseBarrierId != null
           ? { expectActionId: failedPauseBarrierId }
-          : jobData.pendingActionId != null && { expectActionId: jobData.pendingActionId }),
+          : jobData.pendingActionId != null && {
+              expectActionId: jobData.pendingActionId,
+            }),
       }),
       patch: {
         completedAt,
@@ -3735,10 +3766,14 @@ class GenerationJobManagerClass {
     const claim: TerminalJobClaim = Object.freeze({
       streamId,
       createdAt,
-      ...(jobData.conversationId != null && { conversationId: jobData.conversationId }),
+      ...(jobData.conversationId != null && {
+        conversationId: jobData.conversationId,
+      }),
       status,
       ...(terminalError != null && { error: terminalError }),
-      ...(options.persistencePending === true && { persistencePending: true as const }),
+      ...(options.persistencePending === true && {
+        persistencePending: true as const,
+      }),
       drainedSteers: Object.freeze([...drainedSteers]),
     });
     this.terminalClaimRuntimes.set(claim, runtime ?? null);
@@ -3919,6 +3954,27 @@ class GenerationJobManagerClass {
         : undefined;
     let cleanupError: unknown;
     let retainTerminalHostEvidence = false;
+    const unresolvedOverflow =
+      runtime?.earlyBufferOverflow?.recoveryOutcome == null
+        ? runtime?.earlyBufferOverflow
+        : undefined;
+    if (runtime != null && unresolvedOverflow != null) {
+      await this.settleEarlyBufferRecovery(
+        streamId,
+        runtime,
+        unresolvedOverflow,
+        'failed',
+        Date.now() - unresolvedOverflow.occurredAt,
+        0,
+        0,
+        runtime.everHadSubscriber ? 'subscriber_disconnected' : 'subscriber_never_attached',
+      ).catch((recoveryError) => {
+        logger.error(
+          '[GenerationJobManager] Failed to settle unobserved early buffer recovery',
+          recoveryError,
+        );
+      });
+    }
 
     // Error jobs stay durable long enough for late subscribers to receive the
     // stored error. A publication failure must never bypass the finally cleanup.
@@ -3986,6 +4042,9 @@ class GenerationJobManagerClass {
       retainTerminalHostEvidence = true;
     } finally {
       if (runtime && this.runtimeState.get(streamId) === runtime) {
+        if (!runtime.everHadSubscriber) {
+          recordGenerationStreamAttachment(this.storeLabel, 'never_attached');
+        }
         this.releaseAbortSubscription(runtime);
         runtime.abortController.abort();
         if (status === 'error') {
@@ -4275,7 +4334,9 @@ class GenerationJobManagerClass {
     /** Text from content parts for fallback token counting; the persisted
      *  abort record keeps steered words (they reached the model context). */
     let text = shouldPersistAbortContent
-      ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
+      ? parseTextParts(abortContent as TMessageContentParts[], false, {
+          includeSteer: true,
+        })
       : '';
 
     /** Claim terminal ownership and drain steers in one store transaction. A
@@ -4369,7 +4430,9 @@ class GenerationJobManagerClass {
     const terminalClaim: TerminalJobClaim = Object.freeze({
       streamId,
       createdAt: jobData.createdAt,
-      ...(jobData.conversationId != null && { conversationId: jobData.conversationId }),
+      ...(jobData.conversationId != null && {
+        conversationId: jobData.conversationId,
+      }),
       status: 'aborted',
       persistencePending: true,
       drainedSteers: Object.freeze([...drainedSteers]),
@@ -4440,7 +4503,9 @@ class GenerationJobManagerClass {
       abortContent = filterPersistableAbortContent(content);
       shouldPersistAbortContent = abortContent.length > 0;
       text = shouldPersistAbortContent
-        ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
+        ? parseTextParts(abortContent as TMessageContentParts[], false, {
+            includeSteer: true,
+          })
         : '';
 
       /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
@@ -4583,6 +4648,7 @@ class GenerationJobManagerClass {
     options?: t.SubscribeOptions,
     prepared?: PreparedSubscription,
   ): Promise<(t.StreamSubscription & { activate?: () => void }) | null> {
+    const attachmentStartedAt = Date.now();
     const subscriptionType = options?.skipBufferReplay ? 'resume' : 'initial';
     if (options?.signal?.aborted) {
       recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
@@ -4823,7 +4889,9 @@ class GenerationJobManagerClass {
     };
     subscription = {
       ready: transportSubscription.ready,
-      ...(prepared?.deferDeliveryUntilActivated === true && { activate: activateDelivery }),
+      ...(prepared?.deferDeliveryUntilActivated === true && {
+        activate: activateDelivery,
+      }),
       unsubscribe: (): void => {
         if (!subscriptionActive) {
           return;
@@ -4913,6 +4981,17 @@ class GenerationJobManagerClass {
 
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
+      if (!runtime.everHadSubscriber) {
+        runtime.everHadSubscriber = true;
+        recordGenerationStreamAttachment(
+          this.storeLabel,
+          'attached',
+          Math.max(0, Date.now() - runtime.createdAt) / 1000,
+        );
+        if (Date.now() - attachmentStartedAt >= SLOW_ATTACHMENT_BOOTSTRAP_MS) {
+          recordGenerationStreamAttachment(this.storeLabel, 'bootstrap_slow');
+        }
+      }
       const attachmentGeneration = runtime.attachmentGeneration;
       const earlyPublicationFence = this.waitForEarlyEventPublications(runtime);
       if (!(await waitWhileAttached(earlyPublicationFence))) {
@@ -5225,11 +5304,11 @@ class GenerationJobManagerClass {
    *
    * @returns whether the event was accepted into the buffer.
    */
-  private bufferEarlyEvent(
+  private async bufferEarlyEvent(
     streamId: string,
     runtime: RuntimeJobState,
     event: t.ServerSentEvent,
-  ): boolean {
+  ): Promise<boolean> {
     if (runtime.earlyEventBufferClosed) {
       return false;
     }
@@ -5238,7 +5317,7 @@ class GenerationJobManagerClass {
       runtime.earlyEventBuffer.length >= EARLY_EVENT_BUFFER_MAX_EVENTS ||
       runtime.earlyEventBufferBytes + estimatedBytes > EARLY_EVENT_BUFFER_MAX_BYTES
     ) {
-      this.overflowEarlyEventBuffer(streamId, runtime);
+      await this.overflowEarlyEventBuffer(streamId, runtime);
       return false;
     }
     runtime.earlyEventBuffer.push(event);
@@ -5246,17 +5325,36 @@ class GenerationJobManagerClass {
     return true;
   }
 
-  private overflowEarlyEventBuffer(streamId: string, runtime: RuntimeJobState): void {
+  private async overflowEarlyEventBuffer(
+    streamId: string,
+    runtime: RuntimeJobState,
+  ): Promise<void> {
     const droppedEvents = runtime.earlyEventBuffer.length;
     const droppedBytes = runtime.earlyEventBufferBytes;
+    const overflow: EarlyBufferOverflowState = {
+      id: randomUUID(),
+      occurredAt: Date.now(),
+      droppedEvents,
+      droppedBytes,
+    };
     this.resetEarlyEventBuffer(runtime);
     runtime.earlyEventBufferClosed = true;
     runtime.earlyEventBufferOverflowed = true;
+    runtime.earlyBufferOverflow = overflow;
+    try {
+      await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
+    } catch (err) {
+      logger.error('[GenerationJobManager] Failed to persist early buffer overflow identity', err);
+    }
     recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
     logger.warn(
-      `[GenerationJobManager] Early event buffer overflow for ${streamId}; ` +
-        `discarded ${droppedEvents} buffered events (~${droppedBytes} bytes); ` +
-        'late subscribers will recover from durable/resume state',
+      '[GenerationJobManager] Early event buffer overflow; late subscriber recovery required',
+      {
+        recoveryId: overflow.id,
+        store: this.storeLabel,
+        droppedEvents,
+        droppedBytes,
+      },
     );
   }
 
@@ -5345,6 +5443,64 @@ class GenerationJobManagerClass {
       });
   }
 
+  private async settleEarlyBufferRecovery(
+    streamId: string,
+    runtime: RuntimeJobState,
+    overflow: EarlyBufferOverflowState,
+    outcome: 'success' | 'failed',
+    durationMs: number,
+    reconstructedEvents: number,
+    reconstructedContent: number,
+    failureReason?: EarlyBufferRecoveryFailureReason,
+  ): Promise<boolean> {
+    const recoveryMethod = this._isRedis ? 'redis' : 'snapshot';
+    const settlement = {
+      recoveryMethod,
+      recoveryOutcome: outcome,
+      recoveryCompletedAt: Date.now(),
+      ...(failureReason != null && { recoveryFailureReason: failureReason }),
+    } as const;
+    let settled = false;
+    if (this.jobStore.settleEarlyBufferRecovery) {
+      settled = await this.jobStore.settleEarlyBufferRecovery(
+        streamId,
+        runtime.createdAt,
+        overflow.id,
+        settlement,
+      );
+    } else if (overflow.recoveryOutcome == null) {
+      await this.jobStore.updateJob(
+        streamId,
+        { earlyBufferOverflow: { ...overflow, ...settlement } },
+        runtime.createdAt,
+      );
+      settled = true;
+    }
+    if (!settled) {
+      return false;
+    }
+    runtime.earlyBufferOverflow = { ...overflow, ...settlement };
+    recordGenerationStreamRecovery(
+      this.storeLabel,
+      recoveryMethod,
+      outcome,
+      Math.max(0, durationMs) / 1000,
+      reconstructedEvents,
+      reconstructedContent,
+    );
+    logger.info('[GenerationJobManager] Early buffer recovery completed', {
+      recoveryId: overflow.id,
+      store: this.storeLabel,
+      method: recoveryMethod,
+      outcome,
+      durationMs,
+      reconstructedEvents,
+      reconstructedContent,
+      ...(failureReason != null && { failureReason }),
+    });
+    return true;
+  }
+
   /**
    * Snapshots resume state and attaches a paused live subscription.
    *
@@ -5363,6 +5519,7 @@ class GenerationJobManagerClass {
       recordGenerationStreamSubscription(this.storeLabel, 'resume', 'error');
       return { subscription: null, resumeState: null, pendingEvents: [] };
     }
+
     if (this.rejectSubscriptionDuringShutdown('resume', onError)) {
       return { subscription: null, resumeState: null, pendingEvents: [] };
     }
@@ -5386,12 +5543,29 @@ class GenerationJobManagerClass {
       return { subscription: null, resumeState: null, pendingEvents: [] };
     }
 
+    const pendingOverflow =
+      runtime.earlyBufferOverflow?.recoveryOutcome == null
+        ? runtime.earlyBufferOverflow
+        : undefined;
+    const recoveryStartedAt = pendingOverflow == null ? undefined : Date.now();
+    let recoverySettled = false;
+    if (pendingOverflow != null) {
+      logger.info('[GenerationJobManager] Early buffer recovery started', {
+        recoveryId: pendingOverflow.id,
+        store: this.storeLabel,
+        method: this._isRedis ? 'redis' : 'snapshot',
+      });
+    }
+
     const capturedPendingEvents: t.ServerSentEvent[] = [];
     const pendingEvents: t.ServerSentEvent[] = [];
     const capturedEventSet = new Set<t.ServerSentEvent>();
     const snapshotCoveredEventSet = new Set<t.ServerSentEvent>();
     const seenEmissionEvents = new Set<t.ServerSentEvent>();
-    const unclassifiedEmissions: Array<{ event: t.ServerSentEvent; sequence: number }> = [];
+    const unclassifiedEmissions: Array<{
+      event: t.ServerSentEvent;
+      sequence: number;
+    }> = [];
     let snapshotFrontier = 0;
     let snapshotClassified = this._isRedis;
     const classifyEmission = (event: t.ServerSentEvent, sequence: number): void => {
@@ -5441,7 +5615,9 @@ class GenerationJobManagerClass {
               EARLY_EVENT_BUFFER_MAX_EVENTS ||
             currentRuntime.earlyEventBufferBytes + restoredBytes > EARLY_EVENT_BUFFER_MAX_BYTES;
           if (overflows) {
-            this.overflowEarlyEventBuffer(streamId, currentRuntime);
+            void this.overflowEarlyEventBuffer(streamId, currentRuntime).catch((err) => {
+              logger.error('[GenerationJobManager] Failed to persist early buffer overflow', err);
+            });
           } else {
             currentRuntime.earlyEventBuffer = [
               ...missingEvents,
@@ -5465,7 +5641,9 @@ class GenerationJobManagerClass {
           );
           await Promise.all(preSnapshotEmissions.map(([, emission]) => emission.snapshotReady));
           const [candidateState, candidateJob] = await Promise.all([
-            this.getResumeState(streamId, options?.expectedCreatedAt),
+            this.getResumeState(streamId, options?.expectedCreatedAt, {
+              durableOnly: false,
+            }),
             this.jobStore.getJob(streamId),
           ]);
           if (
@@ -5492,9 +5670,58 @@ class GenerationJobManagerClass {
         }
       } else {
         [resumeState, jobData] = await Promise.all([
-          this.getResumeState(streamId, options?.expectedCreatedAt),
+          this.getResumeState(streamId, options?.expectedCreatedAt, {
+            durableOnly: pendingOverflow != null,
+          }),
           this.jobStore.getJob(streamId),
         ]);
+      }
+
+      if (pendingOverflow != null && recoveryStartedAt != null) {
+        const contentSnapshot = await this.jobStore.getContentParts(streamId, runtime.createdAt, {
+          durableOnly: this._isRedis,
+        });
+        const reconstructedEvents = this._isRedis
+          ? (contentSnapshot?.reconstructedEventCount ?? 0)
+          : snapshotFrontier;
+        const durableEvents = this._isRedis
+          ? (contentSnapshot?.durableEventCount ?? 0)
+          : snapshotFrontier;
+        const reconstructedContent = resumeState?.aggregatedContent?.length ?? 0;
+        let failureReason: EarlyBufferRecoveryFailureReason | undefined;
+        if (resumeState == null || contentSnapshot == null) {
+          failureReason = this._isRedis ? 'durable_state_missing' : 'snapshot_missing';
+        } else if (durableEvents === 0 || reconstructedEvents !== durableEvents) {
+          failureReason = 'durable_frontier_gap';
+        }
+        const durationMs = Date.now() - recoveryStartedAt;
+        if (failureReason == null) {
+          await this.settleEarlyBufferRecovery(
+            streamId,
+            runtime,
+            pendingOverflow,
+            'success',
+            durationMs,
+            reconstructedEvents,
+            reconstructedContent,
+          );
+          recoverySettled = true;
+        } else {
+          await this.settleEarlyBufferRecovery(
+            streamId,
+            runtime,
+            pendingOverflow,
+            'failed',
+            durationMs,
+            reconstructedEvents,
+            reconstructedContent,
+            failureReason,
+          );
+          await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+          onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+          recoverySettled = true;
+          return { subscription: null, resumeState: null, pendingEvents: [] };
+        }
       }
 
       if (options?.signal?.aborted) {
@@ -5660,7 +5887,10 @@ class GenerationJobManagerClass {
           (resumeState.aggregatedContent ?? []) as SteerContentView,
           liveQueue,
           (content ?? []) as SteerContentView,
-          { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+          {
+            conversationId: streamId,
+            responseMessageId: resumeState.responseMessageId,
+          },
         );
         if (gapEvents.length > 0) {
           pendingEvents.push(...gapEvents);
@@ -5696,8 +5926,12 @@ class GenerationJobManagerClass {
       const snapshotHasReasoningLabels =
         resumeState?.aggregatedContent?.some(
           (part) =>
-            (part as { type?: string; reasoning_label_revision?: unknown } | null)?.type ===
-              'think' &&
+            (
+              part as {
+                type?: string;
+                reasoning_label_revision?: unknown;
+              } | null
+            )?.type === 'think' &&
             typeof (part as { reasoning_label_revision?: unknown }).reasoning_label_revision ===
               'number',
         ) === true;
@@ -5718,7 +5952,10 @@ class GenerationJobManagerClass {
               typeof synthesizeActivityLabelGapEvents
             >[0],
             labelContent as Parameters<typeof synthesizeActivityLabelGapEvents>[1],
-            { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+            {
+              conversationId: streamId,
+              responseMessageId: resumeState.responseMessageId,
+            },
           );
           if (labelGapEvents.length > 0) {
             pendingEvents.push(...(labelGapEvents as t.ServerSentEvent[]));
@@ -5728,7 +5965,10 @@ class GenerationJobManagerClass {
               typeof synthesizeReasoningLabelGapEvents
             >[0],
             labelContent as Parameters<typeof synthesizeReasoningLabelGapEvents>[1],
-            { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+            {
+              conversationId: streamId,
+              responseMessageId: resumeState.responseMessageId,
+            },
           );
           if (reasoningGapEvents.length > 0) {
             pendingEvents.push(...(reasoningGapEvents as t.ServerSentEvent[]));
@@ -5775,6 +6015,33 @@ class GenerationJobManagerClass {
       subscription?.unsubscribe();
       restoreCapturedEvents();
       snapshotCoveredEventSet.clear();
+      if (pendingOverflow != null && recoveryStartedAt != null && !recoverySettled) {
+        await this.settleEarlyBufferRecovery(
+          streamId,
+          runtime,
+          pendingOverflow,
+          'failed',
+          Date.now() - recoveryStartedAt,
+          0,
+          0,
+          'reconstruction_error',
+        ).catch((settlementError) => {
+          logger.error(
+            '[GenerationJobManager] Failed to settle early buffer recovery error',
+            settlementError,
+          );
+        });
+        await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt).catch(
+          (terminalError) => {
+            logger.error(
+              '[GenerationJobManager] Failed to terminalize early buffer recovery error',
+              terminalError,
+            );
+          },
+        );
+        onError?.(GENERATION_RECOVERY_FAILED_ERROR);
+        return { subscription: null, resumeState: null, pendingEvents: [] };
+      }
       throw err;
     }
   }
@@ -6075,7 +6342,7 @@ class GenerationJobManagerClass {
     }
 
     const detached = !runtime.hasSubscriber;
-    const buffered = detached && this.bufferEarlyEvent(streamId, runtime, event);
+    const buffered = detached && (await this.bufferEarlyEvent(streamId, runtime, event));
     if (detached && !this._isRedis) {
       if (runtime.startupTelemetry) {
         this.recordStartupEvent(runtime, event);
@@ -6541,7 +6808,9 @@ class GenerationJobManagerClass {
       this.cleanupFencedRuntime(streamId, runtime);
       return;
     }
-    const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
+    const retirement: FencedRuntimeRetirementContext = {
+      controller: new AbortController(),
+    };
     this.fencedRuntimeRetirements.set(runtime, retirement);
     this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
   }
@@ -6727,7 +6996,10 @@ class GenerationJobManagerClass {
             } as ToolCallWithExecutionStatus)
           : { ...existingCall, ...completedToolCall, executionStatus };
     } else {
-      completedCalls.push({ ...completedToolCall, executionStatus } as ToolCallWithExecutionStatus);
+      completedCalls.push({
+        ...completedToolCall,
+        executionStatus,
+      } as ToolCallWithExecutionStatus);
     }
 
     this.accumulateRunStep(
@@ -6929,7 +7201,9 @@ class GenerationJobManagerClass {
     }
     tokenUsage.push(event.data);
 
-    const update: Partial<SerializableJobData> = { tokenUsage: JSON.stringify(tokenUsage) };
+    const update: Partial<SerializableJobData> = {
+      tokenUsage: JSON.stringify(tokenUsage),
+    };
 
     /** Reconcile the resume snapshot to this call's ACTUAL prompt tokens. A primary
      *  usage is the post-invoke truth for the call the latest stored snapshot
@@ -7040,7 +7314,9 @@ class GenerationJobManagerClass {
         // its pills — this is the authoritative writer of job.metadata.userMessage and
         // would otherwise drop them (the emitted created message includes them).
         ...(Array.isArray(extra.manualSkills) &&
-          extra.manualSkills.length > 0 && { manualSkills: extra.manualSkills }),
+          extra.manualSkills.length > 0 && {
+            manualSkills: extra.manualSkills,
+          }),
         ...(Array.isArray(extra.alwaysAppliedSkills) &&
           extra.alwaysAppliedSkills.length > 0 && {
             alwaysAppliedSkills: extra.alwaysAppliedSkills,
@@ -7541,7 +7817,11 @@ class GenerationJobManagerClass {
      */
     const publish = (): Promise<void> =>
       Promise.resolve().then(async () => {
-        await this.eventTransport.emitPreempt?.(streamId, { op: 'clear', createdAt, steerIds });
+        await this.eventTransport.emitPreempt?.(streamId, {
+          op: 'clear',
+          createdAt,
+          steerIds,
+        });
       });
     return publish().then(
       () => true,
@@ -7604,7 +7884,9 @@ class GenerationJobManagerClass {
               conversationId: streamId,
               steers: downgraded.map((steer) => ({
                 steerId: steer.steerId,
-                ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
+                ...(steer.clientSteerId && {
+                  clientSteerId: steer.clientSteerId,
+                }),
                 preempt: false,
                 preemptRevision: steer.preemptRevision ?? 0,
               })),
@@ -7709,6 +7991,7 @@ class GenerationJobManagerClass {
   async getResumeState(
     streamId: string,
     expectedCreatedAt?: number,
+    options?: { durableOnly?: boolean },
   ): Promise<t.ResumeState | null> {
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
@@ -7719,7 +8002,7 @@ class GenerationJobManagerClass {
      *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
     const [result, runSteps, queuedSteers, claimedSteers] = await Promise.all([
-      this.jobStore.getContentParts(streamId, jobData.createdAt),
+      this.jobStore.getContentParts(streamId, jobData.createdAt, options),
       this.jobStore.getRunSteps(streamId, jobData.createdAt),
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),

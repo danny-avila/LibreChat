@@ -2,14 +2,15 @@
 import type { Redis, Cluster } from 'ioredis';
 import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types';
 import {
+  GenerationJobManagerClass,
+  GENERATION_RECOVERY_FAILED_ERROR,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
+} from '~/stream/GenerationJobManager';
+import {
   ioredisClient as staticRedisClient,
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
-import {
-  GenerationJobManagerClass,
-  TERMINAL_PUBLICATION_RECONNECT_ERROR,
-} from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -128,11 +129,19 @@ describe('GenerationJobManager Integration Tests', () => {
 
     await manager.emitChunk(streamId, {
       event: 'on_run_step',
-      data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
+      data: {
+        id: 'step-1',
+        runId: 'run-1',
+        index: 0,
+        stepDetails: { type: 'message_creation' },
+      },
     });
     await manager.emitChunk(streamId, {
       event: 'on_message_delta',
-      data: { id: 'step-1', delta: { content: { type: 'text', text: 'Hello' } } },
+      data: {
+        id: 'step-1',
+        delta: { content: { type: 'text', text: 'Hello' } },
+      },
     });
 
     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -143,7 +152,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
     await manager.emitChunk(streamId, {
       event: 'on_message_delta',
-      data: { id: 'step-1', delta: { content: { type: 'text', text: ' world' } } },
+      data: {
+        id: 'step-1',
+        delta: { content: { type: 'text', text: ' world' } },
+      },
     });
     await manager.emitChunk(streamId, {
       event: 'on_message_delta',
@@ -185,7 +197,9 @@ describe('GenerationJobManager Integration Tests', () => {
       expect(retrieved?.streamId).toBe(streamId);
 
       // Update job
-      await GenerationJobManager.updateMetadata(streamId, { sender: 'TestAgent' });
+      await GenerationJobManager.updateMetadata(streamId, {
+        sender: 'TestAgent',
+      });
       const updated = await GenerationJobManager.getJob(streamId);
       expect(updated?.metadata?.sender).toBe('TestAgent');
 
@@ -269,7 +283,9 @@ describe('GenerationJobManager Integration Tests', () => {
       expect(hasJob).toBe(true);
 
       // Update and verify
-      await GenerationJobManager.updateMetadata(streamId, { sender: 'RedisAgent' });
+      await GenerationJobManager.updateMetadata(streamId, {
+        sender: 'RedisAgent',
+      });
       const updated = await GenerationJobManager.getJob(streamId);
       expect(updated?.metadata?.sender).toBe('RedisAgent');
 
@@ -1049,12 +1065,18 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await GenerationJobManager.emitChunk(streamId, {
         event: 'on_run_step_delta',
-        data: { id: 'step-1', delta: { type: 'tool_calls', tool_calls: [{ args: '{' }] } },
+        data: {
+          id: 'step-1',
+          delta: { type: 'tool_calls', tool_calls: [{ args: '{' }] },
+        },
       });
 
       await GenerationJobManager.emitChunk(streamId, {
         event: 'on_run_step_delta',
-        data: { id: 'step-1', delta: { type: 'tool_calls', tool_calls: [{ args: '}' }] } },
+        data: {
+          id: 'step-1',
+          delta: { type: 'tool_calls', tool_calls: [{ args: '}' }] },
+        },
       });
 
       await GenerationJobManager.emitChunk(streamId, {
@@ -1116,10 +1138,16 @@ describe('GenerationJobManager Integration Tests', () => {
       const emitPromises: Promise<void>[] = [];
       for (let i = 0; i < 10; i++) {
         emitPromises.push(
-          GenerationJobManager.emitChunk(streamId1, { event: 'test', data: { index: i } }),
+          GenerationJobManager.emitChunk(streamId1, {
+            event: 'test',
+            data: { index: i },
+          }),
         );
         emitPromises.push(
-          GenerationJobManager.emitChunk(streamId2, { event: 'test', data: { index: i * 100 } }),
+          GenerationJobManager.emitChunk(streamId2, {
+            event: 'test',
+            data: { index: i * 100 },
+          }),
         );
       }
       await Promise.all(emitPromises);
@@ -1275,7 +1303,10 @@ describe('GenerationJobManager Integration Tests', () => {
         for (let i = 0; i < 10; i++) {
           await manager.emitChunk(streamId, {
             event: 'on_message_delta',
-            data: { delta: { content: { type: 'text', text: `word${i} ` } }, index: i },
+            data: {
+              delta: { content: { type: 'text', text: `word${i} ` } },
+              index: i,
+            },
           });
         }
 
@@ -1359,7 +1390,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: ' Live!' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: ' Live!' } },
+        },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1403,7 +1437,12 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_run_step',
-        data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -1412,7 +1451,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: 'buffered' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: 'buffered' } },
+        },
       });
 
       const sub2Events: ServerSentEvent[] = [];
@@ -1580,7 +1622,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: ' Live!' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: ' Live!' } },
+        },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1619,7 +1664,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: 'detached-redis' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: 'detached-redis' } },
+        },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1636,7 +1684,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: ' live' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: ' live' } },
+        },
       });
 
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1696,7 +1747,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 5; i++) {
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
         });
       }
 
@@ -1706,7 +1760,10 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: 'after-overflow' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: 'after-overflow' } },
+        },
       });
       expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
 
@@ -1748,7 +1805,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 5; i++) {
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
         });
       }
       expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
@@ -1767,11 +1827,115 @@ describe('GenerationJobManager Integration Tests', () => {
 
       /** The resume path the client falls back to reconstructs the
        * discarded output from the durable chunk log. */
-      const resumeState = await manager.getResumeState(streamId);
+      const { subscription, resumeState } = await manager.subscribeWithResume(streamId, () => {});
       expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
+      subscription?.unsubscribe();
+      const recoveredJob = await manager.getJob(streamId);
+      expect(recoveredJob?.metadata.earlyBufferOverflow).toMatchObject({
+        recoveryMethod: 'redis',
+        recoveryOutcome: 'success',
+      });
 
       await manager.destroy();
     });
+
+    testRedis(
+      'reconstructs more than 5,000 pre-attachment events across replica reconnects (Redis)',
+      async () => {
+        const owner = createRedisManager();
+        const streamId = `overflow-cross-replica-${Date.now()}`;
+        await owner.createJob(streamId, 'user-1');
+        await owner.emitChunk(streamId, {
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            runId: 'run-1',
+            index: 0,
+            stepDetails: { type: 'message_creation' },
+          },
+        });
+        for (let i = 0; i < 5_001; i++) {
+          await owner.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: {
+              id: 'step-1',
+              delta: { content: { type: 'text', text: `${i},` } },
+            },
+          });
+        }
+
+        const firstReplica = createRedisManager();
+        const first = await firstReplica.subscribeWithResume(streamId, () => {});
+        expect(first.resumeState?.aggregatedContent).toHaveLength(1);
+        expect(JSON.stringify(first.resumeState?.aggregatedContent)).toContain('5000,');
+        first.subscription?.activate();
+        first.subscription?.unsubscribe();
+
+        await owner.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: 'after-disconnect' } },
+          },
+        });
+
+        const secondReplica = createRedisManager();
+        const second = await secondReplica.subscribeWithResume(streamId, () => {});
+        expect(JSON.stringify(second.resumeState?.aggregatedContent)).toContain('after-disconnect');
+        second.subscription?.unsubscribe();
+
+        const recoveredJob = await secondReplica.getJob(streamId);
+        expect(recoveredJob?.metadata.earlyBufferOverflow).toMatchObject({
+          recoveryMethod: 'redis',
+          recoveryOutcome: 'success',
+        });
+
+        await Promise.all([owner.destroy(), firstReplica.destroy(), secondReplica.destroy()]);
+      },
+      60_000,
+    );
+
+    testRedis(
+      'terminalizes an overflow when durable reconstruction is missing (Redis)',
+      async () => {
+        const owner = createRedisManager();
+        const streamId = `overflow-missing-durable-${Date.now()}`;
+        await owner.createJob(streamId, 'user-1');
+        const bigText = 'm'.repeat(2 * 1024 * 1024);
+        for (let i = 0; i < 5; i++) {
+          await owner.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: {
+              id: 'step-1',
+              delta: { content: { type: 'text', text: bigText } },
+            },
+          });
+        }
+        await ioredisClient!.del(`stream:{${streamId}}:chunks`);
+
+        const replica = createRedisManager();
+        const errors: string[] = [];
+        const result = await replica.subscribeWithResume(
+          streamId,
+          () => {},
+          undefined,
+          (error) => errors.push(error),
+        );
+
+        expect(result.subscription).toBeNull();
+        expect(errors).toEqual([GENERATION_RECOVERY_FAILED_ERROR]);
+        const failedJob = await replica.getJob(streamId);
+        expect(failedJob?.status).toBe('error');
+        expect(failedJob?.error).toBe(GENERATION_RECOVERY_FAILED_ERROR);
+        expect(failedJob?.metadata.earlyBufferOverflow).toMatchObject({
+          recoveryMethod: 'redis',
+          recoveryOutcome: 'failed',
+          recoveryFailureReason: 'durable_state_missing',
+        });
+
+        await Promise.all([owner.destroy(), replica.destroy()]);
+      },
+    );
 
     test('buffers detached events until the cap in in-memory mode', async () => {
       const manager = createInMemoryManager();
@@ -1839,7 +2003,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 5; i++) {
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
         });
       }
       releaseGate();
@@ -1882,11 +2049,19 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_run_step',
-        data: { id: 'step-1', runId: 'run-1', index: 0, stepDetails: { type: 'message_creation' } },
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
       });
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { id: 'step-1', delta: { content: { type: 'text', text: 'buffered' } } },
+        data: {
+          id: 'step-1',
+          delta: { content: { type: 'text', text: 'buffered' } },
+        },
       });
 
       const liveEvents: ServerSentEvent[] = [];
@@ -1939,7 +2114,9 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'buffered-pre-snapshot' } } },
+        data: {
+          delta: { content: { type: 'text', text: 'buffered-pre-snapshot' } },
+        },
       });
 
       const liveEvents: ServerSentEvent[] = [];
@@ -1984,7 +2161,9 @@ describe('GenerationJobManager Integration Tests', () => {
 
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
+          data: {
+            delta: { content: { type: 'text', text: 'buffered-redis' } },
+          },
         });
         await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -2290,7 +2469,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 5; i++) {
         await replicaA.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `token${i} ` } }, index: i },
+          data: {
+            delta: { content: { type: 'text', text: `token${i} ` } },
+            index: i,
+          },
         });
       }
 
@@ -2334,7 +2516,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 3; i++) {
         await replicaA.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `pre-local-${i}` } }, index: i },
+          data: {
+            delta: { content: { type: 'text', text: `pre-local-${i}` } },
+            index: i,
+          },
         });
       }
 
@@ -2350,7 +2535,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 3; i++) {
         await replicaA.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `post-local-${i}` } }, index: i + 3 },
+          data: {
+            delta: { content: { type: 'text', text: `post-local-${i}` } },
+            index: i + 3,
+          },
         });
       }
 
@@ -2423,7 +2611,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 3; i++) {
         await replicaA.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `word${i} ` } }, index: i },
+          data: {
+            delta: { content: { type: 'text', text: `word${i} ` } },
+            index: i,
+          },
         });
       }
 
@@ -2486,11 +2677,17 @@ describe('GenerationJobManager Integration Tests', () => {
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'pre-sub-0' } }, index: 0 },
+        data: {
+          delta: { content: { type: 'text', text: 'pre-sub-0' } },
+          index: 0,
+        },
       });
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'pre-sub-1' } }, index: 1 },
+        data: {
+          delta: { content: { type: 'text', text: 'pre-sub-1' } },
+          index: 1,
+        },
       });
 
       const receivedEvents: unknown[] = [];
@@ -2506,7 +2703,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 5; i++) {
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `post-sub-${i}` } }, index: i + 2 },
+          data: {
+            delta: { content: { type: 'text', text: `post-sub-${i}` } },
+            index: i + 2,
+          },
         });
       }
 
@@ -2553,7 +2753,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 0; i < 3; i++) {
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `chunk-${i}` } }, index: i },
+          data: {
+            delta: { content: { type: 'text', text: `chunk-${i}` } },
+            index: i,
+          },
         });
       }
 
@@ -2567,7 +2770,10 @@ describe('GenerationJobManager Integration Tests', () => {
       for (let i = 3; i < 6; i++) {
         await manager.emitChunk(streamId, {
           event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: `chunk-${i}` } }, index: i },
+          data: {
+            delta: { content: { type: 'text', text: `chunk-${i}` } },
+            index: i,
+          },
         });
       }
 
@@ -2631,7 +2837,10 @@ describe('GenerationJobManager Integration Tests', () => {
       await sub2.ready;
       expect(callCount).toBe(2);
 
-      await transport.emitChunk(streamId, { event: 'test', data: { value: 'hello' } });
+      await transport.emitChunk(streamId, {
+        event: 'test',
+        data: { value: 'hello' },
+      });
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(receivedEvents.length).toBe(1);
@@ -2782,7 +2991,10 @@ describe('GenerationJobManager Integration Tests', () => {
         status: 'error',
         error: 'Generation predecessor handoff could not be confirmed',
         replacedJobs: [
-          expect.objectContaining({ createdAt: predecessor.createdAt, status: 'running' }),
+          expect.objectContaining({
+            createdAt: predecessor.createdAt,
+            status: 'running',
+          }),
         ],
       });
       bystanderSubscription?.unsubscribe();
@@ -2916,7 +3128,10 @@ describe('GenerationJobManager Integration Tests', () => {
       );
 
       const store = new RedisJobStore(ioredisClient!);
-      const moved = await store.transitionStatus(streamId, { from: 'running', to: 'complete' });
+      const moved = await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'complete',
+      });
       expect(moved).toBe(true);
 
       const claimed = await store.claimParkedSteers(streamId, 'user-1');

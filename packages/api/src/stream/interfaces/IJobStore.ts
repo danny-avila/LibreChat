@@ -98,6 +98,27 @@ export const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
  */
 export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
+export type EarlyBufferRecoveryMethod = 'redis' | 'snapshot';
+export type EarlyBufferRecoveryOutcome = 'success' | 'failed';
+export type EarlyBufferRecoveryFailureReason =
+  | 'durable_state_missing'
+  | 'durable_frontier_gap'
+  | 'snapshot_missing'
+  | 'subscriber_never_attached'
+  | 'subscriber_disconnected'
+  | 'reconstruction_error';
+
+export interface EarlyBufferOverflowState {
+  id: string;
+  occurredAt: number;
+  droppedEvents: number;
+  droppedBytes: number;
+  recoveryMethod?: EarlyBufferRecoveryMethod;
+  recoveryOutcome?: EarlyBufferRecoveryOutcome;
+  recoveryCompletedAt?: number;
+  recoveryFailureReason?: EarlyBufferRecoveryFailureReason;
+}
+
 /** Immutable wire/storage contract selected when a generation is created.
  * Missing markers on pre-rollout records are interpreted as protocol v1. */
 export type GenerationProtocolVersion = 1 | 2;
@@ -120,6 +141,10 @@ export interface SerializableJobData {
   completedAt?: number;
   conversationId?: string;
   error?: string;
+
+  /** Durable, non-sensitive identity and one-shot outcome for an early replay
+   * buffer overflow. This lets another replica account for recovery. */
+  earlyBufferOverflow?: EarlyBufferOverflowState;
 
   /** Stable identity of the HTTP submission that created this generation.
    * Internal-only: lets an expired idempotency lease recognize the same live
@@ -950,7 +975,23 @@ export interface IJobStore {
   getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
-  ): Promise<{ content: Agents.MessageContentComplex[] } | null>;
+    options?: { durableOnly?: boolean },
+  ): Promise<{
+    content: Agents.MessageContentComplex[];
+    reconstructedEventCount?: number;
+    durableEventCount?: number;
+  } | null>;
+
+  /** Atomically records the only recovery outcome for one overflow identity. */
+  settleEarlyBufferRecovery?(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    settlement: Pick<
+      EarlyBufferOverflowState,
+      'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
+    >,
+  ): Promise<boolean>;
   getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 
   /** Legacy stores returned `void`; v2 stores return whether the epoch-fenced
@@ -1269,8 +1310,11 @@ export interface IJobStoreV2 extends IJobStore {
   getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
+    options?: { durableOnly?: boolean },
   ): Promise<{
     content: Agents.MessageContentComplex[];
+    reconstructedEventCount?: number;
+    durableEventCount?: number;
   } | null>;
 
   /**
