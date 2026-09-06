@@ -10,7 +10,11 @@ import {
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { AgentManagementFileDeps } from './files';
-import { createAgentManagementFileHandlers, createAgentManagementUploadResponse } from './files';
+import {
+  createAgentManagementFileHandlers,
+  createAgentManagementUploadResponse,
+  createAgentUploadLock,
+} from './files';
 
 jest.mock('@librechat/data-schemas', () => {
   return {
@@ -102,6 +106,71 @@ async function authorizeUpload(
 }
 
 describe('Agent Management file handlers', () => {
+  it('holds and releases the shared upload lock around processing', async () => {
+    const redisClient = {
+      set: jest.fn().mockResolvedValue('OK'),
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const task = jest.fn().mockResolvedValue('uploaded');
+
+    await expect(
+      createAgentUploadLock({ redisClient })('tenant-a:agent-one:context', task),
+    ).resolves.toBe('uploaded');
+
+    expect(redisClient.set).toHaveBeenCalledWith(
+      'agent-management:file-upload:tenant-a:agent-one:context',
+      expect.any(String),
+      'PX',
+      10 * 60 * 1000,
+      'NX',
+    );
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(redisClient.eval).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call('DEL', KEYS[1])"),
+      1,
+      'agent-management:file-upload:tenant-a:agent-one:context',
+      expect.any(String),
+    );
+  });
+
+  it('renews the shared upload lock while processing is still running', async () => {
+    jest.useFakeTimers();
+    const redisClient = {
+      set: jest.fn().mockResolvedValue('OK'),
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    let completeUpload: (value: string) => void = () => {};
+    const task = jest.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          completeUpload = resolve;
+        }),
+    );
+
+    try {
+      const pendingUpload = createAgentUploadLock({ redisClient })(
+        'tenant-a:agent-one:context',
+        task,
+      );
+      await Promise.resolve();
+      jest.advanceTimersByTime((10 * 60 * 1000) / 3);
+      await Promise.resolve();
+
+      expect(redisClient.eval).toHaveBeenCalledWith(
+        expect.stringContaining("redis.call('PEXPIRE', KEYS[1], ARGV[2])"),
+        1,
+        'agent-management:file-upload:tenant-a:agent-one:context',
+        expect.any(String),
+        10 * 60 * 1000,
+      );
+
+      completeUpload('uploaded');
+      await expect(pendingUpload).resolves.toBe('uploaded');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('projects upload success through the management metadata allowlist', () => {
     const response = makeResponse();
     const file = {

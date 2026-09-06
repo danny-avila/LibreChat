@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { logger, ResourceCapabilityMap } from '@librechat/data-schemas';
 import {
   EToolResources,
@@ -68,6 +69,37 @@ type AgentUploadConfig = {
   fileLimit?: number;
   totalSizeLimit?: number;
 };
+type AgentUploadLockRedisClient = {
+  set: (
+    key: string,
+    value: string,
+    expiryMode: 'PX',
+    ttlMs: number,
+    condition: 'NX',
+  ) => Promise<unknown>;
+  eval: (
+    script: string,
+    numberOfKeys: number,
+    key: string,
+    ...args: Array<string | number>
+  ) => Promise<unknown>;
+};
+
+const AGENT_UPLOAD_LOCK_TTL_MS = 10 * 60 * 1000;
+const AGENT_UPLOAD_LOCK_WAIT_MS = 2 * 60 * 1000;
+const AGENT_UPLOAD_LOCK_RENEW_MS = Math.floor(AGENT_UPLOAD_LOCK_TTL_MS / 3);
+const releaseUploadLockScript = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+const renewUploadLockScript = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+`;
 
 export interface AgentManagementFileDeps {
   getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
@@ -97,6 +129,66 @@ export interface AgentManagementFileDeps {
   getUploadConfig: (req: Request, agent: AgentManagementFileAgent) => Promise<AgentUploadConfig>;
   isUploadPurposeEnabled: (req: Request, purpose: AgentUploadPurpose) => Promise<boolean>;
   runUploadExclusive: <T>(key: string, task: () => Promise<T>) => Promise<T>;
+}
+
+/** Serialize an Agent purpose's aggregate-limit check and upload across API replicas. */
+export function createAgentUploadLock({
+  redisClient,
+}: {
+  redisClient: AgentUploadLockRedisClient | null;
+}): AgentManagementFileDeps['runUploadExclusive'] {
+  return async function withAgentUploadLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+    if (!redisClient) {
+      return await task();
+    }
+    const lockKey = `agent-management:file-upload:${key}`;
+    const token = randomUUID();
+    const deadline = Date.now() + AGENT_UPLOAD_LOCK_WAIT_MS;
+    while ((await redisClient.set(lockKey, token, 'PX', AGENT_UPLOAD_LOCK_TTL_MS, 'NX')) !== 'OK') {
+      if (Date.now() >= deadline) {
+        throw new Error('Timed out waiting for Agent file upload lock');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    let stopped = false;
+    let renewalTimer: ReturnType<typeof setTimeout>;
+    const renewLease = async () => {
+      try {
+        const renewed = await redisClient.eval(
+          renewUploadLockScript,
+          1,
+          lockKey,
+          token,
+          AGENT_UPLOAD_LOCK_TTL_MS,
+        );
+        if (renewed !== 1) {
+          logger.warn('[AgentManagement] Lost Agent file upload lock before processing completed');
+        }
+      } catch (error) {
+        logger.warn('[AgentManagement] Failed to renew Agent file upload lock', error);
+      } finally {
+        if (!stopped) {
+          renewalTimer = setTimeout(renewLease, AGENT_UPLOAD_LOCK_RENEW_MS);
+          renewalTimer.unref?.();
+        }
+      }
+    };
+    renewalTimer = setTimeout(renewLease, AGENT_UPLOAD_LOCK_RENEW_MS);
+    renewalTimer.unref?.();
+
+    try {
+      return await task();
+    } finally {
+      stopped = true;
+      clearTimeout(renewalTimer);
+      try {
+        await redisClient.eval(releaseUploadLockScript, 1, lockKey, token);
+      } catch (error) {
+        logger.warn('[AgentManagement] Failed to release Agent file upload lock', error);
+      }
+    }
+  };
 }
 
 function sendError(res: Response, code: Parameters<typeof mapAgentManagementError>[0]) {

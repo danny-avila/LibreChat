@@ -1,5 +1,4 @@
 const express = require('express');
-const crypto = require('crypto');
 const fs = require('fs').promises;
 const {
   EModelEndpoint,
@@ -9,8 +8,8 @@ const {
   mergeFileConfig,
   resolveEndpointType,
 } = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
 const {
+  createAgentUploadLock,
   createAgentManagementCreateHandler,
   createAgentManagementDeleteHandler,
   createAgentManagementFileHandlers,
@@ -30,73 +29,6 @@ const { checkCapability, getEndpointsConfig } = require('~/server/services/Confi
 const v1 = require('~/server/controllers/agents/v1');
 const db = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
-
-const AGENT_UPLOAD_LOCK_TTL_MS = 10 * 60 * 1000;
-const AGENT_UPLOAD_LOCK_WAIT_MS = 2 * 60 * 1000;
-const AGENT_UPLOAD_LOCK_RENEW_MS = Math.floor(AGENT_UPLOAD_LOCK_TTL_MS / 3);
-const releaseUploadLockScript = `
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('DEL', KEYS[1])
-end
-return 0
-`;
-const renewUploadLockScript = `
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
-end
-return 0
-`;
-
-const withAgentUploadLock = async (key, task) => {
-  if (!ioredisClient) {
-    return await task();
-  }
-  const lockKey = `agent-management:file-upload:${key}`;
-  const token = crypto.randomUUID();
-  const deadline = Date.now() + AGENT_UPLOAD_LOCK_WAIT_MS;
-  while ((await ioredisClient.set(lockKey, token, 'PX', AGENT_UPLOAD_LOCK_TTL_MS, 'NX')) !== 'OK') {
-    if (Date.now() >= deadline) {
-      throw new Error('Timed out waiting for Agent file upload lock');
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  let stopped = false;
-  let renewalTimer;
-  const renewLease = async () => {
-    try {
-      const renewed = await ioredisClient.eval(
-        renewUploadLockScript,
-        1,
-        lockKey,
-        token,
-        AGENT_UPLOAD_LOCK_TTL_MS,
-      );
-      if (renewed !== 1) {
-        logger.warn('[AgentManagement] Lost Agent file upload lock before processing completed');
-      }
-    } catch (error) {
-      logger.warn('[AgentManagement] Failed to renew Agent file upload lock', error);
-    } finally {
-      if (!stopped) {
-        renewalTimer = setTimeout(renewLease, AGENT_UPLOAD_LOCK_RENEW_MS);
-        renewalTimer.unref?.();
-      }
-    }
-  };
-  renewalTimer = setTimeout(renewLease, AGENT_UPLOAD_LOCK_RENEW_MS);
-  renewalTimer.unref?.();
-  try {
-    return await task();
-  } finally {
-    stopped = true;
-    clearTimeout(renewalTimer);
-    try {
-      await ioredisClient.eval(releaseUploadLockScript, 1, lockKey, token);
-    } catch (error) {
-      logger.warn('[AgentManagement] Failed to release Agent file upload lock', error);
-    }
-  }
-};
 
 const router = express.Router();
 const readHandlers = createAgentManagementReadHandlers({
@@ -171,7 +103,7 @@ const fileHandlers = createAgentManagementFileHandlers({
     }
     return true;
   },
-  runUploadExclusive: withAgentUploadLock,
+  runUploadExclusive: createAgentUploadLock({ redisClient: ioredisClient }),
 });
 const sendUploadRateLimit = (_req, res) =>
   res.status(429).json({
