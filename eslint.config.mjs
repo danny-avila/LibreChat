@@ -22,6 +22,24 @@ const compat = new FlatCompat({
   allConfig: js.configs.all,
 });
 
+const tenantModelRestrictions = [
+  {
+    selector: "CallExpression[callee.property.name='bulkSave']",
+    message:
+      'Avoid Model.bulkSave() — it derives writes and delegates to bulkWrite() after running save hooks, but without query middleware to scope the generated write filters. Use create()/insertMany() or tenantSafeBulkWrite() instead.',
+  },
+  {
+    selector: "CallExpression[callee.property.name='watch']",
+    message:
+      "Avoid Model.watch() — a change stream opens outside query middleware, so the tenant isolation plugin cannot scope it and it emits every tenant's events. A change stream requires a justified inline exemption documenting its system context and explicit tenantId $match guard.",
+  },
+  {
+    selector: "CallExpression[callee.property.name='estimatedDocumentCount']",
+    message:
+      'Avoid Model.estimatedDocumentCount() — it reads collection metadata and takes no filter, so it always returns the count across every tenant. Use countDocuments() for a tenant-scoped count.',
+  },
+];
+
 export default [
   {
     ignores: [
@@ -374,9 +392,15 @@ export default [
     },
   },
   {
+    files: ['packages/api/**/*.{ts,js}', 'api/**/*.{ts,js}'],
+    ignores: ['**/*.spec.{ts,js}', '**/*.test.{ts,js}'],
+    rules: {
+      'no-restricted-syntax': ['error', ...tenantModelRestrictions],
+    },
+  },
+  {
     // **Data-schemas — ban model APIs that bypass tenant isolation in production code**
-    // Mongoose middleware is the only enforcement point for the tenant-isolation plugin,
-    // so every API that skips it is banned here rather than guarded downstream.
+    // Raw driver calls bypass the plugin; bulkSave also bypasses query filter scoping.
     // Tests and the tenantSafeBulkWrite wrapper itself are excluded.
     files: ['./packages/data-schemas/**/*.ts'],
     ignores: ['**/*.spec.ts', '**/*.test.ts', '**/utils/tenantBulkWrite.ts'],
@@ -393,21 +417,7 @@ export default [
           message:
             'Avoid Model.collection.* — raw driver calls bypass all Mongoose middleware including tenant isolation. Use Mongoose model methods or tenantSafeBulkWrite() instead.',
         },
-        {
-          selector: "CallExpression[callee.property.name='bulkSave']",
-          message:
-            'Avoid Model.bulkSave() — it derives writes and delegates to bulkWrite() without running save or query middleware, so the tenant isolation plugin can neither stamp nor scope them. Use create()/insertMany() or tenantSafeBulkWrite() instead.',
-        },
-        {
-          selector: "CallExpression[callee.property.name='watch']",
-          message:
-            "Avoid Model.watch() — a change stream opens outside query middleware, so the tenant isolation plugin cannot scope it and it emits every tenant's events. Open one only under runAsSystem() with an explicit $match on tenantId.",
-        },
-        {
-          selector: "CallExpression[callee.property.name='estimatedDocumentCount']",
-          message:
-            'Avoid Model.estimatedDocumentCount() — it reads collection metadata and takes no filter, so it always returns the count across every tenant. Use countDocuments() for a tenant-scoped count.',
-        },
+        ...tenantModelRestrictions,
       ],
     },
   },
