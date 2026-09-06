@@ -103,6 +103,20 @@
               }
               safeAttributes[key] = value;
             });
+            /* Stamp before persistence: a recovery reload may precede the RUM module. */
+            safeAttributes.clientBuildId = 'unknown';
+            var entryScripts = document.querySelectorAll('script[type="module"][src]');
+            for (var i = 0; i < entryScripts.length; i++) {
+              var filename = entryScripts[i]
+                .getAttribute('src')
+                .split(/[?#]/, 1)[0]
+                .split('/')
+                .pop();
+              if (/^index[.-][\w-]+\.js$/.test(filename)) {
+                safeAttributes.clientBuildId = filename;
+                break;
+              }
+            }
             if (window.__lcRumQueue.length >= MAX_RUM_QUEUE) {
               window.__lcRumQueue.shift();
             }

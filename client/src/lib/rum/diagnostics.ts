@@ -219,6 +219,7 @@ function emitEarlyRumEvent(HyperDX: HyperDXActionClient, event: RumQueuedEvent):
       compact({
         at: round(event.at),
         visibilityState: nonEmptyString(event.visibilityState),
+        clientBuildId: 'unknown',
         ...sanitizeQueuedAttributes(event.attributes),
       }),
     );

@@ -62,6 +62,7 @@
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e:prepare": "npm run frontend",
+    "test:client-build": "node --test e2e/client-build.test.mjs",
     "e2e": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts",
     "e2e:headed": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --headed",
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
