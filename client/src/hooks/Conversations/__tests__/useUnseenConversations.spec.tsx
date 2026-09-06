@@ -1,10 +1,10 @@
 import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
-import { updateConvoInAllQueries } from '~/utils';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { TConversation } from 'librechat-data-provider';
 import useUnseenConversations from '../useUnseenConversations';
+import { updateConvoInAllQueries } from '~/utils';
 
 const listKeyActive = [QueryKeys.allConversations, { isArchived: false }];
 const listKeyArchived = [QueryKeys.allConversations, { isArchived: true }];
