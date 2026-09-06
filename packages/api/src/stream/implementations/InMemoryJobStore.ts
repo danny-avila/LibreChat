@@ -1549,6 +1549,19 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return true;
   }
 
+  async claimFirstSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt || job.firstSubscriberAttachedAt != null) {
+      return false;
+    }
+    job.firstSubscriberAttachedAt = attachedAt;
+    return true;
+  }
+
   /**
    * Get run steps for a job from graph.contentData.
    * Uses WeakRef - may return empty if graph has been GC'd.

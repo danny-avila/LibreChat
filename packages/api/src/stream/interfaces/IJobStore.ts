@@ -106,12 +106,13 @@ export type EarlyBufferRecoveryFailureReason =
   | 'snapshot_missing'
   | 'subscriber_never_attached'
   | 'subscriber_disconnected'
-  | 'reconstruction_error';
+  | 'reconstruction_error'
+  | 'overflow_marker_persistence_failed';
 
 export interface EarlyBufferOverflowState {
   id: string;
   occurredAt: number;
-  emittedEvents: number;
+  durableEvents: number;
   droppedEvents: number;
   droppedBytes: number;
   recoveryMethod?: EarlyBufferRecoveryMethod;
@@ -146,6 +147,9 @@ export interface SerializableJobData {
   /** Durable, non-sensitive identity and one-shot outcome for an early replay
    * buffer overflow. This lets another replica account for recovery. */
   earlyBufferOverflow?: EarlyBufferOverflowState;
+
+  /** Generation-level first subscriber claim shared across replicas. */
+  firstSubscriberAttachedAt?: number;
 
   /** Stable identity of the HTTP submission that created this generation.
    * Internal-only: lets an expired idempotency lease recognize the same live
@@ -992,6 +996,13 @@ export interface IJobStore {
       EarlyBufferOverflowState,
       'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
     >,
+  ): Promise<boolean>;
+
+  /** Atomically claims the first subscriber for one generation epoch. */
+  claimFirstSubscriber?(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
   ): Promise<boolean>;
   getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 

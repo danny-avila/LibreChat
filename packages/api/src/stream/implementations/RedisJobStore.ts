@@ -630,6 +630,12 @@ const SETTLE_EARLY_BUFFER_RECOVERY_LUA =
   'for key, value in pairs(settlement) do overflow[key] = value end ' +
   'redis.call("HSET", KEYS[1], "earlyBufferOverflow", cjson.encode(overflow)) return 1';
 
+/** Generation-scoped single-winner first-subscriber claim. */
+const CLAIM_FIRST_SUBSCRIBER_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HEXISTS", KEYS[1], "firstSubscriberAttachedAt") == 1 then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "firstSubscriberAttachedAt", ARGV[2]) return 1';
+
 /** Exact provider-segment completion fence. A paused segment finishing after a
  * resume cannot mark the resumed provider drained because its opaque id differs. */
 const PROVIDER_DRAIN_LUA =
@@ -2324,6 +2330,24 @@ export class RedisJobStore implements IJobStoreV2 {
       JSON.stringify(settlement),
     );
     return settled === 1;
+  }
+
+  async claimFirstSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          CLAIM_FIRST_SUBSCRIBER_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+          String(attachedAt),
+        ),
+      ) === 1
+    );
   }
 
   async markProviderExecutionDrained(
@@ -5011,6 +5035,9 @@ export class RedisJobStore implements IJobStoreV2 {
       error: data.error || undefined,
       earlyBufferOverflow: data.earlyBufferOverflow
         ? (JSON.parse(data.earlyBufferOverflow) as EarlyBufferOverflowState)
+        : undefined,
+      firstSubscriberAttachedAt: data.firstSubscriberAttachedAt
+        ? parseInt(data.firstSubscriberAttachedAt, 10)
         : undefined,
       idempotencyClientRequestId: data.idempotencyClientRequestId || undefined,
       recoveredSteerId: data.recoveredSteerId || undefined,

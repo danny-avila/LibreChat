@@ -1845,6 +1845,13 @@ describe('GenerationJobManager Integration Tests', () => {
         const owner = createRedisManager();
         const streamId = `overflow-cross-replica-${Date.now()}`;
         await owner.createJob(streamId, 'user-1');
+        /** Created envelopes are published but not durably appendable, so they
+         * must not advance the durable recovery frontier. */
+        await owner.emitChunk(streamId, {
+          created: true,
+          message: { text: 'hello' },
+          streamId,
+        } as CreatedEvent);
         await owner.emitChunk(streamId, {
           event: 'on_run_step',
           data: {
@@ -1870,6 +1877,11 @@ describe('GenerationJobManager Integration Tests', () => {
         expect(JSON.stringify(first.resumeState?.aggregatedContent)).toContain('5000,');
         first.subscription?.activate();
         first.subscription?.unsubscribe();
+        const firstAttachedAt = await ioredisClient!.hget(
+          `stream:{${streamId}}:job`,
+          'firstSubscriberAttachedAt',
+        );
+        expect(firstAttachedAt).not.toBeNull();
 
         await owner.emitChunk(streamId, {
           event: 'on_message_delta',
@@ -1883,6 +1895,9 @@ describe('GenerationJobManager Integration Tests', () => {
         const second = await secondReplica.subscribeWithResume(streamId, () => {});
         expect(JSON.stringify(second.resumeState?.aggregatedContent)).toContain('after-disconnect');
         second.subscription?.unsubscribe();
+        expect(
+          await ioredisClient!.hget(`stream:{${streamId}}:job`, 'firstSubscriberAttachedAt'),
+        ).toBe(firstAttachedAt);
 
         const recoveredJob = await secondReplica.getJob(streamId);
         expect(recoveredJob?.metadata.earlyBufferOverflow).toMatchObject({
