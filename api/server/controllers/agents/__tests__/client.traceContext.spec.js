@@ -1,9 +1,6 @@
 const AgentClient = require('../client');
 
-/** Minimal `this` for the trace context builder — it only reads `options`. */
-function buildTraceContext(options) {
-  return AgentClient.prototype.buildTraceContext.call({ options });
-}
+const { buildTraceContext } = AgentClient;
 
 describe('AgentClient.buildTraceContext', () => {
   it('reads the model label from the trace-only option the initializer sets', () => {
@@ -28,5 +25,14 @@ describe('AgentClient.buildTraceContext', () => {
       modelLabel: 'Custom',
     });
     expect(buildTraceContext({ endpoint: 'openAI' }).modelLabel).toBeUndefined();
+  });
+
+  it('tolerates a client context without options', () => {
+    expect(buildTraceContext(undefined)).toEqual({
+      endpoint: undefined,
+      endpointType: undefined,
+      modelLabel: undefined,
+      spec: undefined,
+    });
   });
 });
