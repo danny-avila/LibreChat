@@ -1789,6 +1789,43 @@ describe('GenerationJobManager Integration Tests', () => {
     );
 
     testRedis(
+      'fences terminal cleanup before an overflow attachment waits on bootstrap',
+      async () => {
+        const services = createStreamServices({ useRedis: true, redisClient: ioredisClient! });
+        const manager = new GenerationJobManagerClass();
+        manager.configure(services);
+        manager.initialize();
+        const streamId = `overflow-bootstrap-race-${Date.now()}`;
+        const job = await manager.createJob(streamId, 'user-1');
+
+        const bigText = 'q'.repeat(2 * 1024 * 1024);
+        for (let i = 0; i < 5; i++) {
+          await manager.emitChunk(streamId, {
+            event: 'on_message_delta',
+            data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+          });
+        }
+
+        jest
+          .spyOn(services.eventTransport, 'syncReorderBuffer')
+          .mockImplementationOnce(async () => {
+            await manager.completeJob(streamId, undefined, job.createdAt);
+          });
+        await manager.subscribe(streamId, () => {});
+
+        const retained = await manager.getJobStore().getJob(streamId);
+        expect(retained).toMatchObject({
+          status: 'complete',
+          firstSubscriberAttachedAt: expect.any(Number),
+        });
+        expect(retained?.earlyBufferRecovery?.outcome).toBeUndefined();
+
+        await manager.destroy();
+      },
+      30_000,
+    );
+
+    testRedis(
       'terminally fails overflow recovery when the durable chunk log is missing',
       async () => {
         const manager = createRedisManager();

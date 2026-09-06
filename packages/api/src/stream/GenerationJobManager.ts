@@ -4988,6 +4988,43 @@ class GenerationJobManagerClass {
 
     const isFirstAttachment =
       runtime.firstAttachmentClaimedAt != null || !runtime.everHadSubscriber;
+
+    /** An overflow attachment depends on durable reconstruction. Fence terminal
+     * cleanup before any bootstrap wait or local observed-state mutation so a
+     * concurrent completion cannot remove the job and chunk log underneath it. */
+    if (
+      isFirstAttachment &&
+      runtime.firstAttachmentClaimedAt == null &&
+      runtime.earlyEventBufferOverflowed === true
+    ) {
+      const claimedAt = Date.now();
+      try {
+        const claimed = await this.jobStore.claimFirstSubscriberAttachment(
+          streamId,
+          runtime.createdAt,
+          claimedAt,
+        );
+        if (claimed) {
+          runtime.firstAttachmentClaimedAt = claimedAt;
+        } else {
+          const durableJob = await this.jobStore.getJob(streamId);
+          if (
+            durableJob?.createdAt !== runtime.createdAt ||
+            durableJob.firstSubscriberAttachedAt == null
+          ) {
+            subscription.unsubscribe();
+            recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+            return null;
+          }
+        }
+      } catch (err) {
+        subscription.unsubscribe();
+        recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
+        logger.warn('[GenerationJobManager] Failed to fence overflow attachment:', err);
+        return null;
+      }
+    }
+
     if (!runtime.hasSubscriber) {
       runtime.hasSubscriber = true;
       runtime.everHadSubscriber = true;
