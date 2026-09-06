@@ -69,7 +69,7 @@ const mergeTimestamps = async (
    *  own stale reads are fenced by its arrival focus check. */
   stampDelivery = false,
 ): Promise<void> => {
-  const { conversationId, lastResponseAt, lastSeenAt, updatedAt } = convo;
+  const { conversationId, lastResponseAt, lastResponseIsManual, lastSeenAt, updatedAt } = convo;
   if (!conversationId || !lastResponseAt) {
     return;
   }
@@ -102,6 +102,7 @@ const mergeTimestamps = async (
   if (
     cached &&
     cached.lastResponseAt === lastResponseAt &&
+    cached.lastResponseIsManual === lastResponseIsManual &&
     cached.lastSeenAt === (lastSeenAt ?? undefined) &&
     (updatedAt === undefined || cached.updatedAt === updatedAt)
   ) {
@@ -155,6 +156,7 @@ const mergeTimestamps = async (
   if (
     fresh &&
     fresh.lastResponseAt === lastResponseAt &&
+    fresh.lastResponseIsManual === lastResponseIsManual &&
     fresh.lastSeenAt === (lastSeenAt ?? undefined) &&
     (updatedAt === undefined || fresh.updatedAt === updatedAt)
   ) {
@@ -167,6 +169,7 @@ const mergeTimestamps = async (
     (current) => ({
       ...current,
       lastResponseAt,
+      lastResponseIsManual,
       lastSeenAt,
       updatedAt: updatedAt ?? current.updatedAt,
     }),

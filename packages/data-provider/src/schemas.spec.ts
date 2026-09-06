@@ -735,18 +735,19 @@ describe('tMessageSchema user-submitted provenance', () => {
 });
 
 describe('tPresetSchema', () => {
-  it('strips the unseen-reply timestamps from preset payloads', () => {
-    /* Saving a preset off a live conversation (Panel's tConvoUpdateSchema.parse) captures
-       lastResponseAt/lastSeenAt; a preset carrying them would stamp stale unseen state back
-       onto every conversation it is applied to. */
+  it('strips all unseen-reply state from preset payloads', () => {
+    /* Saving a preset off a live conversation captures read-state fields; none may stamp stale
+       state back onto every conversation it is applied to. */
     const parsed = tPresetSchema.parse({
       conversationId: null,
       endpoint: 'openAI',
       lastResponseAt: '2026-08-16T10:00:00.000Z',
+      lastResponseIsManual: true,
       lastSeenAt: '2026-08-16T09:00:00.000Z',
     });
 
     expect(parsed).not.toHaveProperty('lastResponseAt');
+    expect(parsed).not.toHaveProperty('lastResponseIsManual');
     expect(parsed).not.toHaveProperty('lastSeenAt');
   });
 

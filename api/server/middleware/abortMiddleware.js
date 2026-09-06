@@ -149,7 +149,7 @@ async function abortMessage(req, res) {
     );
   }
 
-  await db.saveMessage(
+  const savedMessage = await db.saveMessage(
     {
       userId: req?.user?.id,
       isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
@@ -169,7 +169,7 @@ async function abortMessage(req, res) {
      key and endpoint, so the request body alone would stamp a stopped temporary chat. */
   const stampConversationId = jobData?.conversationId;
   const isTemporaryJob = (jobData?.isTemporary ?? req?.body?.isTemporary) === true;
-  if (!isTemporaryJob && stampConversationId) {
+  if (savedMessage != null && !isTemporaryJob && stampConversationId) {
     try {
       await db.stampConvoLastResponse(userId, stampConversationId);
     } catch (error) {
