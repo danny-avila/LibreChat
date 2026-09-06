@@ -36,16 +36,34 @@ const mockFileRemove = jest.fn((_req, res) =>
   res.status(200).json({ id: 'file-one', deleted: true }),
 );
 const mockFileUpload = jest.fn((_req, res) => res.status(200).json({ id: 'file-uploaded' }));
+const mockFileAuthorizeUpload = jest.fn((_req, _res, next) => next());
+const mockGetFileUploadConfig = jest.fn(() => ({ endpoint: 'openAI' }));
 let mockFileDeps;
 const mockCreateAgentManagementFileHandlers = jest.fn((deps) => {
   mockFileDeps = deps;
-  return { upload: mockFileUpload, list: mockFileList, remove: mockFileRemove };
+  return {
+    authorizeUpload: mockFileAuthorizeUpload,
+    getUploadConfig: mockGetFileUploadConfig,
+    upload: mockFileUpload,
+    list: mockFileList,
+    remove: mockFileRemove,
+  };
 });
 const mockBrowserCreate = jest.fn();
 const mockBrowserUpdate = jest.fn();
 const mockCheckBan = jest.fn((_req, _res, next) => next());
 const mockConfigMiddleware = jest.fn((_req, _res, next) => next());
 const mockUaParser = jest.fn((_req, _res, next) => next());
+const mockUploadMiddleware = jest.fn((req, _res, next) => {
+  req.file = { path: '/tmp/upload', originalname: 'input.txt' };
+  next();
+});
+const mockCreateMulterInstance = jest.fn().mockResolvedValue({
+  single: jest.fn(() => mockUploadMiddleware),
+});
+const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
+  Moonshot: { type: 'custom' },
+});
 
 const mockRequireAgentManagementAuth = jest.fn((req, res, next) => {
   if (req.headers.authorization !== 'Bearer valid-token') {
@@ -77,14 +95,10 @@ jest.mock('~/server/middleware', () => ({
   uaParser: mockUaParser,
 }));
 jest.mock('~/server/routes/files/multer', () => ({
-  createMulterInstance: jest.fn().mockResolvedValue({
-    single: jest.fn(() => (req, _res, next) => {
-      req.file = { path: '/tmp/upload', originalname: 'input.txt' };
-      next();
-    }),
-  }),
+  createMulterInstance: mockCreateMulterInstance,
 }));
 jest.mock('~/server/routes/files/files', () => ({ handleFileUpload: jest.fn() }));
+jest.mock('~/server/services/Config', () => ({ getEndpointsConfig: mockGetEndpointsConfig }));
 jest.mock('~/server/controllers/agents/v1', () => ({
   createAgent: mockBrowserCreate,
   updateAgent: mockBrowserUpdate,
@@ -115,6 +129,9 @@ describe('Agent Management route boundary', () => {
     mockConfigMiddleware.mockClear();
     mockUaParser.mockClear();
     mockMapAgentManagementError.mockClear();
+    mockFileAuthorizeUpload.mockClear();
+    mockFileUpload.mockClear();
+    mockUploadMiddleware.mockClear();
   });
 
   it('rejects a request before reaching management routes without machine authentication', async () => {
@@ -219,6 +236,32 @@ describe('Agent Management route boundary', () => {
     expect(mockFileDeps.removeAgentResourceFiles).toEqual(expect.any(Function));
   });
 
+  it('retries multipart initialization after a transient failure', async () => {
+    mockCreateMulterInstance.mockRejectedValueOnce(new Error('temporary config failure'));
+    mockMapAgentManagementError.mockReturnValueOnce({
+      status: 500,
+      body: { error: { code: 'internal_error', message: 'Internal server error' } },
+    });
+
+    const failed = await request(app)
+      .post('/api/agents/v1/agents/agent-one/files')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ purpose: 'context' });
+    const retried = await request(app)
+      .post('/api/agents/v1/agents/agent-one/files')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ purpose: 'context' });
+
+    expect(failed.status).toBe(500);
+    expect(retried.status).toBe(200);
+    expect(mockCreateMulterInstance).toHaveBeenCalledTimes(2);
+    expect(mockCreateMulterInstance).toHaveBeenLastCalledWith({
+      resolveEndpoint: mockGetFileUploadConfig,
+      uniqueTempPath: true,
+    });
+    expect(mockFileUpload).toHaveBeenCalledTimes(1);
+  });
+
   it('loads file configuration and dispatches authenticated multipart uploads', async () => {
     const response = await request(app)
       .post('/api/agents/v1/agents/agent-one/files')
@@ -227,8 +270,57 @@ describe('Agent Management route boundary', () => {
 
     expect(response.status).toBe(200);
     expect(mockConfigMiddleware).toHaveBeenCalledTimes(1);
+    expect(mockFileAuthorizeUpload).toHaveBeenCalledTimes(1);
     expect(mockFileUpload).toHaveBeenCalledTimes(1);
+    expect(mockFileAuthorizeUpload.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUploadMiddleware.mock.invocationCallOrder[0],
+    );
     expect(mockFileDeps.processUpload).toEqual(expect.any(Function));
     expect(mockFileDeps.deleteTempFile).toEqual(expect.any(Function));
+    expect(mockFileDeps.getUploadConfig).toEqual(expect.any(Function));
+  });
+
+  it('resolves upload limits from the target Agent provider', async () => {
+    const config = await mockFileDeps.getUploadConfig(
+      {
+        config: {
+          fileConfig: {
+            endpoints: {
+              Moonshot: { fileLimit: 3, totalSizeLimit: 20 },
+            },
+          },
+        },
+      },
+      { provider: 'Moonshot' },
+    );
+
+    expect(config).toMatchObject({
+      endpoint: 'Moonshot',
+      endpointType: 'custom',
+      fileLimit: 3,
+      totalSizeLimit: 20 * 1024 * 1024,
+    });
+  });
+
+  it('maps multipart failures into the management error contract', async () => {
+    mockMapAgentManagementError.mockReturnValueOnce({
+      status: 400,
+      body: { error: { code: 'invalid_request', message: 'Invalid request' } },
+    });
+    mockUploadMiddleware.mockImplementationOnce((_req, _res, next) => {
+      next(Object.assign(new Error('File too large'), { code: 'LIMIT_FILE_SIZE' }));
+    });
+
+    const response = await request(app)
+      .post('/api/agents/v1/agents/agent-one/files')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ purpose: 'context' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: { code: 'invalid_request', message: 'Invalid request' },
+    });
+    expect(mockFileUpload).not.toHaveBeenCalled();
+    expect(mockMapAgentManagementError).toHaveBeenCalledWith('invalid_request');
   });
 });

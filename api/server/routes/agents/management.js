@@ -1,6 +1,12 @@
 const express = require('express');
 const fs = require('fs').promises;
 const {
+  EModelEndpoint,
+  getEndpointFileConfig,
+  mergeFileConfig,
+  resolveEndpointType,
+} = require('librechat-data-provider');
+const {
   createAgentManagementCreateHandler,
   createAgentManagementDeleteHandler,
   createAgentManagementFileHandlers,
@@ -15,6 +21,7 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const { createMulterInstance } = require('~/server/routes/files/multer');
 const { handleFileUpload } = require('~/server/routes/files/files');
+const { getEndpointsConfig } = require('~/server/services/Config');
 const v1 = require('~/server/controllers/agents/v1');
 const db = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
@@ -59,12 +66,55 @@ const fileHandlers = createAgentManagementFileHandlers({
       createAgentManagementUploadResponse(res, req.file, req.body.tool_resource),
     ),
   deleteTempFile: fs.unlink,
+  getUploadConfig: async (req, agent) => {
+    const endpoint = agent.provider || EModelEndpoint.agents;
+    const endpointType = resolveEndpointType(
+      await getEndpointsConfig(req),
+      EModelEndpoint.agents,
+      endpoint,
+    );
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      endpoint,
+      endpointType,
+    });
+    return {
+      endpoint,
+      endpointType,
+      disabled: endpointConfig.disabled,
+      fileLimit: endpointConfig.fileLimit,
+      totalSizeLimit: endpointConfig.totalSizeLimit,
+    };
+  },
 });
 const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
 let uploadPromise;
+const getManagementUploader = async () => {
+  try {
+    uploadPromise ??= createMulterInstance({
+      resolveEndpoint: fileHandlers.getUploadConfig,
+      uniqueTempPath: true,
+    });
+    return await uploadPromise;
+  } catch (error) {
+    uploadPromise = undefined;
+    throw error;
+  }
+};
 const uploadSingleFile = (req, res, next) => {
-  uploadPromise ??= createMulterInstance({ endpoint: 'agents' });
-  uploadPromise.then((upload) => upload.single('file')(req, res, next)).catch(next);
+  getManagementUploader()
+    .then((upload) => upload.single('file')(req, res, next))
+    .catch(next);
+};
+const handleUploadError = (error, _req, res, _next) => {
+  const status = Number(error?.statusCode);
+  const isMultipartRequestError =
+    error?.name === 'MulterError' ||
+    error?.code?.startsWith?.('LIMIT_') ||
+    (Number.isInteger(status) && status >= 400 && status < 500);
+  const code = isMultipartRequestError ? 'invalid_request' : 'internal_error';
+  const mapped = mapAgentManagementError(code);
+  return res.status(mapped.status).json(mapped.body);
 };
 
 router.use(requireAgentManagementAuth);
@@ -77,9 +127,11 @@ router.post(
   configMiddleware,
   fileUploadIpLimiter,
   fileUploadUserLimiter,
+  fileHandlers.authorizeUpload,
   uploadSingleFile,
   restoreTenantContextFromReq,
   fileHandlers.upload,
+  handleUploadError,
 );
 router.get('/:id/files', fileHandlers.list);
 router.delete('/:id/files/:fileId', fileHandlers.remove);

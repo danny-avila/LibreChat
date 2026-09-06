@@ -30,6 +30,7 @@ const objectId = new Types.ObjectId();
 const agent = {
   _id: objectId,
   id: 'agent-one',
+  provider: 'Moonshot',
   tool_resources: {
     context: { file_ids: ['file-context', 'file-shared'] },
     file_search: { file_ids: ['file-search', 'file-shared'] },
@@ -78,8 +79,24 @@ function makeDeps(overrides: Partial<AgentManagementFileDeps> = {}): AgentManage
     removeAgentResourceFiles: jest.fn().mockResolvedValue(agent),
     processUpload: jest.fn().mockResolvedValue(undefined),
     deleteTempFile: jest.fn().mockResolvedValue(undefined),
+    getUploadConfig: jest.fn().mockResolvedValue({
+      endpoint: 'Moonshot',
+      endpointType: 'custom',
+      fileLimit: 100,
+      totalSizeLimit: 1_000_000,
+    }),
     ...overrides,
   };
+}
+
+async function authorizeUpload(
+  handlers: ReturnType<typeof createAgentManagementFileHandlers>,
+  request: Request,
+  response: Response,
+) {
+  const next = jest.fn();
+  await handlers.authorizeUpload(request, response, next);
+  expect(next).toHaveBeenCalledTimes(1);
 }
 
 describe('Agent Management file handlers', () => {
@@ -136,14 +153,21 @@ describe('Agent Management file handlers', () => {
       const deps = makeDeps();
       const response = makeResponse();
       const request = makeRequest({ id: 'agent-one' });
+      const handlers = createAgentManagementFileHandlers(deps);
+      await authorizeUpload(handlers, request, response);
       request.body = { purpose };
-      request.file = { path: '/tmp/upload', originalname: 'input.txt' } as Express.Multer.File;
+      request.file = {
+        path: '/tmp/upload',
+        originalname: 'input.txt',
+        size: 12,
+      } as Express.Multer.File;
 
-      await createAgentManagementFileHandlers(deps).upload(request, response);
+      await handlers.upload(request, response);
 
       expect(deps.processUpload).toHaveBeenCalledWith(request, response);
       expect(request.body).toEqual({
-        endpoint: 'agents',
+        endpoint: 'Moonshot',
+        endpointType: 'custom',
         agent_id: 'agent-one',
         tool_resource: purpose,
       });
@@ -166,36 +190,124 @@ describe('Agent Management file handlers', () => {
     expect(response.status).toHaveBeenCalledWith(400);
   });
 
-  it('cleans up an upload rejected by tenant-scoped Agent lookup', async () => {
+  it('rejects a cross-tenant Agent before staging an upload', async () => {
     const deps = makeDeps({ getAgentWithVersionCount: jest.fn().mockResolvedValue(null) });
     const response = makeResponse();
     const request = makeRequest({ id: 'agent-other-tenant' });
-    request.body = { purpose: EToolResources.context };
-    request.file = { path: '/tmp/rejected', originalname: 'input.txt' } as Express.Multer.File;
+    const next = jest.fn();
 
-    await createAgentManagementFileHandlers(deps).upload(request, response);
+    await createAgentManagementFileHandlers(deps).authorizeUpload(request, response, next);
 
-    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/rejected');
+    expect(next).not.toHaveBeenCalled();
+    expect(deps.deleteTempFile).not.toHaveBeenCalled();
     expect(deps.processUpload).not.toHaveBeenCalled();
     expect(response.status).toHaveBeenCalledWith(404);
   });
 
   it('reports cleanup failures with the management error contract', async () => {
     const deps = makeDeps({
-      getAgentWithVersionCount: jest.fn().mockResolvedValue(null),
       deleteTempFile: jest.fn().mockRejectedValue(new Error('cleanup failed')),
+      getUploadConfig: jest.fn().mockResolvedValue({
+        endpoint: 'Moonshot',
+        endpointType: 'custom',
+        fileLimit: 2,
+      }),
     });
     const response = makeResponse();
-    const request = makeRequest({ id: 'agent-other-tenant' });
+    const request = makeRequest({ id: 'agent-one' });
+    const handlers = createAgentManagementFileHandlers(deps);
+    await authorizeUpload(handlers, request, response);
     request.body = { purpose: EToolResources.context };
-    request.file = { path: '/tmp/rejected', originalname: 'input.txt' } as Express.Multer.File;
+    request.file = {
+      path: '/tmp/rejected',
+      originalname: 'input.txt',
+      size: 12,
+    } as Express.Multer.File;
 
-    await createAgentManagementFileHandlers(deps).upload(request, response);
+    await handlers.upload(request, response);
 
     expect(response.status).toHaveBeenCalledWith(500);
     expect(response.json).toHaveBeenCalledWith({
       error: { code: 'internal_error', message: 'Internal server error' },
     });
+  });
+
+  it('serializes uploads when enforcing the per-purpose aggregate file limit', async () => {
+    let attachedCount = 1;
+    const getAgentWithVersionCount = jest.fn().mockImplementation(async () => ({
+      ...agent,
+      tool_resources: {
+        ...agent.tool_resources,
+        context: {
+          file_ids: Array.from({ length: attachedCount }, (_, index) => `file-${index}`),
+        },
+      },
+    }));
+    const processUpload = jest.fn().mockImplementation(async () => {
+      attachedCount += 1;
+    });
+    const deps = makeDeps({
+      getAgentWithVersionCount,
+      processUpload,
+      getUploadConfig: jest.fn().mockResolvedValue({ endpoint: 'Moonshot', fileLimit: 2 }),
+    });
+    const handlers = createAgentManagementFileHandlers(deps);
+    const firstResponse = makeResponse();
+    const secondResponse = makeResponse();
+    const firstRequest = makeRequest({ id: 'agent-one' });
+    const secondRequest = makeRequest({ id: 'agent-one' });
+    await authorizeUpload(handlers, firstRequest, firstResponse);
+    await authorizeUpload(handlers, secondRequest, secondResponse);
+    firstRequest.body = { purpose: EToolResources.context };
+    secondRequest.body = { purpose: EToolResources.context };
+    firstRequest.file = {
+      path: '/tmp/first',
+      originalname: 'first.txt',
+      size: 1,
+    } as Express.Multer.File;
+    secondRequest.file = {
+      path: '/tmp/second',
+      originalname: 'second.txt',
+      size: 1,
+    } as Express.Multer.File;
+
+    await Promise.all([
+      handlers.upload(firstRequest, firstResponse),
+      handlers.upload(secondRequest, secondResponse),
+    ]);
+
+    expect(processUpload).toHaveBeenCalledTimes(1);
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/second');
+    expect(secondResponse.status).toHaveBeenCalledWith(400);
+  });
+
+  it('rejects an upload that would exceed the per-purpose aggregate byte limit', async () => {
+    const deps = makeDeps({
+      getFiles: jest.fn().mockResolvedValue([
+        { file_id: 'file-context', bytes: 8 },
+        { file_id: 'file-shared', bytes: 12 },
+      ]),
+      getUploadConfig: jest.fn().mockResolvedValue({
+        endpoint: 'Moonshot',
+        totalSizeLimit: 24,
+      }),
+    });
+    const response = makeResponse();
+    const request = makeRequest({ id: 'agent-one' });
+    const handlers = createAgentManagementFileHandlers(deps);
+    await authorizeUpload(handlers, request, response);
+    request.body = { purpose: EToolResources.context };
+    request.file = {
+      path: '/tmp/too-large-in-aggregate',
+      originalname: 'input.txt',
+      size: 5,
+    } as Express.Multer.File;
+
+    await handlers.upload(request, response);
+
+    expect(deps.processUpload).not.toHaveBeenCalled();
+    expect(deps.deleteTempFile).toHaveBeenCalledWith('/tmp/too-large-in-aggregate');
+    expect(response.status).toHaveBeenCalledWith(400);
   });
 
   it('lists safe file metadata with every attached purpose in the authenticated tenant', async () => {
@@ -353,6 +465,9 @@ describe('Agent Management file handlers', () => {
     );
 
     expect(response.status).toHaveBeenCalledWith(404);
+    expect(response.json).toHaveBeenCalledWith({
+      error: { code: 'not_found', message: 'File not found' },
+    });
     expect(deps.removeAgentResourceFiles).not.toHaveBeenCalled();
   });
 });

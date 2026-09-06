@@ -4,7 +4,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { createMulterInstance, storage, importFileFilter, createFileFilter } = require('./multer');
+const {
+  createMulterInstance,
+  createStorage,
+  storage,
+  importFileFilter,
+  createFileFilter,
+} = require('./multer');
 
 // Mock only the config service that requires external dependencies
 jest.mock('~/server/services/Config', () => ({
@@ -77,6 +83,16 @@ describe('Multer Configuration', () => {
     });
 
     describe('filename function', () => {
+      it('uses the request file ID to make management staging paths unique', (done) => {
+        const uniqueStorage = createStorage({ uniqueTempPath: true });
+
+        uniqueStorage.getFilename(mockReq, mockFile, (err, filename) => {
+          expect(err).toBeNull();
+          expect(filename).toBe(`${mockReq.file_id}-test-file.jpg`);
+          done();
+        });
+      });
+
       it('should generate a UUID for req.file_id', (done) => {
         const cb = jest.fn((err, filename) => {
           expect(err).toBeNull();
@@ -311,7 +327,7 @@ describe('Multer Configuration', () => {
             default: { supportedMimeTypes: ['application/pdf'] },
           },
         }),
-        'agents',
+        () => ({ endpoint: 'agents' }),
       );
       const textFile = {
         ...mockFile,

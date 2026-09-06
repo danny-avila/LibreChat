@@ -7,7 +7,7 @@ import {
   ResourceType,
 } from 'librechat-data-provider';
 import type { IRole, IUser, SystemCapability } from '@librechat/data-schemas';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { AgentManagementProjectionSource } from './management';
 import { mapAgentManagementError } from './management';
@@ -57,7 +57,15 @@ type AgentManagementUploadBody = {
 };
 type AgentManagementFileAgent = AgentManagementProjectionSource & {
   _id: Types.ObjectId;
+  provider?: string;
   tool_resources?: Partial<Record<AgentFilePurpose, { file_ids?: string[] }>>;
+};
+type AgentUploadConfig = {
+  endpoint: string;
+  endpointType?: string;
+  disabled?: boolean;
+  fileLimit?: number;
+  totalSizeLimit?: number;
 };
 
 export interface AgentManagementFileDeps {
@@ -85,11 +93,16 @@ export interface AgentManagementFileDeps {
   }) => Promise<AgentManagementFileAgent>;
   processUpload: (req: Request, res: Response) => Promise<Response | void>;
   deleteTempFile: (path: string) => Promise<void>;
+  getUploadConfig: (req: Request, agent: AgentManagementFileAgent) => Promise<AgentUploadConfig>;
 }
 
 function sendError(res: Response, code: Parameters<typeof mapAgentManagementError>[0]) {
   const mapped = mapAgentManagementError(code);
   return res.status(mapped.status).json(mapped.body);
+}
+
+function sendFileNotFound(res: Response) {
+  return res.status(404).json({ error: { code: 'not_found', message: 'File not found' } });
 }
 
 function getUploadErrorCode(status: number): Parameters<typeof mapAgentManagementError>[0] {
@@ -203,10 +216,24 @@ function getFilePurposes(agent: AgentManagementFileAgent): Map<string, AgentFile
 
 /** Machine-authenticated Agent file listing and unlink handlers. */
 export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps): {
+  authorizeUpload: (req: Request, res: Response, next: NextFunction) => Promise<Response | void>;
+  getUploadConfig: (
+    req: Request,
+  ) => Pick<AgentUploadConfig, 'endpoint' | 'endpointType'> | undefined;
   upload: (req: Request, res: Response) => Promise<Response>;
   list: (req: Request, res: Response) => Promise<Response>;
   remove: (req: Request, res: Response) => Promise<Response>;
 } {
+  const authorizedUploads = new WeakMap<
+    Request,
+    {
+      agent: AgentManagementFileAgent;
+      tenantId: string;
+      uploadConfig: AgentUploadConfig;
+    }
+  >();
+  const uploadQueues = new Map<string, Promise<void>>();
+
   async function getAuthorizedAgent(req: Request, permissions: Permissions[]) {
     const user = req.user as IUser | undefined;
     if (!user?.id || !user.tenantId) {
@@ -230,6 +257,85 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
     return { allowed: true as const, agent, user, tenantId: user.tenantId };
   }
 
+  async function authorizeUpload(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | void> {
+    try {
+      const authorized = await getAuthorizedAgent(req, [Permissions.USE, Permissions.CREATE]);
+      if (!authorized.allowed) {
+        return sendError(res, authorized.code);
+      }
+      const uploadConfig = await deps.getUploadConfig(req, authorized.agent);
+      if (uploadConfig.disabled === true) {
+        return sendError(res, 'invalid_request');
+      }
+      authorizedUploads.set(req, {
+        agent: authorized.agent,
+        tenantId: authorized.tenantId,
+        uploadConfig,
+      });
+      next();
+    } catch (error) {
+      logger.error('[AgentManagement] Error authorizing Agent file upload', error);
+      return sendError(res, 'internal_error');
+    }
+  }
+
+  function getAuthorizedUploadConfig(req: Request) {
+    const config = authorizedUploads.get(req)?.uploadConfig;
+    if (!config) {
+      return undefined;
+    }
+    return { endpoint: config.endpoint, endpointType: config.endpointType };
+  }
+
+  async function withUploadQueue<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = uploadQueues.get(key) ?? Promise.resolve();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => gate);
+    uploadQueues.set(key, queued);
+    await previous;
+    try {
+      return await task();
+    } finally {
+      release();
+      if (uploadQueues.get(key) === queued) {
+        uploadQueues.delete(key);
+      }
+    }
+  }
+
+  async function isWithinAggregateLimits(
+    req: Request,
+    purpose: AgentUploadPurpose,
+    tenantId: string,
+    config: AgentUploadConfig,
+  ): Promise<boolean> {
+    const currentAgent = await deps.getAgentWithVersionCount({
+      id: req.params.id,
+      tenantId,
+    });
+    if (!currentAgent) {
+      return false;
+    }
+    const fileIds = [...new Set(currentAgent.tool_resources?.[purpose]?.file_ids ?? [])];
+    if (config.fileLimit && fileIds.length + 1 > config.fileLimit) {
+      return false;
+    }
+    if (!config.totalSizeLimit || fileIds.length === 0) {
+      return !config.totalSizeLimit || (req.file?.size ?? 0) <= config.totalSizeLimit;
+    }
+    const files =
+      (await deps.getFiles({ file_id: { $in: fileIds }, tenantId }, null, { text: 0 })) ?? [];
+    const currentBytes = files.reduce((total, file) => total + file.bytes, 0);
+    return currentBytes + (req.file?.size ?? 0) <= config.totalSizeLimit;
+  }
+
   async function cleanupRejectedUpload(req: Request): Promise<boolean> {
     if (!req.file?.path) {
       return true;
@@ -251,20 +357,38 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
         return sendError(res, cleaned ? 'invalid_request' : 'internal_error');
       }
 
-      const authorized = await getAuthorizedAgent(req, [Permissions.USE, Permissions.CREATE]);
-      if (!authorized.allowed) {
+      const authorized = authorizedUploads.get(req);
+      if (!authorized) {
         const cleaned = await cleanupRejectedUpload(req);
-        return sendError(res, cleaned ? authorized.code : 'internal_error');
+        return sendError(res, cleaned ? 'permission_denied' : 'internal_error');
       }
 
-      req.body = {
-        endpoint: 'agents',
-        agent_id: req.params.id,
-        tool_resource: purpose,
-      };
-      req.headers.accept = 'application/json';
-      await deps.processUpload(req, res);
-      return res;
+      return await withUploadQueue(
+        `${authorized.tenantId}:${req.params.id}:${purpose}`,
+        async () => {
+          if (
+            !(await isWithinAggregateLimits(
+              req,
+              purpose as AgentUploadPurpose,
+              authorized.tenantId,
+              authorized.uploadConfig,
+            ))
+          ) {
+            const cleaned = await cleanupRejectedUpload(req);
+            return sendError(res, cleaned ? 'invalid_request' : 'internal_error');
+          }
+
+          req.body = {
+            endpoint: authorized.uploadConfig.endpoint,
+            endpointType: authorized.uploadConfig.endpointType,
+            agent_id: req.params.id,
+            tool_resource: purpose,
+          };
+          req.headers.accept = 'application/json';
+          await deps.processUpload(req, res);
+          return res;
+        },
+      );
     } catch (error) {
       logger.error('[AgentManagement] Error preparing Agent file upload', error);
       await cleanupRejectedUpload(req);
@@ -319,7 +443,7 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
 
       const purposes = getFilePurposes(authorized.agent).get(fileId) ?? [];
       if (purposes.length === 0) {
-        return sendError(res, 'not_found');
+        return sendFileNotFound(res);
       }
       await deps.removeAgentResourceFiles({
         agent_id: req.params.id,
@@ -336,5 +460,11 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
     }
   }
 
-  return { upload, list, remove };
+  return {
+    authorizeUpload,
+    getUploadConfig: getAuthorizedUploadConfig,
+    upload,
+    list,
+    remove,
+  };
 }
