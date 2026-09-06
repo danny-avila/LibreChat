@@ -3964,6 +3964,7 @@ class GenerationJobManagerClass {
         : undefined;
     let cleanupError: unknown;
     let retainTerminalHostEvidence = false;
+    let retainPendingRecoveryEvidence = false;
 
     /** Account for an overflow before successful completion can remove its
      * durable job record. A concurrently attached replica claims the durable
@@ -4038,16 +4039,16 @@ class GenerationJobManagerClass {
         // durable final whose DONE publish failed is retained for reconnect
         // replay even though its pending marker is already clear.
         const terminalJob = await this.jobStore.getJob(streamId);
+        retainPendingRecoveryEvidence =
+          terminalJob?.firstSubscriberAttachedAt != null &&
+          terminalJob.earlyBufferRecovery != null &&
+          terminalJob.earlyBufferRecovery.outcome == null;
         if (
           !retainForTerminalReplay &&
           terminalJob?.providerDrained !== false &&
           terminalJob?.preserveForScheduleReconcile !== true &&
           terminalJob?.terminalHostActionPending !== true &&
-          !(
-            terminalJob?.firstSubscriberAttachedAt != null &&
-            terminalJob.earlyBufferRecovery != null &&
-            terminalJob.earlyBufferRecovery.outcome == null
-          ) &&
+          !retainPendingRecoveryEvidence &&
           (terminalJob?.createdAt !== createdAt || terminalJob.terminalPersistencePending !== true)
         ) {
           // A same-stream replacement created after the claim makes this a safe
@@ -4070,7 +4071,7 @@ class GenerationJobManagerClass {
           runtime.startupTelemetry?.end('completed_without_delta');
         }
         runtime.startupTelemetry = undefined;
-        if (!retainTerminalHostEvidence) {
+        if (!retainTerminalHostEvidence && !retainPendingRecoveryEvidence) {
           this.jobStore.clearContentState(streamId, createdAt);
           this.runStepBuffers?.delete(streamId);
         }
