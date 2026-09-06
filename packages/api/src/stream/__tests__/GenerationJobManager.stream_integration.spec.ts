@@ -1895,10 +1895,9 @@ describe('GenerationJobManager Integration Tests', () => {
         .mockRejectedValueOnce(new Error('transient claim timeout'));
       const first = await recoveryReplica.subscribeWithResume(streamId, () => {});
       expect(first.subscription).toBeNull();
-      expect(await recoveryReplica.getJobStore().getJob(streamId)).toMatchObject({
-        status: 'running',
-        earlyBufferRecovery: { outcome: undefined },
-      });
+      const retryableJob = await recoveryReplica.getJobStore().getJob(streamId);
+      expect(retryableJob).toMatchObject({ status: 'running' });
+      expect(retryableJob?.earlyBufferRecovery?.outcome).toBeUndefined();
 
       const retried = await recoveryReplica.subscribeWithResume(streamId, () => {});
       expect(retried.subscription).not.toBeNull();
