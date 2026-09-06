@@ -972,8 +972,10 @@ const CONTENT_CLEAR_LUA =
   'return 1';
 
 const CHUNKS_READ_LUA =
-  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
-  'return redis.call("XRANGE", KEYS[2], "-", "+")';
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {{}, false} end ' +
+  'local entries = redis.call("XRANGE", KEYS[2], "-", "+") ' +
+  'local durable = redis.call("HGET", KEYS[1], "durableEventCount") ' +
+  'return {entries, durable or false}';
 
 const RUNSTEPS_READ_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return false end ' +
@@ -4807,16 +4809,14 @@ export class RedisJobStore implements IJobStoreV2 {
      * without the buffered tail. Cross-replica readers keep today's contract:
      * the log may trail live emission by up to one window. */
     await this.flushCoalescedAppends(streamId);
-    const rawEntries =
-      expectedCreatedAt == null
-        ? await this.redis.xrange(KEYS.chunks(streamId), '-', '+')
-        : await this.redis.eval(
-            CHUNKS_READ_LUA,
-            2,
-            KEYS.job(streamId),
-            KEYS.chunks(streamId),
-            String(expectedCreatedAt),
-          );
+    const rawSnapshot = await this.redis.eval(
+      CHUNKS_READ_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.chunks(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    const [rawEntries, rawDurableEventCount] = Array.isArray(rawSnapshot) ? rawSnapshot : [];
     const entries = Array.isArray(rawEntries) ? (rawEntries as Array<[string, string[]]>) : [];
 
     const chunks = entries
@@ -4832,7 +4832,16 @@ export class RedisJobStore implements IJobStoreV2 {
         return null;
       })
       .filter(Boolean);
-    return { chunks, durableEventCount: entries.length };
+    const parsedDurableEventCount =
+      typeof rawDurableEventCount === 'string' || typeof rawDurableEventCount === 'number'
+        ? Number(rawDurableEventCount)
+        : Number.NaN;
+    return {
+      chunks,
+      durableEventCount: Number.isFinite(parsedDurableEventCount)
+        ? parsedDurableEventCount
+        : entries.length,
+    };
   }
 
   /**
