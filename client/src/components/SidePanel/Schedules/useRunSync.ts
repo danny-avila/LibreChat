@@ -1,9 +1,8 @@
 import { useRef, useEffect } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import type { QueryClient } from '@tanstack/react-query';
 import type { TSchedule } from 'librechat-data-provider';
-import { trackScheduledRun } from '~/data-provider/Schedules/admission';
+import { trackScheduledRun, releaseScheduledRun } from '~/data-provider/Schedules/admission';
 
 type Occurrences = Pick<TSchedule, 'inFlight' | 'lastRun'>;
 
@@ -21,27 +20,9 @@ const runState = (schedule: Occurrences): string => {
   return `${live}|${lastRun?.conversationId ?? ''}:${lastRun?.status ?? ''}`;
 };
 
-/** What a schedule this client has never seen is compared against. One created
- *  elsewhere that arrives with its first run already settled is news the list
- *  should hear; one that arrives with no run yet is not. */
+/** A schedule that has never run. What a schedule this client has not seen before
+ *  is compared against — and, on the first observation, what every schedule is. */
 const IDLE_STATE = runState({});
-
-/** When the sidebar's lists were last read from the server — the oldest across
- *  the variants, since any one of them could be the one missing a chat. Nothing
- *  cached means nothing stale: a list mounted later is read fresh. */
-const listsReadAt = (queryClient: QueryClient): number => {
-  const lists = queryClient.getQueryCache().findAll([QueryKeys.allConversations], { exact: false });
-  return lists.length === 0 ? Infinity : Math.min(...lists.map((list) => list.state.dataUpdatedAt));
-};
-
-/** Whether a run settled after the sidebar last heard from the server. The first
- *  observation cannot compare against an earlier one, but it can compare against
- *  this: a panel opened long after a run must not refetch a list that has held
- *  that chat all along, and must refetch one that never got the chance to. */
-const settledSince = (schedules: TSchedule[], readAt: number): boolean =>
-  schedules.some(
-    (schedule) => schedule.lastRun != null && Date.parse(schedule.lastRun.firedAt) > readAt,
-  );
 
 /**
  * Puts an automatic occurrence's chat in the sidebar, the same way Run Now does.
@@ -54,22 +35,28 @@ const settledSince = (schedules: TSchedule[], readAt: number): boolean =>
  * than inferred from the schedule. Every one is handed to the admission watch Run
  * Now uses, on every observation: that watch is the one place that decides whether
  * an id is landed, in flight, or — having given up on a delivery deferred past its
- * budget — worth trying again on a later announcement. Only generating runs are
- * ever handed over, so a settled run whose generation never wrote a conversation
- * is never watched, let alone watched again.
+ * budget — worth trying again. When an occurrence leaves the list it is released,
+ * so the watch remembers a run only for as long as this keeps announcing it.
+ *
+ * `observedAt` is what makes "every observation" true. React Query keeps the
+ * previous reference when a refetch is deep-equal, which is exactly what a poll
+ * returns while a run stays in flight, so an effect keyed on the data alone would
+ * never run again — and a watch that gave up would never be asked to try again.
  *
  * When a run's state moves — one settles, its schedule is deleted from under it,
  * or a schedule created elsewhere arrives with a run already behind it — the list
- * is re-read once for the chat, order and title the settlement changed.
- * Because the state includes the generating occurrences, an owner editing the
- * schedule mid-flight (which fences the `lastRun` projection) still cannot hide a
- * settlement. The first observation has no earlier one to compare against, so it
- * compares against the sidebar instead: it re-reads only if a run settled after
- * the lists were last read, which is the one case where they lack its chat.
+ * is re-read once for the chat, order and title the settlement changed. Because
+ * the state includes the generating occurrences, an owner editing the schedule
+ * mid-flight (which fences the `lastRun` projection) still cannot hide a
+ * settlement. The first observation has nothing earlier to compare against, so it
+ * re-reads if any schedule has run at all: the sidebar may have been read before
+ * that run, and nothing here can tell — one refetch on opening the panel is the
+ * honest price of that.
  */
-export default function useRunSync(schedules?: TSchedule[]): void {
+export default function useRunSync(schedules?: TSchedule[], observedAt?: number): void {
   const queryClient = useQueryClient();
   const states = useRef<Map<string, string> | null>(null);
+  const announced = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (schedules == null) {
@@ -77,20 +64,28 @@ export default function useRunSync(schedules?: TSchedule[]): void {
     }
     const previous = states.current;
     const current = new Map<string, string>();
+    const live = new Set<string>();
     for (const schedule of schedules) {
       current.set(schedule.id, runState(schedule));
       for (const conversationId of inFlightChats(schedule)) {
+        live.add(conversationId);
         void trackScheduledRun(queryClient, conversationId);
       }
     }
+    for (const conversationId of announced.current) {
+      if (!live.has(conversationId)) {
+        releaseScheduledRun(conversationId);
+      }
+    }
+    announced.current = live;
     states.current = current;
     const moved =
       previous == null
-        ? settledSince(schedules, listsReadAt(queryClient))
+        ? [...current.values()].some((state) => state !== IDLE_STATE)
         : [...previous].some(([id, state]) => current.get(id) !== state) ||
           [...current].some(([id, state]) => !previous.has(id) && state !== IDLE_STATE);
     if (moved) {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
     }
-  }, [schedules, queryClient]);
+  }, [schedules, observedAt, queryClient]);
 }

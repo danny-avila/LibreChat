@@ -6,11 +6,16 @@ import type { TConversation, TScheduleRunNowResponse } from 'librechat-data-prov
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import {
+  resetTrackedRuns,
+  trackScheduledRun,
+  trackedRunCount,
+  releaseScheduledRun,
+} from '../Schedules/admission';
+import {
   ACTIVE_JOBS_POLL_MS,
   resetActiveJobsGrace,
   getActiveJobsRefetchInterval,
 } from '../SSE/queries';
-import { resetTrackedRuns, trackScheduledRun, trackedRunCount } from '../Schedules/admission';
 import { useRunScheduleNowMutation } from '../Schedules/mutations';
 import * as sseQueries from '../SSE/queries';
 
@@ -381,48 +386,26 @@ describe('run-now conversation tracking', () => {
     queryClient.clear();
   });
 
-  it('remembers only the most recent landed runs, so a long-lived panel stays bounded', async () => {
+  it('remembers a landed run until it is released, then probes it again if announced', async () => {
     const queryClient = createQueryClient();
     signIn(queryClient, 'user-a');
     seedList(queryClient);
-    mockGetConversationById.mockImplementation(async (id) => ({
-      ...serverConversation(),
-      conversationId: id,
-    }));
+    mockGetConversationById.mockResolvedValue(serverConversation());
 
-    for (let i = 0; i < 300; i += 1) {
-      void trackScheduledRun(queryClient, `run-${i}`);
-    }
+    void trackScheduledRun(queryClient, 'run-convo-1');
+    await settleAdmission();
+    void trackScheduledRun(queryClient, 'run-convo-1');
+    await settleAdmission();
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    expect(trackedRunCount()).toBe(1);
+
+    releaseScheduledRun('run-convo-1');
+    expect(trackedRunCount()).toBe(0);
+    void trackScheduledRun(queryClient, 'run-convo-1');
     await settleAdmission();
 
-    expect(trackedRunCount()).toBe(256);
-    expect(readList(queryClient)).toHaveLength(301);
-    queryClient.clear();
-  });
-
-  it('never evicts a watch still in flight, however many runs land after it', async () => {
-    const queryClient = createQueryClient();
-    signIn(queryClient, 'user-a');
-    seedList(queryClient);
-    /** One delivery deferred well past the others; three hundred land around it. */
-    mockGetConversationById.mockImplementation(async (id) =>
-      id === 'slow'
-        ? Promise.reject(httpError(404, 'Not Found'))
-        : { ...serverConversation(), conversationId: id },
-    );
-
-    void trackScheduledRun(queryClient, 'slow');
-    for (let i = 0; i < 300; i += 1) {
-      void trackScheduledRun(queryClient, `run-${i}`);
-    }
-    await settleAdmission(3_000);
-    /** Announced again, as the poll would while it is still in flight. Were it
-     *  evicted, this would start a second watch and double the probes. */
-    void trackScheduledRun(queryClient, 'slow');
-    await settleAdmission(3_000);
-
-    const slowProbes = mockGetConversationById.mock.calls.filter(([id]) => id === 'slow').length;
-    expect(slowProbes).toBe(3);
+    expect(mockGetConversationById).toHaveBeenCalledTimes(2);
+    expect(readList(queryClient).filter((c) => c.conversationId === 'run-convo-1')).toHaveLength(1);
     queryClient.clear();
   });
 

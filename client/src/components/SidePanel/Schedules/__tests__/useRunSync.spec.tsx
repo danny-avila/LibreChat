@@ -4,7 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TSchedule, TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { resetTrackedRuns } from '~/data-provider/Schedules/admission';
+import { resetTrackedRuns, trackedRunCount } from '~/data-provider/Schedules/admission';
 import useRunSync from '../useRunSync';
 
 const mockGetConversationById = jest.fn<Promise<TConversation>, [string]>();
@@ -90,8 +90,11 @@ const listIds = (queryClient: QueryClient) =>
 const isStale = (queryClient: QueryClient) =>
   queryClient.getQueryState(listKey)?.isInvalidated === true;
 
+/** Every render is a fresh poll observation, the way the panel feeds the hook —
+ *  including one whose data is the same reference as the last. */
+let observation = 0;
 const renderWith = (queryClient: QueryClient, initial?: TSchedule[]) =>
-  renderHook((schedules?: TSchedule[]) => useRunSync(schedules), {
+  renderHook((schedules?: TSchedule[]) => useRunSync(schedules, (observation += 1)), {
     wrapper: createWrapper(queryClient),
     initialProps: initial,
   });
@@ -256,10 +259,21 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
-  it('records the first observation in silence when the sidebar is fresher than the runs', async () => {
+  it('re-reads on the first observation when any schedule has run', async () => {
     const queryClient = createQueryClient();
-    /** List read after the run fired: it has held that chat all along. */
+    /** The sidebar may have been read before that run and nothing here can tell;
+     *  one refetch on opening the panel is the price. Nothing is probed. */
     renderWith(queryClient, [settled()]);
+    await admit();
+
+    expect(isStale(queryClient)).toBe(true);
+    expect(mockGetConversationById).not.toHaveBeenCalled();
+    queryClient.clear();
+  });
+
+  it('records the first observation in silence when nothing has ever run', async () => {
+    const queryClient = createQueryClient();
+    renderWith(queryClient, [schedule, { ...schedule, id: 'schedule-2' }]);
     await admit();
 
     expect(isStale(queryClient)).toBe(false);
@@ -267,21 +281,37 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
-  it('re-reads on the first observation when a run settled after the sidebar was read', async () => {
+  it('announces again on a poll whose data is the same reference', async () => {
     const queryClient = createQueryClient();
-    /** The panel opens after a run fired and finished with it closed; the list was
-     *  read before that and never got the chance to pick the chat up. */
-    const readAt = queryClient.getQueryState(listKey)?.dataUpdatedAt ?? 0;
-    const firedAt = new Date(readAt + 60_000).toISOString();
-    renderWith(queryClient, [
-      settled('run-convo-1', {
-        lastRun: { conversationId: 'run-convo-1', status: 'success', firedAt },
-      }),
-    ]);
+    mockGetConversationById.mockRejectedValue(
+      Object.assign(new Error('Not Found'), { isAxiosError: true, response: { status: 404 } }),
+    );
+    const list = [running()];
+    const { rerender } = renderWith(queryClient, list);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(600_000);
+    });
+    expect(listIds(queryClient)).toEqual(['existing']);
+
+    /** Deep-equal refetch: React Query hands back the same array. Only the
+     *  observation stamp moves, and that has to be enough to ask again. */
+    mockGetConversationById.mockResolvedValue(serverConversation());
+    rerender(list);
     await admit();
 
-    expect(isStale(queryClient)).toBe(true);
-    expect(mockGetConversationById).not.toHaveBeenCalled();
+    expect(listIds(queryClient)).toEqual(['run-convo-1', 'existing']);
+    queryClient.clear();
+  });
+
+  it('releases a run once it leaves the list, so nothing is remembered for it', async () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [running()]);
+    await admit();
+    expect(trackedRunCount()).toBe(1);
+
+    rerender([settled()]);
+
+    expect(trackedRunCount()).toBe(0);
     queryClient.clear();
   });
 

@@ -14,10 +14,10 @@ import useRunSync from './useRunSync';
 
 export default function SchedulePanel() {
   const localize = useLocalize();
-  const { data, isLoading, isError, refetch } = useSchedulesQuery();
+  const { data, dataUpdatedAt, isLoading, isError, refetch } = useSchedulesQuery();
   /** The cards refresh themselves from this query; the sidebar cannot, so the
    *  chat a run just produced is read out of the same poll. */
-  useRunSync(data?.schedules);
+  useRunSync(data?.schedules, dataUpdatedAt);
   const [createOpen, setCreateOpen] = useState(false);
 
   const hasCreateAccess = useHasAccess({

@@ -58,25 +58,14 @@ const cacheOwner = (queryClient: QueryClient): string | undefined =>
 const watching = new Set<string>();
 
 /**
- * Runs already landed, so a later announcement is a no-op. A panel that stays
- * mounted sees a new id per occurrence for as long as schedules keep firing, so
- * only the most recent are kept: a run is announced only while it is in flight,
- * and one that landed is not — a forgotten id would at worst be probed once more
- * and found already present. A watch that gave up is in neither set, so a later
- * announcement of a run admitted after the budget can try again.
+ * Runs already landed, so a later announcement is a no-op. A run is announced for
+ * as long as it is generating, and the announcer releases it when it stops — so
+ * this holds an id exactly as long as something could announce it, and is bounded
+ * by real concurrency rather than by a count that could evict a run still being
+ * announced. A watch that gave up is in neither set, so a later announcement of a
+ * run admitted after the budget can try again.
  */
 const landed = new Set<string>();
-const LANDED_RUN_LIMIT = 256;
-
-function forgetOldestLanded(): void {
-  while (landed.size > LANDED_RUN_LIMIT) {
-    const [oldest] = landed;
-    if (oldest === undefined) {
-      return;
-    }
-    landed.delete(oldest);
-  }
-}
 
 /** @internal Test seams. */
 export function resetTrackedRuns(): void {
@@ -85,6 +74,12 @@ export function resetTrackedRuns(): void {
 }
 export function trackedRunCount(): number {
   return watching.size + landed.size;
+}
+
+/** The announcer no longer names this run — it settled, or its schedule went —
+ *  so nothing can announce it again, and there is nothing left to remember. */
+export function releaseScheduledRun(conversationId: string): void {
+  landed.delete(conversationId);
 }
 
 /**
@@ -192,6 +187,5 @@ export async function trackScheduledRun(
   watching.delete(conversationId);
   if (admitted) {
     landed.add(conversationId);
-    forgetOldestLanded();
   }
 }
