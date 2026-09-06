@@ -49,6 +49,8 @@ const {
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
@@ -2013,7 +2015,7 @@ async function loadToolsForExecution({
     isWorkspaceListRequested;
   const isSkillToolRequested = toolNames.includes(AgentConstants.SKILL_TOOL);
   const isSandboxFileToolRequested = toolNames.some((name) =>
-    [AgentConstants.READ_FILE, AgentConstants.CREATE_FILE, AgentConstants.EDIT_FILE].includes(name),
+    [AgentConstants.READ_FILE, CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME].includes(name),
   );
 
   let enabledCapabilities;

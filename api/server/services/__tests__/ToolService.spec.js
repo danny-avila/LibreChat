@@ -2529,43 +2529,96 @@ describe('ToolService - Action Capability Gating', () => {
       }
     });
 
-    it('resolves stateful routing for host file tools with the controller conversation ID', async () => {
-      const capabilities = [
-        AgentCapabilities.tools,
-        AgentCapabilities.execute_code,
-        AgentCapabilities.stateful_code_sessions,
-      ];
-      const req = createMockReq(capabilities);
-      req.body = {};
-      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
-      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+    it.each(['read_file', 'create_file', 'edit_file'])(
+      'resolves stateful routing for standalone %s with the controller conversation ID',
+      async (toolName) => {
+        const capabilities = [
+          AgentCapabilities.tools,
+          AgentCapabilities.execute_code,
+          AgentCapabilities.stateful_code_sessions,
+        ];
+        const req = createMockReq(capabilities);
+        req.body = {};
+        mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+        process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
 
-      try {
+        try {
+          const result = await loadToolsForExecution({
+            req,
+            res: {},
+            conversationId: 'resolved-api-conversation',
+            agent: {
+              id: 'stateful-agent',
+              tools: [Tools.execute_code],
+              stateful_code_sessions: true,
+              stateful_code_environment: 'conversation',
+            },
+            toolNames: [toolName],
+            actionsEnabled: false,
+          });
+
+          expect(result.configurable.codeExecutionContext.executionProfile).toBe('stateful');
+          expect(mockResolveCodeExecutionContext).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              statefulSessions: true,
+              conversationId: 'resolved-api-conversation',
+            }),
+          );
+        } finally {
+          delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+        }
+      },
+    );
+
+    it.each(['read_file', 'create_file', 'edit_file'])(
+      'keeps standalone %s on the selected attached worker',
+      async (toolName) => {
+        const capabilities = [
+          AgentCapabilities.tools,
+          AgentCapabilities.execute_code,
+          AgentCapabilities.stateful_code_sessions,
+        ];
+        const req = createMockReq(capabilities);
+        req.config.endpoints.agents.statefulCodeSessions = {
+          environments: [
+            {
+              id: 'personal-machine',
+              type: 'attached',
+              baseURL: 'https://attached-code.test/v1',
+              workerId: 'worker-personal',
+            },
+          ],
+        };
+        mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+        mockResolveCodeExecutionContext.mockImplementationOnce(
+          jest.requireActual('@librechat/api').resolveCodeExecutionContext,
+        );
+
         const result = await loadToolsForExecution({
           req,
           res: {},
           conversationId: 'resolved-api-conversation',
           agent: {
-            id: 'stateful-agent',
+            id: 'attached-agent',
             tools: [Tools.execute_code],
             stateful_code_sessions: true,
-            stateful_code_environment: 'conversation',
+            code_environment_id: 'personal-machine',
           },
-          toolNames: [AgentConstants.READ_FILE],
+          toolNames: [toolName],
           actionsEnabled: false,
         });
 
-        expect(result.configurable.codeExecutionContext.executionProfile).toBe('stateful');
-        expect(mockResolveCodeExecutionContext).toHaveBeenLastCalledWith(
+        expect(result.configurable.codeExecutionContext).toEqual(
           expect.objectContaining({
-            statefulSessions: true,
-            conversationId: 'resolved-api-conversation',
+            baseUrl: 'https://attached-code.test/v1',
+            executionProfile: 'stateful',
+            environmentType: 'attached',
+            environmentId: 'personal-machine',
+            bridgeWorkerId: 'worker-personal',
           }),
         );
-      } finally {
-        delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
-      }
-    });
+      },
+    );
 
     it('preserves attached routing when workspace search is the only requested tool', async () => {
       const capabilities = [
