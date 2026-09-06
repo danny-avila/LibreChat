@@ -111,6 +111,7 @@ export type EarlyBufferRecoveryFailureReason =
 export interface EarlyBufferOverflowState {
   id: string;
   occurredAt: number;
+  emittedEvents: number;
   droppedEvents: number;
   droppedBytes: number;
   recoveryMethod?: EarlyBufferRecoveryMethod;

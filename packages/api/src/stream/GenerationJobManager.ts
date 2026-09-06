@@ -5334,6 +5334,7 @@ class GenerationJobManagerClass {
     const overflow: EarlyBufferOverflowState = {
       id: randomUUID(),
       occurredAt: Date.now(),
+      emittedEvents: runtime.emissionSequence,
       droppedEvents,
       droppedBytes,
     };
@@ -5342,6 +5343,7 @@ class GenerationJobManagerClass {
     runtime.earlyEventBufferOverflowed = true;
     runtime.earlyBufferOverflow = overflow;
     try {
+      await this.jobStore.flushPendingAppends?.(streamId);
       await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
     } catch (err) {
       logger.error('[GenerationJobManager] Failed to persist early buffer overflow identity', err);
@@ -5691,7 +5693,10 @@ class GenerationJobManagerClass {
         let failureReason: EarlyBufferRecoveryFailureReason | undefined;
         if (resumeState == null || contentSnapshot == null) {
           failureReason = this._isRedis ? 'durable_state_missing' : 'snapshot_missing';
-        } else if (durableEvents === 0 || reconstructedEvents !== durableEvents) {
+        } else if (
+          durableEvents < pendingOverflow.emittedEvents ||
+          reconstructedEvents !== durableEvents
+        ) {
           failureReason = 'durable_frontier_gap';
         }
         const durationMs = Date.now() - recoveryStartedAt;
