@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { buildLangfuseTraceMetadata, resolveLangfuseTraceUserId } from './identity';
 
 const user = {
@@ -26,8 +27,13 @@ describe('resolveLangfuseTraceUserId', () => {
     expect(resolveLangfuseTraceUserId({ userIdField: 'openidId' }, user)).toBe('oidc-sub-1');
   });
 
-  it('falls back to the internal id when the user lacks the configured field', () => {
+  it('falls back to the internal id when the user lacks the configured field, warning once', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     expect(resolveLangfuseTraceUserId({ userIdField: 'samlId' }, user)).toBeUndefined();
+    expect(resolveLangfuseTraceUserId({ userIdField: 'samlId' }, { id: 'user-3' })).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('"samlId"');
+    warn.mockRestore();
     expect(resolveLangfuseTraceUserId({ userIdField: 'email' }, { id: 'user-2' })).toBeUndefined();
     expect(
       resolveLangfuseTraceUserId({ userIdField: 'email' }, { id: 'user-2', email: '   ' }),

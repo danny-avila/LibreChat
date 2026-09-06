@@ -4,6 +4,7 @@ import type {
   LangfuseTraceConfig,
   DeepPartial,
 } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import { normalizeString } from '~/utils/text';
 
@@ -17,6 +18,8 @@ export type LangfuseTraceContext = Partial<
 export type LangfuseTraceIdentityConfig = DeepPartial<LangfuseTraceConfig>;
 
 const DEFAULT_USER_ID_FIELD = 'id';
+/** Fields already reported as unset, so a busy deployment logs each once. */
+const missingUserIdFieldWarnings = new Set<string>();
 const USER_METADATA_PREFIX = 'librechat.user.';
 const CONVERSATION_METADATA_KEYS: Record<LangfuseTraceConversationMetadataField, string> = {
   conversationId: 'librechat.conversation.id',
@@ -42,7 +45,14 @@ export function resolveLangfuseTraceUserId(
   if (field === DEFAULT_USER_ID_FIELD) {
     return undefined;
   }
-  return normalizeString(user?.[field]);
+  const value = normalizeString(user?.[field]);
+  if (value == null && !missingUserIdFieldWarnings.has(field)) {
+    missingUserIdFieldWarnings.add(field);
+    logger.warn(
+      `[langfuse] trace.userIdField "${field}" is unset for user ${user?.id ?? '(unknown)'}; the trace keeps the internal id. Reported once per field.`,
+    );
+  }
+  return value;
 }
 
 /**

@@ -1511,15 +1511,21 @@ function buildSubagentConfigs(
  * @returns {Promise<Run<IState>>} A promise that resolves to a new Run instance.
  */
 /** The caller's trace context over run-derived defaults for the fields it left unset. */
-function resolveRunTraceContext(
-  agents: RunAgent[],
-  requestBody?: t.RequestBody,
-  traceContext?: LangfuseTraceContext,
-): LangfuseTraceContext {
+function resolveRunTraceContext({
+  agents,
+  conversationId,
+  requestBody,
+  traceContext,
+}: {
+  agents: RunAgent[];
+  conversationId?: string;
+  requestBody?: t.RequestBody;
+  traceContext?: LangfuseTraceContext;
+}): LangfuseTraceContext {
   const primaryAgent = agents[0];
   return {
     ...traceContext,
-    conversationId: traceContext?.conversationId ?? requestBody?.conversationId,
+    conversationId: traceContext?.conversationId ?? conversationId ?? requestBody?.conversationId,
     provider: traceContext?.provider ?? primaryAgent?.provider,
     model: traceContext?.model ?? primaryAgent?.model_parameters?.model ?? primaryAgent?.model,
   };
@@ -2328,7 +2334,7 @@ export async function createRun({
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
       user,
-      traceContext: resolveRunTraceContext(agents, requestBody, traceContext),
+      traceContext: resolveRunTraceContext({ agents, conversationId, requestBody, traceContext }),
     }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },

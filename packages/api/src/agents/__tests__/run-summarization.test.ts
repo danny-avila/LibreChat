@@ -2487,7 +2487,8 @@ describe('Langfuse run config', () => {
       streaming: true,
       streamUsage: true,
       user: { id: 'user-1', email: 'alice@example.com', role: 'ADMIN' } as never,
-      requestBody: { conversationId: 'convo-1' },
+      conversationId: 'convo-1',
+      requestBody: { conversationId: 'convo-stale' },
       traceContext: { endpoint: 'agents', spec: 'support-bot' },
       appConfig: {
         langfuse: {
