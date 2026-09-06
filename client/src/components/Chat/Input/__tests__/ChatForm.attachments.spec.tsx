@@ -255,8 +255,11 @@ describe('ChatForm attachments', () => {
   test('returns focus to the textarea when removing a quote collapses the popup', async () => {
     renderComposer({ quotes: ['alpha', 'beta'] });
     const textarea = await screen.findByTestId('text-input');
-    await userEvent.click(screen.getByRole('button', { name: '2 selections' }));
-    const popup = await screen.findByTestId('quote-selections-popup');
+    // Hover opens this disclosure too; test the click path without a synthetic hover toggle.
+    await userEvent.click(screen.getByRole('button', { name: '2 selections' }), {
+      skipHover: true,
+    });
+    const popup = await screen.findByRole('dialog');
 
     await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
 
@@ -268,8 +271,11 @@ describe('ChatForm attachments', () => {
   test('keeps focus inside the popup when removing a quote leaves several', async () => {
     renderComposer({ quotes: ['alpha', 'beta', 'gamma'] });
     await screen.findByTestId('text-input');
-    await userEvent.click(screen.getByRole('button', { name: '3 selections' }));
-    const popup = await screen.findByTestId('quote-selections-popup');
+    // Hover opens this disclosure too; test the click path without a synthetic hover toggle.
+    await userEvent.click(screen.getByRole('button', { name: '3 selections' }), {
+      skipHover: true,
+    });
+    const popup = await screen.findByRole('dialog');
 
     await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
 
@@ -285,8 +291,11 @@ describe('ChatForm attachments', () => {
     try {
       renderComposer({ quotes: ['alpha', 'beta'] });
       const textarea = await screen.findByTestId('text-input');
-      await userEvent.click(screen.getByRole('button', { name: '2 selections' }));
-      const popup = await screen.findByTestId('quote-selections-popup');
+      // Hover opens this disclosure too; test the click path without a synthetic hover toggle.
+      await userEvent.click(screen.getByRole('button', { name: '2 selections' }), {
+        skipHover: true,
+      });
+      const popup = await screen.findByRole('dialog');
 
       await userEvent.click(within(popup).getAllByRole('button', { name: 'Remove quote' })[0]);
 
