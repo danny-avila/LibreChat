@@ -58,6 +58,8 @@ async function port() {
 }
 
 async function start(name, executable, args, env = {}, cwd = runDir) {
+  if (stopping)
+    throw new Error('Acceptance shutdown has begun; refusing to start another service.');
   const log = await open(path.join(runDir, `${name}.log`), 'a', 0o600);
   const child = spawn(executable, args, {
     cwd,
@@ -109,6 +111,7 @@ try {
   const { MongoMemoryServer } = require('mongodb-memory-server');
   mongo = await MongoMemoryServer.create({
     instance: { ip: '127.0.0.1', dbName: 'byom-acceptance' },
+    spawn: { env: base },
   });
   const redisPort = await port();
   const codePort = await port();
