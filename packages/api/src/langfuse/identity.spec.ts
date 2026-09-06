@@ -40,6 +40,18 @@ describe('resolveLangfuseTraceUserId', () => {
     ).toBeUndefined();
     expect(resolveLangfuseTraceUserId({ userIdField: 'email' }, undefined)).toBeUndefined();
   });
+
+  it('ignores a field name outside the allowlist that bypassed schema validation', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const trace = { userIdField: 'federatedTokens' as never };
+    expect(
+      resolveLangfuseTraceUserId(trace, { ...user, federatedTokens: 'secret' } as never),
+    ).toBeUndefined();
+    expect(resolveLangfuseTraceUserId(trace, user)).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('not an allowed user field');
+    warn.mockRestore();
+  });
 });
 
 describe('buildLangfuseTraceMetadata', () => {
@@ -52,6 +64,22 @@ describe('buildLangfuseTraceMetadata', () => {
     modelLabel: '',
     spec: 'support-bot',
   };
+
+  it('skips metadata field names outside the allowlists that bypassed schema validation', () => {
+    expect(
+      buildLangfuseTraceMetadata({
+        trace: {
+          userMetadataFields: ['federatedTokens', 'email'] as never,
+          conversationMetadataFields: ['text', 'spec'] as never,
+        },
+        user: { ...user, federatedTokens: 'secret' } as never,
+        context: { ...context, text: 'prompt' } as never,
+      }),
+    ).toEqual({
+      'librechat.user.email': 'alice@example.com',
+      'librechat.spec': 'support-bot',
+    });
+  });
 
   it('exports nothing unless a field is allowlisted', () => {
     expect(buildLangfuseTraceMetadata({ trace: undefined, user, context })).toBeUndefined();

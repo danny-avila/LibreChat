@@ -1,6 +1,12 @@
+import {
+  LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS,
+  LANGFUSE_TRACE_USER_METADATA_FIELDS,
+  LANGFUSE_TRACE_USER_ID_FIELDS,
+} from 'librechat-data-provider';
 import type {
   LangfuseTraceConversationMetadataField,
   LangfuseTraceUserMetadataField,
+  LangfuseTraceUserIdField,
   LangfuseTraceConfig,
   DeepPartial,
 } from 'librechat-data-provider';
@@ -18,8 +24,38 @@ export type LangfuseTraceContext = Partial<
 export type LangfuseTraceIdentityConfig = DeepPartial<LangfuseTraceConfig>;
 
 const DEFAULT_USER_ID_FIELD = 'id';
-/** Fields already reported as unset, so a busy deployment logs each once. */
-const missingUserIdFieldWarnings = new Set<string>();
+/** Fields already reported (unset or unknown), so a busy deployment logs each once. */
+const userIdFieldWarnings = new Set<string>();
+/**
+ * Runtime copies of the schema allowlists. Admin config patches persist
+ * overrides without schema validation, so a field name is checked again at
+ * the point it is read rather than trusted from the config type.
+ */
+const USER_ID_FIELDS = new Set<string>(LANGFUSE_TRACE_USER_ID_FIELDS);
+const USER_METADATA_FIELDS = new Set<string>(LANGFUSE_TRACE_USER_METADATA_FIELDS);
+const CONVERSATION_METADATA_FIELDS = new Set<string>(LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS);
+
+function isUserIdField(field: string): field is LangfuseTraceUserIdField {
+  return USER_ID_FIELDS.has(field);
+}
+
+function isUserMetadataField(field: unknown): field is LangfuseTraceUserMetadataField {
+  return typeof field === 'string' && USER_METADATA_FIELDS.has(field);
+}
+
+function isConversationMetadataField(
+  field: unknown,
+): field is LangfuseTraceConversationMetadataField {
+  return typeof field === 'string' && CONVERSATION_METADATA_FIELDS.has(field);
+}
+
+function warnOnce(field: string, message: string): void {
+  if (userIdFieldWarnings.has(field)) {
+    return;
+  }
+  userIdFieldWarnings.add(field);
+  logger.warn(`[langfuse] trace.userIdField "${field}" ${message} Reported once per field.`);
+}
 const USER_METADATA_PREFIX = 'librechat.user.';
 const CONVERSATION_METADATA_KEYS: Record<LangfuseTraceConversationMetadataField, string> = {
   conversationId: 'librechat.conversation.id',
@@ -41,15 +77,19 @@ export function resolveLangfuseTraceUserId(
   trace: LangfuseTraceIdentityConfig | undefined,
   user: LangfuseTraceUser | undefined,
 ): string | undefined {
-  const field = trace?.userIdField ?? DEFAULT_USER_ID_FIELD;
+  const field: string = trace?.userIdField ?? DEFAULT_USER_ID_FIELD;
   if (field === DEFAULT_USER_ID_FIELD) {
     return undefined;
   }
+  if (!isUserIdField(field)) {
+    warnOnce(field, 'is not an allowed user field; the trace keeps the internal id.');
+    return undefined;
+  }
   const value = normalizeString(user?.[field]);
-  if (value == null && !missingUserIdFieldWarnings.has(field)) {
-    missingUserIdFieldWarnings.add(field);
-    logger.warn(
-      `[langfuse] trace.userIdField "${field}" is unset for user ${user?.id ?? '(unknown)'}; the trace keeps the internal id. Reported once per field.`,
+  if (value == null) {
+    warnOnce(
+      field,
+      `is unset for user ${user?.id ?? '(unknown)'}; the trace keeps the internal id.`,
     );
   }
   return value;
@@ -71,13 +111,16 @@ export function buildLangfuseTraceMetadata({
 }): Record<string, string> | undefined {
   const metadata: Record<string, string> = {};
   for (const field of new Set(trace?.userMetadataFields ?? [])) {
-    const value = field == null ? undefined : normalizeString(user?.[field]);
+    const value = isUserMetadataField(field) ? normalizeString(user?.[field]) : undefined;
     if (value != null) {
       metadata[`${USER_METADATA_PREFIX}${field}`] = value;
     }
   }
   for (const field of new Set(trace?.conversationMetadataFields ?? [])) {
-    const value = field == null ? undefined : normalizeString(context?.[field]);
+    if (!isConversationMetadataField(field)) {
+      continue;
+    }
+    const value = normalizeString(context?.[field]);
     if (value != null) {
       metadata[CONVERSATION_METADATA_KEYS[field]] = value;
     }
