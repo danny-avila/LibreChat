@@ -40,7 +40,15 @@ const schedule: TSchedule = {
 /** The list naming the chat a running occurrence is producing. */
 const running = (conversationId = 'run-convo-1', overrides?: Partial<TSchedule>): TSchedule => ({
   ...schedule,
-  activeRun: { conversationId },
+  activeRuns: [{ conversationId }],
+  ...overrides,
+});
+
+/** The list after a run settled — the only trace a run short enough to start and
+ *  finish between two polls ever leaves. */
+const settled = (conversationId = 'run-convo-1', overrides?: Partial<TSchedule>): TSchedule => ({
+  ...schedule,
+  lastRun: { conversationId, status: 'success', firedAt: '2026-09-05T09:00:00.000Z' },
   ...overrides,
 });
 
@@ -153,6 +161,45 @@ describe('useRunSync', () => {
 
     rerender([{ ...schedule, name: 'Renamed', configRevision: 2 }]);
     expect(isStale(queryClient)).toBe(true);
+    queryClient.clear();
+  });
+
+  it('fetches a run that started and settled between two polls', async () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [schedule]);
+
+    rerender([settled()]);
+    await admit();
+
+    expect(listIds(queryClient)).toEqual(['run-convo-1', 'existing']);
+    queryClient.clear();
+  });
+
+  it('fetches every concurrent occurrence, a pause and a run alike', async () => {
+    const queryClient = createQueryClient();
+    mockGetConversationById.mockImplementation(async (id) => serverConversation(id));
+    renderWith(queryClient, [
+      running('paused-convo', {
+        activeRuns: [{ conversationId: 'paused-convo' }, { conversationId: 'run-convo-1' }],
+      }),
+    ]);
+
+    await admit();
+
+    expect(listIds(queryClient)).toEqual(
+      expect.arrayContaining(['paused-convo', 'run-convo-1', 'existing']),
+    );
+    queryClient.clear();
+  });
+
+  it('does not fetch history on the first observation, only runs in flight', async () => {
+    const queryClient = createQueryClient();
+    renderWith(queryClient, [settled('old-convo'), { ...running(), id: 'schedule-2' }]);
+
+    await admit();
+
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    expect(mockGetConversationById).toHaveBeenCalledWith('run-convo-1');
     queryClient.clear();
   });
 

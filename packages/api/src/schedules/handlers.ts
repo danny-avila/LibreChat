@@ -240,32 +240,25 @@ export type WireSchedule = Pick<
   | 'createdAt'
   | 'updatedAt'
 > & {
-  /** See `TSchedule.activeRun`: the running occurrence, from its own run row. */
-  activeRun?: { conversationId: string };
+  /** See `TSchedule.activeRuns`: the running occurrences, from their own run rows. */
+  activeRuns?: Array<{ conversationId: string }>;
 };
 
 /**
- * The occurrence a client should go looking for. A schedule can hold two active
- * rows — a `requires_action` pause does not block the next occurrence — so take the
- * one that fired last. A reservation that has not been dispatched yet carries no
- * conversation id, and there is nothing to look for until it does.
+ * The chats a schedule's running occurrences are producing. A reservation that has
+ * not been dispatched yet carries no conversation id, and there is nothing to look
+ * for until it does.
  */
-export function pickActiveRun(runs: readonly IScheduleRun[]): IScheduleRun | undefined {
-  let latest: IScheduleRun | undefined;
-  for (const run of runs) {
-    if (run.conversationId == null) {
-      continue;
-    }
-    const firedAt = (run.firedAt ?? run.scheduledFor).getTime();
-    const latestFiredAt = latest ? (latest.firedAt ?? latest.scheduledFor).getTime() : -Infinity;
-    if (firedAt >= latestFiredAt) {
-      latest = run;
-    }
-  }
-  return latest;
+export function toWireActiveRuns(
+  runs: readonly IScheduleRun[],
+): Array<{ conversationId: string }> | undefined {
+  const chats = runs.flatMap((run) =>
+    run.conversationId != null ? [{ conversationId: run.conversationId }] : [],
+  );
+  return chats.length > 0 ? chats : undefined;
 }
 
-function activeRunsBySchedule(runs: readonly IScheduleRun[]): Map<string, IScheduleRun> {
+function activeRunsBySchedule(runs: readonly IScheduleRun[]): Map<string, IScheduleRun[]> {
   const grouped = new Map<string, IScheduleRun[]>();
   for (const run of runs) {
     const list = grouped.get(run.scheduleId);
@@ -275,14 +268,7 @@ function activeRunsBySchedule(runs: readonly IScheduleRun[]): Map<string, ISched
       grouped.set(run.scheduleId, [run]);
     }
   }
-  const picked = new Map<string, IScheduleRun>();
-  for (const [scheduleId, list] of grouped) {
-    const run = pickActiveRun(list);
-    if (run) {
-      picked.set(scheduleId, run);
-    }
-  }
-  return picked;
+  return grouped;
 }
 
 /**
@@ -295,7 +281,7 @@ function activeRunsBySchedule(runs: readonly IScheduleRun[]): Map<string, ISched
 export function toWireSchedule(
   schedule: ISchedule,
   limits?: Pick<ScheduleLimits, 'projectId'>,
-  activeRun?: IScheduleRun,
+  activeRuns: readonly IScheduleRun[] = [],
 ): WireSchedule {
   return {
     id: schedule.id,
@@ -317,9 +303,7 @@ export function toWireSchedule(
     configRevision: schedule.configRevision,
     createdAt: schedule.createdAt,
     updatedAt: schedule.updatedAt,
-    ...(activeRun?.conversationId != null && {
-      activeRun: { conversationId: activeRun.conversationId },
-    }),
+    ...(activeRuns.length > 0 && { activeRuns: toWireActiveRuns(activeRuns) }),
   };
 }
 
@@ -554,16 +538,25 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   async function getSchedule(req: ServerRequest, res: Response): Promise<void> {
     const { id } = req.params as { id: string };
     const user = requestUser(req);
+    // The run read starts before ownership is established, so it is scoped to the
+    // caller — the same user-bound query the list uses — and narrowed here, rather
+    // than a by-schedule read that would touch rows the caller may not own.
     const [schedule, limits, activeRuns] = await Promise.all([
       deps.methods.getScheduleById(id, user.id),
       deps.getLimits(user),
-      deps.methods.getActiveRunsForSchedule(id),
+      deps.methods.getActiveRunsForUser(user.id),
     ]);
     if (schedule == null) {
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    res.json(toWireSchedule(schedule, limits, pickActiveRun(activeRuns)));
+    res.json(
+      toWireSchedule(
+        schedule,
+        limits,
+        activeRuns.filter((run) => run.scheduleId === id),
+      ),
+    );
   }
 
   async function createSchedule(req: ServerRequest, res: Response): Promise<void> {

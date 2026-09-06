@@ -760,52 +760,73 @@ describe('active run projection', () => {
       { user: { id: 'user-1' } } as unknown as ServerRequest,
       res,
     );
-    return (captured.body as { schedules: Array<{ activeRun?: { conversationId: string } }> })
-      .schedules[0];
+    return (
+      captured.body as { schedules: Array<{ activeRuns?: Array<{ conversationId: string }> }> }
+    ).schedules[0];
   }
 
   it('names the chat a running occurrence is producing', async () => {
     const wire = await listWith([run({ conversationId: 'convo-1' })]);
-    expect(wire.activeRun).toEqual({ conversationId: 'convo-1' });
+    expect(wire.activeRuns).toEqual([{ conversationId: 'convo-1' }]);
   });
 
   it('projects nothing for a reservation that has not been dispatched', async () => {
     const wire = await listWith([run({})]);
-    expect(wire.activeRun).toBeUndefined();
+    expect(wire.activeRuns).toBeUndefined();
   });
 
   it('projects nothing when no occurrence is running', async () => {
     const wire = await listWith([]);
-    expect(wire.activeRun).toBeUndefined();
+    expect(wire.activeRuns).toBeUndefined();
   });
 
-  it('prefers the occurrence that fired last when a pause and a run coexist', async () => {
+  it('keeps every concurrent occurrence: a pause does not block the next run', async () => {
     const wire = await listWith([
-      run({
-        conversationId: 'paused',
-        status: 'requires_action',
-        firedAt: new Date('2026-09-05T09:00:00Z'),
-      }),
-      run({ conversationId: 'running', firedAt: new Date('2026-09-06T09:00:00Z') }),
+      run({ conversationId: 'paused', status: 'requires_action' }),
+      run({ conversationId: 'running' }),
     ]);
-    expect(wire.activeRun).toEqual({ conversationId: 'running' });
+    expect(wire.activeRuns).toEqual([{ conversationId: 'paused' }, { conversationId: 'running' }]);
   });
 
-  it("reads the single-schedule route from that schedule's own rows", async () => {
+  it('files each occurrence under its own schedule', async () => {
+    const deps = makeCreateDeps();
+    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => [
+      schedule,
+      { ...schedule, id: 'sched-2' },
+    ]);
+    (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => [
+      run({ conversationId: 'convo-2', scheduleId: 'sched-2' }),
+    ]);
+    (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => []);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).listSchedules(
+      { user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    const [first, second] = (
+      captured.body as { schedules: Array<{ activeRuns?: Array<{ conversationId: string }> }> }
+    ).schedules;
+    expect(first.activeRuns).toBeUndefined();
+    expect(second.activeRuns).toEqual([{ conversationId: 'convo-2' }]);
+  });
+
+  it('scopes the single-schedule read to the caller before ownership is known', async () => {
     const deps = makeCreateDeps();
     (deps.methods.getScheduleById as jest.Mock) = jest.fn(async () => schedule);
-    (deps.methods.getActiveRunsForSchedule as jest.Mock) = jest.fn(async () => [
-      run({ conversationId: 'convo-1' }),
+    (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => [
+      run({ conversationId: 'mine' }),
+      run({ conversationId: 'other-schedule', scheduleId: 'sched-9' }),
     ]);
     const { res, captured } = makeRes();
     await createSchedulesHandlers(deps).getSchedule(
       { params: { id: 'sched-1' }, user: { id: 'user-1' } } as unknown as ServerRequest,
       res,
     );
-    expect(deps.methods.getActiveRunsForSchedule).toHaveBeenCalledWith('sched-1');
-    expect((captured.body as { activeRun?: unknown }).activeRun).toEqual({
-      conversationId: 'convo-1',
-    });
+    expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1');
+    expect(deps.methods.getActiveRunsForSchedule).not.toHaveBeenCalled();
+    expect((captured.body as { activeRuns?: unknown }).activeRuns).toEqual([
+      { conversationId: 'mine' },
+    ]);
   });
 });
 

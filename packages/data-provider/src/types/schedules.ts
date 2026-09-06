@@ -136,13 +136,13 @@ export type TSchedule = {
   nextRunAt?: string;
   lastRun?: TScheduleLastRun;
   /**
-   * The occurrence running right now, when one is. Read from its own run row, not
-   * from `lastRun` — which is projected only when a run settles, pauses or skips,
-   * and is deliberately withheld from a run whose schedule was edited mid-flight.
-   * This is the one signal a client has that a chat is on its way, and the id it
-   * needs to go and fetch it.
+   * The occurrences running right now — a `requires_action` pause does not block
+   * the next one, so there can be two. Read from their own run rows, not from
+   * `lastRun`, which is projected only when a run settles, pauses or skips and is
+   * deliberately withheld from a run whose schedule was edited mid-flight. This is
+   * the signal a client has that a chat is on its way, and the id to fetch it by.
    */
-  activeRun?: { conversationId: string };
+  activeRuns?: Array<{ conversationId: string }>;
   runCount: number;
   failureCount: number;
   configRevision?: number;
