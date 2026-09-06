@@ -12,7 +12,11 @@ import type {
 } from '@librechat/agents';
 import type { PtcToolCallEvent } from 'librechat-data-provider';
 import type { CodeExecutionContext } from './execution';
-import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
+import {
+  createOwnedToolEndHandler,
+  createToolExecuteHandler,
+  ToolExecuteOptions,
+} from './handlers';
 import { markSandboxReady } from './prewarm';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { WorkspaceToolHttpError } from '../code/workspace';
@@ -123,6 +127,28 @@ function protectedToolOutputRequest() {
     },
   } as never;
 }
+
+describe('createOwnedToolEndHandler', () => {
+  it('forwards the graph-owned step identity to the tool callback', async () => {
+    const callback = jest.fn(async () => undefined);
+    const handler = createOwnedToolEndHandler(callback as never, logger);
+    const graph = {
+      toolCallStepIds: new Map([['call_1', 'step-1']]),
+    } as never;
+
+    await handler.handle(
+      'on_tool_end',
+      { output: { tool_call_id: 'call_1', content: 'ok' } } as never,
+      { agent_id: 'agent-a' },
+      graph,
+    );
+
+    expect(callback).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ agent_id: 'agent-a', stepId: 'step-1' }),
+    );
+  });
+});
 
 describe('createToolExecuteHandler', () => {
   describe('code execution session context passthrough', () => {

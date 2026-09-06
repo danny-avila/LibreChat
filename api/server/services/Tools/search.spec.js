@@ -28,6 +28,7 @@ describe('createOnSearchResults', () => {
       toolCall: {
         id: 'tool-call-1',
         name: 'web_search',
+        stepId: 'step-search-1',
         turn: 0,
       },
     };
@@ -53,6 +54,7 @@ describe('createOnSearchResults', () => {
           data: expect.objectContaining({
             messageId: 'response-1',
             toolCallId: 'tool-call-1',
+            stepId: 'step-search-1',
             conversationId: 'conversation-1',
           }),
         },

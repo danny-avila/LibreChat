@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, Tools } from 'librechat-data-provider';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ContentParts from '../ContentParts';
@@ -90,6 +90,9 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
+  MemoryCall: ({ attachments }: { attachments?: TAttachment[] }) => (
+    <div data-testid="memory-call" data-count={attachments?.length ?? 0} />
+  ),
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -99,7 +102,9 @@ jest.mock('../MemoryArtifacts', () => ({
 
 jest.mock('../WebSearch', () => ({
   __esModule: true,
-  default: () => <div data-testid="web-search" />,
+  default: ({ attachments }: { attachments?: TAttachment[] }) => (
+    <div data-testid="web-search" data-count={attachments?.length ?? 0} />
+  ),
 }));
 
 jest.mock('../RetrievalCall', () => ({
@@ -158,6 +163,24 @@ const makeMcpToolCall = (
       name: `getTinyImage${MCP_DELIMITER}Everything`,
       args: '{}',
       output: hasOutput ? 'image_returned' : '',
+      ...(stepId == null ? {} : { stepId }),
+      ...(agentId == null ? {} : { agentId }),
+    },
+  }) as unknown as TMessageContentParts;
+
+const makeOwnedToolCall = (
+  name: string,
+  id: string,
+  stepId?: string,
+  agentId?: string,
+): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
+      name,
+      args: '{}',
+      output: 'completed',
       ...(stepId == null ? {} : { stepId }),
       ...(agentId == null ? {} : { agentId }),
     },
@@ -305,6 +328,75 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(groups[0]).toHaveAttribute('data-count', '1');
   });
 
+  it('routes producer-shaped search snapshots by agent and host step', () => {
+    const content = [
+      makeOwnedToolCall(Tools.web_search, 'call_0', 'step-search-1', 'agent-a'),
+      makeTextPart('between searches'),
+      makeOwnedToolCall(Tools.web_search, 'call_0', undefined, 'agent-a'),
+    ];
+    const attachments = [
+      {
+        type: Tools.web_search,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-search-1',
+        conversationId: 'c1',
+        [Tools.web_search]: { turn: 0, organic: [{ link: 'https://first.example' }] },
+      },
+      {
+        type: Tools.web_search,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-search-2',
+        conversationId: 'c1',
+        [Tools.web_search]: { turn: 0, organic: [{ link: 'https://second.example' }] },
+      },
+    ] as unknown as TAttachment[];
+
+    renderContentParts({ ...baseProps, content, attachments });
+
+    expect(screen.getAllByTestId('web-search').map((card) => card.dataset.count)).toEqual([
+      '1',
+      '1',
+    ]);
+  });
+
+  it('routes producer-shaped memory artifacts by agent and host step', () => {
+    const content = [
+      makeOwnedToolCall('set_memory', 'call_0', 'step-memory-1', 'agent-a'),
+      makeTextPart('between memory writes'),
+      makeOwnedToolCall('set_memory', 'call_0', undefined, 'agent-a'),
+    ];
+    const attachments = [
+      {
+        type: Tools.memory,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-memory-1',
+        conversationId: 'c1',
+        [Tools.memory]: { key: 'first', type: 'update' },
+      },
+      {
+        type: Tools.memory,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-memory-2',
+        conversationId: 'c1',
+        [Tools.memory]: { key: 'second', type: 'update' },
+      },
+    ] as unknown as TAttachment[];
+
+    renderContentParts({ ...baseProps, content, attachments });
+
+    expect(screen.getAllByTestId('memory-call').map((card) => card.dataset.count)).toEqual([
+      '1',
+      '1',
+    ]);
+  });
   it('keeps a manually expanded completed tool group open when its content index shifts', () => {
     const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
     const nextContent = [makeTextPart('streamed preface'), ...content];

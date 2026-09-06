@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { atom, useRecoilState, useRecoilValue } from 'recoil';
+import { useAtom } from 'jotai';
+import {
+  collapsedAskActionsAtom,
+  askAnswerSelectionAtom,
+  askAnswerCheckedAtom,
+  askAnswerTextAtom,
+  releasedComposerTextAtom,
+  useAskAnswerHost,
+} from '~/components/Chat/ask/state';
 import {
   useAskSubmitStatus,
   useResumeSubmit,
@@ -12,57 +20,6 @@ import {
 import { getAskAnswerDraftId, morphTransition, setDraft } from '~/utils';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useOptionalChatFormContext } from '~/Providers';
-import store from '~/store';
-
-/**
- * Action ids the user moved into the chat: the popover is hidden AND the
- * composer is released (answer mode off), so the chat card is the question's
- * only surface until the card's chevron moves it back. One state for one
- * user-visible concept. A hidden popover whose composer stayed armed was
- * indistinguishable from one whose composer did not.
- */
-const collapsedAskActionsAtom = atom<string[]>({
-  key: 'askAnswerModeCollapsedActions',
-  default: [],
-});
-
-/** Currently highlighted option row (keyboard cursor), or nothing. */
-const askAnswerSelectionAtom = atom<number | null>({
-  key: 'askAnswerModeSelection',
-  default: null,
-});
-
-/** Checked option rows for a multi-select question — shared across the
- *  popover, the composer, and the chat card so every surface shows (and
- *  submits) the same set. */
-const askAnswerCheckedAtom = atom<number[]>({
-  key: 'askAnswerModeChecked',
-  default: [],
-});
-
-/**
- * Free-form answers handed between the composer and the in-message card,
- * keyed by pending action id. A single `{ actionId, text }` slot lost an
- * unsent answer as soon as a second paused conversation's question claimed
- * it: the reader is action-scoped, so returning to the first card showed an
- * empty box with no route back to the text. Entries are dropped on submit.
- */
-const askAnswerTextAtom = atom<Record<string, string>>({
-  key: 'askAnswerModeText',
-  default: {},
-});
-
-/**
- * Ordinary composer text typed AFTER a question moved to the chat card, keyed
- * by pending action id. Expanding hands the composer back to the answer, which
- * would otherwise overwrite an unsent normal message with no route back to it.
- * Only needed while Save drafts is off; with saving on the conversation draft
- * already holds that text.
- */
-const releasedComposerTextAtom = atom<Record<string, string>>({
-  key: 'askAnswerModeReleasedComposerText',
-  default: {},
-});
 
 /**
  * First-class "answer mode" for a live `ask_user_question` pause. Clicking an
@@ -94,18 +51,16 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     select: findLiveAskUserQuestion,
   });
   const liveAsk = enabled ? (liveAskData ?? null) : null;
-  const [collapsedIds, setCollapsedIds] = useRecoilState(collapsedAskActionsAtom);
-  const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
-  const [checked, setChecked] = useRecoilState(askAnswerCheckedAtom);
-  const [answerDrafts, setAnswerDrafts] = useRecoilState(askAnswerTextAtom);
-  const [releasedComposerText, setReleasedComposerText] = useRecoilState(releasedComposerTextAtom);
-  const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
+  const [collapsedIds, setCollapsedIds] = useAtom(collapsedAskActionsAtom);
+  const [selected, setSelected] = useAtom(askAnswerSelectionAtom);
+  const [checked, setChecked] = useAtom(askAnswerCheckedAtom);
+  const [answerDrafts, setAnswerDrafts] = useAtom(askAnswerTextAtom);
+  const [releasedComposerText, setReleasedComposerText] = useAtom(releasedComposerTextAtom);
+  const saveDrafts = useAskAnswerHost();
   const { submitAskAnswer } = useResumeSubmit();
-  /** Recoil-backed so the lock/status works from the composer, which renders
+  /** Jotai-backed so the lock/status works from the composer, which renders
    *  outside `ApprovalProvider` (where the context status would be inert). */
   const { getAskStatus } = useAskSubmitStatus();
-  /** Absent outside ChatView (Share/search render the answer card without the
-   *  composer form) — resets are simply skipped there. */
   const formContext = useOptionalChatFormContext();
   /** Resume callbacks may settle after this ChatForm has navigated to another
    * conversation (the form instance is intentionally reused across routes).

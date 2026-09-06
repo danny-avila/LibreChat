@@ -350,6 +350,20 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ? { 'rgb-surface-composer-hover': customColors['rgb-surface-hover'] }
       : {};
   /**
+   * Code blocks are tied to the same mode-specific surfaces by the legacy CSS:
+   * `surface-primary-alt` in light and `presentation` in dark. Keep that
+   * relationship for themes created before `surface-code` was registered,
+   * rather than pinning their syntax colours to the bundled code surface.
+   */
+  const codeSurfaceSource =
+    mode === 'dark'
+      ? customColors?.['rgb-presentation']
+      : customColors?.['rgb-surface-primary-alt'];
+  const codeSurfaceFallback =
+    customColors?.['rgb-surface-code'] === undefined && codeSurfaceSource !== undefined
+      ? { 'rgb-surface-code': codeSurfaceSource }
+      : {};
+  /**
    * Themes written before the shimmer stops existed cannot name them, and
    * filling the omission from the bundled base would pin their in-flight labels
    * to LibreChat's own sweep — a theme that restates its text as white would
@@ -385,6 +399,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     colors: {
       ...baseColors,
       ...customColors,
+      ...codeSurfaceFallback,
       ...composerHoverFallback,
       ...shimmerBaseFallback,
       ...textMutedFallback,

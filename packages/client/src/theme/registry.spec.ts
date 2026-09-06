@@ -50,6 +50,52 @@ describe('theme registry', () => {
     expect(dark.appearance).toEqual(defaultAppearance);
   });
 
+  it('derives omitted code surfaces from the mode-specific legacy canvas', () => {
+    const theme = fromLegacyTheme(
+      {
+        'rgb-surface-primary-alt': '12 34 56',
+        'rgb-presentation': '210 211 212',
+      },
+      'legacy-code-reference',
+    );
+
+    expect(resolveTheme(theme, 'light').colors['rgb-surface-code']).toBe('12 34 56');
+    expect(resolveTheme(theme, 'dark').colors['rgb-surface-code']).toBe('210 211 212');
+  });
+
+  it('preserves explicit code surfaces instead of deriving them', () => {
+    const theme: ThemeDefinition = {
+      version: 1,
+      name: 'explicit-code-reference',
+      modes: {
+        light: {
+          colors: {
+            'rgb-surface-primary-alt': '12 34 56',
+            'rgb-surface-code': '65 43 21',
+          },
+        },
+        dark: {
+          colors: {
+            'rgb-presentation': '210 211 212',
+            'rgb-surface-code': '98 76 54',
+          },
+        },
+      },
+    };
+
+    expect(resolveTheme(theme, 'light').colors['rgb-surface-code']).toBe('65 43 21');
+    expect(resolveTheme(theme, 'dark').colors['rgb-surface-code']).toBe('98 76 54');
+  });
+
+  it('keeps the bundled code surfaces unchanged for the default appearances', () => {
+    expect(resolveTheme(libreChatTheme, 'light').colors['rgb-surface-code']).toBe(
+      defaultTheme['rgb-surface-code'],
+    );
+    expect(resolveTheme(libreChatTheme, 'dark').colors['rgb-surface-code']).toBe(
+      darkTheme['rgb-surface-code'],
+    );
+  });
+
   /** Themes predate the shimmer stops, so an omission means "not written yet",
    *  not "wants LibreChat's sweep". Filling it from the bundled base would light
    *  a white-text theme's in-flight labels in the stock near-black. */

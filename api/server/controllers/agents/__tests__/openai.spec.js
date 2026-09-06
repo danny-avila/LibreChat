@@ -194,6 +194,9 @@ jest.mock('@librechat/api', () => ({
    *  export or the call throws before the assertions run. */
   stripActivityLabelParts: jest.fn((payload) => payload),
   writeSSE: jest.fn(),
+  createOwnedToolEndHandler: jest.fn(
+    (...args) => new (require('@librechat/agents').ToolEndHandler)(...args),
+  ),
   createRun: jest.fn().mockResolvedValue({
     processStream: mockProcessStream,
   }),

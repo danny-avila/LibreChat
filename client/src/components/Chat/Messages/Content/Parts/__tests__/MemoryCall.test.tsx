@@ -1,11 +1,13 @@
 import React from 'react';
+import { Tools } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
+import type { TAttachment } from 'librechat-data-provider';
 import MemoryCall from '../MemoryCall';
 
 jest.mock('~/hooks', () => ({
   useLocalize:
     () =>
-    (key: string): string => {
+    (key: string, params?: { tokens?: number }): string => {
       const translations: Record<string, string> = {
         com_ui_memory_saving: 'Saving memory',
         com_ui_memory_saved: 'Saved memory',
@@ -15,6 +17,7 @@ jest.mock('~/hooks', () => ({
         com_ui_memory: 'Memory',
         com_ui_cancelled: 'Cancelled',
         com_ui_tool_failed: 'failed',
+        com_ui_memory_would_exceed: `Cannot save: remove ${params?.tokens} tokens to make space.`,
       };
       return translations[key] ?? key;
     },
@@ -165,6 +168,35 @@ describe('MemoryCall', () => {
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Memory preferences failed');
     expect(screen.getByText(/Memory set for key/)).toBeInTheDocument();
+    expect(screen.queryByText('requested value')).not.toBeInTheDocument();
+  });
+
+  it('shows the actionable overage from a linked memory error artifact', () => {
+    const attachment: TAttachment = {
+      type: Tools.memory,
+      toolCallId: 'call_0',
+      messageId: 'message-1',
+      [Tools.memory]: {
+        type: 'error',
+        key: 'preferences',
+        value: JSON.stringify({ errorType: 'would_exceed', tokenCount: 47 }),
+      },
+    };
+    render(
+      <MemoryCall
+        toolName="set_memory"
+        initialProgress={1}
+        isSubmitting={false}
+        args={{ key: 'preferences', value: 'requested value' }}
+        output="Memory storage would exceed limit. Cannot save this memory."
+        attachments={[attachment]}
+        hideAttachments
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Cannot save: remove 47 tokens to make space.',
+    );
     expect(screen.queryByText('requested value')).not.toBeInTheDocument();
   });
 });

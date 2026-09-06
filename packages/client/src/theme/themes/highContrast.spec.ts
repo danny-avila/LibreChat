@@ -71,10 +71,9 @@ const textTokens: Array<keyof IThemeRGB> = [
   'rgb-text-muted',
 ];
 
-/** `--surface-code` resolves to `surface-primary-alt` in light mode and
- *  `presentation` in dark, so asserting against both covers either mode without
- *  the table needing to know which one it is holding. */
-const codeSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-primary-alt', 'rgb-presentation'];
+/** Code blocks share the mode's own high-contrast canvas rather than a bundled
+ * fallback that would reintroduce a grey surface. */
+const codeSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-code'];
 
 const syntaxTokens: Array<keyof IThemeRGB> = [
   'rgb-syntax-text',
@@ -166,6 +165,17 @@ describe.each([
 ])('%s palette', (_name, theme: IThemeRGB) => {
   it('declares every registry token, so nothing falls back to a mid-grey default', () => {
     expect(Object.keys(theme).sort()).toEqual([...themeColorTokens].sort());
+  });
+
+  it('uses the mode canvas for code blocks instead of the stock grey', () => {
+    const expected = theme === highContrastDarkTheme ? '0 0 0' : '255 255 255';
+    const source =
+      theme === highContrastDarkTheme
+        ? theme['rgb-presentation']
+        : theme['rgb-surface-primary-alt'];
+
+    expect(theme['rgb-surface-code']).toBe(expected);
+    expect(theme['rgb-surface-code']).toBe(source);
   });
 
   it('keeps neutral text at WCAG AAA on every canvas and hover fill', () => {

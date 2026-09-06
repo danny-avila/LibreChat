@@ -8,6 +8,7 @@ jest.mock('nanoid', () => ({
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   writeAttachmentEvent: jest.fn(),
+  createOwnedToolEndHandler: jest.fn((callback) => ({ handle: callback })),
   GenerationJobManager: {
     emitChunk: jest.fn(),
   },
@@ -497,6 +498,42 @@ describe('createToolEndCallback', () => {
       { owner: 'agent-b', link: 'https://example.com/agent-b' },
     ]);
   });
+
+  it.each(['createToolEndCallback', 'createResponsesToolEndCallback'])(
+    '%s preserves memory payloads and their execution owner',
+    async (factoryName) => {
+      const toolEndCallback = require('../callbacks')[factoryName]({ req, res, artifactPromises });
+      await toolEndCallback(
+        {
+          output: {
+            tool_call_id: 'call_0',
+            artifact: {
+              [Tools.memory]: {
+                key: 'project',
+                type: 'update',
+                value: 'owned',
+              },
+            },
+          },
+        },
+        {
+          run_id: 'run456',
+          thread_id: 'thread789',
+          agent_id: 'agent-a',
+          stepId: 'step-memory-1',
+        },
+      );
+
+      const [attachment] = await Promise.all(artifactPromises);
+      expect(attachment).toMatchObject({
+        type: Tools.memory,
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-memory-1',
+        [Tools.memory]: { key: 'project', type: 'update', value: 'owned' },
+      });
+    },
+  );
 
   describe('ui_resources artifact handling', () => {
     it('should process ui_resources artifact and return attachment when headers not sent', async () => {

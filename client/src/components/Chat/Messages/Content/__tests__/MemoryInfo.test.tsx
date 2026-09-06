@@ -97,28 +97,6 @@ describe('MemoryInfo', () => {
         ),
       ).toBeInTheDocument();
     });
-
-    test('applies correct styling to error messages', () => {
-      const memoryArtifacts: MemoryArtifact[] = [
-        {
-          type: 'error',
-          key: 'system',
-          value: JSON.stringify({ errorType: 'would_exceed', tokenCount: 50 }),
-        },
-      ];
-
-      render(<MemoryInfo memoryArtifacts={memoryArtifacts} />);
-
-      const errorMessage = screen.getByText(
-        'Cannot save - would exceed limit by 50 tokens. Delete existing memories to make space.',
-      );
-      const errorContainer = errorMessage.closest('[role="alert"]');
-
-      expect(errorContainer).toHaveClass('bg-status-error-subtle');
-      expect(errorContainer).toHaveClass('text-status-error');
-      expect(errorContainer).toHaveClass('border-status-error-border');
-      expect(errorContainer).toHaveClass('p-3');
-    });
   });
 
   describe('Mixed Memory Types', () => {

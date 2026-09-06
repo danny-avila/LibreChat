@@ -203,6 +203,9 @@ jest.mock('@librechat/api', () => ({
    *  before SDK formatting; the mock must expose it like any other used
    *  export or the call throws before the assertions run. */
   stripActivityLabelParts: jest.fn((payload) => payload),
+  createOwnedToolEndHandler: jest.fn(
+    (...args) => new (require('@librechat/agents').ToolEndHandler)(...args),
+  ),
   collectReachableAgents: (roots) => {
     const agents = [];
     const pending = [...roots];

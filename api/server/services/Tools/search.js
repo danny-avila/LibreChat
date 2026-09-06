@@ -35,6 +35,7 @@ function createOnSearchResults(res, streamId = null, jobCreatedAt) {
     searchResultData: undefined,
     toolCallId: undefined,
     agentId: undefined,
+    stepId: undefined,
     attachmentName: undefined,
     messageId: undefined,
     conversationId: undefined,
@@ -84,7 +85,8 @@ function createOnSearchResults(res, streamId = null, jobCreatedAt) {
     }
 
     context.toolCallId = runnableConfig.toolCall.id;
-    context.agentId = runnableConfig.metadata.agent_id;
+    context.agentId = runnableConfig.metadata.agent_id ?? runnableConfig.metadata.agentId;
+    context.stepId = runnableConfig.toolCall?.stepId;
     context.messageId = runnableConfig.metadata.run_id;
     context.conversationId = runnableConfig.metadata.thread_id;
     context.attachmentName = `${runnableConfig.toolCall.name}_${context.toolCallId}_${nanoid()}`;
@@ -135,6 +137,7 @@ function buildAttachment(context) {
     messageId: context.messageId,
     toolCallId: context.toolCallId,
     agentId: context.agentId,
+    stepId: context.stepId,
     conversationId: context.conversationId,
     name: context.attachmentName,
     type: Tools.web_search,

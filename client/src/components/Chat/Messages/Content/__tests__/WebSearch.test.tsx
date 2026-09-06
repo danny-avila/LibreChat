@@ -220,6 +220,15 @@ describe('WebSearch', () => {
       expect(hrefs).toContain('https://pi.example.com/2');
       expect(hrefs).not.toContain('https://neutrino.example.com/1');
     });
+
+    it('does not fall back to another execution when filtered attachments are empty', () => {
+      renderWebSearch({
+        searchResults,
+        attachments: [],
+      });
+
+      expect(screen.getByRole('button', { name: 'Searched the web' })).toBeDisabled();
+    });
   });
 
   describe('streaming favicons', () => {
@@ -316,6 +325,7 @@ describe('WebSearch', () => {
       } as unknown as TAttachment;
 
       renderWebSearch({ attachments: [attachment] });
+      fireEvent.click(screen.getByRole('button', { name: /Searched the web/ }));
 
       expect(
         screen.getByText('How context windows change what assistants can do.'),

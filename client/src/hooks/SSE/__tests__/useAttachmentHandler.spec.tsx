@@ -182,6 +182,29 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     expect(ctx.list).toHaveLength(2);
   });
 
+  it('keeps same-agent executions separate when provider id and turn repeat', () => {
+    const ctx = setup();
+    const snapshot = (stepId: string, link: string) =>
+      ({
+        messageId,
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId,
+        type: Tools.web_search,
+        [Tools.web_search]: { turn: 0, organic: [{ link }] },
+      }) as unknown as TAttachment;
+
+    ctx.handle(snapshot('step-1', 'https://first.example'));
+    ctx.handle(snapshot('step-2', 'https://second.example'));
+    ctx.handle(snapshot('step-1', 'https://first-updated.example'));
+
+    expect(ctx.list).toHaveLength(2);
+    expect(ctx.list.map((attachment) => attachment[Tools.web_search]?.organic?.[0]?.link)).toEqual([
+      'https://first-updated.example',
+      'https://second.example',
+    ]);
+  });
+
   it('keeps sibling tool calls separate when they share a file_id (distinct toolCallIds)', () => {
     /* Two background code calls regenerated the same filename — same
      * claimed file_id, different toolCallId. Each card anchors its own

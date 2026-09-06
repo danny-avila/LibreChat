@@ -1,49 +1,32 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { useAtom } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
-import { atom, useRecoilState, useRecoilValue } from 'recoil';
 import type { Agents } from 'librechat-data-provider';
+import type { AskAnswerStatus } from '~/components/Chat/ask/state';
 import {
   useSubmitToolApprovalMutation,
   useSubmitAskAnswerMutation,
   type ResumeAgentFields,
 } from '~/data-provider';
+import { askSubmitStatusAtom } from '~/components/Chat/ask/state';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
 import store from '~/store';
 
-/** Per-action submission lifecycle, surfaced to the cards so they can disable
- *  controls and explain a terminal outcome. */
-type ActionStatus = 'idle' | 'submitting' | 'submitted' | 'expired' | 'error';
-
-/**
- * Ask-answer submit status keyed by `actionId`. This lives in Recoil, NOT the
- * {@link ApprovalContext} React state, because the PRIMARY answer surface is
- * the composer in `ChatForm` — which renders OUTSIDE `ApprovalProvider` (that
- * only wraps message content). A React context read there degrades to the
- * inert {@link FALLBACK}, so an in-flight lock / expired status tracked in the
- * context would never engage for the composer. A global atom is visible to
- * both the composer (`useAskAnswerMode`) and the message-content card
- * (`AskUserQuestion`), so a fast double-submit is actually blocked and a
- * terminal (expired/error) state surfaces on either surface.
- */
-const askSubmitStatusAtom = atom<Record<string, ActionStatus>>({
-  key: 'askAnswerSubmitStatus',
-  default: {},
-});
-
 /** Shared read/write for the ask-answer submit status. */
 export function useAskSubmitStatus(): {
-  getAskStatus: (actionId: string) => ActionStatus;
-  setAskStatus: (actionId: string, status: ActionStatus) => void;
+  getAskStatus: (actionId: string) => AskAnswerStatus;
+  setAskStatus: (actionId: string, status: AskAnswerStatus) => void;
 } {
-  const [statusMap, setStatusMap] = useRecoilState(askSubmitStatusAtom);
+  const [statusMap, setStatusMap] = useAtom(askSubmitStatusAtom);
   const getAskStatus = useCallback(
-    (actionId: string): ActionStatus => statusMap[actionId] ?? 'idle',
+    (actionId: string): AskAnswerStatus => statusMap[actionId] ?? 'idle',
     [statusMap],
   );
   const setAskStatus = useCallback(
-    (actionId: string, status: ActionStatus) =>
+    (actionId: string, status: AskAnswerStatus) =>
       setStatusMap((prev) => ({ ...prev, [actionId]: status })),
     [setStatusMap],
   );
@@ -81,9 +64,9 @@ interface ApprovalContextValue {
   /** True once every registered tool_call in the action has a decision. */
   isReady: (actionId: string) => boolean;
   /** Lifecycle status for an action (so cards can disable / show messages). */
-  getStatus: (actionId: string) => ActionStatus;
+  getStatus: (actionId: string) => AskAnswerStatus;
   /** Set an action's submission status (driven by the cards' submit via `useResumeSubmit`). */
-  setStatus: (actionId: string, status: ActionStatus) => void;
+  setStatus: (actionId: string, status: AskAnswerStatus) => void;
   /** Restore a free-form question answer after transient phase-slice remounts. */
   getAskAnswerDraft: (actionId: string) => string;
   /** Retain a free-form question answer for this response message's lifetime. */
@@ -145,7 +128,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
   const askAnswerDraftsRef = useRef(new Map<string, string>());
   const [version, bump] = useState(0);
   const rerender = useCallback(() => bump((v) => v + 1), []);
-  const [statusByAction, setStatusByAction] = useState<Record<string, ActionStatus>>({});
+  const [statusByAction, setStatusByAction] = useState<Record<string, AskAnswerStatus>>({});
 
   const registerToolCall = useCallback(
     (actionId: string, toolCallId: string) => {
@@ -238,11 +221,11 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
   }, []);
 
   const getStatus = useCallback(
-    (actionId: string): ActionStatus => statusByAction[actionId] ?? 'idle',
+    (actionId: string): AskAnswerStatus => statusByAction[actionId] ?? 'idle',
     [statusByAction],
   );
 
-  const setStatus = useCallback((actionId: string, status: ActionStatus) => {
+  const setStatus = useCallback((actionId: string, status: AskAnswerStatus) => {
     setStatusByAction((prev) => ({ ...prev, [actionId]: status }));
   }, []);
 
@@ -319,7 +302,7 @@ export function useResumeSubmit() {
    *  synchronous action-id guard alongside the rendered submission status. */
   const submittingToolActionIdsRef = useRef(new Set<string>());
   const submittingAskActionIdsRef = useRef(new Set<string>());
-  /** Ask status lives in Recoil so it works from the composer (outside the
+  /** Ask status lives in Jotai so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
   const { setAskStatus } = useAskSubmitStatus();
   const activeGenerationCreatedAt = useRecoilValue(

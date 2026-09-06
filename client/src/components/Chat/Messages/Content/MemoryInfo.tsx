@@ -78,9 +78,9 @@ export default function MemoryInfo({ memoryArtifacts }: { memoryArtifacts: Memor
 
       {errorMessages.length > 0 && (
         <div>
-          <h4 className="mb-2 text-sm font-semibold text-text-destructive">
+          <p className="mb-2 text-sm font-semibold text-status-error">
             {localize('com_ui_memory_storage_full')}
-          </h4>
+          </p>
           <div className="space-y-2">
             {errorMessages.map((errorMessage) => (
               <Alert key={errorMessage} variant="error" icon={false} className="rounded-md p-3">

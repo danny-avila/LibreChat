@@ -169,7 +169,7 @@ export default function WebSearch({
   }, [attachments]);
 
   const allSources = useMemo((): ValidSource[] => {
-    if (attachments) {
+    if (attachments != null) {
       const turnMap: Record<string, SearchResultData> = {};
       for (const att of attachments) {
         if (att.type === Tools.web_search && att[Tools.web_search]) {
@@ -178,9 +178,7 @@ export default function WebSearch({
           turnMap[key] = data;
         }
       }
-      if (Object.keys(turnMap).length > 0) {
-        return collectSources(turnMap);
-      }
+      return collectSources(turnMap);
     }
     if (searchResults?.[ownTurn]) {
       return collectSources({ [ownTurn]: searchResults[ownTurn] });
@@ -218,12 +216,8 @@ export default function WebSearch({
     if (complete && !finalizing) {
       return [];
     }
-    const result = searchResults?.[ownTurn];
-    if (!result) {
-      return [];
-    }
-    return [...(result.organic || []), ...(result.topStories || [])];
-  }, [searchResults, complete, finalizing, ownTurn]);
+    return allSources;
+  }, [allSources, complete, finalizing]);
 
   const showSources = streamingSources.length > 0;
   /** Stable phase text: the live region must not re-announce the growing

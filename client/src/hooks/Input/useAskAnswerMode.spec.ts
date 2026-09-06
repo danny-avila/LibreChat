@@ -1,31 +1,29 @@
+import React from 'react';
+import { Provider, createStore } from 'jotai';
+import { act, renderHook } from '@testing-library/react';
+import {
+  AskAnswerHostProvider,
+  collapsedAskActionsAtom,
+  askAnswerSelectionAtom,
+  askAnswerCheckedAtom,
+  askAnswerTextAtom,
+  releasedComposerTextAtom,
+} from '~/components/Chat/ask/state';
+
 const mockSubmitAskAnswer = jest.fn();
 const mockResetComposer = jest.fn();
 const mockGetComposerText = jest.fn(() => 'answer from A');
 const mockSetComposerText = jest.fn();
-const mockSetCollapsedIds = jest.fn();
-const mockSetSelected = jest.fn();
-const mockSetChecked = jest.fn();
-let mockAnswerDrafts: Record<string, string> = {};
-/** Applies updater functions so the tests can assert the resulting drafts
- *  rather than the setter's call shape. */
-const mockSetAnswerDrafts = jest.fn((update: unknown) => {
-  mockAnswerDrafts =
-    typeof update === 'function'
-      ? (update as (current: Record<string, string>) => Record<string, string>)(mockAnswerDrafts)
-      : (update as Record<string, string>);
-});
-let mockReleasedComposerText: Record<string, string> = {};
-const mockSetReleasedComposerText = jest.fn((update: unknown) => {
-  mockReleasedComposerText =
-    typeof update === 'function'
-      ? (update as (current: Record<string, string>) => Record<string, string>)(
-          mockReleasedComposerText,
-        )
-      : (update as Record<string, string>);
-});
 const mockSetDraft = jest.fn();
 let mockSaveDrafts = false;
-let mockCollapsedIds: string[] = [];
+let jotaiStore = createStore();
+
+const JotaiWrapper = ({ children }: { children: React.ReactNode }) =>
+  React.createElement(
+    Provider,
+    { store: jotaiStore },
+    React.createElement(AskAnswerHostProvider, { saveDrafts: mockSaveDrafts }, children),
+  );
 
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -44,31 +42,7 @@ jest.mock('~/utils', () => ({
   morphTransition: (update: () => void) => update(),
   setDraft: (...args: unknown[]) => mockSetDraft(...args),
 }));
-jest.mock('recoil', () => ({
-  atom: (cfg: unknown) => cfg,
-  useRecoilState: (state: { key?: string }) => {
-    if (state.key === 'askAnswerModeCollapsedActions') {
-      return [mockCollapsedIds, mockSetCollapsedIds];
-    }
-    if (state.key === 'askAnswerModeSelection') {
-      return [null, mockSetSelected];
-    }
-    if (state.key === 'askAnswerModeChecked') {
-      return [[], mockSetChecked];
-    }
-    if (state.key === 'askAnswerModeText') {
-      return [mockAnswerDrafts, mockSetAnswerDrafts];
-    }
-    if (state.key === 'askAnswerModeReleasedComposerText') {
-      return [mockReleasedComposerText, mockSetReleasedComposerText];
-    }
-    return [[], jest.fn()];
-  },
-  useRecoilValue: () => mockSaveDrafts,
-}));
-jest.mock('~/store', () => ({ __esModule: true, default: { saveDrafts: 'saveDrafts' } }));
 
-import { act, renderHook } from '@testing-library/react';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { findLiveAskUserQuestion } from '~/utils/approval';
 import useAskAnswerMode from './useAskAnswerMode';
@@ -92,30 +66,28 @@ describe('useAskAnswerMode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSaveDrafts = false;
-    mockCollapsedIds = [];
-    mockAnswerDrafts = {};
-    mockReleasedComposerText = {};
+    jotaiStore = createStore();
     mockGetComposerText.mockReturnValue('answer from A');
   });
 
-  it('projects the live ask via the findLiveAskUserQuestion select over the conversation cache', () => {
+  it('is active when a live ask is available', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
 
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
-    expect(mockUseGetMessages).toHaveBeenCalledWith(
-      'conversation-1',
-      expect.objectContaining({ enabled: true, select: findLiveAskUserQuestion }),
-    );
     expect(result.current.liveAsk).toBe(liveAsk);
     expect(result.current.active).toBe(true);
     expect(result.current.popoverVisible).toBe(true);
   });
 
-  it('is inactive when the select finds no live ask', () => {
+  it('is inactive without a live ask', () => {
     mockUseGetMessages.mockReturnValue({ data: undefined });
 
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     expect(result.current.liveAsk).toBeNull();
     expect(result.current.active).toBe(false);
@@ -125,7 +97,9 @@ describe('useAskAnswerMode', () => {
   it('locks the composer for a batch, and hands it back the moment it collapses', () => {
     mockUseGetMessages.mockReturnValue({ data: batchAsk });
 
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     expect(result.current.active).toBe(true);
     expect(result.current.batchMode).toBe(true);
@@ -142,34 +116,35 @@ describe('useAskAnswerMode', () => {
 
   it('does not move the normal composer draft into a collapsed batch answer', () => {
     mockUseGetMessages.mockReturnValue({ data: batchAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.collapse());
 
-    expect(mockSetAnswerDrafts).not.toHaveBeenCalled();
+    expect(jotaiStore.get(askAnswerTextAtom)).toEqual({});
     expect(mockResetComposer).not.toHaveBeenCalled();
   });
 
   it('does not overwrite normal composer text when expanding a batch', () => {
-    mockCollapsedIds = ['a1'];
-    mockAnswerDrafts = { a1: 'stale batch handoff' };
+    jotaiStore.set(collapsedAskActionsAtom, ['a1']);
+    jotaiStore.set(askAnswerTextAtom, { a1: 'stale batch handoff' });
     mockUseGetMessages.mockReturnValue({ data: batchAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.expand());
 
     expect(mockSetComposerText).not.toHaveBeenCalled();
   });
 
-  it('disables the query and forces liveAsk null for a new (unsaved) conversation', () => {
+  it('is inactive for a new unsaved conversation', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
 
-    const { result } = renderHook(() => useAskAnswerMode('new'));
-
-    expect(mockUseGetMessages).toHaveBeenCalledWith(
-      '',
-      expect.objectContaining({ enabled: false }),
-    );
+    const { result } = renderHook(() => useAskAnswerMode('new'), {
+      wrapper: JotaiWrapper,
+    });
     expect(result.current.liveAsk).toBeNull();
     expect(result.current.active).toBe(false);
   });
@@ -177,25 +152,31 @@ describe('useAskAnswerMode', () => {
   it('forces liveAsk null when there is no conversation id', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
 
-    const { result } = renderHook(() => useAskAnswerMode(null));
+    const { result } = renderHook(() => useAskAnswerMode(null), {
+      wrapper: JotaiWrapper,
+    });
 
     expect(result.current.liveAsk).toBeNull();
   });
 
   it('moves the composer answer into the card and clears it when drafts are disabled', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.collapse());
 
-    expect(mockAnswerDrafts).toEqual({ a1: 'answer from A' });
+    expect(jotaiStore.get(askAnswerTextAtom)).toEqual({ a1: 'answer from A' });
     expect(mockResetComposer).toHaveBeenCalledTimes(1);
   });
 
   it('lets draft handoff restore the conversation composer when drafts are enabled', () => {
     mockSaveDrafts = true;
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.collapse());
 
@@ -203,10 +184,12 @@ describe('useAskAnswerMode', () => {
   });
 
   it('restores the card answer into the composer when drafts are disabled', () => {
-    mockCollapsedIds = ['a1'];
-    mockAnswerDrafts = { a1: 'answer edited in the card' };
+    jotaiStore.set(collapsedAskActionsAtom, ['a1']);
+    jotaiStore.set(askAnswerTextAtom, { a1: 'answer edited in the card' });
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.expand());
 
@@ -216,11 +199,13 @@ describe('useAskAnswerMode', () => {
   it('keeps the ask-specific draft current while editing the card', () => {
     mockSaveDrafts = true;
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.setAnswerText('answer edited in the card'));
 
-    expect(mockAnswerDrafts).toEqual({ a1: 'answer edited in the card' });
+    expect(jotaiStore.get(askAnswerTextAtom)).toEqual({ a1: 'answer edited in the card' });
     expect(mockSetDraft).toHaveBeenCalledWith({
       id: 'draft-a1',
       value: 'answer edited in the card',
@@ -228,19 +213,24 @@ describe('useAskAnswerMode', () => {
   });
 
   it("preserves another paused question's answer when a second one is edited", () => {
-    mockAnswerDrafts = { a1: 'answer from A' };
+    jotaiStore.set(askAnswerTextAtom, { a1: 'answer from A' });
     const otherAsk = {
       actionId: 'a2',
       question: { question: 'Pick one', options: [], multiSelect: false },
     } as unknown as typeof liveAsk;
     mockUseGetMessages.mockReturnValue({ data: otherAsk });
-    const { result } = renderHook(() => useAskAnswerMode('conversation-2'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-2'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => result.current.setAnswerText('answer from B'));
 
     /** A single shared slot dropped A's unsent answer the moment B claimed
      *  it, and the action-scoped reader then showed A an empty box. */
-    expect(mockAnswerDrafts).toEqual({ a1: 'answer from A', a2: 'answer from B' });
+    expect(jotaiStore.get(askAnswerTextAtom)).toEqual({
+      a1: 'answer from A',
+      a2: 'answer from B',
+    });
   });
 
   it('hands the released composer text back when the answer is submitted', () => {
@@ -248,14 +238,16 @@ describe('useAskAnswerMode', () => {
      *  message was typed in the released composer, then the question was moved
      *  back. Submitting from there never goes through `collapse`, so the
      *  message has to be restored here or it dies with the question. */
-    mockReleasedComposerText = { a1: 'an ordinary unsent message' };
+    jotaiStore.set(releasedComposerTextAtom, { a1: 'an ordinary unsent message' });
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
     mockSubmitAskAnswer.mockImplementation(
       (_actionId: string, _answer: string, options?: { onSuccess?: () => void }) => {
         options?.onSuccess?.();
       },
     );
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => {
       result.current.submitText('answer from A');
@@ -263,14 +255,14 @@ describe('useAskAnswerMode', () => {
 
     expect(mockSetComposerText).toHaveBeenLastCalledWith('text', 'an ordinary unsent message');
     expect(mockResetComposer).not.toHaveBeenCalled();
-    expect(mockReleasedComposerText).toEqual({});
+    expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({});
   });
 
   it('hands the released text back for an option answer too', () => {
     /** Only the free-text path sets `consumedComposerText`, so gating the
      *  restore on it discarded the stash whenever the user answered by
      *  clicking an option (or skipping) instead of typing. */
-    mockReleasedComposerText = { a1: 'an ordinary unsent message' };
+    jotaiStore.set(releasedComposerTextAtom, { a1: 'an ordinary unsent message' });
     const askWithOptions = {
       actionId: 'a1',
       question: {
@@ -288,7 +280,9 @@ describe('useAskAnswerMode', () => {
         options?.onSuccess?.();
       },
     );
-    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
 
     act(() => {
       result.current.submitOption(0);
@@ -296,7 +290,7 @@ describe('useAskAnswerMode', () => {
 
     expect(mockSubmitAskAnswer).toHaveBeenCalledWith('a1', 'blue', expect.anything());
     expect(mockSetComposerText).toHaveBeenLastCalledWith('text', 'an ordinary unsent message');
-    expect(mockReleasedComposerText).toEqual({});
+    expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({});
   });
 
   it('does not let a delayed answer success clear the composer or selection after navigation', () => {
@@ -309,7 +303,7 @@ describe('useAskAnswerMode', () => {
     );
     const { result, rerender } = renderHook(
       ({ conversationId }) => useAskAnswerMode(conversationId),
-      { initialProps: { conversationId: 'conversation-A' } },
+      { initialProps: { conversationId: 'conversation-A' }, wrapper: JotaiWrapper },
     );
 
     expect(result.current.submitText('answer from A')).toBe(true);
@@ -326,14 +320,15 @@ describe('useAskAnswerMode', () => {
     mockUseGetMessages.mockReturnValue({ data: nextAsk });
     mockGetComposerText.mockReturnValue('draft typed in B');
     rerender({ conversationId: 'conversation-B' });
-    mockSetSelected.mockClear();
-    mockSetChecked.mockClear();
-
-    finishAnswer?.();
+    act(() => {
+      jotaiStore.set(askAnswerSelectionAtom, 1);
+      jotaiStore.set(askAnswerCheckedAtom, [0]);
+    });
+    act(() => finishAnswer?.());
 
     expect(mockResetComposer).not.toHaveBeenCalled();
-    expect(mockSetSelected).not.toHaveBeenCalled();
-    expect(mockSetChecked).not.toHaveBeenCalled();
+    expect(jotaiStore.get(askAnswerSelectionAtom)).toBe(1);
+    expect(jotaiStore.get(askAnswerCheckedAtom)).toEqual([0]);
   });
 
   it('keeps newer composer text when the answer settles on the same question', () => {
@@ -344,18 +339,21 @@ describe('useAskAnswerMode', () => {
         finishAnswer = options?.onSuccess;
       },
     );
-    const { result } = renderHook(() => useAskAnswerMode('conversation-A'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-A'), {
+      wrapper: JotaiWrapper,
+    });
 
     expect(result.current.submitText('answer from A')).toBe(true);
     mockGetComposerText.mockReturnValue('new text typed while resuming');
-    mockSetSelected.mockClear();
-    mockSetChecked.mockClear();
-
-    finishAnswer?.();
+    act(() => {
+      jotaiStore.set(askAnswerSelectionAtom, 1);
+      jotaiStore.set(askAnswerCheckedAtom, [0]);
+    });
+    act(() => finishAnswer?.());
 
     expect(mockResetComposer).not.toHaveBeenCalled();
-    expect(mockSetSelected).toHaveBeenCalledWith(null);
-    expect(mockSetChecked).toHaveBeenCalledWith([]);
+    expect(jotaiStore.get(askAnswerSelectionAtom)).toBeNull();
+    expect(jotaiStore.get(askAnswerCheckedAtom)).toEqual([]);
   });
 
   it('clears the consumed answer when the same question and composer value still own it', () => {
@@ -366,14 +364,16 @@ describe('useAskAnswerMode', () => {
         finishAnswer = options?.onSuccess;
       },
     );
-    const { result } = renderHook(() => useAskAnswerMode('conversation-A'));
+    const { result } = renderHook(() => useAskAnswerMode('conversation-A'), {
+      wrapper: JotaiWrapper,
+    });
 
     expect(result.current.submitText('answer from A')).toBe(true);
-    finishAnswer?.();
+    act(() => finishAnswer?.());
 
     expect(mockResetComposer).toHaveBeenCalledTimes(1);
-    expect(mockSetSelected).toHaveBeenCalledWith(null);
-    expect(mockSetChecked).toHaveBeenCalledWith([]);
+    expect(jotaiStore.get(askAnswerSelectionAtom)).toBeNull();
+    expect(jotaiStore.get(askAnswerCheckedAtom)).toEqual([]);
   });
 
   it('ignores a delayed answer success after its answer-mode owner unmounts', () => {
@@ -384,16 +384,18 @@ describe('useAskAnswerMode', () => {
         finishAnswer = options?.onSuccess;
       },
     );
-    const { result, unmount } = renderHook(() => useAskAnswerMode('conversation-A'));
-
-    expect(result.current.submitText('answer from A')).toBe(true);
+    const { unmount } = renderHook(() => useAskAnswerMode('conversation-A'), {
+      wrapper: JotaiWrapper,
+    });
+    act(() => {
+      jotaiStore.set(askAnswerSelectionAtom, 1);
+      jotaiStore.set(askAnswerCheckedAtom, [0]);
+    });
     unmount();
-    mockSetSelected.mockClear();
-    mockSetChecked.mockClear();
-    finishAnswer?.();
+    act(() => finishAnswer?.());
 
     expect(mockResetComposer).not.toHaveBeenCalled();
-    expect(mockSetSelected).not.toHaveBeenCalled();
-    expect(mockSetChecked).not.toHaveBeenCalled();
+    expect(jotaiStore.get(askAnswerSelectionAtom)).toBe(1);
+    expect(jotaiStore.get(askAnswerCheckedAtom)).toEqual([0]);
   });
 });

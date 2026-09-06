@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import { Brain } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
-import type { PartMetadata, TAttachment } from 'librechat-data-provider';
+import type { PartMetadata, TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { toolPanelSpacingClassName } from '../disclosure';
 import useToolCallState from './useToolCallState';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
+import MemoryInfo from '../MemoryInfo';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -50,12 +51,17 @@ export default function MemoryCall({
   const memoryKey = useMemo(() => parseJsonField(args, 'key'), [args]);
   const memoryValue = useMemo(() => parseJsonField(args, 'value'), [args]);
   const hasPanel = !!memoryKey || !!memoryValue;
-  const memoryFailed = useMemo(
-    () =>
-      isMemoryFailureOutput(toolName, output) ||
-      (attachments?.some((attachment) => attachment?.[Tools.memory]?.type === 'error') ?? false),
-    [attachments, toolName, output],
-  );
+  const memoryErrors = useMemo(() => {
+    const errors: MemoryArtifact[] = [];
+    for (const attachment of attachments ?? []) {
+      const artifact = attachment[Tools.memory];
+      if (artifact?.type === 'error') {
+        errors.push(artifact);
+      }
+    }
+    return errors;
+  }, [attachments]);
+  const memoryFailed = isMemoryFailureOutput(toolName, output) || memoryErrors.length > 0;
 
   const { showCode, toggleCode, expandStyle, expandRef, phase } = useToolCallState({
     initialProgress,
@@ -106,9 +112,12 @@ export default function MemoryCall({
               )}
             >
               {phase === 'failed' ? (
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-status-error">
-                  {output}
-                </pre>
+                <>
+                  <pre className="whitespace-pre-wrap break-words font-mono text-xs text-status-error">
+                    {output}
+                  </pre>
+                  <MemoryInfo memoryArtifacts={memoryErrors} />
+                </>
               ) : (
                 <>
                   {memoryKey && (

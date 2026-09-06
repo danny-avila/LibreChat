@@ -149,7 +149,10 @@ function ShoppingStrip({ items, label }: { items: ShoppingResult[]; label: strin
   return (
     <ul className="flex list-none gap-2.5 overflow-x-auto pb-1" aria-label={label}>
       {items.slice(0, MAX_VERTICAL_ITEMS).map((item, i) => (
-        <li key={item.productId || item.link || i} className="flex w-40 shrink-0">
+        <li
+          key={`${item.productId ?? ''}|${safeUrl(item.link) ?? ''}|${i}`}
+          className="flex w-40 shrink-0"
+        >
           <a
             href={safeUrl(item.link)}
             target="_blank"

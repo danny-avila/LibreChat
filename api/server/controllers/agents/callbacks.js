@@ -13,7 +13,6 @@ const {
 const {
   GraphEvents,
   GraphNodeKeys,
-  ToolEndHandler,
   createContentAggregator,
   summarizeEvent,
 } = require('@librechat/agents');
@@ -23,6 +22,7 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
@@ -40,6 +40,15 @@ function isHostFileAuthoringArtifact(artifact) {
 
 function isCodeArtifactToolOutput(output) {
   return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
+}
+
+function getAttachmentOwnership(metadata) {
+  const agentId = metadata?.agent_id ?? metadata?.agentId;
+  const stepId = metadata?.stepId;
+  return {
+    ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),
+    ...(typeof stepId === 'string' && stepId.length > 0 ? { stepId } : {}),
+  };
 }
 
 function addStatefulWorkspaceChange(attachment, artifact, executionProfile) {
@@ -506,7 +515,7 @@ function getDefaultHandlers({
       collectedThoughtSignatures,
       emitTokenUsage,
     ),
-    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
+    [GraphEvents.TOOL_END]: createOwnedToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
        * Handle ON_RUN_STEP event.
@@ -1004,9 +1013,9 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         (async () => {
           const attachment = {
             type: Tools.web_search,
+            ...getAttachmentOwnership(metadata),
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
-            agentId: metadata.agent_id,
             conversationId: metadata.thread_id,
             [Tools.web_search]: { ...output.artifact[Tools.web_search] },
           };
@@ -1027,6 +1036,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         (async () => {
           const attachment = {
             type: Tools.memory,
+            ...getAttachmentOwnership(metadata),
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
@@ -1368,6 +1378,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           const attachment = {
             type: Tools.web_search,
             toolCallId: output.tool_call_id,
+            ...getAttachmentOwnership(metadata),
             [Tools.web_search]: { ...output.artifact[Tools.web_search] },
           };
           // For Responses API, always emit attachment during streaming
@@ -1377,6 +1388,26 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           return attachment;
         })().catch((error) => {
           logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (output.artifact[Tools.memory]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.memory,
+            toolCallId: output.tool_call_id,
+            ...getAttachmentOwnership(metadata),
+            [Tools.memory]: output.artifact[Tools.memory],
+          };
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing memory artifact content:', error);
           return null;
         }),
       );

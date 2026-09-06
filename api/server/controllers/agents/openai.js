@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -56,6 +56,7 @@ const {
   getUserFacingProviderError,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   resolveAgentScopedSkillIds,
@@ -1001,7 +1002,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         },
         on_run_step_completed: createHandler(),
         // Use proper ToolEndHandler for processing artifacts (images, file citations, code output)
-        on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+        on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
         on_chain_stream: createHandler(),
         on_chain_end: createHandler(),
         on_agent_update: createHandler(),
