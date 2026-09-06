@@ -7,6 +7,9 @@ export async function stopGroup(child, graceMs = 5000) {
       return true;
     } catch (error) {
       if (error.code === 'ESRCH') return false;
+      // An existence probe can observe an inaccessible group during teardown.
+      // Keep polling; never suppress permission failures for actual signals.
+      if (name === 0 && error.code === 'EPERM') return true;
       throw error;
     }
   };
