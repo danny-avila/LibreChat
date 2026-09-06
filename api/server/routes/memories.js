@@ -1,4 +1,5 @@
 const express = require('express');
+const { isValidMemoryKey } = require('@librechat/data-schemas');
 const {
   Tokenizer,
   generateCheckAccess,
@@ -101,10 +102,6 @@ const updateMemoryMiddleware = [
   configMiddleware,
 ];
 
-/** Mirrors the MemoryEntry schema's key validator so invalid keys are
- *  rejected with a 400 instead of surfacing as a Mongoose validation 500 */
-const MEMORY_KEY_REGEX = /^[a-z_]+$/;
-
 /** Resolves agent display names for agent-partitioned memories, restricted
  *  to agents the requester can VIEW — `agentId` is caller-supplied on write,
  *  so an unrestricted lookup would leak private agents' names. */
@@ -192,7 +189,7 @@ router.post('/', createMemoryMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
-  if (!MEMORY_KEY_REGEX.test(key.trim())) {
+  if (!isValidMemoryKey(key.trim())) {
     return res.status(400).json({
       error: 'Key must only contain lowercase letters and underscores.',
     });
@@ -332,7 +329,7 @@ router.patch('/:key', updateMemoryMiddleware, async (req, res) => {
   /** Trim to match POST's key normalization; blank/whitespace-only falls back to urlKey */
   const newKey = typeof bodyKey === 'string' && bodyKey.trim() !== '' ? bodyKey.trim() : urlKey;
 
-  if (newKey !== urlKey && !MEMORY_KEY_REGEX.test(newKey)) {
+  if (newKey !== urlKey && !isValidMemoryKey(newKey)) {
     return res.status(400).json({
       error: 'Key must only contain lowercase letters and underscores.',
     });
