@@ -22,9 +22,6 @@ type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
   mediaUploadEnabled?: boolean;
   additionalHeaders?: Record<string, string>;
-  /** Trace user identity override; ships in `@librechat/agents` after 3.7.22
-   *  and is ignored by older releases, which keep `configurable.user_id`. */
-  userId?: string;
 };
 type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
 type TenantExportBlockReason =
