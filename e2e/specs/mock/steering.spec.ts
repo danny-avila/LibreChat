@@ -21,6 +21,11 @@ const MCP_SERVER_TITLE = 'E2E Memory';
 /** Last chunk streamed by the fake model's slow replies (160 chunks, 0-indexed). */
 const SLOW_REPLY_LAST_CHUNK = 'chunk-159';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
+/** A pasted paragraph wider than the composer at any desktop viewport. */
+const LONG_PASTE = Array.from(
+  { length: 6 },
+  (_, index) => `pasted line ${index + 1}: a follow-up long enough to overflow the composer`,
+).join(' ');
 
 const uniqueLabel = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -508,7 +513,9 @@ test.describe('mid-run steering and queuing', () => {
   }) => {
     test.setTimeout(120000);
     const label = uniqueLabel('queue');
-    const queueText = `Queued follow-up ${label}`;
+    /** Wider than the composer at every desktop width: the row must truncate
+     *  the text rather than widen the composer column to fit it. */
+    const queueText = `Queued follow-up ${label} ${LONG_PASTE}`;
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
@@ -524,6 +531,20 @@ test.describe('mid-run steering and queuing', () => {
     await expect(row).toBeVisible({ timeout: 10000 });
     // Queued means NOT injected into the live thread.
     await expect(inFlightSteers(page)).toHaveCount(0);
+
+    // The queued text's natural width must not leak into the composer's size:
+    // the row ends where the form ends and its controls stay on screen.
+    const overflow = await row.evaluate((element) => {
+      const form = element.closest('form');
+      if (form == null) {
+        return Number.POSITIVE_INFINITY;
+      }
+      return element.getBoundingClientRect().right - form.getBoundingClientRect().right;
+    });
+    expect(overflow).toBeLessThanOrEqual(0);
+    await expect(row.getByRole('button', { name: 'Remove message' })).toBeInViewport({
+      ratio: 1,
+    });
 
     // Clean completion drains exactly one queued message as a new user turn.
     await expect(row).toHaveCount(0, { timeout: 60000 });
