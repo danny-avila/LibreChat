@@ -386,7 +386,7 @@ describe('run-now conversation tracking', () => {
     queryClient.clear();
   });
 
-  it('remembers a landed run until it is released, then probes it again if announced', async () => {
+  it('does not retain a one-shot admission without a polling owner', async () => {
     const queryClient = createQueryClient();
     signIn(queryClient, 'user-a');
     seedList(queryClient);
@@ -394,14 +394,28 @@ describe('run-now conversation tracking', () => {
 
     void trackScheduledRun(queryClient, 'run-convo-1');
     await settleAdmission();
-    void trackScheduledRun(queryClient, 'run-convo-1');
+
+    expect(readList(queryClient).some((c) => c.conversationId === 'run-convo-1')).toBe(true);
+    expect(trackedRunCount()).toBe(0);
+    queryClient.clear();
+  });
+
+  it('remembers a landed run until it is released, then probes it again if announced', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    mockGetConversationById.mockResolvedValue(serverConversation());
+
+    void trackScheduledRun(queryClient, 'run-convo-1', { retain: true });
+    await settleAdmission();
+    void trackScheduledRun(queryClient, 'run-convo-1', { retain: true });
     await settleAdmission();
     expect(mockGetConversationById).toHaveBeenCalledTimes(1);
     expect(trackedRunCount()).toBe(1);
 
     releaseScheduledRun('run-convo-1');
     expect(trackedRunCount()).toBe(0);
-    void trackScheduledRun(queryClient, 'run-convo-1');
+    void trackScheduledRun(queryClient, 'run-convo-1', { retain: true });
     await settleAdmission();
 
     expect(mockGetConversationById).toHaveBeenCalledTimes(2);

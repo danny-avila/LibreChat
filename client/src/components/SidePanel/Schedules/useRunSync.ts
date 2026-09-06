@@ -58,6 +58,16 @@ export default function useRunSync(schedules?: TSchedule[], observedAt?: number)
   const states = useRef<Map<string, string> | null>(null);
   const announced = useRef<Set<string>>(new Set());
 
+  useEffect(
+    () => () => {
+      for (const conversationId of announced.current) {
+        releaseScheduledRun(conversationId);
+      }
+      announced.current.clear();
+    },
+    [],
+  );
+
   useEffect(() => {
     if (schedules == null) {
       return;
@@ -69,7 +79,7 @@ export default function useRunSync(schedules?: TSchedule[], observedAt?: number)
       current.set(schedule.id, runState(schedule));
       for (const conversationId of inFlightChats(schedule)) {
         live.add(conversationId);
-        void trackScheduledRun(queryClient, conversationId);
+        void trackScheduledRun(queryClient, conversationId, { retain: true });
       }
     }
     for (const conversationId of announced.current) {

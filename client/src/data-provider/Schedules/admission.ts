@@ -55,7 +55,7 @@ const cacheOwner = (queryClient: QueryClient): string | undefined =>
  * evicted: a second watch for a run still being watched is the one thing this
  * exists to prevent.
  */
-const watching = new Set<string>();
+const watching = new Map<string, { retain: boolean }>();
 
 /**
  * Runs already landed, so a later announcement is a no-op. A run is announced for
@@ -80,6 +80,10 @@ export function trackedRunCount(): number {
  *  so nothing can announce it again, and there is nothing left to remember. */
 export function releaseScheduledRun(conversationId: string): void {
   landed.delete(conversationId);
+  const watch = watching.get(conversationId);
+  if (watch) {
+    watch.retain = false;
+  }
 }
 
 /**
@@ -170,6 +174,9 @@ async function admit(queryClient: QueryClient, conversationId: string): Promise<
  * a 200 means the chat is listable now, and carries the server's own row rather
  * than a guess assembled from the client's cached schedule.
  *
+ * `retain` is for a polling owner that will release the id when it stops naming
+ * it. One-shot Run Now calls leave no retained id after admission finishes.
+ *
  * Deliberately detached from the caller: the sidebar has to gain the chat whether
  * or not the panel the run was announced in is still mounted. Bounded, and it
  * writes only what the server returned — a delivery that never admits leaves
@@ -178,14 +185,23 @@ async function admit(queryClient: QueryClient, conversationId: string): Promise<
 export async function trackScheduledRun(
   queryClient: QueryClient,
   conversationId: string,
+  { retain = false }: { retain?: boolean } = {},
 ): Promise<void> {
-  if (!conversationId || watching.has(conversationId) || landed.has(conversationId)) {
+  const existing = watching.get(conversationId);
+  if (existing && retain) {
+    existing.retain = true;
+  }
+  if (!conversationId || existing || landed.has(conversationId)) {
     return;
   }
-  watching.add(conversationId);
-  const admitted = await admit(queryClient, conversationId);
-  watching.delete(conversationId);
-  if (admitted) {
-    landed.add(conversationId);
+  const watch = { retain };
+  watching.set(conversationId, watch);
+  try {
+    const admitted = await admit(queryClient, conversationId);
+    if (admitted && watch.retain) {
+      landed.add(conversationId);
+    }
+  } finally {
+    watching.delete(conversationId);
   }
 }

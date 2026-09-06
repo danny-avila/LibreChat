@@ -315,6 +315,49 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
+  it('does not retain a run released before admission finishes', async () => {
+    const queryClient = createQueryClient();
+    const { rerender } = renderWith(queryClient, [running()]);
+    rerender([settled()]);
+
+    await admit();
+
+    expect(listIds(queryClient)).toContain('run-convo-1');
+    expect(trackedRunCount()).toBe(0);
+    queryClient.clear();
+  });
+
+  it.each([false, true])('releases on unmount with admission finished: %s', async (finished) => {
+    const queryClient = createQueryClient();
+    const { unmount } = renderWith(queryClient, [running()]);
+    if (finished) {
+      await admit();
+    }
+
+    unmount();
+    await admit();
+
+    expect(listIds(queryClient)).toContain('run-convo-1');
+    expect(trackedRunCount()).toBe(0);
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    queryClient.clear();
+  });
+
+  it('reclaims a pending watch on remount without a duplicate probe', async () => {
+    const queryClient = createQueryClient();
+    const first = renderWith(queryClient, [running()]);
+    first.unmount();
+    const second = renderWith(queryClient, [running()]);
+
+    await admit();
+
+    expect(trackedRunCount()).toBe(1);
+    expect(mockGetConversationById).toHaveBeenCalledTimes(1);
+    second.unmount();
+    expect(trackedRunCount()).toBe(0);
+    queryClient.clear();
+  });
+
   it('leaves the list alone when nothing about a run moved', async () => {
     const queryClient = createQueryClient();
     const { rerender } = renderWith(queryClient, [schedule]);
