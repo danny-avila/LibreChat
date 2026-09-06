@@ -1,11 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import {
-  SKILL_NAME_PATTERN,
-  SKILL_NAME_MAX_LENGTH,
-  SKILL_DESCRIPTION_MAX_LENGTH,
-} from 'librechat-data-provider';
-import {
   Input,
   Label,
   Button,
@@ -14,6 +9,12 @@ import {
   TextareaAutosize,
   useToastContext,
 } from '@librechat/client';
+import {
+  SKILL_NAME_PATTERN,
+  SKILL_NAME_MAX_LENGTH,
+  SKILL_BODY_MAX_LENGTH,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+} from 'librechat-data-provider';
 import type { TSkill } from 'librechat-data-provider';
 import type { FormEvent } from 'react';
 import { useCreateSkillMutation } from '~/data-provider';
@@ -38,6 +39,11 @@ interface FormValues {
   name: string;
   description: string;
   body: string;
+}
+
+interface SkillValidationIssue {
+  field: string;
+  code: string;
 }
 
 /**
@@ -78,16 +84,46 @@ export default function CreateSkillDialog({
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
-      const data = (
+      const response = (
         error as {
           response?: {
-            data?: { error?: string; issues?: { field: string; message: string }[] };
+            status?: number;
+            data?: { error?: string; message?: string; issues?: SkillValidationIssue[] };
           };
         }
-      )?.response?.data;
+      )?.response;
+      const getIssueMessage = ({ field, code }: SkillValidationIssue) => {
+        if (field === 'name' && code === 'REQUIRED') {
+          return localize('com_ui_skill_name_required');
+        }
+        if (field === 'name' && code === 'TOO_LONG') {
+          return localize('com_ui_skill_name_too_long', { 0: SKILL_NAME_MAX_LENGTH });
+        }
+        if (field === 'name' && code === 'INVALID_FORMAT') {
+          return localize('com_ui_skill_name_invalid');
+        }
+        if (field === 'name' && (code === 'RESERVED_PREFIX' || code === 'RESERVED_WORD')) {
+          return localize('com_ui_skill_name_reserved');
+        }
+        if (field === 'description' && code === 'REQUIRED') {
+          return localize('com_ui_skill_description_required');
+        }
+        if (field === 'description' && code === 'TOO_LONG') {
+          return localize('com_ui_skill_description_too_long', {
+            0: SKILL_DESCRIPTION_MAX_LENGTH,
+          });
+        }
+        if (field === 'body' && code === 'TOO_LONG') {
+          return localize('com_ui_skill_instructions_too_long', { 0: SKILL_BODY_MAX_LENGTH });
+        }
+        return localize('com_ui_skill_validation_error');
+      };
+      const data = response?.data;
       const message = data?.issues?.length
-        ? data.issues.map((issue) => `${issue.field}: ${issue.message}`).join('; ')
-        : data?.error || localize('com_ui_skill_create_error');
+        ? data.issues.map(getIssueMessage).join('; ')
+        : response?.status === 409
+          ? localize('com_ui_skill_name_exists')
+          : data?.message || localize('com_ui_skill_create_error');
       showToast({ status: 'error', message });
     },
   });
