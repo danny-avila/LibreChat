@@ -26,6 +26,7 @@ const {
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
+  getModelRefusalInfo,
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
 } = require('@librechat/api');
@@ -132,20 +133,14 @@ class ModelEndHandler {
     let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
-      const responseMetadata = data?.output?.response_metadata;
-      const bedrockStopReason =
-        responseMetadata?.messageStop?.stopReason ?? responseMetadata?.stopReason;
-      const isBedrockContentFiltered = bedrockStopReason === 'content_filtered';
-      if (data?.output?.additional_kwargs?.stop_reason === 'refusal' || isBedrockContentFiltered) {
-        const info = isBedrockContentFiltered
-          ? { stop_reason: bedrockStopReason }
-          : { ...data.output.additional_kwargs };
+      const refusalInfo = getModelRefusalInfo(data?.output);
+      if (refusalInfo) {
         errorMessage = JSON.stringify({
           type: ErrorTypes.REFUSAL,
-          info,
+          info: refusalInfo,
         });
         logger.debug(`[ModelEndHandler] Model refused to respond`, {
-          ...info,
+          ...refusalInfo,
           userId: metadata.user_id,
           messageId: metadata.run_id,
           conversationId: metadata.thread_id,
