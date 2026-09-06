@@ -52,7 +52,10 @@ const CollapsibleText = memo(function CollapsibleText({
    *  of text on mount. */
   useLayoutEffect(() => {
     const el = contentRef.current;
-    if (el == null) {
+    /** Disabled means the text renders in full, so measuring it is wasted work:
+     *  a thread that keeps every message mounted would otherwise carry one
+     *  ResizeObserver per message for a clamp that never applies. */
+    if (el == null || !enabled) {
       return;
     }
     const measure = () =>

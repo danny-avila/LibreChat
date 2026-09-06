@@ -465,17 +465,30 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return map;
   }, [entries, startEntry]);
 
+  const currentIdRef = useRef(currentId);
+  currentIdRef.current = currentId;
+
   /**
    * Rib centres in the column's own content space, plus the resting size each
    * rib returns to. Everything that answers "which rib is the pointer on" —
    * the fisheye, the preview, a click in the gaps, a drag — reads this one
    * layout, so they cannot disagree.
    */
+  /**
+   * `currentId` is read through a ref so this keeps a stable identity while the
+   * scroll spy advances. It used to be a dependency, which re-ran the effect
+   * that owns the rail's ResizeObserver on nearly every frame of a scroll and
+   * scheduled a fresh 400-rib measurement each time: source-mapped profiling of
+   * a production scroll charged more self time here than to any other function.
+   * Only the resting widths depend on which rib is current, and those are
+   * refreshed in place by `ensureRibLayout`.
+   */
   const measureRibs = useCallback(() => {
     const col = columnRef.current;
     if (!col) {
       return;
     }
+    const current = currentIdRef.current;
     const layout: Array<{ id: string; line: HTMLElement; center: number; dims: RibDims }> = [];
     const kids = col.children;
     for (let i = 0; i < kids.length; i++) {
@@ -490,30 +503,46 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         id,
         line,
         center: button.offsetTop + button.offsetHeight / 2,
-        dims: ribDimsFor(entry, id === currentId),
+        dims: ribDimsFor(entry, id === current),
       });
     }
     measuredCountRef.current = kids.length;
-    measuredCurrentRef.current = currentId;
+    measuredCurrentRef.current = current;
     ribLayoutRef.current = layout;
-  }, [entryById, currentId]);
+  }, [entryById]);
 
-  /** Re-measures when the rib set or the current rib has changed since the last
-   *  measurement, so a gesture that arrives before the scheduled measure still
-   *  hit-tests against the ribs on screen and releases them to the resting size
-   *  they are actually rendered at. */
+  /**
+   * Re-measures when the rib set changed, so a gesture arriving before the
+   * scheduled measure still hit-tests against the ribs on screen.
+   *
+   * A change of current rib is handled without touching the DOM. Every rib
+   * button is laid out at a fixed `RIB_ROW_HEIGHT` and all `RibDims` share the
+   * same `baseH`, so promoting one rib to current changes widths only and no
+   * centre can move. Re-measuring for it walked all ~400 ribs with two forced
+   * layout reads each, and the scroll spy changes the current rib on nearly
+   * every frame: a trace of one wheel scroll charged 502 ms to that, more than
+   * the frame budget on its own.
+   */
   const ensureRibLayout = useCallback(() => {
     const col = columnRef.current;
     if (!col) {
       return;
     }
-    if (
-      measuredCountRef.current !== col.children.length ||
-      measuredCurrentRef.current !== currentId
-    ) {
+    if (measuredCountRef.current !== col.children.length) {
       measureRibs();
+      return;
     }
-  }, [measureRibs, currentId]);
+    if (measuredCurrentRef.current !== currentId) {
+      const layout = ribLayoutRef.current;
+      for (let i = 0; i < layout.length; i++) {
+        const entry = entryById.get(layout[i].id);
+        if (entry) {
+          layout[i].dims = ribDimsFor(entry, layout[i].id === currentId);
+        }
+      }
+      measuredCurrentRef.current = currentId;
+    }
+  }, [measureRibs, currentId, entryById]);
 
   useEffect(() => {
     messagesByIdRef.current = messagesById;
@@ -863,7 +892,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       cancelAnimationFrame(raf);
       resize?.disconnect();
     };
-  }, [entries, currentId, measureRibs]);
+  }, [entries, measureRibs]);
 
   const positionTip = useCallback((top: number, right: number) => {
     tipPosRef.current = { top, right };
@@ -1167,9 +1196,29 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
     const offsetsTop: number[] = new Array(entries.length);
     const offsetsBottom: number[] = new Array(entries.length);
+    /** Offsets are recomputed on every content resize, and `content-visibility`
+     *  makes the thread resize continuously while a reader scrolls a long
+     *  conversation for the first time. Resolving 400 ids by document lookup on
+     *  each pass cost 28 ms of a 3 s wheel scroll in a CPU profile; rows are
+     *  never unmounted, so the node stays valid until `entries` changes and the
+     *  effect rebuilds this cache. `isConnected` covers a row being replaced. */
+    const elements = new Map<string, HTMLElement>();
+    const resolveCached = (id: string): HTMLElement | null => {
+      const cached = elements.get(id);
+      if (cached?.isConnected === true) {
+        return cached;
+      }
+      const el = resolveEntryEl(id);
+      if (el) {
+        elements.set(id, el);
+      } else {
+        elements.delete(id);
+      }
+      return el;
+    };
     const recomputeOffsets = () => {
       for (let i = 0; i < entries.length; i++) {
-        const el = resolveEntryEl(entries[i].id);
+        const el = resolveCached(entries[i].id);
         if (!el) {
           offsetsTop[i] = Number.POSITIVE_INFINITY;
           offsetsBottom[i] = Number.POSITIVE_INFINITY;
@@ -1318,7 +1367,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       const mid = (firstInd.offsetTop + lastInd.offsetTop + lastInd.offsetHeight) / 2;
       const target = mid - col.clientHeight / 2;
       const columnMaxScrollTop = Math.max(0, col.scrollHeight - col.clientHeight);
-      col.scrollTop = Math.max(0, Math.min(target, columnMaxScrollTop));
+      const next = Math.max(0, Math.min(target, columnMaxScrollTop));
+      /** The rail's own scroll listener re-enters this path, so only write when
+       *  the centring actually moves; sub-pixel churn re-triggered the rail
+       *  every frame of an outer scroll for no visible change. */
+      if (Math.abs(next - col.scrollTop) >= 0.5) {
+        col.scrollTop = next;
+      }
     };
 
     const scheduleTick = () => {
@@ -1559,16 +1614,35 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [focusNav]);
 
-  if (messageEntries.length < 3) {
-    return null;
-  }
-
   /** Only a response at the tail of a live submission is actually generating.
    *  Every other entry with no preview is a settled message whose content
    *  simply has no text part — including the user's own turn, which is what
    *  sits last for the frames between sending and the reply's row mounting. */
   const lastEntry = messageEntries[messageEntries.length - 1];
-  const pendingId = isSubmitting && !lastEntry.isUser ? lastEntry.id : null;
+  const pendingId = isSubmitting && lastEntry != null && !lastEntry.isUser ? lastEntry.id : null;
+
+  /** The scroll spy changes `currentId` on nearly every frame, so this render
+   *  runs that often. Labelling inside the entry map put two i18next
+   *  interpolations on every rib, over 800 per frame on a 400-message thread,
+   *  for text that only changes with the entries themselves. */
+  const ribLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (let i = 0; i < messageEntries.length; i++) {
+      const entry = messageEntries[i];
+      labels.set(
+        entry.id,
+        localize(
+          entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
+          { 0: previewTextFor(entry, localize, entry.id === pendingId).slice(0, 30) },
+        ),
+      );
+    }
+    return labels;
+  }, [messageEntries, localize, pendingId]);
+
+  if (messageEntries.length < 3) {
+    return null;
+  }
 
   const tipEntry = tip ? entryById.get(tip.id) : undefined;
   let tipText = '';
@@ -1647,10 +1721,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {messageEntries.map((entry) => {
-          const label = localize(
-            entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
-            { 0: previewTextFor(entry, localize, entry.id === pendingId).slice(0, 30) },
-          );
+          const label = ribLabels.get(entry.id) ?? '';
           return (
             <MessageIndicator
               key={entry.id}

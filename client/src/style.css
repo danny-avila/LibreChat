@@ -2,8 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * A long thread keeps every message in the DOM so find-in-page, keyboard
+ * access, text selection and export keep working, which means the browser
+ * otherwise styles, lays out and paints ~147 elements per message on every
+ * scroll frame. Skipping whole off-screen rows took wheel scrolling on a
+ * 400-message thread from 4 FPS to the display's refresh rate; skipping only
+ * the message body left the ~42 elements of header and action-bar chrome
+ * outside it still painting, which capped the same scroll at 52 FPS.
+ *
+ * Applied to the row rather than the body because the row is also what
+ * `MessageNav` measures, and a contained element keeps its own box: only its
+ * contents are skipped. `auto` intrinsic sizing remembers each row's real
+ * height after first render, so offsets and the scrollbar settle once a row
+ * has been seen. Custom CSS because Tailwind 3 ships no content-visibility
+ * utility.
+ */
 .message-render {
   scroll-margin-top: 4rem;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+/**
+ * Export and print must render every row: html-to-image clones computed
+ * styles, so a skipped row would be captured blank.
+ */
+.capturing-screenshot .message-render {
+  content-visibility: visible;
+}
+
+@media print {
+  .message-render {
+    content-visibility: visible;
+  }
+}
+
+/**
+ * Scrolling drags content under a stationary cursor, so every row that passes
+ * beneath it fires hover enter/leave on its action buttons and their tooltip
+ * stores. A CPU profile of one wheel scroll over a 400-message thread charged
+ * 1231 ms to a single `onMouseLeave`. Suppressing pointer events on the
+ * descendants for the length of the scroll took it from 35.6 to 50.1 FPS and
+ * halved p95 frame time; the container itself keeps its own pointer events, so
+ * scrolling, keyboard focus and assistive technology are unaffected. Applied
+ * by `useScrollHoverSuppression` and released 140 ms after the last event.
+ */
+.is-scrolling * {
+  pointer-events: none;
 }
 
 /* Custom Variables */

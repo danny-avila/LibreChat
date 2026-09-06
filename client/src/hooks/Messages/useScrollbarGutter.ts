@@ -22,9 +22,18 @@ export default function useScrollbarGutter(
       return;
     }
 
+    /** The property inherits from the document element, so an unconditional
+     *  write invalidates style for every node in the thread. Resize deliveries
+     *  are frequent and the gutter almost never changes, so only publish a new
+     *  value. */
+    let published: string | null = null;
     const publish = () => {
-      const gutter = Math.max(0, element.offsetWidth - element.clientWidth);
-      document.documentElement.style.setProperty(SCROLLBAR_GUTTER_PROPERTY, `${gutter}px`);
+      const gutter = `${Math.max(0, element.offsetWidth - element.clientWidth)}px`;
+      if (gutter === published) {
+        return;
+      }
+      published = gutter;
+      document.documentElement.style.setProperty(SCROLLBAR_GUTTER_PROPERTY, gutter);
     };
 
     publish();

@@ -1,9 +1,11 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { MessageTimestamp as MessageTimestampValue } from '~/utils';
 import useClockFormat from '~/hooks/useClockFormat';
 import { cn, getMessageTimestamp } from '~/utils';
 import useTimeTick from '~/hooks/useTimeTick';
 
-type Timestamp = NonNullable<ReturnType<typeof getMessageTimestamp>>;
+type Timestamp = MessageTimestampValue;
 
 function TimestampText({
   timestamp,
@@ -45,7 +47,15 @@ function RecentTimestamp({
   className?: string;
   revealOnHover?: boolean;
 }) {
-  useTimeTick();
+  useTimeTick(
+    useCallback(() => {
+      const current = getMessageTimestamp(value, language, hour12);
+      if (!current) {
+        return '';
+      }
+      return current.isRecent ? current.relative : current.absolute;
+    }, [value, language, hour12]),
+  );
   const timestamp = getMessageTimestamp(value, language, hour12);
 
   if (!timestamp) {

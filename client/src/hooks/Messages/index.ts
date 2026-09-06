@@ -29,4 +29,5 @@ export { hasCopyableText, useCopyMessageToClipboard } from './useCopyToClipboard
 export { default as useContentMetadata } from './useContentMetadata';
 export { default as useMessageScrolling } from './useMessageScrolling';
 export { default as useScrollbarGutter } from './useScrollbarGutter';
+export { default as useScrollHoverSuppression } from './useScrollHoverSuppression';
 export { default as useSmoothStreaming } from './useSmoothStreaming';

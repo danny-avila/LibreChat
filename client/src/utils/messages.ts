@@ -652,8 +652,43 @@ const resolveLocale = (locale?: string): string | undefined => {
   }
 };
 
-const formatRelativeTime = (from: Date, to: Date, locale?: string): string => {
+/**
+ * `Intl` formatter construction dominates this function: a thread renders one
+ * timestamp per message and refreshes them on a shared ticker, so building a
+ * fresh formatter per call rebuilt hundreds of them per tick. They are
+ * immutable and keyed only by locale and options, so they are shared.
+ */
+const relativeFormatters = new Map<string, Intl.RelativeTimeFormat>();
+const absoluteFormatters = new Map<string, Intl.DateTimeFormat>();
+
+const relativeFormatter = (locale?: string): Intl.RelativeTimeFormat => {
+  const key = locale ?? '';
+  const cached = relativeFormatters.get(key);
+  if (cached) {
+    return cached;
+  }
   const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  relativeFormatters.set(key, formatter);
+  return formatter;
+};
+
+const absoluteFormatter = (locale?: string, hour12?: boolean): Intl.DateTimeFormat => {
+  const key = `${locale ?? ''}|${hour12 ?? ''}`;
+  const cached = absoluteFormatters.get(key);
+  if (cached) {
+    return cached;
+  }
+  const formatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    hour12,
+  });
+  absoluteFormatters.set(key, formatter);
+  return formatter;
+};
+
+const formatRelativeTime = (from: Date, to: Date, locale?: string): string => {
+  const formatter = relativeFormatter(locale);
   let duration = (from.getTime() - to.getTime()) / 1000;
   for (const division of RELATIVE_TIME_DIVISIONS) {
     if (Math.abs(duration) < division.amount) {
@@ -685,11 +720,7 @@ export const getMessageTimestamp = (
   return {
     iso: date.toISOString(),
     relative: formatRelativeTime(date, now, safeLocale),
-    absolute: new Intl.DateTimeFormat(safeLocale, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      hour12,
-    }).format(date),
+    absolute: absoluteFormatter(safeLocale, hour12).format(date),
     isRecent: Math.abs(now.getTime() - date.getTime()) < RECENT_THRESHOLD_MS,
   };
 };

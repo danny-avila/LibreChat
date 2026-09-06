@@ -4,8 +4,12 @@ import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
+import {
+  RowMountProvider,
+  useProgressiveRowMount,
+  useScrollHoverSuppression,
+} from '~/hooks/Messages';
 import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
-import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
 import { MessagesViewProvider, useChatContext } from '~/Providers';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { steerOverlayHeightFamily } from '~/store/steer';
@@ -113,6 +117,7 @@ function MessagesViewContent({
   } = useMessageScrolling(_messagesTree);
 
   useScrollbarGutter(scrollableRef);
+  useScrollHoverSuppression(scrollableRef);
 
   const { conversationId } = conversation ?? {};
 

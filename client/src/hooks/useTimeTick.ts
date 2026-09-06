@@ -1,16 +1,15 @@
 import { useSyncExternalStore } from 'react';
 
+const MINUTE_MS = 60_000;
 const listeners = new Set<() => void>();
-let tick = 0;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 const subscribe = (onStoreChange: () => void): (() => void) => {
   listeners.add(onStoreChange);
   if (intervalId === null) {
     intervalId = setInterval(() => {
-      tick += 1;
       listeners.forEach((listener) => listener());
-    }, 60_000);
+    }, MINUTE_MS);
   }
   return () => {
     listeners.delete(onStoreChange);
@@ -21,13 +20,11 @@ const subscribe = (onStoreChange: () => void): (() => void) => {
   };
 };
 
-const getSnapshot = (): number => tick;
-
 /**
- * Subscribes to a shared, ref-counted ticker that fires once a minute, so components
- * displaying relative time stay current while a view is left open. A single interval
- * is shared across all subscribers and is cleared when the last one unsubscribes.
+ * Checks the displayed time on one shared minute timer. React only rerenders
+ * when the selected text changes, preserving rounding and date boundaries
+ * without rerendering every timestamp on every tick.
  */
-export default function useTimeTick(): number {
+export default function useTimeTick(getSnapshot: () => string): string {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

@@ -15,6 +15,14 @@ const MAX_CANVAS_EDGE = 32_767;
 const MIN_PIXEL_RATIO = 0.5;
 /** html-to-image clones every node and copies ~340 computed styles each; cap the synchronous clone work */
 const MAX_CAPTURE_ELEMENTS = 50_000;
+/** Marks the document while a capture renders every otherwise-skipped row */
+const CAPTURE_CLASS = 'capturing-screenshot';
+
+function nextLayout(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  return promise;
+}
 
 export class ScreenshotLimitError extends Error {
   constructor(message: string) {
@@ -88,10 +96,18 @@ export const useScreenshot = () => {
     /** A capture taken while a long thread is still progressively mounting
      *  would clone a truncated DOM; force the remaining rows in first. */
     await completeProgressiveRowMounts();
-    if (ref?.current) {
-      return takeScreenShot(ref.current);
+    if (!ref?.current) {
+      throw new Error('Ref is not attached to any element.');
     }
-    throw new Error('Ref is not attached to any element.');
+    /** Off-screen rows are skipped by `content-visibility`, which html-to-image
+     *  would clone as blank; render them all before measuring or cloning. */
+    document.documentElement.classList.add(CAPTURE_CLASS);
+    try {
+      await nextLayout();
+      return await takeScreenShot(ref.current);
+    } finally {
+      document.documentElement.classList.remove(CAPTURE_CLASS);
+    }
   };
 
   return { screenshotTargetRef: ref, captureScreenshot };

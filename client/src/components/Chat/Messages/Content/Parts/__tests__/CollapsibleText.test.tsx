@@ -35,6 +35,38 @@ describe('CollapsibleText', () => {
     }
   });
 
+  /* A thread keeps every message mounted, so one observer per disabled message
+     is hundreds of callbacks measuring a clamp that can never apply. */
+  it('observes nothing while the preference is off', () => {
+    const scrollHeight = stubScrollHeight(5000);
+    const original = global.ResizeObserver;
+    const observe = jest.fn();
+    global.ResizeObserver = class {
+      observe = observe;
+      disconnect() {}
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+
+    try {
+      const { rerender } = render(
+        <CollapsibleText enabled={false}>
+          <p>{plainMessage}</p>
+        </CollapsibleText>,
+      );
+      expect(observe).not.toHaveBeenCalled();
+
+      rerender(
+        <CollapsibleText enabled={true}>
+          <p>{plainMessage}</p>
+        </CollapsibleText>,
+      );
+      expect(observe).toHaveBeenCalledTimes(1);
+    } finally {
+      scrollHeight.mockRestore();
+      global.ResizeObserver = original;
+    }
+  });
+
   it('offers no toggle for content that fits the preview', () => {
     const scrollHeight = stubScrollHeight(100);
     try {

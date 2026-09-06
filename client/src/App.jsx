@@ -6,6 +6,7 @@ import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { Toast, ThemeProvider, ToastProvider, useInputModality } from '@librechat/client';
+import { PerformanceGate, PerformanceProfiler } from '~/components/Performance';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
@@ -83,9 +84,12 @@ const App = () => {
                       transition-safe reads are gated behind
                       `_TRANSITION_SUPPORT_UNSTABLE` hooks this app does not use.
                       Worth revisiting once that state has moved to Jotai. */}
-                  <RouterProvider router={router} useTransitions={false} />
+                  <PerformanceProfiler>
+                    <RouterProvider router={router} useTransitions={false} />
+                  </PerformanceProfiler>
                   <WakeLockManager />
                   <QueryDevtoolsGate />
+                  <PerformanceGate />
                   <Toast />
                   <RadixToast.Viewport className="pointer-events-none fixed inset-x-0 top-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start" />
                 </DndProvider>

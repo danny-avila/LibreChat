@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { SearchResultData } from 'librechat-data-provider';
@@ -38,23 +38,25 @@ export default function useMessageHelpers(
     [messageId, setCurrentEditId],
   );
 
-  const handleScroll = useCallback(
-    (event: unknown) => {
+  /** `isSubmitting` is read through a ref so the throttled handler stays stable
+   *  across submissions: rebuilding it per render would drop the rate limit and
+   *  allocate a fresh timer on a continuous-event path. */
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
+
+  const handleScroll = useMemo(
+    () =>
       throttle(() => {
         logger.log(
           'message_scrolling',
-          `useMessageHelpers: setting abort scroll to ${isSubmitting}, handleScroll event`,
-          event,
+          `useMessageHelpers: setting abort scroll to ${isSubmittingRef.current}`,
         );
-        if (isSubmitting) {
-          setAbortScroll(true);
-        } else {
-          setAbortScroll(false);
-        }
-      }, 500)();
-    },
-    [isSubmitting, setAbortScroll],
+        setAbortScroll(isSubmittingRef.current);
+      }, 500),
+    [setAbortScroll],
   );
+
+  useEffect(() => () => handleScroll.cancel(), [handleScroll]);
 
   const assistant = useMemo(() => {
     if (!isAssistantsEndpoint(conversation?.endpoint)) {
