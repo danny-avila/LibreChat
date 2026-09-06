@@ -209,9 +209,18 @@ function isArrayType(type: ts.TypeNode | undefined): boolean {
   );
 }
 
-/** Whether a function is declared to return an array, or returns an array
- * literal from its own body (nested functions are not descended into). */
-function returnsArray(fn: ts.FunctionLikeDeclaration): boolean {
+function isArrayExpression(expression: ts.Expression, arrayNames: Set<string>): boolean {
+  const unwrapped = unwrapExpression(expression);
+  return (
+    ts.isArrayLiteralExpression(unwrapped) ||
+    (ts.isIdentifier(unwrapped) && arrayNames.has(unwrapped.text))
+  );
+}
+
+/** Whether a function is declared to return an array, or returns one from its
+ * own body — an array literal, or a variable bound to one (nested functions
+ * are not descended into). */
+function returnsArray(fn: ts.FunctionLikeDeclaration, arrayNames: Set<string>): boolean {
   if (isArrayType(fn.type)) {
     return true;
   }
@@ -219,7 +228,7 @@ function returnsArray(fn: ts.FunctionLikeDeclaration): boolean {
     return false;
   }
   if (!ts.isBlock(fn.body)) {
-    return ts.isArrayLiteralExpression(unwrapExpression(fn.body));
+    return isArrayExpression(fn.body, arrayNames);
   }
   let found = false;
   const visit = (node: ts.Node): void => {
@@ -229,7 +238,7 @@ function returnsArray(fn: ts.FunctionLikeDeclaration): boolean {
     if (
       ts.isReturnStatement(node) &&
       node.expression != null &&
-      ts.isArrayLiteralExpression(unwrapExpression(node.expression))
+      isArrayExpression(node.expression, arrayNames)
     ) {
       found = true;
       return;
@@ -240,46 +249,61 @@ function returnsArray(fn: ts.FunctionLikeDeclaration): boolean {
   return found;
 }
 
-function isArrayReturningFunction(expression: ts.Expression): boolean {
+function isArrayReturningFunction(expression: ts.Expression, arrayNames: Set<string>): boolean {
   return (
     (ts.isArrowFunction(expression) || ts.isFunctionExpression(expression)) &&
-    returnsArray(expression)
+    returnsArray(expression, arrayNames)
   );
 }
 
-/** Names of variables initialized with array literals and of functions and
- * methods that return one, so an indirect `const update = [...];
- * Model.updateOne(filter, update)`, a `Model.updateMany(filter,
- * buildPipeline(ids))` or a `builder.pipeline()` is still caught. Scope-naive
- * by design: a false positive here names something that holds an array and is
- * passed as an update, which deserves a look regardless. */
+/** Names of variables initialized with array literals, then of functions and
+ * methods that return one — an array literal or one of those variables — so an
+ * indirect `const update = [...]; Model.updateOne(filter, update)`, a
+ * `Model.updateMany(filter, buildPipeline(ids))` or a `builder.pipeline()` is
+ * still caught. Scope-naive by design: a false positive here names something
+ * that holds an array and is passed as an update, which deserves a look
+ * regardless. */
 function collectArrayValuedNames(sourceFile: ts.SourceFile): Set<string> {
   const names = new Set<string>();
-  const visit = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer != null) {
-      const initializer = unwrapExpression(node.initializer);
-      if (ts.isArrayLiteralExpression(initializer) || isArrayReturningFunction(initializer)) {
-        names.add(node.name.text);
-      }
+  const visitVariables = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer != null &&
+      ts.isArrayLiteralExpression(unwrapExpression(node.initializer))
+    ) {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, visitVariables);
+  };
+  visitVariables(sourceFile);
+  const visitFunctions = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer != null &&
+      isArrayReturningFunction(unwrapExpression(node.initializer), names)
+    ) {
+      names.add(node.name.text);
     }
     if (
       (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
       node.name != null &&
       ts.isIdentifier(node.name) &&
-      returnsArray(node)
+      returnsArray(node, names)
     ) {
       names.add(node.name.text);
     }
     if (
       ts.isPropertyAssignment(node) &&
       ts.isIdentifier(node.name) &&
-      isArrayReturningFunction(unwrapExpression(node.initializer))
+      isArrayReturningFunction(unwrapExpression(node.initializer), names)
     ) {
       names.add(node.name.text);
     }
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, visitFunctions);
   };
-  visit(sourceFile);
+  visitFunctions(sourceFile);
   return names;
 }
 
@@ -639,6 +663,10 @@ describe('Amazon DocumentDB compatibility', () => {
       [
         'pipeline returned by an object method',
         `const builder = { pipeline: () => [{ $addFields: { a: 1 } }] };\nModel.updateOne(filter, builder.pipeline());`,
+      ],
+      [
+        'pipeline returned through a local variable',
+        `function pipeline() {\n  const stages = [{ $addFields: { a: 1 } }];\n  return stages;\n}\nModel.updateMany(filter, pipeline());`,
       ],
     ])('flags a pipeline update: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).not.toEqual([]);

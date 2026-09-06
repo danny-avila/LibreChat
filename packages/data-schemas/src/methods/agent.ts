@@ -79,15 +79,21 @@ export function pruneEdges(edges: IAgent['edges'], agentIds: string[]): AgentEdg
   });
 }
 
+interface GraphEdges {
+  _id: Types.ObjectId;
+  edges?: IAgent['edges'];
+}
+
 /**
  * Removes deleted agent references from active graphs in the requested tenant.
- * Graphs are read a page at a time and each page's pruned edges are written back
- * behind a compare-and-set on the edges that were read, so a concurrent edit is
- * never overwritten. A cleaned graph stops matching the filter, so the filter is
- * its own cursor: every pass reads the next still-matching page, and a graph
- * whose edges changed underneath is simply read again. This is the
- * plain-operator form of what was an aggregation-pipeline update, which Amazon
- * DocumentDB rejects.
+ * Graphs are read a page at a time behind an `_id` cursor, and each page's
+ * pruned edges are written back behind a compare-and-set on the edges that were
+ * read, so a concurrent edit is never overwritten. A graph whose edges changed
+ * underneath fails its compare-and-set and is left behind the cursor, so once
+ * the cursor is exhausted one more sweep from the top picks up every miss (and
+ * any reference added meanwhile); the cleanup ends when a sweep from the top
+ * finds nothing. This is the plain-operator form of what was an
+ * aggregation-pipeline update, which Amazon DocumentDB rejects.
  */
 async function removeAgentIdsFromEdges(
   Agent: Model<IAgent>,
@@ -102,14 +108,19 @@ async function removeAgentIdsFromEdges(
     $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
   };
   let stalledPasses = 0;
+  let after: Types.ObjectId | undefined;
   for (;;) {
-    const graphs = await Agent.find(filter)
+    const graphs = await Agent.find(after == null ? filter : { ...filter, _id: { $gt: after } })
       .sort({ _id: 1 })
       .limit(EDGE_CLEANUP_BATCH)
       .select('_id edges')
-      .lean<Pick<IAgent, '_id' | 'edges'>[]>();
+      .lean<GraphEdges[]>();
     if (graphs.length === 0) {
-      return;
+      if (after == null) {
+        return;
+      }
+      after = undefined;
+      continue;
     }
     const result = await tenantSafeBulkWrite(
       Agent,
@@ -127,6 +138,7 @@ async function removeAgentIdsFromEdges(
         `[removeAgentIdsFromEdges] graph edges kept changing during cleanup (${EDGE_CLEANUP_STALLED_PASSES} passes without progress)`,
       );
     }
+    after = graphs[graphs.length - 1]._id;
   }
 }
 

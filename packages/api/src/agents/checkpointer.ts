@@ -818,7 +818,8 @@ const CHECKPOINT_INDEX_BUILD_DEADLINE_MS = 120_000;
  * index that already exists is a no-op), so re-running it lets one more build
  * through per pass until every index exists. Every other error is returned for
  * the caller to log, exactly as `setup()` reports it — including those reported
- * beside a conflict that outlasts the deadline.
+ * beside a conflict that outlasts the deadline. A rejection of `setup()` itself
+ * propagates, so the caller keeps its in-process fallback.
  */
 export async function setupCheckpointIndexes(
   saver: Pick<MongoDBSaver, 'setup'>,
@@ -840,6 +841,9 @@ export async function setupCheckpointIndexes(
       { peerBuildDeadlineMs: CHECKPOINT_INDEX_BUILD_DEADLINE_MS, ...options },
     );
   } catch (error) {
+    if (!isIndexBuildInProgress(error)) {
+      throw error;
+    }
     return [...companions, error instanceof Error ? error : new Error(String(error))];
   }
 }

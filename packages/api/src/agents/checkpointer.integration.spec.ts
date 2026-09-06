@@ -1348,4 +1348,18 @@ describe('setupCheckpointIndexes on a single-index-build engine (mongodb-memory-
       restore();
     }
   });
+
+  it('propagates a setup() rejection that is not a build conflict', async () => {
+    /** The driver validates collection names server-side and `setup()` settles
+     * every build with `Promise.allSettled`, so there is no rejection path to
+     * trigger for real; a rejecting stand-in covers the contract that such a
+     * rejection reaches the caller's in-process fallback instead of being
+     * reported as an index error. */
+    const saver = makeSaver();
+    saver.setup = () => Promise.reject(new Error('client closed'));
+
+    await expect(setupCheckpointIndexes(saver, { peerBuildPollMs: 1 })).rejects.toThrow(
+      'client closed',
+    );
+  });
 });
