@@ -50,6 +50,7 @@ import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
 import type { TerminalSteerHook } from '~/agents/steering/runtime';
+import type { LangfuseTraceContext } from '~/langfuse/identity';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
@@ -1509,6 +1510,21 @@ function buildSubagentConfigs(
  *   their defer_loading overridden to false, preventing redundant re-discovery.
  * @returns {Promise<Run<IState>>} A promise that resolves to a new Run instance.
  */
+/** The caller's trace context over run-derived defaults for the fields it left unset. */
+function resolveRunTraceContext(
+  agents: RunAgent[],
+  requestBody?: t.RequestBody,
+  traceContext?: LangfuseTraceContext,
+): LangfuseTraceContext {
+  const primaryAgent = agents[0];
+  return {
+    ...traceContext,
+    conversationId: traceContext?.conversationId ?? requestBody?.conversationId,
+    provider: traceContext?.provider ?? primaryAgent?.provider,
+    model: traceContext?.model ?? primaryAgent?.model_parameters?.model ?? primaryAgent?.model,
+  };
+}
+
 export async function createRun({
   runId,
   signal,
@@ -1520,6 +1536,7 @@ export async function createRun({
   user,
   tenantId,
   centralTraceExportEnabled,
+  traceContext,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -1561,6 +1578,12 @@ export async function createRun({
    * run. Tenant fanout can still export when tenant routing is available.
    */
   centralTraceExportEnabled?: boolean;
+  /**
+   * Request values the deployment may export as Langfuse trace metadata
+   * (`langfuse.trace.conversationMetadataFields`). The conversation id,
+   * provider, and model default from the run itself.
+   */
+  traceContext?: LangfuseTraceContext;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   /**
@@ -2304,6 +2327,8 @@ export async function createRun({
       runId: resolvedRunId,
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
+      user,
+      traceContext: resolveRunTraceContext(agents, requestBody, traceContext),
     }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },

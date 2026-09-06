@@ -1,5 +1,6 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
+import type { LangfuseTraceContext, LangfuseTraceUser } from './identity';
 import {
   hasLangfuseEnvCredentials,
   isLangfuseCentralMediaUploadDisabled,
@@ -10,6 +11,7 @@ import {
   usesLangfuseMultiTenantRouting,
 } from './policy';
 import { normalizeBoolean, resolveLangfuseHeaders, resolveTenantCredentials } from './utils';
+import { buildLangfuseTraceMetadata, resolveLangfuseTraceUserId } from './identity';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { scopeHeadersToDestination } from './destinations';
 import { normalizeString } from '~/utils/text';
@@ -20,6 +22,9 @@ type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
   mediaUploadEnabled?: boolean;
   additionalHeaders?: Record<string, string>;
+  /** Trace user identity override; ships in `@librechat/agents` after 3.7.22
+   *  and is ignored by older releases, which keep `configurable.user_id`. */
+  userId?: string;
 };
 type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
 type TenantExportBlockReason =
@@ -248,6 +253,8 @@ export function buildLangfuseConfig({
   runId,
   tenantId,
   centralTraceExportEnabled = true,
+  user,
+  traceContext,
 }: {
   appConfig?: AppConfig;
   runId?: string;
@@ -258,6 +265,10 @@ export function buildLangfuseConfig({
    * to drop the central pipeline while preserving tenant fanout when available.
    */
   centralTraceExportEnabled?: boolean;
+  /** The requesting user, read only for the fields `langfuse.trace` allowlists. */
+  user?: LangfuseTraceUser;
+  /** Request values `langfuse.trace.conversationMetadataFields` may export. */
+  traceContext?: LangfuseTraceContext;
 } = {}): LangfuseRunConfig {
   const normalizedTenantId = normalizeString(tenantId);
   const config = appConfig?.langfuse;
@@ -265,7 +276,14 @@ export function buildLangfuseConfig({
   const langfuse: LangfuseRunConfigWithTraceAttributes = {
     deterministicTraceId: true,
   };
-  const metadata = mergeTraceMetadata(undefined, normalizedTenantId);
+  const traceUserId = resolveLangfuseTraceUserId(config?.trace, user);
+  if (traceUserId != null) {
+    langfuse.userId = traceUserId;
+  }
+  const metadata = mergeTraceMetadata(
+    buildLangfuseTraceMetadata({ trace: config?.trace, user, context: traceContext }),
+    normalizedTenantId,
+  );
   const tags = mergeTags(undefined, normalizedTenantId);
   if (metadata) {
     langfuse.metadata = metadata;

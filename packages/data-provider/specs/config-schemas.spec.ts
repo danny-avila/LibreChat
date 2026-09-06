@@ -1765,6 +1765,42 @@ describe('configSchema langfuse', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts trace identity and metadata allowlists', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        trace: {
+          userIdField: 'email',
+          userMetadataFields: ['email', 'username', 'role', 'provider'],
+          conversationMetadataFields: ['conversationId', 'endpoint', 'model', 'spec'],
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects trace fields outside the allowlists', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { userIdField: 'password' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { userMetadataFields: ['totpSecret'] } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { conversationMetadataFields: ['text'] } },
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects non-string Langfuse header values', () => {
     const result = configSchema.safeParse({
       version: '1.3.7',

@@ -36,10 +36,24 @@ cache: true
 # only Authorization upstream, so a tenant Langfuse behind its own proxy is not
 # covered even when the collector receives these.
 #
+# Traces carry the internal user id as the Langfuse userId and no user or
+# request metadata unless langfuse.trace opts in. userIdField picks the user
+# field that becomes the trace userId (id, email, username, name, openidId,
+# samlId, ldapId, googleId, githubId, discordId, appleId, facebookId); a user
+# without a value for that field keeps the internal id. The two allowlists copy
+# fields into trace metadata as librechat.user.<field> (the userId fields plus
+# role and provider) and librechat.conversation.id, librechat.endpoint,
+# librechat.endpoint.type, librechat.provider, librechat.model,
+# librechat.model.label, librechat.spec.
+#
 # langfuse:
 #   headers:
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
 #     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
+#   trace:
+#     userIdField: email
+#     userMetadataFields: [email, username, role, provider]
+#     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)

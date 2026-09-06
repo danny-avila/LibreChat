@@ -2480,6 +2480,44 @@ describe('Langfuse run config', () => {
     });
   });
 
+  it('forwards the requesting user and trace context into the Langfuse run config', async () => {
+    await createRun({
+      agents: [makeAgent()] as never,
+      signal: new AbortController().signal,
+      streaming: true,
+      streamUsage: true,
+      user: { id: 'user-1', email: 'alice@example.com', role: 'ADMIN' } as never,
+      requestBody: { conversationId: 'convo-1' },
+      traceContext: { endpoint: 'agents', spec: 'support-bot' },
+      appConfig: {
+        langfuse: {
+          trace: {
+            userIdField: 'email',
+            userMetadataFields: ['role'],
+            conversationMetadataFields: ['conversationId', 'endpoint', 'provider', 'model', 'spec'],
+          },
+        },
+      } as unknown as AppConfig,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      userId: 'alice@example.com',
+      metadata: {
+        'librechat.user.role': 'ADMIN',
+        'librechat.conversation.id': 'convo-1',
+        'librechat.endpoint': 'agents',
+        'librechat.provider': 'openAI',
+        'librechat.model': 'gpt-4o',
+        'librechat.spec': 'support-bot',
+      },
+      librechatTraceAttributes: exportTelemetry('central_only', 'fanout_disabled'),
+    });
+  });
+
   it('adds tenant Langfuse credentials from tenant-scoped app config', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
