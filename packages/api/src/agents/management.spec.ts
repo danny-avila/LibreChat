@@ -47,6 +47,7 @@ describe('Agent Management contract', () => {
           model: 'gpt-5',
           name: 'Researcher',
           stateful_code_environment: 'agent-user',
+          git_identity: { name: 'LibreChat Agent', email: 'agent@example.com' },
           subagents: { enabled: true, allowSelf: true, agent_ids: [] },
         }),
       ).toMatchObject({ provider: 'openAI', model: 'gpt-5', tools: [] });
@@ -56,11 +57,13 @@ describe('Agent Management contract', () => {
           instructions: 'Updated',
           model_parameters: { temperature: 0.1 },
           code_environment_id: null,
+          git_identity: { name: 'LibreChat Agent', email: 'agent@example.com' },
         }),
       ).toEqual({
         instructions: 'Updated',
         model_parameters: { temperature: 0.1 },
         code_environment_id: null,
+        git_identity: { name: 'LibreChat Agent', email: 'agent@example.com' },
       });
     });
 

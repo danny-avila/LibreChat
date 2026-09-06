@@ -826,14 +826,18 @@ describe('ContentParts — synthesized activity folds', () => {
     /** Providers append an empty TEXT slot after visible output. The cursor
      *  belongs to the card (the run's tail is inside its span), and that
      *  trailing slot looks like the initial waiting state from inside its own
-     *  segment — so without the ownership signal both render one. */
-    renderContentParts({
+     *  segment — so without the ownership signal both render one. The card
+     *  draws its own in-flow dot; the segment's `EmptyText` must stay out. */
+    const { container } = renderContentParts({
       ...baseProps,
       isSubmitting: true,
       content: [...labeledRun(), makeTextPart('')],
     });
 
-    expect(screen.getAllByTestId('empty-text')).toHaveLength(1);
+    const dots = container.querySelectorAll('.result-thinking');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveClass('after:!static');
+    expect(screen.queryAllByTestId('empty-text')).toHaveLength(0);
   });
 
   it('leaves an unlabeled run rendering exactly as before', () => {

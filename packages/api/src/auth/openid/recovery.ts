@@ -191,6 +191,7 @@ export interface OpenIDRefreshRecoveryDeps {
     key: string;
     ownerId: string;
     tokens: SharedOpenIDRefreshResult;
+    onWriteStart?: () => void;
   }) => Promise<RefreshFlightRecord | null>;
   failOpenIDRefreshFlight: (args: {
     key: string;
@@ -721,6 +722,7 @@ export function createOpenIDRefreshRecoveryService(
             preparePublication: false,
           });
         }
+        let completionStarted = false;
         return withOpenIDRefreshFlightLease({
           key,
           ownerId: flight.ownerId,
@@ -747,6 +749,9 @@ export function createOpenIDRefreshRecoveryService(
                 const completed = await completeOpenIDRefreshFlight({
                   key,
                   ownerId: flight.ownerId,
+                  onWriteStart: () => {
+                    completionStarted = true;
+                  },
                   tokens: {
                     tokenset: publishedTokenset,
                     claims: { sub: openidSubject ?? user.openidId ?? userId },
@@ -764,6 +769,22 @@ export function createOpenIDRefreshRecoveryService(
                 markLeaseSettled();
               },
             }),
+        }).catch(async (error) => {
+          /** A completion write may have succeeded despite a lost acknowledgement. */
+          if (!completionStarted) {
+            try {
+              await failOpenIDRefreshFlight({
+                key,
+                ownerId: flight.ownerId,
+                error: error instanceof Error ? error : new Error('OpenID publication failed'),
+              });
+            } catch (flightError) {
+              logger.warn('[refreshController] Failed to settle authentication publication', {
+                error: toOpenIDLogArgument(flightError),
+              });
+            }
+          }
+          throw error;
         });
       }
     }
