@@ -554,11 +554,14 @@ const PinnedSection = ({
       /* Current enough, too, and not merely settled: the pinned query holds its
        * data for five minutes while the order has no such window, so focusing a
        * tab reconciles the order on its own. Pruning that newer order against
-       * the older membership beside it would drop the position of a
-       * conversation another tab pinned in between. Until the membership
-       * catches up, merging keeps those keys. */
+       * the older membership beside it would drop the position of a favorite
+       * or conversation another tab pinned in between. Until both membership
+       * sources catch up, merging keeps those keys. */
       const membershipCurrent = membershipComplete && membershipUpdatedAt >= orderUpdatedAt;
-      const canPrune = membershipCurrent && favoritesData.isLoaded;
+      const canPrune =
+        membershipCurrent &&
+        favoritesData.isLoaded &&
+        favoritesData.dataUpdatedAt >= orderUpdatedAt;
       const nextOrder = canPrune ? visibleKeys : mergeVisibleOrder(storedOrder ?? [], visibleKeys);
 
       updatePinnedOrder.mutate(nextOrder, {
@@ -591,6 +594,7 @@ const PinnedSection = ({
       membershipUpdatedAt,
       orderUpdatedAt,
       favoritesData.isLoaded,
+      favoritesData.dataUpdatedAt,
       showToast,
       localize,
     ],

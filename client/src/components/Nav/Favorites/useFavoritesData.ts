@@ -35,6 +35,7 @@ export type FavoritesData = {
   /** Whether the favorites membership is settled: retrieved, with no write in
    *  flight and no recovery refetch outstanding. */
   isLoaded: boolean;
+  dataUpdatedAt: number;
   isAgentsLoading: boolean;
   agentsMap: Record<string, Agent>;
   specsMap: Record<string, TModelSpec>;
@@ -59,6 +60,7 @@ export default function useFavoritesData(): FavoritesData {
     isLoading,
     isSuccess,
     isFetching: isFavoritesFetching,
+    dataUpdatedAt,
   } = useFavorites();
   /* Counted across the whole query client, not from this hook's own observer:
    * a favorite row runs its own `useFavorites`, so a removal started there is
@@ -212,6 +214,7 @@ export default function useFavoritesData(): FavoritesData {
     favorites: safeFavorites,
     isLoading,
     isLoaded,
+    dataUpdatedAt,
     isAgentsLoading,
     agentsMap: combinedAgentsMap,
     specsMap,

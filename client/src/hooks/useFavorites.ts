@@ -238,6 +238,7 @@ export default function useFavorites() {
     /** True while the list is being refetched, including the refetch that
      *  recovers from a failed write. */
     isFetching: getFavoritesQuery.isFetching,
+    dataUpdatedAt: getFavoritesQuery.dataUpdatedAt,
     /** Whether there was an error fetching favorites */
     isError: getFavoritesQuery.isError,
     /** Whether the update mutation is in progress */

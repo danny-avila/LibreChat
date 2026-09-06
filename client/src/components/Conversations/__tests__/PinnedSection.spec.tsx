@@ -23,6 +23,7 @@ const mockFavoritesData = {
   favorites: [] as Array<Record<string, string>>,
   isLoading: false,
   isLoaded: true,
+  dataUpdatedAt: MEMBERSHIP_FETCHED_AT,
   isAgentsLoading: false,
   agentsMap: {} as Record<string, unknown>,
   specsMap: {} as Record<string, unknown>,
@@ -154,6 +155,7 @@ describe('PinnedSection unified list', () => {
     mockFavoritesData.favorites = [];
     mockFavoritesData.isLoading = false;
     mockFavoritesData.isLoaded = true;
+    mockFavoritesData.dataUpdatedAt = MEMBERSHIP_FETCHED_AT;
     mockFavoritesData.isAgentsLoading = false;
     mockFavoritesData.agentsMap = {};
     mockFavoritesData.specsMap = {};
@@ -525,6 +527,39 @@ describe('PinnedSection unified list', () => {
 
     expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
       ['convo:unseen', 'convo:c2', 'convo:c1'],
+      expect.anything(),
+    );
+  });
+
+  it('preserves unseen favorite positions until favorites catch up with the order', () => {
+    mockPinnedOrder = ['model:6:openAI:unseen', 'convo:c1'];
+    mockFavoritesData.dataUpdatedAt = mockOrderUpdatedAt - 1;
+    const tree = (
+      <DndProvider backend={HTML5Backend}>
+        <PinnedSection
+          conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
+          toggleNav={jest.fn()}
+          membershipComplete
+          membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
+        />
+      </DndProvider>
+    );
+    const { rerender } = render(tree);
+
+    fireEvent.keyDown(screen.getByText('Pinned Chat'), { key: 'ArrowDown', altKey: true });
+
+    expect(mockUpdatePinnedOrder).toHaveBeenLastCalledWith(
+      ['model:6:openAI:unseen', 'convo:c2', 'convo:c1'],
+      expect.anything(),
+    );
+
+    mockFavoritesData.dataUpdatedAt = mockOrderUpdatedAt;
+    act(() => mockUpdatePinnedOrder.mock.calls[0][1].onSettled());
+    rerender(tree);
+    fireEvent.keyDown(screen.getByText('Pinned Chat'), { key: 'ArrowDown', altKey: true });
+
+    expect(mockUpdatePinnedOrder).toHaveBeenLastCalledWith(
+      ['convo:c2', 'convo:c1'],
       expect.anything(),
     );
   });
