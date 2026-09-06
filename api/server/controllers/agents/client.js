@@ -996,6 +996,22 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Request values `langfuse.trace.conversationMetadataFields` may export.
+   * The model label rides the trace-only `options.traceContext`: the
+   * initialized agent's `model_parameters` drop it (`extractLibreChatParams`),
+   * and a top-level `modelLabel` option would also rename the assistant in
+   * formatted messages.
+   */
+  buildTraceContext() {
+    return {
+      endpoint: this.options.endpoint,
+      endpointType: this.options.endpointType,
+      modelLabel: this.options.traceContext?.modelLabel ?? this.options.modelLabel,
+      spec: this.options.spec,
+    };
+  }
+
+  /**
    * Bridges label generation to the SDK's `run.generateActivityLabel()` so
    * the fast-model call is Langfuse-traced under the conversation's session
    * (thread_id) with its own tags — never as an orphan trace. Returns null
@@ -4391,12 +4407,7 @@ class AgentClient extends BaseClient {
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
-          traceContext: {
-            endpoint: this.options.endpoint,
-            endpointType: this.options.endpointType,
-            modelLabel: this.options.modelLabel,
-            spec: this.options.spec,
-          },
+          traceContext: this.buildTraceContext(),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
           appConfig,
@@ -4931,12 +4942,7 @@ class AgentClient extends BaseClient {
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
-        traceContext: {
-          endpoint: this.options.endpoint,
-          endpointType: this.options.endpointType,
-          modelLabel: this.options.modelLabel,
-          spec: this.options.spec,
-        },
+        traceContext: this.buildTraceContext(),
         tenantId: resolveRequestTenantId(this.options.req ?? {}),
         summarizationConfig: appConfig?.summarization,
         appConfig,

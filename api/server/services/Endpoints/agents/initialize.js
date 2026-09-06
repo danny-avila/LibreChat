@@ -1601,6 +1601,7 @@ const initializeClient = async ({
     invokedSkillIdentities,
     agent: primaryConfig,
     spec: endpointOption.spec,
+    traceContext: { modelLabel: endpointOption.model_parameters?.modelLabel },
     iconURL: endpointOption.iconURL,
     chatProjectId: endpointOption.chatProjectId,
     attachments: primaryConfig.requestAttachments ?? primaryConfig.attachments,
