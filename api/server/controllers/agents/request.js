@@ -37,6 +37,7 @@ const {
   EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
   findAgentEventAppliedAction,
   createAgentEventActionRecorder,
+  isTransferToolEchoText,
   isHITLEnabled,
   agentRequestsAskUserQuestion,
   resolveAgentTurnExecutionPlan,
@@ -50,6 +51,7 @@ const { logViolation } = require('~/cache');
 const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
 const {
   saveMessage,
+  deleteMessages,
   saveConvo,
   getMessages,
   getConvo,
@@ -2772,6 +2774,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               ? 'Terminal response could not be persisted as unfinished'
               : 'Response message could not be persisted before terminal publication',
           );
+        }
+        /** A printed handoff tool name is neither commentary nor a tool call.
+         * The terminal handler records it as failed; remove the synthetic row
+         * here so it cannot become context for a later agent in this thread. */
+        if (eventTaskId != null && isTransferToolEchoText(response.text)) {
+          await deleteMessages({
+            user: userId,
+            conversationId,
+            messageId: response.messageId,
+          });
         }
         if (appliedEventActor != null) {
           const recorded = await recordAgentEventActorReconciliation({

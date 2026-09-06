@@ -31,10 +31,31 @@ interface SettleAgentTriggerHandlingOutcomeInput {
 
 export interface AgentEventRunOutcome {
   status: 'applied' | 'completed_no_action' | 'failed' | 'cancelled';
+  error?: string;
   action?: { toolName: string; toolCallId?: string };
 }
 
 const MAX_RECEIPT_ID_LENGTH = 256;
+const TRANSFER_TOOL_ECHO_PATTERN = /^Tool:\s*lc_transfer_to_agent_[A-Za-z0-9_-]+,?$/;
+const TRANSFER_TOOL_ECHO_ERROR = 'Agent response contained an unexecuted handoff tool name';
+
+export function isTransferToolEchoText(text: unknown): boolean {
+  return typeof text === 'string' && TRANSFER_TOOL_ECHO_PATTERN.test(text.trim());
+}
+
+function isTransferToolEcho(content: Agents.MessageContentComplex[]): boolean {
+  if (content.length === 0) {
+    return false;
+  }
+  let text = '';
+  for (const part of content) {
+    if (!('text' in part) || typeof part.text !== 'string') {
+      return false;
+    }
+    text += part.text;
+  }
+  return isTransferToolEchoText(text);
+}
 
 async function hasDurableAgentEventHistory(input: {
   getMessage: MessageMethods['getMessage'];
@@ -168,6 +189,9 @@ export function classifyAgentEventRunOutcome(
   }
   if (job.status === 'aborted') {
     return { status: 'cancelled' };
+  }
+  if (isTransferToolEcho(content)) {
+    return { status: 'failed', error: TRANSFER_TOOL_ECHO_ERROR };
   }
   return { status: 'completed_no_action' };
 }
@@ -345,7 +369,7 @@ export function createAgentEventTerminalHandler(
     const settledAt = new Date(job.completedAt ?? Date.now());
     const settleCompletionDelivery = async (
       completionOutcome: AgentEventRunOutcome,
-      failureError = receivedJob.error ?? 'Generation failed',
+      failureError = completionOutcome.error ?? receivedJob.error ?? 'Generation failed',
     ): Promise<void> => {
       if (completionDeliveryKey == null) {
         return;
@@ -1109,7 +1133,10 @@ export function createAgentEventTerminalHandler(
       ...(settlementOutcome.status === 'failed' && {
         error: compensated
           ? 'Applied event actor action was explicitly compensated'
-          : (detachedTerminalFailure ?? job.error ?? 'Generation failed'),
+          : (detachedTerminalFailure ??
+            settlementOutcome.error ??
+            job.error ??
+            'Generation failed'),
       }),
       ...(settlementOutcome.action != null && { action: settlementOutcome.action }),
     });
@@ -1120,7 +1147,10 @@ export function createAgentEventTerminalHandler(
       settlementOutcome,
       compensated
         ? 'Applied event actor action was explicitly compensated'
-        : (detachedTerminalFailure ?? receivedJob.error ?? 'Generation failed'),
+        : (detachedTerminalFailure ??
+            settlementOutcome.error ??
+            receivedJob.error ??
+            'Generation failed'),
     );
   };
 }
