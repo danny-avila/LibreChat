@@ -266,7 +266,7 @@ async def get_latest_docket_entry(ctx: Context, case_id: str) -> dict:
     ),
 )
 async def retrieve_case_billing_summary(ctx: Context, case_id: str) -> dict:
-    return await _get(ctx, f"/api/billing/cases/{case_id}/summary")
+    return await _get(ctx, f"/api/core/billing/cases/{case_id}/summary")
 
 
 @mcp.tool(description="List members of a legal team.")
@@ -309,7 +309,10 @@ async def read_people_dossiers(
 
 @mcp.tool(description="Search cases and dockets by keyword or docket number.")
 async def search_case(ctx: Context, query: str, app_id: str | None = None) -> dict:
-    return await _post(ctx, "/api/search-case/", {"query": query, "appId": app_id or "2"})
+    body: dict[str, str] = {"q": query}
+    if app_id:
+        body["appId"] = app_id
+    return await _post(ctx, "/api/search-case/", body)
 
 
 @mcp.tool(description="Generate a case summary artifact for a case, including strategic-summary prompts.")
@@ -338,9 +341,13 @@ async def retrieve_case_summary(ctx: Context, case_id: str) -> dict:
     return await _post(ctx, "/api/retrieve-case-summary/", {"caseId": case_id})
 
 
-@mcp.tool(description="Search precedents and case authorities.")
-async def precedent_query(ctx: Context, query: str, case_id: str | None = None) -> dict:
-    return await _post(ctx, "/api/precedent-query/", {"query": query, "caseId": case_id})
+@mcp.tool(description="Search precedents and case authorities for an authenticated case.")
+async def precedent_query(ctx: Context, query: str, case_id: str, app_id: str) -> dict:
+    return await _post(
+        ctx,
+        "/api/man-search-precs/",
+        {"query": query, "caseId": case_id, "appId": app_id},
+    )
 
 
 @mcp.tool(description="Search case documents and workspace knowledge for a case.")
@@ -484,7 +491,7 @@ async def templatize_motion_template(  # noqa: PLR0913
     ctx: Context,
     case_id: str,
     source: dict,
-    app_id: str | None = None,
+    app_id: str,
     dry_run: bool | None = None,
     overrides: dict | None = None,
     legal_team_ids: list[str] | None = None,
@@ -494,7 +501,7 @@ async def templatize_motion_template(  # noqa: PLR0913
         "/api/templates/templatize/",
         {
             "caseId": case_id,
-            "appId": app_id or "2",
+            "appId": app_id,
             "source": source,
             "dryRun": dry_run,
             "overrides": overrides,
@@ -509,7 +516,7 @@ async def delete_motion_template(  # noqa: PLR0913
     side: str,
     stage: str,
     motion_slug: str,
-    app_id: str | None = None,
+    app_id: str,
     confirm_delete: bool | None = None,
     max_items_per_bucket: int | None = None,
 ) -> dict:
@@ -517,7 +524,7 @@ async def delete_motion_template(  # noqa: PLR0913
         ctx,
         "/api/templates/delete/",
         {
-            "appId": app_id or "2",
+            "appId": app_id,
             "side": side,
             "stage": stage,
             "motionSlug": motion_slug,
@@ -684,7 +691,7 @@ async def edit_case_important_dates(  # noqa: PLR0913 - MCP tool schema is inten
 
 @mcp.tool(description="Generate or regenerate a bill for a case and billing period.")
 async def generate_case_bill(ctx: Context, case_id: str, billing_period: str | None = None) -> dict:
-    return await _post(ctx, f"/api/billing/cases/{case_id}/generate", {"billingPeriod": billing_period})
+    return await _post(ctx, f"/api/core/billing/cases/{case_id}/generate", {"billingPeriod": billing_period})
 
 
 @mcp.tool(description="Export logged hours for the authenticated user's assigned firm cases.")
@@ -802,27 +809,64 @@ async def update_user_hourly_rate(ctx: Context, hourly_rate: float) -> dict:
 
 @mcp.tool(description="Accept a pending legal team invite for the authenticated user.")
 async def accept_legal_team_invite(ctx: Context, invite_id: str) -> dict:
-    return await _post(ctx, "/api/accept-legal-team-invite/", {"inviteId": invite_id})
+    return await _post(ctx, "/api/accept-legal-team-invite/", {"token": invite_id})
 
 
 @mcp.tool(description="Rename a legal team (admin only).")
-async def rename_legal_team(ctx: Context, legal_team_id: str, name: str) -> dict:
-    return await _post(ctx, "/api/rename-legal-team/", {"legalTeamId": legal_team_id, "name": name})
+async def rename_legal_team(ctx: Context, legal_team_id: str, name: str, app_id: str | None = None) -> dict:
+    return await _post(
+        ctx,
+        "/api/rename-legal-team/",
+        {"legalTeamId": legal_team_id, "appId": app_id or "2", "legalTeamName": name},
+    )
 
 
-@mcp.tool(description="Remove a member from a legal team (admin only).")
-async def remove_legal_team_member(ctx: Context, legal_team_id: str, user_id: str) -> dict:
-    return await _post(ctx, "/api/remove-legal-team-member/", {"legalTeamId": legal_team_id, "userId": user_id})
+@mcp.tool(description="Remove a member from a legal team by user id or email (admin only).")
+async def remove_legal_team_member(
+    ctx: Context,
+    legal_team_id: str,
+    member_user_id: str | None = None,
+    member_email: str | None = None,
+    app_id: str | None = None,
+) -> dict:
+    body = {
+        "legalTeamId": legal_team_id,
+        "appId": app_id or "2",
+        "memberUserId": member_user_id,
+        "memberEmail": member_email,
+    }
+    return await _post(ctx, "/api/remove-legal-team-member/", {k: v for k, v in body.items() if v is not None})
 
 
 @mcp.tool(description="Assign all members of a legal team to a case (admin only).")
-async def assign_legal_team_to_case(ctx: Context, legal_team_id: str, case_id: str) -> dict:
-    return await _post(ctx, "/api/assign-legal-team-to-case/", {"legalTeamId": legal_team_id, "caseId": case_id})
+async def assign_legal_team_to_case(ctx: Context, legal_team_id: str, case_id: str, app_id: str | None = None) -> dict:
+    return await _post(
+        ctx,
+        "/api/assign-legal-team-to-case/",
+        {"legalTeamId": legal_team_id, "appId": app_id or "2", "caseId": case_id},
+    )
+
+
+@mcp.tool(description="Invite a collaborator to join a legal team.")
+async def legal_team_invite(
+    ctx: Context,
+    email: str,
+    app_id: str,
+    legal_team_id: str | None = None,
+    case_id: str | None = None,
+) -> dict:
+    payload = {
+        "email": email,
+        "appId": app_id,
+        "legalTeamId": legal_team_id,
+        "caseId": case_id,
+    }
+    return await _post(ctx, "/api/legal-team-invite/", {k: v for k, v in payload.items() if v is not None})
 
 
 @mcp.tool(description="Delete a legal team (admin only).")
-async def delete_legal_team(ctx: Context, legal_team_id: str) -> dict:
-    return await _post(ctx, "/api/delete-legal-team/", {"legalTeamId": legal_team_id})
+async def delete_legal_team(ctx: Context, legal_team_id: str, app_id: str | None = None) -> dict:
+    return await _post(ctx, "/api/delete-legal-team/", {"legalTeamId": legal_team_id, "appId": app_id or "2"})
 
 
 @mcp.tool(description="Assign the authenticated user (or an admin-selected user) to a case.")
