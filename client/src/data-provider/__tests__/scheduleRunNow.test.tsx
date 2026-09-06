@@ -400,6 +400,32 @@ describe('run-now conversation tracking', () => {
     queryClient.clear();
   });
 
+  it('never evicts a watch still in flight, however many runs land after it', async () => {
+    const queryClient = createQueryClient();
+    signIn(queryClient, 'user-a');
+    seedList(queryClient);
+    /** One delivery deferred well past the others; three hundred land around it. */
+    mockGetConversationById.mockImplementation(async (id) =>
+      id === 'slow'
+        ? Promise.reject(httpError(404, 'Not Found'))
+        : { ...serverConversation(), conversationId: id },
+    );
+
+    void trackScheduledRun(queryClient, 'slow');
+    for (let i = 0; i < 300; i += 1) {
+      void trackScheduledRun(queryClient, `run-${i}`);
+    }
+    await settleAdmission(3_000);
+    /** Announced again, as the poll would while it is still in flight. Were it
+     *  evicted, this would start a second watch and double the probes. */
+    void trackScheduledRun(queryClient, 'slow');
+    await settleAdmission(3_000);
+
+    const slowProbes = mockGetConversationById.mock.calls.filter(([id]) => id === 'slow').length;
+    expect(slowProbes).toBe(3);
+    queryClient.clear();
+  });
+
   it('refuses the write when the cache is claimed while the owner is still unknown', async () => {
     const queryClient = createQueryClient();
     seedList(queryClient);

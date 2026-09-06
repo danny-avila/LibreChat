@@ -256,12 +256,31 @@ describe('useRunSync', () => {
     queryClient.clear();
   });
 
-  it('records the first observation in silence', async () => {
+  it('records the first observation in silence when the sidebar is fresher than the runs', async () => {
     const queryClient = createQueryClient();
-    renderWith(queryClient, [schedule]);
+    /** List read after the run fired: it has held that chat all along. */
+    renderWith(queryClient, [settled()]);
     await admit();
 
     expect(isStale(queryClient)).toBe(false);
+    expect(mockGetConversationById).not.toHaveBeenCalled();
+    queryClient.clear();
+  });
+
+  it('re-reads on the first observation when a run settled after the sidebar was read', async () => {
+    const queryClient = createQueryClient();
+    /** The panel opens after a run fired and finished with it closed; the list was
+     *  read before that and never got the chance to pick the chat up. */
+    const readAt = queryClient.getQueryState(listKey)?.dataUpdatedAt ?? 0;
+    const firedAt = new Date(readAt + 60_000).toISOString();
+    renderWith(queryClient, [
+      settled('run-convo-1', {
+        lastRun: { conversationId: 'run-convo-1', status: 'success', firedAt },
+      }),
+    ]);
+    await admit();
+
+    expect(isStale(queryClient)).toBe(true);
     expect(mockGetConversationById).not.toHaveBeenCalled();
     queryClient.clear();
   });

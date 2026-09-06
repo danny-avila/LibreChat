@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import type { TSchedule } from 'librechat-data-provider';
 import { trackScheduledRun } from '~/data-provider/Schedules/admission';
 
@@ -25,6 +26,23 @@ const runState = (schedule: Occurrences): string => {
  *  should hear; one that arrives with no run yet is not. */
 const IDLE_STATE = runState({});
 
+/** When the sidebar's lists were last read from the server — the oldest across
+ *  the variants, since any one of them could be the one missing a chat. Nothing
+ *  cached means nothing stale: a list mounted later is read fresh. */
+const listsReadAt = (queryClient: QueryClient): number => {
+  const lists = queryClient.getQueryCache().findAll([QueryKeys.allConversations], { exact: false });
+  return lists.length === 0 ? Infinity : Math.min(...lists.map((list) => list.state.dataUpdatedAt));
+};
+
+/** Whether a run settled after the sidebar last heard from the server. The first
+ *  observation cannot compare against an earlier one, but it can compare against
+ *  this: a panel opened long after a run must not refetch a list that has held
+ *  that chat all along, and must refetch one that never got the chance to. */
+const settledSince = (schedules: TSchedule[], readAt: number): boolean =>
+  schedules.some(
+    (schedule) => schedule.lastRun != null && Date.parse(schedule.lastRun.firedAt) > readAt,
+  );
+
 /**
  * Puts an automatic occurrence's chat in the sidebar, the same way Run Now does.
  *
@@ -45,8 +63,9 @@ const IDLE_STATE = runState({});
  * is re-read once for the chat, order and title the settlement changed.
  * Because the state includes the generating occurrences, an owner editing the
  * schedule mid-flight (which fences the `lastRun` projection) still cannot hide a
- * settlement. The first observation is recorded in silence: a panel opened long
- * after a run must not refetch a list that has held its chat all along.
+ * settlement. The first observation has no earlier one to compare against, so it
+ * compares against the sidebar instead: it re-reads only if a run settled after
+ * the lists were last read, which is the one case where they lack its chat.
  */
 export default function useRunSync(schedules?: TSchedule[]): void {
   const queryClient = useQueryClient();
@@ -65,12 +84,11 @@ export default function useRunSync(schedules?: TSchedule[]): void {
       }
     }
     states.current = current;
-    if (previous == null) {
-      return;
-    }
     const moved =
-      [...previous].some(([id, state]) => current.get(id) !== state) ||
-      [...current].some(([id, state]) => !previous.has(id) && state !== IDLE_STATE);
+      previous == null
+        ? settledSince(schedules, listsReadAt(queryClient))
+        : [...previous].some(([id, state]) => current.get(id) !== state) ||
+          [...current].some(([id, state]) => !previous.has(id) && state !== IDLE_STATE);
     if (moved) {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
     }

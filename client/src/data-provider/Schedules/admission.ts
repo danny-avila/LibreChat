@@ -49,38 +49,42 @@ const cacheOwner = (queryClient: QueryClient): string | undefined =>
   queryClient.getQueryData<TUser>([QueryKeys.user])?.id;
 
 /**
- * Runs with a watch in flight or already landed. A run can be announced twice —
- * by the click that started it, and by the schedules poll that then lists it —
- * and must be watched once. A watch that gave up is forgotten, so a later
- * announcement of a run admitted after the budget can try again.
+ * Runs with a watch in flight. A run can be announced twice — by the click that
+ * started it, and by the schedules poll that then lists it — and must be watched
+ * once. Bounded by however many generations can actually be running, and never
+ * evicted: a second watch for a run still being watched is the one thing this
+ * exists to prevent.
  */
-const tracked = new Set<string>();
+const watching = new Set<string>();
 
 /**
- * How many landed runs to remember. A panel that stays mounted sees a new id per
- * occurrence for as long as schedules keep firing, and a run is only announced
- * while it is in flight — none is still in flight by the time this many have
- * started after it — so the oldest entries can go without a watch ever running
- * twice for the same run.
+ * Runs already landed, so a later announcement is a no-op. A panel that stays
+ * mounted sees a new id per occurrence for as long as schedules keep firing, so
+ * only the most recent are kept: a run is announced only while it is in flight,
+ * and one that landed is not — a forgotten id would at worst be probed once more
+ * and found already present. A watch that gave up is in neither set, so a later
+ * announcement of a run admitted after the budget can try again.
  */
-const TRACKED_RUN_LIMIT = 256;
+const landed = new Set<string>();
+const LANDED_RUN_LIMIT = 256;
 
-function forgetOldestTracked(): void {
-  while (tracked.size > TRACKED_RUN_LIMIT) {
-    const [oldest] = tracked;
+function forgetOldestLanded(): void {
+  while (landed.size > LANDED_RUN_LIMIT) {
+    const [oldest] = landed;
     if (oldest === undefined) {
       return;
     }
-    tracked.delete(oldest);
+    landed.delete(oldest);
   }
 }
 
 /** @internal Test seams. */
 export function resetTrackedRuns(): void {
-  tracked.clear();
+  watching.clear();
+  landed.clear();
 }
 export function trackedRunCount(): number {
-  return tracked.size;
+  return watching.size + landed.size;
 }
 
 /**
@@ -180,13 +184,14 @@ export async function trackScheduledRun(
   queryClient: QueryClient,
   conversationId: string,
 ): Promise<void> {
-  if (!conversationId || tracked.has(conversationId)) {
+  if (!conversationId || watching.has(conversationId) || landed.has(conversationId)) {
     return;
   }
-  tracked.add(conversationId);
-  forgetOldestTracked();
-  const landed = await admit(queryClient, conversationId);
-  if (!landed) {
-    tracked.delete(conversationId);
+  watching.add(conversationId);
+  const admitted = await admit(queryClient, conversationId);
+  watching.delete(conversationId);
+  if (admitted) {
+    landed.add(conversationId);
+    forgetOldestLanded();
   }
 }
