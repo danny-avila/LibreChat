@@ -31,9 +31,16 @@ const { requireAgentManagementAuth } = require('./middleware');
 
 const AGENT_UPLOAD_LOCK_TTL_MS = 10 * 60 * 1000;
 const AGENT_UPLOAD_LOCK_WAIT_MS = 2 * 60 * 1000;
+const AGENT_UPLOAD_LOCK_RENEW_MS = Math.floor(AGENT_UPLOAD_LOCK_TTL_MS / 3);
 const releaseUploadLockScript = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+const renewUploadLockScript = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('PEXPIRE', KEYS[1], ARGV[2])
 end
 return 0
 `;
@@ -51,9 +58,36 @@ const withAgentUploadLock = async (key, task) => {
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  let stopped = false;
+  let renewalTimer;
+  const renewLease = async () => {
+    try {
+      const renewed = await ioredisClient.eval(
+        renewUploadLockScript,
+        1,
+        lockKey,
+        token,
+        AGENT_UPLOAD_LOCK_TTL_MS,
+      );
+      if (renewed !== 1) {
+        logger.warn('[AgentManagement] Lost Agent file upload lock before processing completed');
+      }
+    } catch (error) {
+      logger.warn('[AgentManagement] Failed to renew Agent file upload lock', error);
+    } finally {
+      if (!stopped) {
+        renewalTimer = setTimeout(renewLease, AGENT_UPLOAD_LOCK_RENEW_MS);
+        renewalTimer.unref?.();
+      }
+    }
+  };
+  renewalTimer = setTimeout(renewLease, AGENT_UPLOAD_LOCK_RENEW_MS);
+  renewalTimer.unref?.();
   try {
     return await task();
   } finally {
+    stopped = true;
+    clearTimeout(renewalTimer);
     try {
       await ioredisClient.eval(releaseUploadLockScript, 1, lockKey, token);
     } catch (error) {
@@ -124,7 +158,16 @@ const fileHandlers = createAgentManagementFileHandlers({
   },
   runUploadExclusive: withAgentUploadLock,
 });
-const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
+const sendUploadRateLimit = (_req, res) =>
+  res.status(429).json({
+    error: {
+      code: 'invalid_request',
+      message: 'Too many file upload requests. Try again later',
+    },
+  });
+const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters({
+  onLimit: sendUploadRateLimit,
+});
 const uploadSingleFile = async (req, res, next) => {
   try {
     const upload = await createMulterInstance({

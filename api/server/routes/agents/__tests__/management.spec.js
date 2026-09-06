@@ -70,6 +70,11 @@ const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
 });
 const mockRedisSet = jest.fn().mockResolvedValue('OK');
 const mockRedisEval = jest.fn().mockResolvedValue(1);
+let mockRateLimitIp = false;
+const mockCreateFileLimiters = jest.fn(({ onLimit } = {}) => ({
+  fileUploadIpLimiter: jest.fn((req, res, next) => (mockRateLimitIp ? onLimit(req, res) : next())),
+  fileUploadUserLimiter: jest.fn((_req, _res, next) => next()),
+}));
 
 const mockRequireAgentManagementAuth = jest.fn((req, res, next) => {
   if (req.headers.authorization !== 'Bearer valid-token') {
@@ -95,10 +100,7 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/server/middleware', () => ({
   checkBan: mockCheckBan,
   configMiddleware: mockConfigMiddleware,
-  createFileLimiters: jest.fn(() => ({
-    fileUploadIpLimiter: jest.fn((_req, _res, next) => next()),
-    fileUploadUserLimiter: jest.fn((_req, _res, next) => next()),
-  })),
+  createFileLimiters: mockCreateFileLimiters,
   uaParser: mockUaParser,
 }));
 jest.mock('~/server/routes/files/multer', () => ({
@@ -141,6 +143,7 @@ describe('Agent Management route boundary', () => {
     mockUploadMiddleware.mockClear();
     mockRedisSet.mockClear();
     mockRedisEval.mockClear();
+    mockRateLimitIp = false;
   });
 
   it('rejects a request before reaching management routes without machine authentication', async () => {
@@ -333,6 +336,56 @@ describe('Agent Management route boundary', () => {
       'agent-management:file-upload:tenant-a:agent-one:context',
       expect.any(String),
     );
+  });
+
+  it('renews the shared Agent upload lock while processing is still running', async () => {
+    jest.useFakeTimers();
+    let completeUpload;
+    const task = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          completeUpload = resolve;
+        }),
+    );
+
+    try {
+      const pendingUpload = mockFileDeps.runUploadExclusive('tenant-a:agent-one:context', task);
+      await Promise.resolve();
+      jest.advanceTimersByTime((10 * 60 * 1000) / 3);
+      await Promise.resolve();
+
+      expect(mockRedisEval).toHaveBeenCalledWith(
+        expect.stringContaining("redis.call('PEXPIRE', KEYS[1], ARGV[2])"),
+        1,
+        'agent-management:file-upload:tenant-a:agent-one:context',
+        expect.any(String),
+        10 * 60 * 1000,
+      );
+
+      completeUpload('uploaded');
+      await expect(pendingUpload).resolves.toBe('uploaded');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('maps upload quota failures into the management error contract', async () => {
+    mockRateLimitIp = true;
+
+    const response = await request(app)
+      .post('/api/agents/v1/agents/agent-one/files')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ purpose: 'context' });
+
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({
+      error: {
+        code: 'invalid_request',
+        message: 'Too many file upload requests. Try again later',
+      },
+    });
+    expect(mockFileAuthorizeUpload).not.toHaveBeenCalled();
+    expect(mockFileUpload).not.toHaveBeenCalled();
   });
 
   it('maps multipart failures into the management error contract', async () => {
