@@ -115,21 +115,36 @@ export default function useTextarea({
     latestMessage?.error === true && latestMessage.isCreatedByUser === true && !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
+  const insertComposerText = useCallback(
+    (text: string) => {
+      const textarea = textAreaRef.current;
+      if (!textarea) {
+        return false;
+      }
+
+      const { value, selectionStart, selectionEnd } = textarea;
+      const nextCursor = selectionStart + text.length;
+      setValue('text', `${value.slice(0, selectionStart)}${text}${value.slice(selectionEnd)}`, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      forceResize(textarea);
+      textarea.focus();
+      textarea.setSelectionRange(nextCursor, nextCursor);
+      return true;
+    },
+    [setValue, textAreaRef],
+  );
+
   useEffect(() => {
     const prompt = activePrompt ?? '';
-    const textarea = textAreaRef.current;
-    if (!prompt || !textarea) {
+    if (!prompt || !insertComposerText(prompt)) {
       return;
     }
 
-    const { value, selectionStart, selectionEnd } = textarea;
-    const nextValue = `${value.slice(0, selectionStart)}${prompt}${value.slice(selectionEnd)}`;
-    const nextCursor = selectionStart + prompt.length;
-    setValue('text', nextValue, { shouldDirty: true, shouldValidate: true });
-    textarea.setSelectionRange(nextCursor, nextCursor);
-    forceResize(textarea);
     setActivePrompt(undefined);
-  }, [activePrompt, setActivePrompt, setValue, textAreaRef]);
+  }, [activePrompt, insertComposerText, setActivePrompt]);
 
   /** Text a surface the user was leaving handed to THIS conversation (see
    *  `pendingComposerTextByConvoId`). It is drained once, on the first render
@@ -137,11 +152,12 @@ export default function useTextarea({
    *  navigation that resolves its record before moving the route. */
   useEffect(() => {
     const text = pendingComposerText ?? '';
-    if (text === '' || textAreaRef.current == null) return;
-    insertTextAtCursor(textAreaRef.current, text);
-    forceResize(textAreaRef.current);
+    if (text === '' || !insertComposerText(text)) {
+      return;
+    }
+
     setPendingComposerText(undefined);
-  }, [pendingComposerText, setPendingComposerText, textAreaRef]);
+  }, [insertComposerText, pendingComposerText, setPendingComposerText]);
 
   useEffect(() => {
     const currentValue = textAreaRef.current?.value ?? '';
