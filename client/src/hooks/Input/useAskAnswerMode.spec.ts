@@ -16,6 +16,7 @@ const mockGetComposerText = jest.fn(() => 'answer from A');
 const mockSetComposerText = jest.fn();
 const mockSetDraft = jest.fn();
 let mockSaveDrafts = false;
+let mockAskStatus = 'idle';
 let jotaiStore = createStore();
 
 const JotaiWrapper = ({ children }: { children: React.ReactNode }) =>
@@ -27,7 +28,7 @@ const JotaiWrapper = ({ children }: { children: React.ReactNode }) =>
 
 jest.mock('~/data-provider', () => ({ useGetMessagesByConvoId: jest.fn() }));
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
-  useAskSubmitStatus: () => ({ getAskStatus: () => 'idle' }),
+  useAskSubmitStatus: () => ({ getAskStatus: () => mockAskStatus }),
   useResumeSubmit: () => ({ submitAskAnswer: mockSubmitAskAnswer }),
 }));
 jest.mock('~/Providers', () => ({
@@ -66,8 +67,11 @@ describe('useAskAnswerMode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSaveDrafts = false;
+    mockAskStatus = 'idle';
     jotaiStore = createStore();
     mockGetComposerText.mockReturnValue('answer from A');
+    mockSetComposerText.mockReset();
+    mockSubmitAskAnswer.mockReset();
   });
 
   it('is active when a live ask is available', () => {
@@ -230,6 +234,68 @@ describe('useAskAnswerMode', () => {
     expect(jotaiStore.get(askAnswerTextAtom)).toEqual({
       a1: 'answer from A',
       a2: 'answer from B',
+    });
+  });
+
+  it.each(['expired', 'submitted', 'removed'])(
+    'restores the released message when the question is %s',
+    (terminal) => {
+      let composerText = 'answer from A';
+      mockGetComposerText.mockImplementation(() => composerText);
+      mockSetComposerText.mockImplementation((_name: string, text: string) => {
+        composerText = text;
+      });
+      mockUseGetMessages.mockReturnValue({ data: liveAsk });
+      const { result, rerender } = renderHook(() => useAskAnswerMode('conversation-1'), {
+        wrapper: JotaiWrapper,
+      });
+      act(() => result.current.collapse());
+      composerText = 'an ordinary unsent message';
+      act(() => result.current.expand());
+      expect(composerText).toBe('answer from A');
+
+      if (terminal === 'removed') {
+        mockUseGetMessages.mockReturnValue({ data: null });
+      } else {
+        mockAskStatus = terminal;
+      }
+      rerender();
+
+      expect(result.current.active).toBe(false);
+      expect(composerText).toBe('an ordinary unsent message');
+      expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({});
+    },
+  );
+
+  it('preserves newer composer edits when an in-flight question expires', () => {
+    jotaiStore.set(releasedComposerTextAtom, { a1: 'an older message' });
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { rerender } = renderHook(() => useAskAnswerMode('conversation-1'), {
+      wrapper: JotaiWrapper,
+    });
+    mockAskStatus = 'submitting';
+    rerender();
+    mockGetComposerText.mockReturnValue('newer message typed during submission');
+    mockAskStatus = 'expired';
+    rerender();
+
+    expect(mockSetComposerText).not.toHaveBeenCalled();
+    expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({});
+  });
+
+  it('does not restore a departed conversation stash into a different composer', () => {
+    jotaiStore.set(releasedComposerTextAtom, { a1: 'message for conversation A' });
+    mockUseGetMessages.mockReturnValue({ data: liveAsk });
+    const { rerender } = renderHook(({ id }) => useAskAnswerMode(id), {
+      initialProps: { id: 'conversation-1' },
+      wrapper: JotaiWrapper,
+    });
+    mockUseGetMessages.mockReturnValue({ data: null });
+    rerender({ id: 'conversation-2' });
+
+    expect(mockSetComposerText).not.toHaveBeenCalled();
+    expect(jotaiStore.get(releasedComposerTextAtom)).toEqual({
+      a1: 'message for conversation A',
     });
   });
 

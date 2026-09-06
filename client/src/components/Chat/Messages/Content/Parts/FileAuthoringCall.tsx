@@ -51,18 +51,31 @@ function textValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function coerceJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Structured edits for the args preview. Never formatted into diff text:
  *  `buildEditPreviewDiff` renders them directly, so no separator has to be
  *  invented and later told apart from real content. */
 function buildEditArgsPreview(args: ToolCallArgs): TextEditPreview[] {
   const parsed = parseArgsObject(args);
-  if (Array.isArray(parsed?.edits) && parsed.edits.length > 0) {
-    return parsed.edits
+  const edits = coerceJsonValue(parsed?.edits);
+  if (Array.isArray(edits) && edits.length > 0) {
+    return edits
       .map((edit): TextEditPreview | undefined => {
-        if (typeof edit !== 'object' || edit === null || Array.isArray(edit)) {
+        const coercedEdit = coerceJsonValue(edit);
+        if (typeof coercedEdit !== 'object' || coercedEdit === null || Array.isArray(coercedEdit)) {
           return undefined;
         }
-        const entry = edit as Record<string, unknown>;
+        const entry = coercedEdit as Record<string, unknown>;
         const oldText = textValue(entry.old_text);
         const newText = textValue(entry.new_text);
         return oldText || newText ? { oldText, newText } : undefined;

@@ -234,6 +234,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     isCreatedByUser: false,
     isLast: true,
     isSubmitting: false,
+    showThinking: false,
     isLatestMessage: true,
   };
 
@@ -597,6 +598,7 @@ describe('ContentParts — synthesized activity folds', () => {
     messageId: 'msg1',
     isCreatedByUser: false,
     isLast: true,
+    showThinking: false,
     isSubmitting: false,
     isLatestMessage: true,
   };
@@ -952,6 +954,7 @@ describe('ContentParts integration: phase media row', () => {
     isCreatedByUser: false,
     isLast: true,
     isSubmitting: false,
+    showThinking: false,
     isLatestMessage: true,
   };
 
@@ -1030,6 +1033,7 @@ describe('ContentParts integration: lane groups backed by one agent', () => {
     isCreatedByUser: false,
     isLast: true,
     isSubmitting: false,
+    showThinking: false,
     isLatestMessage: true,
   };
 

@@ -132,6 +132,63 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     () => splitOtherOption(batchMode ? undefined : liveAsk?.question.options),
     [batchMode, liveAsk],
   );
+
+  const lastAnswerableRef = useRef<{
+    conversationId: typeof conversationId;
+    actionId: string;
+    submitting: boolean;
+    composerText: string;
+  } | null>(null);
+  /** Expiration and server-side removal bypass the success callback. Recover
+   *  the in-memory message on those exits too, without crossing conversations
+   *  or replacing text edited while a resume was in flight. */
+  useEffect(() => {
+    const previous = lastAnswerableRef.current;
+    if (answerable && liveAsk) {
+      const sameAction =
+        previous != null &&
+        previous.conversationId === conversationId &&
+        previous.actionId === liveAsk.actionId;
+      const submitting = status === 'submitting';
+      lastAnswerableRef.current = {
+        conversationId,
+        actionId: liveAsk.actionId,
+        submitting,
+        composerText:
+          sameAction && submitting && previous.submitting
+            ? previous.composerText
+            : (formContext?.getValues('text') ?? ''),
+      };
+      return;
+    }
+    lastAnswerableRef.current = null;
+    if (!previous || previous.conversationId !== conversationId) {
+      return;
+    }
+    const released = releasedComposerText[previous.actionId];
+    if (released == null) {
+      return;
+    }
+    if (!previous.submitting || formContext?.getValues('text') === previous.composerText) {
+      formContext?.setValue('text', released);
+    }
+    setReleasedComposerText((current) => {
+      if (current[previous.actionId] == null) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[previous.actionId];
+      return next;
+    });
+  }, [
+    answerable,
+    conversationId,
+    liveAsk,
+    status,
+    formContext,
+    releasedComposerText,
+    setReleasedComposerText,
+  ]);
   const answerText = liveAsk != null ? (answerDrafts[liveAsk.actionId] ?? '') : '';
   const setAnswerText = useCallback(
     (text: string) => {
@@ -284,10 +341,10 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    * flight).
    *
    * The selection/composer cleanup runs ONLY after the resume is accepted (in
-   * `submitAskAnswer`'s success path): a failed resume — the 16k answer-cap
-   * 400, an expired action, a network error — leaves `status` re-answerable,
-   * so wiping the composer (the user's only copy of a free-form answer) up
-   * front would lose it. The composer only resets when its text was consumed
+   * `submitAskAnswer`'s success path): a retryable failed resume — the 16k
+   * answer-cap 400 or a network error — must preserve the user's free-form
+   * answer. Terminal exits separately restore any released normal message.
+   * The composer only resets when its text was consumed
    * by the answer or when the draft machinery will restore the stashed
    * conversation draft; with drafts disabled and an option-click answer the
    * typed text is left alone.

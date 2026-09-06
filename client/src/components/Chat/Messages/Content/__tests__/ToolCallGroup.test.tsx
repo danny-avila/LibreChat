@@ -259,6 +259,7 @@ describe('ToolCallGroup image hoisting', () => {
     parts,
     isSubmitting: false,
     isLast: false,
+    showThinking: false,
     lastContentIdx: 1,
     renderPart: (_p: TMessageContentParts, idx: number) => (
       <div data-testid={`inner-${idx}`} key={idx}>

@@ -174,6 +174,7 @@ const baseProps = {
   isSubmitting: false,
   isLatestMessage: false,
   isCreatedByUser: false,
+  showThinking: false,
   content: [],
 };
 

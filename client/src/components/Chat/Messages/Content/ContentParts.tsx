@@ -206,6 +206,7 @@ type ContentPartsProps = {
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
   isCreatedByUser: boolean;
+  showThinking: boolean;
   isLast: boolean;
   isSubmitting: boolean;
   isLatestMessage?: boolean;
@@ -269,6 +270,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   authorHeader,
   conversationId,
   isCreatedByUser,
+  showThinking,
   isLatestMessage,
   createdAt,
   nestedActivityPhase = false,
@@ -811,6 +813,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
+          showThinking={showThinking}
           withinActivityPhase={withinPhase}
           cursorOwnedElsewhere={cursorOwnedByCard}
           hideAttachments={hoisted}
@@ -1057,6 +1060,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               lastContentIdx={lastContentIdx}
               groupAttachments={group.groupAttachments}
               initialExpansionState={expansionState.get(groupId)}
+              showThinking={showThinking}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
               labelPart={group.labelPart}
               withinActivityPhase={withinActivityPhase}

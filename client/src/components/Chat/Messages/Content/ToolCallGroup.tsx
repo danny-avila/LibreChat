@@ -1,5 +1,4 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
@@ -28,7 +27,6 @@ import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { isError, StackedToolIcons } from './ToolOutput';
-import { showThinkingAtom } from '~/store/showThinking';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import SearchVerticals from './verticals';
@@ -201,6 +199,7 @@ interface ToolCallGroupProps {
   parts: PartWithIndex[];
   isSubmitting: boolean;
   isLast: boolean;
+  showThinking: boolean;
   renderPart: (
     part: TMessageContentParts,
     idx: number,
@@ -233,6 +232,7 @@ export default function ToolCallGroup({
   parts,
   isSubmitting,
   isLast,
+  showThinking,
   renderPart,
   lastContentIdx,
   groupAttachments,
@@ -244,7 +244,6 @@ export default function ToolCallGroup({
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const mcpServerNames = useMCPServerNames();
-  const showThinking = useAtomValue(showThinkingAtom);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const retainedForPendingApprovalRef = useRef(false);

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
@@ -14,6 +15,7 @@ import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { showThinkingAtom } from '~/store/showThinking';
 import Elapsed, { shouldShowElapsed } from './Elapsed';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
@@ -46,6 +48,7 @@ function MessageParts(props: TMessageProps) {
   } = useMessageHelpers(props, searchResults);
 
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const showThinking = useAtomValue(showThinkingAtom);
   const { messageId = null, isCreatedByUser } = message ?? {};
 
   const name = useMemo(() => {
@@ -173,6 +176,7 @@ function MessageParts(props: TMessageProps) {
             setSiblingIdx={setSiblingIdx}
             isCreatedByUser={message.isCreatedByUser}
             conversationId={conversation?.conversationId}
+            showThinking={showThinking}
             isLatestMessage={messageId === latestMessageId}
             content={message.content as Array<TMessageContentParts | undefined>}
           />
