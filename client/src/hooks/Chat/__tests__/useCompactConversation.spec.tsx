@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import useCompactConversation, { useIsConversationCompacting } from '../useCompactConversation';
 
 let mockSettle: (() => void) | null = null;
+let mockReject: ((reason?: unknown) => void) | null = null;
+const mockShowToast = jest.fn();
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({
@@ -14,7 +16,7 @@ jest.mock('~/Providers', () => ({
   }),
 }));
 jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 jest.mock('~/data-provider', () => {
   const tanstack = jest.requireActual('@tanstack/react-query');
@@ -23,8 +25,9 @@ jest.mock('~/data-provider', () => {
       tanstack.useMutation({
         mutationKey: ['compactConversation'],
         mutationFn: () =>
-          new Promise<{ conversationId: string }>((resolve) => {
+          new Promise<{ conversationId: string }>((resolve, reject) => {
             mockSettle = () => resolve({ conversationId: 'convo_1' });
+            mockReject = reject;
           }),
       }),
   };
@@ -64,11 +67,12 @@ function Harness({ showConsumer }: { showConsumer: boolean }) {
 describe('useCompactConversation', () => {
   beforeEach(() => {
     mockSettle = null;
+    mockReject = null;
+    mockShowToast.mockClear();
     compactFn = () => undefined;
     canCompactValue = true;
     lockValue = false;
   });
-
   it('raises the lock while pending and releases it when the mutation settles', async () => {
     render(<Harness showConsumer />);
     act(() => compactFn());
@@ -78,6 +82,29 @@ describe('useCompactConversation', () => {
       mockSettle?.();
     });
     await waitFor(() => expect(lockValue).toBe(false));
+  });
+
+  it('shows an insufficient-balance warning when compaction is refused', async () => {
+    render(<Harness showConsumer />);
+    act(() => compactFn());
+    await waitFor(() => expect(mockReject).not.toBeNull());
+
+    await act(async () => {
+      mockReject?.({
+        response: {
+          status: 402,
+          data: { code: 'INSUFFICIENT_BALANCE' },
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_ui_context_compact_insufficient_balance',
+        severity: 'warning',
+      }),
+    );
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the lock across unmount and rediscovers it on remount', async () => {

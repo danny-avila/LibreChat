@@ -1,6 +1,7 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { TMessage } from 'librechat-data-provider';
+import type { CompactConversationParams } from '../summary';
 import type { CompactRequestDeps } from '../request';
 import type { ServerRequest } from '~/types';
 
@@ -147,9 +148,8 @@ describe('handleCompactRequest', () => {
     const saved = (deps.saveMessage as jest.Mock).mock.calls[0][1];
     expect(saved.content).toEqual([SUMMARY]);
     expect(saved.content[0]).toMatchObject({ initiatedBy: 'user' });
-    /** Summary tokens plus the branch's observed instruction overhead: the
-     *  client stops adding its own once this marker exists. */
-    expect(saved.metadata.summaryUsedTokens).toBe(520);
+    expect(saved.metadata.summaryUsedTokens).toBe(120);
+    expect(saved.metadata.summaryExcludesOverhead).toBe(true);
     expect(saved.metadata.usage).toMatchObject({ input: 900, output: 80 });
     /** Inherits the branch's assistant identity. */
     expect(saved.sender).toBe('Claude');
@@ -207,6 +207,40 @@ describe('handleCompactRequest', () => {
     expect(ctx.isTemporary).toBeUndefined();
     const convoCtx = (deps.saveConvo as jest.Mock).mock.calls[0][0];
     expect(convoCtx.isTemporary).toBeUndefined();
+  });
+
+  it('ignores a client attempt to make a permanent conversation temporary', async () => {
+    const req = makeReq({ isTemporary: true });
+    req.resolvedConversation = { conversationId: 'convo_1', isTemporary: false };
+    const deps = makeDeps();
+
+    const result = await handleCompactRequest({ req, res }, deps);
+
+    expect(result.status).toBe(201);
+    expect((deps.saveMessage as jest.Mock).mock.calls[0][0].isTemporary).toBe(false);
+    expect((deps.saveConvo as jest.Mock).mock.calls[0][0].isTemporary).toBe(false);
+  });
+
+  it('does not trust a temporary flag when legacy stored messages are permanent', async () => {
+    const deps = makeDeps();
+
+    const result = await handleCompactRequest({ req: makeReq({ isTemporary: true }), res }, deps);
+
+    expect(result.status).toBe(201);
+    expect((deps.saveMessage as jest.Mock).mock.calls[0][0].isTemporary).not.toBe(true);
+    expect((deps.saveConvo as jest.Mock).mock.calls[0][0].isTemporary).not.toBe(true);
+  });
+
+  it('keeps a temporary conversation temporary when the client and legacy messages disagree', async () => {
+    const req = makeReq({ isTemporary: false });
+    req.resolvedConversation = { conversationId: 'convo_1', isTemporary: true };
+    const deps = makeDeps();
+
+    const result = await handleCompactRequest({ req, res }, deps);
+
+    expect(result.status).toBe(201);
+    expect((deps.saveMessage as jest.Mock).mock.calls[0][0].isTemporary).toBe(true);
+    expect((deps.saveConvo as jest.Mock).mock.calls[0][0].isTemporary).toBe(true);
   });
 
   it('refuses an Assistants conversation instead of failing inside model resolution', async () => {
@@ -540,6 +574,36 @@ describe('handleCompactRequest', () => {
     expect(order).toEqual(['job', 'siblings']);
   });
 
+  it('returns an insufficient-balance refusal before spending or saving a summary', async () => {
+    const req = makeReq();
+    (req.config as AppConfig).balance = { enabled: true };
+    const deps = makeDeps({
+      findBalanceByUser: jest.fn().mockResolvedValue({ tokenCredits: 0 }),
+    });
+    mockCompactConversation.mockImplementation(
+      async ({ beforeInvoke }: CompactConversationParams) => {
+        await beforeInvoke?.({
+          promptTokens: 100,
+          passPromptTokens: [100],
+          model: 'gpt-4o-mini',
+          provider: 'openAI',
+          endpoint: 'openAI',
+          balanceEndpoint: 'openAI',
+        });
+        throw new Error('The insufficient-balance gate should have refused this request');
+      },
+    );
+
+    const result = await handleCompactRequest({ req, res }, deps);
+
+    expect(result).toMatchObject({ status: 402, code: 'INSUFFICIENT_BALANCE' });
+    expect(deps.insertMany).not.toHaveBeenCalled();
+    expect(deps.spendTokens).not.toHaveBeenCalled();
+    expect(deps.spendStructuredTokens).not.toHaveBeenCalled();
+    expect(deps.saveMessage).not.toHaveBeenCalled();
+    expect(deps.saveConvo).not.toHaveBeenCalled();
+  });
+
   it('prices the balance gate at the largest pass, not the summed estimate', async () => {
     /** Premium long-context rates are keyed off ONE call's input. Without it
      *  the gate approves at the standard rate a call that is then charged at
@@ -672,15 +736,21 @@ describe('handleCompactRequest', () => {
     );
   });
 
-  it('omits the flag when a snapshot supplied the overhead', async () => {
-    const deps = makeDeps();
+  it('does not reuse unversioned overhead even when the endpoint and model still match', async () => {
+    const branch = [BRANCH[0], { ...BRANCH[1], endpoint: 'openAI', model: 'gpt-4o-mini' }];
+    const deps = makeDeps({
+      getMessages: jest.fn(async (filter) => (filter.parentMessageId == null ? branch : [])),
+    });
 
-    await handleCompactRequest({ req: makeReq(), res }, deps);
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
 
-    const saved = (deps.saveMessage as jest.Mock).mock.calls[0][1] as Partial<TMessage>;
-    expect(saved.metadata).not.toHaveProperty('summaryExcludesOverhead');
-    /** 120 summary tokens plus the snapshot's 400 of instruction overhead. */
-    expect(saved.metadata?.summaryUsedTokens).toBe(520);
+    expect(result.status).toBe(201);
+    if (result.status === 201 && 'message' in result) {
+      expect(result.message.metadata).toMatchObject({
+        summaryUsedTokens: 120,
+        summaryExcludesOverhead: true,
+      });
+    }
   });
 
   it('bills a locally counted estimate when the provider reported no usage', async () => {

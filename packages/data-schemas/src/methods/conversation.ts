@@ -2351,12 +2351,16 @@ export function createConversationMethods(
         /* This backfill runs after the main write, so it needs the same timestamp
            suppression: otherwise the first pin or archive of a legacy chat under
            `RetentionMode.ALL` bumps `updatedAt` here and lands in Today anyway. */
-        await Conversation.updateOne(
-          { _id: conversation._id, isTemporary: { $ne: false } },
-          { $set: { isTemporary: false } },
-          preserveUpdatedAt ? { timestamps: false } : {},
-        );
-        conversation.isTemporary = false;
+        try {
+          await Conversation.updateOne(
+            { _id: conversation._id, isTemporary: { $ne: false } },
+            { $set: { isTemporary: false } },
+            preserveUpdatedAt ? { timestamps: false } : {},
+          );
+          conversation.isTemporary = false;
+        } catch (error) {
+          logger.error('[saveConvo] Error backfilling retention flag after save', error);
+        }
       }
 
       const newChatProjectId = conversation.chatProjectId ?? null;

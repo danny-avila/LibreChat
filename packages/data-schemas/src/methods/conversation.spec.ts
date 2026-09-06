@@ -1350,6 +1350,47 @@ describe('Conversation Operations', () => {
       expect(result?.expiredAt).toBeDefined();
       expect(result?.isTemporary).toBe(false);
     });
+    it('retains the committed summary reference when legacy retention backfill fails', async () => {
+      const conversationId = uuidv4();
+      const summaryMessageId = new mongoose.Types.ObjectId();
+      const anchor = new Date('2026-03-05T22:17:14.997Z');
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title: 'Legacy summary',
+        endpoint: EModelEndpoint.openAI,
+        messages: [],
+        expiredAt: null,
+        isArchived: false,
+        createdAt: anchor,
+        updatedAt: anchor,
+      });
+
+      const updateSpy = jest
+        .spyOn(Conversation, 'updateOne')
+        .mockRejectedValueOnce(new Error('retention backfill failed'));
+      try {
+        const result = await saveConvo(
+          {
+            userId: 'user123',
+            interfaceConfig: { retentionMode: RetentionMode.ALL, temporaryChatRetention: 24 },
+          },
+          { conversationId, title: 'Committed summary' },
+          { appendMessageIds: [summaryMessageId], noUpsert: true },
+        );
+
+        expect(result?.title).toBe('Committed summary');
+        expect(result?.expiredAt).toBeInstanceOf(Date);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        updateSpy.mockRestore();
+      }
+
+      const persisted = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(persisted?.title).toBe('Committed summary');
+      expect(persisted?.messages?.map(String)).toContain(String(summaryMessageId));
+      expect(persisted?.expiredAt).toBeInstanceOf(Date);
+    });
 
     it('should preserve existing temporary flag when retentionMode is ALL and isTemporary is omitted', async () => {
       mockCtx.isTemporary = true;

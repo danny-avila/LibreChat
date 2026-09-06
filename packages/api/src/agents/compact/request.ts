@@ -69,6 +69,7 @@ export const CompactErrorCodes = {
   ILLEGAL_MODEL: 'ILLEGAL_MODEL',
   SAVE_FAILED: 'SAVE_FAILED',
   CONTENT_FILTER_BLOCK: 'CONTENT_FILTER_BLOCK',
+  INSUFFICIENT_BALANCE: 'INSUFFICIENT_BALANCE',
   FAILED: 'FAILED',
 } as const;
 
@@ -218,19 +219,6 @@ async function isGenerating(
     job.status === 'requires_action' ||
     job.metadata?.terminalPersistencePending === true
   );
-}
-
-/**
- * Instruction + tool-schema overhead observed on the branch's most recent
- * response. Same agent and model, so it is the right constant to fold into the
- * compacted baseline the client reads.
- */
-function priorInstructionTokens(priorResponse?: TMessage): number {
-  const snapshot = priorResponse?.metadata?.contextUsage as
-    | { effectiveInstructionTokens?: number; breakdown?: { instructionTokens?: number } }
-    | undefined;
-  const tokens = snapshot?.effectiveInstructionTokens ?? snapshot?.breakdown?.instructionTokens;
-  return typeof tokens === 'number' && tokens > 0 ? tokens : 0;
 }
 
 /**
@@ -465,10 +453,7 @@ export async function handleCompactRequest(
       };
     }
 
-    /** Inherit the branch's own assistant identity so the compaction message
-     *  carries the same name and avatar as the responses around it, and its
-     *  instruction overhead so the persisted baseline matches the automatic
-     *  path's. */
+    /** Inherit the branch's assistant name and avatar. */
     let priorResponse: TMessage | undefined;
     for (let i = branch.length - 1; i >= 0 && !priorResponse; i--) {
       if (branch[i].isCreatedByUser === false) {
@@ -628,17 +613,13 @@ export async function handleCompactRequest(
       };
     }
 
-    const instructionTokens = priorInstructionTokens(priorResponse);
-    /** Retention follows the conversation the branch belongs to: an omitted
-     *  flag must not promote an expiring chat to permanent, and a temporary
-     *  chat keeps its expiry on the new summary. The branch's own rows are
-     *  the server-side truth, so the client cannot flip it either way. */
+    /** Retention is server-owned. Prefer the authorized conversation, falling
+     *  back to stored messages for legacy callers without a resolved row. */
     const persistenceContext: CompactPersistenceContext = {
       userId,
       isTemporary:
-        body.isTemporary === true ||
-        (allMessages ?? []).some((message) => message.isTemporary === true) ||
-        undefined,
+        req.resolvedConversation?.isTemporary ??
+        ((allMessages ?? []).some((message) => message.isTemporary === true) || undefined),
       interfaceConfig: appConfig?.interfaceConfig,
     };
     const savedMessage = await deps.saveMessage(
@@ -667,19 +648,11 @@ export async function handleCompactRequest(
         unfinished: false,
         error: false,
         metadata: {
-          /** Caps the client-side context estimate at the compacted baseline
-           *  instead of re-summing the history the summary replaced. The client
-           *  stops adding its own cached instruction overhead once this marker
-           *  exists, so the marker has to carry that overhead the way
-           *  `computeSummaryUsedTokens` does. */
-          summaryUsedTokens: (result.summary.tokenCount ?? 0) + instructionTokens,
-          /** A conversation whose prior responses carry no context snapshot
-           *  (the `BaseClient` path writes none) leaves the instruction and
-           *  tool-schema overhead unknown here. The client suppresses its own
-           *  cached overhead whenever a baseline exists, so it has to be told
-           *  when this one does NOT carry it, or the gauge understates a large
-           *  system prompt for the rest of the conversation. */
-          ...(instructionTokens === 0 && { summaryExcludesOverhead: true }),
+          /** Historical snapshots cannot prove the current instruction/tool
+           *  configuration, even when the model matches. Let the client add
+           *  its current model overhead instead of freezing a stale value. */
+          summaryUsedTokens: result.summary.tokenCount ?? 0,
+          summaryExcludesOverhead: true,
           /** The context-usage UI rebuilds branch and session totals from each
            *  response message's `metadata.usage`, so a compaction the user was
            *  charged for is invisible in them without it. */
@@ -822,6 +795,13 @@ export async function handleCompactRequest(
         error: 'Compaction was blocked by the content policy',
         code: CompactErrorCodes.CONTENT_FILTER_BLOCK,
         ...(policyError.body != null && { body: { ...policyError.body } }),
+      };
+    }
+    if (error instanceof Error && error.message.includes(ViolationTypes.TOKEN_BALANCE)) {
+      return {
+        status: 402,
+        error: 'Insufficient balance to compact conversation',
+        code: CompactErrorCodes.INSUFFICIENT_BALANCE,
       };
     }
     logger.error('[compact] Error compacting conversation', error);
