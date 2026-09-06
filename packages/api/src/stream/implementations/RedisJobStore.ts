@@ -25,8 +25,8 @@ import type {
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
-  EarlyBufferOverflowState,
 } from '~/stream/interfaces/IJobStore';
+import type { EarlyBufferOverflowState } from '../../types/earlyBufferRecovery';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {

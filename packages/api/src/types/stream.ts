@@ -9,7 +9,7 @@ import type {
   AgentEventSuspensionProjection,
   AgentTriggerExpectedAction,
 } from '../agents/triggers/types';
-import type { EarlyBufferOverflowState } from '~/stream/interfaces/IJobStore';
+import type { EarlyBufferOverflowState } from './earlyBufferRecovery';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { MCPRuntimeRequestBody } from '../mcp/types';

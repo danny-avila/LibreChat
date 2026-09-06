@@ -22,8 +22,8 @@ import type {
   IdempotencyClaimValue,
   IdempotencyClaimResult,
   ParkedSteerClaim,
-  EarlyBufferOverflowState,
 } from '~/stream/interfaces/IJobStore';
+import type { EarlyBufferOverflowState } from '../../types/earlyBufferRecovery';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobStatusTransitionDeadlineError,

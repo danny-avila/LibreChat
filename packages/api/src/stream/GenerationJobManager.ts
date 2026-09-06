@@ -31,9 +31,11 @@ import type {
   PreemptMessage,
   SteerQueueItem,
   DetachedAgentEventActionStoreMode,
+} from './interfaces/IJobStore';
+import type {
   EarlyBufferOverflowState,
   EarlyBufferRecoveryFailureReason,
-} from './interfaces/IJobStore';
+} from '../types/earlyBufferRecovery';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { RecoveredSteerPayload } from './SteerRecovery';
 import type { SteerContentView } from './SteeringLifecycle';

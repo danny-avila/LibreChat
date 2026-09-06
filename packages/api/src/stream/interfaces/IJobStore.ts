@@ -14,6 +14,7 @@ import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 import type { MCPRuntimeRequestBody } from '~/mcp/types';
+import type { EarlyBufferOverflowState } from '../../types/earlyBufferRecovery';
 
 /**
  * Detached Event Actor execution guarantee advertised by a generation store.
@@ -97,29 +98,6 @@ export const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
  * Stores must NOT cleanup `requires_action` jobs as if they were complete.
  */
 export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
-
-export type EarlyBufferRecoveryMethod = 'redis' | 'snapshot';
-export type EarlyBufferRecoveryOutcome = 'success' | 'failed';
-export type EarlyBufferRecoveryFailureReason =
-  | 'durable_state_missing'
-  | 'durable_frontier_gap'
-  | 'snapshot_missing'
-  | 'subscriber_never_attached'
-  | 'subscriber_disconnected'
-  | 'reconstruction_error'
-  | 'overflow_marker_persistence_failed';
-
-export interface EarlyBufferOverflowState {
-  id: string;
-  occurredAt: number;
-  durableEvents: number;
-  droppedEvents: number;
-  droppedBytes: number;
-  recoveryMethod?: EarlyBufferRecoveryMethod;
-  recoveryOutcome?: EarlyBufferRecoveryOutcome;
-  recoveryCompletedAt?: number;
-  recoveryFailureReason?: EarlyBufferRecoveryFailureReason;
-}
 
 /** Immutable wire/storage contract selected when a generation is created.
  * Missing markers on pre-rollout records are interpreted as protocol v1. */
