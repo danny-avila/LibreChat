@@ -77,8 +77,22 @@ interface ChatFormProps {
   stopGenerating: () => void;
 }
 
-const interactiveTargetSelector =
-  'button, a, input, select, textarea, label, [role="button"], [role="menu"], [role="menuitem"]';
+/** Targets that own focus themselves: form fields and links, popup disclosures
+ * (Ariakit and Radix both emit `aria-haspopup`), and popup content, which React
+ * bubbles through portals. */
+const focusOwningTargetSelector = [
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  '[aria-haspopup]:not([aria-haspopup="false"])',
+  '[role="combobox"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+].join(', ');
 
 const ChatForm = memo(function ChatForm({
   index,
@@ -165,35 +179,23 @@ const ChatForm = memo(function ChatForm({
     [requiresKey, invalidAssistant],
   );
 
-  /** Skipped on touchscreens so a tap does not raise the keyboard. */
-  const focusTextArea = useCallback(() => {
+  /** The surface returns focus to the textarea after any click (send, stop, badge
+   * toggles), except when the target owns focus itself or opens a popup. Ariakit
+   * records `document.activeElement` at open time as a menu's disclosure, so
+   * refocusing the textarea behind a menu button made the textarea the disclosure
+   * and the menu could never close on textarea interaction (#15624). */
+  const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    /** Check if the device is a touchscreen */
     if (window.matchMedia?.('(pointer: coarse)').matches) {
+      return;
+    }
+    const owner =
+      event.target instanceof Element ? event.target.closest(focusOwningTargetSelector) : null;
+    if (owner && !owner.contains(event.currentTarget)) {
       return;
     }
     textAreaRef.current?.focus();
   }, []);
-
-  /** Ariakit records `document.activeElement` at open time as a menu's disclosure. Stealing
-   * focus from a clicked control makes the textarea that disclosure, so the menu can never
-   * close on textarea interaction (#15624). Only empty composer space focuses the textarea;
-   * controls that finish a composer action (send, steer, stop) restore it themselves. */
-  const handleContainerClick = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      if (event.target instanceof Element && event.target.closest(interactiveTargetSelector)) {
-        return;
-      }
-      focusTextArea();
-    },
-    [focusTextArea],
-  );
-
-  const handleStop = useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>) => {
-      handleStopGenerating(event);
-      focusTextArea();
-    },
-    [handleStopGenerating, focusTextArea],
-  );
 
   const handleFocusOrClick = useCallback(() => {
     if (isCollapsed) {
@@ -523,16 +525,13 @@ const ChatForm = memo(function ChatForm({
           control={methods.control}
           steering={steering}
           getText={() => methods.getValues('text')}
-          onConsumed={() => {
-            methods.reset();
-            focusTextArea();
-          }}
+          onConsumed={() => methods.reset()}
           disabled={filesLoading}
         />
       );
     }
     if (showStopButton) {
-      return <StopButton stop={handleStop} setShowStopButton={setShowStopButton} />;
+      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
     }
     return null;
   })();
@@ -550,7 +549,6 @@ const ChatForm = memo(function ChatForm({
   return (
     <form
       onSubmit={methods.handleSubmit((data) => {
-        focusTextArea();
         // Answer mode: composer text answers the paused run instead of
         // starting a new turn (submitText resets the composer itself).
         // Dismissing the popover — or collapsing a batch, which answers in its
@@ -782,10 +780,7 @@ const ChatForm = memo(function ChatForm({
                       <InterruptSteerButton
                         steering={steering}
                         getText={() => methods.getValues('text')}
-                        onConsumed={() => {
-                          methods.reset();
-                          focusTextArea();
-                        }}
+                        onConsumed={() => methods.reset()}
                         disabled={filesLoading}
                       />
                     </div>

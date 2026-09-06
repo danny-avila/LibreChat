@@ -203,7 +203,7 @@ describe('ChatForm attachments', () => {
     expect(textarea).toHaveFocus();
   }, 20000);
 
-  test('returns focus to the textarea after a mouse click on send', async () => {
+  test('still returns focus to the textarea after a plain control click', async () => {
     renderComposer();
     const textarea = await screen.findByTestId('text-input');
     await userEvent.type(textarea, 'hi');
