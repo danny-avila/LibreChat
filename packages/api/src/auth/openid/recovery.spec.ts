@@ -104,4 +104,49 @@ describe('OpenID authentication publication settlement', () => {
     expect(deps.completeOpenIDRefreshFlight).toHaveBeenCalledTimes(1);
     expect(deps.failOpenIDRefreshFlight).not.toHaveBeenCalled();
   });
+
+  describe('with a stale token set left in the Express session', () => {
+    function buildStaleSession() {
+      return {
+        accessToken: 'stale-access',
+        idToken: 'stale-id',
+        refreshToken: 'stale-refresh',
+        accessTokenExpiresAt: Math.floor(Date.now() / 1000) - 120,
+      };
+    }
+
+    it('publishes the IdP token set at login instead of the stale session set', async () => {
+      const { deps, service, input } = setup();
+      const req = { session: { openidTokens: buildStaleSession() } };
+      await expect(
+        service.sendOpenIDAuthResponse({ ...input, req, discardSessionTokens: true }),
+      ).resolves.toBe('app-token');
+      expect(req.session.openidTokens).toBeUndefined();
+      expect(deps.completeOpenIDRefreshFlight).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokens: expect.objectContaining({
+            tokenset: expect.objectContaining({ access_token: 'access', refresh_token: 'refresh' }),
+          }),
+        }),
+      );
+      expect(deps.setOpenIDAuthTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ access_token: 'access', refresh_token: 'refresh' }),
+        req,
+        input.res,
+        expect.objectContaining({ userId: 'user', existingRefreshToken: 'refresh' }),
+      );
+    });
+
+    it('keeps adopting an advanced session on the refresh path', async () => {
+      const { deps, service, input } = setup();
+      const req = { session: { openidTokens: buildStaleSession() } };
+      await expect(service.sendOpenIDAuthResponse({ ...input, req })).resolves.toBe('app-token');
+      expect(deps.setOpenIDAuthTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ access_token: 'stale-access', refresh_token: 'stale-refresh' }),
+        req,
+        input.res,
+        expect.objectContaining({ existingRefreshToken: 'stale-refresh' }),
+      );
+    });
+  });
 });

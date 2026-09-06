@@ -83,6 +83,7 @@ function createOAuthHandler(redirectUri = domains.client) {
           existingRefreshToken: req.user.tokenset.refresh_token,
           openidSubject: req.user.openidId,
           openidIssuer: req.user.openidIssuer,
+          discardSessionTokens: true,
           req,
           res,
         });

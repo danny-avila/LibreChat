@@ -100,6 +100,12 @@ interface SendOpenIDAuthResponseInput {
     },
   ) => Promise<void>;
   preparePublication?: boolean;
+  /**
+   * A fresh authorization-code login supersedes whatever token set the Express session still
+   * holds from an earlier authentication. The advanced-session comparison exists for refresh
+   * races and must not republish that stale set in place of the tokens the IdP just issued.
+   */
+  discardSessionTokens?: boolean;
 }
 
 export interface OpenIDRefreshRecoveryService {
@@ -679,6 +685,7 @@ export function createOpenIDRefreshRecoveryService(
     publicationGeneration,
     commitPublication,
     preparePublication = true,
+    discardSessionTokens = false,
   }: SendOpenIDAuthResponseInput): Promise<string | undefined> {
     const userId = user._id.toString();
     const publicationIdentity = predecessorIdentity ?? {
@@ -720,6 +727,7 @@ export function createOpenIDRefreshRecoveryService(
             publicationGeneration: sharedGeneration,
             commitPublication: async () => {},
             preparePublication: false,
+            discardSessionTokens,
           });
         }
         let completionStarted = false;
@@ -745,6 +753,7 @@ export function createOpenIDRefreshRecoveryService(
                   ? new Date(flight.flight.createdAt).getTime()
                   : Date.now(),
               },
+              discardSessionTokens,
               commitPublication: async (appAuthToken, publishedTokenset, metadata) => {
                 const completed = await completeOpenIDRefreshFlight({
                   key,
@@ -796,6 +805,9 @@ export function createOpenIDRefreshRecoveryService(
       await new Promise<void>((resolve, reject) => {
         reload((error?: Error | null) => (error ? reject(error) : resolve()));
       });
+    }
+    if (discardSessionTokens && req?.session?.openidTokens) {
+      delete req.session.openidTokens;
     }
     let effectiveTokenset = tokenset;
     let effectiveExistingRefreshToken = existingRefreshToken;
