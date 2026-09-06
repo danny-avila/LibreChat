@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { randomBytes, generateKeyPairSync } from 'node:crypto';
 import { access, chmod, mkdir, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
 import { stopGroup } from './process.mjs';
+import { createLifecycle } from './lifecycle.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(path.join(root, 'api/package.json'));
@@ -25,9 +26,7 @@ await Promise.all(
 );
 const runDir = await mkdtemp(path.join(tmpdir(), 'librechat-native-acceptance-'));
 await chmod(runDir, 0o700);
-const children = [];
-let mongo;
-let stopping;
+const lifecycle = createLifecycle();
 const secret = () => randomBytes(32).toString('hex');
 /** Never inherit provider credentials, worker identities, proxies, or NODE_OPTIONS. */
 const base = Object.fromEntries(
@@ -58,22 +57,24 @@ async function port() {
 }
 
 async function start(name, executable, args, env = {}, cwd = runDir) {
-  if (stopping)
-    throw new Error('Acceptance shutdown has begun; refusing to start another service.');
-  const log = await open(path.join(runDir, `${name}.log`), 'a', 0o600);
-  const child = spawn(executable, args, {
-    cwd,
-    detached: true,
-    env: { ...base, ...env },
-    stdio: ['ignore', log.fd, log.fd],
-  });
-  children.push(child);
-  await new Promise((resolve, reject) => {
-    child.once('spawn', resolve);
-    child.once('error', reject);
-  });
-  await log.close();
-  return child;
+  return lifecycle.acquire(async () => {
+    const log = await open(path.join(runDir, `${name}.log`), 'a', 0o600);
+    try {
+      const child = spawn(executable, args, {
+        cwd,
+        detached: true,
+        env: { ...base, ...env },
+        stdio: ['ignore', log.fd, log.fd],
+      });
+      await new Promise((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', reject);
+      });
+      return child;
+    } finally {
+      await log.close();
+    }
+  }, stopGroup);
 }
 
 async function ready(url, child) {
@@ -91,28 +92,22 @@ async function ready(url, child) {
   throw new Error(`Timed out waiting for ${url}; see ${runDir}`);
 }
 
-async function stop() {
-  if (stopping) return stopping;
-  stopping = (async () => {
-    for (const child of [...children].reverse()) {
-      await stopGroup(child);
-    }
-    await mongo?.stop();
-  })();
-  return stopping;
-}
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
-    void stop().then(() => process.exit(130));
+    void lifecycle.stop().then(() => process.exit(130));
   });
 }
 
 try {
   const { MongoMemoryServer } = require('mongodb-memory-server');
-  mongo = await MongoMemoryServer.create({
-    instance: { ip: '127.0.0.1', dbName: 'byom-acceptance' },
-    spawn: { env: base },
-  });
+  const mongo = await lifecycle.acquire(
+    () =>
+      MongoMemoryServer.create({
+        instance: { ip: '127.0.0.1', dbName: 'byom-acceptance' },
+        spawn: { env: base },
+      }),
+    (instance) => instance.stop(),
+  );
   const redisPort = await port();
   const codePort = await port();
   const appPort = await port();
@@ -251,29 +246,37 @@ try {
     `Native BYOM acceptance: ${appURL}; Code API ${codeURL}; Redis ${redisPort}; Mongo ${mongo.instanceInfo.port}`,
   );
   console.log(`Private run directory: ${runDir}`);
-  const test = spawn(
-    process.execPath,
-    [require.resolve('@playwright/test/cli'), 'test', '--config', 'e2e/byom/playwright.config.ts'],
-    {
-      cwd: root,
-      detached: true,
-      stdio: 'inherit',
-      env: {
-        ...base,
-        E2E_BASE_URL: appURL,
-        BYOM_ACCEPTANCE_DIR: runDir,
-        BYOM_CODE_CLI: cli,
-        E2E_CHROMIUM_CHANNEL: process.env.E2E_CHROMIUM_CHANNEL ?? '',
-      },
-    },
+  const test = await lifecycle.acquire(
+    () =>
+      spawn(
+        process.execPath,
+        [
+          require.resolve('@playwright/test/cli'),
+          'test',
+          '--config',
+          'e2e/byom/playwright.config.ts',
+        ],
+        {
+          cwd: root,
+          detached: true,
+          stdio: 'inherit',
+          env: {
+            ...base,
+            E2E_BASE_URL: appURL,
+            BYOM_ACCEPTANCE_DIR: runDir,
+            BYOM_CODE_CLI: cli,
+            E2E_CHROMIUM_CHANNEL: process.env.E2E_CHROMIUM_CHANNEL ?? '',
+          },
+        },
+      ),
+    stopGroup,
   );
-  children.push(test);
   process.exitCode = await new Promise((resolve, reject) => {
     test.once('error', reject);
     test.once('exit', (code) => resolve(code ?? 1));
   });
 } finally {
-  await stop();
+  await lifecycle.stop();
   console.log(
     `Acceptance logs retained privately at ${runDir}; no existing services or workspaces were changed.`,
   );
