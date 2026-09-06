@@ -35,9 +35,9 @@ import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { getDeploymentSkillIds } from './deployment';
 import { resolveSkillFilePathParam } from './path';
 import { parseSkillMarkdown } from './parse';
-import { getDeploymentSkillIds } from './deployment';
 import { isBinaryBuffer } from './binary';
 
 /** Thin error shape the skill methods throw on validation failure. */
