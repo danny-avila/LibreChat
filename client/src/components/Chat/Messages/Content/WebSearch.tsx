@@ -295,11 +295,13 @@ export default function WebSearch({
                 : completedText
             }
           >
-            {hasSourceData ? (
-              <SourceFaviconStack sources={allSources} />
-            ) : (
-              <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-            )}
+            <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+              {hasSourceData ? (
+                <SourceFaviconStack sources={allSources} />
+              ) : (
+                <Globe className="size-4 shrink-0 text-text-secondary" />
+              )}
+            </span>
             <span className="min-w-0 truncate font-medium">{completedText}</span>
             {hasSourceData && (
               <ChevronDown
@@ -430,7 +432,7 @@ export default function WebSearch({
   }
 
   return (
-    <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
+    <div className="relative my-1 flex h-5 shrink-0 items-center gap-2">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {genericProgressText}
       </span>
