@@ -159,8 +159,6 @@ const INDEX_BUILD_METHODS = new Set([
 ]);
 const INDEX_BUILD_HELPER = 'packages/data-schemas/src/utils/retry.ts';
 const INDEX_BUILD_WRAPPER = 'buildIndexWithRetry';
-/** Meilisearch's client shares the method name and never reaches MongoDB. */
-const NON_MONGO_INDEX_CLIENTS = new Set(['packages/data-schemas/src/models/plugins/mongoMeili.ts']);
 /** Modules that name forbidden operators in order to reject them. */
 const OPERATOR_GUARDS = new Set(['packages/data-schemas/src/tenant/probe.ts']);
 
@@ -242,31 +240,73 @@ function returnsArray(fn: ts.FunctionLikeDeclaration): boolean {
   return found;
 }
 
-/** Names of variables initialized with array literals and of functions that
- * return one, so an indirect `const update = [...]; Model.updateOne(filter,
- * update)` or a `Model.updateMany(filter, buildPipeline(ids))` is still
- * caught. Scope-naive by design: a false positive here names something that
- * holds an array and is passed as an update, which deserves a look regardless. */
+function isArrayReturningFunction(expression: ts.Expression): boolean {
+  return (
+    (ts.isArrowFunction(expression) || ts.isFunctionExpression(expression)) &&
+    returnsArray(expression)
+  );
+}
+
+/** Names of variables initialized with array literals and of functions and
+ * methods that return one, so an indirect `const update = [...];
+ * Model.updateOne(filter, update)`, a `Model.updateMany(filter,
+ * buildPipeline(ids))` or a `builder.pipeline()` is still caught. Scope-naive
+ * by design: a false positive here names something that holds an array and is
+ * passed as an update, which deserves a look regardless. */
 function collectArrayValuedNames(sourceFile: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer != null) {
       const initializer = unwrapExpression(node.initializer);
-      const arrayValued = ts.isArrayLiteralExpression(initializer)
-        ? true
-        : (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) &&
-          returnsArray(initializer);
-      if (arrayValued) {
+      if (ts.isArrayLiteralExpression(initializer) || isArrayReturningFunction(initializer)) {
         names.add(node.name.text);
       }
     }
-    if (ts.isFunctionDeclaration(node) && node.name != null && returnsArray(node)) {
+    if (
+      (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+      node.name != null &&
+      ts.isIdentifier(node.name) &&
+      returnsArray(node)
+    ) {
+      names.add(node.name.text);
+    }
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      isArrayReturningFunction(unwrapExpression(node.initializer))
+    ) {
       names.add(node.name.text);
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
   return names;
+}
+
+/** Object literals bound to variable names, so a stage held in a variable and
+ * pushed or listed later is still inspected. Scope-naive like the array names. */
+function collectObjectValuedNames(
+  sourceFile: ts.SourceFile,
+): Map<string, ts.ObjectLiteralExpression> {
+  const objects = new Map<string, ts.ObjectLiteralExpression>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer != null) {
+      const initializer = unwrapExpression(node.initializer);
+      if (ts.isObjectLiteralExpression(initializer)) {
+        objects.set(node.name.text, initializer);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return objects;
+}
+
+function calleeName(call: ts.CallExpression): string | undefined {
+  if (ts.isIdentifier(call.expression)) {
+    return call.expression.text;
+  }
+  return ts.isPropertyAccessExpression(call.expression) ? call.expression.name.text : undefined;
 }
 
 function isArrayValued(expression: ts.Expression, arrayNames: Set<string>): boolean {
@@ -277,8 +317,9 @@ function isArrayValued(expression: ts.Expression, arrayNames: Set<string>): bool
   if (ts.isIdentifier(unwrapped)) {
     return arrayNames.has(unwrapped.text);
   }
-  if (ts.isCallExpression(unwrapped) && ts.isIdentifier(unwrapped.expression)) {
-    return arrayNames.has(unwrapped.expression.text);
+  if (ts.isCallExpression(unwrapped)) {
+    const name = calleeName(unwrapped);
+    return name != null && arrayNames.has(name);
   }
   if (ts.isConditionalExpression(unwrapped)) {
     return (
@@ -404,15 +445,20 @@ function propertyName(property: ts.ObjectLiteralElementLike): string | undefined
 /** Array methods whose object arguments become elements of the receiver. */
 const ARRAY_APPENDERS = new Set(['push', 'unshift', 'concat']);
 
-function aliasStageOffenses(sourceFile: ts.SourceFile, element: ts.Expression): string[] {
-  const stage = unwrapExpression(element);
-  if (ts.isConditionalExpression(stage)) {
+function aliasStageOffenses(
+  sourceFile: ts.SourceFile,
+  element: ts.Expression,
+  objects: Map<string, ts.ObjectLiteralExpression>,
+): string[] {
+  const unwrapped = unwrapExpression(element);
+  if (ts.isConditionalExpression(unwrapped)) {
     return [
-      ...aliasStageOffenses(sourceFile, stage.whenTrue),
-      ...aliasStageOffenses(sourceFile, stage.whenFalse),
+      ...aliasStageOffenses(sourceFile, unwrapped.whenTrue, objects),
+      ...aliasStageOffenses(sourceFile, unwrapped.whenFalse, objects),
     ];
   }
-  if (!ts.isObjectLiteralExpression(stage)) {
+  const stage = ts.isIdentifier(unwrapped) ? objects.get(unwrapped.text) : unwrapped;
+  if (stage == null || !ts.isObjectLiteralExpression(stage)) {
     return [];
   }
   return stage.properties
@@ -441,10 +487,11 @@ function arrayElements(node: ts.Node): readonly ts.Expression[] {
  * literal or appended to one, on either side of a conditional — wherever the
  * pipeline is assembled. */
 function findAliasStages(sourceFile: ts.SourceFile): string[] {
+  const objects = collectObjectValuedNames(sourceFile);
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
     offenses.push(
-      ...arrayElements(node).flatMap((element) => aliasStageOffenses(sourceFile, element)),
+      ...arrayElements(node).flatMap((element) => aliasStageOffenses(sourceFile, element, objects)),
     );
     ts.forEachChild(node, visit);
   };
@@ -483,12 +530,20 @@ function isWrappedIndexBuild(node: ts.Node): boolean {
   return false;
 }
 
+/** Meilisearch's client shares the `createIndex` name; its options carry a
+ * `primaryKey`, which no MongoDB index option does. */
+function isMeilisearchIndexCall(call: ts.CallExpression): boolean {
+  const options = call.arguments[1] == null ? undefined : unwrapExpression(call.arguments[1]);
+  return (
+    options != null &&
+    ts.isObjectLiteralExpression(options) &&
+    options.properties.some((property) => propertyName(property) === 'primaryKey')
+  );
+}
+
 /** Reports every index build that bypasses the retrying helpers. */
 function findRawIndexBuilds(sourceFile: ts.SourceFile): string[] {
-  if (
-    sourceFile.fileName === INDEX_BUILD_HELPER ||
-    NON_MONGO_INDEX_CLIENTS.has(sourceFile.fileName)
-  ) {
+  if (sourceFile.fileName === INDEX_BUILD_HELPER) {
     return [];
   }
   const offenses: string[] = [];
@@ -497,7 +552,8 @@ function findRawIndexBuilds(sourceFile: ts.SourceFile): string[] {
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       INDEX_BUILD_METHODS.has(node.expression.name.text) &&
-      !isWrappedIndexBuild(node)
+      !isWrappedIndexBuild(node) &&
+      !isMeilisearchIndexCall(node)
     ) {
       offenses.push(offenseAt(sourceFile, node, `raw ${node.expression.name.text}`));
     }
@@ -576,6 +632,14 @@ describe('Amazon DocumentDB compatibility', () => {
         'pipeline returned by an untyped function body',
         `function pipeline() {\n  const stage = { $set: { a: 1 } };\n  return [stage] as PipelineStage[];\n}\nModel.findOneAndUpdate(filter, pipeline());`,
       ],
+      [
+        'pipeline returned by a class method',
+        `class Builder {\n  pipeline(): PipelineStage[] {\n    return [{ $addFields: { a: 1 } }];\n  }\n}\nModel.updateMany(filter, new Builder().pipeline());`,
+      ],
+      [
+        'pipeline returned by an object method',
+        `const builder = { pipeline: () => [{ $addFields: { a: 1 } }] };\nModel.updateOne(filter, builder.pipeline());`,
+      ],
     ])('flags a pipeline update: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).not.toEqual([]);
     });
@@ -646,6 +710,14 @@ describe('Amazon DocumentDB compatibility', () => {
         'stage chosen by a conditional element',
         `Model.aggregate([...scope, flag ? { $set: { a: 1 } } : { $addFields: { a: 1 } }]);`,
       ],
+      [
+        'stage held in a variable and pushed',
+        `const stage = { $set: { a: 1 } };\nstages.push(stage);`,
+      ],
+      [
+        'stage held in a variable and listed',
+        `const stage = { $unset: 'a' };\nconst stages = [stage];`,
+      ],
     ])('flags an alias stage: %s', (_shape, source) => {
       expect(findAliasStages(parse('fixture.ts', source))).not.toEqual([]);
     });
@@ -678,6 +750,7 @@ describe('Amazon DocumentDB compatibility', () => {
 
     it.each([
       ['raw createIndex', `await collection.createIndex({ a: 1 });`],
+      ['raw createIndex with options', `await collection.createIndex({ a: 1 }, { unique: true });`],
       ['raw createIndexes', `await Model.createIndexes();`],
       ['raw syncIndexes', `await Model.syncIndexes();`],
     ])('flags an unguarded index build: %s', (_shape, source) => {
@@ -690,6 +763,7 @@ describe('Amazon DocumentDB compatibility', () => {
         `await buildIndexWithRetry(() => collection.createIndex({ a: 1 }), 'a_1');`,
       ],
       ['the model helper', `await createIndexesWithRetry(Model);`],
+      ['the Meilisearch client', `await client.createIndex('messages', { primaryKey: 'id' });`],
     ])('accepts a guarded index build: %s', (_shape, source) => {
       expect(findRawIndexBuilds(parse('fixture.ts', source))).toEqual([]);
     });

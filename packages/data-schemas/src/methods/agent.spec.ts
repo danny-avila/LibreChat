@@ -21,7 +21,7 @@ import type {
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole, CodeEnvironmentDocument } from '..';
 import { withCodeEnvironmentReference } from './codeEnvironment';
-import { createAgentMethods, type AgentMethods } from './agent';
+import { createAgentMethods, EDGE_CLEANUP_BATCH, type AgentMethods } from './agent';
 import { tenantStorage } from '~/config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
@@ -1319,6 +1319,42 @@ describe('Agent Methods', () => {
         { from: sourceAgentId, to: targetAgentId, edgeType: 'handoff' },
         { from: sourceAgentId, to: addedAgentId, edgeType: 'handoff' },
       ]);
+    });
+
+    test('cleans every graph when the references span more than one page', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const deletedAgentId = `agent_${uuidv4()}`;
+      const targetAgentId = `agent_${uuidv4()}`;
+      const graphCount = EDGE_CLEANUP_BATCH + 1;
+      await createAgent({
+        id: deletedAgentId,
+        name: 'Popular Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await Agent.insertMany(
+        Array.from({ length: graphCount }, (_, index) => ({
+          id: `agent_${uuidv4()}`,
+          name: `Paged Graph ${index}`,
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          edges: [
+            { from: deletedAgentId, to: targetAgentId, edgeType: 'handoff' },
+            { from: targetAgentId, to: [deletedAgentId, targetAgentId], edgeType: 'direct' },
+          ],
+        })),
+      );
+
+      await deleteAgent({ id: deletedAgentId });
+
+      const graphs = await Agent.find({ name: /^Paged Graph / })
+        .select('edges')
+        .lean<Pick<IAgent, 'edges'>[]>();
+      expect(graphs).toHaveLength(graphCount);
+      const expectedEdges = [{ from: targetAgentId, to: [targetAgentId], edgeType: 'direct' }];
+      graphs.forEach((graph) => expect(graph.edges).toEqual(expectedEdges));
     });
 
     test('should remove agent from user favorites when agent is deleted', async () => {

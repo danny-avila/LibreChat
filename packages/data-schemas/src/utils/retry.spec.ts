@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { Model } from 'mongoose';
 import type { IAgentTriggerDeliveryDocument } from '~/types/triggerDelivery';
-import { buildIndexWithRetry, createIndexesWithRetry } from './retry';
+import { buildIndexWithRetry, createIndexesWithRetry, retryWithBackoff } from './retry';
 import triggerDeliverySchema from '~/schema/triggerDelivery';
 
 const DB_SETUP_TIMEOUT_MS = 60_000;
@@ -222,5 +222,46 @@ describe('buildIndexWithRetry on a raw driver collection', () => {
       }),
     ).rejects.toThrow('bad index spec');
     expect(attempts).toBe(1);
+  });
+});
+
+describe('retryWithBackoff option validation', () => {
+  test.each([
+    ['a NaN attempt count', { maxAttempts: NaN }],
+    ['a NaN base delay', { baseDelayMs: NaN }],
+    ['a NaN maximum delay', { maxDelayMs: NaN }],
+  ])('rejects %s before running the operation', async (_shape, options) => {
+    let attempts = 0;
+    const operation = async () => {
+      attempts += 1;
+    };
+
+    await expect(retryWithBackoff(operation, 'validation', options)).rejects.toThrow(
+      'Invalid options',
+    );
+    expect(attempts).toBe(0);
+  });
+});
+
+describe('buildIndexWithRetry peer-build deadline', () => {
+  test('reruns after a long admitted build reports a companion conflict', async () => {
+    let attempts = 0;
+    const build = async (): Promise<string> => {
+      attempts += 1;
+      if (attempts === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        throw indexBuildInProgressError();
+      }
+      return 'built';
+    };
+
+    await expect(
+      buildIndexWithRetry(build, 'long-build', {
+        maxAttempts: 1,
+        peerBuildPollMs: 1,
+        peerBuildDeadlineMs: 20,
+      }),
+    ).resolves.toBe('built');
+    expect(attempts).toBe(2);
   });
 });

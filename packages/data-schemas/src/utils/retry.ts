@@ -37,7 +37,8 @@ export async function retryWithBackoff<T>(
     retryableErrors = DEFAULT_OPTIONS.retryableErrors,
   } = options;
 
-  if (maxAttempts < 1 || baseDelayMs < 0 || maxDelayMs < 0) {
+  /** Negated comparisons, so a NaN option is rejected rather than skipping every attempt. */
+  if (!(maxAttempts >= 1) || !(baseDelayMs >= 0) || !(maxDelayMs >= 0)) {
     throw new Error(
       `[retryWithBackoff] Invalid options: maxAttempts must be >= 1, delays must be non-negative`,
     );
@@ -127,7 +128,10 @@ async function settleAutomaticIndexBuild(model: IndexedModel): Promise<void> {
  * the same release) holds the collection's single index build slot. A peer's
  * build time is data-dependent, so the wait polls rather than backs off: the
  * caller cannot become ready without the index, and giving up only restarts it
- * into the same wait. Every other error propagates at once.
+ * into the same wait. The deadline counts from the first conflict rather than
+ * from the first attempt — a builder that admits one long build before
+ * reporting another's conflict has not been waiting on anyone yet, so it always
+ * gets a rerun. Every other error propagates at once.
  */
 async function buildWhenCollectionFree<T>(
   build: () => Promise<T>,
@@ -135,15 +139,19 @@ async function buildWhenCollectionFree<T>(
   options: IndexBuildOptions,
 ): Promise<T> {
   const pollMs = options.peerBuildPollMs ?? DEFAULT_PEER_BUILD_POLL_MS;
-  const startedAt = Date.now();
+  let waitingSince: number | undefined;
   for (;;) {
     try {
       return await build();
     } catch (error: unknown) {
-      const elapsedMs = Date.now() - startedAt;
-      const deadlineReached =
-        options.peerBuildDeadlineMs != null && elapsedMs >= options.peerBuildDeadlineMs;
-      if (!isIndexBuildInProgress(error) || deadlineReached) {
+      if (!isIndexBuildInProgress(error)) {
+        throw error;
+      }
+      if (waitingSince == null) {
+        waitingSince = Date.now();
+      }
+      const elapsedMs = Date.now() - waitingSince;
+      if (options.peerBuildDeadlineMs != null && elapsedMs >= options.peerBuildDeadlineMs) {
         throw error;
       }
       logger.warn(

@@ -46,7 +46,10 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.ocr,
 ];
 
-const EDGE_CLEANUP_ATTEMPTS = 5;
+/** Graphs read per cleanup pass; bounds application memory the way the server-side update did. */
+export const EDGE_CLEANUP_BATCH = 200;
+/** Consecutive passes that may clean nothing before the loop gives up. */
+const EDGE_CLEANUP_STALLED_PASSES = 5;
 
 type AgentEdge = NonNullable<IAgent['edges']>[number];
 type EdgeEndpoint = AgentEdge['from'];
@@ -78,9 +81,11 @@ export function pruneEdges(edges: IAgent['edges'], agentIds: string[]): AgentEdg
 
 /**
  * Removes deleted agent references from active graphs in the requested tenant.
- * Each graph is read and its pruned edges written back behind a compare-and-set
- * on the edges that were read, so a concurrent edit is never overwritten; a
- * graph whose edges changed underneath is re-read on the next pass. This is the
+ * Graphs are read a page at a time and each page's pruned edges are written back
+ * behind a compare-and-set on the edges that were read, so a concurrent edit is
+ * never overwritten. A cleaned graph stops matching the filter, so the filter is
+ * its own cursor: every pass reads the next still-matching page, and a graph
+ * whose edges changed underneath is simply read again. This is the
  * plain-operator form of what was an aggregation-pipeline update, which Amazon
  * DocumentDB rejects.
  */
@@ -96,8 +101,11 @@ async function removeAgentIdsFromEdges(
     ...(tenantId !== undefined ? { tenantId } : {}),
     $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
   };
-  for (let attempt = 0; attempt < EDGE_CLEANUP_ATTEMPTS; attempt++) {
+  let stalledPasses = 0;
+  for (;;) {
     const graphs = await Agent.find(filter)
+      .sort({ _id: 1 })
+      .limit(EDGE_CLEANUP_BATCH)
       .select('_id edges')
       .lean<Pick<IAgent, '_id' | 'edges'>[]>();
     if (graphs.length === 0) {
@@ -113,13 +121,13 @@ async function removeAgentIdsFromEdges(
       })),
       { ordered: false },
     );
-    if (result.matchedCount === graphs.length) {
-      return;
+    stalledPasses = result.matchedCount === 0 ? stalledPasses + 1 : 0;
+    if (stalledPasses >= EDGE_CLEANUP_STALLED_PASSES) {
+      throw new Error(
+        `[removeAgentIdsFromEdges] graph edges kept changing during cleanup (${EDGE_CLEANUP_STALLED_PASSES} passes without progress)`,
+      );
     }
   }
-  throw new Error(
-    `[removeAgentIdsFromEdges] graph edges kept changing during cleanup (${EDGE_CLEANUP_ATTEMPTS} attempts)`,
-  );
 }
 
 export interface AgentDeps {
