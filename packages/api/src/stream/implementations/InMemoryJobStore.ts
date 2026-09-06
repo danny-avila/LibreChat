@@ -1555,23 +1555,47 @@ export class InMemoryJobStore implements IJobStoreV2 {
     streamId: string,
     expectedCreatedAt: number,
     attachedAt: number,
+    subscriberId: string,
+    leaseExpiresAt: number,
   ): Promise<boolean> {
     const job = this.jobs.get(streamId);
     if (job?.createdAt !== expectedCreatedAt) {
       return false;
     }
-    job.activeSubscriberCount = (job.activeSubscriberCount ?? 0) + 1;
+    job.activeSubscriberLeases ??= {};
+    job.activeSubscriberLeases[subscriberId] = leaseExpiresAt;
     const firstSubscriber = job.firstSubscriberAttachedAt == null;
     job.firstSubscriberAttachedAt ??= attachedAt;
     return firstSubscriber;
   }
 
-  async detachSubscriber(streamId: string, expectedCreatedAt: number): Promise<void> {
+  async detachSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    subscriberId: string,
+  ): Promise<void> {
     const job = this.jobs.get(streamId);
     if (job?.createdAt !== expectedCreatedAt) {
       return;
     }
-    job.activeSubscriberCount = Math.max(0, (job.activeSubscriberCount ?? 0) - 1);
+    delete job.activeSubscriberLeases?.[subscriberId];
+  }
+
+  async hasActiveSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    observedAt: number,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt) {
+      return false;
+    }
+    for (const [subscriberId, expiresAt] of Object.entries(job.activeSubscriberLeases ?? {})) {
+      if (expiresAt <= observedAt) {
+        delete job.activeSubscriberLeases?.[subscriberId];
+      }
+    }
+    return Object.keys(job.activeSubscriberLeases ?? {}).length > 0;
   }
 
   /**

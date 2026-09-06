@@ -164,6 +164,8 @@ const TERMINAL_PERSISTENCE_TIMEOUT_MS = 30_000;
 const EARLY_EVENT_BUFFER_MAX_EVENTS = 5_000;
 const EARLY_EVENT_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const SLOW_ATTACHMENT_BOOTSTRAP_MS = 3_000;
+const SUBSCRIBER_LEASE_TTL_MS = 30_000;
+const SUBSCRIBER_LEASE_REFRESH_MS = 10_000;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 type TokenIdempotencyClaim = IdempotencyClaimValue & {
   claimedAt: number;
@@ -699,6 +701,8 @@ interface RuntimeJobState {
   subscriberStateWrite?: Promise<unknown>;
   /** Whether this runtime's local subscriber group is represented durably. */
   subscriberStateAttached: boolean;
+  subscriberLeaseId: string;
+  subscriberLeaseTimer?: ReturnType<typeof setInterval>;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
   /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
@@ -897,6 +901,7 @@ class GenerationJobManagerClass {
       for (const runtime of this.runtimeState.values()) {
         runtime.startupTelemetry?.end('aborted');
         runtime.startupTelemetry = undefined;
+        this.stopSubscriberLease(runtime);
         this.releaseAbortSubscription(runtime, true);
         runtime.abortController.abort();
       }
@@ -1616,13 +1621,18 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = false;
       runtime.attachmentGeneration++;
       runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
+      this.stopSubscriberLease(runtime);
 
       runtime.subscriberStateWrite = (runtime.subscriberStateWrite ?? Promise.resolve())
         .then(async () => {
           if (!runtime.subscriberStateAttached) {
             return;
           }
-          await this.jobStore.detachSubscriber(streamId, runtime.createdAt);
+          await this.jobStore.detachSubscriber(
+            streamId,
+            runtime.createdAt,
+            runtime.subscriberLeaseId,
+          );
           runtime.subscriberStateAttached = false;
         })
         .catch((detachError) => {
@@ -1656,6 +1666,40 @@ class GenerationJobManagerClass {
         },
       );
     });
+  }
+
+  private stopSubscriberLease(runtime: RuntimeJobState): void {
+    if (runtime.subscriberLeaseTimer != null) {
+      clearInterval(runtime.subscriberLeaseTimer);
+      runtime.subscriberLeaseTimer = undefined;
+    }
+  }
+
+  private startSubscriberLease(streamId: string, runtime: RuntimeJobState): void {
+    if (runtime.subscriberLeaseTimer != null) {
+      return;
+    }
+    runtime.subscriberLeaseTimer = setInterval(() => {
+      if (!runtime.hasSubscriber || !runtime.subscriberStateAttached) {
+        return;
+      }
+      const refreshedAt = Date.now();
+      runtime.subscriberStateWrite = (runtime.subscriberStateWrite ?? Promise.resolve())
+        .then(() =>
+          this.jobStore.claimFirstSubscriber(
+            streamId,
+            runtime.createdAt,
+            refreshedAt,
+            runtime.subscriberLeaseId,
+            refreshedAt + SUBSCRIBER_LEASE_TTL_MS,
+          ),
+        )
+        .catch((leaseError) => {
+          logger.error('[GenerationJobManager] Failed to renew subscriber lease', leaseError);
+          return false;
+        });
+    }, SUBSCRIBER_LEASE_REFRESH_MS);
+    runtime.subscriberLeaseTimer.unref?.();
   }
 
   private async persistSubscriberCleanup(
@@ -1843,6 +1887,7 @@ class GenerationJobManagerClass {
       return;
     }
     if (this.runtimeState.get(streamId) === predecessor) {
+      this.stopSubscriberLease(predecessor);
       this.runtimeState.delete(streamId);
       this.releaseJobOwnership(streamId, predecessor.createdAt);
       this.releaseAbortSubscription(predecessor, true);
@@ -2657,6 +2702,7 @@ class GenerationJobManagerClass {
       hasSubscriber: false,
       everHadSubscriber: false,
       subscriberStateAttached: false,
+      subscriberLeaseId: randomUUID(),
       attachmentGeneration: 0,
     };
     this.runtimeState.set(streamId, runtime);
@@ -2739,6 +2785,7 @@ class GenerationJobManagerClass {
       ) {
         this.releaseAbortSubscription(runtime);
         runtime.abortController.abort();
+        this.stopSubscriberLease(runtime);
         this.runtimeState.delete(streamId);
         this.releaseJobOwnership(streamId, runtime.createdAt);
       }
@@ -2969,6 +3016,7 @@ class GenerationJobManagerClass {
       hasSubscriber: false,
       everHadSubscriber: false,
       subscriberStateAttached: false,
+      subscriberLeaseId: randomUUID(),
       attachmentGeneration: 0,
       finalEvent,
       errorEvent: jobData.error,
@@ -3007,6 +3055,7 @@ class GenerationJobManagerClass {
     if (!confirmedJobData) {
       this.releaseAbortSubscription(runtime);
       runtime.abortController.abort();
+      this.stopSubscriberLease(runtime);
       this.runtimeState.delete(streamId);
       return null;
     }
@@ -4007,7 +4056,7 @@ class GenerationJobManagerClass {
       const subscriberActive =
         runtime.hasSubscriber ||
         (persistedLifecycle?.createdAt === createdAt &&
-          (persistedLifecycle.activeSubscriberCount ?? 0) > 0);
+          (await this.jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())));
       let unobservedFailureReason: EarlyBufferRecoveryFailureReason | undefined;
       if (!subscriberActive) {
         unobservedFailureReason = generationHadSubscriber
@@ -4118,6 +4167,7 @@ class GenerationJobManagerClass {
         this.tokenUsageWriteQueues.delete(streamId);
         this.runStepWriteQueues.delete(streamId);
         if (status !== 'error' && this._cleanupOnComplete) {
+          this.stopSubscriberLease(runtime);
           this.runtimeState.delete(streamId);
         }
       }
@@ -5046,8 +5096,13 @@ class GenerationJobManagerClass {
             streamId,
             runtime.createdAt,
             attachedAt,
+            runtime.subscriberLeaseId,
+            Date.now() + SUBSCRIBER_LEASE_TTL_MS,
           );
           runtime.subscriberStateAttached = true;
+          if (runtime.hasSubscriber) {
+            this.startSubscriberLease(streamId, runtime);
+          }
           return firstSubscriber;
         })
         .catch((claimError) => {
@@ -5399,7 +5454,7 @@ class GenerationJobManagerClass {
       runtime.earlyEventBuffer.length >= EARLY_EVENT_BUFFER_MAX_EVENTS ||
       runtime.earlyEventBufferBytes + estimatedBytes > EARLY_EVENT_BUFFER_MAX_BYTES
     ) {
-      await this.overflowEarlyEventBuffer(streamId, runtime);
+      await this.overflowEarlyEventBuffer(streamId, runtime, 1, estimatedBytes);
       return false;
     }
     runtime.earlyEventBuffer.push(event);
@@ -5410,9 +5465,11 @@ class GenerationJobManagerClass {
   private async overflowEarlyEventBuffer(
     streamId: string,
     runtime: RuntimeJobState,
+    rejectedEvents = 0,
+    rejectedBytes = 0,
   ): Promise<void> {
-    const droppedEvents = runtime.earlyEventBuffer.length;
-    const droppedBytes = runtime.earlyEventBufferBytes;
+    const droppedEvents = runtime.earlyEventBuffer.length + rejectedEvents;
+    const droppedBytes = runtime.earlyEventBufferBytes + rejectedBytes;
     const overflow: EarlyBufferOverflowState = {
       id: randomUUID(),
       occurredAt: Date.now(),
@@ -5750,7 +5807,12 @@ class GenerationJobManagerClass {
               EARLY_EVENT_BUFFER_MAX_EVENTS ||
             currentRuntime.earlyEventBufferBytes + restoredBytes > EARLY_EVENT_BUFFER_MAX_BYTES;
           if (overflows) {
-            void this.overflowEarlyEventBuffer(streamId, currentRuntime).catch((err) => {
+            void this.overflowEarlyEventBuffer(
+              streamId,
+              currentRuntime,
+              missingEvents.length,
+              restoredBytes,
+            ).catch((err) => {
               logger.error('[GenerationJobManager] Failed to persist early buffer overflow', err);
             });
           } else {
@@ -5848,6 +5910,18 @@ class GenerationJobManagerClass {
             reconstructedContent,
           );
           recoverySettled = winningOutcome != null;
+          if (winningOutcome == null) {
+            const currentJob = await this.jobStore.getJob(streamId);
+            if (currentJob?.createdAt !== runtime.createdAt) {
+              removeCaptureHandler();
+              subscription?.unsubscribe();
+              if (currentJob != null) {
+                await this.reconcileFencedRuntimeHandoff(streamId, runtime, currentJob);
+              }
+              recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+              return { subscription: null, resumeState: null, pendingEvents: [] };
+            }
+          }
           if (winningOutcome === 'not_required') {
             return { subscription: null, resumeState, pendingEvents: [] };
           }
@@ -5868,6 +5942,18 @@ class GenerationJobManagerClass {
             failureReason,
           );
           recoverySettled = winningOutcome != null;
+          if (winningOutcome == null) {
+            const currentJob = await this.jobStore.getJob(streamId);
+            if (currentJob?.createdAt !== runtime.createdAt) {
+              removeCaptureHandler();
+              subscription?.unsubscribe();
+              if (currentJob != null) {
+                await this.reconcileFencedRuntimeHandoff(streamId, runtime, currentJob);
+              }
+              recordGenerationStreamSubscription(this.storeLabel, 'resume', 'not_found');
+              return { subscription: null, resumeState: null, pendingEvents: [] };
+            }
+          }
           if (winningOutcome === 'not_required') {
             return { subscription: null, resumeState, pendingEvents: [] };
           }
@@ -6907,6 +6993,7 @@ class GenerationJobManagerClass {
       this.jobStore.clearContentState(streamId, runtime.createdAt);
 
       if (this.runtimeState.get(streamId) === runtime) {
+        this.stopSubscriberLease(runtime);
         this.runtimeState.delete(streamId);
         this.runStepBuffers?.delete(streamId);
         this.replayEventWriteQueues.delete(streamId);
@@ -8162,9 +8249,12 @@ class GenerationJobManagerClass {
     expectedCreatedAt?: number,
     options?: {
       durableOnly?: boolean;
+      validateEarlyBufferRecovery?: boolean;
       onContentSnapshot?: (snapshot: Awaited<ReturnType<IJobStore['getContentParts']>>) => void;
     },
   ): Promise<t.ResumeState | null> {
+    const recoveryStartedAt =
+      options?.validateEarlyBufferRecovery === true ? Date.now() : undefined;
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)) {
       return null;
@@ -8175,13 +8265,61 @@ class GenerationJobManagerClass {
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
     const [result, runSteps, queuedSteers, claimedSteers] = await Promise.all([
       this.jobStore.getContentParts(streamId, jobData.createdAt, {
-        durableOnly: options?.durableOnly,
+        durableOnly: options?.durableOnly === true || options?.validateEarlyBufferRecovery === true,
       }),
       this.jobStore.getRunSteps(streamId, jobData.createdAt),
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
     ]);
     options?.onContentSnapshot?.(result);
+    const pendingOverflow =
+      options?.validateEarlyBufferRecovery === true &&
+      jobData.earlyBufferOverflow?.recoveryOutcome == null
+        ? jobData.earlyBufferOverflow
+        : undefined;
+    if (pendingOverflow != null) {
+      const runtime = await this.getOrCreateRuntimeState(streamId);
+      if (runtime == null || runtime.createdAt !== jobData.createdAt) {
+        throw new Error('Generation changed during HITL recovery validation');
+      }
+      const reconstructedEvents = result?.reconstructedEventCount ?? 0;
+      const durableEvents = result?.durableEventCount ?? 0;
+      let failureReason: EarlyBufferRecoveryFailureReason | undefined;
+      if (result == null) {
+        failureReason = 'durable_state_missing';
+      } else if (
+        durableEvents < pendingOverflow.durableEvents ||
+        reconstructedEvents !== durableEvents
+      ) {
+        failureReason = 'durable_frontier_gap';
+      }
+      const winningOutcome = await this.settleEarlyBufferRecovery(
+        streamId,
+        runtime,
+        pendingOverflow,
+        failureReason == null ? 'success' : 'failed',
+        recoveryStartedAt == null ? 0 : Date.now() - recoveryStartedAt,
+        reconstructedEvents,
+        result?.content.length ?? 0,
+        failureReason,
+      );
+      if (winningOutcome == null) {
+        const currentJob = await this.jobStore.getJob(streamId);
+        if (currentJob?.createdAt !== jobData.createdAt) {
+          throw new Error('Generation changed during HITL recovery validation');
+        }
+      }
+      if (failureReason != null && winningOutcome === 'success') {
+        throw new Error('Concurrent recovery succeeded; retry HITL resume');
+      }
+      if (winningOutcome === 'not_required') {
+        throw new Error('HITL recovery no longer required for this generation');
+      }
+      if (winningOutcome !== 'success') {
+        await this.completeJob(streamId, GENERATION_RECOVERY_FAILED_ERROR, runtime.createdAt);
+        throw new Error(GENERATION_RECOVERY_FAILED_ERROR);
+      }
+    }
     const reconstructedContent = result?.content ?? [];
     const bufferState = this.runStepBuffers?.get(streamId);
     const bufferedRunSteps = bufferState?.createdAt === jobData.createdAt ? bufferState.steps : [];
@@ -8721,6 +8859,7 @@ class GenerationJobManagerClass {
           currentJob,
           observedRuntime,
         );
+        this.stopSubscriberLease(observedRuntime);
         this.runtimeState.delete(streamId);
         this.runStepBuffers?.delete(streamId);
         this.replayEventWriteQueues.delete(streamId);
@@ -8778,6 +8917,7 @@ class GenerationJobManagerClass {
       observedRuntime.startupTelemetry?.end('error', new Error(REAPED_JOB_ERROR));
       observedRuntime.startupTelemetry = undefined;
       this.releaseAbortSubscription(observedRuntime);
+      this.stopSubscriberLease(observedRuntime);
       this.runtimeState.delete(streamId);
       runningJobsChanged = this.ownedJobs.delete(streamId) || runningJobsChanged;
       this.runStepBuffers?.delete(streamId);
@@ -9010,6 +9150,7 @@ class GenerationJobManagerClass {
     for (const runtime of this.runtimeState.values()) {
       runtime.startupTelemetry?.end('aborted');
       runtime.startupTelemetry = undefined;
+      this.stopSubscriberLease(runtime);
       this.releaseAbortSubscription(runtime, true);
       runtime.abortController.abort();
     }

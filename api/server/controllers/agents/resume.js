@@ -1031,7 +1031,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let resumeState;
   let preparedContent;
   try {
-    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt, {
+      validateEarlyBufferRecovery: true,
+    });
     const batchedAnswer =
       mapped.resumeValue?.answers != null &&
       typeof mapped.resumeValue.answers === 'object' &&

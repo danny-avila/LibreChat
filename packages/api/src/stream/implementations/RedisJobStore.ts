@@ -633,14 +633,18 @@ const SETTLE_EARLY_BUFFER_RECOVERY_LUA =
 /** Generation-scoped single-winner first-subscriber claim. */
 const CLAIM_FIRST_SUBSCRIBER_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
-  'redis.call("HINCRBY", KEYS[1], "activeSubscriberCount", 1) ' +
+  'redis.call("ZADD", KEYS[2], ARGV[4], ARGV[3]) redis.call("PEXPIRE", KEYS[2], 60000) ' +
   'if redis.call("HEXISTS", KEYS[1], "firstSubscriberAttachedAt") == 1 then return 0 end ' +
   'redis.call("HSET", KEYS[1], "firstSubscriberAttachedAt", ARGV[2]) return 1';
 
 const DETACH_SUBSCRIBER_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
-  'local active = tonumber(redis.call("HGET", KEYS[1], "activeSubscriberCount") or "0") ' +
-  'if active > 0 then redis.call("HINCRBY", KEYS[1], "activeSubscriberCount", -1) end return 1';
+  'redis.call("ZREM", KEYS[2], ARGV[2]) return 1';
+
+const HAS_ACTIVE_SUBSCRIBER_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'redis.call("ZREMRANGEBYSCORE", KEYS[2], "-inf", ARGV[2]) ' +
+  'if redis.call("ZCARD", KEYS[2]) > 0 then return 1 end return 0';
 
 /** Exact provider-segment completion fence. A paused segment finishing after a
  * resume cannot mark the resumed provider drained because its opaque id differs. */
@@ -1652,6 +1656,9 @@ const KEYS = {
   steerReceiptOrder: (streamId: string) => `stream:{${streamId}}:steer-receipt-order`,
   /** Latest generation epoch, retained briefly beyond the live job hash. */
   generationEpoch: (streamId: string) => `stream:{${streamId}}:generation-epoch`,
+  /** Expiring, generation-scoped subscriber-group leases. */
+  subscriberLeases: (streamId: string, createdAt: number) =>
+    `stream:{${streamId}}:subscriber-leases:${createdAt}`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
@@ -2348,22 +2355,57 @@ export class RedisJobStore implements IJobStoreV2 {
     streamId: string,
     expectedCreatedAt: number,
     attachedAt: number,
+    subscriberId: string,
+    leaseExpiresAt: number,
   ): Promise<boolean> {
     return (
       Number(
         await this.redis.eval(
           CLAIM_FIRST_SUBSCRIBER_LUA,
-          1,
+          2,
           KEYS.job(streamId),
+          KEYS.subscriberLeases(streamId, expectedCreatedAt),
           String(expectedCreatedAt),
           String(attachedAt),
+          subscriberId,
+          String(leaseExpiresAt),
         ),
       ) === 1
     );
   }
 
-  async detachSubscriber(streamId: string, expectedCreatedAt: number): Promise<void> {
-    await this.redis.eval(DETACH_SUBSCRIBER_LUA, 1, KEYS.job(streamId), String(expectedCreatedAt));
+  async detachSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    subscriberId: string,
+  ): Promise<void> {
+    await this.redis.eval(
+      DETACH_SUBSCRIBER_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.subscriberLeases(streamId, expectedCreatedAt),
+      String(expectedCreatedAt),
+      subscriberId,
+    );
+  }
+
+  async hasActiveSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    observedAt: number,
+  ): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          HAS_ACTIVE_SUBSCRIBER_LUA,
+          2,
+          KEYS.job(streamId),
+          KEYS.subscriberLeases(streamId, expectedCreatedAt),
+          String(expectedCreatedAt),
+          String(observedAt),
+        ),
+      ) === 1
+    );
   }
 
   async markProviderExecutionDrained(
@@ -5056,9 +5098,6 @@ export class RedisJobStore implements IJobStoreV2 {
         : undefined,
       firstSubscriberAttachedAt: data.firstSubscriberAttachedAt
         ? parseInt(data.firstSubscriberAttachedAt, 10)
-        : undefined,
-      activeSubscriberCount: data.activeSubscriberCount
-        ? parseInt(data.activeSubscriberCount, 10)
         : undefined,
       durableEventCount: data.durableEventCount ? parseInt(data.durableEventCount, 10) : undefined,
       idempotencyClientRequestId: data.idempotencyClientRequestId || undefined,

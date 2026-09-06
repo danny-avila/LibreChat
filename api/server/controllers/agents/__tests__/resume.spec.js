@@ -2014,6 +2014,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.getResumeState).toHaveBeenCalledWith(
+        CONVO_ID,
+        job.createdAt,
+        { validateEarlyBufferRecovery: true },
+      );
     });
 
     it('blocks a user-authored respond decision before consuming the action', async () => {

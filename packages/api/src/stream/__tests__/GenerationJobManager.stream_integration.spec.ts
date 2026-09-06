@@ -1758,6 +1758,9 @@ describe('GenerationJobManager Integration Tests', () => {
       const stats = manager.getRuntimeStats();
       expect(stats.earlyBufferedEvents).toBe(0);
       expect(stats.earlyBufferedBytes).toBe(0);
+      const overflow = (await manager.getJob(streamId))?.metadata.earlyBufferOverflow;
+      expect(overflow?.droppedEvents).toBe(4);
+      expect(overflow?.droppedBytes).toBeGreaterThan(8 * 1024 * 1024);
 
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
@@ -1841,6 +1844,48 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('reconciles a generation replaced while recovery settles', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-replaced-during-settlement-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const originalCreatedAt = (await jobStore.getJob(streamId))!.createdAt;
+      const bigText = 'r'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      jest.spyOn(jobStore, 'settleEarlyBufferRecovery').mockImplementationOnce(async () => {
+        await jobStore.createJob(streamId, 'user-1');
+        return false;
+      });
+
+      const errors: string[] = [];
+      const result = await manager.subscribeWithResume(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+        { expectedCreatedAt: originalCreatedAt },
+      );
+      expect(result.subscription).toBeNull();
+      expect(errors).not.toContain(GENERATION_RECOVERY_FAILED_ERROR);
+      expect((await jobStore.getJob(streamId))!.createdAt).toBeGreaterThan(originalCreatedAt);
+
+      await manager.destroy();
+    });
+
     testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
       const manager = createRedisManager();
       const streamId = `overflow-redirect-${Date.now()}`;
@@ -1899,6 +1944,7 @@ describe('GenerationJobManager Integration Tests', () => {
         const owner = createRedisManager();
         const streamId = `overflow-cross-replica-${Date.now()}`;
         await owner.createJob(streamId, 'user-1');
+        const createdAt = (await owner.getJob(streamId))!.createdAt;
         const firstReplica = createRedisManager();
         /** Cache a pre-overflow runtime so resume must refresh the later
          * durable marker rather than trust process-local state. */
@@ -1940,9 +1986,13 @@ describe('GenerationJobManager Integration Tests', () => {
           'firstSubscriberAttachedAt',
         );
         expect(firstAttachedAt).not.toBeNull();
-        expect(await ioredisClient!.hget(`stream:{${streamId}}:job`, 'activeSubscriberCount')).toBe(
-          '0',
-        );
+        expect(
+          await (firstReplica.getJobStore() as IJobStoreV2).hasActiveSubscriber(
+            streamId,
+            createdAt,
+            Date.now(),
+          ),
+        ).toBe(false);
 
         await owner.emitChunk(streamId, {
           event: 'on_message_delta',
@@ -1956,9 +2006,13 @@ describe('GenerationJobManager Integration Tests', () => {
         const second = await secondReplica.subscribeWithResume(streamId, () => {});
         expect(JSON.stringify(second.resumeState?.aggregatedContent)).toContain('after-disconnect');
         await new Promise((resolve) => setTimeout(resolve, 50));
-        expect(await ioredisClient!.hget(`stream:{${streamId}}:job`, 'activeSubscriberCount')).toBe(
-          '1',
-        );
+        expect(
+          await (secondReplica.getJobStore() as IJobStoreV2).hasActiveSubscriber(
+            streamId,
+            createdAt,
+            Date.now(),
+          ),
+        ).toBe(true);
         second.subscription?.unsubscribe();
         expect(
           await ioredisClient!.hget(`stream:{${streamId}}:job`, 'firstSubscriberAttachedAt'),
@@ -2017,6 +2071,31 @@ describe('GenerationJobManager Integration Tests', () => {
         await Promise.all([owner.destroy(), replica.destroy()]);
       },
     );
+
+    testRedis('validates overflow recovery before exposing HITL resume state', async () => {
+      const manager = createRedisManager();
+      const streamId = `overflow-hitl-validation-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+      const bigText = 'h'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: {
+            id: 'step-1',
+            delta: { content: { type: 'text', text: bigText } },
+          },
+        });
+      }
+      const createdAt = (await manager.getJob(streamId))!.createdAt;
+      await ioredisClient!.del(`stream:{${streamId}}:chunks`);
+
+      await expect(
+        manager.getResumeState(streamId, createdAt, { validateEarlyBufferRecovery: true }),
+      ).rejects.toThrow(GENERATION_RECOVERY_FAILED_ERROR);
+      expect((await manager.getJob(streamId))?.status).toBe('error');
+
+      await manager.destroy();
+    });
 
     testRedis(
       'terminalizes a durable failed outcome left running by a crashed replica',
@@ -2177,18 +2256,36 @@ describe('GenerationJobManager Integration Tests', () => {
       manager.initialize();
       const streamId = `subscriber-lifecycle-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
+      const createdAt = (await jobStore.getJob(streamId))!.createdAt;
 
       const first = await manager.subscribe(streamId, () => {});
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect((await jobStore.getJob(streamId))?.activeSubscriberCount).toBe(1);
+      await expect(jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())).resolves.toBe(
+        true,
+      );
       first?.unsubscribe();
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect((await jobStore.getJob(streamId))?.activeSubscriberCount).toBe(0);
+      await expect(jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())).resolves.toBe(
+        false,
+      );
 
       const second = await manager.subscribe(streamId, () => {});
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect((await jobStore.getJob(streamId))?.activeSubscriberCount).toBe(1);
+      await expect(jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())).resolves.toBe(
+        true,
+      );
       second?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await jobStore.claimFirstSubscriber(
+        streamId,
+        createdAt,
+        Date.now(),
+        'crashed-subscriber',
+        Date.now() - 1,
+      );
+      await expect(jobStore.hasActiveSubscriber(streamId, createdAt, Date.now())).resolves.toBe(
+        false,
+      );
       await manager.destroy();
     });
 

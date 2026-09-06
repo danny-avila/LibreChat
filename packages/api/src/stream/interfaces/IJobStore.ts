@@ -128,8 +128,8 @@ export interface SerializableJobData {
 
   /** Generation-level first subscriber claim shared across replicas. */
   firstSubscriberAttachedAt?: number;
-  /** Active local subscriber groups across replicas for this generation. */
-  activeSubscriberCount?: number;
+  /** Expiring local subscriber-group leases (in-memory store only). */
+  activeSubscriberLeases?: Record<string, number>;
   /** Generation-wide durable chunk frontier maintained by the store. */
   durableEventCount?: number;
 
@@ -1310,9 +1310,21 @@ export interface IJobStoreV2 extends IJobStore {
     streamId: string,
     expectedCreatedAt: number,
     attachedAt: number,
+    subscriberId: string,
+    leaseExpiresAt: number,
   ): Promise<boolean>;
 
-  detachSubscriber(streamId: string, expectedCreatedAt: number): Promise<void>;
+  detachSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    subscriberId: string,
+  ): Promise<void>;
+
+  hasActiveSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    observedAt: number,
+  ): Promise<boolean>;
 
   /**
    * Get run steps for a job (for resume state).
