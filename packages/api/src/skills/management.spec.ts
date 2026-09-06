@@ -6,6 +6,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
 import { PermissionBits, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { AllMethods, IRole, IUser } from '@librechat/data-schemas';
+import type { RequestHandler } from 'express';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { SkillManagementDeps } from './management';
 import type { ServerRequest } from '~/types';
@@ -27,6 +28,11 @@ let authenticated: boolean;
 let saveFile: jest.MockedFunction<SkillManagementDeps['saveFile']>;
 let filters: FiltersConfig | undefined;
 let readSkill: jest.SpyInstance;
+let beforeList: jest.Mock;
+let uploadLimiter: jest.MockedFunction<RequestHandler>;
+let accessible: jest.Mock;
+let publiclyAccessible: jest.Mock;
+let publicStatus: jest.Mock;
 let originalStrict: string | undefined;
 const inTenant = <T>(fn: () => T) => tenantStorage.run({ tenantId }, fn);
 
@@ -68,17 +74,24 @@ beforeEach(async () => {
     relativePath,
     bytes: Buffer.byteLength(content),
   }));
+  beforeList = jest.fn();
+  uploadLimiter = jest.fn((_req, _res, next) => next());
+  accessible = jest.fn(async () => (allowView ? [new Types.ObjectId(skillId)] : []));
+  publiclyAccessible = jest.fn(async () => []);
+  publicStatus = jest.fn(async () => false);
   const handlers = createSkillsHandlers({
     ...db,
-    findAccessibleResources: async () => (allowView ? [new Types.ObjectId(skillId)] : []),
-    findPubliclyAccessibleResources: async () => [],
-    hasPublicPermission: async () => false,
+    findAccessibleResources: accessible,
+    findPubliclyAccessibleResources: publiclyAccessible,
+    hasPublicPermission: publicStatus,
     grantPermission: async () => undefined,
     getStrategyFunctions: () => ({}),
     isValidObjectIdString: (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id),
   });
   const management = createSkillManagementHandlers({
     handlers,
+    beforeList,
+    fileWriteLimiters: [uploadLimiter],
     getSkillById: db.getSkillById,
     getRoleByName: async () =>
       ({
@@ -357,4 +370,70 @@ it.each(['1e2', '0x10'])('honors normalized pagination for limit=%s', async (lim
   );
   const response = await request(app).get(`/skills?limit=${limit}`).expect(200);
   expect(response.body.data).toHaveLength(2);
+});
+
+it('authorizes and validates discovery before starting sync', async () => {
+  allowUse = false;
+  await request(app).get('/skills').expect(403);
+  expect(beforeList).not.toHaveBeenCalled();
+  allowUse = true;
+  await request(app).get('/skills?limit=0').expect(400);
+  expect(beforeList).not.toHaveBeenCalled();
+  await request(app).get('/skills').expect(200);
+  expect(beforeList).toHaveBeenCalledTimes(1);
+  expect(beforeList.mock.invocationCallOrder[0]).toBeLessThan(
+    accessible.mock.invocationCallOrder[0],
+  );
+});
+it('continues discovery after a sync trigger failure', async () => {
+  beforeList.mockRejectedValueOnce(new Error('sync unavailable'));
+  await request(app).get('/skills').expect(200);
+  expect(accessible).toHaveBeenCalledTimes(1);
+});
+it('does not enumerate ACLs for capability-managed lists', async () => {
+  canManage = true;
+  await request(app).get('/skills').expect(200);
+  expect(accessible).not.toHaveBeenCalled();
+  expect(publiclyAccessible).not.toHaveBeenCalled();
+});
+it('does not read discarded public status for details, updates, or conflicts', async () => {
+  await request(app).get(`/skills/${skillId}`).expect(200);
+  await request(app)
+    .patch(`/skills/${skillId}`)
+    .send({ expectedVersion: 1, body: 'Updated' })
+    .expect(200);
+  await request(app)
+    .patch(`/skills/${skillId}`)
+    .send({ expectedVersion: 1, body: 'Stale' })
+    .expect(409);
+  expect(publicStatus).not.toHaveBeenCalled();
+});
+it('authorizes file targets before charging upload quotas', async () => {
+  allowUse = false;
+  await request(app).put(`/skills/${skillId}/files/note.txt`).send({ content: 'text' }).expect(403);
+  allowUse = true;
+  allowEdit = false;
+  await request(app).put(`/skills/${skillId}/files/note.txt`).send({ content: 'text' }).expect(404);
+  allowEdit = true;
+  await request(app)
+    .put(`/skills/${new Types.ObjectId()}/files/note.txt`)
+    .send({ content: 'text' })
+    .expect(404);
+  expect(uploadLimiter).not.toHaveBeenCalled();
+  expect(saveFile).not.toHaveBeenCalled();
+  await request(app).put(`/skills/${skillId}/files/note.txt`).send({ content: 'text' }).expect(200);
+  expect(uploadLimiter).toHaveBeenCalledTimes(1);
+  expect(readSkill).toHaveBeenCalledTimes(3);
+});
+it('stops storage writes when the upload limiter rejects', async () => {
+  uploadLimiter.mockImplementationOnce((_req, res) => {
+    res.sendStatus(429);
+  });
+  await request(app).put(`/skills/${skillId}/files/note.txt`).send({ content: 'text' }).expect(429);
+  expect(saveFile).not.toHaveBeenCalled();
+});
+it('fails closed when the upload limiter errors', async () => {
+  uploadLimiter.mockImplementationOnce((_req, _res, next) => next(new Error('limiter failure')));
+  await request(app).put(`/skills/${skillId}/files/note.txt`).send({ content: 'text' }).expect(500);
+  expect(saveFile).not.toHaveBeenCalled();
 });

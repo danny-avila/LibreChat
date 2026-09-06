@@ -1,6 +1,5 @@
 const express = require('express');
 const { createSkillManagementHandlers, mapAgentManagementError } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
 const { maybeRunGitHubSkillSyncForRequest } = require('~/server/services/Skills/sync');
 const { checkBan, configMiddleware } = require('~/server/middleware');
@@ -15,7 +14,10 @@ const { getRoleByName } = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
 
 const router = express.Router();
+const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
 const handlers = createSkillManagementHandlers({
+  beforeList: maybeRunGitHubSkillSyncForRequest,
+  fileWriteLimiters: [fileUploadIpLimiter, fileUploadUserLimiter],
   handlers: getSkillsHandlers(),
   getSkillById: getSkillDbMethods().getSkillById,
   getRoleByName,
@@ -24,25 +26,12 @@ const handlers = createSkillManagementHandlers({
   saveFile: getSkillToolDeps().saveSkillFileContent,
 });
 router.use(requireAgentManagementAuth, checkBan, configMiddleware);
-router.get('/', async (req, res) => {
-  try {
-    await maybeRunGitHubSkillSyncForRequest(req);
-  } catch (error) {
-    logger.error('[GET /agents/v1/skills] Failed to start request-scoped skill sync:', error);
-  }
-  return handlers.list(req, res);
-});
+router.get('/', handlers.list);
 router.get('/:id', handlers.get);
 router.patch('/:id', handlers.update);
 router.get('/:id/files', handlers.listFiles);
 router.get('/:id/files/*relativePath', handlers.getFile);
-const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
-router.put(
-  '/:id/files/*relativePath',
-  fileUploadIpLimiter,
-  fileUploadUserLimiter,
-  handlers.updateFile,
-);
+router.put('/:id/files/*relativePath', handlers.updateFile);
 router.use((_req, res) => {
   const { status, body } = mapAgentManagementError('not_found');
   body.error.message = 'Skill or file not found';

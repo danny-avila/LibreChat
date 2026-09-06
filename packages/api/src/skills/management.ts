@@ -7,7 +7,7 @@ import {
   ResourceType,
 } from 'librechat-data-provider';
 import type { SkillFrontmatterValue, TSkill, TUpdateSkillPayload } from 'librechat-data-provider';
-import type { Request, Response } from 'express';
+import type { Request, Response, RequestHandler } from 'express';
 import type { SkillsHandlers, SkillsHandlersDeps } from './handlers';
 import type { AgentManagementReadDeps } from '../agents/reads';
 import type { ServerRequest } from '~/types';
@@ -110,6 +110,8 @@ type SkillHandler = (req: ServerRequest, res: Response) => Promise<Response | un
 type Projector = (body: unknown) => object;
 export interface SkillManagementDeps {
   handlers: SkillsHandlers;
+  beforeList?: (req: ServerRequest) => Promise<void>;
+  fileWriteLimiters?: RequestHandler[];
   getSkillById: SkillsHandlersDeps['getSkillById'];
   getRoleByName: AgentManagementReadDeps['getRoleByName'];
   checkPermission: AgentManagementReadDeps['checkPermission'];
@@ -165,6 +167,33 @@ async function runHandler(
   };
   await handler(req as ServerRequest, adapter);
   return sent ? res : sendError(res, 'internal_error');
+}
+
+/** Wait for limiter admission or a terminal response; release listeners on every outcome. */
+async function admitFileWrite(req: Request, res: Response, limiters: RequestHandler[]) {
+  for (const limiter of limiters) {
+    const admitted = await new Promise<boolean>((resolve, reject) => {
+      const finish = () => settle(false);
+      const settle = (allowed: boolean, error?: unknown) => {
+        res.off('finish', finish);
+        res.off('close', finish);
+        if (error) reject(error);
+        else resolve(allowed);
+      };
+      if (res.writableEnded || res.destroyed) return settle(false);
+      res.once('finish', finish);
+      res.once('close', finish);
+      try {
+        Promise.resolve(limiter(req, res, (error) => settle(!error, error))).catch((error) =>
+          settle(false, error),
+        );
+      } catch (error) {
+        settle(false, error);
+      }
+    });
+    if (!admitted) return false;
+  }
+  return !res.writableEnded && !res.destroyed;
 }
 
 /** Machine API adapters reuse the browser Skills behavior after principal and resource checks. */
@@ -234,6 +263,11 @@ export function createSkillManagementHandlers(
     list: wrap(undefined, async (req, res) => {
       const parsed = listSchema.safeParse(req.query);
       if (!parsed.success) return sendError(res, 'invalid_request', parsed.error);
+      try {
+        await deps.beforeList?.(req as ServerRequest);
+      } catch (error) {
+        logger.error('[SkillManagement] Failed to start request-scoped skill sync', error);
+      }
       const manageTenantId = (await canManageSkills(req)) ? req.user?.tenantId : undefined;
       return runHandler(
         req,
@@ -265,13 +299,24 @@ export function createSkillManagementHandlers(
       );
     }),
     get: wrap(PermissionBits.VIEW, (req, res) =>
-      runHandler(req, res, deps.handlers.get, (body) => projectSkill(body, true)),
+      runHandler(
+        req,
+        res,
+        (request, response) => deps.handlers.get(request, response, { includePublicStatus: false }),
+        (body) => projectSkill(body, true),
+      ),
     ),
     update: wrap(PermissionBits.EDIT, async (req, res) => {
       const parsed = skillManagementUpdateSchema.safeParse(req.body);
       if (!parsed.success) return sendError(res, 'invalid_request', parsed.error);
       req.body = parsed.data;
-      return runHandler(req, res, deps.handlers.patch, (body) => projectSkill(body, true));
+      return runHandler(
+        req,
+        res,
+        (request, response) =>
+          deps.handlers.patch(request, response, { includePublicStatus: false }),
+        (body) => projectSkill(body, true),
+      );
     }),
     listFiles: wrap(PermissionBits.VIEW, (req, res) =>
       runHandler(req, res, deps.handlers.listFiles, (body) => ({
@@ -304,6 +349,7 @@ export function createSkillManagementHandlers(
         if (!isContentFilterError(error)) throw error;
         return sendError(res, 'invalid_request');
       }
+      if (!(await admitFileWrite(req, res, deps.fileWriteLimiters ?? []))) return res;
       const result = await deps.saveFile({
         req: req as ServerRequest,
         skillId: req.params.id,
