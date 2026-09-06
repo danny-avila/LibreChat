@@ -119,11 +119,13 @@ export default function CreateSkillDialog({
         return localize('com_ui_skill_validation_error');
       };
       const data = response?.data;
-      const message = data?.issues?.length
-        ? data.issues.map(getIssueMessage).join('; ')
-        : response?.status === 409
-          ? localize('com_ui_skill_name_exists')
-          : data?.message || localize('com_ui_skill_create_error');
+      let message = data?.message || localize('com_ui_skill_create_error');
+      if (response?.status === 409) {
+        message = localize('com_ui_skill_name_exists');
+      }
+      if (data?.issues?.length) {
+        message = data.issues.map(getIssueMessage).join('; ');
+      }
       showToast({ status: 'error', message });
     },
   });
