@@ -85,6 +85,7 @@ function makeDeps(overrides: Partial<AgentManagementFileDeps> = {}): AgentManage
       fileLimit: 100,
       totalSizeLimit: 1_000_000,
     }),
+    runUploadExclusive: async (_key, task) => await task(),
     ...overrides,
   };
 }

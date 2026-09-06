@@ -95,9 +95,12 @@ const createFileFilter = (customFileConfig, resolveEndpoint) => {
   return fileFilter;
 };
 
-const createMulterInstance = async ({ resolveEndpoint, uniqueTempPath = false } = {}) => {
-  const appConfig = await getAppConfig();
-  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
+const createMulterInstance = async (options = {}) => {
+  const { resolveEndpoint, uniqueTempPath = false } = options;
+  const appConfig = Object.prototype.hasOwnProperty.call(options, 'fileConfig')
+    ? null
+    : await getAppConfig();
+  const fileConfig = mergeFileConfig(options.fileConfig ?? appConfig?.fileConfig);
   const fileFilter = createFileFilter(fileConfig, resolveEndpoint);
   return multer({
     storage: uniqueTempPath ? createStorage({ uniqueTempPath: true }) : storage,

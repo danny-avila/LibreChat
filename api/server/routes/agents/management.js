@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const {
   EModelEndpoint,
@@ -6,6 +7,7 @@ const {
   mergeFileConfig,
   resolveEndpointType,
 } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 const {
   createAgentManagementCreateHandler,
   createAgentManagementDeleteHandler,
@@ -13,6 +15,7 @@ const {
   createAgentManagementUploadResponse,
   createAgentManagementReadHandlers,
   createAgentManagementUpdateHandler,
+  ioredisClient,
   mapAgentManagementError,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
@@ -25,6 +28,39 @@ const { getEndpointsConfig } = require('~/server/services/Config');
 const v1 = require('~/server/controllers/agents/v1');
 const db = require('~/models');
 const { requireAgentManagementAuth } = require('./middleware');
+
+const AGENT_UPLOAD_LOCK_TTL_MS = 10 * 60 * 1000;
+const AGENT_UPLOAD_LOCK_WAIT_MS = 2 * 60 * 1000;
+const releaseUploadLockScript = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
+const withAgentUploadLock = async (key, task) => {
+  if (!ioredisClient) {
+    return await task();
+  }
+  const lockKey = `agent-management:file-upload:${key}`;
+  const token = crypto.randomUUID();
+  const deadline = Date.now() + AGENT_UPLOAD_LOCK_WAIT_MS;
+  while ((await ioredisClient.set(lockKey, token, 'PX', AGENT_UPLOAD_LOCK_TTL_MS, 'NX')) !== 'OK') {
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for Agent file upload lock');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  try {
+    return await task();
+  } finally {
+    try {
+      await ioredisClient.eval(releaseUploadLockScript, 1, lockKey, token);
+    } catch (error) {
+      logger.warn('[AgentManagement] Failed to release Agent file upload lock', error);
+    }
+  }
+};
 
 const router = express.Router();
 const readHandlers = createAgentManagementReadHandlers({
@@ -86,25 +122,20 @@ const fileHandlers = createAgentManagementFileHandlers({
       totalSizeLimit: endpointConfig.totalSizeLimit,
     };
   },
+  runUploadExclusive: withAgentUploadLock,
 });
 const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
-let uploadPromise;
-const getManagementUploader = async () => {
+const uploadSingleFile = async (req, res, next) => {
   try {
-    uploadPromise ??= createMulterInstance({
+    const upload = await createMulterInstance({
+      fileConfig: req.config?.fileConfig ?? null,
       resolveEndpoint: fileHandlers.getUploadConfig,
       uniqueTempPath: true,
     });
-    return await uploadPromise;
+    return upload.single('file')(req, res, next);
   } catch (error) {
-    uploadPromise = undefined;
-    throw error;
+    return next(error);
   }
-};
-const uploadSingleFile = (req, res, next) => {
-  getManagementUploader()
-    .then((upload) => upload.single('file')(req, res, next))
-    .catch(next);
 };
 const handleUploadError = (error, _req, res, _next) => {
   const status = Number(error?.statusCode);

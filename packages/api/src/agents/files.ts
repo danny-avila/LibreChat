@@ -94,6 +94,7 @@ export interface AgentManagementFileDeps {
   processUpload: (req: Request, res: Response) => Promise<Response | void>;
   deleteTempFile: (path: string) => Promise<void>;
   getUploadConfig: (req: Request, agent: AgentManagementFileAgent) => Promise<AgentUploadConfig>;
+  runUploadExclusive: <T>(key: string, task: () => Promise<T>) => Promise<T>;
 }
 
 function sendError(res: Response, code: Parameters<typeof mapAgentManagementError>[0]) {
@@ -363,9 +364,9 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
         return sendError(res, cleaned ? 'permission_denied' : 'internal_error');
       }
 
-      return await withUploadQueue(
-        `${authorized.tenantId}:${req.params.id}:${purpose}`,
-        async () => {
+      const queueKey = `${authorized.tenantId}:${req.params.id}:${purpose}`;
+      return await deps.runUploadExclusive(queueKey, async () =>
+        withUploadQueue(queueKey, async () => {
           if (
             !(await isWithinAggregateLimits(
               req,
@@ -387,7 +388,7 @@ export function createAgentManagementFileHandlers(deps: AgentManagementFileDeps)
           req.headers.accept = 'application/json';
           await deps.processUpload(req, res);
           return res;
-        },
+        }),
       );
     } catch (error) {
       logger.error('[AgentManagement] Error preparing Agent file upload', error);

@@ -52,7 +52,11 @@ const mockCreateAgentManagementFileHandlers = jest.fn((deps) => {
 const mockBrowserCreate = jest.fn();
 const mockBrowserUpdate = jest.fn();
 const mockCheckBan = jest.fn((_req, _res, next) => next());
-const mockConfigMiddleware = jest.fn((_req, _res, next) => next());
+const mockRequestFileConfig = { endpoints: { Moonshot: { fileLimit: 3 } } };
+const mockConfigMiddleware = jest.fn((req, _res, next) => {
+  req.config = { fileConfig: mockRequestFileConfig };
+  next();
+});
 const mockUaParser = jest.fn((_req, _res, next) => next());
 const mockUploadMiddleware = jest.fn((req, _res, next) => {
   req.file = { path: '/tmp/upload', originalname: 'input.txt' };
@@ -64,6 +68,8 @@ const mockCreateMulterInstance = jest.fn().mockResolvedValue({
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
   Moonshot: { type: 'custom' },
 });
+const mockRedisSet = jest.fn().mockResolvedValue('OK');
+const mockRedisEval = jest.fn().mockResolvedValue(1);
 
 const mockRequireAgentManagementAuth = jest.fn((req, res, next) => {
   if (req.headers.authorization !== 'Bearer valid-token') {
@@ -77,6 +83,7 @@ jest.mock('../middleware', () => ({
   requireAgentManagementAuth: mockRequireAgentManagementAuth,
 }));
 jest.mock('@librechat/api', () => ({
+  ioredisClient: { set: mockRedisSet, eval: mockRedisEval },
   mapAgentManagementError: mockMapAgentManagementError,
   restoreTenantContextFromReq: jest.fn((_req, _res, next) => next()),
   createAgentManagementCreateHandler: mockCreateAgentManagementCreateHandler,
@@ -132,6 +139,8 @@ describe('Agent Management route boundary', () => {
     mockFileAuthorizeUpload.mockClear();
     mockFileUpload.mockClear();
     mockUploadMiddleware.mockClear();
+    mockRedisSet.mockClear();
+    mockRedisEval.mockClear();
   });
 
   it('rejects a request before reaching management routes without machine authentication', async () => {
@@ -256,6 +265,7 @@ describe('Agent Management route boundary', () => {
     expect(retried.status).toBe(200);
     expect(mockCreateMulterInstance).toHaveBeenCalledTimes(2);
     expect(mockCreateMulterInstance).toHaveBeenLastCalledWith({
+      fileConfig: mockRequestFileConfig,
       resolveEndpoint: mockGetFileUploadConfig,
       uniqueTempPath: true,
     });
@@ -300,6 +310,29 @@ describe('Agent Management route boundary', () => {
       fileLimit: 3,
       totalSizeLimit: 20 * 1024 * 1024,
     });
+  });
+
+  it('holds the shared Agent upload lock around aggregate checks and persistence', async () => {
+    const task = jest.fn().mockResolvedValue('uploaded');
+
+    await expect(mockFileDeps.runUploadExclusive('tenant-a:agent-one:context', task)).resolves.toBe(
+      'uploaded',
+    );
+
+    expect(mockRedisSet).toHaveBeenCalledWith(
+      'agent-management:file-upload:tenant-a:agent-one:context',
+      expect.any(String),
+      'PX',
+      10 * 60 * 1000,
+      'NX',
+    );
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(mockRedisEval).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call('DEL', KEYS[1])"),
+      1,
+      'agent-management:file-upload:tenant-a:agent-one:context',
+      expect.any(String),
+    );
   });
 
   it('maps multipart failures into the management error contract', async () => {
