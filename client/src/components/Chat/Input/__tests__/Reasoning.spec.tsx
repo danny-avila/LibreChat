@@ -72,6 +72,7 @@ describe('ReasoningControl', () => {
   it('renders a compact, localized disclosure for the next message', async () => {
     render(
       <ReasoningControl
+        index={0}
         setting={enumSetting}
         value={{ key: 'reasoning_effort', value: 'medium' } as TReasoningOverride}
         onChange={jest.fn()}
@@ -93,6 +94,7 @@ describe('ReasoningControl', () => {
     const onChange = jest.fn();
     render(
       <ReasoningControl
+        index={0}
         setting={enumSetting}
         value={{ key: 'reasoning_effort', value: 'medium' } as TReasoningOverride}
         onChange={onChange}
@@ -114,6 +116,7 @@ describe('ReasoningControl', () => {
   it('renders a modal dialog with an explicit close control', () => {
     render(
       <ReasoningControl
+        index={0}
         setting={enumSetting}
         value={{ key: 'reasoning_effort', value: 'medium' } as TReasoningOverride}
         onChange={jest.fn()}
@@ -131,6 +134,7 @@ describe('ReasoningControl', () => {
     const onChange = jest.fn();
     render(
       <ReasoningControl
+        index={0}
         setting={budgetSetting}
         value={{ key: 'thinkingBudget', value: 4096 }}
         onChange={onChange}
@@ -160,6 +164,7 @@ describe('ReasoningControl', () => {
     const onChange = jest.fn();
     render(
       <ReasoningControl
+        index={0}
         setting={budgetSetting}
         value={{ key: 'thinkingBudget', value: -1 }}
         onChange={onChange}

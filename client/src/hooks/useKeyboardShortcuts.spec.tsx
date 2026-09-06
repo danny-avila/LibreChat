@@ -2,19 +2,21 @@ import copy from 'copy-to-clipboard';
 import { MemoryRouter } from 'react-router-dom';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, act, cleanup, renderHook } from '@testing-library/react';
-import type { TConversation } from 'librechat-data-provider';
+import { render, act, cleanup, renderHook, fireEvent, screen } from '@testing-library/react';
+import type { SettingDefinition, TConversation } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import useKeyboardShortcuts, {
   isOverridden,
   effectiveBinding,
   useShortcutHint,
+  useShortcutActions,
   getShortcutDisplay,
   getShortcutAriaKey,
   useShortcutDisplay,
   useShortcutAriaKey,
 } from './useKeyboardShortcuts';
+import { ReasoningControl } from '~/components/Chat/Input/Reasoning';
 import store from '~/store';
 
 jest.mock('copy-to-clipboard', () => ({
@@ -28,6 +30,7 @@ jest.mock('./useNewConvo', () => ({
 }));
 
 const STORAGE_KEY = 'customKeyboardShortcuts';
+const queryClient = new QueryClient();
 const copyMock = copy as jest.MockedFunction<typeof copy>;
 
 function buildConversation(conversationId: string, title: string): TConversation {
@@ -58,6 +61,7 @@ function renderHarness(
   conversation?: TConversation,
   route = '/c/test-convo',
   initialize?: (snapshot: MutableSnapshot) => void,
+  children?: ReactNode,
 ) {
   const initializeState = (snapshot: MutableSnapshot) => {
     if (conversation) {
@@ -65,15 +69,21 @@ function renderHarness(
     }
     initialize?.(snapshot);
   };
-  return render(<Harness />, {
-    wrapper: ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={new QueryClient()}>
-        <RecoilRoot initializeState={initializeState}>
-          <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
-        </RecoilRoot>
-      </QueryClientProvider>
-    ),
-  });
+  return render(
+    <>
+      <Harness />
+      {children}
+    </>,
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <RecoilRoot initializeState={initializeState}>
+            <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+          </RecoilRoot>
+        </QueryClientProvider>
+      ),
+    },
+  );
 }
 
 beforeEach(() => {
@@ -83,6 +93,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  queryClient.clear();
   document.body.replaceChildren();
 });
 
@@ -570,6 +581,44 @@ describe('stop generating shortcut', () => {
     expect(second.onClick).toHaveBeenCalledTimes(1);
     expect(first.onClick).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('stops only the secondary pane from its numeric reasoning input and slider', () => {
+    const setting = {
+      key: 'thinkingBudget',
+      label: 'com_endpoint_thinking_budget',
+      type: 'number',
+      range: { min: -1, positiveMin: 128, max: 32768, step: 128 },
+    } as SettingDefinition;
+    let stop: (() => boolean | void) | undefined;
+    function NumericReasoning() {
+      stop = useShortcutActions().find((action) => action.id === 'stopGenerating')?.run;
+      return (
+        <ReasoningControl
+          index={1}
+          setting={setting}
+          value={{ key: 'thinkingBudget', value: 4096 }}
+          onChange={jest.fn()}
+        />
+      );
+    }
+    renderHarness(undefined, '/c/test-convo', undefined, <NumericReasoning />);
+    const first = appendComposerForm();
+    const second = appendComposerForm();
+    first.form.dataset.chatPane = '0';
+    second.form.dataset.chatPane = '1';
+    fireEvent.click(screen.getByRole('button', { name: /Reasoning for next message/ }));
+
+    for (const role of ['spinbutton', 'slider']) {
+      const control = screen.getByRole(role);
+      control.focus();
+      act(() => {
+        expect(stop?.()).toBe(true);
+      });
+    }
+
+    expect(second.onClick).toHaveBeenCalledTimes(2);
+    expect(first.onClick).not.toHaveBeenCalled();
   });
 
   it('does not prevent the event when nothing is generating', () => {

@@ -2,18 +2,10 @@ import React, { createRef } from 'react';
 import { ReasoningEffort } from 'librechat-data-provider';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { SettingDefinition, TConversation, TReasoningOverride } from 'librechat-data-provider';
+import type * as ReasoningModule from '../../Reasoning';
 import Thinking from '../Thinking';
 
 const mockSetValue = jest.fn();
-type ReasoningControlMockProps = {
-  setting: SettingDefinition;
-  value?: TReasoningOverride;
-  disabled?: boolean;
-  onChange: (value: TReasoningOverride) => void;
-};
-const mockReasoningControl = jest.fn((_props: ReasoningControlMockProps) => (
-  <div data-testid="numeric-reasoning-control" />
-));
 let mockPendingOverride: TReasoningOverride | undefined;
 let mockSetting = {
   key: 'reasoning_effort',
@@ -30,7 +22,7 @@ const mockChatContext = React.createContext<{ conversation: TConversation | null
 });
 
 jest.mock('../../Reasoning', () => ({
-  ReasoningControl: (props: ReasoningControlMockProps) => mockReasoningControl(props),
+  ReasoningControl: jest.requireActual<typeof ReasoningModule>('../../Reasoning').ReasoningControl,
   useComposerReasoning: () => ({
     setting: mockSetting,
     value:
@@ -118,26 +110,21 @@ describe('Thinking', () => {
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 
-  it('marks its portal with the owning split-pane index', () => {
-    renderInComposer({ index: 1 });
-    fireEvent.click(screen.getByTestId('composer-thinking-button'));
-
-    expect(document.querySelector('[data-chat-pane-portal="1"]')).toBeInTheDocument();
-  });
-
-  it('routes numeric budgets through the shared reasoning control', () => {
+  it('stages a numeric budget selected from the secondary composer', () => {
     mockSetting = {
       key: 'thinkingBudget',
       type: 'number',
+      default: 4096,
       range: { min: -1, positiveMin: 128, max: 32768, step: 128 },
     } as SettingDefinition;
-    renderInComposer();
+    renderInComposer({ index: 1 });
 
-    expect(screen.queryByTestId('composer-thinking-button')).not.toBeInTheDocument();
-    expect(screen.getByTestId('numeric-reasoning-control')).toBeInTheDocument();
-    expect(mockReasoningControl.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ setting: mockSetting, disabled: false, onChange: mockSetValue }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_reasoning_for_next_message/ }));
+    const slider = screen.getByRole('slider');
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+
+    expect(mockSetValue).toHaveBeenLastCalledWith({ key: 'thinkingBudget', value: 4224 });
   });
 
   it('shows staged one-shot effort without mutating the conversation', () => {

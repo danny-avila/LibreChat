@@ -217,6 +217,7 @@ function Thinking({ index, disabled, hasAddedConversation }: ThinkingProps) {
   if (reasoning.setting.type !== 'enum' || reasoning.setting.options?.length === 0) {
     return (
       <ReasoningControl
+        index={index}
         setting={reasoning.setting}
         value={reasoning.value}
         disabled={disabled}

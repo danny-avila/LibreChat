@@ -27,6 +27,7 @@ import { formatTokens } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 type ReasoningControlProps = {
+  index: number;
   setting: SettingDefinition;
   value?: TReasoningOverride;
   disabled?: boolean;
@@ -42,6 +43,7 @@ const translated = (
     : String(value ?? '');
 
 export function ReasoningControl({
+  index,
   setting,
   value,
   disabled = false,
@@ -121,6 +123,7 @@ export function ReasoningControl({
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
+          data-chat-pane-portal={index}
           role="dialog"
           aria-label={label}
           align="end"
