@@ -1,10 +1,13 @@
 const UPLOAD_PLACEHOLDER = /^\/mnt\/data\/(\d+)\.(png|jpe?g|webp)$/;
+const ATTACHMENT_REFERENCE = /^attachment:\/([^/]+)$/;
 const BASE64_PAYLOAD = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$(?![\s\S])/;
 const DATA_URL = /^data:(image\/[^;,]+);base64,([\s\S]*)$(?![\s\S])/i;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 type SupportedImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
-type UploadPlaceholder = { index: number; mimeType: SupportedImageMime };
+type UploadPlaceholder =
+  | { kind: 'indexed'; index: number; mimeType: SupportedImageMime }
+  | { kind: 'attachment'; filename: string; mimeType: SupportedImageMime };
 
 type ToolArgumentValue =
   | string
@@ -16,6 +19,7 @@ type ToolArgumentValue =
 
 export interface ImageToolRequestFile {
   file_id?: string;
+  filename?: string;
   type?: string;
 }
 
@@ -31,6 +35,7 @@ export interface ImageToolUser {
 
 export interface ImageToolFile {
   file_id: string;
+  filename?: string;
   type?: string;
 }
 
@@ -101,18 +106,31 @@ function getUploadPlaceholder(value: ToolArgumentValue): UploadPlaceholder | und
     return undefined;
   }
 
-  const match = value.match(UPLOAD_PLACEHOLDER);
-  if (!match) {
+  const indexedMatch = value.match(UPLOAD_PLACEHOLDER);
+  if (indexedMatch) {
+    const index = Number(indexedMatch[1]);
+    const mimeType = normalizeImageMimeType(`image/${indexedMatch[2]}`);
+    return Number.isSafeInteger(index) && mimeType
+      ? { kind: 'indexed', index, mimeType }
+      : undefined;
+  }
+
+  const attachmentMatch = value.match(ATTACHMENT_REFERENCE);
+  if (!attachmentMatch) {
     return undefined;
   }
 
-  const index = Number(match[1]);
-  const mimeType = normalizeImageMimeType(`image/${match[2]}`);
-  return Number.isSafeInteger(index) && mimeType ? { index, mimeType } : undefined;
+  const filename = attachmentMatch[1];
+  const extension = filename.match(/\.(png|jpe?g|webp)$/)?.[1];
+  const mimeType = normalizeImageMimeType(extension ? `image/${extension}` : undefined);
+  return mimeType ? { kind: 'attachment', filename, mimeType } : undefined;
 }
 
-function getUploadPlaceholderKey({ index, mimeType }: UploadPlaceholder): string {
-  return `${index}:${mimeType}`;
+function getUploadPlaceholderKey(placeholder: UploadPlaceholder): string {
+  if (placeholder.kind === 'indexed') {
+    return `${placeholder.index}:${placeholder.mimeType}`;
+  }
+  return `attachment:${placeholder.filename}:${placeholder.mimeType}`;
 }
 
 function getRequestImageFiles(request?: ImageToolRequest): Array<ImageToolRequestFile | undefined> {
@@ -129,6 +147,10 @@ function collectReferencedPlaceholders(
   if (placeholder) {
     placeholders.set(getUploadPlaceholderKey(placeholder), placeholder);
     return;
+  }
+
+  if (typeof value === 'string' && value.startsWith('attachment:')) {
+    throw new UnresolvedUploadedImageError();
   }
 
   if (Array.isArray(value)) {
@@ -232,16 +254,28 @@ export async function resolveUploadedImageArguments({
     throw new UnresolvedUploadedImageError();
   }
 
-  const orderedPlaceholders = [...referencedPlaceholders.values()].sort(
-    (left, right) => left.index - right.index,
-  );
+  const orderedPlaceholders = [...referencedPlaceholders.values()].sort((left, right) => {
+    if (left.kind === 'attachment' || right.kind === 'attachment') {
+      return getUploadPlaceholderKey(left).localeCompare(getUploadPlaceholderKey(right));
+    }
+    return left.index - right.index;
+  });
   const referencedFilesByPlaceholder = new Map<string, ImageToolRequestFile>();
   for (const placeholder of orderedPlaceholders) {
     const placeholderKey = getUploadPlaceholderKey(placeholder);
-    const requestFile = requestImageFiles[placeholder.index];
+    const requestFile =
+      placeholder.kind === 'indexed'
+        ? requestImageFiles[placeholder.index]
+        : (() => {
+            const matchingFiles = requestImageFiles.filter(
+              (file) => file?.filename === placeholder.filename,
+            );
+            return matchingFiles.length === 1 ? matchingFiles[0] : undefined;
+          })();
     if (
       !requestFile?.file_id ||
       normalizeImageMimeType(requestFile.type) !== placeholder.mimeType ||
+      (placeholder.kind === 'attachment' && requestFile.filename !== placeholder.filename) ||
       referencedFilesByPlaceholder.has(placeholderKey)
     ) {
       throw new UnresolvedUploadedImageError();
@@ -271,7 +305,12 @@ export async function resolveUploadedImageArguments({
   }
   const imageFiles = referencedFileIds.map((fileId) => filesById.get(fileId)!);
 
-  const { image_urls: imageUrls } = await dependencies.encodeImages(request, imageFiles);
+  let imageUrls: ImageToolEncoding['image_urls'];
+  try {
+    ({ image_urls: imageUrls } = await dependencies.encodeImages(request, imageFiles));
+  } catch {
+    throw new UnresolvedUploadedImageError();
+  }
   const imageUrlsByFileId = new Map<string, { mimeType: SupportedImageMime; url: string }>();
   for (const image of imageUrls ?? []) {
     const dataUrl = parseImageDataUrl(image.image_url?.url);
@@ -295,6 +334,7 @@ export async function resolveUploadedImageArguments({
       const dataUrl = imageUrlsByFileId.get(requestFile.file_id!)!;
       if (
         normalizeImageMimeType(file.type) !== placeholder.mimeType ||
+        (placeholder.kind === 'attachment' && file.filename !== placeholder.filename) ||
         dataUrl.mimeType !== placeholder.mimeType
       ) {
         throw new UnresolvedUploadedImageError();

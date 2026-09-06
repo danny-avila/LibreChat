@@ -2572,12 +2572,20 @@ describe('User parameter passing tests', () => {
           filepath: `/uploads/${format}`,
           filename: `upload.${format}`,
         };
-        const mockUser = { id: `image-user-${format}`, role: 'USER' };
+        const capturedUser = { id: `captured-image-user-${format}`, role: 'USER' };
+        const effectiveUser = { id: `image-user-${format}`, role: 'USER' };
         const request = {
-          body: { files: [{ file_id: uploadedFile.file_id, type: mimeType }] },
+          body: {
+            files: [
+              { file_id: uploadedFile.file_id, filename: uploadedFile.filename, type: mimeType },
+            ],
+          },
           config: {},
         };
-        const toolArguments = { image: `/mnt/data/0.${format}`, prompt: 'keep this field' };
+        const toolArguments = {
+          image: `attachment:/${uploadedFile.filename}`,
+          prompt: 'keep this field',
+        };
         const { getRoleByName } = require('~/models');
         const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
         getRoleByName.mockResolvedValue({
@@ -2593,7 +2601,7 @@ describe('User parameter passing tests', () => {
         const mcpTool = await createMCPTool({
           config: { forwardUploadedImages: true, type: 'stdio', command: 'node' },
           request,
-          user: mockUser,
+          user: capturedUser,
           toolKey: `custom_edit${D}arbitrary-image-server`,
           provider: 'openai',
           userMCPAuthMap: {},
@@ -2609,7 +2617,7 @@ describe('User parameter passing tests', () => {
 
         await expect(
           mcpTool.invoke(toolArguments, {
-            configurable: { user: mockUser },
+            configurable: { user: effectiveUser },
             metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
             toolCall: {},
           }),
@@ -2617,7 +2625,7 @@ describe('User parameter passing tests', () => {
 
         expect(mockGetFiles).toHaveBeenCalledWith({
           file_id: { $in: [uploadedFile.file_id] },
-          user: mockUser.id,
+          user: effectiveUser.id,
         });
         expect(mockCallTool).toHaveBeenCalledWith(
           expect.objectContaining({

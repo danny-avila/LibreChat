@@ -154,6 +154,7 @@ describe('encodeAndFormat - request memory guard', () => {
   it.each([
     ['zero metadata', 0],
     ['stale-low metadata', 1],
+    ['missing metadata', undefined],
   ])('rejects an actual over-limit local MCP image with %s', async (_name, metadataBytes) => {
     const { file, imageContent } = createLocalImage({
       bytes: mcpImageSizeLimit + 1,
@@ -193,6 +194,23 @@ describe('encodeAndFormat - request memory guard', () => {
         image_url: { url: `data:image/png;base64,${imageContent}`, detail: 'auto' },
       }),
     ]);
+  });
+
+  it('returns no MCP image URL for a persisted image record without dimensions', async () => {
+    const file = {
+      source: FileSources.local,
+      type: 'image/png',
+      file_id: 'missing-dimensions',
+      filepath: 'local/no-dimensions.png',
+      filename: 'no-dimensions.png',
+      bytes: 10,
+    };
+
+    const result = await encodeAndFormat(makeReq(), [file], { mcpImageSizeLimit }, VisionModes.mcp);
+
+    expect(result.image_urls).toEqual([]);
+    expect(result.files).toEqual([expect.objectContaining({ file_id: file.file_id })]);
+    expect(mockPrepareImagePayload).not.toHaveBeenCalled();
   });
 });
 
