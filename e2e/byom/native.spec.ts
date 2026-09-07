@@ -205,16 +205,26 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     return outputs.join('\n');
   }
 
+  async function selectApprovalMode(mode: 'Ask before changes' | 'Accept edits') {
+    const selector = page.getByTestId('code-approval-mode');
+    await expect(selector).toBeVisible();
+    await selector.click();
+    await page.getByRole('menuitemradio', { name: new RegExp(`^${mode}`) }).click();
+    await expect(selector).toContainText(mode);
+  }
+
   try {
     const a = await startWorker('a');
     await select(a);
     expect(await turn('create', 'Approve')).toContain('Created workspace/proof.txt');
     expect(await readFile(path.join(a.root, 'proof.txt'), 'utf8')).toBe('native-original');
     expect(await turn('read')).toContain('native-original');
-    await turn('edit', 'Approve');
+    await selectApprovalMode('Accept edits');
+    await turn('edit');
     expect(await readFile(path.join(a.root, 'proof.txt'), 'utf8')).toBe('native-edited');
     await page.reload();
     expect(await turn('read')).toContain('native-edited');
+    /** Accept edits does not weaken command execution approval. */
     expect(await turn('command', 'Approve')).toContain('native-command-ok');
     expect(await turn('reject', 'Reject')).toMatch(/reject|denied|declined/i);
     expect(await readdir(a.root)).not.toContain('rejected.txt');
@@ -237,6 +247,8 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       body: JSON.stringify({
         nativeCommand: true,
         physicalCreate: true,
+        acceptEditsWithoutPrompt: true,
+        commandsStillRequireApproval: true,
         crossTurnEdit: true,
         rejectedWriteAbsent: true,
         twoWorkerIsolation: true,
