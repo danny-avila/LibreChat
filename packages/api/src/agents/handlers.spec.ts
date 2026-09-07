@@ -6991,6 +6991,97 @@ describe('createToolExecuteHandler', () => {
         expect(result.content).toContain('bash_tool');
       });
 
+      describe('SANDBOX_INLINE_IMAGE_MAX_BYTES', () => {
+        const originalValue = process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES;
+        let warnSpy: jest.SpyInstance;
+
+        beforeEach(() => {
+          warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+        });
+
+        afterEach(() => {
+          warnSpy.mockRestore();
+          if (originalValue === undefined) {
+            delete process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES;
+          } else {
+            process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES = originalValue;
+          }
+        });
+
+        async function readOversizeImage() {
+          const readSandboxImage = jest.fn(async () => ({
+            tooLarge: true as const,
+            bytes: 30_000_000,
+          }));
+          const handler = makeReadFileHandler({
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            readSandboxImage,
+          });
+          const [result] = await invokeHandler(handler, [
+            { id: 'call_limit', name: Constants.READ_FILE, args: { path: '/mnt/data/big.png' } },
+          ]);
+          return { result, readSandboxImage };
+        }
+
+        it('caps sandbox image reads at 1 MiB when unset', async () => {
+          delete process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES;
+
+          const { result, readSandboxImage } = await readOversizeImage();
+
+          expect(readSandboxImage).toHaveBeenCalledWith(
+            expect.objectContaining({ maxBytes: 1_048_576 }),
+          );
+          expect(result.content).toContain('over the 1048576-byte inline limit');
+          expect(warnSpy).not.toHaveBeenCalled();
+        });
+
+        it('uses the configured cap for the read and names it in the over-limit message', async () => {
+          process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES = '5242880';
+
+          const { result, readSandboxImage } = await readOversizeImage();
+
+          expect(readSandboxImage).toHaveBeenCalledWith(
+            expect.objectContaining({ maxBytes: 5_242_880 }),
+          );
+          expect(result.content).toContain('over the 5242880-byte inline limit');
+          expect(result.content).toContain('under 5242880 bytes');
+          expect(warnSpy).not.toHaveBeenCalled();
+        });
+
+        it.each([['lots'], ['0'], ['-5'], ['1.5e6']])(
+          'falls back to the default and warns on the invalid value %j',
+          async (value) => {
+            process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES = value;
+
+            const { readSandboxImage } = await readOversizeImage();
+
+            expect(readSandboxImage).toHaveBeenCalledWith(
+              expect.objectContaining({ maxBytes: 1_048_576 }),
+            );
+            expect(warnSpy).toHaveBeenCalledWith(
+              expect.stringContaining(
+                `SANDBOX_INLINE_IMAGE_MAX_BYTES=${value} is not a positive integer`,
+              ),
+            );
+          },
+        );
+
+        it('clamps values above the 20 MiB ceiling and warns', async () => {
+          process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES = '999999999';
+
+          const { result, readSandboxImage } = await readOversizeImage();
+
+          expect(readSandboxImage).toHaveBeenCalledWith(
+            expect.objectContaining({ maxBytes: 20_971_520 }),
+          );
+          expect(result.content).toContain('over the 20971520-byte inline limit');
+          expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('exceeds the 20971520-byte ceiling'),
+          );
+        });
+      });
+
       it('reports a round-trip-bound image as unreadable inline, not oversize', async () => {
         /* Within the byte cap but needing more windowed `/exec` reads than
          * one call may spend on the Code API's execution limiter. Saying

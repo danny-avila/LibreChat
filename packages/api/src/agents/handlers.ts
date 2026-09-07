@@ -656,18 +656,63 @@ function truncateUtf8(value: string, maxBytes: number): string {
 }
 
 /**
- * Inline ceiling for images pulled out of the code-execution sandbox —
- * deliberately tighter than {@link MAX_BINARY_BYTES}, which governs the
- * skill-file path. The two differ because their transports differ: skill
- * files stream from storage, while sandbox bytes come back base64 over
- * `/exec` stdout, which the runner caps (`SANDBOX_OUTPUT_MAX_SIZE`). The
- * reader therefore windows the file, so cost scales in round-trips —
- * ~32 at this limit vs ~160 at 5MB. Nothing is lost by stopping here:
- * vision providers downsample to ~1.5-2k px regardless, so multi-MB
- * originals buy no fidelity, and anything larger degrades to the
- * `bash_tool` hint below.
+ * Default inline ceiling for images pulled out of the code-execution
+ * sandbox — deliberately tighter than {@link MAX_BINARY_BYTES}, which
+ * governs the skill-file path. The two differ because their transports
+ * differ: skill files stream from storage, while sandbox bytes come back
+ * base64 over `/exec` stdout, which the runner caps
+ * (`SANDBOX_OUTPUT_MAX_SIZE`). The reader therefore windows the file, so
+ * cost scales in round-trips — ~32 at this limit vs ~160 at 5MB. Nothing
+ * is lost by stopping here: vision providers downsample to ~1.5-2k px
+ * regardless, so multi-MB originals buy no fidelity, and anything larger
+ * degrades to the `bash_tool` hint below.
+ *
+ * Deployments whose sandbox returns larger windows (a bigger
+ * `SANDBOX_OUTPUT_MAX_SIZE`) and whose model request path accepts the
+ * resulting payload can raise it with `SANDBOX_INLINE_IMAGE_MAX_BYTES`,
+ * see {@link getSandboxInlineImageMaxBytes}.
  */
-const MAX_SANDBOX_INLINE_IMAGE_BYTES = 1024 * 1024;
+const DEFAULT_SANDBOX_INLINE_IMAGE_BYTES = 1024 * 1024;
+/** Hard upper bound for `SANDBOX_INLINE_IMAGE_MAX_BYTES`: the inlined image
+ *  travels base64-encoded inside the model request, and vision providers
+ *  reject images past ~20MB. */
+const MAX_SANDBOX_INLINE_IMAGE_BYTES_CEILING = 20 * 1024 * 1024;
+let warnedSandboxInlineImageLimit: string | undefined;
+
+/**
+ * Resolves the inline byte cap for sandbox images from
+ * `SANDBOX_INLINE_IMAGE_MAX_BYTES`. Unset means the
+ * {@link DEFAULT_SANDBOX_INLINE_IMAGE_BYTES} default; a value that is not a
+ * positive integer falls back to the default, one above
+ * {@link MAX_SANDBOX_INLINE_IMAGE_BYTES_CEILING} is clamped to it. Either
+ * correction is logged once per distinct value so a typo in the env does
+ * not silently change behavior. Read per call, so the same process picks up
+ * a changed env in tests and on config reload.
+ */
+export function getSandboxInlineImageMaxBytes(): number {
+  const raw = process.env.SANDBOX_INLINE_IMAGE_MAX_BYTES?.trim();
+  if (raw == null || raw === '') {
+    return DEFAULT_SANDBOX_INLINE_IMAGE_BYTES;
+  }
+  const warnOnce = (message: string) => {
+    if (warnedSandboxInlineImageLimit !== raw) {
+      warnedSandboxInlineImageLimit = raw;
+      logger.warn(`[read_file] SANDBOX_INLINE_IMAGE_MAX_BYTES=${raw} ${message}`);
+    }
+  };
+  if (!/^\d+$/.test(raw) || Number(raw) <= 0) {
+    warnOnce(
+      `is not a positive integer; using the default of ${DEFAULT_SANDBOX_INLINE_IMAGE_BYTES} bytes`,
+    );
+    return DEFAULT_SANDBOX_INLINE_IMAGE_BYTES;
+  }
+  const parsed = Number(raw);
+  if (parsed > MAX_SANDBOX_INLINE_IMAGE_BYTES_CEILING) {
+    warnOnce(`exceeds the ${MAX_SANDBOX_INLINE_IMAGE_BYTES_CEILING}-byte ceiling; clamping to it`);
+    return MAX_SANDBOX_INLINE_IMAGE_BYTES_CEILING;
+  }
+  return parsed;
+}
 const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
@@ -2092,6 +2137,7 @@ async function handleSandboxImageRead(
   }
 
   const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
+  const inlineImageMaxBytes = getSandboxInlineImageMaxBytes();
   let read:
     | { base64: string; bytes: number }
     | { tooLarge: true; reason?: 'size' | 'round_trips'; bytes: number; inlineCeiling?: number }
@@ -2101,7 +2147,7 @@ async function handleSandboxImageRead(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
-      maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      maxBytes: inlineImageMaxBytes,
       ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
@@ -2123,11 +2169,11 @@ async function handleSandboxImageRead(
     const ceiling =
       read.reason === 'round_trips' && read.inlineCeiling != null
         ? read.inlineCeiling
-        : MAX_SANDBOX_INLINE_IMAGE_BYTES;
+        : inlineImageMaxBytes;
     const overBudget =
       read.reason === 'round_trips'
         ? `more than this sandbox can return inline (about ${ceiling} bytes)`
-        : `over the ${MAX_SANDBOX_INLINE_IMAGE_BYTES}-byte inline limit`;
+        : `over the ${inlineImageMaxBytes}-byte inline limit`;
     return {
       toolCallId: tc.id,
       status: 'success',
