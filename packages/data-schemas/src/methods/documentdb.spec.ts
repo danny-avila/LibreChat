@@ -431,20 +431,45 @@ function isJavaScriptSource(expression: ts.Expression): boolean {
  * `'$where'`, `obj['$where']`) remains an offense.
  */
 const CALL_FORWARDERS = new Set(['call', 'apply', 'bind']);
+const CODE_ASSIGNMENT_OPERATORS = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+]);
 
-function isCalled(access: ts.PropertyAccessExpression): boolean {
-  let callee: ts.Node = access;
-  while (ts.isParenthesizedExpression(callee.parent)) {
-    callee = callee.parent;
+/** Steps outward through the wrappers `unwrapExpression` peels inward, so a
+ * call on `(x)`, `x as T`, `x satisfies T` or `x!` is still a call on `x`. */
+function outermostWrapper(node: ts.Node): ts.Node {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current.parent) ||
+    ts.isAsExpression(current.parent) ||
+    ts.isSatisfiesExpression(current.parent) ||
+    ts.isNonNullExpression(current.parent)
+  ) {
+    current = current.parent;
   }
-  const use = callee.parent;
-  if (ts.isCallExpression(use) && use.expression === callee) {
+  return current;
+}
+
+function isInvoked(callee: ts.Node): boolean {
+  const use = outermostWrapper(callee).parent;
+  return ts.isCallExpression(use) && use.expression === outermostWrapper(callee);
+}
+
+/** A direct call, or a call through `call`/`apply`/`bind` — the forwarder itself
+ * must be invoked, so a bag field that merely shares one of those names is not a call. */
+function isCalled(access: ts.PropertyAccessExpression): boolean {
+  if (isInvoked(access)) {
     return true;
   }
+  const use = outermostWrapper(access).parent;
   return (
     ts.isPropertyAccessExpression(use) &&
-    use.expression === callee &&
-    CALL_FORWARDERS.has(use.name.text)
+    use.expression === outermostWrapper(access) &&
+    CALL_FORWARDERS.has(use.name.text) &&
+    isInvoked(use)
   );
 }
 
@@ -460,7 +485,7 @@ function isUnjudgedDottedWhere(node: ts.Node): boolean {
   const assignsCode =
     ts.isBinaryExpression(use) &&
     use.left === access &&
-    use.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    CODE_ASSIGNMENT_OPERATORS.has(use.operatorToken.kind) &&
     isJavaScriptSource(use.right);
   return !assignsCode;
 }
@@ -809,6 +834,10 @@ describe('Amazon DocumentDB compatibility', () => {
       /** ...including a non-literal assigned to a filter, which no syntax can tell
        * from the bag write; the method sweep and the live run are the backstop. */
       expect(findForbiddenTokens(parse('fixture.ts', `filter.$where = predicate;`))).toEqual([]);
+      /** ...and a bag field that happens to be named like a call forwarder. */
+      expect(findForbiddenTokens(parse('fixture.ts', `document.$where.call = expected;`))).toEqual(
+        [],
+      );
       /** Every way of writing the operator itself is an offense: */
       expect(
         findForbiddenTokens(parse('fixture.ts', `const filter = { $where: 'this.a == 1' };`)),
@@ -850,6 +879,25 @@ describe('Amazon DocumentDB compatibility', () => {
       );
       expect(
         findForbiddenTokens(parse('fixture.ts', `document.$where('this.a == 1');`)),
+      ).not.toEqual([]);
+      /** Compound assignments of code, and calls through TypeScript's transparent
+       * wrappers, are the same two shapes spelled differently. */
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where ??= 'this.a == 1';`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where ||= () => this.a == 1;`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(
+          parse('fixture.ts', `(query.$where as typeof query.$where)('this.a == 1');`),
+        ),
+      ).not.toEqual([]);
+      expect(findForbiddenTokens(parse('fixture.ts', `query.$where!('this.a == 1');`))).not.toEqual(
+        [],
+      );
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `(query.$where!).call(query, 'this.a == 1');`)),
       ).not.toEqual([]);
     });
 
