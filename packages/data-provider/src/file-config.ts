@@ -599,6 +599,18 @@ export const isPermissiveMimeConfig = (types?: RegexLike[]): boolean => {
   return types.some((regex) => regex.test('x-librechat/x-probe'));
 };
 
+/**
+ * Detects whether an endpoint's `supportedMimeTypes` were set by the admin rather than inherited
+ * from the built-in default list. Inheritance is signaled by referential identity with
+ * `supportedMimeTypes`, which `mergeWithDefault` preserves for unconfigured endpoints.
+ */
+export const isExplicitMimeConfig = (types?: RegexLike[]): types is RegexLike[] => {
+  if (!types || types.length === 0) {
+    return false;
+  }
+  return types !== supportedMimeTypes;
+};
+
 /** The kind of content a provider upload path can actually send to the model. */
 export type MimeUploadCategory = 'image' | 'document' | 'audio' | 'video';
 

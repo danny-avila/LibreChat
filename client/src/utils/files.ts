@@ -16,7 +16,7 @@ import {
   EModelEndpoint,
   retrievalMimeTypes,
   isBedrockDocumentType,
-  isPermissiveMimeConfig,
+  isExplicitMimeConfig,
   codeInterpreterMimeTypes,
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
@@ -518,12 +518,12 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
     isDocumentSupportedProvider(currentProvider) ||
     isAzureWithResponsesApi
   ) {
-    /** Custom endpoints that the admin opened up (permissive config) honor that allowlist,
-     * matching the file picker; an inherited default config is not treated as opened up. */
+    /** Custom endpoints with an admin-configured allowlist honor it for direct attach (this is
+     * how video/audio get opted in for an OpenAI-compatible gateway), matching the file picker
+     * and the server-side encoders; an inherited default config is not treated as opened up. */
     if (
       ctx.endpointType === EModelEndpoint.custom &&
-      ctx.endpointSupportedMimeTypes != null &&
-      isPermissiveMimeConfig(ctx.endpointSupportedMimeTypes)
+      isExplicitMimeConfig(ctx.endpointSupportedMimeTypes)
     ) {
       return checkType(type, ctx.endpointSupportedMimeTypes);
     }
