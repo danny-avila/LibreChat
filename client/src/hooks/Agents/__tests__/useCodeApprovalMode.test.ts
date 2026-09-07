@@ -39,6 +39,7 @@ describe('useCodeApprovalMode', () => {
       agentsConfig: {
         statefulCodeSessions: {
           approvalsEnabled: true,
+          approvalModes: ['ask', 'acceptEdits'],
           environments: [
             {
               id: 'mac',
@@ -72,6 +73,7 @@ describe('useCodeApprovalMode', () => {
       agentsConfig: {
         statefulCodeSessions: {
           approvalsEnabled: true,
+          approvalModes: ['ask', 'acceptEdits'],
           environments: [
             {
               id: 'mac',
@@ -97,6 +99,7 @@ describe('useCodeApprovalMode', () => {
       agentsConfig: {
         statefulCodeSessions: {
           approvalsEnabled: false,
+          approvalModes: [],
           environments: [{ id: 'mac', name: 'Mac', type: 'attached' }],
         },
       },
@@ -119,6 +122,21 @@ describe('useCodeApprovalMode', () => {
     const { result } = renderHook(() => useCodeApprovalMode(conversation));
 
     expect(result.current).toEqual({ available: false, modes: [], selected: undefined });
+  });
+
+  test('keeps ask fail-closed when an older server does not advertise approval modes', () => {
+    mockUseGetAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        statefulCodeSessions: {
+          approvalsEnabled: true,
+          environments: [{ id: 'mac', name: 'Mac', type: 'attached' }],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useCodeApprovalMode(conversation));
+
+    expect(result.current).toEqual({ available: false, modes: [], selected: 'ask' });
   });
 
   test('keeps ask fail-closed while agent metadata is unavailable', () => {
@@ -155,6 +173,7 @@ describe('useCodeApprovalMode', () => {
       agentsConfig: {
         statefulCodeSessions: {
           approvalsEnabled: true,
+          approvalModes: ['ask', 'acceptEdits'],
           environments: [
             {
               id: 'mac',
@@ -228,6 +247,7 @@ describe('useCodeApprovalMode', () => {
       agentsConfig: {
         statefulCodeSessions: {
           approvalsEnabled: true,
+          approvalModes: ['ask', 'acceptEdits'],
           environments: [
             {
               id: 'mac',

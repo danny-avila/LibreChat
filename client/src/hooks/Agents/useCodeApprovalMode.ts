@@ -43,10 +43,12 @@ export default function useCodeApprovalMode(
   const supported =
     (conversation?.endpointType ?? conversation?.endpoint) === EModelEndpoint.agents &&
     statefulCodeSessions?.approvalsEnabled === true;
-  const available = supported && attachedEnvironments.length > 0;
+  const endpointModes = statefulCodeSessions?.approvalModes;
+  const available =
+    supported && endpointModes?.includes('ask') === true && attachedEnvironments.length > 0;
   const modes = useMemo(() => {
     if (!available) return [];
-    const allowed = new Set<CodeApprovalMode>(['ask']);
+    const allowed = new Set<CodeApprovalMode>(endpointModes?.includes('ask') ? ['ask'] : []);
     for (const environment of attachedEnvironments) {
       const environmentModes = getAllowedCodeApprovalModes({
         environment: 'attached',
@@ -54,10 +56,12 @@ export default function useCodeApprovalMode(
         configSchema: environment.configSchema,
         settings: environment.settings,
       });
-      if (environmentModes.includes('acceptEdits')) allowed.add('acceptEdits');
+      if (endpointModes?.includes('acceptEdits') && environmentModes.includes('acceptEdits')) {
+        allowed.add('acceptEdits');
+      }
     }
     return CODE_APPROVAL_MODES.filter((mode) => allowed.has(mode));
-  }, [attachedEnvironments, available]);
+  }, [attachedEnvironments, available, endpointModes]);
   const requested = conversation?.codeApprovalMode ?? 'ask';
   /**
    * Fail closed while agent/environment metadata is incomplete. An affirmative
