@@ -3259,31 +3259,70 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (typeof Message.meiliSearch !== 'function') {
       throw new Error('MeiliSearch plugin not registered on Message model');
     }
-    const results = await Message.meiliSearch(query, searchOptions, hydrate);
-    if (results.hits.length === 0) {
-      return results;
+    const attributes = searchOptions.attributesToRetrieve;
+    const internalAttributes =
+      attributes && !attributes.includes('*')
+        ? [...new Set([...attributes, 'messageId', 'user'])]
+        : attributes;
+    const limit = searchOptions.limit ?? 20;
+    let offset = searchOptions.offset ?? 0;
+    const search = () =>
+      Message.meiliSearch(
+        query,
+        {
+          ...searchOptions,
+          attributesToRetrieve: internalAttributes,
+          offset,
+          limit,
+        },
+        false,
+      );
+    const results = await search();
+    const hits: typeof results.hits = [];
+    let page = results;
+    while (page.hits.length > 0 && hits.length < limit) {
+      const identities = page.hits.flatMap((hit) =>
+        typeof hit.messageId === 'string' && typeof hit.user === 'string'
+          ? [{ messageId: hit.messageId, user: hit.user }]
+          : [],
+      );
+      const visible =
+        identities.length === 0
+          ? []
+          : await readVisibleMessages(
+              mongoose.models.Message as Model<IMessage>,
+              { $or: identities },
+              hydrate ? undefined : 'messageId user',
+              { sort: false },
+            );
+      const byIdentity = new Map(
+        visible.map((message) => [JSON.stringify([message.user, message.messageId]), message]),
+      );
+      for (const hit of page.hits) {
+        const message = byIdentity.get(JSON.stringify([hit.user, hit.messageId]));
+        if (!message) {
+          continue;
+        }
+        const projected = { ...hit };
+        if (attributes && !attributes.includes('*')) {
+          for (const field of ['messageId', 'user']) {
+            if (!attributes.includes(field)) {
+              delete projected[field];
+            }
+          }
+        }
+        hits.push(hydrate ? { ...message, ...projected } : projected);
+        if (hits.length === limit) {
+          break;
+        }
+      }
+      if (hits.length >= limit || page.hits.length < limit) {
+        break;
+      }
+      offset += page.hits.length;
+      page = await search();
     }
-    const identities = results.hits.flatMap((hit) =>
-      typeof hit.messageId === 'string' && typeof hit.user === 'string'
-        ? [{ messageId: hit.messageId, user: hit.user }]
-        : [],
-    );
-    if (identities.length === 0) {
-      return { ...results, hits: [] };
-    }
-    const visible = await readVisibleMessages(
-      mongoose.models.Message as Model<IMessage>,
-      { $or: identities },
-      'messageId user',
-      { sort: false },
-    );
-    const visibleIds = new Set(
-      visible.map((message) => JSON.stringify([message.user, message.messageId])),
-    );
-    return {
-      ...results,
-      hits: results.hits.filter((hit) => visibleIds.has(JSON.stringify([hit.user, hit.messageId]))),
-    };
+    return { ...results, hits };
   }
 
   return {

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createMethods, createModels, tenantStorage } from '..';
+import type { SearchParams } from 'meilisearch';
 import type { AllMethods, IMessage } from '..';
 
 let server: MongoMemoryServer;
@@ -97,6 +98,7 @@ it('filters before limits and preserves cursors and schema-private projections',
         $set: {
           contextMeta: { secret: 'private' },
           subagentTranscript: { messagesJson: 'private' },
+          subagentTask: { status: 'completed' },
         },
       },
     );
@@ -118,8 +120,84 @@ it('filters before limits and preserves cursors and schema-private projections',
     expect(ordinary[0]).not.toHaveProperty('subagentTranscript');
     const internal = await methods.getMessages({ user: owner }, '+subagentTranscript');
     expect(internal[0].subagentTranscript).toEqual({ messagesJson: 'private' });
+    const transcript = await methods.getMessages(
+      { user: owner },
+      'messageId parentMessageId text createdAt +subagentTranscript +subagentTask',
+    );
+    expect(transcript[0].subagentTranscript).toEqual({ messagesJson: 'private' });
+    expect(transcript[0].subagentTask).toEqual({ status: 'completed' });
+    expect(transcript[0]).not.toHaveProperty('contextMeta');
+    expect(transcript[0]).not.toHaveProperty('user');
   });
 });
+
+it.each([false, true])(
+  'refills projected search results with one visibility read per page (hydrate=%s)',
+  async (hydrate) => {
+    await scope(async () => {
+      await seedTurn();
+      await Message.create({
+        messageId: 'search-visible',
+        conversationId,
+        user: owner,
+        sender: 'User',
+        text: 'visible',
+      });
+      const indexed = [
+        { messageId: responseId, user: owner, conversationId },
+        { messageId: 'search-visible', user: owner, conversationId },
+      ];
+      const search = jest.fn(async (_query: string, options: SearchParams) => ({
+        hits: indexed
+          .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 20))
+          .map((hit) =>
+            Object.fromEntries(
+              Object.entries(hit).filter(
+                ([field]) =>
+                  !options.attributesToRetrieve || options.attributesToRetrieve.includes(field),
+              ),
+            ),
+          ),
+      }));
+      Object.defineProperty(Message, 'meiliSearch', { configurable: true, value: search });
+      const aggregate = jest.spyOn(Message, 'aggregate');
+      try {
+        const result = await methods.searchMessages(
+          'visible',
+          {
+            limit: 1,
+            attributesToRetrieve: ['conversationId', 'originalConversationId'],
+            filter: `user = "${owner}"`,
+          },
+          hydrate,
+        );
+        expect(result.hits).toHaveLength(1);
+        expect(result.hits[0].conversationId).toBe(conversationId);
+        if (hydrate) {
+          expect(result.hits[0].messageId).toBe('search-visible');
+          expect(result.hits[0].text).toBe('visible');
+        } else {
+          expect(result.hits[0]).toEqual({ conversationId });
+        }
+        expect(search).toHaveBeenCalledTimes(2);
+        expect(aggregate).toHaveBeenCalledTimes(2);
+        expect(search).toHaveBeenLastCalledWith(
+          'visible',
+          expect.objectContaining({
+            offset: 1,
+            limit: 1,
+            filter: `user = "${owner}"`,
+            attributesToRetrieve: ['conversationId', 'originalConversationId', 'messageId', 'user'],
+          }),
+          false,
+        );
+      } finally {
+        aggregate.mockRestore();
+        Reflect.deleteProperty(Message, 'meiliSearch');
+      }
+    });
+  },
+);
 
 it('does not publish a turn through another tenant or owner with the same response ID', async () => {
   await scope(async () => {

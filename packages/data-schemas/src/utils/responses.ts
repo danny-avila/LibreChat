@@ -70,18 +70,24 @@ export async function readVisibleMessages(
   const castFilter = query.cast(Message, filter);
   const projection: Record<string, 0 | 1> = {};
   const selected = new Set<string>();
+  const forced = new Set<string>();
   let inclusive = false;
   for (const field of select?.split(/\s+/).filter(Boolean) ?? []) {
     const name = field.replace(/^[-+]/, '');
     selected.add(name);
     if (field.startsWith('+')) {
+      forced.add(name);
       continue;
     }
     const include = field.startsWith('-') ? 0 : 1;
     projection[name] = include;
     inclusive ||= include === 1;
   }
-  if (!inclusive) {
+  if (inclusive) {
+    for (const name of forced) {
+      projection[name] = 1;
+    }
+  } else {
     Message.schema.eachPath((name, schemaType) => {
       if (schemaType.options.select === false && !selected.has(name)) {
         projection[name] = 0;
