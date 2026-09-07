@@ -370,28 +370,6 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('retries checkpoint ownership maintenance without blocking other maintenance', async () => {
-    const sweepActorCheckpointScopes = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('storage unavailable'))
-      .mockResolvedValue(1);
-    const recoverAgentTriggerUserPurges = jest.fn().mockResolvedValue(0);
-    const service = createAgentTriggerService({
-      methods: deliveryMethods({ recoverAgentTriggerUserPurges }),
-      sweepActorCheckpointScopes,
-      purgeRecoveryIntervalMs: 5,
-      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
-    });
-    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(sweepActorCheckpointScopes.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(recoverAgentTriggerUserPurges.mock.calls.length).toBeGreaterThanOrEqual(2);
-    await service.stop();
-    const stoppedCalls = sweepActorCheckpointScopes.mock.calls.length;
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    expect(sweepActorCheckpointScopes).toHaveBeenCalledTimes(stoppedCalls);
-  });
-
   it('expires dormant legacy actor receipts during durable maintenance', async () => {
     const expireLegacyAgentEventActorReceipts = jest.fn().mockResolvedValue(1);
     const service = createAgentTriggerService({

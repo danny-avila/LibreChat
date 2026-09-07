@@ -64,6 +64,9 @@ const {
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
+  checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -4382,6 +4385,13 @@ class AgentClient extends BaseClient {
             ? {}
             : {
                 [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: this.eventActorInvocationId,
+                [LIBRECHAT_CHECKPOINT_OWNER_KEY]: checkpointOwnerNamespacePrefix(
+                  this.options.req.user.id,
+                  this.options.req._agentEventBindingTenantId,
+                ),
+                ...(this.eventActorCheckpointId == null
+                  ? {}
+                  : { [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: this.eventActorCheckpointId }),
                 event_actor_invocation_id: this.eventActorInvocationId,
                 event_actor_depth: 1,
               }),

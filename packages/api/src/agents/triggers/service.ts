@@ -55,7 +55,6 @@ export interface AgentTriggerServiceDeps {
   userDrainPollMs?: number;
   purgeRecoveryIntervalMs?: number;
   purgeRecoveryLimit?: number;
-  sweepActorCheckpointScopes?: () => Promise<number>;
   supportsDetachedActionCompletion?: () => boolean;
   settleSourceBeforeDeadLetter?: AgentTriggerDeliveryEngineDeps['settleSourceBeforeDeadLetter'];
 }
@@ -366,38 +365,29 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         return 0;
       });
     const current = runAsSystem(async () => {
-      const [
-        purgedUsers,
-        publishedLanes,
-        batchRecovery,
-        expiredActorScopes,
-        expiredLegacyActorReceipts,
-      ] = await Promise.all([
-        isolated('user purges', () => methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit)),
-        isolated('lane publications', () =>
-          methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
-        ),
-        methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit).then(
-          (count) => ({ succeeded: true as const, count }),
-          (error) => {
-            logger.error(
-              '[agent-triggers] durable delivery maintenance step failed (batch receipts):',
-              error,
-            );
-            return { succeeded: false as const, count: 0 };
-          },
-        ),
-        isolated(
-          'actor checkpoint ownership',
-          () => deps.sweepActorCheckpointScopes?.() ?? Promise.resolve(0),
-        ),
-        isolated(
-          'legacy actor receipts',
-          () =>
-            methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
-            Promise.resolve(0),
-        ),
-      ]);
+      const [purgedUsers, publishedLanes, batchRecovery, expiredLegacyActorReceipts] =
+        await Promise.all([
+          isolated('user purges', () => methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit)),
+          isolated('lane publications', () =>
+            methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+          ),
+          methods.recoverAgentTriggerBatchReceipts(purgeRecoveryLimit).then(
+            (count) => ({ succeeded: true as const, count }),
+            (error) => {
+              logger.error(
+                '[agent-triggers] durable delivery maintenance step failed (batch receipts):',
+                error,
+              );
+              return { succeeded: false as const, count: 0 };
+            },
+          ),
+          isolated(
+            'legacy actor receipts',
+            () =>
+              methods.expireLegacyAgentEventActorReceipts?.(new Date(), purgeRecoveryLimit) ??
+              Promise.resolve(0),
+          ),
+        ]);
       const recoveredBatches = batchRecovery.count;
       const reclaimedLanes = batchRecovery.succeeded
         ? await isolated('lane reclamation', () =>
@@ -412,8 +402,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         publishedLanes > 0 ||
         recoveredBatches > 0 ||
         reclaimedLanes > 0 ||
-        expiredLegacyActorReceipts > 0 ||
-        expiredActorScopes > 0
+        expiredLegacyActorReceipts > 0
       ) {
         logger.info('[agent-triggers] recovered durable delivery maintenance', {
           purgedUsers,
@@ -421,7 +410,6 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           recoveredBatches,
           reclaimedLanes,
           expiredLegacyActorReceipts,
-          expiredActorScopes,
         });
       }
     })

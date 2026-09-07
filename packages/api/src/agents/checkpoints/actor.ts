@@ -2,17 +2,14 @@ import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointReference } from '../checkpointer';
 import {
   captureAgentEventCheckpoint,
-  deleteAgentCheckpoint,
+  deleteOwnedActorCheckpointScope,
   deleteAgentEventCheckpointReference,
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
 } from '../checkpointer';
-import {
-  registerActorCheckpointScope,
-  getActorCheckpointScope,
-  acknowledgeActorCheckpointScope,
-} from './ownership';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { acknowledgeActorPruning, drainActorPruning } from './pruning';
 
@@ -20,35 +17,28 @@ type HistoricalReference = Omit<AgentEventCheckpointReference, 'checkpointId'> &
   checkpointId?: string;
 };
 
-/** Preserve the SDK wire/storage format and bind fresh scopes durably before writes. */
+/** Preserve the SDK wire format; each new payload row carries authenticated ownership. */
 export function createOwnedActorCheckpoints(user: string, tenantId?: string) {
-  const prefix = checkpointOwnerNamespacePrefix(user, tenantId);
-
+  const owner = checkpointOwnerNamespacePrefix(user, tenantId);
   async function resolveNamespace(
     reference: HistoricalReference,
     cfg?: TCheckpointerConfig,
   ): Promise<string | undefined> {
-    if (!reference.checkpointId) {
+    if (!reference.checkpointId)
       throw new Error('Historical actor checkpoint reference is missing its checkpoint id');
-    }
-    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
-    if (scope != null && scope.owner !== prefix) {
-      return undefined;
-    }
-    const owned = reference.checkpointNs;
     const saver = await getAgentCheckpointer(cfg);
-    if (!saver) {
-      throw new Error('Event actor checkpoints require a durable checkpointer');
-    }
+    if (!saver) throw new Error('Event actor checkpoints require a durable checkpointer');
     const tuple = await saver.getTuple({
       configurable: {
         thread_id: reference.threadId,
         checkpoint_ns: '',
         checkpoint_id: reference.checkpointId,
-        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: owned,
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: reference.checkpointNs,
+        [LIBRECHAT_CHECKPOINT_OWNER_KEY]: owner,
+        [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: reference.checkpointId,
       },
     });
-    return tuple?.checkpoint.id === reference.checkpointId ? owned : undefined;
+    return tuple?.checkpoint.id === reference.checkpointId ? reference.checkpointNs : undefined;
   }
 
   const fork: typeof forkAgentEventCheckpoint = async (
@@ -57,27 +47,7 @@ export function createOwnedActorCheckpoints(user: string, tenantId?: string) {
     invocationId,
     cfg,
     overlay,
-  ) => {
-    const checkpointNs = await resolveNamespace(source, cfg);
-    if (checkpointNs == null) {
-      return null;
-    }
-    await registerActorCheckpointScope(user, tenantId, source.threadId, logical, cfg);
-    const result = await forkAgentEventCheckpoint(
-      { ...source, checkpointNs },
-      logical,
-      invocationId,
-      cfg,
-      overlay,
-    );
-    if (result == null) {
-      const scope = await getActorCheckpointScope(source.threadId, logical, cfg);
-      if (scope?.owner === prefix) {
-        await acknowledgeActorCheckpointScope(scope, cfg);
-      }
-    }
-    return result ? { ...result, checkpointNs: logical } : null;
-  };
+  ) => forkAgentEventCheckpoint(source, logical, invocationId, cfg, overlay, owner);
 
   async function capture(
     threadId: string,
@@ -85,59 +55,34 @@ export function createOwnedActorCheckpoints(user: string, tenantId?: string) {
     invocationId: string,
     cfg?: TCheckpointerConfig,
     storageNamespace?: string | null,
+    legacyCheckpointId?: string,
   ): Promise<AgentEventCheckpointReference | null> {
-    if (storageNamespace === null) {
-      return null;
-    }
-    const scope = await getActorCheckpointScope(threadId, logical, cfg);
-    if (
-      (scope != null && scope.owner !== prefix) ||
-      (storageNamespace === undefined && scope == null)
-    ) {
-      return null;
-    }
-    const result = await captureAgentEventCheckpoint(
+    if (storageNamespace === null) return null;
+    return captureAgentEventCheckpoint(
       threadId,
       storageNamespace ?? logical,
       invocationId,
       cfg,
+      owner,
+      legacyCheckpointId,
     );
-    return result ? { ...result, checkpointNs: logical } : null;
   }
 
   async function removeOwned(
     reference: Pick<AgentEventCheckpointReference, 'threadId' | 'checkpointNs'>,
     cfg?: TCheckpointerConfig,
   ): Promise<void> {
-    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
-    if (scope == null) {
-      return;
-    }
-    if (scope.owner !== prefix) {
-      throw new Error('Fresh actor checkpoint scope is not registered to this owner');
-    }
-    await deleteAgentCheckpoint(reference.threadId, cfg, undefined, {
-      throwOnError: true,
-      checkpointNamespace: reference.checkpointNs,
-    });
-    await acknowledgeActorCheckpointScope(scope, cfg);
+    await deleteOwnedActorCheckpointScope(reference.threadId, reference.checkpointNs, owner, cfg);
   }
 
   async function remove(reference: HistoricalReference, cfg?: TCheckpointerConfig): Promise<void> {
-    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
-    if (scope != null) {
-      if (scope.owner !== prefix) {
-        throw new Error('Actor checkpoint scope belongs to another owner');
-      }
-      await removeOwned(reference, cfg);
-      return;
-    }
-    if (!reference.checkpointId) {
+    if (!reference.checkpointId)
       throw new Error('Historical actor checkpoint reference is missing its checkpoint id');
-    }
+    await removeOwned(reference, cfg);
     await deleteAgentEventCheckpointReference(
       { ...reference, checkpointId: reference.checkpointId },
       cfg,
+      owner,
     );
   }
 
@@ -147,8 +92,6 @@ export function createOwnedActorCheckpoints(user: string, tenantId?: string) {
     capture,
     remove,
     removeOwned,
-    register: (threadId: string, logical: string, cfg?: TCheckpointerConfig) =>
-      registerActorCheckpointScope(user, tenantId, threadId, logical, cfg),
     drain: (threadId: string, cfg?: TCheckpointerConfig) =>
       drainActorPruning(user, tenantId, threadId, (reference) => remove(reference, cfg)),
     acknowledgePruning: (reference: AgentEventCheckpointReference) =>

@@ -14,9 +14,19 @@ import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IndexBuildOptions } from '@librechat/data-schemas';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { ResolvedCheckpointerConfig } from './checkpoints/config';
-import { deleteOwnedActorCheckpointScopes } from './checkpoints/ownership';
+import {
+  OwnedMongoSaver,
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
+} from './checkpoints/saver';
 import { checkpointOwnerNamespacePrefix } from '../stream/checkpoints';
 import { resolveCheckpointerConfig } from './checkpoints/config';
+
+export {
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
+} from './checkpoints/saver';
+export { checkpointOwnerNamespacePrefix } from '../stream/checkpoints';
 
 export { resolveCheckpointerConfig } from './checkpoints/config';
 export type { ResolvedCheckpointerConfig } from './checkpoints/config';
@@ -83,6 +93,14 @@ function fromStorageCheckpointConfig(
     ...storedConfig,
     configurable: {
       ...storedConfig.configurable,
+      ...(requestedConfig.configurable?.[LIBRECHAT_CHECKPOINT_OWNER_KEY] && {
+        [LIBRECHAT_CHECKPOINT_OWNER_KEY]:
+          requestedConfig.configurable[LIBRECHAT_CHECKPOINT_OWNER_KEY],
+      }),
+      ...(requestedConfig.configurable?.[LIBRECHAT_LEGACY_CHECKPOINT_KEY] && {
+        [LIBRECHAT_LEGACY_CHECKPOINT_KEY]:
+          requestedConfig.configurable[LIBRECHAT_LEGACY_CHECKPOINT_KEY],
+      }),
       thread_id: requestedConfig.configurable?.thread_id ?? storedConfig.configurable?.thread_id,
       checkpoint_ns: graphNamespace,
       [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: generationNamespace,
@@ -300,7 +318,7 @@ export type LazyMongoSaverOptions = ConstructorParameters<typeof MongoDBSaver>[0
   hardLimitBytes?: number;
 };
 
-export class LazyMongoSaver extends MongoDBSaver {
+export class LazyMongoSaver extends OwnedMongoSaver {
   /** checkpoint id → time the resumable `putWrites` anchoring it arrived; consumed by `put`. */
   private readonly writeAnchorIds = new Map<string, number>();
   /** checkpoint id → time its anchored `put` persisted it, so a bookkeeping batch that lands
@@ -719,6 +737,7 @@ function eventActorRunnableConfig(
   reference: Pick<AgentEventCheckpointReference, 'threadId' | 'checkpointNs'>,
   invocationId: string,
   checkpointId?: string,
+  owner?: string,
 ): RunnableConfig {
   return {
     configurable: {
@@ -726,6 +745,12 @@ function eventActorRunnableConfig(
       checkpoint_ns: '',
       [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: reference.checkpointNs,
       [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: invocationId,
+      ...(owner == null
+        ? {}
+        : {
+            [LIBRECHAT_CHECKPOINT_OWNER_KEY]: owner,
+            ...(checkpointId == null ? {} : { [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: checkpointId }),
+          }),
       ...(checkpointId == null ? {} : { checkpoint_id: checkpointId }),
     },
   };
@@ -738,20 +763,21 @@ export async function forkAgentEventCheckpoint(
   invocationId: string,
   cfg?: TCheckpointerConfig,
   messageOverlay?: AgentEventCheckpointMessageOverlay,
+  owner?: string,
 ): Promise<AgentEventCheckpointReference | null> {
   const saver = await getAgentCheckpointer(cfg);
   if (!saver || checkpointNs.length === 0 || invocationId.length === 0) {
     return null;
   }
   const tuple = await saver.getTuple(
-    eventActorRunnableConfig(source, invocationId, source.checkpointId),
+    eventActorRunnableConfig(source, invocationId, source.checkpointId, owner),
   );
   if (!tuple || tuple.metadata == null || (tuple.pendingWrites?.length ?? 0) > 0) {
     return null;
   }
   const target = { threadId: source.threadId, checkpointNs };
   const persisted = await saver.put(
-    eventActorRunnableConfig(target, invocationId),
+    eventActorRunnableConfig(target, invocationId, undefined, owner),
     applyAgentEventCheckpointMessageOverlay(tuple.checkpoint, messageOverlay),
     tuple.metadata,
   );
@@ -766,6 +792,7 @@ export async function forkAgentEventCheckpoint(
 export async function deleteAgentEventCheckpointReference(
   reference: AgentEventCheckpointReference,
   cfg?: TCheckpointerConfig,
+  owner?: string,
 ): Promise<boolean> {
   const resolved = resolveCheckpointerConfig(cfg);
   if (resolved.type === 'memory') {
@@ -779,6 +806,9 @@ export async function deleteAgentEventCheckpointReference(
     thread_id: reference.threadId,
     checkpoint_ns: reference.checkpointNs,
     checkpoint_id: reference.checkpointId,
+    ...(owner == null
+      ? { lc_owner: { $exists: false } }
+      : { $or: [{ lc_owner: owner }, { lc_owner: { $exists: false } }] }),
   };
   await db.collection(resolved.checkpointWritesCollectionName).deleteMany(exact);
   await db.collection(resolved.checkpointCollectionName).deleteOne(exact);
@@ -791,14 +821,21 @@ export async function captureAgentEventCheckpoint(
   checkpointNs: string,
   invocationId: string,
   cfg?: TCheckpointerConfig,
+  owner?: string,
+  legacyCheckpointId?: string,
 ): Promise<AgentEventCheckpointReference | null> {
   const saver = await getAgentCheckpointer(cfg);
   if (!saver) {
     return null;
   }
-  const tuple = await saver.getTuple(
-    eventActorRunnableConfig({ threadId, checkpointNs }, invocationId),
+  let tuple = await saver.getTuple(
+    eventActorRunnableConfig({ threadId, checkpointNs }, invocationId, undefined, owner),
   );
+  if (legacyCheckpointId != null && (tuple == null || tuple.checkpoint.id < legacyCheckpointId)) {
+    tuple = await saver.getTuple(
+      eventActorRunnableConfig({ threadId, checkpointNs }, invocationId, legacyCheckpointId, owner),
+    );
+  }
   const checkpointId = tuple?.checkpoint.id;
   return typeof checkpointId === 'string' && checkpointId.length > 0
     ? { threadId, checkpointId, checkpointNs }
@@ -892,23 +929,21 @@ async function buildMongoSaver(
         },
       ),
     );
-    try {
-      const owners = mongoose.connection.db!.collection(
-        `${resolved.checkpointCollectionName}_actor_owners`,
-      );
-      await Promise.all([
-        buildIndexWithRetry(
-          () => owners.createIndex({ owner: 1, threadId: 1 }),
-          'actor_checkpoint_owners.owner',
-        ),
-        buildIndexWithRetry(
-          () => owners.createIndex({ threadId: 1 }),
-          'actor_checkpoint_owners.thread',
-        ),
-      ]);
-    } catch (error) {
-      logger.warn('[checkpointer] Actor ownership index unavailable:', error);
-    }
+    await Promise.all(
+      [resolved.checkpointCollectionName, resolved.checkpointWritesCollectionName].map(
+        async (name) => {
+          try {
+            await buildIndexWithRetry(
+              () =>
+                mongoose.connection.db!.collection(name).createIndex({ lc_owner: 1, thread_id: 1 }),
+              `${name}.lc_owner`,
+            );
+          } catch (error) {
+            logger.warn('[checkpointer] Payload ownership index unavailable:', error);
+          }
+        },
+      ),
+    );
     logger.info('[checkpointer] Durable Mongo checkpointer ready for agent continuation');
     return saver;
   } catch (err) {
@@ -1080,6 +1115,29 @@ export async function deleteAgentCheckpoint(
   }
 }
 
+/** Erase only payload rows carrying this authenticated actor owner. */
+export async function deleteOwnedActorCheckpointScope(
+  threadId: string,
+  checkpointNs: string,
+  owner: string,
+  cfg?: TCheckpointerConfig,
+): Promise<void> {
+  const resolved = resolveCheckpointerConfig(cfg);
+  if (resolved.type === 'memory') return;
+  const db = mongoose.connection.db;
+  if (!db || mongoose.connection.readyState !== 1)
+    throw new Error('Checkpoint database is unavailable');
+  const filter = {
+    thread_id: threadId,
+    checkpoint_ns: generationNamespaceFilter(checkpointNs),
+    lc_owner: owner,
+  };
+  await Promise.all([
+    db.collection(resolved.checkpointCollectionName).deleteMany(filter),
+    db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
+  ]);
+}
+
 /** Delete durable rows by authenticated ownership, independently of job/receipt lifetimes. */
 export async function deleteOwnedAgentCheckpoints(
   userId: string,
@@ -1098,30 +1156,13 @@ export async function deleteOwnedAgentCheckpoints(
   if (!db || mongoose.connection.readyState !== 1) {
     throw new Error('Checkpoint database is unavailable');
   }
-  await deleteOwnedActorCheckpointScopes(
-    userId,
-    tenantId,
-    conversationIds,
-    async (scopes) => {
-      const filter = {
-        $or: scopes.map((scope) => ({
-          thread_id: scope.threadId,
-          checkpoint_ns: generationNamespaceFilter(scope.checkpointNs),
-        })),
-      };
-      await Promise.all([
-        db.collection(resolved.checkpointCollectionName).deleteMany(filter),
-        db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
-      ]);
-    },
-    cfg,
-  );
-  const checkpoint_ns = { $regex: `^${checkpointOwnerNamespacePrefix(userId, tenantId)}` };
+  const owner = checkpointOwnerNamespacePrefix(userId, tenantId);
+  const ownership = { $or: [{ checkpoint_ns: { $regex: `^${owner}` } }, { lc_owner: owner }] };
   const ids = conversationIds == null ? undefined : [...new Set(conversationIds)];
   const batchSize = 256;
   for (let offset = 0; offset < (ids?.length ?? 1); offset += batchSize) {
     const filter = {
-      checkpoint_ns,
+      ...ownership,
       ...(ids && { thread_id: { $in: ids.slice(offset, offset + batchSize) } }),
     };
     await Promise.all([

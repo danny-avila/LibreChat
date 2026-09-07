@@ -416,7 +416,6 @@ export async function executeAgentEventActor<T>(
       if (!(await getAgentCheckpointer(input.checkpointer))) {
         throw new Error('Event actor checkpoint forks require a durable Mongo checkpointer');
       }
-      await checkpoints.register(input.conversationId, request.checkpointNs, input.checkpointer);
       return {
         ...request,
         continuation: 'cold',
@@ -1023,6 +1022,7 @@ export async function resumeAgentEventActor<T>(
           request.suspension.invocation.invocationId,
           input.checkpointer,
           checkpointStorageNamespace,
+          request.suspension.checkpoint.checkpointId,
         );
         if (checkpoint?.checkpointId == null) {
           throw new Error('Re-paused event actor has no observable interrupt checkpoint');
@@ -1071,6 +1071,7 @@ export async function resumeAgentEventActor<T>(
           request.suspension.invocation.invocationId,
           input.checkpointer,
           checkpointStorageNamespace,
+          request.suspension.checkpoint.checkpointId,
         );
       } catch (error) {
         return {

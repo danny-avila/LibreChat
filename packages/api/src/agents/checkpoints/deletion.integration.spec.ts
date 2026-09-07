@@ -113,7 +113,7 @@ test('thousands of conversation targets use bounded cleanup commands', async () 
   ).toEqual([]);
 });
 
-test('snapshots actor ownership once per bounded thread batch, not once per reference', async () => {
+test('snapshots legacy references without per-reference ownership lookups', async () => {
   const ids = Array.from({ length: 257 }, (_, i) => `thread-${i}`);
   await mongoose.connection.db!.collection('conversations').insertMany(
     ids.map((conversationId) => ({
@@ -134,8 +134,7 @@ test('snapshots actor ownership once per bounded thread batch, not once per refe
   const scopeReads = find.mock.calls.filter(
     (_, index) => find.mock.contexts[index].collectionName === 'cleanup_cp_actor_owners',
   );
-  expect(scopeReads).toHaveLength(2);
-  expect(scopeReads.map(([filter]) => filter?.threadId.$in.length)).toEqual([256, 1]);
+  expect(scopeReads).toHaveLength(0);
   expect(
     findOne.mock.calls.filter(
       (_, index) => findOne.mock.contexts[index].collectionName === 'cleanup_cp_actor_owners',
