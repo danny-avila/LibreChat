@@ -49,6 +49,40 @@ describe('FlowStateManager', () => {
   });
 
   describe('Concurrency Tests', () => {
+    it('does not delete a replacement OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'new-state' });
+
+      await expect(
+        flowManager.deleteFlowIfCurrent('oauth-flow', 'mcp_oauth', 1, 'old-state'),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'PENDING',
+        metadata: { state: 'new-state' },
+      });
+    });
+
+    it('fails only the observed OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');
+
+      await expect(
+        flowManager.failFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'cancelled',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'FAILED',
+        error: 'cancelled',
+        metadata: { state: 'expected-state' },
+      });
+    });
+
     it('should handle concurrent flow creation and return same result', async () => {
       const flowId = 'test-flow';
       const type = 'test-type';

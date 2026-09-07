@@ -632,7 +632,7 @@ const clearStoredMCPOAuthState = async (userId, serverName) => {
 };
 
 /** Revokes MCP OAuth tokens at the provider when possible, then clears local state. */
-const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
+const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig, serverConfigOverride) => {
   if (!pluginKey.startsWith(Constants.mcp_prefix)) {
     // this is not an MCP server, so nothing to do here
     return;
@@ -640,10 +640,13 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const serverConfig =
+    serverConfigOverride ??
     (await getMCPServersRegistry().getServerConfig(serverName, userId)) ??
     appConfig?.mcpServers?.[serverName];
-  const oauthServers = await getMCPServersRegistry().getOAuthServers(userId);
-  if (!oauthServers.has(serverName) || !serverConfig) {
+  const isOAuthServer = serverConfigOverride
+    ? serverConfigOverride.requiresOAuth === true
+    : (await getMCPServersRegistry().getOAuthServers(userId)).has(serverName);
+  if (!isOAuthServer || !serverConfig) {
     await clearStoredMCPOAuthState(userId, serverName);
     return;
   }

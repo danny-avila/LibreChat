@@ -49,6 +49,7 @@ const {
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const { maybeUninstallOAuthMCP } = require('~/server/controllers/UserController');
 const db = require('~/models');
 
 /**
@@ -648,6 +649,19 @@ const deleteMCPServerController = async (req, res) => {
     /** Fence connections another replica could have created before deletion committed. */
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
+    try {
+      await maybeUninstallOAuthMCP(
+        userId,
+        `${Constants.mcp_prefix}${serverName}`,
+        req.config,
+        existingConfig,
+      );
+    } catch (error) {
+      logger.warn(
+        `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
+        error,
+      );
+    }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);

@@ -51,6 +51,11 @@ jest.mock('~/server/services/Config', () => ({
   invalidateCachedTools: jest.fn(),
 }));
 
+const mockMaybeUninstallOAuthMCP = jest.fn();
+jest.mock('~/server/controllers/UserController', () => ({
+  maybeUninstallOAuthMCP: (...args) => mockMaybeUninstallOAuthMCP(...args),
+}));
+
 const {
   getMCPServersList,
   getMCPServerById,
@@ -125,6 +130,7 @@ beforeEach(async () => {
   mockRegistryInstance.updateServer.mockReset();
   mockRegistryInstance.removeServer.mockReset();
   mockMcpManager.disconnectUserConnection.mockReset().mockResolvedValue(undefined);
+  mockMaybeUninstallOAuthMCP.mockReset().mockResolvedValue(undefined);
   const cacheService = require('~/server/services/Config');
   cacheService.invalidateCachedTools.mockReset().mockResolvedValue(undefined);
   cacheService.getMCPServerTools.mockReset().mockResolvedValue({ retained: {} });
@@ -354,6 +360,7 @@ describe('DB-backed server mutation fencing', () => {
     expect(require('~/server/services/Config').invalidateCachedTools).not.toHaveBeenCalled();
     expect(mockRegistryInstance.commitServerUpdate).not.toHaveBeenCalled();
     expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
+    expect(mockMaybeUninstallOAuthMCP).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
@@ -374,6 +381,7 @@ describe('DB-backed server mutation fencing', () => {
     );
 
     expect(mockMcpManager.disconnectUserConnection).not.toHaveBeenCalled();
+    expect(mockMaybeUninstallOAuthMCP).not.toHaveBeenCalled();
     expect(mockRegistryInstance.commitServerUpdate).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -457,6 +465,12 @@ describe('DB-backed server mutation fencing', () => {
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
     expect(invalidateCachedTools).toHaveBeenCalledTimes(2);
     expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(user.id, 'github');
+    expect(mockMaybeUninstallOAuthMCP).toHaveBeenCalledWith(
+      user.id,
+      'mcp_github',
+      undefined,
+      expect.objectContaining({ source: 'user' }),
+    );
     expect(invalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(
       mockRegistryInstance.removeServer.mock.invocationCallOrder[0],
     );

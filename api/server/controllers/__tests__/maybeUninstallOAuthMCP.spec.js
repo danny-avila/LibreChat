@@ -161,6 +161,8 @@ const serverConfig = {
   oauth_headers: { 'X-Tenant': 'acme' },
 };
 
+const parsedServerConfig = { ...serverConfig, requiresOAuth: true };
+
 const appConfig = {
   mcpServers: { acme: serverConfig },
 };
@@ -297,6 +299,23 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlow.mock.calls[0][1]).toBe('mcp_get_tokens');
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledWith('user-123:acme', expect.anything());
+  });
+
+  test('uses a retained deleted-server config to revoke before clearing local state', async () => {
+    setupOAuthServerFound();
+    mockGetServerConfig.mockResolvedValue(null);
+    mockGetOAuthServers.mockResolvedValue(new Set());
+    mockGetTokens.mockResolvedValue({
+      access_token: 'access-abc',
+      credential_set_id: credentialSetId,
+    });
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig, parsedServerConfig);
+
+    expect(mockGetOAuthServers).not.toHaveBeenCalled();
+    expect(mockRevokeOAuthToken).toHaveBeenCalledTimes(1);
+    expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledTimes(1);
   });
 
   test('does not revoke tokens from a concurrently replaced credential generation', async () => {

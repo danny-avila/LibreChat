@@ -60,6 +60,7 @@ jest.mock('@librechat/api', () => {
       resolveStateToFlowId: jest.fn(async (state) => state),
       storeStateMapping: jest.fn(),
       deleteStateMapping: jest.fn(),
+      failFlowAndDeleteStateMapping: jest.fn(),
     },
     MCPTokenStorage: {
       storeTokens: jest.fn(),
@@ -2247,8 +2248,9 @@ describe('MCP Routes', () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
           status: 'PENDING',
+          createdAt: 123,
+          metadata: { state: 'opaque-state' },
         }),
-        failFlow: jest.fn().mockResolvedValue(),
       };
 
       getLogStores.mockReturnValue({});
@@ -2263,9 +2265,10 @@ describe('MCP Routes', () => {
         message: 'OAuth flow for test-server cancelled successfully',
       });
 
-      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+      expect(MCPOAuthHandler.failFlowAndDeleteStateMapping).toHaveBeenCalledWith(
         'test-user-id:test-server',
-        'mcp_oauth',
+        expect.objectContaining({ metadata: { state: 'opaque-state' } }),
+        mockFlowManager,
         'User cancelled OAuth flow',
       );
     });
@@ -2291,8 +2294,10 @@ describe('MCP Routes', () => {
     it('should return 500 when cancellation fails', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING' }),
-        failFlow: jest.fn().mockRejectedValue(new Error('Database error')),
       };
+      MCPOAuthHandler.failFlowAndDeleteStateMapping.mockRejectedValueOnce(
+        new Error('Database error'),
+      );
 
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
