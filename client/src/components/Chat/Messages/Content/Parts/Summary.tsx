@@ -12,7 +12,7 @@ import { cn } from '~/utils';
 
 type SummaryProps = Pick<
   SummaryContentPart,
-  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing'
+  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing' | 'failed'
 >;
 
 function useCopyToClipboard(content?: string) {
@@ -203,115 +203,120 @@ const FloatingSummaryBar = memo(
   },
 );
 
-const Summary = memo(({ content, model, provider, tokenCount, summarizing }: SummaryProps) => {
-  const contentId = useId();
-  const localize = useLocalize();
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isBarVisible, setIsBarVisible] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { isSubmitting, isLatestMessage } = useMessageContext();
+const Summary = memo(
+  ({ content, model, provider, tokenCount, summarizing, failed }: SummaryProps) => {
+    const contentId = useId();
+    const localize = useLocalize();
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isBarVisible, setIsBarVisible] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const { isSubmitting, isLatestMessage } = useMessageContext();
 
-  const text = useMemo(
-    () =>
-      (content ?? [])
-        .map((block) => ('text' in block && typeof block.text === 'string' ? block.text : ''))
-        .join(''),
-    [content],
-  );
-  const { isCopied, handleCopy } = useCopyToClipboard(text);
+    const text = useMemo(
+      () =>
+        (content ?? [])
+          .map((block) => ('text' in block && typeof block.text === 'string' ? block.text : ''))
+          .join(''),
+      [content],
+    );
+    const { isCopied, handleCopy } = useCopyToClipboard(text);
 
-  const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    setIsExpanded((prev) => !prev);
-  }, []);
+    const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      setIsExpanded((prev) => !prev);
+    }, []);
 
-  const handleFocus = useCallback(() => setIsBarVisible(true), []);
-  const handleBlur = useCallback((e: FocusEvent) => {
-    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
-      setIsBarVisible(false);
+    const handleFocus = useCallback(() => setIsBarVisible(true), []);
+    const handleBlur = useCallback((e: FocusEvent) => {
+      if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+        setIsBarVisible(false);
+      }
+    }, []);
+    const handleMouseEnter = useCallback(() => setIsBarVisible(true), []);
+    const handleMouseLeave = useCallback(() => {
+      if (!containerRef.current?.contains(document.activeElement)) {
+        setIsBarVisible(false);
+      }
+    }, []);
+
+    const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+    const isActivelyStreaming = !!summarizing && !!effectiveIsSubmitting;
+
+    const meta = useMemo(() => {
+      const parts: string[] = [];
+      if (provider || model) {
+        parts.push([provider, model].filter(Boolean).join('/'));
+      }
+      if (tokenCount != null && tokenCount > 0) {
+        parts.push(`${tokenCount} ${localize('com_ui_tokens')}`);
+      }
+      return parts.length > 0 ? parts.join(' \u00b7 ') : undefined;
+    }, [model, provider, tokenCount, localize]);
+
+    /** A failed round keeps whatever deltas already streamed in, so the label
+     *  must not claim the conversation was summarized. */
+    const label = useMemo(() => {
+      if (isActivelyStreaming) {
+        return localize('com_ui_summarizing');
+      }
+      return failed
+        ? localize('com_ui_summarize_failed')
+        : localize('com_ui_conversation_summarized');
+    }, [isActivelyStreaming, failed, localize]);
+
+    if (!summarizing && !text) {
+      return null;
     }
-  }, []);
-  const handleMouseEnter = useCallback(() => setIsBarVisible(true), []);
-  const handleMouseLeave = useCallback(() => {
-    if (!containerRef.current?.contains(document.activeElement)) {
-      setIsBarVisible(false);
-    }
-  }, []);
 
-  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
-  const isActivelyStreaming = !!summarizing && !!effectiveIsSubmitting;
-
-  const meta = useMemo(() => {
-    const parts: string[] = [];
-    if (provider || model) {
-      parts.push([provider, model].filter(Boolean).join('/'));
-    }
-    if (tokenCount != null && tokenCount > 0) {
-      parts.push(`${tokenCount} ${localize('com_ui_tokens')}`);
-    }
-    return parts.length > 0 ? parts.join(' \u00b7 ') : undefined;
-  }, [model, provider, tokenCount, localize]);
-
-  const label = useMemo(
-    () =>
-      isActivelyStreaming
-        ? localize('com_ui_summarizing')
-        : localize('com_ui_conversation_summarized'),
-    [isActivelyStreaming, localize],
-  );
-
-  if (!summarizing && !text) {
-    return null;
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="group/summary"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-    >
-      <div className="group/summary-container">
-        <div className="mb-2 pb-2 pt-2">
-          <SummaryButton
-            isExpanded={isExpanded}
-            onClick={handleClick}
-            label={label}
-            content={text}
-            contentId={contentId}
-            showCopyButton={!isActivelyStreaming}
-            isCopied={isCopied}
-            onCopy={handleCopy}
-          />
-        </div>
-        <div
-          id={contentId}
-          role="region"
-          aria-label={label}
-          aria-hidden={!isExpanded || undefined}
-          className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-4')}
-          style={{
-            gridTemplateRows: isExpanded ? '1fr' : '0fr',
-          }}
-        >
-          <div className="relative overflow-hidden">
-            <SummaryContent meta={meta}>{text}</SummaryContent>
-            <FloatingSummaryBar
-              isVisible={isBarVisible && isExpanded}
+    return (
+      <div
+        ref={containerRef}
+        className="group/summary"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+      >
+        <div className="group/summary-container">
+          <div className="mb-2 pb-2 pt-2">
+            <SummaryButton
+              isExpanded={isExpanded}
               onClick={handleClick}
+              label={label}
               content={text}
               contentId={contentId}
+              showCopyButton={!isActivelyStreaming}
               isCopied={isCopied}
               onCopy={handleCopy}
             />
           </div>
+          <div
+            id={contentId}
+            role="region"
+            aria-label={label}
+            aria-hidden={!isExpanded || undefined}
+            className={cn('grid transition-all duration-300 ease-out', isExpanded && 'mb-4')}
+            style={{
+              gridTemplateRows: isExpanded ? '1fr' : '0fr',
+            }}
+          >
+            <div className="relative overflow-hidden">
+              <SummaryContent meta={meta}>{text}</SummaryContent>
+              <FloatingSummaryBar
+                isVisible={isBarVisible && isExpanded}
+                onClick={handleClick}
+                content={text}
+                contentId={contentId}
+                isCopied={isCopied}
+                onCopy={handleCopy}
+              />
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 SummaryContent.displayName = 'SummaryContent';
 SummaryButton.displayName = 'SummaryButton';

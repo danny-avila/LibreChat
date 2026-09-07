@@ -2,7 +2,11 @@
  * @jest-environment jsdom
  */
 import { Constants, EModelEndpoint, type Agent } from 'librechat-data-provider';
-import type { AgentModelParameters } from 'librechat-data-provider';
+import type {
+  AgentCreateParams,
+  AgentUpdateParams,
+  AgentModelParameters,
+} from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
@@ -12,6 +16,13 @@ import {
   hasPersistedDirtyFields,
   mayHavePersistedChange,
 } from '../AgentPanel';
+
+test('the create identity contract excludes the update-only clear sentinel', () => {
+  const createAcceptsNull: null extends AgentCreateParams['git_identity'] ? true : false = false;
+  const updateAcceptsNull: null extends AgentUpdateParams['git_identity'] ? true : false = true;
+  expect(createAcceptsNull).toBe(false);
+  expect(updateAcceptsNull).toBe(true);
+});
 
 const createForm = (): AgentForm => ({
   agent: undefined,
@@ -158,6 +169,45 @@ describe('composeAgentUpdatePayload', () => {
     const { payload } = composeAgentUpdatePayload(form);
 
     expect(payload.code_environment_id).toBeUndefined();
+  });
+
+  it('normalizes a configured Git identity', () => {
+    const form = createForm();
+    form.git_identity = { name: '  Coding Agent  ', email: '  agent@example.com  ' };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toEqual({
+      name: 'Coding Agent',
+      email: 'agent@example.com',
+    });
+  });
+
+  it('clears an empty Git identity when updating an agent', () => {
+    const form = createForm();
+    form.git_identity = { name: '', email: '' };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toBeNull();
+  });
+
+  it('does not turn a partially filled Git identity into a clear operation', () => {
+    const form = createForm();
+    form.git_identity = { name: 'Coding Agent', email: '' };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.git_identity).toEqual({ name: 'Coding Agent', email: '' });
+  });
+
+  it('omits an empty Git identity when creating an agent', () => {
+    const form = createForm();
+    form.git_identity = { name: '', email: '' };
+
+    const { payload } = composeAgentUpdatePayload(form);
+
+    expect(payload.git_identity).toBeUndefined();
   });
 
   it('persists standalone skill authoring separately from catalog access', () => {

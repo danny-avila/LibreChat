@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -53,6 +53,7 @@ const {
   getSafeErrorMetadata,
   getUserFacingProviderError,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
   resolveRecursionLimit,
   getRemoteAgentPermissions,
   resolveAgentScopedSkillIds,
@@ -1155,7 +1156,7 @@ const executeResponse = async (envelope, { req, res }) => {
               }
             },
           },
-          on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+          on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
           on_run_step_completed: { handle: () => {} },
           on_chain_stream: { handle: () => {} },
           on_chain_end: { handle: () => {} },
@@ -1184,7 +1185,8 @@ const executeResponse = async (envelope, { req, res }) => {
           customHandlers: handlers,
           initialSessions,
           requestBody: mcpRequestBody,
-          user: { id: userId },
+          user: { ...createSafeUser(req.user), id: userId },
+          traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
@@ -1368,7 +1370,7 @@ const executeResponse = async (envelope, { req, res }) => {
               }
             },
           },
-          on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+          on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
           on_run_step_completed: { handle: () => {} },
           on_chain_stream: { handle: () => {} },
           on_chain_end: { handle: () => {} },
@@ -1396,7 +1398,8 @@ const executeResponse = async (envelope, { req, res }) => {
           customHandlers: handlers,
           initialSessions,
           requestBody: mcpRequestBody,
-          user: { id: userId },
+          user: { ...createSafeUser(req.user), id: userId },
+          traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */

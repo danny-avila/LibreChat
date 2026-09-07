@@ -13,7 +13,6 @@ const {
 const {
   GraphEvents,
   GraphNodeKeys,
-  ToolEndHandler,
   createContentAggregator,
   summarizeEvent,
 } = require('@librechat/agents');
@@ -23,6 +22,7 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
@@ -40,6 +40,15 @@ function isHostFileAuthoringArtifact(artifact) {
 
 function isCodeArtifactToolOutput(output) {
   return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
+}
+
+function getAttachmentOwnership(metadata) {
+  const agentId = metadata?.executingAgentId ?? metadata?.agentId ?? metadata?.agent_id;
+  const stepId = metadata?.stepId;
+  return {
+    ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),
+    ...(typeof stepId === 'string' && stepId.length > 0 ? { stepId } : {}),
+  };
 }
 
 function addStatefulWorkspaceChange(attachment, artifact, executionProfile) {
@@ -506,7 +515,7 @@ function getDefaultHandlers({
       collectedThoughtSignatures,
       emitTokenUsage,
     ),
-    [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
+    [GraphEvents.TOOL_END]: createOwnedToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
        * Handle ON_RUN_STEP event.
@@ -785,6 +794,23 @@ function getDefaultHandlers({
     handlers[GraphEvents.ON_SUMMARIZE_COMPLETE] = {
       handle: async (_event, data) => {
         aggregateContent({ event: GraphEvents.ON_SUMMARIZE_COMPLETE, data });
+        /**
+         * Stamped onto the aggregated part for the same reason as
+         * `runStepStatus` above: an errored round keeps whatever deltas it
+         * already streamed, and the SDK's aggregator ignores a complete event
+         * that carries no `summary`, so nothing records the failure. Without
+         * this the flag exists only on the live client message and a reload
+         * re-renders the truncated text under "Conversation summarized".
+         * Resolved through `stepMap` only, so a missing step degrades to the
+         * old behavior rather than marking an unrelated part.
+         */
+        if (data?.error && contentParts) {
+          const index = stepMap?.get(data?.id)?.index;
+          const part = typeof index === 'number' ? contentParts[index] : undefined;
+          if (part?.type === ContentTypes.SUMMARY) {
+            part.failed = true;
+          }
+        }
         await emitForJob({
           event: GraphEvents.ON_SUMMARIZE_COMPLETE,
           data,
@@ -987,6 +1013,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         (async () => {
           const attachment = {
             type: Tools.web_search,
+            ...getAttachmentOwnership(metadata),
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
@@ -1009,6 +1036,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         (async () => {
           const attachment = {
             type: Tools.memory,
+            ...getAttachmentOwnership(metadata),
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
@@ -1350,6 +1378,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           const attachment = {
             type: Tools.web_search,
             toolCallId: output.tool_call_id,
+            ...getAttachmentOwnership(metadata),
             [Tools.web_search]: { ...output.artifact[Tools.web_search] },
           };
           // For Responses API, always emit attachment during streaming
@@ -1359,6 +1388,26 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           return attachment;
         })().catch((error) => {
           logger.error('Error processing artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    if (output.artifact[Tools.memory]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = {
+            type: Tools.memory,
+            toolCallId: output.tool_call_id,
+            ...getAttachmentOwnership(metadata),
+            [Tools.memory]: output.artifact[Tools.memory],
+          };
+          if (res.headersSent && !res.writableEnded) {
+            writeResponsesAttachment(res, tracker, attachment, metadata);
+          }
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing memory artifact content:', error);
           return null;
         }),
       );

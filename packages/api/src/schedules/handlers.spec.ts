@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ISchedule } from '@librechat/data-schemas';
+import type { ISchedule, IScheduleRun } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { SchedulesHandlersDeps } from './handlers';
 import type { ServerRequest } from '~/types';
@@ -154,6 +154,8 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
     markScheduleDeleting: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
     updateScheduleById: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
     armSchedule: jest.fn(async () => undefined),
+    getActiveRunsForUser: jest.fn(async () => []),
+    getActiveRunsForSchedule: jest.fn(async () => []),
   };
   return {
     methods: methods as unknown as SchedulesHandlersDeps['methods'],
@@ -734,6 +736,80 @@ describe('deferred deletion retry', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(captured.body).toEqual(expect.objectContaining({ schedules: [] }));
+  });
+});
+
+describe('in-flight run projection', () => {
+  const schedule = { id: 'sched-1', user: 'user-1', name: 'Digest' } as unknown as ISchedule;
+  const run = (over: Partial<IScheduleRun>): IScheduleRun =>
+    ({
+      scheduleId: 'sched-1',
+      user: 'user-1',
+      scheduledFor: new Date('2026-09-06T09:00:00Z'),
+      status: 'started',
+      ...over,
+    }) as unknown as IScheduleRun;
+  type Wire = { inFlight?: Array<{ conversationId: string }> };
+
+  async function listWith(runs: IScheduleRun[], schedules: ISchedule[] = [schedule]) {
+    const deps = makeCreateDeps();
+    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => schedules);
+    (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => runs);
+    (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => []);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).listSchedules(
+      { user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    return { deps, schedules: (captured.body as { schedules: Wire[] }).schedules };
+  }
+
+  it('names the chat a generating occurrence is producing', async () => {
+    const { schedules } = await listWith([run({ conversationId: 'convo-1' })]);
+    expect(schedules[0].inFlight).toEqual([{ conversationId: 'convo-1' }]);
+  });
+
+  it('asks only for generating occurrences, never the parked ones', async () => {
+    // Indexed by status rather than user, and `requires_action` rows accumulate for
+    // as long as approvals wait; `started` rows are bounded by the capacity slots.
+    const { deps } = await listWith([]);
+    expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1', ['started']);
+  });
+
+  it('projects nothing for a reservation that has not been dispatched', async () => {
+    const { schedules } = await listWith([run({})]);
+    expect(schedules[0].inFlight).toBeUndefined();
+  });
+
+  it('projects nothing when no occurrence is generating', async () => {
+    const { schedules } = await listWith([]);
+    expect(schedules[0].inFlight).toBeUndefined();
+  });
+
+  it('files each occurrence under its own schedule', async () => {
+    const { schedules } = await listWith(
+      [run({ conversationId: 'convo-2', scheduleId: 'sched-2' })],
+      [schedule, { ...schedule, id: 'sched-2' }],
+    );
+    expect(schedules[0].inFlight).toBeUndefined();
+    expect(schedules[1].inFlight).toEqual([{ conversationId: 'convo-2' }]);
+  });
+
+  it('scopes the single-schedule read to the caller before ownership is known', async () => {
+    const deps = makeCreateDeps();
+    (deps.methods.getScheduleById as jest.Mock) = jest.fn(async () => schedule);
+    (deps.methods.getActiveRunsForUser as jest.Mock) = jest.fn(async () => [
+      run({ conversationId: 'mine' }),
+      run({ conversationId: 'other-schedule', scheduleId: 'sched-9' }),
+    ]);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).getSchedule(
+      { params: { id: 'sched-1' }, user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    expect(deps.methods.getActiveRunsForUser).toHaveBeenCalledWith('user-1', ['started']);
+    expect(deps.methods.getActiveRunsForSchedule).not.toHaveBeenCalled();
+    expect((captured.body as Wire).inFlight).toEqual([{ conversationId: 'mine' }]);
   });
 });
 

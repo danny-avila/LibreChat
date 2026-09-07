@@ -14,6 +14,7 @@ export * from './media';
 export * from './greeting';
 export * from './latex';
 export * from './tilde';
+export * from './morph';
 export * from './forms';
 export * from './roles';
 export * from './errors';

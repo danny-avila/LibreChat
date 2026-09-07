@@ -46,8 +46,11 @@ const {
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
   createAttachedWorkspaceBashTool,
+  createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
@@ -2012,7 +2015,7 @@ async function loadToolsForExecution({
     isWorkspaceListRequested;
   const isSkillToolRequested = toolNames.includes(AgentConstants.SKILL_TOOL);
   const isSandboxFileToolRequested = toolNames.some((name) =>
-    [AgentConstants.READ_FILE, AgentConstants.CREATE_FILE, AgentConstants.EDIT_FILE].includes(name),
+    [AgentConstants.READ_FILE, CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME].includes(name),
   );
 
   let enabledCapabilities;
@@ -2093,7 +2096,7 @@ async function loadToolsForExecution({
        * library so PTC calls share the same managed auth context.
        */
       for (const name of ptcToolNames) {
-        const ptcTool = createBashProgrammaticToolCallingTool({
+        const ptcOptions = {
           authHeaders: () =>
             codeExecutionAuthHeaders(
               (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
@@ -2102,7 +2105,11 @@ async function loadToolsForExecution({
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
-        });
+        };
+        const ptcTool =
+          codeExecutionContext.environmentType === 'attached'
+            ? createGitIdentityProgrammaticBashTool(ptcOptions, agent?.git_identity)
+            : createBashProgrammaticToolCallingTool(ptcOptions);
         ptcTool.name = name;
         allLoadedTools.push(ptcTool);
       }
@@ -2133,6 +2140,7 @@ async function loadToolsForExecution({
           ? createAttachedWorkspaceBashTool({
               authHeaders,
               baseUrl: codeExecutionContext.baseUrl,
+              gitIdentity: agent?.git_identity,
             })
           : createBashExecutionTool({
               authHeaders,

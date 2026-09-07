@@ -36,7 +36,7 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
             className="absolute flex items-center justify-center rounded-full bg-surface-destructive"
             style={{ width: '14px', height: '14px', top: 0, right: 0 }}
           >
-            <AlertCircle size={10} className="text-white" />
+            <AlertCircle size={10} className="text-text-on-status" />
           </div>
         )}
       </div>

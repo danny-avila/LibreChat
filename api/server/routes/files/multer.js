@@ -11,22 +11,28 @@ const {
 } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const appConfig = req.config;
-    const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
-    if (!fs.existsSync(outputPath)) {
-      fs.mkdirSync(outputPath, { recursive: true });
-    }
-    cb(null, outputPath);
-  },
-  filename: function (req, file, cb) {
-    req.file_id = crypto.randomUUID();
-    file.originalname = decodeURIComponent(file.originalname);
-    const sanitizedFilename = sanitizeFilename(file.originalname);
-    cb(null, sanitizedFilename);
-  },
-});
+const createStorage = ({ uniqueTempPath = false } = {}) =>
+  multer.diskStorage({
+    destination: function (req, file, cb) {
+      const appConfig = req.config;
+      const outputPath = path.join(appConfig.paths.uploads, 'temp', req.user.id);
+      if (!fs.existsSync(outputPath)) {
+        fs.mkdirSync(outputPath, { recursive: true });
+      }
+      cb(null, outputPath);
+    },
+    filename: function (req, file, cb) {
+      req.file_id = crypto.randomUUID();
+      file.originalname = decodeURIComponent(file.originalname);
+      const sanitizedFilename = sanitizeFilename(file.originalname);
+      const stagedFilename = uniqueTempPath
+        ? sanitizeFilename(`${req.file_id}-${sanitizedFilename}`)
+        : sanitizedFilename;
+      cb(null, stagedFilename);
+    },
+  });
+
+const storage = createStorage();
 
 const importFileFilter = (req, file, cb) => {
   if (file.mimetype === 'application/json') {
@@ -50,7 +56,7 @@ const normalizeUploadMimeType = (file) => {
  *
  * @param {import('librechat-data-provider').FileConfig | undefined} customFileConfig
  */
-const createFileFilter = (customFileConfig) => {
+const createFileFilter = (customFileConfig, resolveEndpoint) => {
   /**
    * @param {ServerRequest} req
    * @param {Express.Multer.File}
@@ -67,8 +73,9 @@ const createFileFilter = (customFileConfig) => {
       return cb(null, true);
     }
 
-    const endpoint = req.body.endpoint;
-    const endpointType = req.body.endpointType;
+    const resolved = resolveEndpoint?.(req);
+    const endpoint = resolved?.endpoint ?? req.body.endpoint;
+    const endpointType = resolved?.endpointType ?? req.body.endpointType;
     const endpointFileConfig = getEndpointFileConfig({
       fileConfig: customFileConfig,
       endpoint,
@@ -88,15 +95,24 @@ const createFileFilter = (customFileConfig) => {
   return fileFilter;
 };
 
-const createMulterInstance = async () => {
-  const appConfig = await getAppConfig();
-  const fileConfig = mergeFileConfig(appConfig?.fileConfig);
-  const fileFilter = createFileFilter(fileConfig);
+const createMulterInstance = async (options = {}) => {
+  const { resolveEndpoint, uniqueTempPath = false } = options;
+  const appConfig = Object.prototype.hasOwnProperty.call(options, 'fileConfig')
+    ? null
+    : await getAppConfig();
+  const fileConfig = mergeFileConfig(options.fileConfig ?? appConfig?.fileConfig);
+  const fileFilter = createFileFilter(fileConfig, resolveEndpoint);
   return multer({
-    storage,
+    storage: uniqueTempPath ? createStorage({ uniqueTempPath: true }) : storage,
     fileFilter,
     limits: { fileSize: fileConfig.serverFileSizeLimit },
   });
 };
 
-module.exports = { createMulterInstance, storage, importFileFilter, createFileFilter };
+module.exports = {
+  createMulterInstance,
+  createStorage,
+  storage,
+  importFileFilter,
+  createFileFilter,
+};

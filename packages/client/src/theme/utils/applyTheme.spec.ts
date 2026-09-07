@@ -4,8 +4,8 @@ import applyTheme, {
   clearAppliedTheme,
   themeOwnedProperties,
 } from './applyTheme';
+import { highContrastTheme, resolveTheme } from '../registry';
 import { defaultTheme } from '../themes/default';
-import { resolveTheme } from '../registry';
 
 const semanticProperties = [
   '--link',
@@ -135,6 +135,14 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--theme-control-radius')).toBe('0.25rem');
     expect(root.style.getPropertyValue('--theme-surface-radius')).toBe('0.5rem');
     expect(root.style.getPropertyValue('--theme-motion-fast')).toBe('80ms');
+  });
+
+  it('applies the resolved high-contrast code surface instead of the stock grey', () => {
+    const root = document.documentElement;
+
+    applyResolvedTheme(resolveTheme(highContrastTheme, 'dark'), root);
+
+    expect(root.style.getPropertyValue('--surface-code')).toBe('0 0 0');
   });
 
   /** The sweep under an in-flight label is painted in CSS, so it is only
