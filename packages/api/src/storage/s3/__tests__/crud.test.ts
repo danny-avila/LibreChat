@@ -1111,11 +1111,13 @@ describe('S3 CRUD', () => {
       const { getS3FileStream } = await import('../crud');
       const result = await getS3FileStream(
         {} as ServerRequest,
-        'https://bucket.s3.amazonaws.com/images/user123/file.pdf',
+        'https://bucket.s3.amazonaws.com/images/user123/mi%C4%99dzynarodowy%20%28CE%29.pdf',
       );
 
       expect(result).toBeInstanceOf(Readable);
-      expect(s3Mock.commandCalls(GetObjectCommand)).toHaveLength(1);
+      expect(s3Mock.commandCalls(GetObjectCommand)[0].args[0].input).toMatchObject({
+        Key: 'images/user123/międzynarodowy (CE).pdf',
+      });
     });
 
     it('handles errors when retrieving stream', async () => {
@@ -1511,12 +1513,28 @@ describe('S3 CRUD', () => {
       expect(key).toBe('folder/file.txt');
     });
 
-    it('handles URLs with encoded characters', async () => {
+    it('decodes URL-encoded object keys exactly once', async () => {
       const { extractKeyFromS3Url } = await import('../crud');
       const key = extractKeyFromS3Url(
-        'https://bucket.s3.amazonaws.com/test-bucket/images/user123/my%20file%20name.jpg',
+        'https://bucket.s3.amazonaws.com/test-bucket/images/user123/mi%C4%99dzynarodowy%20%28CE%29%20%2B%20%23%20%2525.pdf',
       );
-      expect(key).toBe('images/user123/my%20file%20name.jpg');
+      expect(key).toBe('images/user123/międzynarodowy (CE) + # %25.pdf');
+    });
+
+    it('decodes keys from path-style regional URLs', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url(
+        'https://s3.us-west-2.amazonaws.com/test-bucket/uploads/user123/za%C5%BC%C3%B3%C5%82%C4%87.pdf',
+      );
+      expect(key).toBe('uploads/user123/zażółć.pdf');
+    });
+
+    it('preserves malformed percent escapes instead of throwing', async () => {
+      const { extractKeyFromS3Url } = await import('../crud');
+      const key = extractKeyFromS3Url(
+        'https://bucket.s3.amazonaws.com/test-bucket/uploads/user123/report%Q1.pdf',
+      );
+      expect(key).toBe('uploads/user123/report%Q1.pdf');
     });
 
     it('handles deep nested paths', async () => {
