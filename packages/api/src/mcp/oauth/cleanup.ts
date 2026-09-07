@@ -5,9 +5,9 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { MCPOAuthTokens } from './types';
 import { getMCPAppToolsPublicationGeneration } from '~/mcp/toolsChanged';
+import { getMCPOAuthLeaseId, MCPTokenStorage } from './tokens';
 import { MCPOAuthHandler } from './handler';
 import { isOAuthServer } from '~/mcp/utils';
-import { MCPTokenStorage } from './tokens';
 
 export function getMCPServerGeneration(config: ParsedServerConfig): string {
   const definitionGeneration = getMCPAppToolsPublicationGeneration(config);
@@ -277,10 +277,22 @@ export async function cleanupMCPServerOAuth(params: UninstallParams): Promise<vo
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const releaseRefreshTeardown =
     (await dependencies.tokenStorage.beginRefreshTeardown?.(userId, serverName)) ?? (() => {});
+  const teardownLease = await dependencies.flowManager.acquireLease(
+    getMCPOAuthLeaseId(userId, serverName),
+    { advanceGeneration: true },
+  );
+  if (!teardownLease) {
+    releaseRefreshTeardown();
+    throw new Error(`Unable to acquire OAuth teardown lease for ${serverName}`);
+  }
   try {
     await cleanupMCPServerOAuthWithFenceHeld(params);
   } finally {
-    releaseRefreshTeardown();
+    try {
+      await teardownLease.release();
+    } finally {
+      releaseRefreshTeardown();
+    }
   }
 }
 

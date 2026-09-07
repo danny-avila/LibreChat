@@ -1,4 +1,5 @@
 import { Keyv } from 'keyv';
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
@@ -6,6 +7,17 @@ import { registerShutdownTask } from '../app/shutdown';
 import { math } from '~/utils/math';
 
 type GuardedMutationResult = 'updated' | 'stale' | 'missing';
+
+export interface FlowLease {
+  generation: number;
+  release: () => Promise<void>;
+}
+
+interface InMemoryLeaseState {
+  generation: number;
+  owner?: string;
+  leaseUntil?: number;
+}
 
 interface KeyvRedisStore {
   constructor: { name: string };
@@ -62,6 +74,37 @@ redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
 return 1
 `;
 
+const READ_LEASE_GENERATION = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+return cjson.decode(raw).generation or 0
+`;
+
+const ACQUIRE_LEASE = `
+local raw = redis.call('GET', KEYS[1])
+local data = raw and cjson.decode(raw) or { generation = 0 }
+local now = tonumber(ARGV[2])
+if data.owner and data.leaseUntil and data.leaseUntil > now then return -2 end
+local expected = tonumber(ARGV[3])
+if expected >= 0 and data.generation ~= expected then return -1 end
+if ARGV[4] == '1' then data.generation = data.generation + 1 end
+data.owner = ARGV[1]
+data.leaseUntil = now + tonumber(ARGV[5])
+redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[6])
+return data.generation
+`;
+
+const RELEASE_LEASE = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local data = cjson.decode(raw)
+if data.owner ~= ARGV[1] then return -1 end
+data.owner = nil
+data.leaseUntil = nil
+redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[2])
+return 1
+`;
+
 /**
  * Lifetime of a PENDING OAuth flow: how long the auth button stays valid and an
  * in-flight flow can be reused before it is replaced. Mirrors
@@ -83,6 +126,7 @@ export function normalizeExpiresAt(timestamp: number): number {
 }
 
 export class FlowStateManager<T = unknown> {
+  private static readonly inMemoryLeases = new Map<string, InMemoryLeaseState>();
   private keyv: Keyv;
   private ttl: number;
   private monitorTimeout: number;
@@ -137,6 +181,92 @@ export class FlowStateManager<T = unknown> {
    */
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
+  }
+
+  /** Reads the generation used to reject work that crossed a teardown boundary. */
+  async getLeaseGeneration(leaseId: string): Promise<number> {
+    const flowKey = this.getFlowKey(leaseId, 'lease');
+    const inMemoryKey = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      return Number(await this.evalRedisScript(READ_LEASE_GENERATION, redisKey, []));
+    }
+    return FlowStateManager.inMemoryLeases.get(inMemoryKey)?.generation ?? 0;
+  }
+
+  /**
+   * Acquires a cross-replica lease. `expectedGeneration` rejects an operation that started
+   * before teardown; `advanceGeneration` is the teardown linearization point.
+   */
+  async acquireLease(
+    leaseId: string,
+    options: {
+      expectedGeneration?: number;
+      advanceGeneration?: boolean;
+      leaseMs?: number;
+      waitMs?: number;
+    } = {},
+  ): Promise<FlowLease | null> {
+    const flowKey = this.getFlowKey(leaseId, 'lease');
+    const inMemoryKey = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
+    const redisKey = this.getRedisKey(flowKey);
+    const owner = randomUUID();
+    const leaseMs = options.leaseMs ?? 15 * 60_000;
+    const waitUntil = Date.now() + (options.waitMs ?? 15_000);
+    const retentionMs = 24 * 60 * 60_000;
+    while (true) {
+      const now = Date.now();
+      let result: number;
+      if (redisKey) {
+        result = Number(
+          await this.evalRedisScript(ACQUIRE_LEASE, redisKey, [
+            owner,
+            String(now),
+            String(options.expectedGeneration ?? -1),
+            options.advanceGeneration ? '1' : '0',
+            String(leaseMs),
+            String(retentionMs),
+          ]),
+        );
+      } else {
+        const current = FlowStateManager.inMemoryLeases.get(inMemoryKey) ?? { generation: 0 };
+        if (current.owner && (current.leaseUntil ?? 0) > now) {
+          result = -2;
+        } else if (
+          options.expectedGeneration !== undefined &&
+          current.generation !== options.expectedGeneration
+        ) {
+          result = -1;
+        } else {
+          result = current.generation + (options.advanceGeneration ? 1 : 0);
+          FlowStateManager.inMemoryLeases.set(inMemoryKey, {
+            generation: result,
+            owner,
+            leaseUntil: now + leaseMs,
+          });
+        }
+      }
+      if (result === -1) return null;
+      if (result >= 0) {
+        return {
+          generation: result,
+          release: async () => {
+            if (redisKey) {
+              await this.evalRedisScript(RELEASE_LEASE, redisKey, [owner, String(retentionMs)]);
+              return;
+            }
+            const current = FlowStateManager.inMemoryLeases.get(inMemoryKey);
+            if (current?.owner === owner) {
+              FlowStateManager.inMemoryLeases.set(inMemoryKey, {
+                generation: current.generation,
+              });
+            }
+          },
+        };
+      }
+      if (Date.now() >= waitUntil) return null;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 
   private getRedisKey(flowKey: string): string | null {

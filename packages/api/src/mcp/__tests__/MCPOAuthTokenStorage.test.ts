@@ -2081,6 +2081,34 @@ describe('MCPTokenStorage', () => {
       ).toMatchObject({ token: 'enc:rt-1' });
     });
 
+    it('discards a remote refresh response after teardown advances the durable generation', async () => {
+      await seedRefreshableTokens('remote-teardown-srv');
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+      const flowManager = {
+        getLeaseGeneration: jest.fn().mockResolvedValue(7),
+        acquireLease: jest.fn().mockResolvedValue(null),
+      };
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(refreshTokens, 'remote-teardown-srv'),
+          flowManager: flowManager as never,
+        }),
+      ).resolves.toBeNull();
+
+      expect(flowManager.acquireLease).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ expectedGeneration: 7 }),
+      );
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:remote-teardown-srv:refresh',
+        }),
+      ).toMatchObject({ token: 'enc:rt-1' });
+    });
+
     it('does not fence a colon-prefixed sibling server', async () => {
       await seedRefreshableTokens('foo:bar');
       let resolveRefresh!: (tokens: MCPOAuthTokens) => void;

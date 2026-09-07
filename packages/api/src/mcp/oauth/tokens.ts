@@ -9,6 +9,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
+import type { FlowLease, FlowStateManager } from '~/flow/manager';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -82,7 +83,15 @@ interface GetTokensParams {
   onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
+  /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
+  flowManager?: Pick<FlowStateManager, 'getLeaseGeneration' | 'acquireLease'>;
 }
+
+export const getMCPOAuthLeaseId = (
+  userId: string,
+  serverName: string,
+  tenantId: string | undefined = getTenantId(),
+): string => JSON.stringify([tenantId ?? '', userId, serverName]);
 
 /**
  * Reads the `exp` claim (RFC 7519 §4.1.4 / RFC 9068) from a JWT-format access
@@ -801,7 +810,15 @@ export class MCPTokenStorage {
       existingAccessToken?: IToken | null;
     },
   ): Promise<MCPOAuthTokens | null> {
-    const { userId, serverName, refreshTokens, createToken, signal, singleFlightScope } = params;
+    const {
+      userId,
+      serverName,
+      refreshTokens,
+      createToken,
+      signal,
+      singleFlightScope,
+      flowManager,
+    } = params;
     const logPrefix = this.getLogPrefix(userId, serverName);
 
     const ownerKey = this.getRefreshOwnerKey(userId, serverName);
@@ -831,6 +848,9 @@ export class MCPTokenStorage {
       return null;
     }
 
+    const leaseId = getMCPOAuthLeaseId(userId, serverName);
+    const leaseGeneration = flowManager ? await flowManager.getLeaseGeneration(leaseId) : undefined;
+
     /**
      * The shared redemption is owner-neutral: no caller's `AbortSignal` is
      * threaded into the execution, so an impatient waiter (e.g. the silent
@@ -844,6 +864,8 @@ export class MCPTokenStorage {
       refreshTokens,
       createToken,
       signal: executionController.signal,
+      leaseId,
+      leaseGeneration,
     }).finally(() => {
       clearTimeout(staleTimer);
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
@@ -936,12 +958,17 @@ export class MCPTokenStorage {
     existingAccessToken,
     onRefreshSuccess,
     signal,
+    flowManager,
+    leaseId,
+    leaseGeneration,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
     refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
     createToken: NonNullable<GetTokensParams['createToken']>;
     /** Internal stale-abort signal owned by `forceRefreshTokens` — never a caller's. */
     signal: AbortSignal;
+    leaseId: string;
+    leaseGeneration?: number;
   }): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const identifier = `mcp:${serverName}`;
@@ -1053,26 +1080,42 @@ export class MCPTokenStorage {
         throw new Error('Token refresh aborted before storing refreshed credentials');
       }
 
+      let persistenceLease: FlowLease | null = null;
+      if (flowManager && leaseGeneration !== undefined) {
+        persistenceLease = await flowManager.acquireLease(leaseId, {
+          expectedGeneration: leaseGeneration,
+        });
+        if (!persistenceLease) {
+          logger.debug(`${logPrefix} Discarding refresh response superseded by OAuth teardown`);
+          return null;
+        }
+      }
+
       // Store the refreshed tokens (handles both create and update)
       // Pass existing token state to avoid duplicate DB calls
-      const storedTokens = await this.storeTokens({
-        userId,
-        serverName,
-        tokens: newTokens,
-        createToken,
-        updateToken,
-        deleteTokens,
-        findToken,
-        clientInfo,
-        existingTokens: {
-          accessToken: existingAccessToken ?? undefined,
-          refreshToken: refreshTokenData,
-          clientInfoToken: clientInfoData,
-        },
-        metadata: storedClientMetadata,
-        expectedCredentialSetId: refreshCredentialSetId,
-        signal,
-      });
+      let storedTokens: MCPOAuthTokens;
+      try {
+        storedTokens = await this.storeTokens({
+          userId,
+          serverName,
+          tokens: newTokens,
+          createToken,
+          updateToken,
+          deleteTokens,
+          findToken,
+          clientInfo,
+          existingTokens: {
+            accessToken: existingAccessToken ?? undefined,
+            refreshToken: refreshTokenData,
+            clientInfoToken: clientInfoData,
+          },
+          metadata: storedClientMetadata,
+          expectedCredentialSetId: refreshCredentialSetId,
+          signal,
+        });
+      } finally {
+        await persistenceLease?.release();
+      }
 
       if (onRefreshSuccess) {
         try {

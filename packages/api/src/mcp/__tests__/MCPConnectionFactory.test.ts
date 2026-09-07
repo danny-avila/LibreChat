@@ -125,6 +125,11 @@ describe('MCPConnectionFactory', () => {
     } as t.MCPOptions;
 
     mockFlowManager = {
+      getLeaseGeneration: jest.fn().mockResolvedValue(0),
+      acquireLease: jest.fn().mockResolvedValue({
+        generation: 0,
+        release: jest.fn().mockResolvedValue(undefined),
+      }),
       initFlow: jest.fn().mockResolvedValue(undefined),
       createFlow: jest.fn(),
       createFlowWithHandler: jest.fn(),

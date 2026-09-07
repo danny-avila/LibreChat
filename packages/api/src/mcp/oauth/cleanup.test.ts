@@ -1,6 +1,14 @@
 import type { ParsedServerConfig } from '~/mcp/types';
 import { cleanupMCPServerOAuth, getMCPServerGeneration } from './cleanup';
 
+const createFlowManager = () => ({
+  acquireLease: jest.fn().mockResolvedValue({
+    generation: 1,
+    release: jest.fn().mockResolvedValue(undefined),
+  }),
+  deleteFlow: jest.fn(),
+});
+
 describe('getMCPServerGeneration', () => {
   it('includes the durable database identity for user servers', () => {
     const config = { type: 'streamable-http', url: 'https://example.com', dbId: 'server-1' };
@@ -55,7 +63,7 @@ describe('cleanupMCPServerOAuth', () => {
         userId: 'user-1',
         pluginKey: 'mcp_test-server',
         dependencies: {
-          flowManager: { deleteFlow: jest.fn() } as never,
+          flowManager: createFlowManager() as never,
           oauthHandler: {
             generateFlowId: jest.fn(),
             generateTokenFlowId: jest.fn(),
@@ -122,7 +130,7 @@ describe('cleanupMCPServerOAuth', () => {
       pluginKey: 'mcp_test-server',
       serverConfigOverride: { type: 'streamable-http', url: 'https://example.com/mcp' },
       dependencies: {
-        flowManager: { deleteFlow: jest.fn() } as never,
+        flowManager: createFlowManager() as never,
         oauthHandler: {
           generateFlowId: jest.fn(() => 'user-1:test-server'),
           generateTokenFlowId: jest.fn(() => 'user-1:test-server'),
@@ -198,7 +206,7 @@ describe('cleanupMCPServerOAuth', () => {
         oauth: {},
       },
       dependencies: {
-        flowManager: { deleteFlow: jest.fn() } as never,
+        flowManager: createFlowManager() as never,
         oauthHandler: {
           generateFlowId: jest.fn(() => 'user-1:test-server'),
           generateTokenFlowId: jest.fn(() => 'user-1:test-server'),
@@ -245,7 +253,7 @@ describe('cleanupMCPServerOAuth', () => {
         oauth: {},
       },
       dependencies: {
-        flowManager: { deleteFlow: jest.fn() } as never,
+        flowManager: createFlowManager() as never,
         oauthHandler: {
           generateFlowId: jest.fn(() => 'user-1:test-server'),
           generateTokenFlowId: jest.fn(() => 'user-1:test-server'),

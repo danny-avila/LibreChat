@@ -1252,4 +1252,32 @@ describe('FlowStateManager', () => {
       expect(result.age).toBeLessThan(60 * 1000);
     });
   });
+
+  describe('cross-replica leases', () => {
+    it('rejects stale work after teardown advances the generation', async () => {
+      const generation = await flowManager.getLeaseGeneration('user:server');
+      const teardown = await flowManager.acquireLease('user:server', {
+        advanceGeneration: true,
+      });
+
+      expect(teardown?.generation).toBe(generation + 1);
+      await teardown?.release();
+      await expect(
+        flowManager.acquireLease('user:server', { expectedGeneration: generation }),
+      ).resolves.toBeNull();
+    });
+
+    it('serializes holders and preserves the generation after release', async () => {
+      const first = await flowManager.acquireLease('shared-owner');
+      expect(first).not.toBeNull();
+      await expect(flowManager.acquireLease('shared-owner', { waitMs: 0 })).resolves.toBeNull();
+
+      await first?.release();
+      const second = await flowManager.acquireLease('shared-owner', {
+        expectedGeneration: first?.generation,
+      });
+      expect(second?.generation).toBe(first?.generation);
+      await second?.release();
+    });
+  });
 });
