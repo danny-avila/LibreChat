@@ -694,6 +694,16 @@ export interface MessageMethods {
     limitPerThread: number;
   }): Promise<ParentSubagentTaskRecord[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
+  commitStoredResponseTurn(params: {
+    userId: string;
+    conversationId: string;
+    responseId: string;
+  }): Promise<IMessage | null>;
+  deleteStoredResponseTurn(params: {
+    userId: string;
+    conversationId: string;
+    responseId: string;
+  }): Promise<DeleteResult>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
     options?: {
@@ -3129,6 +3139,54 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
+  /** Publishes a staged Responses turn without recreating a deleted output row. */
+  async function commitStoredResponseTurn({
+    userId,
+    conversationId,
+    responseId,
+  }: {
+    userId: string;
+    conversationId: string;
+    responseId: string;
+  }): Promise<IMessage | null> {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    return Message.findOneAndUpdate(
+      {
+        user: userId,
+        conversationId,
+        messageId: responseId,
+        isCreatedByUser: false,
+        isUserSubmitted: false,
+        'metadata.responsesInput': null,
+        'metadata.responsesTurn.version': 1,
+        'metadata.responsesTurn.responseId': responseId,
+        'metadata.responsesResponse.version': 1,
+        'metadata.responsesResponse.commitState': 'pending',
+      },
+      { $set: { 'metadata.responsesResponse.commitState': 'committed' } },
+      { new: true },
+    ).lean<IMessage | null>();
+  }
+
+  /** Removes only rows staged for one Responses turn. */
+  async function deleteStoredResponseTurn({
+    userId,
+    conversationId,
+    responseId,
+  }: {
+    userId: string;
+    conversationId: string;
+    responseId: string;
+  }): Promise<DeleteResult> {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    return Message.deleteMany({
+      user: userId,
+      conversationId,
+      'metadata.responsesTurn.version': 1,
+      'metadata.responsesTurn.responseId': responseId,
+    });
+  }
+
   /**
    * Deletes messages from the database.
    */
@@ -3217,6 +3275,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     getMessagesForSubagentThreadView,
     listSubagentTasksForThreads,
     getMessage,
+    commitStoredResponseTurn,
+    deleteStoredResponseTurn,
     getMessagesByCursor,
     searchMessages,
     deleteMessages,

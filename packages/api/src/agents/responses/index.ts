@@ -184,12 +184,21 @@ export {
 } from './service';
 
 export {
+  buildStoredResponseMetadata,
+  filterCommittedResponseMessages,
+  getStoredResponseSnapshot,
+  isCommittedStoredResponse,
   isStoredResponseOutput,
+  persistStoredResponse,
   resolveStoredResponse,
   revalidateStoredResponseConversation,
   selectStoredResponseHistory,
+  type PersistStoredResponseParams,
   type StoredResponseConversationLookup,
+  type StoredResponseInputMessage,
   type StoredResponseLookup,
   type StoredResponseReference,
   type StoredResponseResolution,
+  type StoredResponseSnapshot,
+  type StoredResponseWriteDependencies,
 } from './persistence';

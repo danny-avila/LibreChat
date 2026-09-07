@@ -3,7 +3,14 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createMethods, createModels, tenantStorage } from '@librechat/data-schemas';
 import type { AllMethods, IConversation, IMessage } from '@librechat/data-schemas';
-import { resolveStoredResponse } from './persistence';
+import type { Response } from './types';
+import {
+  buildStoredResponseMetadata,
+  filterCommittedResponseMessages,
+  getStoredResponseSnapshot,
+  persistStoredResponse,
+  resolveStoredResponse,
+} from './persistence';
 
 const TENANT_A = 'tenant-aaaaaaaaaaaaaaaaaaaa';
 const TENANT_B = 'tenant-bbbbbbbbbbbbbbbbbbbb';
@@ -178,4 +185,222 @@ describe('resolveStoredResponse with Mongo tenant scope', () => {
       ),
     ).resolves.toEqual({ status: 'not_found' });
   });
+
+  it('does not let an ordinary conversation save publish a pending Responses turn', async () => {
+    const conversationId = '82bb41c5-5c41-4e3b-8488-d110386d6315';
+    const responseId = 'resp_pending_browser_save';
+    await asTenant(TENANT_A, async () => {
+      await Conversation.create({
+        conversationId,
+        user: OWNER,
+        title: 'pending',
+        endpoint: EModelEndpoint.agents,
+        isTemporary: false,
+      });
+      await Message.create([
+        {
+          messageId: 'pending-input',
+          conversationId,
+          user: OWNER,
+          sender: 'User',
+          text: 'question',
+          isCreatedByUser: true,
+          isUserSubmitted: true,
+          metadata: {
+            responsesTurn: { version: 1, responseId },
+            responsesInput: { role: 'user' },
+          },
+        },
+        {
+          messageId: responseId,
+          conversationId,
+          user: OWNER,
+          sender: 'Agent',
+          text: 'answer',
+          isCreatedByUser: false,
+          isUserSubmitted: false,
+          metadata: buildStoredResponseMetadata(storedResponse({ id: responseId })),
+        },
+      ]);
+
+      await methods.saveConvo({ userId: OWNER }, { conversationId, title: 'renamed by browser' });
+      const rebuilt = await methods.getConvo(OWNER, conversationId);
+      const messages = await methods.getMessages({ user: OWNER, conversationId });
+
+      expect(rebuilt?.messages).toHaveLength(2);
+      expect(filterCommittedResponseMessages(messages)).toEqual([]);
+      await expect(resolveStoredResponse(lookup(), OWNER, responseId)).resolves.toEqual({
+        status: 'not_found',
+      });
+    });
+  });
+
+  it('publishes one complete turn only after the manifest and output marker commit', async () => {
+    const conversationId = '92bb41c5-5c41-4e3b-8488-d110386d6315';
+    const responseId = 'resp_committed_turn';
+    const response = storedResponse({ id: responseId });
+
+    await asTenant(TENANT_A, async () => {
+      const result = await persistStoredResponse({
+        deps: {
+          saveConvo: methods.saveConvo,
+          saveMessage: methods.saveMessage,
+          getConvo: methods.getConvo,
+          getMessage: methods.getMessage,
+          commitStoredResponseTurn: methods.commitStoredResponseTurn,
+          deleteStoredResponseTurn: methods.deleteStoredResponseTurn,
+          createMessageId: () => 'committed-input',
+        },
+        context: { userId: OWNER },
+        conversation: {
+          data: { conversationId, endpoint: EModelEndpoint.agents, agent_id: 'agent-1' },
+          initialAgentId: 'agent-1',
+          isContinuation: false,
+        },
+        inputMessages: [{ role: 'user', content: 'question' }],
+        parentMessageId: null,
+        responseId,
+        response,
+        agentId: 'agent-1',
+      });
+      const messages = await methods.getMessages({ user: OWNER, conversationId });
+
+      expect(filterCommittedResponseMessages(messages)).toHaveLength(2);
+      expect(getStoredResponseSnapshot(result.outputMessage)).toEqual({
+        output: response.output,
+        usage: response.usage,
+        previousResponseId: response.previous_response_id,
+      });
+      await expect(resolveStoredResponse(lookup(), OWNER, responseId)).resolves.toMatchObject({
+        status: 'found',
+        reference: { responseMessage: { messageId: responseId } },
+      });
+    });
+  });
+
+  it('preserves both turns when concurrent Responses commits append to one conversation', async () => {
+    const conversationId = 'a2bb41c5-5c41-4e3b-8488-d110386d6315';
+    await asTenant(TENANT_A, async () => {
+      await methods.saveConvo(
+        { userId: OWNER },
+        { conversationId, endpoint: EModelEndpoint.agents, agent_id: 'agent-1' },
+        { appendMessageIds: [] },
+      );
+      const persist = (responseId: string, inputId: string) =>
+        persistStoredResponse({
+          deps: {
+            saveConvo: methods.saveConvo,
+            saveMessage: methods.saveMessage,
+            getConvo: methods.getConvo,
+            getMessage: methods.getMessage,
+            commitStoredResponseTurn: methods.commitStoredResponseTurn,
+            deleteStoredResponseTurn: methods.deleteStoredResponseTurn,
+            createMessageId: () => inputId,
+          },
+          context: { userId: OWNER },
+          conversation: {
+            data: { conversationId, endpoint: EModelEndpoint.agents, agent_id: 'agent-1' },
+            initialAgentId: 'agent-1',
+            isContinuation: true,
+          },
+          inputMessages: [{ role: 'user', content: inputId }],
+          parentMessageId: null,
+          responseId,
+          response: storedResponse({ id: responseId }),
+          agentId: 'agent-1',
+        });
+
+      await Promise.all([
+        persist('resp_concurrent_a', 'concurrent-input-a'),
+        persist('resp_concurrent_b', 'concurrent-input-b'),
+      ]);
+      const storedConversation = await methods.getConvo(OWNER, conversationId);
+      const messages = await methods.getMessages({ user: OWNER, conversationId });
+
+      expect(storedConversation?.messages).toHaveLength(4);
+      expect(filterCommittedResponseMessages(messages)).toHaveLength(4);
+    });
+  });
+
+  it('does not recreate a deleted pending output and cleans only its exact turn', async () => {
+    const conversationId = 'b2bb41c5-5c41-4e3b-8488-d110386d6315';
+    const responseId = 'resp_deleted_pending';
+    await asTenant(TENANT_A, async () => {
+      await Message.create([
+        {
+          messageId: 'deleted-turn-input',
+          conversationId,
+          user: OWNER,
+          isCreatedByUser: true,
+          isUserSubmitted: true,
+          metadata: {
+            responsesTurn: { version: 1, responseId },
+            responsesInput: { role: 'user' },
+          },
+        },
+        {
+          messageId: responseId,
+          conversationId,
+          user: OWNER,
+          isCreatedByUser: false,
+          isUserSubmitted: false,
+          metadata: buildStoredResponseMetadata(storedResponse({ id: responseId })),
+        },
+        {
+          messageId: 'sibling-turn',
+          conversationId,
+          user: OWNER,
+          isCreatedByUser: false,
+          isUserSubmitted: false,
+          metadata: buildStoredResponseMetadata(
+            storedResponse({ id: 'sibling-turn' }),
+            'committed',
+          ),
+        },
+      ]);
+      await Message.deleteOne({ user: OWNER, conversationId, messageId: responseId });
+
+      await expect(
+        methods.commitStoredResponseTurn({ userId: OWNER, conversationId, responseId }),
+      ).resolves.toBeNull();
+      await methods.deleteStoredResponseTurn({ userId: OWNER, conversationId, responseId });
+
+      expect(
+        await Message.exists({ user: OWNER, conversationId, messageId: responseId }),
+      ).toBeNull();
+      expect(
+        await Message.exists({ user: OWNER, conversationId, messageId: 'deleted-turn-input' }),
+      ).toBeNull();
+      expect(
+        await Message.exists({ user: OWNER, conversationId, messageId: 'sibling-turn' }),
+      ).not.toBeNull();
+    });
+  });
 });
+
+function storedResponse(overrides: Partial<Response> = {}): Response {
+  return {
+    id: 'resp_stored',
+    status: 'completed',
+    previous_response_id: null,
+    output: [
+      {
+        type: 'message',
+        id: 'output-item',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'answer', annotations: [], logprobs: [] }],
+      },
+    ],
+    usage: {
+      input_tokens: 4,
+      output_tokens: 2,
+      total_tokens: 6,
+      input_tokens_details: { cached_tokens: 1 },
+      output_tokens_details: { reasoning_tokens: 0 },
+      primary: { input_tokens: 4, output_tokens: 2, total_tokens: 6 },
+      subagent: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+    },
+    ...overrides,
+  } as Response;
+}

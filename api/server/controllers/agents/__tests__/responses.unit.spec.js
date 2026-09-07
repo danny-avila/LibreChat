@@ -149,6 +149,94 @@ const mockResponsesUsage = {
   subagent: { input_tokens: 25, output_tokens: 10, total_tokens: 35 },
 };
 const mockBuildResponsesUsage = jest.fn().mockReturnValue(mockResponsesUsage);
+const mockPersistStoredResponse = jest.fn(async (params) => {
+  const { deps, context, conversation, inputMessages, response, responseId, agentId } = params;
+  const initialConversation = await deps.saveConvo(context, conversation.data, {
+    context: 'Responses API - save conversation',
+    initialAgentId: conversation.initialAgentId,
+    appendMessageIds: [],
+    ...(conversation.isContinuation && { noUpsert: true }),
+  });
+  if (initialConversation?.conversationId !== conversation.data.conversationId) {
+    throw new Error('Conversation was deleted before the response could be stored');
+  }
+  const messageIds = [];
+  let parentMessageId = params.parentMessageId;
+  for (const input of inputMessages) {
+    const messageId = input.messageId ?? 'mock-nanoid-123';
+    let sender = 'Agent';
+    if (input.role === 'user') {
+      sender = 'User';
+    } else if (input.role === 'tool') {
+      sender = 'Tool';
+    }
+    const message = await deps.saveMessage(
+      context,
+      {
+        messageId,
+        conversationId: conversation.data.conversationId,
+        parentMessageId,
+        isCreatedByUser: input.role === 'user',
+        isUserSubmitted: true,
+        text: typeof input.content === 'string' ? input.content : JSON.stringify(input.content),
+        ...(Array.isArray(input.content) && { content: input.content }),
+        sender,
+        endpoint: conversation.data.endpoint,
+        model: agentId,
+        metadata: {
+          responsesInput: {
+            role: input.role,
+            ...(input.name != null && { name: input.name }),
+            ...(input.tool_call_id != null && { tool_call_id: input.tool_call_id }),
+            ...(input.tool_calls != null && { tool_calls: input.tool_calls }),
+          },
+        },
+      },
+      { context: 'Responses API - save input' },
+    );
+    if (message?._id == null)
+      throw new Error(`Response input message could not be stored: ${messageId}`);
+    messageIds.push(message._id);
+    parentMessageId = messageId;
+  }
+  const outputMessageFields = (await params.getOutputMessageFields?.()) ?? {};
+  const outputMessage = await deps.saveMessage(
+    context,
+    {
+      ...outputMessageFields,
+      messageId: responseId,
+      conversationId: conversation.data.conversationId,
+      parentMessageId,
+      isCreatedByUser: false,
+      isUserSubmitted: false,
+      text: '',
+      sender: 'Agent',
+      endpoint: conversation.data.endpoint,
+      model: agentId,
+      finish_reason: response.status === 'completed' ? 'stop' : response.status,
+      tokenCount: params.visibleOutputTokens ?? response.usage?.output_tokens,
+      metadata: {
+        responsesResponse: {
+          version: 1,
+          output: response.output,
+          usage: response.usage,
+          previousResponseId: response.previous_response_id ?? null,
+        },
+      },
+    },
+    { context: 'Responses API - save assistant response' },
+  );
+  if (outputMessage?._id == null)
+    throw new Error(`Response output message could not be stored: ${responseId}`);
+  messageIds.push(outputMessage._id);
+  const storedConversation = await deps.saveConvo(context, conversation.data, {
+    context: 'Responses API - save conversation',
+    initialAgentId: conversation.initialAgentId,
+    appendMessageIds: messageIds,
+    noUpsert: true,
+  });
+  return { conversation: storedConversation, outputMessage };
+});
 const mockEnrollAgentExecution = jest.fn();
 let mockExecution;
 const mockStoredResponseReferences = new Map();
@@ -374,6 +462,24 @@ jest.mock('@librechat/api', () => ({
     completeOutput: jest.fn(),
     finalizeStream: jest.fn(),
   }),
+  filterCommittedResponseMessages: jest.fn((messages) => messages),
+  getStoredResponseSnapshot: jest.fn((message) => {
+    const snapshot = message.metadata?.responsesResponse;
+    if (snapshot?.version === 1) {
+      return {
+        output: snapshot.output,
+        usage: snapshot.usage,
+        previousResponseId: snapshot.previousResponseId ?? null,
+      };
+    }
+    const output = message.metadata?.responsesOutput;
+    return Array.isArray(output)
+      ? {
+          output,
+          previousResponseId: message.metadata?.responsesPreviousResponseId ?? null,
+        }
+      : null;
+  }),
   createAggregatorEventHandlers: jest.fn().mockReturnValue({
     on_message_delta: { handle: jest.fn() },
     on_reasoning_delta: { handle: jest.fn() },
@@ -387,6 +493,7 @@ jest.mock('@librechat/api', () => ({
       message.isUserSubmitted !== true &&
       message.metadata?.responsesInput == null,
   ),
+  persistStoredResponse: mockPersistStoredResponse,
   resolveStoredResponse: jest.fn(async (deps, userId, responseId) => {
     if (mockStoredResponseReferences.has(responseId)) {
       return mockStoredResponseReferences.get(responseId);
@@ -909,6 +1016,7 @@ describe('createResponse controller', () => {
     api.buildAggregatedResponse.mockReturnValueOnce({
       id: 'resp_mock-123',
       status: 'completed',
+      previous_response_id: previousMessage.messageId,
       output: structuredOutput,
       usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
     });
@@ -951,8 +1059,12 @@ describe('createResponse controller', () => {
         parentMessageId: 'input-new',
         isUserSubmitted: false,
         metadata: {
-          responsesOutput: structuredOutput,
-          responsesPreviousResponseId: previousMessage.messageId,
+          responsesResponse: {
+            version: 1,
+            output: structuredOutput,
+            usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+            previousResponseId: previousMessage.messageId,
+          },
         },
       }),
       { context: 'Responses API - save assistant response' },
@@ -1312,6 +1424,39 @@ describe('createResponse controller', () => {
         usage: { input_tokens: 0, output_tokens: 7, total_tokens: 7 },
       }),
     );
+  });
+
+  it('preserves explicitly null usage from a stored response snapshot', async () => {
+    const api = require('@librechat/api');
+    const target = {
+      messageId: 'resp_null_usage',
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      isCreatedByUser: false,
+      isUserSubmitted: false,
+      tokenCount: 7,
+      metadata: {
+        responsesResponse: {
+          version: 1,
+          commitState: 'committed',
+          output: [],
+          usage: null,
+          previousResponseId: null,
+        },
+      },
+    };
+    api.resolveStoredResponse.mockResolvedValueOnce({
+      status: 'found',
+      reference: {
+        conversation: { conversationId: target.conversationId, user: 'user-123' },
+        conversationId: target.conversationId,
+        responseMessage: target,
+      },
+    });
+    req.params = { id: target.messageId };
+
+    await getResponse(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ usage: null }));
   });
 
   it('excludes stored caller context from legacy UUID response output', async () => {

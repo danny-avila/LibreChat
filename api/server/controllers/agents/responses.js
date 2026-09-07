@@ -82,7 +82,10 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  filterCommittedResponseMessages,
+  getStoredResponseSnapshot,
   isStoredResponseOutput,
+  persistStoredResponse,
   resolveStoredResponse,
   revalidateStoredResponseConversation,
   selectStoredResponseHistory,
@@ -316,14 +319,14 @@ function extractResponseRequestContent(request, messageFragments) {
 
 /**
  * Load messages from a previous response/conversation
- * @param {string} conversationId - The conversation/response ID
+ * @param {import('@librechat/data-schemas').IConversation} conversation
  * @param {string} userId - The user ID
  * @param {string | undefined} responseMessageId - Canonical response branch target
  * @returns {Promise<Array>} Messages from the conversation
  */
-async function loadPreviousMessages(conversationId, userId, responseMessageId) {
+async function loadPreviousMessages(conversation, userId, responseMessageId) {
   const messages = await db.getMessages({
-    conversationId,
+    conversationId: conversation.conversationId,
     user: userId,
     ...buildRetentionVisibilityFilter(),
   });
@@ -332,10 +335,13 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
   }
 
   // Convert stored messages to internal format
-  return selectStoredResponseHistory(messages, responseMessageId).flatMap((msg) => {
-    const responsesOutput = msg.metadata?.responsesOutput;
-    if (Array.isArray(responsesOutput)) {
-      const restoredOutput = convertToInternalMessages(responsesOutput);
+  return selectStoredResponseHistory(
+    filterCommittedResponseMessages(messages),
+    responseMessageId,
+  ).flatMap((msg) => {
+    const snapshot = getStoredResponseSnapshot(msg);
+    if (snapshot != null) {
+      const restoredOutput = convertToInternalMessages(snapshot.output);
       if (restoredOutput.length > 0) {
         return restoredOutput.map((outputMessage) => ({
           ...outputMessage,
@@ -384,169 +390,8 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
   });
 }
 
-/**
- * Save input messages to database
- * @param {import('express').Request} req
- * @param {string} conversationId
- * @param {Array} inputMessages - Internal format messages
- * @param {string} agentId
- * @param {string | null} parentMessageId
- * @returns {Promise<{ parentMessageId: string | null, messageIds: import('mongoose').Types.ObjectId[] }>}
- */
-async function saveInputMessages(req, conversationId, inputMessages, agentId, parentMessageId) {
-  const messageIds = [];
-  let currentParentMessageId = parentMessageId;
-  for (const msg of inputMessages) {
-    const messageId = msg.messageId || nanoid();
-    let sender = 'Agent';
-    if (msg.role === 'user') {
-      sender = 'User';
-    } else if (msg.role === 'tool') {
-      sender = 'Tool';
-    }
-    const message = await db.saveMessage(
-      {
-        userId: req?.user?.id,
-        isTemporary: req?.body?.isTemporary,
-        interfaceConfig: req?.config?.interfaceConfig,
-      },
-      {
-        messageId,
-        conversationId,
-        parentMessageId: currentParentMessageId,
-        isCreatedByUser: msg.role === 'user',
-        isUserSubmitted: true,
-        text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-        ...(Array.isArray(msg.content) && { content: msg.content }),
-        sender,
-        endpoint: EModelEndpoint.agents,
-        model: agentId,
-        metadata: {
-          responsesInput: {
-            role: msg.role,
-            ...(typeof msg.name === 'string' && { name: msg.name }),
-            ...(typeof msg.tool_call_id === 'string' && { tool_call_id: msg.tool_call_id }),
-            ...(Array.isArray(msg.tool_calls) && { tool_calls: msg.tool_calls }),
-          },
-        },
-      },
-      { context: 'Responses API - save input' },
-    );
-    if (message?._id != null) {
-      messageIds.push(message._id);
-    }
-    currentParentMessageId = messageId;
-  }
-  return { parentMessageId: currentParentMessageId, messageIds };
-}
-
-/**
- * Save response output to database
- * @param {import('express').Request} req
- * @param {string} conversationId
- * @param {string} responseId
- * @param {import('@librechat/api').Response} response
- * @param {string} agentId
- * @param {number | undefined} visibleOutputTokens
- * @param {string | null} parentMessageId
- * @param {string | null} previousResponseId
- * @returns {Promise<import('@librechat/data-schemas').IMessage | null | undefined>}
- */
-async function saveResponseOutput(
-  req,
-  conversationId,
-  responseId,
-  response,
-  agentId,
-  visibleOutputTokens,
-  parentMessageId,
-  previousResponseId,
-) {
-  // Extract text content from output items
-  let responseText = '';
-  for (const item of response.output) {
-    if (item.type === 'message' && item.content) {
-      for (const part of item.content) {
-        if (part.type === 'output_text' && part.text) {
-          responseText += part.text;
-        }
-      }
-    }
-  }
-
-  const langfuseTraceFields = await getLangfuseTraceMessageFields(req.config, responseId);
-
-  // Save the assistant message
-  return db.saveMessage(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
-    {
-      messageId: responseId,
-      conversationId,
-      parentMessageId,
-      isCreatedByUser: false,
-      isUserSubmitted: false,
-      ...langfuseTraceFields,
-      text: responseText,
-      sender: 'Agent',
-      endpoint: EModelEndpoint.agents,
-      model: agentId,
-      finish_reason: response.status === 'completed' ? 'stop' : response.status,
-      tokenCount: visibleOutputTokens ?? response.usage?.output_tokens,
-      metadata: {
-        responsesOutput: response.output,
-        ...(previousResponseId != null && { responsesPreviousResponseId: previousResponseId }),
-      },
-    },
-    { context: 'Responses API - save assistant response' },
-  );
-}
-
-/**
- * Save or update conversation
- * @param {import('express').Request} req
- * @param {string} conversationId
- * @param {string} agentId
- * @param {object} agent
- * @param {import('mongoose').Types.ObjectId[] | undefined} appendMessageIds
- * @param {boolean} noUpsert
- * @returns {Promise<object | null>}
- */
-async function saveConversation(
-  req,
-  conversationId,
-  agentId,
-  agent,
-  appendMessageIds,
-  noUpsert = false,
-) {
-  const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
-  return db.saveConvo(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
-    {
-      conversationId,
-      endpoint: EModelEndpoint.agents,
-      agent_id: agentId,
-      ...(title != null && { title }),
-      model: agent?.model,
-    },
-    {
-      context: 'Responses API - save conversation',
-      initialAgentId: agent?.id === agentId ? agentId : null,
-      ...(appendMessageIds != null && { appendMessageIds }),
-      ...(noUpsert && { noUpsert: true }),
-    },
-  );
-}
-
-async function persistResponse({
+/** Persist one complete Responses turn through the shared manifest protocol. */
+function persistResponse({
   req,
   conversationId,
   agentId,
@@ -558,52 +403,43 @@ async function persistResponse({
   response,
   visibleOutputTokens,
 }) {
-  const storedConversation = await saveConversation(
-    req,
-    conversationId,
+  const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
+  return persistStoredResponse({
+    deps: {
+      saveConvo: db.saveConvo,
+      saveMessage: db.saveMessage,
+      getConvo: db.getConvo,
+      getMessage: db.getMessage,
+      commitStoredResponseTurn: db.commitStoredResponseTurn,
+      deleteStoredResponseTurn: db.deleteStoredResponseTurn,
+    },
+    context: {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
+    conversation: {
+      data: {
+        conversationId,
+        endpoint: EModelEndpoint.agents,
+        agent_id: agentId,
+        ...(title != null && { title }),
+        model: agent?.model,
+      },
+      initialAgentId: agent?.id === agentId ? agentId : null,
+      isContinuation: previousResponse != null,
+    },
     agentId,
-    agent,
-    [],
-    previousResponse != null,
-  );
-  if (storedConversation?.conversationId !== conversationId) {
-    throw new Error('Conversation was deleted before the response could be stored');
-  }
-
-  const inputPersistence = await saveInputMessages(
-    req,
-    conversationId,
     inputMessages,
-    agentId,
     parentMessageId,
-  );
-  const outputMessage = await saveResponseOutput(
-    req,
-    conversationId,
     responseId,
     response,
-    agentId,
     visibleOutputTokens,
-    inputPersistence.parentMessageId,
-    previousResponse?.responseMessage?.messageId ?? previousResponse?.conversationId ?? null,
-  );
-  const messageIds = [...inputPersistence.messageIds];
-  if (outputMessage?._id != null) {
-    messageIds.push(outputMessage._id);
-  }
-  const refreshedConversation = await saveConversation(
-    req,
-    conversationId,
-    agentId,
-    agent,
-    messageIds,
-    true,
-  );
-  if (refreshedConversation?.conversationId !== conversationId) {
-    throw new Error('Conversation was deleted before message references were stored');
-  }
-
-  logger.debug(`[Responses API] Stored response ${responseId} in conversation ${conversationId}`);
+    getOutputMessageFields: () => getLangfuseTraceMessageFields(req.config, responseId),
+  }).then((result) => {
+    logger.debug(`[Responses API] Stored response ${responseId} in conversation ${conversationId}`);
+    return result;
+  });
 }
 
 /**
@@ -616,9 +452,9 @@ function convertMessagesToOutputItems(messages) {
 
   for (const msg of messages) {
     if (isStoredResponseOutput(msg)) {
-      const responsesOutput = msg.metadata?.responsesOutput;
-      if (Array.isArray(responsesOutput)) {
-        output.push(...responsesOutput);
+      const snapshot = getStoredResponseSnapshot(msg);
+      if (snapshot != null) {
+        output.push(...snapshot.output);
       } else {
         output.push({
           type: 'message',
@@ -857,7 +693,7 @@ const executeResponse = async (envelope, { req, res }) => {
             previousResponse,
           ),
           loadPreviousMessages(
-            conversationId,
+            previousResponse.conversation,
             principal.userId,
             previousResponse.responseMessage?.messageId,
           ),
@@ -1860,11 +1696,13 @@ const getResponse = async (req, res) => {
 
     const messages = responseMessage
       ? [responseMessage]
-      : await db.getMessages({
-          conversationId,
-          user: userId,
-          ...buildRetentionVisibilityFilter(),
-        });
+      : filterCommittedResponseMessages(
+          await db.getMessages({
+            conversationId,
+            user: userId,
+            ...buildRetentionVisibilityFilter(),
+          }),
+        );
 
     if (!messages || messages.length === 0) {
       return sendResponsesErrorResponse(
@@ -1880,6 +1718,18 @@ const getResponse = async (req, res) => {
     const output = convertMessagesToOutputItems(messages);
 
     const lastAssistantMessage = responseMessage ?? messages.filter(isStoredResponseOutput).pop();
+    const storedSnapshot =
+      lastAssistantMessage == null ? null : getStoredResponseSnapshot(lastAssistantMessage);
+    let storedUsage = null;
+    if (storedSnapshot != null && Object.prototype.hasOwnProperty.call(storedSnapshot, 'usage')) {
+      storedUsage = storedSnapshot.usage;
+    } else if (lastAssistantMessage?.tokenCount) {
+      storedUsage = {
+        input_tokens: 0,
+        output_tokens: lastAssistantMessage.tokenCount,
+        total_tokens: lastAssistantMessage.tokenCount,
+      };
+    }
     const createdAt = responseMessage?.createdAt ?? conversation.createdAt ?? Date.now();
     const completedAt = responseMessage?.updatedAt ?? conversation.updatedAt ?? Date.now();
 
@@ -1897,10 +1747,7 @@ const getResponse = async (req, res) => {
         conversation.agentId ||
         conversation.model ||
         'unknown',
-      previous_response_id:
-        typeof responseMessage?.metadata?.responsesPreviousResponseId === 'string'
-          ? responseMessage.metadata.responsesPreviousResponseId
-          : null,
+      previous_response_id: storedSnapshot?.previousResponseId ?? null,
       instructions: null,
       output,
       error: null,
@@ -1916,13 +1763,7 @@ const getResponse = async (req, res) => {
       top_logprobs: null,
       reasoning: null,
       user: userId,
-      usage: lastAssistantMessage?.tokenCount
-        ? {
-            input_tokens: 0,
-            output_tokens: lastAssistantMessage.tokenCount,
-            total_tokens: lastAssistantMessage.tokenCount,
-          }
-        : null,
+      usage: storedUsage,
       max_output_tokens: null,
       max_tool_calls: null,
       store: true,
