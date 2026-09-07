@@ -227,6 +227,7 @@ describe('Conversation Operations', () => {
       expect(getMessages).toHaveBeenCalledWith(
         { conversationId: mockConversationData.conversationId, user: mockCtx.userId },
         '_id',
+        { includePendingResponses: true },
       );
     });
 
@@ -1102,7 +1103,9 @@ describe('Conversation Operations', () => {
 
       await saveConvo(ctx, { conversationId, title: 'rebuild' });
 
-      expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id', {
+        includePendingResponses: true,
+      });
       const stored = await Conversation.findOne({ conversationId }).lean();
       expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
     });
