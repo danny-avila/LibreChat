@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import { Check, X, Pencil, MessageSquare, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
@@ -77,6 +77,8 @@ export default function ToolApproval({
     unregisterToolCall,
     setDecision,
     getDecision,
+    getDecisionDraft,
+    setDecisionDraft,
     isReady,
     getStatus,
     getLeadToolCallId,
@@ -89,20 +91,20 @@ export default function ToolApproval({
     retainedDecision != null && allowedDecisions.includes(retainedDecision.decision)
       ? retainedDecision
       : undefined;
-  const [active, setActive] = useState<DecisionType | null>(
-    () => initialDecision?.decision ?? null,
-  );
-  const [editText, setEditText] = useState(() =>
+  const initialEditText =
     initialDecision?.decision === 'edit'
       ? (JSON.stringify(initialDecision.editedArguments, null, 2) ?? '{}')
-      : seedArgs(args),
-  );
-  const [responseText, setResponseText] = useState(() =>
-    initialDecision?.decision === 'respond' ? (initialDecision.responseText ?? '') : '',
-  );
-  const [reason, setReason] = useState(() =>
-    initialDecision?.decision === 'reject' ? (initialDecision.reason ?? '') : '',
-  );
+      : seedArgs(args);
+  const decisionDraft = getDecisionDraft(actionId, toolCallId) ?? {
+    active: initialDecision?.decision ?? null,
+    editText: initialEditText,
+    responseText:
+      initialDecision?.decision === 'respond' ? (initialDecision.responseText ?? '') : '',
+    reason: initialDecision?.decision === 'reject' ? (initialDecision.reason ?? '') : '',
+  };
+  const { active, editText, responseText, reason } = decisionDraft;
+  const updateDecisionDraft = (updates: Partial<typeof decisionDraft>) =>
+    setDecisionDraft(actionId, toolCallId, { ...decisionDraft, ...updates });
 
   useEffect(() => {
     registerToolCall(actionId, toolCallId);
@@ -211,7 +213,7 @@ export default function ToolApproval({
               variant={active === decision ? 'default' : 'outline'}
               disabled={locked}
               aria-pressed={active === decision}
-              onClick={() => setActive((prev) => (prev === decision ? null : decision))}
+              onClick={() => updateDecisionDraft({ active: active === decision ? null : decision })}
               className="inline-flex items-center gap-1.5"
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -226,7 +228,7 @@ export default function ToolApproval({
           <TextareaAutosize
             value={editText}
             disabled={locked}
-            onChange={(e) => setEditText(e.target.value)}
+            onChange={(e) => updateDecisionDraft({ editText: e.target.value })}
             minRows={3}
             maxRows={16}
             className={cn(
@@ -245,7 +247,7 @@ export default function ToolApproval({
         <TextareaAutosize
           value={responseText}
           disabled={locked}
-          onChange={(e) => setResponseText(e.target.value)}
+          onChange={(e) => updateDecisionDraft({ responseText: e.target.value })}
           minRows={2}
           maxRows={12}
           placeholder={localize('com_ui_tool_response_placeholder')}
@@ -258,7 +260,7 @@ export default function ToolApproval({
         <TextareaAutosize
           value={reason}
           disabled={locked}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(e) => updateDecisionDraft({ reason: e.target.value })}
           minRows={1}
           maxRows={6}
           placeholder={localize('com_ui_reject_reason_placeholder')}

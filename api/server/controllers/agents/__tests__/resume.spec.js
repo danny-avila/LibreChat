@@ -206,6 +206,7 @@ jest.mock('~/server/services/MCPRequestContext', () => ({
 
 // Import after mocks
 const ResumeAgentController = require('~/server/controllers/agents/resume');
+const { captureCodeExecutionApprovalBinding } = require('@librechat/api');
 
 /** Drain the microtask + immediate queues so the post-ACK continuation settles. */
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -2606,6 +2607,69 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   });
 
   describe('happy path: approve -> reconstruct -> resume -> finalize', () => {
+    const statefulCodeAgent = (bridgeWorkerId) => ({
+      id: AGENT_ID,
+      codeExecutionContext: {
+        baseUrl: 'https://bridge.example/v1',
+        codeSessionKey: `execute_code:stateful:route-a:${bridgeWorkerId}`,
+        executionProfile: 'stateful',
+        executionRouteKey: 'stateful:route-a',
+        runtimeSessionHint: 'v3:environment-a:agent-user:scope-a',
+        statefulSessions: true,
+        environmentId: 'environment-a',
+        environmentType: 'attached',
+        bridgeWorkerId,
+      },
+    });
+
+    it('resumes when the rebuilt stateful code target matches the paused approval', async () => {
+      const agent = statefulCodeAgent('worker-a');
+      const codeExecutionBinding = captureCodeExecutionApprovalBinding([agent]);
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { pendingAction: { codeExecutionBinding } } }),
+      );
+      const resumedClient = makeClient({
+        options: { agent },
+        agentConfigs: new Map(),
+      });
+      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.beginProviderExecution).toHaveBeenCalledTimes(1);
+      expect(resumedClient.resumeCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails before provider execution when the approved stateful code target changed', async () => {
+      const pausedAgent = statefulCodeAgent('worker-a');
+      const codeExecutionBinding = captureCodeExecutionApprovalBinding([pausedAgent]);
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { pendingAction: { codeExecutionBinding } } }),
+      );
+      const resumedClient = makeClient({
+        options: { agent: statefulCodeAgent('worker-b') },
+        agentConfigs: new Map(),
+      });
+      mockInitializeClient.mockResolvedValue({ client: resumedClient, userMCPAuthMap: {} });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+      expect(resumedClient.resumeCompletion).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.stringContaining('Retry the request and review the action again'),
+        1000,
+      );
+      expect(mockDisposeClient).toHaveBeenCalledWith(resumedClient);
+    });
+
     it('seals the exact paused legacy-event fence only after resumed history persists', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({ metadata: { agentEventLegacyTurnToken: 'legacy-hitl-token' } }),

@@ -1294,6 +1294,23 @@ export default function useResumableSSE(
         return;
       }
       const startedAsNewConversation = optimisticStreamIdsRef.current.has(currentStreamId);
+      /** Terminal handlers below are fenced by this subscription and its generation.
+       * Clear every key the same run may have occupied, including the temporary
+       * new-chat key, so aborts and resumes from another tab cannot leave a stale
+       * approval card beside an idle composer. */
+      const clearPendingApprovalForTerminal = (conversationId?: string | null) => {
+        const conversationIds = new Set<string>([
+          currentStreamId,
+          ...(conversationId ? [conversationId] : []),
+          ...(currentSubmission.conversation?.conversationId
+            ? [currentSubmission.conversation.conversationId]
+            : []),
+          ...(startedAsNewConversation ? [String(Constants.NEW_CONVO)] : []),
+        ]);
+        for (const id of conversationIds) {
+          jotaiStore.set(pendingApprovalActionFamily(id), null);
+        }
+      };
       const clearAttachedGenerationCreatedAt = () => {
         updateActiveGenerationCreatedAt(currentStreamId, null, generationCreatedAt);
         if (startedAsNewConversation) {
@@ -1980,6 +1997,7 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
+            clearPendingApprovalForTerminal(finalConvoId);
             clearComposerDrafts(runIndex, currentSubmission.conversation?.conversationId, {
               includeNewChatDraft:
                 !currentSubmission.conversation?.conversationId ||
@@ -2907,6 +2925,7 @@ export default function useResumableSSE(
         resetLive({ ...currentSubmission, userMessage });
         removeActiveJob(currentStreamId);
         clearAttachedGenerationCreatedAt();
+        clearPendingApprovalForTerminal(reconciliationConvoId);
         clearComposerDrafts(runIndex, reconciliationConvoId, {
           includeNewChatDraft:
             !reconciliationConvoId ||
@@ -3178,6 +3197,7 @@ export default function useResumableSSE(
 
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
+          clearPendingApprovalForTerminal(recoveryConvoId);
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
@@ -3277,6 +3297,7 @@ export default function useResumableSSE(
           flushPendingDeltas();
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
+          clearPendingApprovalForTerminal(recoveryConvoId);
           resetLive({ ...currentSubmission, userMessage });
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
@@ -3606,6 +3627,7 @@ export default function useResumableSSE(
           resetLive({ ...currentSubmission, userMessage });
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
+          clearPendingApprovalForTerminal(recoveryConvoId);
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)

@@ -60,11 +60,13 @@ const pendingAction: Agents.PendingAction = {
     action_requests: [
       {
         name: 'create_file',
+        source: 'librechat_code',
         tool_call_id: 'call-1',
         arguments: { path: 'src/new.ts', content: 'export const value = 1;' },
       },
       {
         name: 'bash_tool',
+        source: 'librechat_code',
         tool_call_id: 'call-2',
         arguments: { command: 'npm test -- new' },
       },

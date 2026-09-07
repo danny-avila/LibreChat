@@ -4,6 +4,7 @@ describe('buildApprovalPreview', () => {
   test('shows the exact effective command and reveals bidi control characters', () => {
     const preview = buildApprovalPreview({
       name: 'bash_tool',
+      source: 'librechat_code',
       tool_call_id: 'call-1',
       arguments: { command: 'git status\u202etest' },
     });
@@ -19,6 +20,7 @@ describe('buildApprovalPreview', () => {
   test('renders ordered edit replacements as proposals', () => {
     const preview = buildApprovalPreview({
       name: 'edit_file',
+      source: 'librechat_code',
       tool_call_id: 'call-1',
       arguments: {
         path: 'src/index.ts',
@@ -48,9 +50,22 @@ describe('buildApprovalPreview', () => {
     expect(preview.body).toContain('"path": "outside.txt"');
   });
 
+  test('does not specialize a same-name tool without native server provenance', () => {
+    const preview = buildApprovalPreview({
+      name: 'create_file',
+      tool_call_id: 'call-1',
+      arguments: { path: 'outside.txt', content: 'data' },
+    });
+
+    expect(preview.kind).toBe('generic');
+    expect(preview.target).toBeUndefined();
+    expect(preview.body).toContain('"path": "outside.txt"');
+  });
+
   test('bounds an initially rendered preview by line count and character count', () => {
     const preview = buildApprovalPreview({
       name: 'create_file',
+      source: 'librechat_code',
       tool_call_id: 'call-1',
       arguments: { path: 'large.txt', content: `${'x'.repeat(20_000)}\n${'line\n'.repeat(250)}` },
     });
@@ -64,25 +79,48 @@ describe('buildApprovalPreview', () => {
     const previews = buildApprovalPreviews(
       Array.from({ length: 8 }, (_, index) => ({
         name: 'create_file',
+        source: 'librechat_code' as const,
         tool_call_id: `call-${index}`,
         arguments: { path: `${index}.txt`, content: 'x'.repeat(16 * 1024) },
       })),
     );
 
-    expect(previews.reduce((total, preview) => total + preview.body.length, 0)).toBeLessThanOrEqual(
-      64 * 1024,
-    );
+    expect(
+      previews.reduce(
+        (total, preview) => total + preview.body.length + (preview.target?.length ?? 0),
+        0,
+      ),
+    ).toBeLessThanOrEqual(64 * 1024);
     expect(previews.at(-1)).toMatchObject({ body: '', truncated: true });
   });
 
   test('applies the visible cap after expanding hidden control characters', () => {
     const preview = buildApprovalPreview({
       name: 'create_file',
+      source: 'librechat_code',
       tool_call_id: 'call-1',
       arguments: { path: 'controls.txt', content: '\u202e'.repeat(16 * 1024) },
     });
 
     expect(preview.body.length).toBeLessThanOrEqual(16 * 1024);
+    expect(preview.truncated).toBe(true);
+  });
+
+  test('reveals and bounds hostile file targets inside the total preview budget', () => {
+    const preview = buildApprovalPreview({
+      name: 'create_file',
+      source: 'librechat_code',
+      tool_call_id: 'call-1',
+      arguments: {
+        path: `spoof\nname\u202ets/${'nested/'.repeat(300)}`,
+        content: 'x'.repeat(16 * 1024),
+      },
+    });
+
+    expect(preview.target).not.toContain('\n');
+    expect(preview.target).toContain('\\u000a');
+    expect(preview.target?.length).toBeLessThanOrEqual(1024);
+    expect((preview.target?.length ?? 0) + preview.body.length).toBeLessThanOrEqual(16 * 1024);
     expect(preview.truncated).toBe(true);
   });
 });

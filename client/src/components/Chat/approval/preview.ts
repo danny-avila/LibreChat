@@ -3,6 +3,7 @@ import type { Agents } from 'librechat-data-provider';
 const MAX_PREVIEW_CHARS = 16 * 1024;
 const MAX_PREVIEW_LINES = 200;
 const MAX_BATCH_PREVIEW_CHARS = 64 * 1024;
+const MAX_TARGET_CHARS = 1024;
 
 export interface ApprovalPreview {
   kind: 'command' | 'create' | 'edit' | 'generic';
@@ -22,6 +23,21 @@ function revealControlCharacters(value: string): string {
     const codePoint = character.codePointAt(0)?.toString(16).padStart(4, '0') ?? '????';
     return `\\u${codePoint}`;
   });
+}
+
+/* eslint-disable no-control-regex -- headings must reveal even ordinary whitespace controls */
+const TARGET_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
+/* eslint-enable no-control-regex */
+
+function boundTarget(value: string, maxChars: number): { target: string; truncated: boolean } {
+  const revealed = value.replace(TARGET_CONTROL_CHARACTERS, (character) => {
+    const codePoint = character.codePointAt(0)?.toString(16).padStart(4, '0') ?? '????';
+    return `\\u${codePoint}`;
+  });
+  return {
+    target: revealed.slice(0, maxChars),
+    truncated: revealed.length > maxChars,
+  };
 }
 
 function boundPreview(
@@ -93,21 +109,31 @@ export function buildApprovalPreview(
   let target: string | undefined;
   let rawBody = stringifyArguments(request.arguments);
 
-  if (request.name === 'bash_tool' && parsed) {
+  if (request.source === 'librechat_code' && request.name === 'bash_tool' && parsed) {
     kind = 'command';
     rawBody = stringField(parsed, 'command');
-  } else if (request.name === 'create_file' && parsed) {
+  } else if (request.source === 'librechat_code' && request.name === 'create_file' && parsed) {
     kind = 'create';
     target = stringField(parsed, 'path', 'file_path') || undefined;
     rawBody = stringField(parsed, 'content') || stringifyArguments(request.arguments);
-  } else if (request.name === 'edit_file' && parsed) {
+  } else if (request.source === 'librechat_code' && request.name === 'edit_file' && parsed) {
     kind = 'edit';
     target = stringField(parsed, 'path', 'file_path') || undefined;
     rawBody = stringifyArguments(parsed.edits ?? parsed);
   }
 
-  const { body, truncated } = boundPreview(rawBody, Math.max(0, maxChars));
-  return { kind, toolName: request.name, target, body, truncated };
+  const totalBudget = Math.max(0, maxChars);
+  const boundedTarget =
+    target == null ? undefined : boundTarget(target, Math.min(MAX_TARGET_CHARS, totalBudget));
+  const targetLength = boundedTarget?.target.length ?? 0;
+  const boundedBody = boundPreview(rawBody, Math.max(0, totalBudget - targetLength));
+  return {
+    kind,
+    toolName: request.name,
+    target: boundedTarget?.target,
+    body: boundedBody.body,
+    truncated: boundedBody.truncated || boundedTarget?.truncated === true,
+  };
 }
 
 /** Keep a large approval batch from multiplying per-action preview work in the composer. */
@@ -115,7 +141,10 @@ export function buildApprovalPreviews(requests: Agents.ToolApprovalRequest[]): A
   let remainingChars = MAX_BATCH_PREVIEW_CHARS;
   return requests.map((request) => {
     const preview = buildApprovalPreview(request, Math.min(MAX_PREVIEW_CHARS, remainingChars));
-    remainingChars = Math.max(0, remainingChars - preview.body.length);
+    remainingChars = Math.max(
+      0,
+      remainingChars - preview.body.length - (preview.target?.length ?? 0),
+    );
     return preview;
   });
 }

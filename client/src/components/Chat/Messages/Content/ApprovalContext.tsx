@@ -58,6 +58,14 @@ interface ApprovalContextValue {
   ) => void;
   /** Current decision a card holds, if any (drives selected-state styling). */
   getDecision: (actionId: string, toolCallId: string) => Agents.ToolApprovalResolution | undefined;
+  /** Shared form state for duplicated timeline/composer review surfaces. */
+  getDecisionDraft: (actionId: string, toolCallId: string) => ToolApprovalDecisionDraft | undefined;
+  /** Replace a tool call's shared form state and notify every rendered surface. */
+  setDecisionDraft: (
+    actionId: string,
+    toolCallId: string,
+    draft: ToolApprovalDecisionDraft,
+  ) => void;
   /** Every recorded decision for an action, in registration order (the submit batch). */
   getDecisions: (actionId: string) => Agents.ToolApprovalResolution[];
   /** Declare that a tool_call belongs to an action so submit can require all. */
@@ -88,6 +96,13 @@ interface ApprovalContextValue {
 
 const ApprovalContext = createContext<ApprovalContextValue | null>(null);
 
+export interface ToolApprovalDecisionDraft {
+  active: Agents.ToolApprovalDecisionType | null;
+  editText: string;
+  responseText: string;
+  reason: string;
+}
+
 /** Cards call this; outside a provider it degrades to inert no-ops so a tool
  *  call without an active approval never crashes. */
 export const useApprovalContext = (): ApprovalContextValue => {
@@ -99,6 +114,8 @@ const FALLBACK: ApprovalContextValue = {
   version: 0,
   setDecision: () => undefined,
   getDecision: () => undefined,
+  getDecisionDraft: () => undefined,
+  setDecisionDraft: () => undefined,
   getDecisions: () => [],
   registerToolCall: () => undefined,
   unregisterToolCall: () => undefined,
@@ -162,6 +179,7 @@ function ApprovalStateProvider({
    *  (the callbacks alone are referentially stable, so without it a bump would
    *  never propagate past the memoized value). */
   const decisionsRef = useRef(new Map<string, Map<string, Agents.ToolApprovalResolution>>());
+  const decisionDraftsRef = useRef(new Map<string, Map<string, ToolApprovalDecisionDraft>>());
   const registeredRef = useRef(new Map<string, Map<string, number>>());
   /** Server-owned batch membership. Unlike card registrations, this survives
    *  folding, virtualization, late tool parts, and a second composer surface. */
@@ -186,6 +204,7 @@ function ApprovalStateProvider({
     );
     if (authoritativeActionIdRef.current !== actionId) {
       decisionsRef.current.clear();
+      decisionDraftsRef.current.clear();
       registeredRef.current.clear();
       authoritativeRef.current.clear();
       submittingToolActionIdsRef.current.clear();
@@ -267,6 +286,22 @@ function ApprovalStateProvider({
     [],
   );
 
+  const getDecisionDraft = useCallback(
+    (actionId: string, toolCallId: string) =>
+      decisionDraftsRef.current.get(actionId)?.get(toolCallId),
+    [],
+  );
+
+  const setDecisionDraft = useCallback(
+    (actionId: string, toolCallId: string, draft: ToolApprovalDecisionDraft) => {
+      const drafts = decisionDraftsRef.current.get(actionId) ?? new Map();
+      drafts.set(toolCallId, draft);
+      decisionDraftsRef.current.set(actionId, drafts);
+      rerender();
+    },
+    [rerender],
+  );
+
   const getDecisions = useCallback((actionId: string) => {
     const required = authoritativeRef.current.get(actionId) ?? [
       ...(registeredRef.current.get(actionId)?.keys() ?? []),
@@ -336,6 +371,8 @@ function ApprovalStateProvider({
       version,
       setDecision,
       getDecision,
+      getDecisionDraft,
+      setDecisionDraft,
       getDecisions,
       registerToolCall,
       unregisterToolCall,
@@ -353,6 +390,8 @@ function ApprovalStateProvider({
       version,
       setDecision,
       getDecision,
+      getDecisionDraft,
+      setDecisionDraft,
       getDecisions,
       registerToolCall,
       unregisterToolCall,
