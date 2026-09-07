@@ -180,7 +180,9 @@ export class MCPConnectionFactory {
       scopes: process.env.GRAPH_API_SCOPES,
     });
 
-    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
+    return serverConfig === basic.serverConfig
+      ? basic
+      : { ...basic, serverConfig, serverDefinition: basic.serverDefinition ?? basic.serverConfig };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -416,7 +418,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
-    this.serverDefinition = basic.serverConfig;
+    this.serverDefinition = basic.serverDefinition ?? basic.serverConfig;
     this.serverConfig = basic.skipEnvProcessing
       ? basic.serverConfig
       : processMCPEnv({

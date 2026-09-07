@@ -24,6 +24,8 @@ const {
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   isMCPOAuthSecretReentryRequiredError,
+  prepareMCPServerOAuthDeletion,
+  cleanupDeletedMCPServerOAuthUsers,
 } = require('@librechat/api');
 const {
   Constants,
@@ -31,7 +33,6 @@ const {
   ResourceType,
   PermissionBits,
   PermissionTypes,
-  PrincipalType,
   MCP_USER_INPUT_FIELDS,
   MCPServerUserInputSchema,
 } = require('librechat-data-provider');
@@ -643,16 +644,18 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
             },
           })
         : Promise.resolve([]);
-    const tokenUserIdsBeforeDelete = await getTokenUserIds();
-    const aclEntries =
+    const getAclEntries = () =>
       existingConfig?.dbId && mongoose.models.AclEntry
-        ? await mongoose.models.AclEntry.find({
+        ? mongoose.models.AclEntry.find({
             resourceType: ResourceType.MCPSERVER,
             resourceId: existingConfig.dbId,
             permBits: { $bitsAnySet: PermissionBits.VIEW },
           }).lean()
-        : [];
-    const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
+        : Promise.resolve([]);
+    const [oauthDeletionSnapshot, retainedTools] = await Promise.all([
+      prepareMCPServerOAuthDeletion({ getTokenUserIds, getAclEntries }),
+      getMCPServerTools(userId, serverName, existingConfig),
+    ]);
     await invalidateCachedTools({ userId, serverName });
     try {
       await registry.removeServer(serverName, 'DB', userId);
@@ -669,74 +672,17 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
     try {
-      /** A second snapshot catches callbacks that stored credentials after the first snapshot but
-       * before the committed deletion became visible. Restrict identifier matches to principals
-       * that could access this exact DB resource so a same-name Config-tier server is untouched. */
-      const tokenUserIdsAfterDelete = await getTokenUserIds();
-      const candidateUserIds = [
-        ...new Set(
-          [userId, ...tokenUserIdsBeforeDelete, ...tokenUserIdsAfterDelete]
-            .filter(Boolean)
-            .map((id) => id.toString()),
-        ),
-      ];
-      const affectedUserIds = [userId];
-      const sharedCandidates = candidateUserIds.filter(
-        (candidateUserId) => candidateUserId !== userId,
-      );
-      const PRINCIPAL_LOOKUP_CONCURRENCY = 10;
-      for (
-        let offset = 0;
-        offset < sharedCandidates.length;
-        offset += PRINCIPAL_LOOKUP_CONCURRENCY
-      ) {
-        const batch = sharedCandidates.slice(offset, offset + PRINCIPAL_LOOKUP_CONCURRENCY);
-        const principalResults = await Promise.allSettled(
-          batch.map((candidateUserId) => db.getUserPrincipals({ userId: candidateUserId })),
-        );
-        for (const [index, result] of principalResults.entries()) {
-          const candidateUserId = batch[index];
-          if (result.status === 'rejected') {
-            logger.warn(
-              `[deleteMCPServerController] Failed to resolve MCP principals for user ${candidateUserId}:`,
-              result.reason,
-            );
-            continue;
-          }
-          const hadAccess = aclEntries.some((entry) =>
-            result.value.some(
-              (principal) =>
-                principal.principalType === entry.principalType &&
-                (principal.principalType === PrincipalType.PUBLIC ||
-                  principal.principalId?.toString() === entry.principalId?.toString()),
-            ),
-          );
-          if (hadAccess) {
-            affectedUserIds.push(candidateUserId);
-          }
-        }
-      }
-      const cleanupResults = await Promise.allSettled(
-        affectedUserIds.map(async (affectedUserId) => {
-          const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
-            userId: affectedUserId,
-          });
-          await uninstallOAuthMCP?.(
-            affectedUserId,
-            `${Constants.mcp_prefix}${serverName}`,
-            { mcpSettings: { allowedDomains, allowedAddresses } },
-            existingConfig,
-          );
-        }),
-      );
-      for (const result of cleanupResults) {
-        if (result.status === 'rejected') {
-          logger.warn(
-            `[deleteMCPServerController] OAuth cleanup failed for ${serverName}:`,
-            result.reason,
-          );
-        }
-      }
+      await cleanupDeletedMCPServerOAuthUsers({
+        ownerUserId: userId,
+        serverName,
+        serverConfig: existingConfig,
+        snapshot: oauthDeletionSnapshot,
+        getTokenUserIds,
+        getUserPrincipals: (candidateUserId) => db.getUserPrincipals({ userId: candidateUserId }),
+        resolveAllowlists: (candidateUserId) =>
+          registry.resolveAllowlists({ userId: candidateUserId }),
+        uninstallOAuthMCP,
+      });
     } catch (error) {
       logger.warn(
         `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,

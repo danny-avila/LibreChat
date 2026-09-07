@@ -118,4 +118,49 @@ describe('cleanupMCPServerOAuth', () => {
       token: 'encrypted-old-access',
     });
   });
+
+  it('does not revoke a credential generation created after the teardown snapshot', async () => {
+    const revokeOAuthToken = jest.fn();
+    const getTokens = jest.fn();
+    const deleteTokens = jest.fn();
+    const findToken = jest.fn(async ({ type }: { type?: string }) => ({
+      token: `encrypted-old-${type}`,
+      metadata: { credential_set_id: 'old-generation' },
+    })) as never;
+
+    await cleanupMCPServerOAuth({
+      userId: 'user-1',
+      pluginKey: 'mcp_test-server',
+      serverConfigOverride: {
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        oauth: {},
+      },
+      dependencies: {
+        flowManager: { deleteFlow: jest.fn() } as never,
+        oauthHandler: {
+          generateFlowId: jest.fn(() => 'user-1:test-server'),
+          generateTokenFlowId: jest.fn(() => 'user-1:test-server'),
+          deleteFlowAndStateMapping: jest.fn(),
+          revokeOAuthToken,
+        },
+        tokenStorage: {
+          deleteUserTokens: jest.fn(),
+          getClientInfoAndMetadata: jest.fn(async () => ({
+            clientInfo: { client_id: 'replacement-client' },
+            clientMetadata: { credential_set_id: 'replacement-generation' },
+          })),
+          getTokens,
+          assertCredentialSetBinding: jest.fn(),
+        },
+        findToken,
+        deleteTokens,
+        getServerConfig: jest.fn(),
+        isRegisteredOAuthServer: jest.fn(),
+      },
+    });
+
+    expect(getTokens).not.toHaveBeenCalled();
+    expect(revokeOAuthToken).not.toHaveBeenCalled();
+  });
 });

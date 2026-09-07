@@ -1,5 +1,5 @@
 import { logger, getTenantId } from '@librechat/data-schemas';
-import { Constants, type MCPOptions } from 'librechat-data-provider';
+import { Constants, PrincipalType, type MCPOptions } from 'librechat-data-provider';
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { ParsedServerConfig } from '~/mcp/types';
@@ -23,6 +23,116 @@ interface CleanupConfig {
     allowedAddresses?: string[] | null;
   };
   mcpServers?: Record<string, MCPOptions>;
+}
+
+interface OAuthAclSubject {
+  principalType: string;
+  principalId?: { toString(): string } | string | null;
+}
+
+export interface MCPServerOAuthDeletionSnapshot {
+  tokenUserIds: string[];
+  aclEntries: OAuthAclSubject[];
+}
+
+interface PrepareDeletionParams {
+  getTokenUserIds: () => Promise<Array<{ toString(): string } | string>>;
+  getAclEntries: () => Promise<OAuthAclSubject[]>;
+}
+
+export async function prepareMCPServerOAuthDeletion({
+  getTokenUserIds,
+  getAclEntries,
+}: PrepareDeletionParams): Promise<MCPServerOAuthDeletionSnapshot> {
+  const [tokenUserIds, aclEntries] = await Promise.all([getTokenUserIds(), getAclEntries()]);
+  return { tokenUserIds: tokenUserIds.map(String), aclEntries };
+}
+
+interface CleanupDeletedUsersParams {
+  ownerUserId: string;
+  serverName: string;
+  serverConfig: MCPOptions;
+  snapshot: MCPServerOAuthDeletionSnapshot;
+  getTokenUserIds: () => Promise<Array<{ toString(): string } | string>>;
+  getUserPrincipals: (userId: string) => Promise<OAuthAclSubject[]>;
+  resolveAllowlists: (
+    userId: string,
+  ) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+  uninstallOAuthMCP?: (
+    userId: string,
+    pluginKey: string,
+    appConfig: CleanupConfig,
+    serverConfig: MCPOptions,
+  ) => Promise<void>;
+}
+
+const OAUTH_CLEANUP_CONCURRENCY = 10;
+
+export async function cleanupDeletedMCPServerOAuthUsers({
+  ownerUserId,
+  serverName,
+  serverConfig,
+  snapshot,
+  getTokenUserIds,
+  getUserPrincipals,
+  resolveAllowlists,
+  uninstallOAuthMCP,
+}: CleanupDeletedUsersParams): Promise<void> {
+  const tokenUserIdsAfterDelete = (await getTokenUserIds()).map(String);
+  const candidateUserIds = [
+    ...new Set([ownerUserId, ...snapshot.tokenUserIds, ...tokenUserIdsAfterDelete]),
+  ];
+  const affectedUserIds = [ownerUserId];
+  const sharedCandidates = candidateUserIds.filter((userId) => userId !== ownerUserId);
+
+  for (let offset = 0; offset < sharedCandidates.length; offset += OAUTH_CLEANUP_CONCURRENCY) {
+    const batch = sharedCandidates.slice(offset, offset + OAUTH_CLEANUP_CONCURRENCY);
+    const results = await Promise.allSettled(batch.map(getUserPrincipals));
+    for (let index = 0; index < results.length; index++) {
+      const result = results[index];
+      if (result.status === 'rejected') {
+        logger.warn(
+          `[cleanupDeletedMCPServerOAuthUsers] Failed to resolve MCP principals for user ${batch[index]}:`,
+          result.reason,
+        );
+        continue;
+      }
+      const hadAccess = snapshot.aclEntries.some((entry) =>
+        result.value.some(
+          (principal) =>
+            principal.principalType === entry.principalType &&
+            (principal.principalType === PrincipalType.PUBLIC ||
+              principal.principalId?.toString() === entry.principalId?.toString()),
+        ),
+      );
+      if (hadAccess) {
+        affectedUserIds.push(batch[index]);
+      }
+    }
+  }
+
+  for (let offset = 0; offset < affectedUserIds.length; offset += OAUTH_CLEANUP_CONCURRENCY) {
+    const batch = affectedUserIds.slice(offset, offset + OAUTH_CLEANUP_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (userId) => {
+        const { allowedDomains, allowedAddresses } = await resolveAllowlists(userId);
+        await uninstallOAuthMCP?.(
+          userId,
+          `${Constants.mcp_prefix}${serverName}`,
+          { mcpSettings: { allowedDomains, allowedAddresses } },
+          serverConfig,
+        );
+      }),
+    );
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        logger.warn(
+          `[cleanupDeletedMCPServerOAuthUsers] OAuth cleanup failed for ${serverName}:`,
+          result.reason,
+        );
+      }
+    }
+  }
 }
 
 export interface MCPOAuthCleanupDependencies {
@@ -82,7 +192,8 @@ export async function clearStoredMCPOAuthState({
         await dependencies.deleteTokens({
           ...filter,
           ...(snapshotToken && { token: snapshotToken }),
-          ...(credentialSetId !== undefined && { metadataCredentialSetId: credentialSetId }),
+          ...(!tokenSnapshot &&
+            credentialSetId !== undefined && { metadataCredentialSetId: credentialSetId }),
         });
       },
     });
@@ -151,11 +262,20 @@ export async function cleanupMCPServerOAuth({
   /** Snapshot exact encrypted values before cancelling the flow. Later cleanup can then remove
    * this authorization without matching credentials written by a replacement attempt. */
   const tokenSnapshot = new Map<string, string>();
+  const tokenGenerationSnapshot = new Map<string, string>();
   const snapshotResults = await Promise.allSettled(
     oauthTokenKeys(serverName).map(async ({ type, identifier }) => {
       const record = await dependencies.findToken({ userId, type, identifier });
       if (record?.token) {
-        tokenSnapshot.set(`${type}:${identifier}`, record.token);
+        const key = `${type}:${identifier}`;
+        tokenSnapshot.set(key, record.token);
+        const metadata =
+          record.metadata instanceof Map
+            ? Object.fromEntries(record.metadata)
+            : (record.metadata ?? {});
+        if (typeof metadata.credential_set_id === 'string') {
+          tokenGenerationSnapshot.set(key, metadata.credential_set_id);
+        }
       }
     }),
   );
@@ -165,6 +285,57 @@ export async function cleanupMCPServerOAuth({
         `[maybeUninstallOAuthMCP] Failed to snapshot OAuth token state for ${serverName}:`,
         result.reason,
       );
+    }
+  }
+  const serverConfig =
+    serverConfigOverride ??
+    (await dependencies.getServerConfig(serverName, userId)) ??
+    appConfig?.mcpServers?.[serverName];
+  const oauthServer = serverConfigOverride
+    ? isOAuthServer(serverConfigOverride)
+    : await dependencies.isRegisteredOAuthServer(serverName, userId);
+  let clientTokenData = null;
+  let tokens = null;
+  if (oauthServer && serverConfig) {
+    try {
+      clientTokenData = await dependencies.tokenStorage.getClientInfoAndMetadata({
+        userId,
+        serverName,
+        findToken: dependencies.findToken,
+      });
+      const clientKey = `mcp_oauth_client:mcp:${serverName}:client`;
+      if (
+        clientTokenData?.clientMetadata.credential_set_id !== tokenGenerationSnapshot.get(clientKey)
+      ) {
+        clientTokenData = null;
+      }
+    } catch (error) {
+      logger.warn(
+        `[maybeUninstallOAuthMCP] Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
+        error,
+      );
+    }
+    if (clientTokenData) {
+      try {
+        tokens = await dependencies.tokenStorage.getTokens({
+          userId,
+          serverName,
+          findToken: dependencies.findToken,
+        });
+        if (tokens) {
+          dependencies.tokenStorage.assertCredentialSetBinding(
+            serverName,
+            tokens.credential_set_id,
+            clientTokenData.clientMetadata,
+          );
+        }
+      } catch (error) {
+        tokens = null;
+        logger.warn(
+          `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
+          error,
+        );
+      }
     }
   }
   const flowIds = [
@@ -185,13 +356,6 @@ export async function cleanupMCPServerOAuth({
     }
   }
 
-  const serverConfig =
-    serverConfigOverride ??
-    (await dependencies.getServerConfig(serverName, userId)) ??
-    appConfig?.mcpServers?.[serverName];
-  const oauthServer = serverConfigOverride
-    ? isOAuthServer(serverConfigOverride)
-    : await dependencies.isRegisteredOAuthServer(serverName, userId);
   if (!oauthServer || !serverConfig) {
     await clearStoredMCPOAuthState({
       userId,
@@ -203,27 +367,6 @@ export async function cleanupMCPServerOAuth({
     return;
   }
 
-  let clientTokenData;
-  try {
-    clientTokenData = await dependencies.tokenStorage.getClientInfoAndMetadata({
-      userId,
-      serverName,
-      findToken: dependencies.findToken,
-    });
-  } catch (error) {
-    logger.warn(
-      `[maybeUninstallOAuthMCP] Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
-      error,
-    );
-    await clearStoredMCPOAuthState({
-      userId,
-      serverName,
-      dependencies,
-      skipOAuthFlows: true,
-      tokenSnapshot,
-    });
-    return;
-  }
   if (!clientTokenData) {
     await clearStoredMCPOAuthState({
       userId,
@@ -258,28 +401,6 @@ export async function cleanupMCPServerOAuth({
       tokenSnapshot,
     });
     return;
-  }
-
-  let tokens = null;
-  try {
-    tokens = await dependencies.tokenStorage.getTokens({
-      userId,
-      serverName,
-      findToken: dependencies.findToken,
-    });
-    if (tokens) {
-      dependencies.tokenStorage.assertCredentialSetBinding(
-        serverName,
-        tokens.credential_set_id,
-        clientMetadata,
-      );
-    }
-  } catch (error) {
-    tokens = null;
-    logger.warn(
-      `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
-      error,
-    );
   }
 
   const revocationMetadata = {

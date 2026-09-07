@@ -219,6 +219,8 @@ export type AddServerResult = {
 export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
+  /** Original unresolved definition retained across asynchronous credential preprocessing. */
+  serverDefinition?: MCPOptions;
   useSSRFProtection?: boolean;
   allowedDomains?: string[] | null;
   /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */

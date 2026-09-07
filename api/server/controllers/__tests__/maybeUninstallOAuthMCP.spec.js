@@ -188,6 +188,10 @@ function setupOAuthServerFound() {
   mockGetAllowedDomains.mockReturnValue(['https://acme.example.com']);
   mockGetAllowedAddresses.mockReturnValue(null);
   mockGetClientInfoAndMetadata.mockResolvedValue({ clientInfo, clientMetadata });
+  mockFindToken.mockImplementation(async ({ type }) => ({
+    token: `encrypted-${type}`,
+    metadata: { credential_set_id: credentialSetId },
+  }));
 }
 
 describe('maybeUninstallOAuthMCP', () => {
@@ -320,7 +324,10 @@ describe('maybeUninstallOAuthMCP', () => {
       credential_set_id: credentialSetId,
     });
     mockRevokeOAuthToken.mockResolvedValue(undefined);
-    mockFindToken.mockResolvedValue({ token: 'encrypted-old-token' });
+    mockFindToken.mockResolvedValue({
+      token: 'encrypted-old-token',
+      metadata: { credential_set_id: credentialSetId },
+    });
     mockDeleteUserTokens.mockImplementation(async ({ deleteToken }) => {
       await deleteToken({ userId, type: 'mcp_oauth', identifier: `mcp:${serverName}` });
     });
