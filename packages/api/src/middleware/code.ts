@@ -1,4 +1,5 @@
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
+import type { AugmentedRequest } from 'express-rate-limit';
 import type { Request, RequestHandler } from 'express';
 import { limiterCache } from '~/cache/cacheFactory';
 
@@ -21,10 +22,11 @@ export const codeEnvironmentPairingLimiter: RequestHandler = (req, res, next) =>
       windowMs: windowInMinutes * 60 * 1000,
       max,
       handler: (limitedReq, limitedRes) => {
-        const resetAt = limitedReq.rateLimit?.resetTime?.getTime?.();
-        const retryAfterSeconds = Number.isFinite(resetAt)
-          ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))
-          : Math.max(1, Math.ceil(windowInMinutes * 60));
+        const resetAt = (limitedReq as AugmentedRequest).rateLimit?.resetTime?.getTime?.();
+        const retryAfterSeconds =
+          resetAt != null && Number.isFinite(resetAt)
+            ? Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))
+            : Math.max(1, Math.ceil(windowInMinutes * 60));
         limitedRes.set('Retry-After', String(retryAfterSeconds));
         return limitedRes.status(429).json({
           error: {
@@ -78,7 +80,7 @@ export const codeEnvironmentStatusIpLimiter: RequestHandler = (req, res, next) =
             type: 'rate_limit_error',
           },
         }),
-      keyGenerator: (limitedReq) => ipKeyGenerator(limitedReq.ip),
+      keyGenerator: (limitedReq) => ipKeyGenerator(limitedReq.ip ?? ''),
       store: limiterCache('code_environment_status_ip_limiter'),
     });
   }
