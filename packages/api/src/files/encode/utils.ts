@@ -1,6 +1,11 @@
 import getStream from 'get-stream';
 import { Providers } from '@librechat/agents';
-import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
+import {
+  FileSources,
+  mergeFileConfig,
+  isExplicitMimeConfig,
+  getEndpointFileConfig,
+} from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
 import { resolveDownloadPath } from '~/storage/path';
@@ -30,6 +35,42 @@ export const getConfiguredFileSizeLimit = (
     endpoint: endpoint ?? provider,
   });
   return endpointConfig?.fileSizeLimit;
+};
+
+/**
+ * Whether the admin explicitly allowed `mimeType` for this endpoint via
+ * `fileConfig.endpoints.<name>.supportedMimeTypes`. The inherited default list does
+ * not count as opting in, mirroring the client's picker and drag-drop logic, so an
+ * OpenAI-compatible endpoint only receives video/audio parts when configured for them.
+ * @param req - The server request object containing config
+ * @param params - Object containing provider and optional endpoint
+ * @param params.provider - The provider to look up
+ * @param params.endpoint - Optional endpoint name for lookup
+ * @param mimeType - The MIME type of the file being attached
+ * @returns True when the endpoint config explicitly matches the MIME type
+ */
+export const isConfiguredProviderMediaType = (
+  req: ServerRequest,
+  params: {
+    provider: Providers;
+    endpoint?: string;
+  },
+  mimeType: string,
+): boolean => {
+  if (!req.config?.fileConfig) {
+    return false;
+  }
+  const { provider, endpoint } = params;
+  const fileConfig = mergeFileConfig(req.config.fileConfig);
+  const endpointConfig = getEndpointFileConfig({
+    fileConfig,
+    endpoint: endpoint ?? provider,
+  });
+  const types = endpointConfig?.supportedMimeTypes;
+  if (!isExplicitMimeConfig(types)) {
+    return false;
+  }
+  return fileConfig.checkType?.(mimeType, types) ?? false;
 };
 
 /**

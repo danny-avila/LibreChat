@@ -8,6 +8,7 @@ import {
   bedrockDocumentMimeTypes,
   isAnthropicDocumentType,
   isPermissiveMimeConfig,
+  isExplicitMimeConfig,
   convertStringsToRegex,
   setFileConfigRegexCompiler,
   documentParserMimeTypes,
@@ -1394,6 +1395,35 @@ describe('getEndpointFileConfig', () => {
       expect(result.totalSizeLimit).toBe(0);
       expect(result.supportedMimeTypes).toEqual([]);
     });
+  });
+});
+
+describe('isExplicitMimeConfig', () => {
+  it('is false for undefined or empty lists', () => {
+    expect(isExplicitMimeConfig(undefined)).toBe(false);
+    expect(isExplicitMimeConfig([])).toBe(false);
+  });
+
+  it('is false for the built-in default list (inherited, not configured)', () => {
+    expect(isExplicitMimeConfig(supportedMimeTypes)).toBe(false);
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: mergeFileConfig({ endpoints: { Other: { fileLimit: 1 } } }),
+      endpoint: 'MyGateway',
+      endpointType: 'custom',
+    });
+    expect(isExplicitMimeConfig(endpointConfig.supportedMimeTypes)).toBe(false);
+  });
+
+  it('is true for an admin-configured list, permissive or not', () => {
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: mergeFileConfig({
+        endpoints: { MyGateway: { supportedMimeTypes: ['image/.*', 'video/.*'] } },
+      }),
+      endpoint: 'MyGateway',
+      endpointType: 'custom',
+    });
+    expect(isExplicitMimeConfig(endpointConfig.supportedMimeTypes)).toBe(true);
+    expect(isExplicitMimeConfig([/.*/])).toBe(true);
   });
 });
 
