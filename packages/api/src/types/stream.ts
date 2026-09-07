@@ -123,6 +123,13 @@ export interface GenerationJobMetadata {
   resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 }
 
+export interface GenerationCheckpointScopeReceipt {
+  userId: string;
+  tenantId?: string;
+  conversationId: string;
+  checkpointNamespace: string;
+}
+
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
 export interface GenerationJob {
@@ -134,6 +141,9 @@ export interface GenerationJob {
   abortController: AbortController;
   error?: string;
   metadata: GenerationJobMetadata;
+  /** Exact predecessor checkpoint identities retained only for destructive
+   * owner cleanup. Non-enumerable on built-in job facades. */
+  replacedCheckpointScopes?: readonly GenerationCheckpointScopeReceipt[];
   readyPromise: Promise<void>;
   resolveReady: () => void;
   /** Final event when job completes */

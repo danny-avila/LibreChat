@@ -124,23 +124,35 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ threads: [] }),
     ),
     GenerationJobManager: generationJobManager,
-    getOwnedAgentCheckpointScope: jest.fn((job, userId, tenantId) => {
+    getOwnedAgentCheckpointScopes: jest.fn((job, userId, tenantId) => {
       const metadata = job?.metadata;
-      if (
-        metadata?.userId !== userId ||
-        (metadata.tenantId ?? undefined) !== (tenantId ?? undefined) ||
-        metadata.generationProtocolVersion !== 2 ||
-        typeof metadata.conversationId !== 'string' ||
-        metadata.conversationId.length === 0 ||
-        typeof metadata.checkpointNamespace !== 'string' ||
-        metadata.checkpointNamespace.length === 0
-      ) {
-        return undefined;
-      }
-      return {
-        threadId: metadata.conversationId,
-        checkpointNamespace: metadata.checkpointNamespace,
-      };
+      const receipts = [
+        ...(metadata?.generationProtocolVersion === 2
+          ? [
+              {
+                userId: metadata.userId,
+                tenantId: metadata.tenantId,
+                conversationId: metadata.conversationId,
+                checkpointNamespace: metadata.checkpointNamespace,
+              },
+            ]
+          : []),
+        ...(job?.replacedCheckpointScopes ?? []),
+      ];
+      return receipts
+        .filter(
+          (receipt) =>
+            receipt.userId === userId &&
+            (receipt.tenantId ?? undefined) === (tenantId ?? undefined) &&
+            typeof receipt.conversationId === 'string' &&
+            receipt.conversationId.length > 0 &&
+            typeof receipt.checkpointNamespace === 'string' &&
+            receipt.checkpointNamespace.length > 0,
+        )
+        .map((receipt) => ({
+          threadId: receipt.conversationId,
+          checkpointNamespace: receipt.checkpointNamespace,
+        }));
     }),
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',

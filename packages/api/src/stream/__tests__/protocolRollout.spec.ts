@@ -61,6 +61,51 @@ describe('generation protocol rollout storage', () => {
     }
   });
 
+  test('replacement acknowledgement preserves predecessor checkpoint cleanup evidence', async () => {
+    const store = new InMemoryJobStore();
+    const predecessor = await store.createJob(
+      'replacement-scope',
+      'owner-a',
+      'conversation-a',
+      'tenant-a',
+      { generationProtocolVersion: 2 },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'attempt-a',
+    );
+    const replacement = await store.createJob(
+      'replacement-scope',
+      'owner-a',
+      'conversation-a',
+      'tenant-a',
+      { generationProtocolVersion: 2 },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'attempt-b',
+    );
+
+    expect(replacement.replacedCheckpointScopes).toEqual([
+      {
+        userId: 'owner-a',
+        tenantId: 'tenant-a',
+        conversationId: 'conversation-a',
+        checkpointNamespace: predecessor.checkpointNamespace,
+      },
+    ]);
+    await expect(
+      store.acknowledgeReplacedJobs('replacement-scope', 'attempt-b', [predecessor.createdAt]),
+    ).resolves.toBe(true);
+    const durable = await store.getJob('replacement-scope');
+    expect(durable?.replacedCheckpointScopes).toEqual(replacement.replacedCheckpointScopes);
+    expect(Object.keys(durable ?? {})).not.toContain('replacedCheckpointScopes');
+  });
+
   test('v1 steering stays receiptless and uses the legacy destructive drain', async () => {
     const store = new InMemoryJobStore();
     const job = await store.createJob('protocol-v1-steer', 'user-1', undefined, undefined, {

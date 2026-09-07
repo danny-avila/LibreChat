@@ -2873,7 +2873,7 @@ class GenerationJobManagerClass {
       },
     };
 
-    return {
+    const facade: t.GenerationJob = {
       streamId,
       emitter: emitterProxy as unknown as t.GenerationJob['emitter'],
       status: jobData.status as t.GenerationJobStatus,
@@ -2949,6 +2949,13 @@ class GenerationJobManagerClass {
       finalEvent: runtime.finalEvent,
       syncSent: runtime.syncSent,
     };
+    if (jobData.replacedCheckpointScopes != null) {
+      Object.defineProperty(facade, 'replacedCheckpointScopes', {
+        value: jobData.replacedCheckpointScopes,
+        enumerable: false,
+      });
+    }
+    return facade;
   }
 
   /**
@@ -9320,11 +9327,21 @@ class GenerationJobManagerClass {
       return [];
     }
     const targets = new Set(conversationIds);
-    const streamIds = await this.getCleanupBlockingJobIdsForUser(userId, tenantId);
+    const streamIds = await this.getAccountCleanupJobIdsForUser(userId, tenantId);
     const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
     return streamIds.filter((_, index) => {
       const job = jobs[index];
-      return job != null && job.userId === userId && targets.has(job.conversationId ?? '');
+      return (
+        job != null &&
+        job.userId === userId &&
+        (targets.has(job.conversationId ?? '') ||
+          (job.replacedCheckpointScopes ?? []).some(
+            (scope) =>
+              scope.userId === userId &&
+              (scope.tenantId ?? undefined) === (tenantId ?? undefined) &&
+              targets.has(scope.conversationId),
+          ))
+      );
     });
   }
 

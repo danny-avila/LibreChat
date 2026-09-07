@@ -5,7 +5,7 @@ const {
   isEnabled,
   normalizeLimit,
   deleteAgentCheckpointScopes,
-  getOwnedAgentCheckpointScope,
+  getOwnedAgentCheckpointScopes,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
   createSubagentControlHandler,
@@ -306,6 +306,7 @@ async function confirmAgentGenerationsDrained(
     logger.warn('Conversation generation index lookup failed', error);
     throw new Error('Conversation generations could not be confirmed drained.');
   }
+  const deletionTargets = new Set(conversationIds);
   const generationIds = [...new Set([...conversationIds, ...leaseTaskIds, ...conversationRunIds])];
   await Promise.all(
     generationIds.map(async (conversationId) => {
@@ -324,11 +325,10 @@ async function confirmAgentGenerationsDrained(
       if (jobTenantId != null && jobTenantId !== tenantId) {
         return;
       }
-      const checkpointScope = getOwnedAgentCheckpointScope(job, userId, tenantId);
-      if (
-        checkpointScope != null &&
-        (ownerWide || conversationIds.includes(checkpointScope.threadId))
-      ) {
+      for (const checkpointScope of getOwnedAgentCheckpointScopes(job, userId, tenantId)) {
+        if (!ownerWide && !deletionTargets.has(checkpointScope.threadId)) {
+          continue;
+        }
         checkpointScopes.set(
           `${checkpointScope.threadId}\u0000${checkpointScope.checkpointNamespace}`,
           checkpointScope,

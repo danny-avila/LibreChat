@@ -7,6 +7,7 @@ import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type {
   SerializableJobData,
+  CheckpointScopeReceipt,
   CreatedJobData,
   ReplacedGeneration,
   SteerQueueItem,
@@ -338,6 +339,7 @@ const REPLACEMENT_RECEIPT_ACK_LUA =
  *          generationProtocolVersion,
  *          creationAttemptId | "",
  *          expectedPredecessorCreatedAt | "", rejectActivePredecessor ("1" | "0"),
+ *          checkpointScopeRetentionTtl,
  *          ...hsetPairs]
  *   Returns: [previousUserId | "", previousTenantId | "", createdAt, "",
  *             replacedCreatedAt | "", replacedStatus | "", replacedConversationId | "",
@@ -355,6 +357,7 @@ const JOB_CREATE_LUA =
   'if not ok or claim.claimToken ~= ARGV[8] or claim.startedAt then ' +
   'return { "", "", "0", "claim_lost" } end end ' +
   'local previousJobExists = redis.call("EXISTS", KEYS[1]) ' +
+  'local previousJobTtl = redis.call("TTL", KEYS[1]) ' +
   'local previousUserId = redis.call("HGET", KEYS[1], "userId") ' +
   'local previousTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
   'if previousJobExists == 1 and (not previousUserId or previousUserId == "" or previousUserId ~= ARGV[6] ' +
@@ -366,6 +369,7 @@ const JOB_CREATE_LUA =
   'local replacedProviderAbortReady = redis.call("HGET", KEYS[1], "providerAbortReady") ' +
   'local replacedProviderExecutionId = redis.call("HGET", KEYS[1], "providerExecutionId") ' +
   'local replacedProviderDrained = redis.call("HGET", KEYS[1], "providerDrained") ' +
+  'local replacedCheckpointNamespace = redis.call("HGET", KEYS[1], "checkpointNamespace") ' +
   'local replacedTerminalPersistencePending = redis.call("HGET", KEYS[1], "terminalPersistencePending") ' +
   'local replacedTerminalHostActionPending = redis.call("HGET", KEYS[1], "terminalHostActionPending") ' +
   'local replacedDetachedTerminalHostActionPending = redis.call("HGET", KEYS[1], "detachedAgentEventTerminalHostActionPending") ' +
@@ -419,6 +423,34 @@ const JOB_CREATE_LUA =
   'local count = 0 for key, _ in pairs(value) do ' +
   'if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then return false end count = count + 1 end ' +
   'return count == #value end ' +
+  // Checkpoint cleanup evidence is independent from provider-handoff receipts:
+  // successful handoff acknowledgement must not erase the predecessor scope.
+  'local checkpointScopes = {} local checkpointScopeSeen = {} ' +
+  'local checkpointScopesRaw = redis.call("HGET", KEYS[1], "__replacedCheckpointScopes") ' +
+  'if checkpointScopesRaw then local scopesOk, inheritedScopes = pcall(cjson.decode, checkpointScopesRaw) ' +
+  'if not scopesOk or not isDenseArray(inheritedScopes) or #inheritedScopes == 0 or #inheritedScopes > 1024 then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'for i = 1, #inheritedScopes do local scope = inheritedScopes[i] ' +
+  'if type(scope) ~= "table" or type(scope.userId) ~= "string" or scope.userId == "" ' +
+  'or (scope.tenantId ~= nil and (type(scope.tenantId) ~= "string" or scope.tenantId == "")) ' +
+  'or type(scope.conversationId) ~= "string" or scope.conversationId == "" ' +
+  'or type(scope.checkpointNamespace) ~= "string" or scope.checkpointNamespace == "" then ' +
+  'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'local scopeKey = cjson.encode({ scope.userId, scope.tenantId or false, ' +
+  'scope.conversationId, scope.checkpointNamespace }) ' +
+  'if checkpointScopeSeen[scopeKey] then return { "", "", "0", "replacement_receipt_corrupt" } end ' +
+  'checkpointScopeSeen[scopeKey] = true checkpointScopes[#checkpointScopes + 1] = scope end end ' +
+  'if previousJobExists == 1 and replacedProtocol == "2" and replacedConversationId ' +
+  'and replacedConversationId ~= "" and replacedCheckpointNamespace ' +
+  'and replacedCheckpointNamespace ~= "" then ' +
+  'if #checkpointScopes >= 1024 then return { "", "", "0", "replacement_chain_full" } end ' +
+  'local scope = { userId = previousUserId, conversationId = replacedConversationId, ' +
+  'checkpointNamespace = replacedCheckpointNamespace } ' +
+  'if previousTenantId then scope.tenantId = previousTenantId end ' +
+  'local scopeKey = cjson.encode({ scope.userId, scope.tenantId or false, ' +
+  'scope.conversationId, scope.checkpointNamespace }) ' +
+  'if not checkpointScopeSeen[scopeKey] then checkpointScopeSeen[scopeKey] = true ' +
+  'checkpointScopes[#checkpointScopes + 1] = scope end end ' +
   // Carry every still-unacknowledged transaction-time predecessor forward.
   // A later replacement can then stop providers skipped when an earlier
   // create reply was lost. Reject before mutation rather than evicting an old
@@ -560,11 +592,13 @@ const JOB_CREATE_LUA =
   'if rt >= 0 and rt < tonumber(ARGV[4]) then redis.call("EXPIRE", KEYS[i], ARGV[4]) end end end ' +
   'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
+  'if #checkpointScopes > 0 then ttl = math.max(ttl, tonumber(ARGV[14]), previousJobTtl) end ' +
   'local generationEpochGraceTtl = tonumber(ARGV[3]) ' +
   'local hset = {} ' +
-  'for i = 14, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'for i = 15, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'redis.call("HSET", KEYS[1], unpack(hset)) ' +
   'redis.call("HSET", KEYS[1], "createdAt", tostring(createdAt)) ' +
+  'if #checkpointScopes > 0 then redis.call("HSET", KEYS[1], "__replacedCheckpointScopes", cjson.encode(checkpointScopes)) end ' +
   'if ARGV[11] ~= "" then redis.call("HSET", KEYS[1], "__creationAttemptId", ARGV[11]) end ' +
   // Keep the transaction-time predecessor receipt in the replacement hash.
   // deserializeJob reconstructs it as non-enumerable return metadata, so an
@@ -2007,6 +2041,7 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     const safeInitialMetadata = { ...initialMetadata };
     delete safeInitialMetadata.providerDrained;
+    delete (safeInitialMetadata as Partial<SerializableJobData>).replacedCheckpointScopes;
     let generationProtocolVersion: 1 | 2 = 2;
     if (
       initialMetadata.generationProtocolVersion === 1 ||
@@ -2080,6 +2115,7 @@ export class RedisJobStore implements IJobStoreV2 {
       creationAttemptId ?? '',
       expectedPredecessorCreatedAt == null ? '' : String(expectedPredecessorCreatedAt),
       rejectActivePredecessor === true ? '1' : '0',
+      String(this.ttl.requiresAction + GENERATION_EPOCH_GRACE_TTL_S),
       ...hsetPairs,
     );
     if (Array.isArray(previousOwner) && previousOwner[3] === 'claim_lost') {
@@ -2533,6 +2569,20 @@ export class RedisJobStore implements IJobStoreV2 {
     }
   }
 
+  private ownerMembershipTtlSeconds(job: SerializableJobData): number {
+    if (this.ttl.userJobsSet === 0) {
+      return 0;
+    }
+    let ttl = this.ttl.userJobsSet;
+    if (job.status === 'requires_action') {
+      ttl = Math.max(ttl, this.pauseTtlSeconds(job.pendingAction));
+    }
+    if ((job.replacedCheckpointScopes?.length ?? 0) > 0) {
+      ttl = Math.max(ttl, this.ttl.requiresAction + GENERATION_EPOCH_GRACE_TTL_S);
+    }
+    return ttl;
+  }
+
   private async applyMembershipSnapshot(
     streamId: string,
     job: SerializableJobData | null,
@@ -2540,9 +2590,13 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<SerializableJobData | null> {
     const statusKey = job ? this.statusSetKey(job.status) : null;
     const activeUserKey =
-      job && (statusKey != null || job.providerDrained === false)
+      job &&
+      (statusKey != null ||
+        job.providerDrained === false ||
+        (job.replacedCheckpointScopes?.length ?? 0) > 0)
         ? KEYS.userJobs(job.userId, job.tenantId)
         : null;
+    const activeUserTtl = job != null ? this.ownerMembershipTtlSeconds(job) : 0;
     const terminalMember = job == null ? null : terminalHostActionMember(streamId, job.createdAt);
     const terminalHostActionIndex =
       job != null && isDetachedAgentEventCompletionJob(job)
@@ -2592,8 +2646,8 @@ export class RedisJobStore implements IJobStoreV2 {
         operations.push(
           (async () => {
             await this.redis.sadd(activeUserKey, streamId);
-            if (this.ttl.userJobsSet > 0) {
-              await this.redis.expire(activeUserKey, this.ttl.userJobsSet);
+            if (activeUserTtl > 0) {
+              await this.redis.expire(activeUserKey, activeUserTtl);
             }
           })(),
         );
@@ -2631,8 +2685,8 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     if (activeUserKey) {
       pipeline.sadd(activeUserKey, streamId);
-      if (this.ttl.userJobsSet > 0) {
-        pipeline.expire(activeUserKey, this.ttl.userJobsSet);
+      if (activeUserTtl > 0) {
+        pipeline.expire(activeUserKey, activeUserTtl);
       }
     }
     // Keep the verification read in this network flush. Redis executes it
@@ -2805,6 +2859,9 @@ export class RedisJobStore implements IJobStoreV2 {
     let ttl = terminal ? this.ttl.completed : this.runningStorageTtlSeconds();
     if (terminal && patch?.terminalPersistencePending === true) {
       ttl = Math.max(ttl, TERMINAL_PERSISTENCE_RETENTION_TTL_S);
+    }
+    if (terminal && (terminalJob?.replacedCheckpointScopes?.length ?? 0) > 0) {
+      ttl = Math.max(ttl, this.ttl.requiresAction + GENERATION_EPOCH_GRACE_TTL_S);
     }
     if (terminal && patch?.terminalHostActionPending === true) {
       // A terminal job owing a host hook must outlive the normal completed TTL so cleanup
@@ -5308,6 +5365,55 @@ export class RedisJobStore implements IJobStoreV2 {
     if (data.__creationAttemptId) {
       Object.defineProperty(job, 'creationAttemptId', {
         value: data.__creationAttemptId,
+        enumerable: false,
+        configurable: true,
+      });
+    }
+
+    if (data.__replacedCheckpointScopes) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data.__replacedCheckpointScopes);
+      } catch {
+        throw new Error('Invalid generation checkpoint scope receipt');
+      }
+      if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 1024) {
+        throw new Error('Invalid generation checkpoint scope receipt');
+      }
+      const scopes: CheckpointScopeReceipt[] = [];
+      const seen = new Set<string>();
+      for (const value of parsed) {
+        if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error('Invalid generation checkpoint scope receipt');
+        }
+        const candidate = value as Record<string, unknown>;
+        if (
+          typeof candidate.userId !== 'string' ||
+          candidate.userId.length === 0 ||
+          (candidate.tenantId != null &&
+            (typeof candidate.tenantId !== 'string' || candidate.tenantId.length === 0)) ||
+          typeof candidate.conversationId !== 'string' ||
+          candidate.conversationId.length === 0 ||
+          typeof candidate.checkpointNamespace !== 'string' ||
+          candidate.checkpointNamespace.length === 0
+        ) {
+          throw new Error('Invalid generation checkpoint scope receipt');
+        }
+        const scope: CheckpointScopeReceipt = {
+          userId: candidate.userId,
+          ...(candidate.tenantId != null && { tenantId: candidate.tenantId as string }),
+          conversationId: candidate.conversationId,
+          checkpointNamespace: candidate.checkpointNamespace,
+        };
+        const scopeKey = `${scope.userId}\u0000${scope.tenantId ?? ''}\u0000${scope.conversationId}\u0000${scope.checkpointNamespace}`;
+        if (seen.has(scopeKey)) {
+          throw new Error('Invalid generation checkpoint scope receipt');
+        }
+        seen.add(scopeKey);
+        scopes.push(scope);
+      }
+      Object.defineProperty(job, 'replacedCheckpointScopes', {
+        value: scopes,
         enumerable: false,
         configurable: true,
       });

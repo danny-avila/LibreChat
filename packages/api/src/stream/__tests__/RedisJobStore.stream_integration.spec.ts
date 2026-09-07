@@ -180,6 +180,13 @@ describe('RedisJobStore Integration Tests', () => {
       expect(predecessor.checkpointNamespace).toEqual(expect.any(String));
       expect(replacement.checkpointNamespace).toEqual(expect.any(String));
       expect(replacement.checkpointNamespace).not.toBe(predecessor.checkpointNamespace);
+      expect(replacement.replacedCheckpointScopes).toEqual([
+        {
+          userId: 'user-1',
+          conversationId: streamId,
+          checkpointNamespace: predecessor.checkpointNamespace,
+        },
+      ]);
       expect(replacement.replacedJob).toEqual({
         createdAt: predecessor.createdAt,
         status: 'requires_action',
@@ -203,6 +210,7 @@ describe('RedisJobStore Integration Tests', () => {
         enumerable: false,
       });
       expect(Object.keys(durableReplacement!)).not.toContain('replacedJob');
+      expect(Object.keys(durableReplacement!)).not.toContain('replacedCheckpointScopes');
       await store.destroy();
     });
 
@@ -2574,6 +2582,41 @@ describe('RedisJobStore Integration Tests', () => {
       const ttl = await ioredisClient.ttl(userKey);
       expect(ttl).toBeGreaterThan(0);
       expect(ttl).toBeLessThanOrEqual(3600);
+
+      await store.destroy();
+    });
+
+    test('retains owner membership through an extended paused approval window', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, {
+        userJobsSetTtl: 60,
+        requiresActionTtl: 60,
+      });
+      await store.initialize();
+
+      const userId = `paused-owner-ttl-user-${Date.now()}`;
+      const streamId = `paused-owner-ttl-stream-${Date.now()}`;
+      const job = await store.createJob(streamId, userId, streamId);
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'requires_action',
+          expectCreatedAt: job.createdAt,
+          patch: {
+            pendingAction: {
+              ...buildPendingAction(streamId),
+              expiresAt: Date.now() + 2 * 86400 * 1000,
+            },
+          },
+        }),
+      ).resolves.toBe(true);
+
+      const ownerTtl = await ioredisClient.ttl(`stream:user:{${userId}}:jobs`);
+      expect(ownerTtl).toBeGreaterThan(2 * 86400);
 
       await store.destroy();
     });

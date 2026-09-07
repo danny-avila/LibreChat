@@ -4,6 +4,7 @@ import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type {
   SerializableJobData,
+  CheckpointScopeReceipt,
   CreatedJobData,
   ReplacedGeneration,
   SteerArmOutcome,
@@ -311,6 +312,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     const safeInitialMetadata = { ...initialMetadata };
     delete safeInitialMetadata.providerDrained;
+    delete (safeInitialMetadata as Partial<SerializableJobData>).replacedCheckpointScopes;
     const assertOwnerCompatible = (): void => {
       const existingJob = this.jobs.get(streamId);
       if (
@@ -482,6 +484,15 @@ export class InMemoryJobStore implements IJobStoreV2 {
       this.lastGenerationEpoch + 1,
     );
     const replacedJobs: ReplacedGeneration[] = [];
+    const replacedCheckpointScopes: CheckpointScopeReceipt[] = [
+      ...(previousJob?.replacedCheckpointScopes ?? []),
+    ];
+    const checkpointScopeKeys = new Set(
+      replacedCheckpointScopes.map(
+        (scope) =>
+          `${scope.userId}\u0000${scope.tenantId ?? ''}\u0000${scope.conversationId}\u0000${scope.checkpointNamespace}`,
+      ),
+    );
     const replacedEpochs = new Set<number>();
     const addReplacedJob = (replaced: ReplacedGeneration): void => {
       if (replacedEpochs.has(replaced.createdAt)) {
@@ -525,6 +536,23 @@ export class InMemoryJobStore implements IJobStoreV2 {
         });
       }
       addReplacedJob(replaced);
+      if (
+        previousJob.generationProtocolVersion === 2 &&
+        previousJob.conversationId &&
+        previousJob.checkpointNamespace
+      ) {
+        const scope = {
+          userId: previousJob.userId,
+          ...(previousJob.tenantId != null && { tenantId: previousJob.tenantId }),
+          conversationId: previousJob.conversationId,
+          checkpointNamespace: previousJob.checkpointNamespace,
+        };
+        const scopeKey = `${scope.userId}\u0000${scope.tenantId ?? ''}\u0000${scope.conversationId}\u0000${scope.checkpointNamespace}`;
+        if (!checkpointScopeKeys.has(scopeKey)) {
+          checkpointScopeKeys.add(scopeKey);
+          replacedCheckpointScopes.push(scope);
+        }
+      }
     }
     this.lastGenerationEpoch = createdAt;
     const job: CreatedJobData = {
@@ -564,6 +592,13 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (replacedJobs.length > 0) {
       Object.defineProperty(job, 'replacedJobs', {
         value: replacedJobs,
+        enumerable: false,
+        configurable: true,
+      });
+    }
+    if (replacedCheckpointScopes.length > 0) {
+      Object.defineProperty(job, 'replacedCheckpointScopes', {
+        value: replacedCheckpointScopes,
         enumerable: false,
         configurable: true,
       });
@@ -653,6 +688,13 @@ export class InMemoryJobStore implements IJobStoreV2 {
         enumerable: false,
         configurable: true,
       });
+      if (replacedCheckpointScopes.length > 0) {
+        Object.defineProperty(createdJob, 'replacedCheckpointScopes', {
+          value: replacedCheckpointScopes,
+          enumerable: false,
+          configurable: true,
+        });
+      }
     }
 
     logger.debug(`[InMemoryJobStore] Created job: ${streamId}`);

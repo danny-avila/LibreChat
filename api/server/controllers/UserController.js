@@ -11,7 +11,7 @@ const {
   getWebSearchInstallEntries,
   getWebSearchUninstallFields,
   deleteAgentCheckpointScopes,
-  getOwnedAgentCheckpointScope,
+  getOwnedAgentCheckpointScopes,
   isStopConfirmed,
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
@@ -433,9 +433,9 @@ const deleteUserController = async (req, res) => {
         job?.metadata?.userId === user.id &&
         (job.metadata.tenantId == null || job.metadata.tenantId === user.tenantId),
     );
-    const checkpointScopes = ownedAgentJobs
-      .map(({ job }) => getOwnedAgentCheckpointScope(job, user.id, user.tenantId))
-      .filter(Boolean);
+    const checkpointScopes = ownedAgentJobs.flatMap(({ job }) =>
+      getOwnedAgentCheckpointScopes(job, user.id, user.tenantId),
+    );
     const stopResults = await Promise.all(
       ownedAgentJobs.map(({ streamId, job }) =>
         GenerationJobManager.abortJob(streamId, {

@@ -118,6 +118,10 @@ export interface SerializableJobData {
    * `checkpoint_ns`, which the saver adapter maps to this storage scope.
    * Legacy paused jobs omit it and use the historical unscoped storage. */
   checkpointNamespace?: string;
+  /** Exact predecessor checkpoint identities retained independently from
+   * replacement-handoff receipts. Built-in stores expose this as
+   * non-enumerable metadata so ordinary job serialization cannot leak it. */
+  replacedCheckpointScopes?: readonly CheckpointScopeReceipt[];
   completedAt?: number;
   conversationId?: string;
   error?: string;
@@ -372,6 +376,13 @@ export interface SerializableJobData {
    * `updateJob` — listed here so cleanup paths can reference the key name.
    */
   steersClosed?: boolean;
+}
+
+export interface CheckpointScopeReceipt {
+  userId: string;
+  tenantId?: string;
+  conversationId: string;
+  checkpointNamespace: string;
 }
 
 /** Exact active hash replaced by one atomic job creation. Built-in stores keep

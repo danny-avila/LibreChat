@@ -602,6 +602,36 @@ export function getOwnedAgentCheckpointScope(
   };
 }
 
+export function getOwnedAgentCheckpointScopes(
+  job: Pick<GenerationJob, 'metadata' | 'replacedCheckpointScopes'> | null | undefined,
+  userId: string,
+  tenantId?: string,
+): AgentCheckpointScope[] {
+  const scopes = new Map<string, AgentCheckpointScope>();
+  const current = getOwnedAgentCheckpointScope(job, userId, tenantId);
+  if (current != null) {
+    scopes.set(`${current.threadId}\u0000${current.checkpointNamespace}`, current);
+  }
+  for (const receipt of job?.replacedCheckpointScopes ?? []) {
+    if (
+      receipt.userId !== userId ||
+      (receipt.tenantId ?? undefined) !== (tenantId ?? undefined) ||
+      typeof receipt.conversationId !== 'string' ||
+      receipt.conversationId.length === 0 ||
+      typeof receipt.checkpointNamespace !== 'string' ||
+      receipt.checkpointNamespace.length === 0
+    ) {
+      continue;
+    }
+    const scope = {
+      threadId: receipt.conversationId,
+      checkpointNamespace: receipt.checkpointNamespace,
+    };
+    scopes.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
+  }
+  return [...scopes.values()];
+}
+
 /**
  * Apply defaults to the YAML `endpoints.agents.checkpointer` block. Mirrors
  * {@link resolveRecursionLimit} — the schema stays descriptive, defaults live here.

@@ -61,7 +61,7 @@ jest.mock('@librechat/api', () => ({
     getJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
-  getOwnedAgentCheckpointScope: jest.fn(() => undefined),
+  getOwnedAgentCheckpointScopes: jest.fn(() => []),
   isStopConfirmed: jest.fn(
     (result) => result?.success === true || result?.failureReason === 'already_settled',
   ),
