@@ -1118,6 +1118,19 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(GetObjectCommand)).toHaveLength(1);
     });
 
+    it('requests the decoded key for a non-ASCII file name', async () => {
+      const { getS3FileStream } = await import('../crud');
+      await getS3FileStream(
+        {} as ServerRequest,
+        'https://test-bucket.s3.amazonaws.com/images/user123/%D0%94%D0%BE%D0%B3%D0%BE%D0%B2%D0%BE%D1%80.pdf',
+      );
+
+      const [call] = s3Mock.commandCalls(GetObjectCommand);
+      expect(call.args[0].input.Key).toBe(
+        'images/user123/\u0414\u043e\u0433\u043e\u0432\u043e\u0440.pdf',
+      );
+    });
+
     it('handles errors when retrieving stream', async () => {
       s3Mock.on(GetObjectCommand).rejects(new Error('Stream error'));
 

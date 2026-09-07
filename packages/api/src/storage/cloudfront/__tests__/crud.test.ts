@@ -534,6 +534,26 @@ describe('CloudFront CRUD', () => {
       );
     });
 
+    it('encodes the invalidation path the same way as the viewer URL', async () => {
+      mockResolveStoredS3Key.mockReturnValue('images/u/report%20final \u0151.webp');
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ invalidateOnDelete: true, distributionId: 'E123' }),
+      );
+      mockCloudFrontSend.mockResolvedValue({});
+
+      const { deleteFileFromCloudFront } = await import('~/storage/cloudfront/crud');
+      await deleteFileFromCloudFront(mockReq, mockFile);
+
+      const { CreateInvalidationCommand } = await import('@aws-sdk/client-cloudfront');
+      expect(CreateInvalidationCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          InvalidationBatch: expect.objectContaining({
+            Paths: { Quantity: 1, Items: ['/images/u/report%2520final%20%C5%91.webp'] },
+          }),
+        }),
+      );
+    });
+
     it('prefixes key with / for invalidation path', async () => {
       mockResolveStoredS3Key.mockReturnValue('images/u/file.webp'); // no leading slash
       mockGetCloudFrontConfig.mockReturnValue(
