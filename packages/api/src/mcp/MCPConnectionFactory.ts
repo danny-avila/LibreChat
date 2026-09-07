@@ -85,7 +85,7 @@ export class MCPConnectionFactory {
   protected readonly deadlineMs?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
-  protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
+  protected upstreamTokenProvider?: UpstreamTokenProvider;
   protected readonly oboIdentityContext?: AuthIdentityContext;
   /** Why the OBO re-exchange failed, when that is more actionable than the server's 401. */
   private oboRefreshError?: Error;
@@ -675,6 +675,9 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      ...(this.directBearerRecoveryEnabled && {
+        suspendToolRefreshOnAuthenticationError: true,
+      }),
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
@@ -702,7 +705,7 @@ export class MCPConnectionFactory {
       await this.attemptToConnect(connection);
       this.connectionReady = true;
       // Keep the `oauthRequired` listener for cached-connection 401 recovery,
-      // but drop response/tool-call callbacks from the completed request.
+      // but drop request-bound callbacks and credentials from the completed request.
       this.releaseRequestScopedOAuthState();
       return connection;
     } catch (error) {
@@ -733,6 +736,7 @@ export class MCPConnectionFactory {
     this.oauthStart = undefined;
     this.oauthEnd = undefined;
     this.returnOnOAuth = false;
+    this.upstreamTokenProvider = undefined;
   }
 
   private getServerUrl(): string | undefined {

@@ -3493,6 +3493,51 @@ describe('MCPManager', () => {
       );
       expect(connection.client.request).toHaveBeenCalledTimes(1);
     });
+
+    it('fences a delayed direct-bearer replacement when the server config mutates', async () => {
+      const connection = {
+        stopReconnecting: jest.fn(),
+      } as unknown as MCPConnection;
+      let finishRefresh: ((tokens: { access_token: string }) => void) | undefined;
+      const forcedRefresh = new Promise<{ access_token: string }>((resolve) => {
+        finishRefresh = resolve;
+      });
+      const upstreamTokenProvider = jest.fn().mockReturnValue(forcedRefresh);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnection = jest.spyOn(manager, 'getUserConnection');
+      const recovery = (
+        manager as unknown as {
+          recoverDirectOpenIDBearerConnection: (args: {
+            connection: MCPConnection;
+            serverName: string;
+            serverConfig: t.ParsedServerConfig;
+            user: IUser;
+            flowManager: Parameters<typeof manager.callTool>[0]['flowManager'];
+            upstreamTokenProvider: NonNullable<
+              Parameters<typeof manager.callTool>[0]['upstreamTokenProvider']
+            >;
+          }) => Promise<void>;
+        }
+      ).recoverDirectOpenIDBearerConnection({
+        connection,
+        serverName,
+        serverConfig,
+        user,
+        flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+        upstreamTokenProvider,
+      });
+      while (upstreamTokenProvider.mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      await manager.disconnectUserConnection(user.id, serverName);
+      finishRefresh?.({ access_token: 'fresh-token' });
+
+      await expect(recovery).rejects.toThrow('cancelled during teardown');
+      expect(getUserConnection).not.toHaveBeenCalled();
+      expect(connection.stopReconnecting).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getConnection', () => {

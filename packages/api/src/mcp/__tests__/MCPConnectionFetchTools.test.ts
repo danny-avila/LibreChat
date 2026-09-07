@@ -48,11 +48,15 @@ const makeTool = (name: string) => ({
 });
 
 /** Build a bare MCPConnection (no real transport) with an injected, controllable client. */
-function createConnectionWithListTools(listTools: jest.Mock): MCPConnection {
+function createConnectionWithListTools(
+  listTools: jest.Mock,
+  suspendToolRefreshOnAuthenticationError = false,
+): MCPConnection {
   const conn = new MCPConnection({
     serverName: 'pagination-test',
     serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
     useSSRFProtection: false,
+    suspendToolRefreshOnAuthenticationError,
   });
   conn.client.listTools = listTools;
   return conn;
@@ -469,7 +473,7 @@ describe('MCPConnection.fetchTools pagination', () => {
   it('preserves an authentication rejection without scheduling a health retry', async () => {
     const authError = Object.assign(new Error('unauthorized'), { status: 401 });
     const listTools = jest.fn().mockRejectedValue(authError);
-    const conn = createConnectionWithListTools(listTools);
+    const conn = createConnectionWithListTools(listTools, true);
     Reflect.set(conn, 'connectionState', 'connected');
     jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
 
@@ -481,6 +485,22 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(Reflect.get(conn, 'toolListRefreshSuspended')).toBe(true);
     await Promise.resolve();
     expect(listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps ordinary authentication modes eligible for tool-list retry', async () => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    const listTools = jest.fn().mockRejectedValue(authError);
+    const conn = createConnectionWithListTools(listTools);
+    Reflect.set(conn, 'connectionState', 'connected');
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+
+    await conn.refreshToolList();
+
+    expect(Reflect.get(conn, 'toolListRefreshSuspended')).toBe(false);
+    expect(Reflect.get(conn, 'toolListRefreshFailures')).toBe(1);
+    const retryTimer = Reflect.get(conn, 'toolListRefreshRetryTimer') as NodeJS.Timeout;
+    expect(retryTimer).toBeDefined();
+    clearTimeout(retryTimer);
   });
 
   it('does not classify an ordinary tools/list failure as authentication rejection', async () => {

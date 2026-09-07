@@ -94,6 +94,10 @@ class InspectableMCPConnectionFactory extends MCPConnectionFactory {
       returnOnOAuth: this.returnOnOAuth,
     };
   }
+
+  public hasUpstreamTokenProviderForTest(): boolean {
+    return this.upstreamTokenProvider != null;
+  }
 }
 
 describe('MCPConnectionFactory', () => {
@@ -2616,6 +2620,7 @@ describe('MCPConnectionFactory', () => {
       const oauthStart = jest.fn();
       const oauthEnd = jest.fn();
       const requestAbortController = new AbortController();
+      const upstreamTokenProvider = jest.fn();
       const factory = new InspectableMCPConnectionFactory(
         {
           serverName: 'test-server',
@@ -2628,6 +2633,7 @@ describe('MCPConnectionFactory', () => {
           oauthStart,
           oauthEnd,
           signal: requestAbortController.signal,
+          upstreamTokenProvider,
           returnOnOAuth: true,
           tokenMethods: {
             findToken: jest.fn(),
@@ -2652,6 +2658,7 @@ describe('MCPConnectionFactory', () => {
         oauthEnd: undefined,
         returnOnOAuth: false,
       });
+      expect(factory.hasUpstreamTokenProviderForTest()).toBe(false);
     });
 
     it('should let a live request handle cached-connection reauthentication with fresh callbacks', async () => {
@@ -3997,6 +4004,7 @@ describe('MCPConnectionFactory', () => {
           serverConfig: expect.objectContaining({
             headers: { Authorization: 'Bearer fresh-token' },
           }),
+          suspendToolRefreshOnAuthenticationError: true,
         }),
       );
     });

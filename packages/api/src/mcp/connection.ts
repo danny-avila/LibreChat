@@ -992,6 +992,8 @@ interface MCPConnectionParams {
   useSSRFProtection?: boolean;
   allowedAddresses?: string[] | null;
   ephemeralConnection?: boolean;
+  /** The owner will replace this connection after a tools/list authentication rejection. */
+  suspendToolRefreshOnAuthenticationError?: boolean;
 }
 
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
@@ -1035,6 +1037,7 @@ export class MCPConnection extends EventEmitter {
   private readonly useSSRFProtection: boolean;
   private readonly allowedAddresses?: string[] | null;
   private readonly ephemeralConnection: boolean;
+  private readonly suspendToolRefreshOnAuthenticationError: boolean;
   private readonly proxyConfig?: MCPProxyConfig;
   private toolListChangeGeneration = 0;
   private handledToolListChangeGeneration = 0;
@@ -1192,6 +1195,8 @@ export class MCPConnection extends EventEmitter {
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
     this.ephemeralConnection = params.ephemeralConnection === true;
+    this.suspendToolRefreshOnAuthenticationError =
+      params.suspendToolRefreshOnAuthenticationError === true;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
@@ -1891,7 +1896,7 @@ export class MCPConnection extends EventEmitter {
       }
       /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
       if (!snapshot.complete || snapshot.orderingUnavailable) {
-        if (snapshot.authenticationError) {
+        if (snapshot.authenticationError && this.suspendToolRefreshOnAuthenticationError) {
           this.toolListRefreshSuspended = true;
           return snapshot;
         }

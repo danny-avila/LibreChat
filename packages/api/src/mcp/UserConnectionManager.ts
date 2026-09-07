@@ -53,6 +53,11 @@ type ConnectionTeardownOptions = {
 
 type ConnectionCreationGuard = { cancelledBy: ConnectionTeardownReason | null };
 
+type ConnectionMutationFence = {
+  assertCurrent: () => void;
+  release: () => void;
+};
+
 /** Signals that a teardown fenced an in-flight creation before it could finish. */
 class ConnectionCreationCancelledError extends Error {
   constructor(
@@ -161,6 +166,26 @@ export abstract class UserConnectionManager {
       `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
       guard.cancelledBy,
     );
+  }
+
+  /** Registers work that resolves a replacement before the ordinary creation queue begins. */
+  protected createConnectionMutationFence(
+    userId: string,
+    serverName: string,
+  ): ConnectionMutationFence {
+    const key = `${userId}:${serverName}`;
+    const guard: ConnectionCreationGuard = { cancelledBy: null };
+    this.registerConnectionCreation(key, guard);
+    return {
+      assertCurrent: () => {
+        /** Lifecycle churn does not invalidate the captured config; a committed mutation does. */
+        if (guard.cancelledBy === 'lifecycle') {
+          guard.cancelledBy = null;
+        }
+        this.assertCreationNotCancelled(guard, userId, serverName);
+      },
+      release: () => this.unregisterConnectionCreation(key, guard),
+    };
   }
 
   /** A mutation fence outranks a lifecycle one: the stale inputs stay stale either way. */

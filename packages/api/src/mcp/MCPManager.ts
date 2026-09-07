@@ -749,39 +749,49 @@ Please follow these instructions when using tools from the respective MCP server
       return this.waitForActiveRecovery(existing.promise, signal);
     }
 
+    const mutationFence = this.createConnectionMutationFence(user.id, serverName);
     const recovery = Promise.resolve().then(async () => {
-      await resolveDirectOpenIDBearerConfig({
-        config: serverConfig,
-        upstreamTokenProvider,
-        forceRefresh: true,
-      });
-      connection.stopReconnecting();
-      await this.waitForConnectionBorrowersToDrain(connection);
-      const requestConnectionKey = `${user.id}:${serverName}`;
-      if (requestScopedConnections?.connections.get(requestConnectionKey) === connection) {
-        requestScopedConnections.connections.delete(requestConnectionKey);
-        await this.disposeEvictedConnection(
-          connection,
-          `[MCP][Request-scoped: ${requestConnectionKey}]`,
-        );
+      let replacementPromise: Promise<MCPConnection>;
+      try {
+        await resolveDirectOpenIDBearerConfig({
+          config: serverConfig,
+          upstreamTokenProvider,
+          forceRefresh: true,
+        });
+        connection.stopReconnecting();
+        await this.waitForConnectionBorrowersToDrain(connection);
+        const requestConnectionKey = `${user.id}:${serverName}`;
+        if (requestScopedConnections?.connections.get(requestConnectionKey) === connection) {
+          requestScopedConnections.connections.delete(requestConnectionKey);
+          await this.disposeEvictedConnection(
+            connection,
+            `[MCP][Request-scoped: ${requestConnectionKey}]`,
+          );
+        }
+        mutationFence.assertCurrent();
+        /** Invocation is synchronous through the replacement's own guard registration, closing
+         * the mutation window before this outer reservation is released. */
+        replacementPromise = this.getUserConnection({
+          serverName,
+          serverConfig,
+          user,
+          forceNew: true,
+          flowManager,
+          tokenMethods,
+          oauthStart,
+          oauthEnd,
+          customUserVars,
+          requestBody,
+          requestScopedConnections,
+          graphTokenResolver,
+          upstreamTokenProvider,
+          oboIdentityContext,
+          directBearerRecoveryState: { attempted: true },
+        });
+      } finally {
+        mutationFence.release();
       }
-      const replacement = await this.getUserConnection({
-        serverName,
-        serverConfig,
-        user,
-        forceNew: true,
-        flowManager,
-        tokenMethods,
-        oauthStart,
-        oauthEnd,
-        customUserVars,
-        requestBody,
-        requestScopedConnections,
-        graphTokenResolver,
-        upstreamTokenProvider,
-        oboIdentityContext,
-        directBearerRecoveryState: { attempted: true },
-      });
+      const replacement = await replacementPromise;
       if (requiresEphemeralUserConnection(serverConfig) && !requestScopedConnections) {
         await this.disposeEvictedConnection(
           replacement,
