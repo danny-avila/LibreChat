@@ -1,20 +1,22 @@
-const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
-const { limiterCache } = require('@librechat/api');
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
+import type { Request, RequestHandler } from 'express';
+import { limiterCache } from '~/cache/cacheFactory';
 
-let configuredCodeEnvironmentPairingLimiter;
-let configuredCodeEnvironmentStatusLimiter;
+type AuthenticatedRequest = Request & { user?: { id?: string } };
 
-function positiveInteger(value, fallback) {
+let configuredPairingLimiter: RequestHandler | undefined;
+let configuredStatusLimiter: RequestHandler | undefined;
+
+function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : fallback;
 }
 
-const codeEnvironmentPairingLimiter = (req, res, next) => {
-  if (configuredCodeEnvironmentPairingLimiter == null) {
+export const codeEnvironmentPairingLimiter: RequestHandler = (req, res, next) => {
+  if (configuredPairingLimiter == null) {
     const max = positiveInteger(process.env.CODE_ENVIRONMENT_PAIRING_USER_MAX, 5);
     const windowInMinutes = positiveInteger(process.env.CODE_ENVIRONMENT_PAIRING_USER_WINDOW, 60);
-
-    configuredCodeEnvironmentPairingLimiter = rateLimit({
+    configuredPairingLimiter = rateLimit({
       windowMs: windowInMinutes * 60 * 1000,
       max,
       handler: (limitedReq, limitedRes) => {
@@ -31,20 +33,18 @@ const codeEnvironmentPairingLimiter = (req, res, next) => {
           },
         });
       },
-      keyGenerator: (limitedReq) => String(limitedReq.user.id),
+      keyGenerator: (limitedReq) => String((limitedReq as AuthenticatedRequest).user?.id ?? ''),
       store: limiterCache('code_environment_pairing_user_limiter'),
     });
   }
-
-  return configuredCodeEnvironmentPairingLimiter(req, res, next);
+  return configuredPairingLimiter(req, res, next);
 };
 
-const codeEnvironmentStatusLimiter = (req, res, next) => {
-  if (configuredCodeEnvironmentStatusLimiter == null) {
+export const codeEnvironmentStatusLimiter: RequestHandler = (req, res, next) => {
+  if (configuredStatusLimiter == null) {
     const max = positiveInteger(process.env.CODE_ENVIRONMENT_STATUS_USER_MAX, 120);
     const windowInMinutes = positiveInteger(process.env.CODE_ENVIRONMENT_STATUS_USER_WINDOW, 1);
-
-    configuredCodeEnvironmentStatusLimiter = rateLimit({
+    configuredStatusLimiter = rateLimit({
       windowMs: windowInMinutes * 60 * 1000,
       max,
       handler: (_limitedReq, limitedRes) =>
@@ -55,13 +55,12 @@ const codeEnvironmentStatusLimiter = (req, res, next) => {
             type: 'rate_limit_error',
           },
         }),
-      keyGenerator: (limitedReq) =>
-        `${String(limitedReq.user.id)}:${ipKeyGenerator(limitedReq.ip)}`,
+      keyGenerator: (limitedReq) => {
+        const userId = String((limitedReq as AuthenticatedRequest).user?.id ?? '');
+        return `${userId}:${ipKeyGenerator(limitedReq.ip)}`;
+      },
       store: limiterCache('code_environment_status_user_limiter'),
     });
   }
-
-  return configuredCodeEnvironmentStatusLimiter(req, res, next);
+  return configuredStatusLimiter(req, res, next);
 };
-
-module.exports = { codeEnvironmentPairingLimiter, codeEnvironmentStatusLimiter };

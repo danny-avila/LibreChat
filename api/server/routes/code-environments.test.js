@@ -39,16 +39,13 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   createCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
   createCodeEnvironmentHttpHandlers: jest.fn(() => mockHandlers),
+  codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
+  codeEnvironmentStatusLimiter: mockCodeEnvironmentStatusLimiter,
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: mockRequireCapability,
 }));
-jest.mock('~/server/middleware/limiters/code', () => ({
-  codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
-  codeEnvironmentStatusLimiter: mockCodeEnvironmentStatusLimiter,
-}));
-
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),

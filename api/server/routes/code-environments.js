@@ -1,11 +1,11 @@
 const express = require('express');
-const { createCodeEnvironmentHttpHandlers } = require('@librechat/api');
-const { SystemCapabilities } = require('@librechat/data-schemas');
-const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const {
+  createCodeEnvironmentHttpHandlers,
   codeEnvironmentPairingLimiter,
   codeEnvironmentStatusLimiter,
-} = require('~/server/middleware/limiters/code');
+} = require('@librechat/api');
+const { SystemCapabilities } = require('@librechat/data-schemas');
+const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig, getCodeEnvironmentRegistry } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
