@@ -132,12 +132,22 @@ function UnifiedSidebar() {
     return () => document.removeEventListener('keydown', handler);
   }, [isSmallScreen, expanded, handleCollapse]);
 
+  const logo = (
+    <div className="flex h-28 flex-shrink-0 items-center justify-center bg-surface-primary-alt p-2">
+      <img
+        src="assets/logo.svg?v=2"
+        className="h-full max-w-full object-contain"
+        alt={localize('com_ui_logo', { 0: 'Maasu' })}
+      />
+    </div>
+  );
+
   if (isSmallScreen) {
     return (
       <>
         <div
           className={cn(
-            'fixed left-0 top-0 z-[110] flex h-full bg-surface-primary-alt',
+            'fixed left-0 top-0 z-[110] flex h-full flex-col bg-surface-primary-alt',
             expanded ? 'translate-x-0' : '-translate-x-full',
           )}
           style={{
@@ -146,14 +156,17 @@ function UnifiedSidebar() {
           }}
           inert={!expanded ? '' : undefined}
         >
-          <SidebarChatProvider>
-            <ActivePanelProvider>
-              <ExpandedPanel links={links} onCollapse={handleCollapse} />
-              <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
-                <SidePanelNav links={links} />
-              </nav>
-            </ActivePanelProvider>
-          </SidebarChatProvider>
+          {logo}
+          <div className="flex min-h-0 flex-1">
+            <SidebarChatProvider>
+              <ActivePanelProvider>
+                <ExpandedPanel links={links} onCollapse={handleCollapse} />
+                <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
+                  <SidePanelNav links={links} />
+                </nav>
+              </ActivePanelProvider>
+            </SidebarChatProvider>
+          </div>
         </div>
         <div
           className={cn(
@@ -178,7 +191,7 @@ function UnifiedSidebar() {
     <SidebarChatProvider>
       <ActivePanelProvider>
         <aside
-          className="relative flex h-full flex-shrink-0 overflow-hidden"
+          className="relative flex h-full flex-shrink-0 flex-col overflow-hidden"
           style={{
             width: expanded ? sidebarWidth : COLLAPSED_WIDTH,
             minWidth: expanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
@@ -189,14 +202,17 @@ function UnifiedSidebar() {
           }}
           aria-label={localize('com_nav_control_panel')}
         >
-          <Sidebar
-            links={links}
-            expanded={expanded}
-            onCollapse={handleCollapse}
-            onExpand={handleExpand}
-            onResizeStart={handleResizeStart}
-            onResizeKeyboard={handleResizeKeyboard}
-          />
+          {expanded && logo}
+          <div className="relative min-h-0 flex-1">
+            <Sidebar
+              links={links}
+              expanded={expanded}
+              onCollapse={handleCollapse}
+              onExpand={handleExpand}
+              onResizeStart={handleResizeStart}
+              onResizeKeyboard={handleResizeKeyboard}
+            />
+          </div>
         </aside>
       </ActivePanelProvider>
     </SidebarChatProvider>
