@@ -5,7 +5,7 @@ import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { useChatContext } from '~/Providers';
 
 /** Conversation whose compaction this client submitted and is still streaming. */
-const compactingConversationAtom = atom<string | null>(null);
+export const compactingConversationAtom = atom<string | null>(null);
 
 /**
  * An Assistants thread lives on the provider, so a summary inserted into the
@@ -39,14 +39,19 @@ export default function useCompactConversation() {
     !isCompactedLeaf(latestMessage);
 
   /** The marker lives from the submission until the turn it started settles:
-   *  cleared on the submitting → idle edge, never on the idle render that
-   *  precedes the submit. */
+   *  cleared on the submitting → idle edge, or on a mount that finds the
+   *  chat already idle (the turn finished while this view was away), never
+   *  on the idle render that precedes the submit. */
   const wasSubmitting = useRef(isSubmitting);
+  const mounted = useRef(false);
   useEffect(() => {
-    if (wasSubmitting.current && !isSubmitting && compactingConversation != null) {
+    const settled = wasSubmitting.current && !isSubmitting;
+    const mountedIdle = !mounted.current && !isSubmitting;
+    mounted.current = true;
+    wasSubmitting.current = isSubmitting;
+    if ((settled || mountedIdle) && compactingConversation != null) {
       setCompactingConversation(null);
     }
-    wasSubmitting.current = isSubmitting;
   }, [isSubmitting, compactingConversation, setCompactingConversation]);
 
   const compact = useCallback(() => {

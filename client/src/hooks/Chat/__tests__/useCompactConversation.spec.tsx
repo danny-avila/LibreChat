@@ -1,7 +1,8 @@
+import { getDefaultStore } from 'jotai';
 import { renderHook, act } from '@testing-library/react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import useCompactConversation from '../useCompactConversation';
+import useCompactConversation, { compactingConversationAtom } from '../useCompactConversation';
 
 const mockAsk = jest.fn();
 let mockContext: {
@@ -46,6 +47,30 @@ describe('useCompactConversation', () => {
       conversation: { conversationId: 'convo-1', endpoint: 'openAI' },
     };
     mockLatestMessage = leaf();
+    getDefaultStore().set(compactingConversationAtom, null);
+  });
+
+  it('drops a marker left by a compaction that finished while the view was away', () => {
+    getDefaultStore().set(compactingConversationAtom, 'convo-1');
+    const hook = renderHook(() => useCompactConversation());
+    expect(hook.result.current.isCompacting).toBe(false);
+
+    /** The next ordinary turn in the same conversation is not a compaction. */
+    mockContext.isSubmitting = true;
+    hook.rerender();
+    expect(hook.result.current.isCompacting).toBe(false);
+  });
+
+  it('keeps the marker when it mounts into a compaction still streaming', () => {
+    getDefaultStore().set(compactingConversationAtom, 'convo-1');
+    mockContext.isSubmitting = true;
+    const hook = renderHook(() => useCompactConversation());
+    expect(hook.result.current.isCompacting).toBe(true);
+
+    mockContext.isSubmitting = false;
+    hook.rerender();
+    expect(hook.result.current.isCompacting).toBe(false);
+    expect(getDefaultStore().get(compactingConversationAtom)).toBeNull();
   });
 
   it('submits a compaction anchored on the leaf itself', () => {

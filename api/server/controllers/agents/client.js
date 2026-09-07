@@ -4508,8 +4508,16 @@ class AgentClient extends BaseClient {
        * synthetic prefix. Names NOT primed this turn still reconstruct from
        * history, preserving sticky manual re-priming across turns.
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      /** A compaction summarizes what was already said. No user turn was
+       *  submitted, so it primes no skills into the transcript it is about
+       *  to summarize and runs no memory pass over it. */
+      const isCompactionTurn = this.isCompactionTurn();
+      const manualSkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.alwaysApplySkillPrimes;
       const freshSkillPrimeNames = collectFreshSkillPrimeNames({
         manualSkillPrimes,
         alwaysApplySkillPrimes,
@@ -4644,7 +4652,7 @@ class AgentClient extends BaseClient {
       });
 
       const memoryMessages =
-        this.processMemory && this.memoryPayload
+        this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
               stripActivityLabelParts(this.memoryPayload),
               undefined,
@@ -4703,7 +4711,7 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        if (this.processMemory) {
+        if (this.processMemory && !isCompactionTurn) {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
