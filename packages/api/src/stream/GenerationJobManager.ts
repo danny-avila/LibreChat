@@ -20,7 +20,6 @@ import type {
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
-  RetainedCheckpointScope,
   CreatedJobData,
   IEventTransport,
   UsageMetadata,
@@ -63,7 +62,6 @@ import {
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
-import { isCleanupSafeCheckpointNamespace } from './checkpoints';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
 /**
@@ -2888,7 +2886,6 @@ class GenerationJobManagerClass {
         tenantId: jobData.tenantId,
         conversationId: jobData.conversationId,
         checkpointNamespace: jobData.checkpointNamespace,
-        checkpointTtlSeconds: jobData.checkpointTtlSeconds,
         generationProtocolVersion: jobData.generationProtocolVersion,
         earlyBufferOverflow: jobData.earlyBufferOverflow,
         userMessage: jobData.userMessage,
@@ -7815,10 +7812,8 @@ class GenerationJobManagerClass {
     expectedCreatedAt?: number,
   ): Promise<void> {
     const generationId = expectedCreatedAt ?? this.runtimeState.get(streamId)?.createdAt;
-    const safeMetadata = sanitizeJobMetadata(metadata);
-    delete safeMetadata.checkpointTtlSeconds;
     const updates: Partial<SerializableJobData> = {
-      ...safeMetadata,
+      ...sanitizeJobMetadata(metadata),
       ...(metadata.userSubmittedPaths && {
         userSubmittedPaths: metadata.userSubmittedPaths,
       }),
@@ -9311,29 +9306,6 @@ class GenerationJobManagerClass {
       return this.getCleanupBlockingJobIdsForUser(userId, tenantId);
     }
     return this.jobStore.getRetainedJobIdsByUser(userId, tenantId);
-  }
-
-  async getRetainedCheckpointScopesForUser(
-    userId: string,
-    tenantId?: string,
-  ): Promise<RetainedCheckpointScope[]> {
-    const scopes = await this.jobStore.getRetainedCheckpointScopesByUser(userId, tenantId);
-    const unique = new Map<string, RetainedCheckpointScope>();
-    for (const scope of scopes) {
-      if (!scope.threadId || !isCleanupSafeCheckpointNamespace(scope.checkpointNamespace)) {
-        throw new Error('Invalid retained checkpoint scope');
-      }
-      unique.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
-    }
-    return [...unique.values()];
-  }
-
-  async acknowledgeCheckpointScopesForUser(
-    userId: string,
-    tenantId: string | undefined,
-    scopes: readonly RetainedCheckpointScope[],
-  ): Promise<void> {
-    await this.jobStore.acknowledgeCheckpointScopes(userId, tenantId, scopes);
   }
 
   /** Resolves every cleanup-blocking run attached to any target conversation.

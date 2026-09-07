@@ -10,8 +10,8 @@ const {
   normalizeHttpError,
   getWebSearchInstallEntries,
   getWebSearchUninstallFields,
-  deleteAgentCheckpointScopes,
-  getOwnedAgentCheckpointScope,
+  deleteOwnedAgentCheckpoints,
+  openCheckpointDeletion,
   isStopConfirmed,
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
@@ -422,10 +422,6 @@ const deleteUserController = async (req, res) => {
       user.id,
       user.tenantId,
     );
-    const retainedCheckpointScopes = await GenerationJobManager.getRetainedCheckpointScopesForUser(
-      user.id,
-      user.tenantId,
-    );
     const activeAgentJobs = await Promise.all(
       activeAgentRuns.map(async (streamId) => ({
         streamId,
@@ -437,16 +433,6 @@ const deleteUserController = async (req, res) => {
         job?.metadata?.userId === user.id &&
         (job.metadata.tenantId == null || job.metadata.tenantId === user.tenantId),
     );
-    const checkpointScopes = new Map();
-    for (const scope of retainedCheckpointScopes) {
-      checkpointScopes.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
-    }
-    for (const { job } of ownedAgentJobs) {
-      const scope = getOwnedAgentCheckpointScope(job, user.id, user.tenantId);
-      if (scope != null) {
-        checkpointScopes.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
-      }
-    }
     const stopResults = await Promise.all(
       ownedAgentJobs.map(({ streamId, job }) =>
         GenerationJobManager.abortJob(streamId, {
@@ -459,34 +445,30 @@ const deleteUserController = async (req, res) => {
       throw new Error('Agent generations could not be confirmed stopped');
     }
 
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: user.role,
+        userId: user.id,
+        tenantId: user.tenantId,
+      }));
+    const checkpointer = appConfig?.endpoints?.agents?.checkpointer;
+    const checkpointDeletion = await openCheckpointDeletion(
+      user.id,
+      user.tenantId,
+      undefined,
+      checkpointer,
+    );
+    await deleteOwnedAgentCheckpoints(user.id, user.tenantId, undefined, checkpointer);
+    await checkpointDeletion.acknowledge();
+
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
     await db.deleteTransactions({ user: user.id });
     await db.deleteUserKey({ userId: user.id, all: true });
     await db.deleteBalances({ user: user._id });
     await db.deletePresets(user.id);
-    let conversationsDeleted = false;
-    let checkpointer;
-    try {
-      await db.deleteConvos(user.id);
-      conversationsDeleted = true;
-      const appConfig =
-        req.config ??
-        (await getAppConfig({
-          role: req.user?.role,
-          userId: req.user?.id,
-          tenantId: req.user?.tenantId,
-        }));
-      checkpointer = appConfig?.endpoints?.agents?.checkpointer;
-    } catch (error) {
-      logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
-    }
-    if (conversationsDeleted && checkpointScopes.size > 0) {
-      const scopes = [...checkpointScopes.values()];
-      /** Legacy generations have no owner-bound namespace and remain for TTL cleanup. */
-      await deleteAgentCheckpointScopes(scopes, checkpointer);
-      await GenerationJobManager.acknowledgeCheckpointScopesForUser(user.id, user.tenantId, scopes);
-    }
+    await db.deleteConvos(user.id, {}, { allowEmpty: true });
     await deleteUserPluginAuth(user.id, null, true);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);

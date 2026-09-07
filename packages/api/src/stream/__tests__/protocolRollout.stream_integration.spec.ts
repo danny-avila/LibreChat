@@ -60,12 +60,8 @@ describe('Redis generation protocol rollout bridge', () => {
 
       expect(first.createdAt).toBe(second.createdAt);
       expect(first.checkpointNamespace).not.toBe(second.checkpointNamespace);
-      expect(first.checkpointNamespace).toMatch(
-        /^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
-      expect(second.checkpointNamespace).toMatch(
-        /^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
+      expect(first.checkpointNamespace).toMatch(/^lcg:v2:[0-9a-f]{64}:[0-9a-f-]{36}$/);
+      expect(second.checkpointNamespace).toMatch(/^lcg:v2:[0-9a-f]{64}:[0-9a-f-]{36}$/);
     } finally {
       now.mockRestore();
     }

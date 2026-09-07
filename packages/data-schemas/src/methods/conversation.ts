@@ -2989,7 +2989,7 @@ export function createConversationMethods(
           ),
           getMessages({ user, conversationId: filter.conversationId }, '_id', { limit: 1 }),
         ]);
-        if (descendants.length === 0 && rootMessages.length === 0) {
+        if (descendants.length === 0 && rootMessages.length === 0 && options?.allowEmpty !== true) {
           throw new Error('Conversation not found or already deleted.');
         }
         conversations = descendants;

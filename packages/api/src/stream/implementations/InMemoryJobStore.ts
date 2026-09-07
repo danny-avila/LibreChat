@@ -3,7 +3,6 @@ import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type {
   SerializableJobData,
-  RetainedCheckpointScope,
   CreatedJobData,
   ReplacedGeneration,
   SteerArmOutcome,
@@ -40,16 +39,11 @@ import {
   toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
 import {
-  checkpointReceiptExpiry,
-  createCheckpointNamespace,
-  isCleanupSafeCheckpointNamespace,
-  normalizeCheckpointTtlSeconds,
-} from '~/stream/checkpoints';
-import {
   isRecoveredSteerPayload,
   recoveredSteerPayloadMatches,
   RecoveredSteerPayloadMismatchError,
 } from '~/stream/SteerRecovery';
+import { createCheckpointNamespace } from '~/stream/checkpoints';
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
@@ -141,11 +135,6 @@ interface ContentState {
   collectedUsage: UsageMetadata[];
 }
 
-interface RetainedCheckpointReceipt {
-  scope: RetainedCheckpointScope;
-  expiresAt: number;
-}
-
 /**
  * In-memory implementation of IJobStoreV2.
  * Suitable for single-instance deployments.
@@ -164,9 +153,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
   /** Maps userId -> Set of streamIds (conversationIds) for active jobs */
   private userJobMap = new Map<string, Set<string>>();
-  /** Exact owner checkpoint identities outlive individual job records until
-   * destructive cleanup confirms their saver rows are gone. */
-  private checkpointScopesByOwner = new Map<string, Map<string, RetainedCheckpointReceipt>>();
 
   /**
    * Maps streamId -> last generation-activity timestamp. Refreshed via
@@ -278,68 +264,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     });
   }
 
-  private checkpointReceiptLifecycleTtlSeconds(job: SerializableJobData, now = Date.now()): number {
-    if (job.status === 'running') {
-      return Math.ceil(this.staleJobTimeout / 1000);
-    }
-    if (job.status === 'requires_action') {
-      const expiresAt = job.pendingAction?.expiresAt;
-      return expiresAt == null ? 0 : Math.max(0, Math.ceil((expiresAt - now) / 1000));
-    }
-    return Math.max(
-      job.terminalPersistencePending === true
-        ? Math.ceil(TERMINAL_PERSISTENCE_RETENTION_MS / 1000)
-        : 0,
-      job.providerDrained === false ? Math.ceil(PROVIDER_DRAIN_TIMEOUT_MS / 1000) : 0,
-    );
-  }
-
-  private retainCheckpointScope(job: SerializableJobData, now = Date.now()): void {
-    if (
-      job.generationProtocolVersion !== 2 ||
-      !job.conversationId ||
-      !isCleanupSafeCheckpointNamespace(job.checkpointNamespace)
-    ) {
-      return;
-    }
-    const ownerKey = job.tenantId ? `${job.tenantId}:${job.userId}` : job.userId;
-    let ownerScopes = this.checkpointScopesByOwner.get(ownerKey);
-    if (ownerScopes == null) {
-      ownerScopes = new Map();
-      this.checkpointScopesByOwner.set(ownerKey, ownerScopes);
-    }
-    const scope = {
-      threadId: job.conversationId,
-      checkpointNamespace: job.checkpointNamespace,
-    };
-    const key = `${scope.threadId}\u0000${scope.checkpointNamespace}`;
-    const expiresAt = checkpointReceiptExpiry(
-      job.checkpointTtlSeconds,
-      this.checkpointReceiptLifecycleTtlSeconds(job, now),
-      now,
-    );
-    const current = ownerScopes.get(key);
-    ownerScopes.set(key, {
-      scope,
-      expiresAt: Math.max(current?.expiresAt ?? 0, expiresAt),
-    });
-  }
-
-  private pruneCheckpointScopes(ownerKey: string, now = Date.now()): void {
-    const retained = this.checkpointScopesByOwner.get(ownerKey);
-    if (retained == null) {
-      return;
-    }
-    for (const [key, receipt] of retained) {
-      if (receipt.expiresAt <= now) {
-        retained.delete(key);
-      }
-    }
-    if (retained.size === 0) {
-      this.checkpointScopesByOwner.delete(ownerKey);
-    }
-  }
-
   async createJob(
     streamId: string,
     userId: string,
@@ -387,7 +311,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     const safeInitialMetadata = { ...initialMetadata };
     delete safeInitialMetadata.providerDrained;
-    delete safeInitialMetadata.checkpointTtlSeconds;
     const assertOwnerCompatible = (): void => {
       const existingJob = this.jobs.get(streamId);
       if (
@@ -613,8 +536,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       createdAt,
       generationProtocolVersion: initialMetadata.generationProtocolVersion === 1 ? 1 : 2,
       ...(initialMetadata.generationProtocolVersion !== 1 && {
-        checkpointNamespace: createCheckpointNamespace(),
-        checkpointTtlSeconds: normalizeCheckpointTtlSeconds(initialMetadata.checkpointTtlSeconds),
+        checkpointNamespace: createCheckpointNamespace(userId, tenantId),
       }),
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && {
@@ -704,7 +626,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
       this.userJobMap.set(userKey, userJobs);
     }
     userJobs.add(streamId);
-    this.retainCheckpointScope(job, now);
 
     const createdJob: CreatedJobData = previousJob == null ? job : { ...job };
     if (previousJob != null) {
@@ -797,9 +718,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     // Plain field writer. Membership-aware status transitions
     // (running ⇄ requires_action) go solely through transitionStatus.
-    const safeUpdates = { ...updates };
-    delete safeUpdates.checkpointTtlSeconds;
-    Object.assign(job, safeUpdates);
+    Object.assign(job, updates);
   }
 
   async markProviderExecutionDrained(
@@ -876,14 +795,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     job.status = args.to;
     if (args.patch) {
-      const safePatch = { ...args.patch };
-      delete safePatch.checkpointTtlSeconds;
-      Object.assign(job, safePatch);
+      Object.assign(job, args.patch);
     }
     for (const field of args.clear ?? []) {
       delete job[field];
     }
-    this.retainCheckpointScope(job);
     const receiptEntries = this.steerReceipts.get(streamId)?.values() ?? [];
     if (args.to === 'requires_action' && args.patch?.pendingAction?.expiresAt == null) {
       // Unlike Redis, this store has no paused-job backstop eviction. Preserve
@@ -1111,7 +1027,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
 
     this.retainGenerationEpoch(streamId, job.createdAt);
-    this.retainCheckpointScope(job);
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
@@ -1138,7 +1053,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (job && (expectedCreatedAt == null || job.createdAt === expectedCreatedAt)) {
       const now = Date.now();
       this.lastActivity.set(streamId, now);
-      this.retainCheckpointScope(job, now);
       const receiptExpiry = now + STEER_RECEIPT_TTL_MS;
       for (const entry of this.steerReceipts.get(streamId)?.values() ?? []) {
         if (entry.receipt.generationCreatedAt === job.createdAt) {
@@ -1215,10 +1129,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const now = Date.now();
     const toDelete: Array<{ streamId: string; createdAt: number }> = [];
     let staleRunning = 0;
-
-    for (const ownerKey of this.checkpointScopesByOwner.keys()) {
-      this.pruneCheckpointScopes(ownerKey, now);
-    }
 
     // Expired parked steers are otherwise only purged by a claim.
     for (const [streamId, parked] of this.parkedSteers) {
@@ -1328,7 +1238,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
         job.terminalHostActionPending = true;
         delete job.pendingAction;
         delete job.pendingActionId;
-        this.retainCheckpointScope(job, now);
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
         // longer than the stale timeout. These are crashed/hung generations that
@@ -1435,7 +1344,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     this.jobs.clear();
     this.contentState.clear();
     this.userJobMap.clear();
-    this.checkpointScopesByOwner.clear();
     this.steerQueues.clear();
     this.claimedSteers.clear();
     this.closedSteerQueues.clear();
@@ -1467,35 +1375,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
       const job = this.jobs.get(streamId);
       return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
     });
-  }
-
-  async getRetainedCheckpointScopesByUser(
-    userId: string,
-    tenantId?: string,
-  ): Promise<RetainedCheckpointScope[]> {
-    const ownerKey = tenantId ? `${tenantId}:${userId}` : userId;
-    this.pruneCheckpointScopes(ownerKey);
-    return [...(this.checkpointScopesByOwner.get(ownerKey)?.values() ?? [])].map(
-      ({ scope }) => scope,
-    );
-  }
-
-  async acknowledgeCheckpointScopes(
-    userId: string,
-    tenantId: string | undefined,
-    scopes: readonly RetainedCheckpointScope[],
-  ): Promise<void> {
-    const ownerKey = tenantId ? `${tenantId}:${userId}` : userId;
-    const retained = this.checkpointScopesByOwner.get(ownerKey);
-    if (retained == null) {
-      return;
-    }
-    for (const scope of scopes) {
-      retained.delete(`${scope.threadId}\u0000${scope.checkpointNamespace}`);
-    }
-    if (retained.size === 0) {
-      this.checkpointScopesByOwner.delete(ownerKey);
-    }
   }
 
   private getJobIdsByUser(

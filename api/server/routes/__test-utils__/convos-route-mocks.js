@@ -4,8 +4,6 @@ const generationJobManager = {
   abortJob: jest.fn().mockResolvedValue({ success: true }),
   getCleanupBlockingJobIdsForUser: jest.fn().mockResolvedValue([]),
   getCleanupBlockingJobIdsForConversations: jest.fn().mockResolvedValue([]),
-  getRetainedCheckpointScopesForUser: jest.fn().mockResolvedValue([]),
-  acknowledgeCheckpointScopesForUser: jest.fn().mockResolvedValue(),
 };
 const subagentActivityHandlerInputs = [];
 const moderatedTexts = [];
@@ -23,27 +21,42 @@ const deleteAgentCheckpoints = jest.fn(async (threadIds = []) => {
     }
   }
 });
-const deleteAgentCheckpointScopes = jest.fn(async (scopes = []) => {
+const ownerPrefix = (userId, tenantId) =>
+  `lcg:v2:${require('crypto')
+    .createHash('sha256')
+    .update(JSON.stringify([tenantId ?? null, userId]))
+    .digest('hex')}:`;
+const deleteOwnedAgentCheckpoints = jest.fn(async (userId, tenantId, threadIds) => {
   for (let index = checkpointRows.length - 1; index >= 0; index -= 1) {
     const row = checkpointRows[index];
-    const matches = scopes.some(
-      (scope) =>
-        row.threadId === scope.threadId &&
-        (row.checkpointNamespace === scope.checkpointNamespace ||
-          row.checkpointNamespace.startsWith(`${scope.checkpointNamespace}|`)),
-    );
-    if (matches) {
+    if (
+      (threadIds == null || threadIds.includes(row.threadId)) &&
+      row.checkpointNamespace.startsWith(ownerPrefix(userId, tenantId))
+    ) {
       checkpointRows.splice(index, 1);
     }
   }
 });
+const deletionTargets = new Map();
+const openCheckpointDeletion = jest.fn(async (userId, tenantId, root) => {
+  const key = JSON.stringify([userId, tenantId, root]);
+  const ids = deletionTargets.get(key) ?? new Set();
+  deletionTargets.set(key, ids);
+  return {
+    conversationIds: () => [...ids],
+    remember: async (targets) => targets.forEach((id) => ids.add(id)),
+    acknowledge: async () => deletionTargets.delete(key),
+  };
+});
 
 function resetCheckpointRows(rows = []) {
   checkpointRows.splice(0, checkpointRows.length, ...rows);
+  deletionTargets.clear();
 }
 
 module.exports = {
   archiveAllHandler,
+  ownerPrefix,
   generationJobManager,
   subagentActivityHandlerInputs,
   moderateText,
@@ -126,26 +139,6 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ threads: [] }),
     ),
     GenerationJobManager: generationJobManager,
-    getOwnedAgentCheckpointScope: jest.fn((job, userId, tenantId) => {
-      const metadata = job?.metadata;
-      if (
-        metadata?.userId !== userId ||
-        (metadata.tenantId ?? undefined) !== (tenantId ?? undefined) ||
-        metadata.generationProtocolVersion !== 2 ||
-        typeof metadata.conversationId !== 'string' ||
-        metadata.conversationId.length === 0 ||
-        typeof metadata.checkpointNamespace !== 'string' ||
-        !/^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
-          metadata.checkpointNamespace,
-        )
-      ) {
-        return undefined;
-      }
-      return {
-        threadId: metadata.conversationId,
-        checkpointNamespace: metadata.checkpointNamespace,
-      };
-    }),
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',
     ),
@@ -156,7 +149,8 @@ module.exports = {
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints,
-    deleteAgentCheckpointScopes,
+    deleteOwnedAgentCheckpoints,
+    openCheckpointDeletion,
     isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
     ...overrides,
   }),

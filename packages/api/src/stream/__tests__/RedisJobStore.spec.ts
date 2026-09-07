@@ -685,39 +685,6 @@ describe('RedisJobStore', () => {
     );
   });
 
-  test('fails creation when the checkpoint receipt cannot be registered', async () => {
-    const redis = {
-      isCluster: true,
-      eval: jest.fn(async (_script: string, keyCount: number) => {
-        if (keyCount === 2) {
-          throw new Error('owner index unavailable');
-        }
-        return ['', '', '100'];
-      }),
-      sadd: jest.fn().mockResolvedValue(1),
-      srem: jest.fn().mockResolvedValue(1),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    await expect(
-      store.createJob('stream-registration-failure', 'user-1', 'conversation-1'),
-    ).rejects.toThrow('Created job membership could not be verified');
-  });
-
-  test('propagates checkpoint acknowledgement failures', async () => {
-    const redis = {
-      isCluster: true,
-      zrem: jest.fn().mockRejectedValue(new Error('ack unavailable')),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    await expect(
-      store.acknowledgeCheckpointScopes('user-1', 'tenant-1', [
-        { threadId: 'conversation-1', checkpointNamespace: 'namespace-1' },
-      ]),
-    ).rejects.toThrow('ack unavailable');
-  });
-
   test('guards local content caches by creation epoch', async () => {
     const evalRedis = jest.fn().mockResolvedValue(false);
     const redis = {
@@ -791,7 +758,7 @@ describe('RedisJobStore', () => {
     const started: string[] = [];
 
     const evalJobCreation = jest.fn((_script: string, keyCount: number) => {
-      if (keyCount === 2) {
+      if (keyCount === 1) {
         started.push('owner');
         return ownerRegistration.promise;
       }
@@ -912,13 +879,9 @@ describe('RedisJobStore', () => {
       eval: jest.fn(async (_script: string, keyCount: number, ...args: string[]) => {
         if (keyCount === 10) {
           durableHash = { ...durableHash, status: 'requires_action' };
-          return 1;
-        }
-        const [ownerKey, , streamId, active] = args;
-        if (active === '1') {
-          await sadd(ownerKey, streamId);
         } else {
-          await srem(ownerKey, streamId);
+          const [ownerKey, streamId] = args;
+          await sadd(ownerKey, streamId);
         }
         return 1;
       }),

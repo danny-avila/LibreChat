@@ -2,10 +2,9 @@ import {
   resolveCheckpointerConfig,
   getApprovalTtlMs,
   getAgentCheckpointer,
-  getOwnedAgentCheckpointScope,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
-  deleteAgentCheckpointScopes,
+  deleteOwnedAgentCheckpoints,
   DEFAULT_CHECKPOINT_TTL_SECONDS,
   __resetCheckpointerForTests,
 } from './checkpointer';
@@ -53,50 +52,19 @@ describe('getApprovalTtlMs', () => {
   });
 });
 
-describe('checkpoint cleanup scopes', () => {
-  const metadata = {
-    userId: 'user-1',
-    tenantId: 'tenant-1',
-    conversationId: 'conversation-1',
-    generationProtocolVersion: 2 as const,
-  };
-
-  test('accepts only the explicit cleanup-safe namespace format', () => {
-    const safeNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000001';
-    expect(
-      getOwnedAgentCheckpointScope(
-        { metadata: { ...metadata, checkpointNamespace: safeNamespace } },
-        'user-1',
-        'tenant-1',
-      ),
-    ).toEqual({ threadId: 'conversation-1', checkpointNamespace: safeNamespace });
-    expect(
-      getOwnedAgentCheckpointScope(
-        { metadata: { ...metadata, checkpointNamespace: '1000' } },
-        'user-1',
-        'tenant-1',
-      ),
-    ).toBeUndefined();
+describe('owner checkpoint cleanup', () => {
+  test('requires an authenticated owner', async () => {
+    await expect(deleteOwnedAgentCheckpoints('', undefined, undefined)).rejects.toThrow('owner');
   });
-
-  test('rejects an unsafe bulk scope before saver access', async () => {
+  test('does not require a database in memory mode', async () => {
     await expect(
-      deleteAgentCheckpointScopes([{ threadId: 'conversation-1', checkpointNamespace: '1000' }]),
-    ).rejects.toThrow('Invalid cleanup-safe checkpoint scope');
-  });
-
-  test('treats cleanup receipt acknowledgement as complete for a memory saver', async () => {
-    await expect(
-      deleteAgentCheckpointScopes(
-        [
-          {
-            threadId: 'conversation-1',
-            checkpointNamespace: 'lcg:v1:00000000-0000-4000-8000-000000000001',
-          },
-        ],
-        { type: 'memory' },
-      ),
+      deleteOwnedAgentCheckpoints('user-1', undefined, undefined, { type: 'memory' }),
     ).resolves.toBeUndefined();
+  });
+  test('fails closed when the durable database is unavailable', async () => {
+    await expect(deleteOwnedAgentCheckpoints('user-1', undefined, undefined)).rejects.toThrow(
+      'unavailable',
+    );
   });
 });
 

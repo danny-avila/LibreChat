@@ -9,7 +9,7 @@ import {
   hasDurableAgentInterruptCheckpoint,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
-  deleteAgentCheckpointScopes,
+  deleteOwnedAgentCheckpoints,
   forkAgentEventCheckpoint,
   captureAgentEventCheckpoint,
   LazyMongoSaver,
@@ -19,6 +19,7 @@ import {
   setupCheckpointIndexes,
   __resetCheckpointerForTests,
 } from './checkpointer';
+import { createCheckpointNamespace } from '../stream/checkpoints';
 
 /**
  * Integration tests for the durable Mongo checkpointer seam, against a real
@@ -621,19 +622,13 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
   it('bulk-deletes only an owned generation scope when thread IDs collide', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `collision-${new mongoose.Types.ObjectId().toString()}`;
-    const ownedNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000001';
+    const ownedNamespace = createCheckpointNamespace('owner', 'tenant');
     await seedInterruptCheckpoint(saver!, threadId, ownedNamespace);
     await seedInterruptCheckpoint(saver!, threadId, `${ownedNamespace}|subgraph`);
     await seedInterruptCheckpoint(saver!, threadId, 'foreign-generation');
     await seedInterruptCheckpoint(saver!, threadId, '');
 
-    await deleteAgentCheckpointScopes(
-      [
-        { threadId, checkpointNamespace: ownedNamespace },
-        { threadId, checkpointNamespace: ownedNamespace },
-      ],
-      MONGO_CFG,
-    );
+    await deleteOwnedAgentCheckpoints('owner', 'tenant', [threadId, threadId], MONGO_CFG);
 
     expect(await saver!.getTuple(readConfig(threadId, ownedNamespace))).toBeUndefined();
     expect(
@@ -653,17 +648,13 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     ).toBe(2);
   });
 
-  it('propagates a bulk checkpoint deletion failure so its receipt is retained', async () => {
-    const namespace = 'lcg:v1:00000000-0000-4000-8000-000000000002';
+  it('propagates a bulk checkpoint deletion failure for retry', async () => {
     const deletion = jest
       .spyOn(mongoose.mongo.Collection.prototype, 'deleteMany')
       .mockRejectedValueOnce(new Error('checkpoint deletion unavailable'));
     try {
       await expect(
-        deleteAgentCheckpointScopes(
-          [{ threadId: 'conversation-1', checkpointNamespace: namespace }],
-          MONGO_CFG,
-        ),
+        deleteOwnedAgentCheckpoints('owner', 'tenant', ['conversation-1'], MONGO_CFG),
       ).rejects.toThrow('checkpoint deletion unavailable');
     } finally {
       deletion.mockRestore();

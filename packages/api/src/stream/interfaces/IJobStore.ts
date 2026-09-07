@@ -118,9 +118,6 @@ export interface SerializableJobData {
    * `checkpoint_ns`, which the saver adapter maps to this storage scope.
    * Legacy paused jobs omit it and use the historical unscoped storage. */
   checkpointNamespace?: string;
-  /** Checkpointer TTL captured when this generation starts. Receipt retention
-   * uses it to outlive the last saver write after the job itself disappears. */
-  checkpointTtlSeconds?: number;
   completedAt?: number;
   conversationId?: string;
   error?: string;
@@ -377,11 +374,6 @@ export interface SerializableJobData {
   steersClosed?: boolean;
 }
 
-export interface RetainedCheckpointScope {
-  threadId: string;
-  checkpointNamespace: string;
-}
-
 /** Exact active hash replaced by one atomic job creation. Built-in stores keep
  * this as non-enumerable transaction metadata; Redis also retains a private
  * receipt in the replacement hash so a committed create with a lost reply can
@@ -488,7 +480,6 @@ export type JobMetadataPatch = Partial<
     | 'providerExecutionId'
     | 'providerDrained'
     | 'generationProtocolVersion'
-    | 'checkpointTtlSeconds'
     | 'resolvedAskUserQuestions'
   >
 >;
@@ -967,18 +958,6 @@ export interface IJobStore {
    * stale paused generation that account deletion must erase before its worker
    * finalizes it. Optional custom stores fall back to cleanup-blocking jobs. */
   getRetainedJobIdsByUser?(userId: string, tenantId?: string): Promise<string[]>;
-  /** Enumerates exact-owner v2 checkpoint identities independently of the
-   * shorter-lived generation job hash. */
-  getRetainedCheckpointScopesByUser?(
-    userId: string,
-    tenantId?: string,
-  ): Promise<RetainedCheckpointScope[]>;
-  /** Removes only receipts whose saver deletion completed successfully. */
-  acknowledgeCheckpointScopes?(
-    userId: string,
-    tenantId: string | undefined,
-    scopes: readonly RetainedCheckpointScope[],
-  ): Promise<void>;
   setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void;
   setContentParts(
     streamId: string,
@@ -1073,17 +1052,6 @@ export interface IJobStoreV2 extends IJobStore {
 
   /** Get a job by streamId (streamId === conversationId) */
   getJob(streamId: string): Promise<SerializableJobData | null>;
-
-  getRetainedCheckpointScopesByUser(
-    userId: string,
-    tenantId?: string,
-  ): Promise<RetainedCheckpointScope[]>;
-
-  acknowledgeCheckpointScopes(
-    userId: string,
-    tenantId: string | undefined,
-    scopes: readonly RetainedCheckpointScope[],
-  ): Promise<void>;
 
   /**
    * Update job data. When `expectedCreatedAt` is supplied, apply the write only

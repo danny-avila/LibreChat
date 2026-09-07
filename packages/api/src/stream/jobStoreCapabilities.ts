@@ -10,8 +10,6 @@ import type { IJobStore, IJobStoreV2 } from './interfaces/IJobStore';
  */
 export const JOB_STORE_V2_REQUIRED_METHODS = [
   'acknowledgeReplacedJobs',
-  'getRetainedCheckpointScopesByUser',
-  'acknowledgeCheckpointScopes',
   'markProviderExecutionDrained',
   'beginProviderExecution',
   'getCleanupBlockingJobIdsByUser',
@@ -46,7 +44,6 @@ type MethodKeys<T> = {
   [Key in keyof T]-?: NonNullable<T[Key]> extends (...args: never[]) => unknown ? Key : never;
 }[keyof T];
 type V2OnlyMethod = Exclude<MethodKeys<IJobStoreV2>, keyof IJobStore>;
-type V2RequiredOverrideMethod = 'getRetainedCheckpointScopesByUser' | 'acknowledgeCheckpointScopes';
 type SameUnion<Left, Right> = [Left] extends [Right]
   ? [Right] extends [Left]
     ? true
@@ -54,9 +51,7 @@ type SameUnion<Left, Right> = [Left] extends [Right]
   : false;
 type AssertTrue<Value extends true> = Value;
 /** Compile-time tripwire: adding a v2-only method requires updating the runtime assertion. */
-type _AllV2MethodsHaveRuntimeChecks = AssertTrue<
-  SameUnion<V2OnlyMethod | V2RequiredOverrideMethod, JobStoreV2RequiredMethod>
->;
+type _AllV2MethodsHaveRuntimeChecks = AssertTrue<SameUnion<V2OnlyMethod, JobStoreV2RequiredMethod>>;
 
 /** Return the v2 capabilities absent from a legacy-compatible store. */
 export function getMissingJobStoreV2Methods(store: IJobStore): JobStoreV2RequiredMethod[] {

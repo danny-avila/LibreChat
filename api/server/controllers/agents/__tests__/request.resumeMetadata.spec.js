@@ -273,9 +273,6 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
-  resolveCheckpointerConfig: (config) => ({
-    ttlSeconds: typeof config?.ttl === 'number' && config.ttl > 0 ? config.ttl : 86400,
-  }),
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -973,7 +970,7 @@ describe('ResumableAgentController resume metadata', () => {
         generationProtocolVersion: 2,
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
       },
-      config: { endpoints: { agents: { checkpointer: { ttl: 123 } } } },
+      config: {},
     };
     const res = createResumableResponse();
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop after negotiation'));
@@ -985,10 +982,7 @@ describe('ResumableAgentController resume metadata', () => {
       'user-123',
       'conversation-123',
       expect.objectContaining({
-        initialMetadata: expect.objectContaining({
-          generationProtocolVersion: 2,
-          checkpointTtlSeconds: 123,
-        }),
+        initialMetadata: expect.objectContaining({ generationProtocolVersion: 2 }),
       }),
     );
     expect(res.set).toHaveBeenCalledWith('x-librechat-generation-protocol', '2');

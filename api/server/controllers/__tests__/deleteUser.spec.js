@@ -22,8 +22,6 @@ const mockDeleteUserSkills = jest.fn();
 const mockDeleteUserCodeEnvironments = jest.fn();
 const mockInvalidateCodeEnvironmentConfigCache = jest.fn();
 const mockGetCleanupBlockingJobIdsForUser = jest.fn();
-const mockGetRetainedCheckpointScopesForUser = jest.fn();
-const mockAcknowledgeCheckpointScopesForUser = jest.fn();
 const mockGetAgentJob = jest.fn();
 const mockAbortJob = jest.fn();
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn();
@@ -60,10 +58,6 @@ jest.mock('@librechat/api', () => ({
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
   GenerationJobManager: {
     getAccountCleanupJobIdsForUser: (...args) => mockGetCleanupBlockingJobIdsForUser(...args),
-    getRetainedCheckpointScopesForUser: (...args) =>
-      mockGetRetainedCheckpointScopesForUser(...args),
-    acknowledgeCheckpointScopesForUser: (...args) =>
-      mockAcknowledgeCheckpointScopesForUser(...args),
     getJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
@@ -71,7 +65,8 @@ jest.mock('@librechat/api', () => ({
   isStopConfirmed: jest.fn(
     (result) => result?.success === true || result?.failureReason === 'already_settled',
   ),
-  deleteAgentCheckpointScopes: jest.fn(),
+  deleteOwnedAgentCheckpoints: jest.fn(),
+  openCheckpointDeletion: jest.fn(async () => ({ acknowledge: jest.fn() })),
 }));
 
 jest.mock('~/models', () => ({
@@ -163,7 +158,7 @@ jest.mock('~/cache', () => ({
 }));
 
 const { deleteUserController } = require('~/server/controllers/UserController');
-const { deleteAgentCheckpointScopes } = require('@librechat/api');
+const { deleteOwnedAgentCheckpoints } = require('@librechat/api');
 
 function createRes() {
   const res = {};
@@ -192,8 +187,6 @@ function stubDeletionMocks() {
   mockDeleteUserSkills.mockResolvedValue(0);
   mockInvalidateCodeEnvironmentConfigCache.mockResolvedValue(undefined);
   mockGetCleanupBlockingJobIdsForUser.mockResolvedValue([]);
-  mockGetRetainedCheckpointScopesForUser.mockResolvedValue([]);
-  mockAcknowledgeCheckpointScopesForUser.mockResolvedValue();
   mockGetAgentJob.mockResolvedValue(null);
   mockAbortJob.mockResolvedValue({ success: true });
   mockDrainAgentTriggerDeliveriesForUser.mockResolvedValue();
@@ -280,8 +273,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
   });
 
-  it('deletes and acknowledges retained checkpoints after their job records expire', async () => {
-    const scope = { threadId: 'conversation-1', checkpointNamespace: 'generation-1' };
+  it('deletes owner checkpoints before account persistence after job records expire', async () => {
     const req = {
       user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },
       body: {},
@@ -289,16 +281,14 @@ describe('deleteUserController - 2FA enforcement', () => {
     };
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
-    mockGetRetainedCheckpointScopesForUser.mockResolvedValueOnce([scope]);
 
     await deleteUserController(req, res);
 
-    expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith([scope], { ttl: 60 });
-    expect(mockAcknowledgeCheckpointScopesForUser).toHaveBeenCalledWith('user1', 'tenant-1', [
-      scope,
-    ]);
-    expect(deleteAgentCheckpointScopes.mock.invocationCallOrder[0]).toBeLessThan(
-      mockAcknowledgeCheckpointScopesForUser.mock.invocationCallOrder[0],
+    expect(deleteOwnedAgentCheckpoints).toHaveBeenCalledWith('user1', 'tenant-1', undefined, {
+      ttl: 60,
+    });
+    expect(deleteOwnedAgentCheckpoints.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteConvos.mock.invocationCallOrder[0],
     );
   });
 
