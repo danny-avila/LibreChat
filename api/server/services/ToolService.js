@@ -54,6 +54,7 @@ const {
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
+  checkAccessWithRequestCache,
 } = require('@librechat/api');
 const {
   Time,
@@ -67,8 +68,10 @@ const {
   EModelEndpoint,
   EToolResources,
   isActionTool,
+  Permissions,
   actionDelimiter,
   ImageVisionTool,
+  PermissionTypes,
   hasActivePiiFields,
   hasActivePiiPatterns,
   openapiToFunction,
@@ -107,7 +110,7 @@ const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSe
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { findPluginAuthsByKeys } = require('~/models');
+const { findPluginAuthsByKeys, getRoleByName } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
@@ -135,6 +138,76 @@ const getActiveToolResources = (toolResources, tools) => {
   }
 
   return Object.keys(activeResources).length > 0 ? activeResources : null;
+};
+
+/**
+ * Role permission that gates a built-in tool, keyed by tool name. The matching
+ * `AgentCapabilities` entry is the instance-wide deployment switch; this is the
+ * per-role grant, so a tool has to clear both. Mirrors `toolAccessPermType` in
+ * `~/server/controllers/tools.js`, which gates the direct tool-call endpoint —
+ * the run path is the other half of the same door.
+ */
+const toolRoleGates = {
+  [Tools.file_search]: {
+    capability: AgentCapabilities.file_search,
+    permissionType: PermissionTypes.FILE_SEARCH,
+  },
+  [Tools.execute_code]: {
+    capability: AgentCapabilities.execute_code,
+    permissionType: PermissionTypes.RUN_CODE,
+  },
+};
+
+/**
+ * Resolves role permissions for the gated tools an agent actually requests, so
+ * the synchronous capability filter can consult them — the same reason
+ * `canUseMCP` is resolved ahead of it. Tools whose capability is already off are
+ * skipped, and repeat checks are served by the per-request permission cache, so
+ * a run costs at most one role read.
+ *
+ * Fails closed: a check that throws denies the tool.
+ *
+ * @param {ServerRequest} req
+ * @param {string[]} [tools] - The agent's configured tool names.
+ * @param {Set<string>} enabledCapabilities - Capabilities enabled for this run.
+ * @returns {Promise<(tool: string) => boolean>} Predicate that returns `true`
+ * for any tool carrying no role permission.
+ */
+const resolveToolRolePermissions = async (req, tools, enabledCapabilities) => {
+  const gated = new Set(
+    (tools ?? []).filter((tool) => {
+      const gate = toolRoleGates[tool];
+      return gate != null && enabledCapabilities.has(gate.capability);
+    }),
+  );
+  if (gated.size === 0) {
+    return () => true;
+  }
+
+  const granted = new Map();
+  for (const tool of gated) {
+    const { permissionType } = toolRoleGates[tool];
+    let allowed = false;
+    try {
+      allowed = await checkAccessWithRequestCache({
+        req,
+        user: req?.user,
+        permissionType,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
+    } catch {
+      logger.error(`[${permissionType}][User: ${req?.user?.id}] Failed tool permission check`);
+    }
+    if (!allowed) {
+      logger.warn(
+        `[${permissionType}] Forbidden: Insufficient permissions for User ${req?.user?.id}: ${Permissions.USE}`,
+      );
+    }
+    granted.set(tool, allowed);
+  }
+
+  return (tool) => granted.get(tool) ?? true;
 };
 
 const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
@@ -801,13 +874,14 @@ async function loadToolDefinitionsWrapper({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
+  const canUseTool = await resolveToolRolePermissions(req, agent.tools, enabledCapabilities);
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return checkCapability(AgentCapabilities.file_search) && canUseTool(tool);
     }
     if (tool === Tools.execute_code) {
-      return checkCapability(AgentCapabilities.execute_code);
+      return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     }
     if (tool === Tools.web_search) {
       return checkCapability(AgentCapabilities.web_search);
@@ -1575,13 +1649,14 @@ async function loadAgentTools({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
+  const canUseTool = await resolveToolRolePermissions(req, agent.tools, enabledCapabilities);
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return checkCapability(AgentCapabilities.file_search) && canUseTool(tool);
     } else if (tool === Tools.execute_code) {
-      return checkCapability(AgentCapabilities.execute_code);
+      return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     } else if (tool === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;

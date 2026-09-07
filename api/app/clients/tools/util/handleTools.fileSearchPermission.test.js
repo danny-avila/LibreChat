@@ -81,9 +81,7 @@ describe('loadTools — FILE_SEARCH permission gate', () => {
 
     await loadTools(buildOptions());
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining(PermissionTypes.FILE_SEARCH),
-    );
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(PermissionTypes.FILE_SEARCH));
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('user-1'));
   });
 
