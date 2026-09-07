@@ -1492,6 +1492,17 @@ export default function useResumableSSE(
       };
 
       /**
+       * The identities this pane may be rendering the in-flight response under
+       * before the first run step renames it to the server's pre-allocated id:
+       * the submission's placeholder (updated on `created`) and the padded form
+       * of the live user message. Read at call time — `created` reassigns both.
+       */
+      const livePlaceholderIds = () => [
+        currentSubmission.initialResponse?.messageId,
+        userMessage?.messageId ? `${userMessage.messageId}_` : undefined,
+      ];
+
+      /**
        * Places an injected steer part on the in-flight response message and
        * resolves its pending chip. Same bounded next-frame retry as pending
        * actions for the inject-before-render race (the assistant placeholder
@@ -1535,7 +1546,7 @@ export default function useResumableSSE(
          * steer part is placed and synced. */
         flushPendingDeltas();
         const messages = getMessages() ?? [];
-        const index = findSteerMessageIndex(messages, event);
+        const index = findSteerMessageIndex(messages, event, livePlaceholderIds());
         if (index < 0) {
           retryNextFrame();
           return;
@@ -1591,7 +1602,7 @@ export default function useResumableSSE(
          * copy back into the step handler's authoritative map). */
         flushPendingDeltas();
         const messages = getMessages() ?? [];
-        const index = findActivityLabelMessageIndex(messages, event);
+        const index = findActivityLabelMessageIndex(messages, event, livePlaceholderIds());
         if (index < 0) {
           retryNextFrame();
           return;

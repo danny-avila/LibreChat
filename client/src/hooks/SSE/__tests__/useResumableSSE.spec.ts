@@ -2392,6 +2392,72 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('renders a steer applied before the first run step on the live placeholder', async () => {
+    const requestFrame = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    const userMessage = {
+      messageId: 'user-1',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const submission = buildSubmission({ userMessage });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+
+    /** `created` carries only the user message; the pane renders the response
+     *  under `${userMessageId}_` until the first run step renames it. */
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({ created: true, message: { ...userMessage } }),
+      });
+    });
+    chatHelpers.getMessages.mockReturnValue([
+      userMessage,
+      { messageId: 'user-1_', conversationId: CONV_ID, isCreatedByUser: false, content: [] },
+    ] as TMessage[]);
+    chatHelpers.setMessages.mockClear();
+
+    /** An interrupt before the model has said a word: the steer is injected at
+     *  content index 0, stamped with the server's pre-allocated response id —
+     *  which no local row carries yet. */
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'server-1',
+            clientSteerId: 'client-1',
+            conversationId: CONV_ID,
+            responseMessageId: 'a1b2c3d4-preallocated',
+            index: 0,
+            part: {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'change of plan',
+              steerId: 'server-1',
+              clientSteerId: 'client-1',
+            },
+          },
+        }),
+      });
+    });
+
+    const committed = chatHelpers.setMessages.mock.calls
+      .map(([messages]) => messages as TMessage[])
+      .find((messages) => messages?.some((m) => m.messageId === 'user-1_'));
+    const placeholder = committed?.find((m) => m.messageId === 'user-1_');
+    expect(placeholder?.content?.[0]).toEqual(
+      expect.objectContaining({ type: ContentTypes.STEER, steerId: 'server-1' }),
+    );
+    /** Landed on the first pass — no frame retries burned waiting for a rename
+     *  that only the first run step can perform. */
+    expect(requestFrame).not.toHaveBeenCalled();
+    requestFrame.mockRestore();
+    unmount();
+  });
+
   it('settles every applied steer immediately and cancels all render retries at terminal', async () => {
     let nextFrameId = 0;
     const requestFrame = jest
