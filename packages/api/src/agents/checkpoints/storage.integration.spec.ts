@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { emptyCheckpoint, INTERRUPT } from '@langchain/langgraph-checkpoint';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import type { Collection } from 'mongodb';
 import {
   getAgentCheckpointer,
   __resetCheckpointerForTests,
@@ -229,6 +230,7 @@ test('captures nested pending writes without a checkpoint and retains them acros
   const recover = createCheckpointDeletionReclaimer(async () => []);
   const originalDelete = mongoose.mongo.Collection.prototype.deleteMany;
   jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany').mockImplementation(function (
+    this: Collection,
     ...args
   ) {
     if (this.collectionName === 'old_writes')
@@ -248,4 +250,164 @@ test('captures nested pending writes without a checkpoint and retains them acros
   for (let pass = 0; pass < 3; pass++) await recover(25);
   expect(await db.collection('old_writes').countDocuments()).toBe(0);
   expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
+});
+
+test.each(['thread', undefined])(
+  'final cleanup discovers a store registered during drain (root=%s)',
+  async (root) => {
+    const deletion = await openCheckpointDeletion('owner', undefined, root, { type: 'memory' });
+    await deletion.remember(['thread']);
+    await seed({
+      configurable: { thread_id: 'thread', checkpoint_ns: createCheckpointNamespace('owner') },
+    });
+    await deletion.cleanup();
+    await deletion.acknowledge();
+    const db = mongoose.connection.db!;
+    expect(await db.collection('old_cp').countDocuments()).toBe(0);
+    expect(await db.collection('old_writes').countDocuments()).toBe(0);
+    expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(
+      root == null ? 0 : 1,
+    );
+  },
+);
+
+test('each post-drain topology capture refreshes the catalog before conversation removal', async () => {
+  const deletion = await openCheckpointDeletion('owner', undefined, 'thread', { type: 'memory' });
+  await deletion.remember(['thread']);
+  await seed({
+    configurable: { thread_id: 'thread', checkpoint_ns: createCheckpointNamespace('owner') },
+  });
+  await deletion.remember(['thread']);
+  const db = mongoose.connection.db!;
+  expect(
+    await db.collection('agent_checkpoint_deletions').countDocuments({
+      checkpoint: { $exists: true },
+      'storage.checkpointCollectionName': 'old_cp',
+    }),
+  ).toBe(1);
+});
+
+test.each([false, true])(
+  'owner-wide cleanup journals orphan payload before deletion fails (actor=%s)',
+  async (actor) => {
+    await seed({
+      configurable: {
+        thread_id: 'orphan',
+        checkpoint_ns: actor ? 'event-actor/orphan' : createCheckpointNamespace('owner', 'tenant'),
+        ...(actor
+          ? { [LIBRECHAT_CHECKPOINT_OWNER_KEY]: checkpointOwnerNamespacePrefix('owner', 'tenant') }
+          : {}),
+      },
+    });
+    const deletion = await openCheckpointDeletion('owner', 'tenant', undefined, { type: 'memory' });
+    const originalDelete = mongoose.mongo.Collection.prototype.deleteMany;
+    jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany').mockImplementation(function (
+      this: Collection,
+      ...args
+    ) {
+      if (this.collectionName === 'old_cp') return Promise.reject(new Error('payload unavailable'));
+      return originalDelete.apply(this, args);
+    });
+    await expect(deletion.cleanup()).rejects.toThrow('payload unavailable');
+    const db = mongoose.connection.db!;
+    expect(
+      await db
+        .collection('agent_checkpoint_deletions')
+        .countDocuments({ checkpoint: { $exists: true }, threadId: 'orphan' }),
+    ).toBe(1);
+    expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(1);
+    jest.restoreAllMocks();
+    const recover = createCheckpointDeletionReclaimer(async () => []);
+    for (let pass = 0; pass < 3; pass++) await recover(25);
+    expect(await db.collection('old_cp').countDocuments()).toBe(0);
+    expect(await db.collection('old_writes').countDocuments()).toBe(0);
+    expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
+    expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(1);
+  },
+);
+
+test('owner-wide acknowledgement retires only its stores and later writes register again', async () => {
+  for (const [user, tenant] of [
+    ['owner', 'tenant'],
+    ['owner', undefined],
+    ['owner', 'other-tenant'],
+    ['foreign', 'tenant'],
+  ]) {
+    await seed({
+      configurable: {
+        thread_id: 'thread',
+        checkpoint_ns: createCheckpointNamespace(user!, tenant),
+      },
+    });
+  }
+  const deletion = await openCheckpointDeletion('owner', 'tenant', undefined, { type: 'memory' });
+  await deletion.cleanup();
+  const db = mongoose.connection.db!;
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(4);
+  await deletion.acknowledge();
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(2);
+  expect(await db.collection('old_cp').countDocuments()).toBe(2);
+  await seed({
+    configurable: {
+      thread_id: 'new-thread',
+      checkpoint_ns: createCheckpointNamespace('owner', 'tenant'),
+    },
+  });
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(3);
+  expect(await db.collection('old_cp').countDocuments()).toBe(3);
+});
+
+test('failed or renewed journal acknowledgement preserves catalog discovery', async () => {
+  await seed({
+    configurable: { thread_id: 'thread', checkpoint_ns: createCheckpointNamespace('owner') },
+  });
+  const first = await openCheckpointDeletion('owner', undefined, undefined, cfg);
+  await first.remember(['thread']);
+  await first.cleanup();
+  const db = mongoose.connection.db!;
+  const originalDelete = mongoose.mongo.Collection.prototype.deleteMany;
+  jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany').mockImplementation(function (
+    this: Collection,
+    ...args
+  ) {
+    if (this.collectionName === 'agent_checkpoint_deletions')
+      return Promise.reject(new Error('journal unavailable'));
+    return originalDelete.apply(this, args);
+  });
+  await expect(first.acknowledge()).rejects.toThrow('journal unavailable');
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(1);
+  jest.restoreAllMocks();
+  const renewed = await openCheckpointDeletion('owner', undefined, undefined, cfg);
+  await renewed.remember(['thread']);
+  await expect(first.acknowledge()).rejects.toThrow('intent is still pending');
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(1);
+  await renewed.cleanup();
+  await renewed.acknowledge();
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(0);
+});
+
+test('catalog retirement can be retried after the journal has already been acknowledged', async () => {
+  await seed({
+    configurable: { thread_id: 'thread', checkpoint_ns: createCheckpointNamespace('owner') },
+  });
+  const deletion = await openCheckpointDeletion('owner', undefined, undefined, cfg);
+  await deletion.cleanup();
+  const originalDelete = mongoose.mongo.Collection.prototype.deleteMany;
+  jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany').mockImplementation(function (
+    this: Collection,
+    ...args
+  ) {
+    if (this.collectionName === CHECKPOINT_STORAGE_COLLECTION)
+      return Promise.reject(new Error('catalog unavailable'));
+    return originalDelete.apply(this, args);
+  });
+  await expect(deletion.acknowledge()).rejects.toThrow('catalog unavailable');
+  const db = mongoose.connection.db!;
+  expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(1);
+  jest.restoreAllMocks();
+  const retry = await openCheckpointDeletion('owner', undefined, undefined, { type: 'memory' });
+  await retry.cleanup();
+  await retry.acknowledge();
+  expect(await db.collection(CHECKPOINT_STORAGE_COLLECTION).countDocuments()).toBe(0);
 });

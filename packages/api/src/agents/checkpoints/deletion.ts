@@ -4,10 +4,12 @@ import { logger } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointReference } from '../checkpointer';
 import type { ResolvedCheckpointerConfig } from './config';
+import type { CheckpointStorageRecord } from './storage';
 import {
   checkpointStorageKey,
   checkpointStorageConfigs,
   ownedCheckpointReferences,
+  CHECKPOINT_STORAGE_COLLECTION,
 } from './storage';
 import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReferences } from '../checkpointer';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
@@ -66,9 +68,12 @@ export async function openCheckpointDeletion(
     .toArray();
   const targets = new Map(retained.map((target) => [target._id, target]));
   const stores = new Map(retained.map((target) => [storageKey(target.storage), target.storage]));
-  for (const storage of await checkpointStorageConfigs(userId, tenantId, cfg)) {
-    stores.set(storageKey(storage), storage);
+  async function refreshStores() {
+    for (const storage of await checkpointStorageConfigs(userId, tenantId, cfg)) {
+      stores.set(storageKey(storage), storage);
+    }
   }
+  await refreshStores();
   const version = randomUUID();
   const batchSize = 256;
 
@@ -97,9 +102,37 @@ export async function openCheckpointDeletion(
   const conversationIds = () => [
     ...new Set([...targets.values()].map((target) => target.threadId)),
   ];
+  async function captureOwned(ids: readonly string[] | undefined) {
+    let batch: DeletionTarget[] = [];
+    for (const [key, storage] of stores) {
+      const rootPrefix = `${ownerPrefix}${key}:${hash(rootConversationId ?? null)}:`;
+      for await (const { checkpoint, conversationId } of ownedCheckpointReferences(
+        userId,
+        tenantId,
+        ids,
+        storage,
+      )) {
+        batch.push({
+          _id: `${rootPrefix}${hash(conversationId)}:${hash(JSON.stringify([checkpoint.threadId, checkpoint.checkpointNs, checkpoint.checkpointId]))}`,
+          version,
+          threadId: conversationId,
+          userId,
+          tenantId,
+          storage,
+          checkpoint,
+        });
+        if (batch.length === batchSize) {
+          await persist(batch);
+          batch = [];
+        }
+      }
+    }
+    if (batch.length > 0) await persist(batch);
+  }
   return {
     conversationIds,
     async remember(ids: readonly string[]) {
+      await refreshStores();
       for (let offset = 0; offset < ids.length; offset += batchSize) {
         const threads = ids.slice(offset, offset + batchSize);
         for (const [key, storage] of stores) {
@@ -115,31 +148,8 @@ export async function openCheckpointDeletion(
             })),
           );
         }
+        await captureOwned(threads);
         let batch: DeletionTarget[] = [];
-        for (const [key, storage] of stores) {
-          const rootPrefix = `${ownerPrefix}${key}:${hash(rootConversationId ?? null)}:`;
-          for await (const captured of ownedCheckpointReferences(
-            userId,
-            tenantId,
-            threads,
-            storage,
-          )) {
-            const { checkpoint, conversationId } = captured;
-            batch.push({
-              _id: `${rootPrefix}${hash(conversationId)}:${hash(JSON.stringify([checkpoint.threadId, checkpoint.checkpointNs, checkpoint.checkpointId]))}`,
-              version,
-              threadId: conversationId,
-              userId,
-              tenantId,
-              storage,
-              checkpoint,
-            });
-            if (batch.length === batchSize) {
-              await persist(batch);
-              batch = [];
-            }
-          }
-        }
         for await (const checkpoint of historicalActorReferences(userId, tenantId, threads)) {
           for (const [key, storage] of stores) {
             const rootPrefix = `${ownerPrefix}${key}:${hash(rootConversationId ?? null)}:`;
@@ -162,6 +172,8 @@ export async function openCheckpointDeletion(
       }
     },
     async cleanup() {
+      await refreshStores();
+      await captureOwned(rootConversationId == null ? undefined : conversationIds());
       const groups = new Map([...stores.keys()].map((key) => [key, [] as DeletionTarget[]]));
       for (const target of targets.values()) groups.get(storageKey(target.storage))!.push(target);
       for (const [key, storage] of stores) {
@@ -189,6 +201,21 @@ export async function openCheckpointDeletion(
             _id,
             version: captured,
           })),
+        });
+      }
+      if (rootConversationId != null) return;
+      const pending = await collection.findOne(
+        { $or: prefixes.map((prefix) => ({ _id: { $regex: `^${prefix}` } })) },
+        { projection: { _id: 1 } },
+      );
+      if (pending != null) throw new Error('Checkpoint deletion intent is still pending');
+      // Owner-wide callers retain their deletion fence through acknowledgement.
+      const descriptors = [...stores.keys()].flatMap((key) =>
+        tenants.map((tenant) => `${checkpointOwnerNamespacePrefix(userId, tenant)}${key}`),
+      );
+      for (let offset = 0; offset < descriptors.length; offset += batchSize) {
+        await db.collection<CheckpointStorageRecord>(CHECKPOINT_STORAGE_COLLECTION).deleteMany({
+          _id: { $in: descriptors.slice(offset, offset + batchSize) },
         });
       }
     },

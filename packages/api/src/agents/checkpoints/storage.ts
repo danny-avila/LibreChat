@@ -44,11 +44,11 @@ export async function checkpointStorageConfigs(
   return [...new Map(configs.map((storage) => [checkpointStorageKey(storage), storage])).values()];
 }
 
-/** Capture payload identities while deletion still owns the conversation topology. */
+/** Capture exact owner-qualified identities, including orphan payload during owner-wide deletion. */
 export async function* ownedCheckpointReferences(
   userId: string,
   tenantId: string | undefined,
-  conversationIds: readonly string[],
+  conversationIds: readonly string[] | undefined,
   storage: CheckpointStorage,
 ): AsyncGenerator<{
   conversationId: string;
@@ -61,30 +61,41 @@ export async function* ownedCheckpointReferences(
   const owners = (tenantId ? [tenantId, undefined] : [undefined]).map((tenant) =>
     checkpointOwnerNamespacePrefix(userId, tenant),
   );
-  for (let offset = 0; offset < conversationIds.length; offset += 64) {
+  for (let offset = 0; offset < (conversationIds?.length ?? 1); offset += 64) {
     const logicalIds = new Map<string, string>();
-    for (const id of conversationIds.slice(offset, offset + 64)) {
+    for (const id of conversationIds?.slice(offset, offset + 64) ?? []) {
       logicalIds.set(id, id);
       for (const owner of owners) logicalIds.set(`${owner}${id}`, id);
     }
     for (const name of [storage.checkpointCollectionName, storage.checkpointWritesCollectionName]) {
       const cursor = db
-        .collection<{ thread_id: string; checkpoint_ns: string; checkpoint_id: string }>(name)
+        .collection<{
+          thread_id: string;
+          checkpoint_ns: string;
+          checkpoint_id: string;
+          lc_owner?: string;
+        }>(name)
         .find(
           {
-            thread_id: { $in: [...logicalIds.keys()] },
+            ...(conversationIds == null ? {} : { thread_id: { $in: [...logicalIds.keys()] } }),
             $or: [
               ...owners.map((owner) => ({ checkpoint_ns: { $regex: `^${owner}` } })),
               { lc_owner: { $in: owners } },
             ],
           },
-          { projection: { thread_id: 1, checkpoint_ns: 1, checkpoint_id: 1 } },
+          { projection: { thread_id: 1, checkpoint_ns: 1, checkpoint_id: 1, lc_owner: 1 } },
         );
       for await (const row of cursor) {
         if (typeof row.checkpoint_id !== 'string' || typeof row.checkpoint_ns !== 'string')
           continue;
+        const logicalThread =
+          row.lc_owner != null &&
+          owners.includes(row.lc_owner) &&
+          row.thread_id.startsWith(row.lc_owner)
+            ? row.thread_id.slice(row.lc_owner.length)
+            : row.thread_id;
         yield {
-          conversationId: logicalIds.get(row.thread_id)!,
+          conversationId: logicalIds.get(row.thread_id) ?? logicalThread,
           checkpoint: {
             threadId: row.thread_id,
             checkpointNs: row.checkpoint_ns,
