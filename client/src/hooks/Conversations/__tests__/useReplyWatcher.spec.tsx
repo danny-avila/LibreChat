@@ -115,36 +115,26 @@ describe('useReplyWatcher', () => {
     expect(mockGetConversationById).not.toHaveBeenCalled();
   });
 
-  it('skips the completion fetch when the cache already holds a newer reply stamp', async () => {
+  it('fetches the successor reply when consecutive jobs keep the same conversation active', async () => {
+    (document.hasFocus as jest.Mock).mockReturnValue(true);
     mockActiveJobIds = [CONVO_ID];
-    const { rerender, queryClient } = setup();
-
-    /* The SSE final handler stamped the list cache after the job was observed running. */
+    const { rerender, queryClient, cachedConvo } = setup();
     act(() => {
-      queryClient.setQueryData<InfiniteData<ConversationCursorData>>(listKey, {
-        pages: [
-          {
-            conversations: [
-              {
-                conversationId: CONVO_ID,
-                title: 'Watched',
-                endpoint: EModelEndpoint.openAI,
-                createdAt: RESPONDED_AT,
-                updatedAt: RESPONDED_AT,
-                lastResponseAt: new Date(Date.now() + 60_000).toISOString(),
-              },
-            ],
-            nextCursor: null,
-          },
-        ],
-        pageParams: [null],
-      });
+      updateCachedTimestamps(queryClient);
+    });
+    mockActiveJobIds = [CONVO_ID];
+    rerender();
+    const successorStamp = '2026-08-16T12:00:00.000Z';
+    mockGetConversationById.mockResolvedValue({
+      conversationId: CONVO_ID,
+      lastResponseAt: successorStamp,
     });
 
     mockActiveJobIds = [];
     rerender();
 
-    expect(mockGetConversationById).not.toHaveBeenCalled();
+    await waitFor(() => expect(cachedConvo()?.lastResponseAt).toBe(successorStamp));
+    expect(isConversationUnseen(cachedConvo())).toBe(true);
   });
 
   it('polls the conversation list while away once notifications are enabled', async () => {
