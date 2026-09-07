@@ -680,23 +680,40 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
             .map((id) => id.toString()),
         ),
       ];
-      const affectedUserIds = [];
-      for (const candidateUserId of candidateUserIds) {
-        if (candidateUserId === userId) {
-          affectedUserIds.push(candidateUserId);
-          continue;
-        }
-        const principals = await db.getUserPrincipals({ userId: candidateUserId });
-        const hadAccess = aclEntries.some((entry) =>
-          principals.some(
-            (principal) =>
-              principal.principalType === entry.principalType &&
-              (principal.principalType === PrincipalType.PUBLIC ||
-                principal.principalId?.toString() === entry.principalId?.toString()),
-          ),
+      const affectedUserIds = [userId];
+      const sharedCandidates = candidateUserIds.filter(
+        (candidateUserId) => candidateUserId !== userId,
+      );
+      const PRINCIPAL_LOOKUP_CONCURRENCY = 10;
+      for (
+        let offset = 0;
+        offset < sharedCandidates.length;
+        offset += PRINCIPAL_LOOKUP_CONCURRENCY
+      ) {
+        const batch = sharedCandidates.slice(offset, offset + PRINCIPAL_LOOKUP_CONCURRENCY);
+        const principalResults = await Promise.allSettled(
+          batch.map((candidateUserId) => db.getUserPrincipals({ userId: candidateUserId })),
         );
-        if (hadAccess) {
-          affectedUserIds.push(candidateUserId);
+        for (const [index, result] of principalResults.entries()) {
+          const candidateUserId = batch[index];
+          if (result.status === 'rejected') {
+            logger.warn(
+              `[deleteMCPServerController] Failed to resolve MCP principals for user ${candidateUserId}:`,
+              result.reason,
+            );
+            continue;
+          }
+          const hadAccess = aclEntries.some((entry) =>
+            result.value.some(
+              (principal) =>
+                principal.principalType === entry.principalType &&
+                (principal.principalType === PrincipalType.PUBLIC ||
+                  principal.principalId?.toString() === entry.principalId?.toString()),
+            ),
+          );
+          if (hadAccess) {
+            affectedUserIds.push(candidateUserId);
+          }
         }
       }
       const cleanupResults = await Promise.allSettled(

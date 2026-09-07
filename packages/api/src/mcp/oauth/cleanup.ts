@@ -10,10 +10,11 @@ import { isOAuthServer } from '~/mcp/utils';
 import { MCPTokenStorage } from './tokens';
 
 export function getMCPServerGeneration(config: ParsedServerConfig): string {
+  const definitionGeneration = getMCPAppToolsPublicationGeneration(config);
   if (config.dbId) {
-    return `db:${config.dbId}`;
+    return `db:${config.dbId}:${definitionGeneration}`;
   }
-  return `config:${getMCPAppToolsPublicationGeneration(config)}`;
+  return `config:${definitionGeneration}`;
 }
 
 interface CleanupConfig {

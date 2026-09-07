@@ -45,6 +45,23 @@ redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
 return 1
 `;
 
+const GUARDED_COMPLETE_FLOW = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local data = cjson.decode(raw)
+local flow = data.value
+if flow.createdAt ~= tonumber(ARGV[1]) then return -1 end
+local state = flow.metadata and flow.metadata.state or ''
+if state ~= ARGV[2] then return -1 end
+if flow.status ~= 'PENDING' then return -1 end
+flow.status = 'COMPLETED'
+flow.result = cjson.decode(ARGV[3])
+flow.completedAt = tonumber(ARGV[4])
+data.expires = tonumber(ARGV[4]) + tonumber(ARGV[5])
+redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
+return 1
+`;
+
 /**
  * Lifetime of a PENDING OAuth flow: how long the auth button stays valid and an
  * in-flight flow can be reused before it is replaced. Mirrors
@@ -282,6 +299,61 @@ export class FlowStateManager<T = unknown> {
       failedAt,
     };
     await this.keyv.set(flowKey, updatedState, this.ttl);
+    return 'updated';
+  }
+
+  /** Completes a flow only while it still represents the caller's observed attempt. */
+  async completeFlowIfCurrent(
+    flowId: string,
+    type: string,
+    expectedCreatedAt: number,
+    expectedState: string,
+    result: T,
+  ): Promise<GuardedMutationResult> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const completedAt = Date.now();
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      const guardedResult = await this.evalRedisScript(GUARDED_COMPLETE_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+        JSON.stringify(result) ?? 'null',
+        String(completedAt),
+        String(this.ttl),
+      ]);
+      return FlowStateManager.guardedResult(guardedResult);
+    }
+
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      const current = memoryEntry.envelope.value;
+      if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+        return 'stale';
+      }
+      if (current.status !== 'PENDING') {
+        return 'stale';
+      }
+      memoryEntry.envelope.value = { ...current, status: 'COMPLETED', result, completedAt };
+      memoryEntry.envelope.expires = completedAt + this.ttl;
+      memoryEntry.store.set(memoryEntry.key, JSON.stringify(memoryEntry.envelope));
+      return 'updated';
+    }
+
+    const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (!current) {
+      return 'missing';
+    }
+    if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+      return 'stale';
+    }
+    if (current.status !== 'PENDING') {
+      return 'stale';
+    }
+    await this.keyv.set(
+      flowKey,
+      { ...current, status: 'COMPLETED', result, completedAt },
+      this.ttl,
+    );
     return 'updated';
   }
 

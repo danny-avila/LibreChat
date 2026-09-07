@@ -88,6 +88,40 @@ describe('FlowStateManager', () => {
       });
     });
 
+    it('does not complete a replacement OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'new-state' });
+
+      await expect(
+        flowManager.completeFlowIfCurrent('oauth-flow', 'mcp_oauth', 1, 'old-state', 'old-result'),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'PENDING',
+        metadata: { state: 'new-state' },
+      });
+    });
+
+    it('does not overwrite an already completed OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');
+      await flowManager.completeFlow('oauth-flow', 'mcp_oauth', 'first-result');
+
+      await expect(
+        flowManager.completeFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'second-result',
+        ),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'COMPLETED',
+        result: 'first-result',
+      });
+    });
+
     it('fails only the observed OAuth attempt', async () => {
       await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
       const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');

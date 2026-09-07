@@ -1161,12 +1161,14 @@ export class MCPOAuthHandler {
     persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
     rollbackPersistedTokens?: (tokens: MCPOAuthTokens) => Promise<void>,
   ): Promise<MCPOAuthTokens> {
+    let observedFlowState: FlowState<MCPOAuthTokens> | null = null;
     try {
       /** Flow state which contains our metadata */
       const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
       if (!flowState) {
         throw new Error('OAuth flow not found');
       }
+      observedFlowState = flowState;
 
       const flowMetadata = flowState.metadata as MCPOAuthFlowMetadata;
       if (!flowMetadata) {
@@ -1234,8 +1236,15 @@ export class MCPOAuthHandler {
       }
 
       /** Now wake flow waiters with the persisted token snapshot. */
-      const completed = await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
-      if (completed === false) {
+      const observedState = typeof metadata.state === 'string' ? metadata.state : '';
+      const completionResult = await flowManager.completeFlowIfCurrent(
+        flowId,
+        this.FLOW_TYPE,
+        flowState.createdAt,
+        observedState,
+        mcpTokens,
+      );
+      if (completionResult !== 'updated') {
         await rollbackPersistedTokens?.(mcpTokens);
         throw new Error('OAuth flow was cancelled before completion');
       }
@@ -1243,7 +1252,16 @@ export class MCPOAuthHandler {
       return mcpTokens;
     } catch (error) {
       logger.error('[MCPOAuth] Failed to complete OAuth flow', { error, flowId });
-      await flowManager.failFlow(flowId, this.FLOW_TYPE, error as Error);
+      if (observedFlowState) {
+        const observedMetadata = observedFlowState.metadata as MCPOAuthFlowMetadata | undefined;
+        await flowManager.failFlowIfCurrent(
+          flowId,
+          this.FLOW_TYPE,
+          observedFlowState.createdAt,
+          typeof observedMetadata?.state === 'string' ? observedMetadata.state : '',
+          error as Error,
+        );
+      }
       throw error;
     }
   }
