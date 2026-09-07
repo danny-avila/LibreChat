@@ -415,30 +415,64 @@ function isJavaScriptSource(expression: ts.Expression): boolean {
   );
 }
 
-/** Receivers on which `$where` is Mongoose's document save-condition bag. `this`
- * is deliberately absent: Mongoose binds it to a Query in query middleware and
- * to a Document in document middleware, so it is no tell either way — a
- * document hook aliases to `document` (as `tenantIsolation.ts` does). */
-const DOCUMENT_RECEIVERS = new Set(['document', 'doc']);
+/** A type annotation naming a Mongoose document type: `Document`,
+ * `HydratedDocument<…>`, or a project alias ending in `Document` such as
+ * `TenantWhereDocument`; unions and intersections of those count. */
+function isDocumentType(type: ts.TypeNode | undefined): boolean {
+  if (type == null) {
+    return false;
+  }
+  if (ts.isUnionTypeNode(type) || ts.isIntersectionTypeNode(type)) {
+    return type.types.some(isDocumentType);
+  }
+  if (!ts.isTypeReferenceNode(type)) {
+    return false;
+  }
+  const name = ts.isIdentifier(type.typeName) ? type.typeName.text : type.typeName.right.text;
+  return name.endsWith('Document');
+}
 
-function isDocumentReceiver(expression: ts.Expression): boolean {
+/** Names declared in this file — as a parameter or a variable — with a document
+ * type annotation. The declared type is the tell, not the spelling: a filter
+ * that happens to be named `document` has no such annotation. `this` never
+ * qualifies, since Mongoose binds it to a Query in query middleware. Scope-naive
+ * like the array names. */
+function collectDocumentReceiverNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isParameter(node) || ts.isVariableDeclaration(node)) &&
+      ts.isIdentifier(node.name) &&
+      isDocumentType(node.type)
+    ) {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return names;
+}
+
+function isDocumentReceiver(expression: ts.Expression, documentNames: Set<string>): boolean {
   const receiver = unwrapExpression(expression);
-  return ts.isIdentifier(receiver) && DOCUMENT_RECEIVERS.has(receiver.text);
+  return ts.isIdentifier(receiver) && documentNames.has(receiver.text);
 }
 
 /**
  * Mongoose's `Document.prototype.$where` is a per-document save-condition bag, not
  * MongoDB's `$where` JavaScript-evaluation operator: `mongoose/lib/model.js` copies
  * its keys into the save filter as ordinary field predicates, so nothing named
- * `$where` reaches the server. The RECEIVER is the tell: the bag lives on a
- * Mongoose document, which this codebase reaches as `document` or `doc`, and it
- * is read or assigned — never called and never handed code. A `$where` on
+ * `$where` reaches the server. The RECEIVER's DECLARED TYPE is the tell: the
+ * bag lives on a Mongoose document, so the receiver must be declared in this
+ * file with a document type (as `tenantIsolation.ts` declares
+ * `document: TenantWhereDocument`), and it is read or assigned — never called
+ * and never handed code. A `$where` on
  * any other receiver, in any position, is the operator, so no amount of
  * indirection on the value or the call (`filter.$where = predicate`,
  * `(query.$where)(js)`, `query.$where.call(…)`, `const w = query.$where`) needs
  * tracing: every one of them fails on the receiver alone.
  */
-function isMongooseDocumentWhere(node: ts.Node): boolean {
+function isMongooseDocumentWhere(node: ts.Node, documentNames: Set<string>): boolean {
   if (!ts.isIdentifier(node) || node.text !== '$where') {
     return false;
   }
@@ -446,7 +480,7 @@ function isMongooseDocumentWhere(node: ts.Node): boolean {
   if (
     !ts.isPropertyAccessExpression(access) ||
     access.name !== node ||
-    !isDocumentReceiver(access.expression)
+    !isDocumentReceiver(access.expression, documentNames)
   ) {
     return false;
   }
@@ -468,10 +502,11 @@ function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
   if (OPERATOR_GUARDS.has(sourceFile.fileName)) {
     return [];
   }
+  const documentNames = collectDocumentReceiverNames(sourceFile);
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
     if (
-      !isMongooseDocumentWhere(node) &&
+      !isMongooseDocumentWhere(node, documentNames) &&
       (ts.isStringLiteralLike(node) ||
         (ts.isIdentifier(node) && !ts.isPropertySignature(node.parent)))
     ) {
@@ -791,19 +826,32 @@ describe('Amazon DocumentDB compatibility', () => {
           parse('fixture.ts', `interface Doc { $where: Record<string, unknown> }`),
         ),
       ).toEqual([]);
-      /** Mongoose's document save-condition bag: read and write both stay exempt. */
-      expect(findForbiddenTokens(parse('fixture.ts', `const where = document.$where;`))).toEqual(
-        [],
-      );
+      /** Mongoose's document save-condition bag: on a receiver DECLARED as a
+       * document type, a read and an object write both stay exempt. */
       expect(
-        findForbiddenTokens(parse('fixture.ts', `document.$where = { tenantId: predicate };`)),
+        findForbiddenTokens(
+          parse(
+            'fixture.ts',
+            `function f(document: TenantWhereDocument) {\n  const where = document.$where;\n  document.$where = { ...where, tenantId: predicate };\n}`,
+          ),
+        ),
       ).toEqual([]);
       expect(
         findForbiddenTokens(
-          parse('fixture.ts', `document.$where = Object.keys(rest).length > 0 ? rest : undefined;`),
+          parse(
+            'fixture.ts',
+            `function f(document: TenantWhereDocument) {\n  document.$where = Object.keys(rest).length > 0 ? rest : undefined;\n}`,
+          ),
         ),
       ).toEqual([]);
-      expect(findForbiddenTokens(parse('fixture.ts', `doc.$where = where;`))).toEqual([]);
+      expect(
+        findForbiddenTokens(
+          parse(
+            'fixture.ts',
+            `const doc: HydratedDocument<IUser> = await load(id);\ndoc.$where = where;`,
+          ),
+        ),
+      ).toEqual([]);
       /** ...but every shape that builds a real query still fails. */
       expect(
         findForbiddenTokens(parse('fixture.ts', `const filter = { $where: 'this.a == 1' };`)),
@@ -856,6 +904,25 @@ describe('Amazon DocumentDB compatibility', () => {
       expect(
         findForbiddenTokens(parse('fixture.ts', `this.$where = { isDeleted: false };`)),
       ).not.toEqual([]);
+      /** The declared type decides, not the spelling: a filter named `document`
+       * or declared as a filter is the operator. */
+      expect(
+        findForbiddenTokens(
+          parse(
+            'fixture.ts',
+            `const document = filter;\ndocument.$where = predicate;\nModel.find(document);`,
+          ),
+        ),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(
+          parse(
+            'fixture.ts',
+            `function f(document: FilterQuery<IUser>) {\n  document.$where = 'this.a == 1';\n}`,
+          ),
+        ),
+      ).not.toEqual([]);
+      expect(findForbiddenTokens(parse('fixture.ts', `doc.$where = where;`))).not.toEqual([]);
     });
 
     it.each([
