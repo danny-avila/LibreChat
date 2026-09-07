@@ -3126,6 +3126,49 @@ describe('MCPManager', () => {
       );
     });
 
+    it('shares a checkout recovery budget with the rejected tool call', async () => {
+      const rejection = new Error('HTTP 401 Unauthorized');
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        stopReconnecting: jest.fn(),
+        isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
+        timeout: 30000,
+        client: { request: jest.fn().mockRejectedValue(rejection) },
+      } as unknown as MCPConnection;
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (config) => config);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnection = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockImplementation(async (options) => {
+          options.directBearerRecoveryState!.attempted = true;
+          return connection;
+        });
+
+      await expect(
+        manager.callTool({
+          user,
+          serverName,
+          toolName: 'mutating_tool',
+          provider: 'openai',
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+          upstreamTokenProvider,
+        }),
+      ).rejects.toMatchObject({
+        code: 'MCP_AUTHENTICATION_REJECTED',
+        connectionRefreshed: false,
+      } satisfies Partial<MCPAuthenticationRejectedError>);
+
+      expect(connection.client.request).toHaveBeenCalledTimes(1);
+      expect(connection.stopReconnecting).not.toHaveBeenCalled();
+      expect(getUserConnection).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
+    });
+
     it('installs an ephemeral replacement in the request-scoped store without leaking the old connection', async () => {
       const rejection = new Error('HTTP 401 Unauthorized');
       const scopedConfig = {

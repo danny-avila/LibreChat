@@ -99,6 +99,25 @@ describe('direct OpenID bearer recovery', () => {
     expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
   });
 
+  it('removes the shadowed OpenID Authorization template when OBO takes precedence', async () => {
+    const config = {
+      ...directBearerConfig('yaml'),
+      obo: { scopes: 'api://mcp/.default' },
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Service': 'private-mcp',
+      },
+    };
+    const upstreamTokenProvider = jest.fn();
+
+    const resolved = await resolveDirectOpenIDBearerConfig({ config, upstreamTokenProvider });
+
+    expect('headers' in resolved ? resolved.headers : undefined).toEqual({
+      'X-Service': 'private-mcp',
+    });
+    expect(upstreamTokenProvider).not.toHaveBeenCalled();
+  });
+
   it('preserves the verified request bearer fallback when no session is available', async () => {
     const config = directBearerConfig('yaml');
 

@@ -32,6 +32,23 @@ function getAuthorizationTemplateValue(value: string): string {
   return extractEnvVariable(value);
 }
 
+/** OBO owns Authorization when configured. Remove only the lower-priority OpenID template
+ * before generic runtime expansion can demand or inject the upstream bearer directly. */
+function removeShadowedOpenIDAuthorization(config: DirectBearerConfig): DirectBearerConfig {
+  const authorization = getAuthorizationHeader(config);
+  if (
+    authorization == null ||
+    !OPENID_ACCESS_TOKEN_PATTERN.test(getAuthorizationTemplateValue(authorization.value)) ||
+    !('headers' in config)
+  ) {
+    return config;
+  }
+
+  const headers = { ...config.headers };
+  delete headers[authorization.name];
+  return { ...config, headers };
+}
+
 /** Whether a trusted operator config explicitly routes its OpenID bearer to this server. */
 export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig): boolean {
   /** OBO is the stronger audience-bound mode and takes precedence when both legacy fields exist. */
@@ -63,6 +80,9 @@ export async function resolveDirectOpenIDBearerConfig({
   upstreamTokenProvider?: UpstreamTokenProvider;
   forceRefresh?: boolean;
 }): Promise<DirectBearerConfig> {
+  if (config.obo != null) {
+    return removeShadowedOpenIDAuthorization(config);
+  }
   if (!usesDirectOpenIDBearerRecovery(config)) {
     return config;
   }

@@ -228,6 +228,8 @@ export class MCPManager extends UserConnectionManager {
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
       /** Pre-resolved config for config-source servers not in YAML/DB */
       serverConfig?: t.ParsedServerConfig;
+      /** One-shot direct-bearer recovery budget shared with the invoking tool call. */
+      directBearerRecoveryState?: t.DirectBearerRecoveryState;
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
     const userId = args.user?.id;
@@ -947,7 +949,7 @@ Please follow these instructions when using tools from the respective MCP server
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
     this.bindRequestScopedConnectionStore(requestScopedConnections);
     let recoveryTakeoverConsumed = false;
-    let directBearerRecoveryConsumed = false;
+    const directBearerRecoveryState: t.DirectBearerRecoveryState = { attempted: false };
     while (true) {
       /** User-specific connection */
       let connection: MCPConnection | undefined;
@@ -1010,6 +1012,7 @@ Please follow these instructions when using tools from the respective MCP server
             requestBody,
             requestScopedConnections,
             serverConfig: providedConfig,
+            directBearerRecoveryState,
           });
           retainConnectionLease();
           const checkoutRecovery = this.oauthRecoveries.get(connection);
@@ -1217,10 +1220,10 @@ Please follow these instructions when using tools from the respective MCP server
           user &&
           connection.isOAuthAuthenticationError(connectionCheckError)
         ) {
-          if (directBearerRecoveryConsumed) {
+          if (directBearerRecoveryState.attempted) {
             throw new MCPAuthenticationRejectedError(serverName, false, connectionCheckError);
           }
-          directBearerRecoveryConsumed = true;
+          directBearerRecoveryState.attempted = true;
           const recovery = this.recoverDirectOpenIDBearerConnection({
             connection,
             serverName,
@@ -1304,10 +1307,10 @@ Please follow these instructions when using tools from the respective MCP server
           result = await requestTool();
         } catch (error) {
           if (directBearerRecovery && user && connection.isOAuthAuthenticationError(error)) {
-            if (directBearerRecoveryConsumed) {
+            if (directBearerRecoveryState.attempted) {
               throw new MCPAuthenticationRejectedError(serverName, false, error);
             }
-            directBearerRecoveryConsumed = true;
+            directBearerRecoveryState.attempted = true;
             const recovery = this.recoverDirectOpenIDBearerConnection({
               connection,
               serverName,
