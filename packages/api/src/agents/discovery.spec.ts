@@ -1,4 +1,11 @@
-import { ErrorTypes, EModelEndpoint, MAX_SUBAGENT_GRAPH_NODES } from 'librechat-data-provider';
+import {
+  ErrorTypes,
+  ResourceType,
+  EModelEndpoint,
+  PermissionBits,
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_GRAPH_NODES,
+} from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { GraphSubagentHostConfig } from './discovery';
@@ -24,7 +31,7 @@ jest.mock('./validation', () => ({
   validateAgentModel: (...args: unknown[]) => mockValidateAgentModel(...args),
 }));
 
-import { discoverConnectedAgents, resolveSubagentGraphs } from './discovery';
+import { discoverConnectedAgents, resolveSubagentGraphs, resolveSubagents } from './discovery';
 
 const makeReq = (userId = 'u1', role = 'USER'): ServerRequest =>
   ({
@@ -1489,5 +1496,239 @@ describe('resolveSubagentGraphs', () => {
 
     expect(getAgent).toHaveBeenCalledTimes(firstMemberIds.length);
     expect(primaryConfig.subagentGraphConfigs).toEqual([]);
+  });
+});
+
+describe('resolveSubagents', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockValidateAgentModel.mockResolvedValue({ isValid: true });
+    mockInitializeAgent.mockImplementation(async ({ agent }: { agent: Agent }) =>
+      makeConfig(agent.id),
+    );
+  });
+
+  it('loads explicit subagents onto the primary and prunes pure subagents from agentConfigs', async () => {
+    const primaryConfig = makeConfig('A');
+    primaryConfig.subagents = { enabled: true, allowSelf: false, agent_ids: ['B'] };
+    const agentConfigs = new Map<string, InitializedAgent>();
+    mockInitializeAgent.mockImplementationOnce(async ({ agent }: { agent: Agent }) => ({
+      ...makeConfig(agent.id),
+      userMCPAuthMap: { subagent: { token: 'subagent-token' } },
+    }));
+    const onAgentInitialized = jest.fn();
+
+    const userMCPAuthMap = await resolveSubagents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        agentConfigs,
+        edges: [],
+        subagentsCapabilityEnabled: true,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent: jest.fn(async ({ id }: { id: string }) => makeAgent(id)),
+        checkPermission: jest.fn().mockResolvedValue(true),
+        logViolation: jest.fn(),
+        db: {} as never,
+        onAgentInitialized,
+      },
+    );
+
+    expect(primaryConfig.subagentAgentConfigs).toHaveLength(1);
+    expect(primaryConfig.subagentAgentConfigs?.[0].id).toBe('B');
+    expect(agentConfigs.has('B')).toBe(false);
+    expect(onAgentInitialized).toHaveBeenCalledWith('B', expect.anything(), expect.anything());
+    expect(userMCPAuthMap).toEqual({ subagent: { token: 'subagent-token' } });
+  });
+
+  it('keeps handoff targets that are also subagents in agentConfigs', async () => {
+    const sharedConfig = makeConfig('B');
+    const primaryConfig = makeConfig('A');
+    primaryConfig.subagents = { enabled: true, allowSelf: false, agent_ids: ['B'] };
+    const agentConfigs = new Map<string, InitializedAgent>([['B', sharedConfig]]);
+    const edges: GraphEdge[] = [{ from: 'A', to: 'B', edgeType: 'direct' }];
+
+    await resolveSubagents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        agentConfigs,
+        edges,
+        subagentsCapabilityEnabled: true,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent: jest.fn(),
+        checkPermission: jest.fn(),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(primaryConfig.subagentAgentConfigs).toEqual([sharedConfig]);
+    expect(agentConfigs.has('B')).toBe(true);
+    expect(mockInitializeAgent).not.toHaveBeenCalled();
+  });
+
+  it('clears subagents when the capability is disabled', async () => {
+    const primaryConfig = makeConfig('A');
+    primaryConfig.subagents = { enabled: true, allowSelf: true, agent_ids: [] };
+    primaryConfig.subagentAgentConfigs = [makeConfig('B')];
+    const handoffConfig = makeConfig('C');
+    handoffConfig.subagents = { enabled: true, agent_ids: ['B'] };
+    const agentConfigs = new Map<string, InitializedAgent>([['C', handoffConfig]]);
+    const getAgent = jest.fn();
+
+    await resolveSubagents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        agentConfigs,
+        edges: [],
+        subagentsCapabilityEnabled: false,
+        allowedProviders: new Set(),
+        modelsConfig: {},
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn(),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(primaryConfig.subagents).toBeUndefined();
+    expect(primaryConfig.subagentAgentConfigs).toEqual([]);
+    expect(handoffConfig.subagents).toBeUndefined();
+    expect(handoffConfig.subagentAgentConfigs).toBeUndefined();
+    expect(getAgent).not.toHaveBeenCalled();
+  });
+
+  it('rejects graphs deeper than MAX_SUBAGENT_DEPTH', async () => {
+    const ids = Array.from({ length: MAX_SUBAGENT_DEPTH + 1 }, (_, index) => `agent_depth_${index}`);
+    const nestedById = new Map(
+      ids.map((id, index) => {
+        const config = makeConfig(id);
+        if (index < ids.length - 1) {
+          config.subagents = { enabled: true, allowSelf: false, agent_ids: [ids[index + 1]] };
+        }
+        return [id, config];
+      }),
+    );
+    const primaryConfig = makeConfig('A');
+    primaryConfig.subagents = { enabled: true, allowSelf: false, agent_ids: [ids[0]] };
+    mockInitializeAgent.mockImplementation(async ({ agent }: { agent: Agent }) =>
+      nestedById.get(agent.id),
+    );
+
+    await expect(
+      resolveSubagents(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          primaryConfig,
+          agentConfigs: new Map(),
+          edges: [],
+          subagentsCapabilityEnabled: true,
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+        },
+        {
+          getAgent: jest.fn(async ({ id }: { id: string }) => makeAgent(id)),
+          checkPermission: jest.fn().mockResolvedValue(true),
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      ),
+    ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
+  });
+
+  it('rejects graphs with more than MAX_SUBAGENT_GRAPH_NODES unique agents', async () => {
+    const firstLevelIds = Array.from({ length: 10 }, (_, index) => `agent_graph_${index}`);
+    const secondLevelIdsByParent = new Map(
+      firstLevelIds.map((id) => [
+        id,
+        Array.from({ length: 5 }, (_, index) => `${id}_child_${index}`),
+      ]),
+    );
+    const primaryConfig = makeConfig('A');
+    primaryConfig.subagents = { enabled: true, allowSelf: false, agent_ids: firstLevelIds };
+    mockInitializeAgent.mockImplementation(async ({ agent }: { agent: Agent }) =>
+      Object.assign(makeConfig(agent.id), {
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          agent_ids: secondLevelIdsByParent.get(agent.id) ?? [],
+        },
+      }),
+    );
+
+    await expect(
+      resolveSubagents(
+        {
+          req: makeReq(),
+          res: makeRes(),
+          primaryConfig,
+          agentConfigs: new Map(),
+          edges: [],
+          subagentsCapabilityEnabled: true,
+          allowedProviders: new Set(),
+          modelsConfig: { openai: ['gpt-4o'] },
+          loadTools: jest.fn(),
+        },
+        {
+          getAgent: jest.fn(async ({ id }: { id: string }) => makeAgent(id)),
+          checkPermission: jest.fn().mockResolvedValue(true),
+          logViolation: jest.fn(),
+          db: {} as never,
+        },
+      ),
+    ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES}`);
+  });
+
+  it('uses the provided resourceType for permission checks', async () => {
+    const primaryConfig = makeConfig('A');
+    primaryConfig.subagents = { enabled: true, allowSelf: false, agent_ids: ['B'] };
+    const checkPermission = jest.fn().mockResolvedValue(false);
+
+    await resolveSubagents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        agentConfigs: new Map(),
+        edges: [],
+        subagentsCapabilityEnabled: true,
+        resourceType: ResourceType.REMOTE_AGENT,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+      },
+      {
+        getAgent: jest.fn(async ({ id }: { id: string }) => makeAgent(id)),
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(checkPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: ResourceType.REMOTE_AGENT,
+        requiredPermission: PermissionBits.VIEW,
+      }),
+    );
+    expect(primaryConfig.subagentAgentConfigs).toEqual([]);
   });
 });

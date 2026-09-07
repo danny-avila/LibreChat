@@ -3,6 +3,7 @@ import {
   ResourceType,
   PermissionBits,
   EModelEndpoint,
+  MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
 } from 'librechat-data-provider';
 import type {
@@ -368,6 +369,212 @@ export async function resolveSubagentGraphs(
     }
     rootConfig.subagentGraphConfigs = resolvedGraphs;
   }
+  return userMCPAuthMap;
+}
+
+export interface ResolveSubagentsParams extends DiscoverConnectedAgentsParams {
+  /** Handoff / connected agent configs discovered before subagent resolution. */
+  agentConfigs: Map<string, InitializedAgent>;
+  /** Handoff edges used to distinguish pure subagents from handoff targets. */
+  edges: GraphEdge[];
+  /** Whether the endpoint-level `subagents` capability is enabled. */
+  subagentsCapabilityEnabled: boolean;
+  /** Agent ids already skipped during handoff discovery. */
+  skippedAgentIds?: Set<string>;
+}
+
+function collectEdgeAgentIds(primaryId: string, edges: GraphEdge[]): Set<string> {
+  const edgeAgentIds = new Set<string>([primaryId]);
+  for (const edge of edges) {
+    const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
+    const targets = Array.isArray(edge.to) ? edge.to : [edge.to];
+    for (const id of sources) {
+      if (typeof id === 'string') {
+        edgeAgentIds.add(id);
+      }
+    }
+    for (const id of targets) {
+      if (typeof id === 'string') {
+        edgeAgentIds.add(id);
+      }
+    }
+  }
+  return edgeAgentIds;
+}
+
+function getExplicitSubagentIds(agent: { id: string; subagents?: Agent['subagents'] }): string[] {
+  return [
+    ...new Set(
+      Array.isArray(agent.subagents?.agent_ids)
+        ? agent.subagents.agent_ids.filter(
+            (id): id is string => typeof id === 'string' && id.length > 0 && id !== agent.id,
+          )
+        : [],
+    ),
+  ];
+}
+
+/**
+ * Loads explicit `subagents.agent_ids` spawn targets for the primary and any
+ * connected agents. Pure subagents are pruned from `agentConfigs` so LangGraph
+ * does not treat them as parallel/handoff nodes; callers keep tool contexts
+ * via `onAgentInitialized` for ON_TOOL_EXECUTE.
+ */
+export async function resolveSubagents(
+  params: ResolveSubagentsParams,
+  deps: DiscoverConnectedAgentsDeps,
+): Promise<Record<string, Record<string, string>> | undefined> {
+  const {
+    primaryConfig,
+    agentConfigs,
+    edges,
+    subagentsCapabilityEnabled,
+    skippedAgentIds: seededSkippedAgentIds,
+  } = params;
+
+  const skippedAgentIds = new Set(seededSkippedAgentIds ?? []);
+  const edgeAgentIds = collectEdgeAgentIds(primaryConfig.id, edges);
+  const pureSubagentIds = new Set<string>();
+  const subagentGraphIds = new Set<string>();
+  let userMCPAuthMap: Record<string, Record<string, string>> | undefined;
+
+  const markSkipped = (agentId: string): void => {
+    skippedAgentIds.add(agentId);
+    deps.onAgentSkipped?.(agentId);
+  };
+
+  const loadAgentById = async (agentId: string): Promise<InitializedAgent | null> => {
+    if (skippedAgentIds.has(agentId)) {
+      return null;
+    }
+    const existing = agentConfigs.get(agentId);
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      const loaded = await initializeReferencedAgent(agentId, params, {
+        ...deps,
+        onAgentSkipped: markSkipped,
+      });
+      if (!loaded) {
+        skippedAgentIds.add(agentId);
+        return null;
+      }
+      agentConfigs.set(agentId, loaded.config);
+      if (loaded.config.userMCPAuthMap) {
+        userMCPAuthMap = { ...userMCPAuthMap, ...loaded.config.userMCPAuthMap };
+      }
+      return loaded.config;
+    } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
+      logger.error(`[resolveSubagents] Error processing subagent ${agentId}:`, error);
+      skippedAgentIds.add(agentId);
+      return null;
+    }
+  };
+
+  const assertSubagentGraphRoom = (agentId: string): void => {
+    if (subagentGraphIds.has(agentId)) {
+      return;
+    }
+    if (subagentGraphIds.size >= MAX_SUBAGENT_GRAPH_NODES) {
+      logger.warn('[resolveSubagents] Subagent graph node limit exceeded', {
+        agentId,
+        primaryAgentId: primaryConfig.id,
+        loadedSubagentCount: subagentGraphIds.size,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      });
+      throw new Error(
+        `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents.`,
+      );
+    }
+  };
+
+  const loadSubagentsFor = async (config: InitializedAgent, depth = 0): Promise<void> => {
+    const sub = config.subagents;
+    if (!subagentsCapabilityEnabled || !sub?.enabled) {
+      config.subagentAgentConfigs = [];
+      return;
+    }
+
+    const explicitSubagentIds = getExplicitSubagentIds(config);
+    if (explicitSubagentIds.length > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+      logger.warn('[resolveSubagents] Subagent graph depth limit exceeded', {
+        agentId: config.id,
+        primaryAgentId: primaryConfig.id,
+        depth,
+        maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+        childCount: explicitSubagentIds.length,
+      });
+      throw new Error(
+        `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${config.id}.`,
+      );
+    }
+
+    const resolved: InitializedAgent[] = [];
+    for (const subagentId of explicitSubagentIds) {
+      if (skippedAgentIds.has(subagentId)) {
+        continue;
+      }
+      if (subagentId === primaryConfig.id) {
+        resolved.push(primaryConfig);
+        continue;
+      }
+
+      assertSubagentGraphRoom(subagentId);
+      const subagentConfig = await loadAgentById(subagentId);
+      if (!subagentConfig) {
+        continue;
+      }
+
+      subagentGraphIds.add(subagentConfig.id ?? subagentId);
+      resolved.push(subagentConfig);
+      if (!edgeAgentIds.has(subagentId)) {
+        pureSubagentIds.add(subagentId);
+      }
+    }
+
+    config.subagentAgentConfigs = resolved;
+  };
+
+  const maxResolvedDepthByConfigId = new Map<string, number>();
+  const pending = [primaryConfig, ...agentConfigs.values()].map((cfg) => ({ cfg, depth: 0 }));
+
+  for (let index = 0; index < pending.length; index++) {
+    const { cfg, depth } = pending[index];
+    if (!cfg?.id) {
+      continue;
+    }
+    const previousDepth = maxResolvedDepthByConfigId.get(cfg.id);
+    if (previousDepth != null && previousDepth >= depth) {
+      continue;
+    }
+    maxResolvedDepthByConfigId.set(cfg.id, depth);
+    await loadSubagentsFor(cfg, depth);
+    for (const child of cfg.subagentAgentConfigs ?? []) {
+      const childDepth = depth + 1;
+      const previousChildDepth = child?.id ? maxResolvedDepthByConfigId.get(child.id) : undefined;
+      if (child?.id && (previousChildDepth == null || previousChildDepth < childDepth)) {
+        pending.push({ cfg: child, depth: childDepth });
+      }
+    }
+  }
+
+  for (const id of pureSubagentIds) {
+    agentConfigs.delete(id);
+  }
+
+  primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
+  if (!subagentsCapabilityEnabled) {
+    for (const config of agentConfigs.values()) {
+      config.subagents = undefined;
+      config.subagentAgentConfigs = undefined;
+    }
+  }
+
   return userMCPAuthMap;
 }
 
