@@ -208,10 +208,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   async function selectApprovalMode(mode: 'Ask before changes' | 'Accept edits') {
     const selector = page.getByTestId('code-approval-mode');
     await expect(selector).toBeVisible();
-    await selector.focus();
-    await selector.press('Enter');
-    await page.keyboard.press(mode === 'Accept edits' ? 'End' : 'Home');
-    await page.keyboard.press('Enter');
+    await selector.click();
+    await expect(selector).toHaveAttribute('aria-expanded', 'true');
+    await page.getByRole('menuitemradio', { name: new RegExp(`^${mode}`) }).click();
     await expect(selector).toContainText(mode, { timeout: 10_000 });
   }
 

@@ -37,6 +37,7 @@ import {
   stripStreamedIndexStamps,
 } from '~/utils';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
+import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -225,8 +226,9 @@ export default function useChatFunctions({
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
+  const getConversation = useGetConversation(index);
   const addedConversation = useRecoilValue(store.conversationByKeySelector(1));
-  const { selected: codeApprovalMode } = useCodeApprovalMode(
+  const { modes: codeApprovalModes, selected: fallbackCodeApprovalMode } = useCodeApprovalMode(
     immutableConversation,
     addedConversation,
   );
@@ -318,6 +320,11 @@ export default function useChatFunctions({
     }
 
     const conversation = cloneDeep(immutableConversation);
+    const latestCodeApprovalMode = getConversation()?.codeApprovalMode;
+    const codeApprovalMode =
+      latestCodeApprovalMode != null && codeApprovalModes.includes(latestCodeApprovalMode)
+        ? latestCodeApprovalMode
+        : fallbackCodeApprovalMode;
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {

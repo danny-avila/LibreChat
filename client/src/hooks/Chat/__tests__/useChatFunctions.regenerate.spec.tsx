@@ -13,6 +13,7 @@ const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
 const mockGetQueryData = jest.fn(() => ({}));
 const mockLoggerWarn = jest.fn();
+const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -40,7 +41,11 @@ jest.mock('recoil', () => ({
 }));
 
 jest.mock('~/hooks/Files/useSetFilesToDelete', () => () => mockSetFilesToDelete);
-jest.mock('~/hooks/Agents/useCodeApprovalMode', () => () => ({ selected: 'ask' }));
+jest.mock('~/hooks/Agents/useCodeApprovalMode', () => () => ({
+  modes: ['ask', 'acceptEdits'],
+  selected: 'ask',
+}));
+jest.mock('~/hooks/Conversations/useGetConversation', () => () => mockGetLatestConversation);
 jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
 jest.mock('~/hooks', () => ({
@@ -56,6 +61,7 @@ jest.mock('~/store', () => ({
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
     pendingQuotesByConvoId: () => 'pendingQuotes',
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
+    conversationByKeySelector: () => 'conversation',
   },
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
@@ -129,6 +135,22 @@ describe('useChatFunctions ask', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetQueryData.mockReturnValue({});
+    mockGetLatestConversation.mockReturnValue(null);
+  });
+
+  it('reads an approval-mode selection made immediately before send', () => {
+    mockGetLatestConversation.mockReturnValue({
+      ...conversation('conversation-1'),
+      codeApprovalMode: 'acceptEdits',
+    });
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.codeApprovalMode).toBe('acceptEdits');
   });
 
   it('refuses to send to an existing conversation before its history loads', () => {
