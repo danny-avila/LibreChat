@@ -2718,7 +2718,7 @@ class GenerationJobManagerClass {
       durableEventSequence: 0,
       inFlightSnapshotEmissions: new Map(),
       hasSubscriber: false,
-      everHadSubscriber: false,
+      everHadSubscriber: jobData.firstSubscriberAttachedAt != null,
       subscriberStateAttached: false,
       subscriberLeaseId: randomUUID(),
       attachmentGeneration: 0,
@@ -6720,7 +6720,17 @@ class GenerationJobManagerClass {
       options?.deliveredSteer == null &&
       isCoalescableDeltaEvent(eventType);
 
-    const detached = !runtime.hasSubscriber;
+    const detachedAtAppend = !runtime.hasSubscriber;
+    const admissionFenceRequired = detachedAtAppend && !runtime.everHadSubscriber;
+    const subscriberAdmission = admissionFenceRequired
+      ? this.jobStore.hasSubscriberAttached(streamId, runtime.createdAt).catch((error) => {
+          logger.warn(
+            '[GenerationJobManager] Failed to read generation-wide subscriber admission',
+            error,
+          );
+          return false;
+        })
+      : undefined;
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -6737,11 +6747,12 @@ class GenerationJobManagerClass {
           coalescableDelta ? { coalesce: true } : undefined,
         );
 
-        /** A detached publication is the cross-replica admission boundary: its
-         * durable record must exist before another replica can observe it and
-         * take a snapshot. This also makes every pre-overflow publication
-         * recoverable before the pending overflow marker is installed. */
-        if (options?.durable === true || detached) {
+        /** Before the generation-wide first-subscriber admission, publication
+         * is the cross-replica boundary: its durable record must already exist
+         * before another replica can snapshot. The admission probe runs beside
+         * the append, so the first event after a remote attachment remains
+         * fenced and later events recover the normal fire-and-forget path. */
+        if (options?.durable === true || admissionFenceRequired) {
           let appended: boolean;
           try {
             appended = await appendPromise;
@@ -6797,6 +6808,13 @@ class GenerationJobManagerClass {
       }
     }
 
+    if ((await subscriberAdmission) === true) {
+      runtime.everHadSubscriber = true;
+      runtime.earlyEventBufferClosed = true;
+      this.resetEarlyEventBuffer(runtime);
+    }
+
+    const detached = !runtime.hasSubscriber;
     const buffered = detached && (await this.bufferEarlyEvent(streamId, runtime, event));
     if (detached && !this._isRedis) {
       if (runtime.startupTelemetry) {

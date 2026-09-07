@@ -2010,14 +2010,15 @@ describe('GenerationJobManager Integration Tests', () => {
       jest.useRealTimers();
     });
 
-    test('persists detached Redis-mode chunks before publishing them', async () => {
+    test('fences publication only until generation-wide subscriber admission', async () => {
       const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
       const eventTransport = new InMemoryEventTransport();
       let releaseAppend!: (appended: boolean) => void;
       const pendingAppend = new Promise<boolean>((resolve) => {
         releaseAppend = resolve;
       });
-      jest.spyOn(jobStore, 'appendChunk').mockReturnValueOnce(pendingAppend);
+      const append = jest.spyOn(jobStore, 'appendChunk').mockReturnValueOnce(pendingAppend);
+      jest.spyOn(jobStore, 'hasSubscriberAttached').mockResolvedValue(true);
       const publish = jest.spyOn(eventTransport, 'emitChunk');
       const manager = new GenerationJobManagerClass();
       manager.configure({ jobStore, eventTransport, isRedis: true });
@@ -2034,6 +2035,16 @@ describe('GenerationJobManager Integration Tests', () => {
       releaseAppend(true);
       await emission;
       expect(publish).toHaveBeenCalledTimes(1);
+
+      append.mockReturnValueOnce(new Promise<boolean>(() => {}));
+      await expect(
+        manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { delta: { content: { type: 'text', text: 'publish without append wait' } } },
+        }),
+      ).resolves.toBeUndefined();
+      expect(publish).toHaveBeenCalledTimes(2);
+      expect(jobStore.hasSubscriberAttached).toHaveBeenCalledTimes(1);
 
       await manager.destroy();
     });

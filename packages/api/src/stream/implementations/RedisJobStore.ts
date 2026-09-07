@@ -639,6 +639,10 @@ const FINALIZE_EARLY_BUFFER_OVERFLOW_LUA =
   'or overflow.persistencePending ~= true or overflow.recoveryOutcome ~= nil then return 0 end ' +
   'redis.call("HSET", KEYS[1], "earlyBufferOverflow", ARGV[3]) return 1';
 
+const HAS_SUBSCRIBER_ATTACHED_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'if redis.call("HEXISTS", KEYS[1], "firstSubscriberAttachedAt") == 1 then return 1 end return 0';
+
 /** Generation-scoped single-winner first-subscriber claim. */
 const CLAIM_FIRST_SUBSCRIBER_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
@@ -2383,6 +2387,19 @@ export class RedisJobStore implements IJobStoreV2 {
       JSON.stringify(finalizedOverflow),
     );
     return finalized === 1;
+  }
+
+  async hasSubscriberAttached(streamId: string, expectedCreatedAt: number): Promise<boolean> {
+    return (
+      Number(
+        await this.redis.eval(
+          HAS_SUBSCRIBER_ATTACHED_LUA,
+          1,
+          KEYS.job(streamId),
+          String(expectedCreatedAt),
+        ),
+      ) === 1
+    );
   }
 
   async claimFirstSubscriber(

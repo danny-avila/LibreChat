@@ -1089,7 +1089,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       '[ResumeAgentController] Resume content preflight failed',
       getSafeErrorMetadata(err),
     );
-    if (scheduleId && err?.message === GENERATION_RECOVERY_FAILED_ERROR) {
+    if (scheduleId) {
       const terminalJob = await GenerationJobManager.getJob(streamId).catch(() => null);
       if (
         terminalJob?.createdAt === job.createdAt &&

@@ -1571,6 +1571,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return true;
   }
 
+  async hasSubscriberAttached(streamId: string, expectedCreatedAt: number): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    return job?.createdAt === expectedCreatedAt && job.firstSubscriberAttachedAt != null;
+  }
+
   async claimFirstSubscriber(
     streamId: string,
     expectedCreatedAt: number,

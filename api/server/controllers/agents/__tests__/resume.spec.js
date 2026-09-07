@@ -1079,7 +1079,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         error: 'generation_recovery_failed',
       });
       mockGenerationJobManager.getResumeState.mockRejectedValueOnce(
-        new Error('generation_recovery_failed'),
+        new Error('terminal cleanup read failed'),
       );
 
       const res = await post(approveBody());

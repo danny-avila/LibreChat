@@ -1315,6 +1315,9 @@ export interface IJobStoreV2 extends IJobStore {
     overflow: EarlyBufferOverflowState,
   ): Promise<boolean>;
 
+  /** Whether this generation has admitted any subscriber on any replica. */
+  hasSubscriberAttached(streamId: string, expectedCreatedAt: number): Promise<boolean>;
+
   /** Atomically claims the first subscriber for one generation epoch. */
   claimFirstSubscriber(
     streamId: string,
