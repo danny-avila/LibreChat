@@ -92,6 +92,7 @@ import {
 } from './errors';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
+import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
@@ -1151,6 +1152,17 @@ export async function initializeAgent(
 
     currentFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
       files: currentFiles,
+      endpoint: agent.endpoint ?? '',
+      endpointType,
+      skipTotalSizeLimit: true,
+      preserveTextSources: true,
+    });
+    const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+    assertAgentAttachmentLimits({
+      attachments: currentFiles.filter(
+        (file) => requestUsageFileIds.has(file.file_id) && isModelBoundAttachmentFile(file),
+      ),
+      fileConfig: appConfig?.fileConfig,
       endpoint: agent.endpoint ?? '',
       endpointType,
     });

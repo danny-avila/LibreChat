@@ -4071,6 +4071,19 @@ describe('RedisJobStore Integration Tests', () => {
           data: {
             steerId: 'steer-1',
             index: 1,
+            part: {
+              type: 'steer',
+              steer: 'change course',
+              steerId: 'steer-1',
+              files: [{ file_id: 'rejected-file' }],
+            },
+          },
+        },
+        {
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'steer-1',
+            index: 1,
             part: { type: 'steer', steer: 'change course', steerId: 'steer-1' },
           },
         },
@@ -4097,6 +4110,7 @@ describe('RedisJobStore Integration Tests', () => {
       const parts = result!.content as Array<{ type?: string; steer?: string; text?: unknown }>;
       expect(parts).toHaveLength(3);
       expect(parts[1]).toMatchObject({ type: 'steer', steer: 'change course' });
+      expect(parts[1]).not.toHaveProperty('files');
       expect(parts[0]?.type).toBe('text');
       expect(parts[2]?.type).toBe('text');
 

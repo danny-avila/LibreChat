@@ -975,6 +975,10 @@ const executeResponse = async (envelope, { req, res }) => {
         agentIds: modelBoundAgents.map(({ id }) => id),
         attachmentsByAgentId: agentContextAttachmentsByAgentId,
         req,
+        endpoint: primaryConfig.endpoint,
+        endpointsByAgentId: new Map(
+          modelBoundAgents.map((runAgent) => [runAgent.id, { endpoint: runAgent.endpoint }]),
+        ),
       });
 
       const mcpManager = getMCPManager();

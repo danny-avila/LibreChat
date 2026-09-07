@@ -1013,7 +1013,11 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   fileContextSizeLimit: 128  # Maximum aggregate model-bound attachment size in one agent turn (MB)
+#   fileContextCharLimit: 1000000  # Maximum aggregate extracted-text characters in one agent turn
 #   endpoints:
+#     agents:
+#       fileLimit: 10
 #     assistants:
 #       fileLimit: 5
 #       fileSizeLimit: 10  # Maximum size for an individual file in MB

@@ -40,6 +40,7 @@ const {
   isHITLEnabled,
   agentRequestsAskUserQuestion,
   resolveAgentTurnExecutionPlan,
+  logAgentMemorySnapshot,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -2721,6 +2722,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           expiredAt: req?._agentEventBindingRetention?.expiredAt,
           interfaceConfig: req?.config?.interfaceConfig,
         };
+        const terminalMemoryContext = {
+          ...(client?.attachmentMemoryContext ?? {}),
+          req,
+          conversationId: conversation?.conversationId,
+          messageId: response?.messageId,
+          attachments:
+            client?.attachmentMemoryContext?.attachments ??
+            client?.modelBoundCurrentFiles ??
+            req.body.files,
+        };
+        logAgentMemorySnapshot('before_terminal_save', terminalMemoryContext);
 
         if (!client.skipSaveUserMessage) {
           if (!userMessage) {
@@ -2773,6 +2785,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               : 'Response message could not be persisted before terminal publication',
           );
         }
+        logAgentMemorySnapshot('after_terminal_save', terminalMemoryContext);
         if (appliedEventActor != null) {
           const recorded = await recordAgentEventActorReconciliation({
             user: userId,
@@ -2858,10 +2871,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
 
           terminalPublicationStarted = true;
+          logAgentMemorySnapshot('before_final_publish', terminalMemoryContext);
           const publication = await GenerationJobManager.publishTerminalClaim(
             terminalClaim,
             finalEvent,
           );
+          logAgentMemorySnapshot('after_final_publish', terminalMemoryContext);
           let terminalOutcome = 'completed_without_delta';
           if (publication.persistenceFailed) {
             terminalOutcome = 'error';

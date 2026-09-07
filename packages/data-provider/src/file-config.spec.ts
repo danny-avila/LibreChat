@@ -1736,3 +1736,22 @@ describe('fileConfigSchema clientImageResize', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('agent attachment context limits', () => {
+  it('keeps the turn-memory ceiling separate from agent upload storage', () => {
+    expect(baseFileConfig.fileContextSizeLimit).toBe(128 * 1024 * 1024);
+    expect(baseFileConfig.endpoints[EModelEndpoint.agents].totalSizeLimit).toBe(512 * 1024 * 1024);
+  });
+
+  it('validates and merges an aggregate model-context size limit in MB', () => {
+    expect(fileConfigSchema.safeParse({ fileContextSizeLimit: 64 }).success).toBe(true);
+    expect(mergeFileConfig({ fileContextSizeLimit: 64 }).fileContextSizeLimit).toBe(
+      64 * 1024 * 1024,
+    );
+  });
+
+  it('validates and merges an aggregate extracted-text character limit', () => {
+    expect(fileConfigSchema.safeParse({ fileContextCharLimit: 250_000 }).success).toBe(true);
+    expect(mergeFileConfig({ fileContextCharLimit: 250_000 }).fileContextCharLimit).toBe(250_000);
+  });
+});

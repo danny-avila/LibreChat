@@ -1034,6 +1034,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         agentIds: contextAgents.map(({ id }) => id),
         attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(contextAgents),
         req,
+        endpoint: primaryConfig.endpoint,
+        endpointsByAgentId: new Map(
+          contextAgents.map((runAgent) => [runAgent.id, { endpoint: runAgent.endpoint }]),
+        ),
       });
       const mcpManager = getMCPManager();
       const configServers = await resolveConfigServers(req);
