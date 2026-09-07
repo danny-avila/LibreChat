@@ -737,9 +737,14 @@ const executeResponse = async (envelope, { req, res }) => {
       };
 
       const enabledCapabilities = new Set(agentsEConfig?.capabilities);
+      const codeCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.execute_code);
       /** Started before the memory read rather than awaited on its own line, so
-       *  the role lookup overlaps that query instead of preceding it. */
-      const toolRoleGrants = resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName });
+       *  the role lookup overlaps that query instead of preceding it. Skipped
+       *  when the deployment has the capability off — the flag is false either
+       *  way, so the read would be pure load on every request. */
+      const toolRoleGrants = codeCapabilityEnabled
+        ? resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName })
+        : null;
       const memoryAvailable = await resolveMemoryAvailability({
         enabledCapabilities,
         memoryConfig: appConfig?.memory,
@@ -749,8 +754,7 @@ const executeResponse = async (envelope, { req, res }) => {
       /** The deployment switch AND the role grant: `initializeAgent` rebuilds
        *  `bash_tool`, `read_file` and the workspace file tools from this flag,
        *  and forwards the code-environment context to their handlers. */
-      const codeEnvAvailable =
-        enabledCapabilities.has(AgentCapabilities.execute_code) && (await toolRoleGrants).runCode;
+      const codeEnvAvailable = codeCapabilityEnabled && (await toolRoleGrants)?.runCode === true;
       const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
       const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
       const accessibleSkillIds = skillsCapabilityEnabled
