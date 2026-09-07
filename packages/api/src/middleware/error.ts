@@ -92,7 +92,8 @@ export const ErrorController = (
 
     if (err instanceof MCPAuthenticationRejectedError) {
       logger.warn('MCP bearer authentication rejected: ' + err.message);
-      return res.status(401).send({
+      /** A remote credential rejection must not trigger the client's app-JWT retry interceptor. */
+      return res.status(err.statusCode).send({
         error: 'invalid_token',
         code: err.code,
         message: err.message,

@@ -254,12 +254,13 @@ describe('ErrorController', () => {
   });
 
   describe('MCPAuthenticationRejectedError handling', () => {
-    it('projects the transport-neutral outcome into an actionable HTTP response', () => {
+    it('projects rejection without triggering the app-auth 401 retry interceptor', () => {
       const error = new MCPAuthenticationRejectedError('private-mcp', true);
 
       ErrorController(error, mockReq, mockRes, mockNext);
 
-      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(error.statusCode).toBe(403);
       expect(mockRes.send).toHaveBeenCalledWith({
         error: 'invalid_token',
         code: 'MCP_AUTHENTICATION_REJECTED',

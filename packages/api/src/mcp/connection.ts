@@ -1604,6 +1604,17 @@ export class MCPConnection extends EventEmitter {
                   resolvedInit?.headers,
                   headers,
                 );
+                const liveBearer = this.directBearerRecoveryEnabled
+                  ? this.getRequestHeaders()?.authorization
+                  : undefined;
+                if (liveBearer != null) {
+                  for (const key of Object.keys(fetchHeaders)) {
+                    if (key.toLowerCase() === 'authorization') {
+                      delete fetchHeaders[key];
+                    }
+                  }
+                  fetchHeaders.authorization = liveBearer;
+                }
                 return undiciFetch(urlString, {
                   ...resolvedInit,
                   redirect: 'manual',

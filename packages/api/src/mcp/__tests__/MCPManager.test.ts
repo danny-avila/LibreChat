@@ -4387,6 +4387,95 @@ describe('MCPManager', () => {
       },
     );
 
+    it.each([
+      { stage: 'initialize', cancelJoiner: false, mutate: false },
+      { stage: 'catalog', cancelJoiner: false, mutate: false },
+      { stage: 'initialize', cancelJoiner: true, mutate: false },
+      { stage: 'catalog', cancelJoiner: true, mutate: false },
+      { stage: 'initialize', cancelJoiner: false, mutate: true },
+      { stage: 'catalog', cancelJoiner: false, mutate: true },
+    ])(
+      'isolates a stopped creation leader during $stage (cancelJoiner=$cancelJoiner, mutate=$mutate)',
+      async ({ stage, cancelJoiner, mutate }) => {
+        const leaderAbort = new AbortController();
+        const joinerAbort = new AbortController();
+        const candidate = newUserConnection();
+        const replacement = newUserConnection();
+        let entered!: () => void;
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const waitForAbort = () =>
+          new Promise<never>((_, reject) => {
+            leaderAbort.signal.addEventListener('abort', () => reject(leaderAbort.signal.reason), {
+              once: true,
+            });
+            entered();
+          });
+        if (stage === 'catalog') {
+          (candidate.refreshToolList as jest.Mock).mockImplementationOnce(waitForAbort);
+        }
+        const config: t.ParsedServerConfig = {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+          source: 'yaml',
+          headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        };
+        mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+        (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+          async (options) => options,
+        );
+        (MCPConnectionFactory.create as jest.Mock)
+          .mockReset()
+          .mockImplementationOnce((basic: t.BasicConnectionOptions) => {
+            basic.directBearerRecoveryState!.attempted = true;
+            return stage === 'initialize' ? waitForAbort() : Promise.resolve(candidate);
+          })
+          .mockResolvedValue(replacement);
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const opts = {
+          serverName,
+          serverConfig: config,
+          user: mockUser,
+          upstreamTokenProvider: jest.fn().mockResolvedValue({ access_token: 'token' }),
+        };
+        const leader = manager.getUserConnection({ ...opts, signal: leaderAbort.signal });
+        const leaderOutcome = leader.catch((error: Error) => error);
+        await started;
+        const joiner = manager.getUserConnection({ ...opts, signal: joinerAbort.signal });
+        const joinerOutcome = joiner.catch((error: Error) => error);
+        await new Promise((resolve) => setImmediate(resolve));
+        if (cancelJoiner) {
+          joinerAbort.abort(new Error('joiner stopped'));
+        }
+        if (mutate) {
+          await manager.disconnectUserConnection(mockUser.id, serverName);
+        }
+        leaderAbort.abort(new Error('leader stopped'));
+        await expect(leaderOutcome).resolves.toMatchObject({ message: 'leader stopped' });
+        if (cancelJoiner || mutate) {
+          await expect(joinerOutcome).resolves.toMatchObject({
+            message: cancelJoiner
+              ? 'joiner stopped'
+              : expect.stringContaining('cancelled during teardown'),
+          });
+          expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+        } else {
+          await expect(joinerOutcome).resolves.toBe(replacement);
+          expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+          expect(MCPConnectionFactory.create).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              directBearerRecoveryState: expect.objectContaining({ attempted: true }),
+            }),
+            expect.objectContaining({ signal: joinerAbort.signal }),
+          );
+        }
+        if (stage === 'catalog') {
+          expect(candidate.dispose).toHaveBeenCalledTimes(1);
+        }
+      },
+    );
+
     it('honors a direct bearer recovery budget consumed during factory initialization', async () => {
       const authenticationError = Object.assign(new Error('unauthorized'), { status: 401 });
       const connection = newUserConnection();

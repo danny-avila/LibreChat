@@ -320,7 +320,7 @@ export class MCPOAuthSecretReentryRequiredError extends Error {
  */
 export class MCPAuthenticationRejectedError extends Error {
   public readonly code: 'MCP_AUTHENTICATION_REJECTED' = MCPErrorCodes.AUTHENTICATION_REJECTED;
-  public readonly statusCode = 401;
+  public readonly statusCode = 403;
   public readonly retryable: boolean;
 
   constructor(

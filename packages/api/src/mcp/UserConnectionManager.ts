@@ -34,6 +34,7 @@ type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: OAuthLifecycleRelay;
   directBearerRecoveryState: t.DirectBearerRecoveryState;
+  signal?: AbortSignal;
 };
 
 /**
@@ -477,19 +478,47 @@ export abstract class UserConnectionManager {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
         logger.debug(`[MCP][User: ${userId}] Joining in-flight connection attempt`);
-        await pending.oauth.add({
-          oauthStart: opts.oauthStart,
-          oauthEnd: opts.oauthEnd,
-          flowManager: opts.flowManager,
-          userId,
-          serverName,
-        });
-        const connection = await pending.promise;
-        if (pending.directBearerRecoveryState.attempted) {
-          directBearerRecoveryState.attempted = true;
+        const mutationFence =
+          config && usesDirectOpenIDBearerRecovery(config)
+            ? this.createConnectionMutationFence(userId, serverName)
+            : undefined;
+        try {
+          await pending.oauth.add({
+            oauthStart: opts.oauthStart,
+            oauthEnd: opts.oauthEnd,
+            flowManager: opts.flowManager,
+            userId,
+            serverName,
+          });
+          opts.signal?.throwIfAborted();
+          await this.waitForConnectionRecovery(
+            pending.promise.then(() => undefined),
+            opts.signal,
+          );
+          const connection = await pending.promise;
+          opts.signal?.throwIfAborted();
+          mutationFence?.assertCurrent();
+          if (pending.directBearerRecoveryState.attempted) {
+            directBearerRecoveryState.attempted = true;
+          }
+          directBearerRecoveryState.resolvedConfig =
+            pending.directBearerRecoveryState.resolvedConfig;
+          return connection;
+        } catch (error) {
+          opts.signal?.throwIfAborted();
+          mutationFence?.assertCurrent();
+          if (!mutationFence || !pending.signal?.aborted || error !== pending.signal.reason) {
+            throw error;
+          }
+          /** The stopped leader owns its aborted attempt, not this still-active request.
+           * Continue with an independently owned creation, preserving any spent auth budget. */
+          directBearerRecoveryState.attempted ||= pending.directBearerRecoveryState.attempted;
+          if (this.pendingConnections.get(lockKey) === pending) {
+            this.pendingConnections.delete(lockKey);
+          }
+        } finally {
+          mutationFence?.release();
         }
-        directBearerRecoveryState.resolvedConfig = pending.directBearerRecoveryState.resolvedConfig;
-        return connection;
       }
     }
 
@@ -524,6 +553,7 @@ export abstract class UserConnectionManager {
         promise: connectionPromise,
         oauth: pendingOAuth,
         directBearerRecoveryState,
+        signal: opts.signal,
       });
     }
 
