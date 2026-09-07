@@ -35,7 +35,8 @@ do not relax that policy to make the test pass.
 2. Native SRT capability reported by each worker, plus approved sandboxed Bash.
 3. Standalone approved `create_file` physically writes the expected bytes.
 4. A subsequent `read_file` returns those bytes through LibreChat.
-5. Approved `edit_file` persists; a browser reload and another turn see the edit.
+5. Selecting **Accept edits** lets `edit_file` persist without a prompt; a browser
+   reload and another turn see the edit, while commands continue to require approval.
 6. Rejected creation leaves no file, and creation has no side effect before approval.
 7. Selecting worker B does not expose worker A's file; B's write leaves A unchanged.
 8. Stopping B produces a persisted tool failure, not success or fallback to A.
@@ -50,7 +51,8 @@ Every run creates its own MongoDB, Redis, Code API, LibreChat, two worker identi
 and workspaces. Ports are dynamically assigned, not the usual development ports.
 Listeners are loopback-only. No existing database, launchd worker, pairing, or project
 directory is reused. Children receive an allowlisted environment; checkout `.env`
-keys are neutralized. Mutations require real UI approval; reads are explicitly allowed.
+keys are neutralized. Mutations default to real UI approval; the test explicitly selects
+**Accept edits** for one file edit, while commands remain approval-gated and reads are allowed.
 
 The command stops its children on success, failure, SIGINT, and SIGTERM. The private
 temporary run directory is printed and retained for debugging; it contains test-only
