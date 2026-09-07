@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useAtomValue } from 'jotai';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
@@ -17,6 +18,7 @@ import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { showThinkingAtom } from '~/store/showThinking';
 import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -322,6 +324,7 @@ export function SubagentActivityContent({
   onCancelControl?: (controlId: string) => void;
 }) {
   const localize = useLocalize();
+  const showThinking = useAtomValue(showThinkingAtom);
   const isSubmitting = isLiveSubagentStatus(activity.status);
   const parts = useMemo(() => activity.items.map(toContentPart), [activity.items]);
 
@@ -353,6 +356,7 @@ export function SubagentActivityContent({
         isCreatedByUser={false}
         isLast
         isSubmitting={isSubmitting}
+        showThinking={showThinking}
         isLatestMessage={isSubmitting}
       />
     );

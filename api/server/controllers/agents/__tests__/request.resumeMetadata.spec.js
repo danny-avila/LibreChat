@@ -24,6 +24,7 @@ const mockGenerationJobManager = {
   markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
   getResumeState: jest.fn(),
+  getJobStore: jest.fn(),
   updateMetadata: jest.fn(),
   persistAgentEventDetachedTerminalEvidence: jest.fn(),
   claimGeneration: jest.fn(),
@@ -444,6 +445,9 @@ describe('ResumableAgentController resume metadata', () => {
       emitter: { on: jest.fn() },
     });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue(null),
+    });
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.isRedis = false;
@@ -3606,9 +3610,11 @@ describe('ResumableAgentController resume metadata', () => {
       const req = createFailedRequest({
         conversationId: undefined,
         clientRequestId: 'failed-new-conversation',
+        agent_id: 'unverified-agent',
         parentMessageId: '00000000-0000-0000-0000-000000000000',
         endpointOption: {
           endpoint: 'azureOpenAI',
+          agent_id: 'unverified-agent',
           modelOptions: { model: 'gpt-4o' },
           chatProjectId: '507f1f77bcf86cd799439011',
         },
@@ -3639,7 +3645,7 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'gpt-4o',
           chatProjectId: '507f1f77bcf86cd799439011',
         }),
-        expect.any(Object),
+        expect.objectContaining({ initialAgentId: null }),
       );
     });
   });

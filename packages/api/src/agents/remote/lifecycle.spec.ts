@@ -213,6 +213,30 @@ describe('Agent execution enrollment', () => {
     ]);
   });
 
+  it('abandons the shutdown tracker when terminalization gives up, without recording a drain', async () => {
+    const enrollment = await enrollAgentExecution(enrollmentParams('chatcmpl-terminal-abandon'), {
+      manager,
+    });
+    await enrollment.beginProviderExecution();
+    const abandon = jest.spyOn(manager, 'abandonProviderExecution');
+    const drained = jest.spyOn(manager, 'markProviderExecutionDrained');
+    jest
+      .spyOn(manager, 'completeJob')
+      .mockRejectedValueOnce(new Error('terminal store unavailable'))
+      .mockRejectedValueOnce(new Error('terminal store still unavailable'));
+
+    await expect(enrollment.settle()).rejects.toThrow('terminal store still unavailable');
+
+    /** No marker on purpose — a successor must still see the truth — but the shutdown
+     *  tracker has no other release path, so it is abandoned explicitly. */
+    expect(drained).not.toHaveBeenCalled();
+    expect(abandon).toHaveBeenCalledWith(
+      'chatcmpl-terminal-abandon',
+      expect.any(Number),
+      expect.any(String),
+    );
+  });
+
   it('lets destructive cleanup abort the canonical signal and wait for trailing writes', async () => {
     const enrollment = await enrollAgentExecution(enrollmentParams('resp-delete'), { manager });
     const tail = deferred<void>();

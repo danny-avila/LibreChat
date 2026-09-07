@@ -203,6 +203,9 @@ jest.mock('@librechat/api', () => ({
    *  before SDK formatting; the mock must expose it like any other used
    *  export or the call throws before the assertions run. */
   stripActivityLabelParts: jest.fn((payload) => payload),
+  createOwnedToolEndHandler: jest.fn(
+    (...args) => new (require('@librechat/agents').ToolEndHandler)(...args),
+  ),
   collectReachableAgents: (roots) => {
     const agents = [];
     const pending = [...roots];
@@ -706,7 +709,11 @@ describe('createResponse controller', () => {
     );
     const { createRun } = require('@librechat/api');
     expect(createRun).toHaveBeenCalledWith(
-      expect.objectContaining({ initialSessions: mockInitialSessions }),
+      expect.objectContaining({
+        initialSessions: mockInitialSessions,
+        user: expect.objectContaining({ id: 'user-123' }),
+        traceContext: { endpoint: 'agents' },
+      }),
     );
   });
 
@@ -815,9 +822,10 @@ describe('createResponse controller', () => {
       req.user = {
         id: 'user-123',
         role: 'USER',
-        tenantId: 'tenant-123',
+        tenantId: 'stale-user-tenant',
         federatedTokens: { access_token: 'secret' },
       };
+      req.tenantId = 'request-tenant';
       const requestBody = {
         ...req.body,
         ephemeralAgent: { skills: true },
@@ -834,7 +842,10 @@ describe('createResponse controller', () => {
       expect(mockCreateAgentRunEnvelope).toHaveBeenCalledWith(
         expect.objectContaining({
           protocol: 'responses',
-          principal: req.user,
+          principal: {
+            ...req.user,
+            tenantId: 'request-tenant',
+          },
           payload: requestBody,
           requestId: expect.any(String),
           receivedAt: expect.any(Number),

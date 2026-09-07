@@ -6,7 +6,7 @@ import {
   isCronCadence,
 } from 'librechat-data-provider';
 import type { TScheduleCadence, TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
-import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
+import type { ScheduleMethods, ISchedule, IScheduleRun } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type {
   ScheduleDeleteResult,
@@ -239,7 +239,42 @@ export type WireSchedule = Pick<
   | 'configRevision'
   | 'createdAt'
   | 'updatedAt'
->;
+> & {
+  /** See `TSchedule.inFlight`: the generating occurrences, from their own run rows. */
+  inFlight?: Array<{ conversationId: string }>;
+};
+
+/** Only generating occurrences are read for the list. `ScheduleRun` is indexed by
+ *  status, not by user, and `started` rows are bounded globally by the capacity
+ *  slots; `requires_action` rows accumulate for as long as their approvals wait. */
+export const LISTED_RUN_STATUSES: readonly IScheduleRun['status'][] = ['started'];
+
+/**
+ * The chats a schedule's generating occurrences are producing. A reservation that
+ * has not been dispatched yet carries no conversation id, and there is nothing to
+ * look for until it does.
+ */
+export function toWireInFlight(
+  runs: readonly IScheduleRun[],
+): Array<{ conversationId: string }> | undefined {
+  const chats = runs.flatMap((run) =>
+    run.conversationId != null ? [{ conversationId: run.conversationId }] : [],
+  );
+  return chats.length > 0 ? chats : undefined;
+}
+
+function inFlightBySchedule(runs: readonly IScheduleRun[]): Map<string, IScheduleRun[]> {
+  const grouped = new Map<string, IScheduleRun[]>();
+  for (const run of runs) {
+    const list = grouped.get(run.scheduleId);
+    if (list) {
+      list.push(run);
+    } else {
+      grouped.set(run.scheduleId, [run]);
+    }
+  }
+  return grouped;
+}
 
 /**
  * Public projection. `limits` is optional only for callers that have none to hand;
@@ -251,6 +286,7 @@ export type WireSchedule = Pick<
 export function toWireSchedule(
   schedule: ISchedule,
   limits?: Pick<ScheduleLimits, 'projectId'>,
+  inFlight: readonly IScheduleRun[] = [],
 ): WireSchedule {
   return {
     id: schedule.id,
@@ -272,6 +308,7 @@ export function toWireSchedule(
     configRevision: schedule.configRevision,
     createdAt: schedule.createdAt,
     updatedAt: schedule.updatedAt,
+    ...(inFlight.length > 0 && { inFlight: toWireInFlight(inFlight) }),
   };
 }
 
@@ -477,13 +514,21 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function listSchedules(req: ServerRequest, res: Response): Promise<void> {
-    const [schedules, limits] = await Promise.all([
-      deps.methods.getSchedulesByUser(requestUser(req).id),
-      deps.getLimits(requestUser(req)),
+    const user = requestUser(req);
+    // Three independent, user-scoped reads; the generating runs ride alongside so
+    // the list can name the chat each one is producing without a second round trip
+    // per card.
+    const [schedules, limits, inFlight] = await Promise.all([
+      deps.methods.getSchedulesByUser(user.id),
+      deps.getLimits(user),
+      deps.methods.getActiveRunsForUser(user.id, LISTED_RUN_STATUSES),
     ]);
-    retryDeferredDeletions(requestUser(req).id);
+    const inFlightBySchedule_ = inFlightBySchedule(inFlight);
+    retryDeferredDeletions(user.id);
     res.json({
-      schedules: schedules.map((schedule) => toWireSchedule(schedule, limits)),
+      schedules: schedules.map((schedule) =>
+        toWireSchedule(schedule, limits, inFlightBySchedule_.get(schedule.id)),
+      ),
       limits: {
         maxPerUser: limits.maxPerUser,
         // minIntervalMinutes ships with the list so the dialog can refuse a cadence
@@ -498,15 +543,25 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   async function getSchedule(req: ServerRequest, res: Response): Promise<void> {
     const { id } = req.params as { id: string };
     const user = requestUser(req);
-    const [schedule, limits] = await Promise.all([
+    // The run read starts before ownership is established, so it is scoped to the
+    // caller — the same user-bound query the list uses — and narrowed here, rather
+    // than a by-schedule read that would touch rows the caller may not own.
+    const [schedule, limits, inFlight] = await Promise.all([
       deps.methods.getScheduleById(id, user.id),
       deps.getLimits(user),
+      deps.methods.getActiveRunsForUser(user.id, LISTED_RUN_STATUSES),
     ]);
     if (schedule == null) {
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    res.json(toWireSchedule(schedule, limits));
+    res.json(
+      toWireSchedule(
+        schedule,
+        limits,
+        inFlight.filter((run) => run.scheduleId === id),
+      ),
+    );
   }
 
   async function createSchedule(req: ServerRequest, res: Response): Promise<void> {

@@ -4999,6 +4999,9 @@ export class RedisJobStore implements IJobStoreV2 {
       compactionSemanticIndex: data.compactionSemanticIndex
         ? JSON.parse(data.compactionSemanticIndex)
         : undefined,
+      /** Calibration and fading state captured at a HITL pause; without this line
+       *  every Redis deployment would resume with no tier to seed. */
+      contextMeta: data.contextMeta ? JSON.parse(data.contextMeta) : undefined,
       /** The owning replica's seal capability. `serializeJob` writes every
        *  boolean generically, but this mapper is explicit — omitting it here
        *  drops the flag on every read, so the steer route would compute

@@ -36,6 +36,15 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   includeReasoningContent?: boolean;
   promptCache?: boolean;
   promptCacheTtl?: '5m' | '1h';
+  /**
+   * Declares that this client talks to the first-party OpenAI surface, which is
+   * what gates the agents SDK's model-specific request constraints (GPT-6
+   * Astra: Responses-only tool calls, rejected sampling parameters,
+   * unsupported reasoning efforts). The SDK defaults them off and takes this as
+   * a declaration rather than inferring it from a base URL, because only this
+   * layer knows whether a URL is a faithful first-party route or a gateway.
+   */
+  firstPartyEndpoint?: boolean;
   _lc_stream_delay?: number;
   verbosity?: string | null;
 };

@@ -11,6 +11,7 @@ import {
 import type {
   EmbeddedResource,
   ListToolsResult,
+  ResourceLink,
   ImageContent,
   AudioContent,
   TextContent,
@@ -73,8 +74,19 @@ export type OAuthHandledSource = 'silent-refresh' | 'interactive';
 
 export type MCPTool = Tool;
 export type MCPToolListResponse = ListToolsResult;
-export type ToolContentPart = TextContent | ImageContent | EmbeddedResource | AudioContent;
-export type { TextContent, ImageContent, EmbeddedResource, AudioContent };
+export type ToolContentPart =
+  | TextContent
+  | ImageContent
+  | EmbeddedResource
+  | ResourceLink
+  | AudioContent;
+export type ResourceContents = EmbeddedResource['resource'];
+export type ResourceBody = {
+  text?: string;
+  image?: ImageContent;
+  binaryBytes?: number;
+};
+export type { TextContent, ImageContent, EmbeddedResource, ResourceLink, AudioContent };
 export type MCPToolCallResponse =
   | undefined
   | {

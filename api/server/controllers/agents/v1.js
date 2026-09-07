@@ -1060,12 +1060,16 @@ const updateAgentHandler = async (req, res) => {
     const {
       avatar: avatarField,
       code_environment_id: codeEnvironmentIdField,
+      git_identity: gitIdentityField,
       _id,
       ...rest
     } = validatedData;
     const updateData = removeNullishValues(rest);
     if (codeEnvironmentIdField !== undefined) {
       updateData.code_environment_id = codeEnvironmentIdField;
+    }
+    if (gitIdentityField !== undefined) {
+      updateData.git_identity = gitIdentityField;
     }
     let existingAgent;
 
@@ -1310,6 +1314,10 @@ const updateAgentHandler = async (req, res) => {
       delete updateData.code_environment_id;
       updateData.$unset = { code_environment_id: 1 };
     }
+    if (updateData.git_identity === null) {
+      delete updateData.git_identity;
+      updateData.$unset = { ...updateData.$unset, git_identity: 1 };
+    }
 
     let updatedAgent =
       Object.keys(updateData).length > 0
@@ -1465,7 +1473,7 @@ const duplicateAgentHandler = async (req, res) => {
       return res.status(subagentReferenceError.status).json(subagentReferenceError.body);
     }
 
-    const originalActions = (await db.getActions({ agent_id: id }, true)) ?? [];
+    const originalActions = (await db.getActions({ agentId: id }, true)) ?? [];
     const sanitizedActions = originalActions.map((action) => {
       const metadata = { ...(action.metadata || {}) };
       for (const field of sensitiveFields) {
@@ -1550,7 +1558,7 @@ const duplicateAgentHandler = async (req, res) => {
       const fullActionId = `${domain}${actionDelimiter}${newActionId}`;
 
       const newAction = await db.updateAction(
-        { action_id: newActionId, agent_id: newAgentId },
+        { actionId: newActionId, agentId: newAgentId },
         {
           metadata: action.metadata,
           agent_id: newAgentId,
@@ -1575,7 +1583,7 @@ const duplicateAgentHandler = async (req, res) => {
     try {
       newAgent = await db.createAgent(newAgentData);
     } catch (error) {
-      await db.deleteActions({ agent_id: newAgentId, user: userId }).catch((cleanupError) => {
+      await db.deleteActions({ agentId: newAgentId, user: userId }).catch((cleanupError) => {
         logger.error(
           '[/agents/:id/duplicate] Failed to clean up cloned Actions after Agent creation failed:',
           cleanupError,
@@ -2065,7 +2073,7 @@ const revertAgentVersionHandler = async (req, res) => {
       .filter(Boolean);
     const actions =
       actionIds.length > 0
-        ? ((await db.getActions({ agent_id: id, action_id: { $in: actionIds } }, true)) ?? [])
+        ? ((await db.getActions({ agentId: id, actionId: actionIds }, true)) ?? [])
         : [];
 
     if (

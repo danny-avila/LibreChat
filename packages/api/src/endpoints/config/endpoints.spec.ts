@@ -199,6 +199,11 @@ describe('createEndpointsConfigService', () => {
                         workerId: 'private-worker-route',
                         tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
                       },
+                      configSchema: {
+                        permissions: {
+                          commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+                        },
+                      },
                       default: true,
                     },
                   ],
@@ -220,6 +225,11 @@ describe('createEndpointsConfigService', () => {
             name: 'Attached VM',
             type: 'attached',
             default: true,
+            configSchema: {
+              permissions: {
+                commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+              },
+            },
           },
         ],
       });

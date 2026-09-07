@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
+import { logger } from '@librechat/data-schemas';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
-import type { StatefulCodeEnvironment, TAgentsEndpoint } from 'librechat-data-provider';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  StatefulCodeEnvironment,
+  TAgentsEndpoint,
+} from 'librechat-data-provider';
 
 export const CODE_API_EXPECTED_PROFILE_HEADER = 'X-CodeAPI-Expected-Profile';
 export const CODE_API_BRIDGE_WORKER_HEADER = 'X-LibreChat-Code-Worker-ID';
@@ -23,6 +29,8 @@ export interface CodeExecutionContext {
   environmentId?: string;
   environmentType?: CodeEnvironmentConfig['type'];
   bridgeWorkerId?: string;
+  codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
+  codeEnvironmentSettings?: CodeEnvironmentUserSettings;
 }
 
 export function createCodeExecutionRouteKey(
@@ -169,6 +177,8 @@ export function resolveCodeExecutionContext(params: {
     environmentId: configuredEnvironment?.id,
     environmentType: configuredEnvironment?.type,
     bridgeWorkerId: configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+    codeEnvironmentConfigSchema: configuredEnvironment?.configSchema,
+    codeEnvironmentSettings: configuredEnvironment?.settings,
   };
 }
 
@@ -183,14 +193,47 @@ export function codeExecutionHeaders(
   };
 }
 
+/**
+ * The cause belongs in the message rather than in winston metadata. A caught
+ * value passed as metadata is merged onto the log record, so a rejection
+ * carrying `tenantId`, `userId` or `event_name` would overwrite the request
+ * identity this log exists to provide; and any metadata makes `format.splat()`
+ * treat a `%s` in the cause as a substitution token. Every read is guarded:
+ * `String()` throws on a null-prototype object and a proxy can throw from a
+ * `name` or `message` accessor, either of which would otherwise replace the
+ * rejection with a formatting error and log nothing.
+ */
+function describeAuthFailure(error: unknown): string {
+  try {
+    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  } catch {
+    return 'undescribable rejection';
+  }
+}
+
+/**
+ * `@librechat/agents` replaces any throw from this callback with a fixed
+ * "not authorized" string before the model or the operator sees it, and its own
+ * console diagnostic carries no request or user id. This log is the only
+ * request-correlated record of why the headers could not be resolved.
+ */
 export async function codeExecutionAuthHeaders(
   authHeaders: (
     bridgeWorkerId?: string,
   ) => Promise<Record<string, string>> | Record<string, string>,
   context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
 ): Promise<Record<string, string>> {
-  return {
-    ...(await authHeaders(context.bridgeWorkerId)),
-    ...codeExecutionHeaders(context),
-  };
+  try {
+    return {
+      ...(await authHeaders(context.bridgeWorkerId)),
+      ...codeExecutionHeaders(context),
+    };
+  } catch (error) {
+    logger.error(
+      `[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: ${context.executionProfile}` +
+        (context.bridgeWorkerId != null ? ` | Worker: ${context.bridgeWorkerId}` : '') +
+        ` | Cause: ${describeAuthFailure(error)}`,
+    );
+    throw error;
+  }
 }

@@ -92,6 +92,16 @@ export async function mergeAccessibleCodeEnvironments({
       )
       .map((environment) => [environment.id, environment]) ?? [],
   );
+  const effectiveControlPlanes = new Map(
+    sessions.environments
+      ?.filter(
+        (environment) =>
+          environment.owner === 'deployment' &&
+          environment.type === 'attached' &&
+          environment.pairing != null,
+      )
+      .map((environment) => [environment.id, environment]) ?? [],
+  );
   const registeredAliasIds = new Set(
     registeredIds.filter((environmentId) => !deploymentEnvironments.has(environmentId)),
   );
@@ -99,7 +109,13 @@ export async function mergeAccessibleCodeEnvironments({
     ({ controlPlaneId, baseURL: _persistedBaseURL, ...environment }) => {
       const controlPlane = deploymentEnvironments.get(controlPlaneId);
       if (controlPlane == null || deploymentEnvironments.has(environment.id)) return [];
-      return [{ ...environment, baseURL: controlPlane.baseURL }];
+      return [
+        {
+          ...environment,
+          baseURL: controlPlane.baseURL,
+          configSchema: effectiveControlPlanes.get(controlPlaneId)?.configSchema,
+        },
+      ];
     },
   );
   const principalEnvironmentIds = new Set(

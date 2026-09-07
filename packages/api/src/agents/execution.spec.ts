@@ -1,3 +1,6 @@
+import winston from 'winston';
+import { Writable } from 'node:stream';
+import { logger } from '@librechat/data-schemas';
 import {
   codeExecutionAuthHeaders,
   codeExecutionHeaders,
@@ -315,5 +318,126 @@ describe('resolveCodeExecutionContext', () => {
         userId: 'user-1',
       }),
     ).toThrow('Stateful code environment "missing-vm" is not configured');
+  });
+});
+
+describe('codeExecutionAuthHeaders', () => {
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it('logs the failure that reaches the model as a generic authorization error', async () => {
+    const failure = new Error('code API signing key is not configured');
+
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject(failure), {
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'opaque-worker-id',
+      }),
+    ).rejects.toBe(failure);
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: stateful | Worker: opaque-worker-id | Cause: Error: code API signing key is not configured',
+    );
+  });
+
+  it('omits the worker from the log when the request is not bridged', async () => {
+    await expect(
+      codeExecutionAuthHeaders(
+        () => {
+          throw new Error('boom');
+        },
+        { executionProfile: 'default' },
+      ),
+    ).rejects.toThrow('boom');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: Error: boom',
+    );
+  });
+
+  it('describes a rejection that cannot be converted to a string, and still rethrows it', async () => {
+    const hostile = Object.create(null) as Record<string, never>;
+
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject(hostile), {
+        executionProfile: 'default',
+      }),
+    ).rejects.toBe(hostile);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: undescribable rejection',
+    );
+  });
+
+  it('describes a rejection whose accessors throw, and still rethrows it', async () => {
+    const hostile = new Proxy(new Error('boom'), {
+      get(): never {
+        throw new Error('accessor exploded');
+      },
+    });
+
+    await expect(
+      codeExecutionAuthHeaders(() => Promise.reject(hostile), {
+        executionProfile: 'default',
+      }),
+    ).rejects.toBe(hostile);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: default | Cause: undescribable rejection',
+    );
+  });
+
+  it('renders the cause verbatim through the formats a deployment actually uses', async () => {
+    errorSpy.mockRestore();
+    const rendered: string[] = [];
+    const capture = new winston.transports.Stream({
+      stream: new Writable({
+        write(chunk: Buffer, _encoding: string, done: () => void) {
+          rendered.push(String(chunk));
+          done();
+        },
+      }),
+      /* `splat()` is what would consume a `%s` in the cause as a substitution
+         token, and the bare printf is the console transport that prints
+         `info.message` alone. Both have to leave the cause intact. */
+      format: winston.format.combine(
+        winston.format.errors({ stack: true }),
+        winston.format.splat(),
+        winston.format.printf((info) => `${info.level}: ${info.message}`),
+      ),
+    });
+    const silenced = logger.transports.map((transport) => {
+      const previous = transport.silent;
+      transport.silent = true;
+      return { transport, previous };
+    });
+    logger.add(capture);
+
+    try {
+      await codeExecutionAuthHeaders(
+        () => Promise.reject(new Error('code API signing key is not configured')),
+        { executionProfile: 'stateful' },
+      ).catch(() => undefined);
+      await codeExecutionAuthHeaders(() => Promise.reject('service said %s unavailable'), {
+        executionProfile: 'stateful',
+      }).catch(() => undefined);
+    } finally {
+      logger.remove(capture);
+      silenced.forEach(({ transport, previous }) => {
+        transport.silent = previous;
+      });
+    }
+
+    const output = rendered.join('');
+    expect(output).toContain('Cause: Error: code API signing key is not configured');
+    expect(output).toContain('Cause: service said %s unavailable');
   });
 });

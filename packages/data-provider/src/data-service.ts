@@ -22,7 +22,9 @@ import * as r from './roles';
 export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
+    if (Array.isArray(value)) {
+      value.forEach((item) => query.append(key, String(item)));
+    } else if (value !== undefined && value !== null && value !== '') {
       query.set(key, String(value));
     }
   }
@@ -72,6 +74,10 @@ export function getCodeEnvironments(): Promise<t.TCodeEnvironmentsResponse> {
   return request.get(endpoints.codeEnvironments());
 }
 
+export function getCodeEnvironmentStatus(id: string): Promise<t.TCodeEnvironmentStatusResponse> {
+  return request.get(endpoints.codeEnvironmentStatus(id));
+}
+
 export function pairCodeEnvironment(payload: {
   name: string;
   controlPlaneId: string;
@@ -83,6 +89,16 @@ export function deleteCodeEnvironment(
   id: string,
 ): Promise<{ environment: t.TCodeEnvironmentSummary }> {
   return request.delete(endpoints.codeEnvironmentById(id));
+}
+
+export function updateCodeEnvironmentSettings({
+  id,
+  settings,
+}: {
+  id: string;
+  settings: config.CodeEnvironmentUserSettings;
+}): Promise<{ environment: t.TCodeEnvironmentSummary }> {
+  return request.patch(endpoints.codeEnvironmentSettings(id), { settings });
 }
 
 export function getFavorites(): Promise<q.TUserFavorite[]> {

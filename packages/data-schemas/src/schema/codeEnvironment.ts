@@ -16,6 +16,21 @@ const workerPrincipalSchema = new Schema(
   { _id: false },
 );
 
+const codeEnvironmentSettingsSchema = new Schema(
+  {
+    permissions: {
+      type: new Schema(
+        {
+          fileWrite: { type: String, enum: ['allow', 'ask', 'deny'] },
+          commandExecution: { type: String, enum: ['allow', 'ask', 'deny'] },
+        },
+        { _id: false },
+      ),
+    },
+  },
+  { _id: false },
+);
+
 const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEnvironmentDocument>(
   {
     environmentId: {
@@ -92,6 +107,9 @@ const codeEnvironmentSchema: Schema<CodeEnvironmentDocument> = new Schema<CodeEn
     },
     workerPrincipal: {
       type: workerPrincipalSchema,
+    },
+    settings: {
+      type: codeEnvironmentSettingsSchema,
     },
     tenantId: {
       type: String,

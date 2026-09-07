@@ -48,7 +48,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
 const { forkSharedConversation } = require('~/server/utils/import/fork');
-const { createForkLimiters } = require('~/server/middleware/limiters');
+const { createForkLimiters, createShareLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -336,6 +336,7 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
+  const { shareIpLimiter, shareUserLimiter } = createShareLimiters();
 
   router.get(
     '/:shareId/config',
@@ -357,6 +358,8 @@ if (allowSharedLinks) {
   router.get(
     '/:shareId',
     optionalJwtAuth,
+    shareIpLimiter,
+    shareUserLimiter,
     canAccessSharedLink,
     sharedLinkConfigMiddleware,
     async (req, res) => {

@@ -67,4 +67,25 @@ describe('createLazyAgentHistoryResolver', () => {
 
     expect(metadata.historicalToolNames).toEqual(expect.arrayContaining(['skill', 'read_file']));
   });
+
+  it('preserves the resolved skill-authoring capability for lazy admission', async () => {
+    const skillId = new Types.ObjectId();
+    const resolver = createLazyAgentHistoryResolver({
+      accessibleSkillIds: [skillId],
+      editableSkillIds: [skillId],
+      skillsCapabilityEnabled: true,
+      ephemeralSkillsToggle: false,
+      userId,
+      listSkillsByAccess: async () => ({ skills: [] }),
+      listAlwaysApplySkills: async () => ({ skills: [] }),
+      canAuthorSkillFiles: () => true,
+      deferredToolsAvailable: false,
+      programmaticToolsAvailable: false,
+      backgroundToolsAvailable: false,
+    });
+
+    await expect(
+      resolver.resolve({ agent, codeExecutionAvailable: true, memoryAvailable: false }),
+    ).resolves.toEqual(expect.objectContaining({ skillAuthoringAvailable: true }));
+  });
 });

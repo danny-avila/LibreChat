@@ -20,29 +20,141 @@ function response() {
 }
 
 describe('code environment HTTP handlers', () => {
-  test('does not advertise principal pairing when Code API principal auth is disabled', async () => {
+  test('reports status only for an accessible worker through its current control plane', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        protocolVersion: 1,
+        workerId: 'personal-vm',
+        online: true,
+        ready: true,
+        leaseExpiresInMs: 50_000,
+        capabilities: { sandboxProfile: 'native-srt', runtimes: ['bash'] },
+      }),
+    });
+    const controlPlane = {
+      id: 'self-service',
+      name: 'Self service',
+      type: 'attached' as const,
+      baseURL: 'https://code.example.com/v1',
+      owner: 'deployment' as const,
+      pairing: { allowPrincipalWorkers: true, tokenEnv: 'CODE_ADMIN_TOKEN' },
+    };
     const handlers = createCodeEnvironmentHttpHandlers({
       getAppConfig: jest.fn().mockResolvedValue({
         endpoints: {
-          [EModelEndpoint.agents]: {
-            statefulCodeSessions: {
-              environments: [
-                {
-                  id: 'principal-workers',
-                  name: 'Principal workers',
-                  type: 'attached',
-                  baseURL: 'https://code.example.com/v1',
-                  owner: 'deployment',
-                  pairing: { allowPrincipalWorkers: true },
-                },
-              ],
-            },
-          },
+          [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [controlPlane] } },
         },
-      } as AppConfig),
+      } as unknown as AppConfig),
       registry: {
         register: jest.fn(),
-        listAccessible: jest.fn().mockResolvedValue([]),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://stale.example.com/v1',
+            controlPlaneId: 'self-service',
+            owner: 'principal',
+            workerId: 'personal-vm',
+          },
+        ]),
+        remove: jest.fn(),
+      },
+      readSecret: jest.fn(() => 'administrator-token'),
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.status(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'personal-vm' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      environmentId: 'personal-vm',
+      status: 'ready',
+      leaseExpiresInMs: 50_000,
+      sandboxProfile: 'native-srt',
+      runtimes: ['bash'],
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://code.example.com/v1/bridge/workers/personal-vm/status',
+      expect.objectContaining({ headers: { Authorization: 'Bearer administrator-token' } }),
+    );
+  });
+
+  test('does not query status for an inaccessible environment', async () => {
+    const fetchImpl = jest.fn();
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: { [EModelEndpoint.agents]: { statefulCodeSessions: { environments: [] } } },
+      } as unknown as AppConfig),
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations: jest.fn().mockResolvedValue([]),
+        remove: jest.fn(),
+      },
+      fetchImpl,
+    });
+    const res = response();
+
+    await handlers.status(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'another-users-vm' },
+      } as never,
+      res as never,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('does not advertise principal pairing when Code API principal auth is disabled', async () => {
+    const listAccessible = jest.fn();
+    const listAccessibleConfigurations = jest.fn();
+    const listAccessibleDetails = jest.fn().mockResolvedValue({
+      summaries: [],
+      configurations: [],
+    });
+    const resolvedPrincipals = [
+      { principalType: 'role', principalId: 'USER' },
+      { principalType: 'user', principalId: '68b2f0c498f24c1e78fa0001' },
+    ];
+    const resolvePrincipals = jest.fn().mockResolvedValue(resolvedPrincipals);
+    const getAppConfig = jest.fn().mockResolvedValue({
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: {
+            environments: [
+              {
+                id: 'principal-workers',
+                name: 'Principal workers',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                owner: 'deployment',
+                pairing: { allowPrincipalWorkers: true },
+              },
+            ],
+          },
+        },
+      },
+    } as AppConfig);
+    const handlers = createCodeEnvironmentHttpHandlers({
+      getAppConfig,
+      registry: {
+        register: jest.fn(),
+        listAccessible,
+        listAccessibleConfigurations,
+        listAccessibleDetails,
+        resolvePrincipals,
         remove: jest.fn(),
       },
       principalAuthEnabled: () => false,
@@ -56,6 +168,19 @@ describe('code environment HTTP handlers', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ environments: [], controlPlanes: [] });
+    expect(listAccessibleDetails).toHaveBeenCalledTimes(1);
+    expect(resolvePrincipals).toHaveBeenCalledTimes(1);
+    expect(listAccessibleDetails).toHaveBeenCalledWith(
+      expect.objectContaining({ principals: resolvedPrincipals }),
+    );
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resolvedPrincipals,
+        skipRuntimeAugmentation: true,
+      }),
+    );
+    expect(listAccessible).not.toHaveBeenCalled();
+    expect(listAccessibleConfigurations).not.toHaveBeenCalled();
   });
 
   test('lists only principal control planes present in the caller effective policy', async () => {
@@ -91,6 +216,7 @@ describe('code environment HTTP handlers', () => {
       idOnTheSource: undefined,
       tenantId: 'tenant-1',
       failClosed: true,
+      skipRuntimeAugmentation: true,
     });
   });
 
@@ -111,109 +237,244 @@ describe('code environment HTTP handlers', () => {
     expect(register).not.toHaveBeenCalled();
   });
 
-  test('pairs a generated worker to the authenticated user and persists its private route', async () => {
-    const register = jest.fn().mockResolvedValue({
+  test('updates settings only through the selected control plane config schema', async () => {
+    const updateSettings = jest.fn().mockResolvedValue({
       resourceId: '68b2f0c498f24c1e78fa0111',
-      id: 'code-generated',
+      id: 'personal-vm',
       name: 'Personal VM',
       type: 'attached',
+      canDelete: true,
     });
-    const fetchImpl = jest.fn().mockResolvedValue({
-      ok: true,
-      json: jest.fn().mockResolvedValue({
-        protocolVersion: 1,
-        workerId: 'code-generated',
-        code: 'a'.repeat(32),
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      }),
-    });
-    const appConfig = {
+    const configSchema = {
+      permissions: {
+        fileWrite: { allowed: ['allow', 'ask', 'deny'] as const, default: 'ask' as const },
+      },
+    };
+    const resolvedPrincipals = [
+      { principalType: 'role', principalId: 'USER' },
+      { principalType: 'user', principalId: '68b2f0c498f24c1e78fa0001' },
+    ];
+    const resolvePrincipals = jest.fn().mockResolvedValue(resolvedPrincipals);
+    const listAccessibleConfigurations = jest.fn().mockResolvedValue([
+      {
+        id: 'personal-vm',
+        name: 'Personal VM',
+        type: 'attached',
+        baseURL: 'https://code.example.com/v1',
+        controlPlaneId: 'self-service',
+        owner: 'principal',
+      },
+    ]);
+    const getAppConfig = jest.fn().mockResolvedValue({
       endpoints: {
         [EModelEndpoint.agents]: {
           statefulCodeSessions: {
-            allowedEnvironments: ['user'],
             environments: [
               {
-                id: 'shared-code-api',
-                name: 'Shared Code API',
+                id: 'self-service',
+                name: 'Self service',
                 type: 'attached',
-                baseURL: 'https://code.librechat.example/v1',
+                baseURL: 'https://code.example.com/v1',
                 owner: 'deployment',
-                pairing: {
-                  allowPrincipalWorkers: true,
-                  tokenEnv: 'CODE_ADMIN_TOKEN',
-                },
+                configSchema,
               },
             ],
           },
         },
       },
-    } as AppConfig;
+    } as unknown as AppConfig);
     const handlers = createCodeEnvironmentHttpHandlers({
-      getAppConfig: jest.fn().mockResolvedValue(appConfig),
-      registry: { register, listAccessible: jest.fn(), remove: jest.fn() },
-      createEnvironmentId: () => 'code-generated',
-      readSecret: jest.fn(() => 'administrator-token'),
-      resolveTenantId: jest.fn(() => 'tenant-1'),
-      principalAuthEnabled: jest.fn(() => true),
-      principalAuthReady: jest.fn(),
-      fetchImpl,
-    });
-    const req = {
-      user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
-      body: {
-        name: 'Personal VM',
-        controlPlaneId: 'shared-code-api',
-        workerId: 'attacker-worker',
-        baseURL: 'https://attacker.example',
+      getAppConfig,
+      registry: {
+        register: jest.fn(),
+        listAccessible: jest.fn(),
+        listAccessibleConfigurations,
+        resolvePrincipals,
+        updateSettings,
+        remove: jest.fn(),
       },
-    };
+    });
     const res = response();
 
-    await handlers.pair(req as never, res as never);
-
-    expect(res.statusCode).toBe(201);
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'https://code.librechat.example/v1/bridge/pairings',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer administrator-token' }),
-        body: JSON.stringify({
-          workerId: 'code-generated',
-          binding: {
-            tenantId: 'tenant-1',
-            principal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
-          },
-        }),
-      }),
+    await handlers.updateSettings(
+      {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        params: { environmentId: 'personal-vm' },
+        body: { settings: { permissions: { fileWrite: 'allow' } } },
+      } as never,
+      res as never,
     );
-    expect(register).toHaveBeenCalledWith({
-      actor: {
+
+    expect(res.statusCode).toBe(200);
+    expect(resolvePrincipals).toHaveBeenCalledTimes(1);
+    expect(listAccessibleConfigurations).toHaveBeenCalledWith(
+      expect.objectContaining({ principals: resolvedPrincipals }),
+    );
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ resolvedPrincipals, skipRuntimeAugmentation: true }),
+    );
+    expect(updateSettings).toHaveBeenCalledWith({
+      actor: expect.objectContaining({
         userId: '68b2f0c498f24c1e78fa0001',
-        role: 'USER',
-        idOnTheSource: null,
-      },
-      maxOwned: 5,
-      environment: {
-        id: 'code-generated',
-        name: 'Personal VM',
-        type: 'attached' as const,
-        baseURL: 'https://code.librechat.example/v1',
-        workerId: 'code-generated',
-        controlPlaneId: 'shared-code-api',
-        revocationTokenEnv: 'CODE_ADMIN_TOKEN',
-        workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
-      },
+        principals: resolvedPrincipals,
+      }),
+      environmentId: 'personal-vm',
+      settings: { permissions: { fileWrite: 'allow' } },
     });
     expect(res.body).toEqual({
-      environment: expect.objectContaining({ id: 'code-generated' }),
-      pairing: expect.objectContaining({
-        workerId: 'code-generated',
-        code: 'a'.repeat(32),
-        endpoint: 'https://code.librechat.example/v1',
+      environment: expect.objectContaining({
+        id: 'personal-vm',
+        configSchema,
+        settings: { permissions: { fileWrite: 'allow' } },
       }),
     });
   });
+
+  test.each([
+    [undefined, undefined, 5],
+    [{ maxPerUser: 100 }, { maxPerUser: 100 }, 100],
+    [{ maxPerUser: 100 }, { maxPerUser: 20 }, 20],
+    [{ maxPerUser: 10 }, { maxPerUser: 100 }, 10],
+    [{ enabled: false }, { enabled: true }, 0],
+    [{ maxPerUser: 10 }, { maxPerUser: 0 }, 0],
+  ])(
+    'pairs with deployment %j and effective policy %j (limit %i)',
+    async (deployment, effective, limit) => {
+      const register = jest.fn().mockResolvedValue({
+        resourceId: '68b2f0c498f24c1e78fa0111',
+        id: 'code-generated',
+        name: 'Personal VM',
+        type: 'attached',
+      });
+      const fetchImpl = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          protocolVersion: 1,
+          workerId: 'code-generated',
+          code: 'a'.repeat(32),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        }),
+      });
+      const appConfig = {
+        endpoints: {
+          [EModelEndpoint.agents]: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              environments: [
+                {
+                  id: 'shared-code-api',
+                  name: 'Shared Code API',
+                  type: 'attached',
+                  baseURL: 'https://code.librechat.example/v1',
+                  owner: 'deployment',
+                  pairing: {
+                    allowPrincipalWorkers: true,
+                    tokenEnv: 'CODE_ADMIN_TOKEN',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as AppConfig;
+      const handlers = createCodeEnvironmentHttpHandlers({
+        getAppConfig: jest.fn(
+          async (options) =>
+            ({
+              ...appConfig,
+              endpoints: {
+                ...appConfig.endpoints,
+                agents: {
+                  ...appConfig.endpoints?.agents,
+                  statefulCodeSessions: {
+                    ...appConfig.endpoints?.agents?.statefulCodeSessions,
+                    principalWorkers: options?.baseOnly ? deployment : effective,
+                  },
+                },
+              },
+            }) as AppConfig,
+        ),
+        registry: {
+          register,
+          listAccessible: jest.fn().mockResolvedValue([{ id: 'existing-machine' }]),
+          remove: jest.fn(),
+        },
+        createEnvironmentId: () => 'code-generated',
+        readSecret: jest.fn(() => 'administrator-token'),
+        resolveTenantId: jest.fn(() => 'tenant-1'),
+        principalAuthEnabled: jest.fn(() => true),
+        principalAuthReady: jest.fn(),
+        fetchImpl,
+      });
+      const req = {
+        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+        body: {
+          name: 'Personal VM',
+          controlPlaneId: 'shared-code-api',
+          workerId: 'attacker-worker',
+          baseURL: 'https://attacker.example',
+        },
+      };
+      const res = response();
+
+      await handlers.pair(req as never, res as never);
+
+      if (limit === 0) {
+        expect(res.statusCode).toBe(403);
+        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(register).not.toHaveBeenCalled();
+        const discovery = response();
+        await handlers.list(req as never, discovery as never);
+        expect(discovery.statusCode).toBe(200);
+        expect(discovery.body).toEqual({
+          environments: [{ id: 'existing-machine' }],
+          controlPlanes: [],
+        });
+        return;
+      }
+      expect(res.statusCode).toBe(201);
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://code.librechat.example/v1/bridge/pairings',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: 'Bearer administrator-token' }),
+          body: JSON.stringify({
+            workerId: 'code-generated',
+            binding: {
+              tenantId: 'tenant-1',
+              principal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
+            },
+          }),
+        }),
+      );
+      expect(register).toHaveBeenCalledWith({
+        actor: {
+          userId: '68b2f0c498f24c1e78fa0001',
+          role: 'USER',
+          idOnTheSource: null,
+        },
+        maxOwned: limit,
+        environment: {
+          id: 'code-generated',
+          name: 'Personal VM',
+          type: 'attached' as const,
+          baseURL: 'https://code.librechat.example/v1',
+          workerId: 'code-generated',
+          controlPlaneId: 'shared-code-api',
+          revocationTokenEnv: 'CODE_ADMIN_TOKEN',
+          workerPrincipal: { type: 'user', id: '68b2f0c498f24c1e78fa0001' },
+        },
+      });
+      expect(res.body).toEqual({
+        environment: expect.objectContaining({ id: 'code-generated' }),
+        pairing: expect.objectContaining({
+          workerId: 'code-generated',
+          code: 'a'.repeat(32),
+          endpoint: 'https://code.librechat.example/v1',
+        }),
+      });
+    },
+  );
 
   test('revokes an upstream pairing when the atomic owner quota is exhausted', async () => {
     const fetchImpl = jest.fn(
