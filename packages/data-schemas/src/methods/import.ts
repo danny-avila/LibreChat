@@ -14,12 +14,30 @@ export interface ConversationImportMethods {
   deleteImportedConversations(scope: ConversationImportCleanupScope): Promise<void>;
 }
 
-function createImportCleanupFilter<T>(scope: ConversationImportCleanupScope): FilterQuery<T> {
+/** Keeps generated UUID arrays well below MongoDB's 16 MiB command limit. */
+export const CONVERSATION_IMPORT_CLEANUP_CHUNK_SIZE = 10_000;
+
+function createImportCleanupFilter<T>(
+  scope: ConversationImportCleanupScope,
+  conversationIds: readonly string[],
+): FilterQuery<T> {
   return {
     user: scope.user,
-    conversationId: { $in: scope.conversationIds },
+    conversationId: { $in: conversationIds },
     ...(scope.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: scope.tenantId }),
   };
+}
+
+function chunkConversationIds(conversationIds: readonly string[]): string[][] {
+  const chunks: string[][] = [];
+  for (
+    let index = 0;
+    index < conversationIds.length;
+    index += CONVERSATION_IMPORT_CLEANUP_CHUNK_SIZE
+  ) {
+    chunks.push(conversationIds.slice(index, index + CONVERSATION_IMPORT_CLEANUP_CHUNK_SIZE));
+  }
+  return chunks;
 }
 
 export function createConversationImportMethods(
@@ -31,7 +49,9 @@ export function createConversationImportMethods(
     }
     const Message = mongoose.models.Message as Model<IMessage>;
     await runAsSystem(async () => {
-      await Message.deleteMany(createImportCleanupFilter<IMessage>(scope));
+      for (const conversationIds of chunkConversationIds(scope.conversationIds)) {
+        await Message.deleteMany(createImportCleanupFilter<IMessage>(scope, conversationIds));
+      }
     });
   }
 
@@ -41,10 +61,18 @@ export function createConversationImportMethods(
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const projectIds = await runAsSystem(async () => {
-      const filter = createImportCleanupFilter<IConversation>(scope);
-      const affectedProjects = await Conversation.distinct('chatProjectId', filter);
-      await Conversation.deleteMany(filter);
-      return affectedProjects.filter((projectId): projectId is string => Boolean(projectId));
+      const affectedProjectIds = new Set<string>();
+      for (const conversationIds of chunkConversationIds(scope.conversationIds)) {
+        const filter = createImportCleanupFilter<IConversation>(scope, conversationIds);
+        const affectedProjects = await Conversation.distinct('chatProjectId', filter);
+        for (const projectId of affectedProjects) {
+          if (projectId) {
+            affectedProjectIds.add(String(projectId));
+          }
+        }
+        await Conversation.deleteMany(filter);
+      }
+      return [...affectedProjectIds];
     });
     const context = tenantStorage.getStore();
     await tenantStorage.run(

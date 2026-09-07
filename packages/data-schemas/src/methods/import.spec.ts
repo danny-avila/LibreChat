@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { CONVERSATION_IMPORT_CLEANUP_CHUNK_SIZE, createConversationImportMethods } from './import';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createModels } from '~/models';
 import { createMethods } from './index';
@@ -151,5 +152,39 @@ describe('conversation import cleanup methods', () => {
     expect(remaining.conversations[0].tenantId).toBe('tenant-a');
     expect(remaining.messages).toHaveLength(1);
     expect(remaining.messages[0].tenantId).toBe('tenant-a');
+  });
+
+  it('chunks every cleanup query while retaining its exact owner and tenant scope', async () => {
+    const deleteMessages = jest.fn().mockResolvedValue(undefined);
+    const findProjects = jest.fn().mockResolvedValue([]);
+    const deleteConversations = jest.fn().mockResolvedValue(undefined);
+    const cleanupMongoose = {
+      models: {
+        Message: { deleteMany: deleteMessages },
+        Conversation: { distinct: findProjects, deleteMany: deleteConversations },
+      },
+    } as unknown as typeof mongoose;
+    const methods = createConversationImportMethods(cleanupMongoose);
+    const conversationIds = Array.from(
+      { length: CONVERSATION_IMPORT_CLEANUP_CHUNK_SIZE * 2 + 1 },
+      (_, index) => `generated-${index}`,
+    );
+    const scope = { user: 'owner-a', tenantId: 'tenant-a', conversationIds };
+
+    await methods.deleteImportedMessages(scope);
+    await methods.deleteImportedConversations(scope);
+
+    for (const cleanupMock of [deleteMessages, findProjects, deleteConversations]) {
+      expect(cleanupMock).toHaveBeenCalledTimes(3);
+      const filters = cleanupMock.mock.calls.map((call) => call.at(-1));
+      expect(filters.flatMap((filter) => filter.conversationId.$in)).toEqual(conversationIds);
+      expect(filters.every((filter) => filter.user === scope.user)).toBe(true);
+      expect(filters.every((filter) => filter.tenantId === scope.tenantId)).toBe(true);
+      expect(
+        filters.every(
+          (filter) => filter.conversationId.$in.length <= CONVERSATION_IMPORT_CLEANUP_CHUNK_SIZE,
+        ),
+      ).toBe(true);
+    }
   });
 });
