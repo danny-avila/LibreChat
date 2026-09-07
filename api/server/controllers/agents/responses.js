@@ -81,7 +81,9 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  isStoredResponseOutput,
   resolveStoredResponse,
+  revalidateStoredResponseConversation,
   selectStoredResponseHistory,
 } = require('@librechat/api');
 const {
@@ -315,6 +317,7 @@ function extractResponseRequestContent(request, messageFragments) {
  * Load messages from a previous response/conversation
  * @param {string} conversationId - The conversation/response ID
  * @param {string} userId - The user ID
+ * @param {string | undefined} responseMessageId - Canonical response branch target
  * @returns {Promise<Array>} Messages from the conversation
  */
 async function loadPreviousMessages(conversationId, userId, responseMessageId) {
@@ -329,7 +332,19 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
     }
 
     // Convert stored messages to internal format
-    return selectStoredResponseHistory(messages, responseMessageId).map((msg) => {
+    return selectStoredResponseHistory(messages, responseMessageId).flatMap((msg) => {
+      const responsesOutput = msg.metadata?.responsesOutput;
+      if (Array.isArray(responsesOutput)) {
+        const restoredOutput = convertToInternalMessages(responsesOutput);
+        if (restoredOutput.length > 0) {
+          return restoredOutput.map((outputMessage) => ({
+            ...outputMessage,
+            messageId: msg.messageId,
+            isCreatedByUser: false,
+            isUserSubmitted: false,
+          }));
+        }
+      }
       const responsesInput = msg.metadata?.responsesInput;
       let role = responsesInput?.role;
       if (!['system', 'user', 'assistant', 'tool'].includes(role)) {
@@ -365,7 +380,7 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
         }),
       };
 
-      return internalMsg;
+      return [internalMsg];
     });
   } catch (error) {
     logger.error('[Responses API] Error loading previous messages:', getSafeErrorMetadata(error));
@@ -438,6 +453,7 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId, pa
  * @param {string} agentId
  * @param {number | undefined} visibleOutputTokens
  * @param {string | null} parentMessageId
+ * @param {string | null} previousResponseId
  * @returns {Promise<import('@librechat/data-schemas').IMessage | null | undefined>}
  */
 async function saveResponseOutput(
@@ -448,6 +464,7 @@ async function saveResponseOutput(
   agentId,
   visibleOutputTokens,
   parentMessageId,
+  previousResponseId,
 ) {
   // Extract text content from output items
   let responseText = '';
@@ -475,6 +492,7 @@ async function saveResponseOutput(
       conversationId,
       parentMessageId,
       isCreatedByUser: false,
+      isUserSubmitted: false,
       ...langfuseTraceFields,
       text: responseText,
       sender: 'Agent',
@@ -482,6 +500,10 @@ async function saveResponseOutput(
       model: agentId,
       finish_reason: response.status === 'completed' ? 'stop' : response.status,
       tokenCount: visibleOutputTokens ?? response.usage?.output_tokens,
+      metadata: {
+        responsesOutput: response.output,
+        ...(previousResponseId != null && { responsesPreviousResponseId: previousResponseId }),
+      },
     },
     { context: 'Responses API - save assistant response' },
   );
@@ -567,6 +589,7 @@ async function persistResponse({
     agentId,
     visibleOutputTokens,
     inputPersistence.parentMessageId,
+    previousResponse?.responseMessage?.messageId ?? previousResponse?.conversationId ?? null,
   );
   const messageIds = [...inputPersistence.messageIds];
   if (outputMessage?._id != null) {
@@ -588,16 +611,6 @@ async function persistResponse({
 }
 
 /**
- * @param {object} msg - Stored message
- * @returns {boolean} Whether the message contains model-generated response output
- */
-function isStoredResponseOutput(msg) {
-  return (
-    !msg.isCreatedByUser && msg.isUserSubmitted !== true && msg.metadata?.responsesInput == null
-  );
-}
-
-/**
  * Convert stored messages to Open Responses output format
  * @param {Array} messages - Stored messages
  * @returns {Array} Output items
@@ -607,19 +620,24 @@ function convertMessagesToOutputItems(messages) {
 
   for (const msg of messages) {
     if (isStoredResponseOutput(msg)) {
-      output.push({
-        type: 'message',
-        id: msg.messageId,
-        role: 'assistant',
-        status: 'completed',
-        content: [
-          {
-            type: 'output_text',
-            text: msg.text || '',
-            annotations: [],
-          },
-        ],
-      });
+      const responsesOutput = msg.metadata?.responsesOutput;
+      if (Array.isArray(responsesOutput)) {
+        output.push(...responsesOutput);
+      } else {
+        output.push({
+          type: 'message',
+          id: msg.messageId,
+          role: 'assistant',
+          status: 'completed',
+          content: [
+            {
+              type: 'output_text',
+              text: msg.text || '',
+              annotations: [],
+            },
+          ],
+        });
+      }
     }
   }
 
@@ -828,12 +846,20 @@ const executeResponse = async (envelope, { req, res }) => {
     },
     handleExecutionError: (error) => handleExecutionError({ error, res, appConfig }),
     execute: async (execution) => {
+      let previousMessages = [];
       if (previousResponse != null) {
-        const revalidated = await resolveStoredResponse(
-          { getConvo: db.getConvo, getMessage: db.getMessage },
-          principal.userId,
-          request.previous_response_id,
-        );
+        const [revalidated, history] = await Promise.all([
+          revalidateStoredResponseConversation(
+            { getConvo: db.getConvo },
+            principal.userId,
+            previousResponse,
+          ),
+          loadPreviousMessages(
+            conversationId,
+            principal.userId,
+            previousResponse.responseMessage?.messageId,
+          ),
+        ]);
         if (revalidated.status === 'read_only') {
           return sendResponsesErrorResponse(
             res,
@@ -847,6 +873,7 @@ const executeResponse = async (envelope, { req, res }) => {
           return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
         }
         previousResponse = revalidated.reference;
+        previousMessages = history;
       }
 
       const mcpRequestBody = createMCPRuntimeRequestBody({
@@ -854,13 +881,6 @@ const executeResponse = async (envelope, { req, res }) => {
         conversationId,
       });
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
-      const previousMessages = previousResponse
-        ? await loadPreviousMessages(
-            conversationId,
-            principal.userId,
-            previousResponse.responseMessage?.messageId,
-          )
-        : [];
       if (previousResponse != null && previousMessages.length === 0) {
         return sendResponsesErrorResponse(res, 404, 'Conversation history not found', 'not_found');
       }
@@ -1860,7 +1880,10 @@ const getResponse = async (req, res) => {
         conversation.agentId ||
         conversation.model ||
         'unknown',
-      previous_response_id: null,
+      previous_response_id:
+        typeof responseMessage?.metadata?.responsesPreviousResponseId === 'string'
+          ? responseMessage.metadata.responsesPreviousResponseId
+          : null,
       instructions: null,
       output,
       error: null,

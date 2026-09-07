@@ -7,6 +7,10 @@ export interface StoredResponseLookup {
   getMessage(input: { user: string; messageId: string }): Promise<IMessage | null>;
 }
 
+export interface StoredResponseConversationLookup {
+  getConvo(userId: string, conversationId: string): Promise<IConversation | null>;
+}
+
 export interface StoredResponseReference {
   conversation: IConversation;
   conversationId: string;
@@ -26,6 +30,14 @@ const classifyConversation = (
   }
   return conversation.subagentThread == null ? 'found' : 'read_only';
 };
+
+export function isStoredResponseOutput(message: IMessage): boolean {
+  return (
+    message.isCreatedByUser !== true &&
+    message.isUserSubmitted !== true &&
+    message.metadata?.responsesInput == null
+  );
+}
 
 export async function resolveStoredResponse(
   deps: StoredResponseLookup,
@@ -58,6 +70,7 @@ export async function resolveStoredResponse(
   if (
     responseMessage == null ||
     responseMessage.isCreatedByUser !== false ||
+    !isStoredResponseOutput(responseMessage) ||
     typeof responseMessage.conversationId !== 'string' ||
     !isRetentionVisible(responseMessage)
   ) {
@@ -80,6 +93,29 @@ export async function resolveStoredResponse(
       conversation,
       conversationId: conversation.conversationId,
       responseMessage,
+    },
+  };
+}
+
+export async function revalidateStoredResponseConversation(
+  deps: StoredResponseConversationLookup,
+  userId: string,
+  reference: StoredResponseReference,
+): Promise<StoredResponseResolution> {
+  const conversation = await deps.getConvo(userId, reference.conversationId);
+  const status = classifyConversation(conversation);
+  if (status === 'not_found' || conversation == null) {
+    return { status: 'not_found' };
+  }
+  if (status === 'read_only') {
+    return { status: 'read_only' };
+  }
+  return {
+    status: 'found',
+    reference: {
+      conversation,
+      conversationId: conversation.conversationId,
+      responseMessage: reference.responseMessage,
     },
   };
 }

@@ -380,6 +380,12 @@ jest.mock('@librechat/api', () => ({
     on_run_step_delta: { handle: jest.fn() },
     on_chat_model_end: { handle: jest.fn() },
   }),
+  isStoredResponseOutput: jest.fn(
+    (message) =>
+      message.isCreatedByUser !== true &&
+      message.isUserSubmitted !== true &&
+      message.metadata?.responsesInput == null,
+  ),
   resolveStoredResponse: jest.fn(async (deps, userId, responseId) => {
     if (mockStoredResponseReferences.has(responseId)) {
       return mockStoredResponseReferences.get(responseId);
@@ -398,6 +404,10 @@ jest.mock('@librechat/api', () => ({
     mockStoredResponseReferences.set(responseId, resolution);
     return resolution;
   }),
+  revalidateStoredResponseConversation: jest.fn(async (_deps, _userId, reference) => ({
+    status: 'found',
+    reference,
+  })),
   selectStoredResponseHistory: jest.fn((messages) => messages),
   executeAgentRun: async ({
     envelope,
@@ -852,6 +862,23 @@ describe('createResponse controller', () => {
   it('persists a continued response under its UUID conversation with linked message refs', async () => {
     const api = require('@librechat/api');
     const db = require('~/models');
+    const structuredOutput = [
+      {
+        type: 'function_call',
+        id: 'fc-weather',
+        call_id: 'call-weather',
+        name: 'weather',
+        arguments: '{"city":"Paris"}',
+        status: 'completed',
+      },
+      {
+        type: 'function_call_output',
+        id: 'fco-weather',
+        call_id: 'call-weather',
+        output: 'Sunny',
+        status: 'completed',
+      },
+    ];
     const previousMessage = {
       messageId: 'resp_previous',
       conversationId: '11111111-1111-4111-8111-111111111111',
@@ -870,13 +897,19 @@ describe('createResponse controller', () => {
         responseMessage: previousMessage,
       },
     };
-    api.resolveStoredResponse.mockResolvedValueOnce(resolution).mockResolvedValueOnce(resolution);
+    api.resolveStoredResponse.mockResolvedValueOnce(resolution);
     api.validateResponseRequest.mockReturnValueOnce({
       request: {
         ...req.body,
         store: true,
         previous_response_id: previousMessage.messageId,
       },
+    });
+    api.buildAggregatedResponse.mockReturnValueOnce({
+      id: 'resp_mock-123',
+      status: 'completed',
+      output: structuredOutput,
+      usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
     });
     api.convertInputToMessages.mockReturnValueOnce([
       { role: 'user', content: 'Continue', messageId: 'input-new' },
@@ -915,6 +948,11 @@ describe('createResponse controller', () => {
         conversationId: previousMessage.conversationId,
         messageId: 'resp_mock-123',
         parentMessageId: 'input-new',
+        isUserSubmitted: false,
+        metadata: {
+          responsesOutput: structuredOutput,
+          responsesPreviousResponseId: previousMessage.messageId,
+        },
       }),
       { context: 'Responses API - save assistant response' },
     );
@@ -1036,6 +1074,25 @@ describe('createResponse controller', () => {
       conversationId,
       isCreatedByUser: false,
       text: 'Done',
+      metadata: {
+        responsesOutput: [
+          {
+            type: 'function_call',
+            id: 'fc-generated',
+            call_id: 'call-generated',
+            name: 'lookup',
+            arguments: '{"query":"forecast"}',
+            status: 'completed',
+          },
+          {
+            type: 'function_call_output',
+            id: 'fco-generated',
+            call_id: 'call-generated',
+            output: 'Warm',
+            status: 'completed',
+          },
+        ],
+      },
     };
     const resolution = {
       status: 'found',
@@ -1045,11 +1102,26 @@ describe('createResponse controller', () => {
         responseMessage,
       },
     };
-    api.resolveStoredResponse.mockResolvedValueOnce(resolution).mockResolvedValueOnce(resolution);
+    api.resolveStoredResponse.mockResolvedValueOnce(resolution);
     api.validateResponseRequest.mockReturnValueOnce({
       request: { ...req.body, previous_response_id: responseMessage.messageId },
     });
-    api.convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Continue' }]);
+    api.convertInputToMessages
+      .mockReturnValueOnce([{ role: 'user', content: 'Continue' }])
+      .mockReturnValueOnce([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call-generated',
+              type: 'function',
+              function: { name: 'lookup', arguments: '{"query":"forecast"}' },
+            },
+          ],
+        },
+        { role: 'tool', content: 'Warm', tool_call_id: 'call-generated' },
+      ]);
     db.getMessages.mockResolvedValueOnce([
       {
         messageId: 'input-system',
@@ -1096,7 +1168,17 @@ describe('createResponse controller', () => {
           tool_calls: [expect.objectContaining({ id: 'call-weather' })],
         }),
         expect.objectContaining({ role: 'tool', content: 'Sunny', tool_call_id: 'call-weather' }),
-        expect.objectContaining({ role: 'assistant', content: 'Done' }),
+        expect.objectContaining({
+          role: 'assistant',
+          tool_calls: [expect.objectContaining({ id: 'call-generated' })],
+          isUserSubmitted: false,
+        }),
+        expect.objectContaining({
+          role: 'tool',
+          content: 'Warm',
+          tool_call_id: 'call-generated',
+          isUserSubmitted: false,
+        }),
         { role: 'user', content: 'Continue' },
       ],
       {},
@@ -1156,6 +1238,22 @@ describe('createResponse controller', () => {
   it('retrieves only the assistant message identified by a canonical response ID', async () => {
     const api = require('@librechat/api');
     const db = require('~/models');
+    const structuredOutput = [
+      {
+        type: 'reasoning',
+        id: 'reason-target',
+        status: 'completed',
+        content: [{ type: 'reasoning_text', text: 'Reasoned' }],
+        summary: [],
+      },
+      {
+        type: 'message',
+        id: 'msg-target',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'Target output', annotations: [], logprobs: [] }],
+      },
+    ];
     const target = {
       messageId: 'resp_target',
       conversationId: '11111111-1111-4111-8111-111111111111',
@@ -1165,6 +1263,10 @@ describe('createResponse controller', () => {
       tokenCount: 7,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:01.000Z'),
+      metadata: {
+        responsesOutput: structuredOutput,
+        responsesPreviousResponseId: 'resp_previous',
+      },
     };
     api.resolveStoredResponse.mockResolvedValueOnce({
       status: 'found',
@@ -1183,7 +1285,8 @@ describe('createResponse controller', () => {
       expect.objectContaining({
         id: target.messageId,
         model: 'agent-123',
-        output: [expect.objectContaining({ id: target.messageId })],
+        previous_response_id: 'resp_previous',
+        output: structuredOutput,
         usage: { input_tokens: 0, output_tokens: 7, total_tokens: 7 },
       }),
     );
@@ -2195,6 +2298,92 @@ describe('createResponse controller', () => {
       );
     });
 
+    it('loads history while post-enrollment conversation revalidation is pending', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const conversationId = '11111111-1111-4111-8111-111111111111';
+      const responseMessage = {
+        messageId: 'resp_previous',
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Previous output',
+      };
+      const reference = {
+        conversation: { conversationId, user: 'user-123' },
+        conversationId,
+        responseMessage,
+      };
+      let finishRevalidation;
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Continue.',
+          stream: false,
+          previous_response_id: responseMessage.messageId,
+        },
+      });
+      api.resolveStoredResponse.mockResolvedValueOnce({ status: 'found', reference });
+      api.revalidateStoredResponseConversation.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRevalidation = resolve;
+          }),
+      );
+      db.getMessages.mockResolvedValueOnce([responseMessage]);
+
+      const pendingResponse = createResponse(req, res);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(api.resolveStoredResponse).toHaveBeenCalledTimes(1);
+      expect(api.revalidateStoredResponseConversation).toHaveBeenCalledWith(
+        { getConvo: db.getConvo },
+        'user-123',
+        reference,
+      );
+      expect(db.getMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId, user: 'user-123' }),
+      );
+      expect(mockExecution.beginProviderExecution.mock.invocationCallOrder[0]).toBeLessThan(
+        api.revalidateStoredResponseConversation.mock.invocationCallOrder[0],
+      );
+      finishRevalidation({ status: 'found', reference });
+      await pendingResponse;
+    });
+
+    it('rejects a continuation deleted after enrollment while history is loading', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const conversationId = '11111111-1111-4111-8111-111111111111';
+      const reference = {
+        conversation: { conversationId, user: 'user-123' },
+        conversationId,
+        responseMessage: null,
+      };
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Continue.',
+          stream: false,
+          previous_response_id: conversationId,
+        },
+      });
+      api.resolveStoredResponse.mockResolvedValueOnce({ status: 'found', reference });
+      api.revalidateStoredResponseConversation.mockResolvedValueOnce({ status: 'not_found' });
+      db.getMessages.mockResolvedValueOnce([
+        { messageId: 'existing', isCreatedByUser: false, text: 'Existing history' },
+      ]);
+
+      await createResponse(req, res);
+
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        404,
+        'Conversation not found',
+        'not_found',
+      );
+      expect(api.createRun).not.toHaveBeenCalled();
+    });
+
     it('rejects a UUID continuation whose visible history is empty', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
       const { getConvo, getMessages } = require('~/models');
@@ -2756,6 +2945,30 @@ describe('Responses persistence with MongoDB', () => {
     const { v4 } = require('uuid');
     const mongod = await MongoMemoryServer.create();
     const conversationId = '11111111-1111-4111-8111-111111111111';
+    const firstOutput = [
+      {
+        type: 'function_call',
+        id: 'fc-database',
+        call_id: 'call-database',
+        name: 'lookup',
+        arguments: '{"query":"first"}',
+        status: 'completed',
+      },
+      {
+        type: 'function_call_output',
+        id: 'fco-database',
+        call_id: 'call-database',
+        output: 'Stored tool result',
+        status: 'completed',
+      },
+      {
+        type: 'message',
+        id: 'msg-database',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'First answer', annotations: [], logprobs: [] }],
+      },
+    ];
 
     try {
       await mongoose.connect(mongod.getUri());
@@ -2781,7 +2994,28 @@ describe('Responses persistence with MongoDB', () => {
       api.selectStoredResponseHistory.mockImplementation((messages) => messages);
       api.convertInputToMessages
         .mockReturnValueOnce([{ role: 'user', content: 'First', messageId: 'input-one' }])
-        .mockReturnValueOnce([{ role: 'user', content: 'Second', messageId: 'input-two' }]);
+        .mockReturnValueOnce([{ role: 'user', content: 'Second', messageId: 'input-two' }])
+        .mockReturnValueOnce([
+          {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                id: 'call-database',
+                type: 'function',
+                function: { name: 'lookup', arguments: '{"query":"first"}' },
+              },
+            ],
+          },
+          { role: 'tool', content: 'Stored tool result', tool_call_id: 'call-database' },
+          { role: 'assistant', content: 'First answer' },
+        ]);
+      api.buildAggregatedResponse.mockReturnValueOnce({
+        id: 'resp_mock-123',
+        status: 'completed',
+        output: firstOutput,
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      });
       api.validateResponseRequest
         .mockReturnValueOnce({
           request: { model: 'agent-123', input: 'First', stream: false, store: true },
@@ -2837,7 +3071,7 @@ describe('Responses persistence with MongoDB', () => {
           expect(getResult.json).toHaveBeenCalledWith(
             expect.objectContaining({
               id: 'resp_mock-123',
-              output: [expect.objectContaining({ id: 'resp_mock-123' })],
+              output: firstOutput,
             }),
           );
 

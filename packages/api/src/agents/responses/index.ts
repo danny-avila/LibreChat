@@ -184,8 +184,11 @@ export {
 } from './service';
 
 export {
+  isStoredResponseOutput,
   resolveStoredResponse,
+  revalidateStoredResponseConversation,
   selectStoredResponseHistory,
+  type StoredResponseConversationLookup,
   type StoredResponseLookup,
   type StoredResponseReference,
   type StoredResponseResolution,

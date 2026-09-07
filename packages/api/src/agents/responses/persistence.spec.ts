@@ -2,6 +2,7 @@ import { Constants } from 'librechat-data-provider';
 import type { IConversation, IMessage } from '@librechat/data-schemas';
 import {
   resolveStoredResponse,
+  revalidateStoredResponseConversation,
   selectStoredResponseHistory,
   type StoredResponseLookup,
 } from './persistence';
@@ -50,6 +51,8 @@ describe('Responses persistence', () => {
 
   it.each([
     ['user message', message({ isCreatedByUser: true })],
+    ['user-submitted assistant message', message({ isUserSubmitted: true })],
+    ['Responses caller input', message({ metadata: { responsesInput: { role: 'assistant' } } })],
     ['temporary message', message({ isTemporary: true })],
     ['expired message', message({ expiredAt: new Date(0) })],
   ])('rejects a %s response target', async (_label, storedMessage) => {
@@ -113,6 +116,29 @@ describe('Responses persistence', () => {
       },
     });
     expect(deps.getMessage).not.toHaveBeenCalled();
+  });
+
+  it('revalidates the conversation while retaining the resolved response target', async () => {
+    const storedConversation = conversation({ title: 'fresh' });
+    const storedMessage = message();
+    const deps = { getConvo: jest.fn().mockResolvedValue(storedConversation) };
+
+    await expect(
+      revalidateStoredResponseConversation(deps, 'owner', {
+        conversation: conversation({ title: 'stale' }),
+        conversationId: storedConversation.conversationId,
+        responseMessage: storedMessage,
+      }),
+    ).resolves.toEqual({
+      status: 'found',
+      reference: {
+        conversation: storedConversation,
+        conversationId: storedConversation.conversationId,
+        responseMessage: storedMessage,
+      },
+    });
+    expect(deps.getConvo).toHaveBeenCalledTimes(1);
+    expect(deps.getConvo).toHaveBeenCalledWith('owner', storedConversation.conversationId);
   });
 
   it('selects only the target response branch', () => {
