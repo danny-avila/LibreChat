@@ -187,11 +187,13 @@ function parse(fileName: string, source: string): ts.SourceFile {
   return ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
 }
 
-/** Peels casts and parentheses so `[...] as PipelineStage[]` is still an array. */
+/** Peels casts, assertions and parentheses so `[...] as PipelineStage[]` and
+ * `<PipelineStage[]>[...]` are still arrays. */
 function unwrapExpression(expression: ts.Expression): ts.Expression {
   let current = expression;
   while (
     ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
     ts.isSatisfiesExpression(current) ||
     ts.isParenthesizedExpression(current) ||
     ts.isNonNullExpression(current)
@@ -433,18 +435,21 @@ function isJavaScriptSource(expression: ts.Expression): boolean {
 const CALL_FORWARDERS = new Set(['call', 'apply', 'bind']);
 const CODE_ASSIGNMENT_OPERATORS = new Set([
   ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.PlusEqualsToken,
   ts.SyntaxKind.QuestionQuestionEqualsToken,
   ts.SyntaxKind.BarBarEqualsToken,
   ts.SyntaxKind.AmpersandAmpersandEqualsToken,
 ]);
 
 /** Steps outward through the wrappers `unwrapExpression` peels inward, so a
- * call on `(x)`, `x as T`, `x satisfies T` or `x!` is still a call on `x`. */
+ * call on or an assignment to `(x)`, `x as T`, `<T>x`, `x satisfies T` or `x!`
+ * is still one on `x`. */
 function outermostWrapper(node: ts.Node): ts.Node {
   let current = node;
   while (
     ts.isParenthesizedExpression(current.parent) ||
     ts.isAsExpression(current.parent) ||
+    ts.isTypeAssertionExpression(current.parent) ||
     ts.isSatisfiesExpression(current.parent) ||
     ts.isNonNullExpression(current.parent)
   ) {
@@ -458,19 +463,28 @@ function isInvoked(callee: ts.Node): boolean {
   return ts.isCallExpression(use) && use.expression === outermostWrapper(callee);
 }
 
+/** The member name a node is accessed through, whether dotted (`x.call`) or by a
+ * string element (`x['call']`). */
+function memberName(use: ts.Node, receiver: ts.Node): string | undefined {
+  if (ts.isPropertyAccessExpression(use) && use.expression === receiver) {
+    return use.name.text;
+  }
+  if (ts.isElementAccessExpression(use) && use.expression === receiver) {
+    const argument = unwrapExpression(use.argumentExpression);
+    return ts.isStringLiteralLike(argument) ? argument.text : undefined;
+  }
+  return undefined;
+}
+
 /** A direct call, or a call through `call`/`apply`/`bind` — the forwarder itself
  * must be invoked, so a bag field that merely shares one of those names is not a call. */
 function isCalled(access: ts.PropertyAccessExpression): boolean {
   if (isInvoked(access)) {
     return true;
   }
-  const use = outermostWrapper(access).parent;
-  return (
-    ts.isPropertyAccessExpression(use) &&
-    use.expression === outermostWrapper(access) &&
-    CALL_FORWARDERS.has(use.name.text) &&
-    isInvoked(use)
-  );
+  const target = outermostWrapper(access);
+  const forwarder = memberName(target.parent, target);
+  return forwarder != null && CALL_FORWARDERS.has(forwarder) && isInvoked(target.parent);
 }
 
 function isUnjudgedDottedWhere(node: ts.Node): boolean {
@@ -481,10 +495,11 @@ function isUnjudgedDottedWhere(node: ts.Node): boolean {
   if (!ts.isPropertyAccessExpression(access) || access.name !== node || isCalled(access)) {
     return false;
   }
-  const use = access.parent;
+  const target = outermostWrapper(access);
+  const use = target.parent;
   const assignsCode =
     ts.isBinaryExpression(use) &&
-    use.left === access &&
+    use.left === target &&
     CODE_ASSIGNMENT_OPERATORS.has(use.operatorToken.kind) &&
     isJavaScriptSource(use.right);
   return !assignsCode;
@@ -763,6 +778,10 @@ describe('Amazon DocumentDB compatibility', () => {
         'annotated variable with a builder initializer',
         `const update: PipelineStage[] = importedBuilder();\nModel.updateMany(filter, update);`,
       ],
+      [
+        'angle-bracket cast literal',
+        `Model.updateOne(filter, <PipelineStage[]>[{ $set: { a: 1 } }]);`,
+      ],
     ])('flags a pipeline update: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).not.toEqual([]);
     });
@@ -879,6 +898,23 @@ describe('Amazon DocumentDB compatibility', () => {
       );
       expect(
         findForbiddenTokens(parse('fixture.ts', `document.$where('this.a == 1');`)),
+      ).not.toEqual([]);
+      /** The assignment target and the assigned value may each be wrapped, the
+       * operator may append, and a forwarder may be reached by element access. */
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `(filter.$where as string) = 'this.a == 1';`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where! = 'this.a == 1';`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where += ' && this.b == 2';`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where = <string>'this.a == 1';`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `query.$where['call'](query, 'this.a == 1');`)),
       ).not.toEqual([]);
       /** Compound assignments of code, and calls through TypeScript's transparent
        * wrappers, are the same two shapes spelled differently. */
