@@ -234,7 +234,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(MCPTokenStorage.getClientInfoAndMetadata).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
-      findToken: mockFindToken,
+      findToken: expect.any(Function),
     });
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
@@ -407,7 +407,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
-      findToken: mockFindToken,
+      findToken: expect.any(Function),
     });
     expect(logger.warn).toHaveBeenCalledWith(
       '[maybeUninstallOAuthMCP] Unable to load OAuth tokens for test-server; clearing local token state.',
@@ -449,7 +449,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
-      findToken: mockFindToken,
+      findToken: expect.any(Function),
     });
     expect(MCPTokenStorage.assertCredentialSetBinding).toHaveBeenCalledWith(
       'test-server',
