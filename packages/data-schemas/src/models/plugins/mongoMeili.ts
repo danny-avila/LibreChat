@@ -478,6 +478,7 @@ const createMeiliMongooseModel = ({
       );
 
       // Get approximate total count for raw estimation, the sync should not overcome this number
+      // eslint-disable-next-line no-restricted-syntax -- a collection-wide estimate is the quantity wanted here: it bounds a full-index sync and only feeds a progress log, so a tenant-scoped count would be wrong, not just unnecessary.
       const approxTotalCount = await this.estimatedDocumentCount();
       logger.info(
         `[syncWithMeili] Approximate total number of all ${collectionName}: ${approxTotalCount}`,

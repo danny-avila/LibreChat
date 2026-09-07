@@ -92,6 +92,28 @@ describe('CloudFront CRUD', () => {
       expect(mockGetSignedUrl).not.toHaveBeenCalled();
     });
 
+    it('percent-encodes non-ASCII characters in the key', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({ userId: 'user1', fileName: 'Ársreikningur.pdf' });
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/%C3%81rsreikningur.pdf');
+    });
+
+    it('percent-encodes a literal % so it cannot be read back as an escape', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({ userId: 'user1', fileName: 'report%20final.pdf' });
+      expect(url).toBe('https://d123.cloudfront.net/i/images/user1/report%2520final.pdf');
+    });
+
+    it('leaves path separators literal', async () => {
+      const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
+      const url = await getCloudFrontURL({
+        userId: 'user1',
+        fileName: 'doc.pdf',
+        basePath: 'documents',
+      });
+      expect(url).toBe('https://d123.cloudfront.net/documents/user1/doc.pdf');
+    });
+
     it('uses custom basePath when provided', async () => {
       const { getCloudFrontURL } = await import('~/storage/cloudfront/crud');
       const url = await getCloudFrontURL({
@@ -507,6 +529,26 @@ describe('CloudFront CRUD', () => {
           DistributionId: 'E123ABC',
           InvalidationBatch: expect.objectContaining({
             Paths: { Quantity: 1, Items: ['/images/u/file.webp'] },
+          }),
+        }),
+      );
+    });
+
+    it('encodes the invalidation path the same way as the viewer URL', async () => {
+      mockResolveStoredS3Key.mockReturnValue('images/u/report%20final \u0151.webp');
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ invalidateOnDelete: true, distributionId: 'E123' }),
+      );
+      mockCloudFrontSend.mockResolvedValue({});
+
+      const { deleteFileFromCloudFront } = await import('~/storage/cloudfront/crud');
+      await deleteFileFromCloudFront(mockReq, mockFile);
+
+      const { CreateInvalidationCommand } = await import('@aws-sdk/client-cloudfront');
+      expect(CreateInvalidationCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          InvalidationBatch: expect.objectContaining({
+            Paths: { Quantity: 1, Items: ['/images/u/report%2520final%20%C5%91.webp'] },
           }),
         }),
       );

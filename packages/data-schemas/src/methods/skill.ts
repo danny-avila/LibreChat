@@ -1,5 +1,6 @@
 import {
   ResourceType,
+  SkillsScope,
   SKILL_NAME_MAX_LENGTH,
   SKILL_DESCRIPTION_MAX_LENGTH,
   SKILL_DESCRIPTION_SHORT_THRESHOLD as SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED,
@@ -750,6 +751,8 @@ export type UpsertSkillFileInput = {
 };
 
 export type ListSkillsByAccessParams = {
+  /** Trusted capability-authorized tenant scope; never accept directly from client input. */
+  manageTenantId?: string;
   accessibleIds: Types.ObjectId[];
   category?: string;
   search?: string;
@@ -1092,11 +1095,14 @@ export function createSkillMethods(
   const { ObjectId } = mongoose.Types;
 
   function buildSkillFilter(
-    params: Pick<ListSkillsByAccessParams, 'accessibleIds' | 'category' | 'search'>,
+    params: Pick<
+      ListSkillsByAccessParams,
+      'accessibleIds' | 'category' | 'search' | 'manageTenantId'
+    >,
   ): FilterQuery<ISkillDocument> {
-    const filter: FilterQuery<ISkillDocument> = {
-      _id: { $in: params.accessibleIds },
-    };
+    const filter: FilterQuery<ISkillDocument> = params.manageTenantId
+      ? { tenantId: params.manageTenantId }
+      : { _id: { $in: params.accessibleIds } };
     if (params.category && params.category.length > 0) {
       filter.category = params.category;
     }
@@ -1650,6 +1656,12 @@ export function createSkillMethods(
    * accessible catalog at runtime, so a plain `$pull` would silently widen
    * a deliberately restricted agent. Disabling skills preserves the
    * restriction until an author makes a new explicit choice.
+   *
+   * That inference only applies to agents with no explicit `skills_scope`.
+   * With a scope persisted, the field already says what an empty allowlist
+   * means -- `selected` resolves to no skills on its own, and `all` means the
+   * full catalog on purpose -- so disabling them would turn skills off behind
+   * the author's back.
    */
   async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
     if (skillIds.length === 0) {
@@ -1659,7 +1671,16 @@ export function createSkillMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     try {
       await Agent.updateMany(
-        { skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } } },
+        {
+          skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } },
+          /** Only `all` and `selected` opt out: each already defines what an
+           *  empty allowlist means. A missing field (matched here because
+           *  `$nin` also matches absent) is the legacy shape, and an explicit
+           *  `none` with the master flag still true is a contradictory shape
+           *  the API accepts, which `skillDeps` would otherwise keep reading
+           *  as permission to expose the skill-authoring tools. */
+          skills_scope: { $nin: [SkillsScope.all, SkillsScope.selected] },
+        },
         { $set: { skills: [], skills_enabled: false } },
         { timestamps: false },
       );

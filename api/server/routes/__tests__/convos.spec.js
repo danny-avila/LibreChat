@@ -271,6 +271,36 @@ describe('Convos Routes', () => {
       const { logger } = require('@librechat/data-schemas');
       expect(logger.error).not.toHaveBeenCalled();
     });
+
+    it('returns an actionable client error for an oversized imported record', async () => {
+      const message = 'Each imported conversation or message must be at most 16711680 bytes';
+      const error = Object.assign(new Error(message), {
+        name: 'ConversationImportError',
+        code: 'invalid_request',
+        statusCode: 413,
+        body: { error: 'invalid_request', message },
+      });
+      importConversations.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(413);
+      expect(response.body).toEqual(error.body);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('preserves the generic server error contract for other import failures', async () => {
+      const error = new Error('invalid JSON');
+      importConversations.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error processing file');
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith('Error processing file', error);
+    });
   });
 
   describe('POST /fork', () => {
@@ -327,6 +357,27 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(error.body);
       expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
     });
+
+    it('returns an actionable client error when a cloned record is oversized', async () => {
+      const message = 'Each imported conversation or message must be at most 16711680 bytes';
+      const error = Object.assign(new Error(message), {
+        name: 'ConversationImportError',
+        code: 'invalid_request',
+        statusCode: 413,
+        body: { error: 'invalid_request', message },
+      });
+      forkConversation.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/fork').send({
+        conversationId: 'source-convo',
+        messageId: 'source-message',
+      });
+
+      expect(response.status).toBe(413);
+      expect(response.body).toEqual(error.body);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /duplicate', () => {
@@ -381,6 +432,26 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(400);
       expect(response.body).toEqual(error.body);
       expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    });
+
+    it('returns an actionable client error when a cloned record is oversized', async () => {
+      const message = 'Each imported conversation or message must be at most 16711680 bytes';
+      const error = Object.assign(new Error(message), {
+        name: 'ConversationImportError',
+        code: 'invalid_request',
+        statusCode: 413,
+        body: { error: 'invalid_request', message },
+      });
+      duplicateConversation.mockRejectedValue(error);
+
+      const response = await request(app)
+        .post('/api/convos/duplicate')
+        .send({ conversationId: 'source-convo' });
+
+      expect(response.status).toBe(413);
+      expect(response.body).toEqual(error.body);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).not.toHaveBeenCalled();
     });
   });
 

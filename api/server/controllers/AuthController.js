@@ -8,6 +8,7 @@ const {
   createAuthIdentityContext,
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
+  isOpenIDSessionMissingError,
   isOpenIDSessionIdentityMatch,
   OPENID_EXPIRY_BUFFER_SECONDS,
 } = require('@librechat/api');
@@ -517,13 +518,17 @@ const refreshController = async (req, res) => {
         );
       });
     } catch (error) {
-      if (isOpenIDRefreshOwnershipError(error)) {
+      if (isOpenIDRefreshOwnershipError(error) || isOpenIDSessionMissingError(error)) {
         clearOpenIDAuthTokens(
           req,
           res,
           req.session?.openidTokens?.appUserId,
           req.session?.openidTokens?.tenantId,
         );
+      }
+      if (isOpenIDSessionMissingError(error)) {
+        logger.warn('[refreshController] OpenID session missing; sign-in required');
+        return res.status(401).send({ code: 'OPENID_SESSION_MISSING' });
       }
       logger.error('[refreshController] OpenID token refresh error', error);
 

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import { toolPanelSpacingClassName } from '../disclosure';
 import useToolCallState from './useToolCallState';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
@@ -33,14 +34,15 @@ export default function SkillCall({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
-  const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
+  const parsedSkillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
+  const skillName = parsedSkillName || localize('com_ui_skill').toLowerCase();
   const intent = useToolCallIntent(args);
 
   const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
     initialProgress,
     isSubmitting,
     output,
-    hasInput: !!skillName,
+    hasInput: !!parsedSkillName,
     onExpand,
     runStepStatus,
   });
@@ -67,14 +69,19 @@ export default function SkillCall({
               aria-hidden="true"
             />
           }
-          hasInput={!!skillName || hasOutput}
+          hasInput={!!parsedSkillName || hasOutput}
           isExpanded={showCode}
         />
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
           {hasOutput && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+            <div
+              className={cn(
+                toolPanelSpacingClassName,
+                'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+              )}
+            >
               <div className="bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
                 <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
                   {localize('com_ui_output')}

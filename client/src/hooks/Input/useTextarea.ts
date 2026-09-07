@@ -27,6 +27,7 @@ import {
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useLatestMessageMeta } from '~/hooks/Messages/useLatestMessage';
+import { useChatFormContext, useUploadModalContext } from '~/Providers';
 import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
@@ -35,7 +36,6 @@ import useUploadOptions from '~/hooks/Files/useUploadOptions';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
-import { useUploadModalContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -67,6 +67,7 @@ export default function useTextarea({
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
+  const { setValue } = useChatFormContext();
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
   const { showToast } = useToastContext();
@@ -114,14 +115,36 @@ export default function useTextarea({
     latestMessage?.error === true && latestMessage.isCreatedByUser === true && !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
+  const insertComposerText = useCallback(
+    (text: string) => {
+      const textarea = textAreaRef.current;
+      if (!textarea) {
+        return false;
+      }
+
+      const { value, selectionStart, selectionEnd } = textarea;
+      const nextCursor = selectionStart + text.length;
+      setValue('text', `${value.slice(0, selectionStart)}${text}${value.slice(selectionEnd)}`, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      forceResize(textarea);
+      textarea.focus();
+      textarea.setSelectionRange(nextCursor, nextCursor);
+      return true;
+    },
+    [setValue, textAreaRef],
+  );
+
   useEffect(() => {
     const prompt = activePrompt ?? '';
-    if (prompt && textAreaRef.current) {
-      insertTextAtCursor(textAreaRef.current, prompt);
-      forceResize(textAreaRef.current);
-      setActivePrompt(undefined);
+    if (!prompt || !insertComposerText(prompt)) {
+      return;
     }
-  }, [activePrompt, setActivePrompt, textAreaRef]);
+
+    setActivePrompt(undefined);
+  }, [activePrompt, insertComposerText, setActivePrompt]);
 
   /** Text a surface the user was leaving handed to THIS conversation (see
    *  `pendingComposerTextByConvoId`). It is drained once, on the first render
@@ -129,11 +152,12 @@ export default function useTextarea({
    *  navigation that resolves its record before moving the route. */
   useEffect(() => {
     const text = pendingComposerText ?? '';
-    if (text === '' || textAreaRef.current == null) return;
-    insertTextAtCursor(textAreaRef.current, text);
-    forceResize(textAreaRef.current);
+    if (text === '' || !insertComposerText(text)) {
+      return;
+    }
+
     setPendingComposerText(undefined);
-  }, [pendingComposerText, setPendingComposerText, textAreaRef]);
+  }, [insertComposerText, pendingComposerText, setPendingComposerText]);
 
   useEffect(() => {
     const currentValue = textAreaRef.current?.value ?? '';

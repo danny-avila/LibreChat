@@ -1,14 +1,17 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, Tools } from 'librechat-data-provider';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ContentParts from '../ContentParts';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
-    if (key === 'com_ui_used_n_tools') {
-      return `Used ${values?.[0]} tools`;
+    if (key === 'com_ui_ran_n_actions') {
+      return `Ran ${values?.[0]} actions`;
+    }
+    if (key === 'com_ui_running_n_actions') {
+      return `Running ${values?.[0]} actions`;
     }
     return key;
   },
@@ -87,6 +90,9 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
+  MemoryCall: ({ attachments }: { attachments?: TAttachment[] }) => (
+    <div data-testid="memory-call" data-count={attachments?.length ?? 0} />
+  ),
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -96,7 +102,9 @@ jest.mock('../MemoryArtifacts', () => ({
 
 jest.mock('../WebSearch', () => ({
   __esModule: true,
-  default: () => <div data-testid="web-search" />,
+  default: ({ attachments }: { attachments?: TAttachment[] }) => (
+    <div data-testid="web-search" data-count={attachments?.length ?? 0} />
+  ),
 }));
 
 jest.mock('../RetrievalCall', () => ({
@@ -160,6 +168,24 @@ const makeMcpToolCall = (
     },
   }) as unknown as TMessageContentParts;
 
+const makeOwnedToolCall = (
+  name: string,
+  id: string,
+  stepId?: string,
+  agentId?: string,
+): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
+      name,
+      args: '{}',
+      output: 'completed',
+      ...(stepId == null ? {} : { stepId }),
+      ...(agentId == null ? {} : { agentId }),
+    },
+  }) as unknown as TMessageContentParts;
+
 const makeMcpToolCallWithoutId = (name: string, hasOutput = true): TMessageContentParts =>
   ({
     type: ContentTypes.TOOL_CALL,
@@ -208,6 +234,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     isCreatedByUser: false,
     isLast: true,
     isSubmitting: false,
+    showThinking: false,
     isLatestMessage: true,
   };
 
@@ -302,6 +329,75 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(groups[0]).toHaveAttribute('data-count', '1');
   });
 
+  it('routes producer-shaped search snapshots by agent and host step', () => {
+    const content = [
+      makeOwnedToolCall(Tools.web_search, 'call_0', 'step-search-1', 'agent-a'),
+      makeTextPart('between searches'),
+      makeOwnedToolCall(Tools.web_search, 'call_0', undefined, 'agent-a'),
+    ];
+    const attachments = [
+      {
+        type: Tools.web_search,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-search-1',
+        conversationId: 'c1',
+        [Tools.web_search]: { turn: 0, organic: [{ link: 'https://first.example' }] },
+      },
+      {
+        type: Tools.web_search,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-search-2',
+        conversationId: 'c1',
+        [Tools.web_search]: { turn: 0, organic: [{ link: 'https://second.example' }] },
+      },
+    ] as unknown as TAttachment[];
+
+    renderContentParts({ ...baseProps, content, attachments });
+
+    expect(screen.getAllByTestId('web-search').map((card) => card.dataset.count)).toEqual([
+      '1',
+      '1',
+    ]);
+  });
+
+  it('routes producer-shaped memory artifacts by agent and host step', () => {
+    const content = [
+      makeOwnedToolCall('set_memory', 'call_0', 'step-memory-1', 'agent-a'),
+      makeTextPart('between memory writes'),
+      makeOwnedToolCall('set_memory', 'call_0', undefined, 'agent-a'),
+    ];
+    const attachments = [
+      {
+        type: Tools.memory,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-memory-1',
+        conversationId: 'c1',
+        [Tools.memory]: { key: 'first', type: 'update' },
+      },
+      {
+        type: Tools.memory,
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        agentId: 'agent-a',
+        stepId: 'step-memory-2',
+        conversationId: 'c1',
+        [Tools.memory]: { key: 'second', type: 'update' },
+      },
+    ] as unknown as TAttachment[];
+
+    renderContentParts({ ...baseProps, content, attachments });
+
+    expect(screen.getAllByTestId('memory-call').map((card) => card.dataset.count)).toEqual([
+      '1',
+      '1',
+    ]);
+  });
   it('keeps a manually expanded completed tool group open when its content index shifts', () => {
     const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
     const nextContent = [makeTextPart('streamed preface'), ...content];
@@ -312,7 +408,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    const toggle = screen.getByRole('button', { name: /^Ran 2 actions/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(toggle);
@@ -324,7 +420,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Ran 2 actions/ })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
@@ -345,7 +441,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const toggles = screen.getAllByRole('button', { name: /Everything/ });
     fireEvent.click(toggles[1]);
     expect(toggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(toggles[1]).toHaveAttribute('aria-expanded', 'true');
@@ -355,7 +451,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
         <ContentParts {...baseProps} content={nextContent} />
       </RecoilRoot>,
     );
-    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const shiftedToggles = screen.getAllByRole('button', { name: /Everything/ });
     expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
   });
@@ -386,7 +482,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'First phase' }));
     fireEvent.click(screen.getByRole('button', { name: 'Second phase' }));
-    const toggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const toggles = screen.getAllByRole('button', { name: /Everything/ });
     fireEvent.click(toggles[1]);
 
     rerender(
@@ -400,7 +496,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
         fireEvent.click(phaseToggle);
       }
     }
-    const shiftedToggles = screen.getAllByRole('button', { name: 'Used 2 tools' });
+    const shiftedToggles = screen.getAllByRole('button', { name: /Everything/ });
     expect(shiftedToggles[0]).toHaveAttribute('aria-expanded', 'false');
     expect(shiftedToggles[1]).toHaveAttribute('aria-expanded', 'true');
   });
@@ -418,7 +514,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    const toggle = screen.getByRole('button', { name: /^Running 2 actions/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
     fireEvent.click(screen.getAllByTestId('progress-text')[0]);
@@ -434,7 +530,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Ran 2 actions/ })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
@@ -449,7 +545,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    const toggle = screen.getByRole('button', { name: /^Ran 2 actions/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(toggle);
@@ -461,7 +557,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Ran 2 actions/ })).toHaveAttribute(
       'aria-expanded',
       'false',
     );
@@ -476,7 +572,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    const toggle = screen.getByRole('button', { name: /^Ran 2 actions/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(toggle);
@@ -488,7 +584,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Ran 2 actions/ })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
@@ -502,6 +598,7 @@ describe('ContentParts — synthesized activity folds', () => {
     messageId: 'msg1',
     isCreatedByUser: false,
     isLast: true,
+    showThinking: false,
     isSubmitting: false,
     isLatestMessage: true,
   };
@@ -826,14 +923,18 @@ describe('ContentParts — synthesized activity folds', () => {
     /** Providers append an empty TEXT slot after visible output. The cursor
      *  belongs to the card (the run's tail is inside its span), and that
      *  trailing slot looks like the initial waiting state from inside its own
-     *  segment — so without the ownership signal both render one. */
-    renderContentParts({
+     *  segment — so without the ownership signal both render one. The card
+     *  draws its own in-flow dot; the segment's `EmptyText` must stay out. */
+    const { container } = renderContentParts({
       ...baseProps,
       isSubmitting: true,
       content: [...labeledRun(), makeTextPart('')],
     });
 
-    expect(screen.getAllByTestId('empty-text')).toHaveLength(1);
+    const dots = container.querySelectorAll('.result-thinking');
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveClass('after:!static');
+    expect(screen.queryAllByTestId('empty-text')).toHaveLength(0);
   });
 
   it('leaves an unlabeled run rendering exactly as before', () => {
@@ -842,7 +943,7 @@ describe('ContentParts — synthesized activity folds', () => {
       content: [makeMcpToolCall('t1'), makeMcpToolCall('t2')],
     });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('activity-phase-panel')).toBeNull();
   });
 });
@@ -853,6 +954,7 @@ describe('ContentParts integration: phase media row', () => {
     isCreatedByUser: false,
     isLast: true,
     isSubmitting: false,
+    showThinking: false,
     isLatestMessage: true,
   };
 
@@ -931,6 +1033,7 @@ describe('ContentParts integration: lane groups backed by one agent', () => {
     isCreatedByUser: false,
     isLast: true,
     isSubmitting: false,
+    showThinking: false,
     isLatestMessage: true,
   };
 
@@ -968,7 +1071,10 @@ describe('ContentParts integration: lane groups backed by one agent', () => {
 
     renderContentParts({ ...baseProps, content });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    const toggle = screen.getByRole('button');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('still renders columns once a second agent shares the group', () => {

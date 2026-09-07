@@ -10,6 +10,7 @@ import type {
 } from 'librechat-data-provider';
 import type { RunStep, StandardGraph } from '@librechat/agents';
 import type { AgentEventDetachedTerminalEvidence } from '~/agents/triggers/types';
+import type { EarlyBufferOverflowState } from '../../types/earlyBufferRecovery';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
@@ -120,6 +121,17 @@ export interface SerializableJobData {
   completedAt?: number;
   conversationId?: string;
   error?: string;
+
+  /** Durable, non-sensitive identity and one-shot outcome for an early replay
+   * buffer overflow. This lets another replica account for recovery. */
+  earlyBufferOverflow?: EarlyBufferOverflowState;
+
+  /** Generation-level first subscriber claim shared across replicas. */
+  firstSubscriberAttachedAt?: number;
+  /** Expiring local subscriber-group leases (in-memory store only). */
+  activeSubscriberLeases?: Record<string, number>;
+  /** Generation-wide durable chunk frontier maintained by the store. */
+  durableEventCount?: number;
 
   /** Stable identity of the HTTP submission that created this generation.
    * Internal-only: lets an expired idempotency lease recognize the same live
@@ -950,7 +962,13 @@ export interface IJobStore {
   getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
-  ): Promise<{ content: Agents.MessageContentComplex[] } | null>;
+    options?: { durableOnly?: boolean },
+  ): Promise<{
+    content: Agents.MessageContentComplex[];
+    reconstructedEventCount?: number;
+    durableEventCount?: number;
+  } | null>;
+
   getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 
   /** Legacy stores returned `void`; v2 stores return whether the epoch-fenced
@@ -1269,9 +1287,57 @@ export interface IJobStoreV2 extends IJobStore {
   getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
+    options?: { durableOnly?: boolean },
   ): Promise<{
     content: Agents.MessageContentComplex[];
+    reconstructedEventCount?: number;
+    durableEventCount?: number;
   } | null>;
+
+  /** Atomically records the only recovery outcome for one overflow identity. */
+  settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    settlement: Pick<
+      EarlyBufferOverflowState,
+      'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
+    >,
+  ): Promise<boolean>;
+
+  /** Atomically replaces an unresolved pending overflow marker with its
+   * finalized durable frontier. A concurrent recovery settlement wins over
+   * this owner-side finalization. */
+  finalizeEarlyBufferOverflow(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    overflow: EarlyBufferOverflowState,
+  ): Promise<boolean>;
+
+  /** Whether this generation has admitted any subscriber on any replica. */
+  hasSubscriberAttached(streamId: string, expectedCreatedAt: number): Promise<boolean>;
+
+  /** Atomically claims the first subscriber for one generation epoch. */
+  claimFirstSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+    subscriberId: string,
+    leaseExpiresAt: number,
+  ): Promise<boolean>;
+
+  detachSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    subscriberId: string,
+  ): Promise<void>;
+
+  hasActiveSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    observedAt: number,
+  ): Promise<boolean>;
 
   /**
    * Get run steps for a job (for resume state).

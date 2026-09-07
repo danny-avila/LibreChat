@@ -58,6 +58,10 @@ export type FileConfig = {
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
+  /** Maximum aggregate model-bound attachment bytes admitted into one agent turn. */
+  fileContextSizeLimit?: number;
+  /** Maximum aggregate extracted-text characters admitted into one agent turn. */
+  fileContextCharLimit?: number;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
@@ -89,6 +93,8 @@ export type FileConfigInput = {
   };
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
+  fileContextSizeLimit?: number;
+  fileContextCharLimit?: number;
   clientImageResize?: {
     enabled?: boolean;
     maxWidth?: number;

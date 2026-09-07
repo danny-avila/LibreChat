@@ -228,6 +228,26 @@ describe('getScheduleRunProject (occurrence scope, recorded vs unknown)', () => 
    * if that ever stopped holding, a deliberately unscoped run would silently start
    * being validated against the schedule's current project instead.
    */
+  it("narrows the user's in-flight runs to the statuses asked for", async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const generating = new Date('2026-07-22T12:00:00Z');
+    const paused = new Date('2026-07-23T12:00:00Z');
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: paused }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: paused,
+      status: 'requires_action',
+      autoDisableAfterFailures: 5,
+    });
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: generating }));
+
+    const all = await methods.getActiveRunsForUser(schedule.user);
+    const started = await methods.getActiveRunsForUser(schedule.user, ['started']);
+
+    expect(all.map((run) => run.status).sort()).toEqual(['requires_action', 'started']);
+    expect(started.map((run) => run.scheduledFor)).toEqual([generating]);
+  });
+
   it('reports a recorded null apart from a field that was never written', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const scoped = new Date('2026-07-20T12:00:00Z');

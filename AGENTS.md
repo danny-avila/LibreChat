@@ -12,6 +12,11 @@ default branch, so close linked issues by hand. Worktrees share one stash stack,
 
 ## Verification
 
+For startup, auth, config, file, or message-loading changes, avoid serial database
+reads and reuse loaded request data. Run `npm run lighthouse` before completion:
+the CI lane adds 250 ms per Mongo query and checks the visible conversation's LCP.
+See [budgets, reproduction and failure diagnosis](e2e/lighthouse/README.md).
+
 A green build is not a typecheck: `packages/api`, `packages/client` and `packages/data-schemas` build
 with `tsdown`, which emits without checking types. Run `npx tsc --noEmit` in the workspace you
 changed. `packages/client` excludes `*.spec.ts(x)` and `*.test.ts(x)` from typechecking entirely.

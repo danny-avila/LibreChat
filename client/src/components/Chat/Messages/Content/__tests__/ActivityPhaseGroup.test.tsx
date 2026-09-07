@@ -1,8 +1,8 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, Tools } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ActivityPhaseGroup from '../ActivityPhaseGroup';
-import { TOOL_ROW_CLASSES } from '../rows';
 
 const mockUseSmoothStreaming = jest.fn(() => true);
 const mockScheduleLayoutReconcile = jest.fn((_target: HTMLElement | null) => jest.fn());
@@ -16,6 +16,7 @@ jest.mock('~/hooks', () => {
   const expandCollapse = jest.requireActual('~/hooks/Messages/useExpandCollapse');
   const lazyCollapseBody = jest.requireActual('~/hooks/Messages/useLazyCollapseBody');
   return {
+    useLocalize: () => (key: string) => key,
     useExpandCollapse: expandCollapse.default,
     useLazyCollapseBody: lazyCollapseBody.default,
     EXPAND_TRANSITION: expandCollapse.EXPAND_TRANSITION,
@@ -39,6 +40,22 @@ const makeLabelPart = (
 
 const labelPart = makeLabelPart(LABEL);
 const nextLabelPart = makeLabelPart(NEXT_LABEL);
+
+/** A completed web search inside the phase: `AttachmentGroup` discards the
+ *  `web_search` type, so only `SearchVerticals` can surface these. */
+const searchAttachment = {
+  type: Tools.web_search,
+  [Tools.web_search]: {
+    images: [
+      {
+        title: 'A pictured result',
+        imageUrl: 'https://example.com/pic.png',
+        thumbnailUrl: 'https://example.com/thumb.png',
+        link: 'https://example.com/page',
+      },
+    ],
+  },
+} as unknown as TAttachment;
 
 describe('ActivityPhaseGroup', () => {
   let frames: Array<FrameRequestCallback | undefined>;
@@ -114,7 +131,14 @@ describe('ActivityPhaseGroup', () => {
     for (const token of TOOL_ROW_CLASSES.split(' ')) {
       expect(cursor).toHaveClass(token);
     }
-    expect(cursor.querySelector('.result-thinking')).toBeInTheDocument();
+    /** The dot rides the same glyph slot as every row's icon, in flow, so the
+     *  slot centers it on the avatar's axis instead of a text baseline. */
+    const slot = cursor.firstElementChild;
+    for (const token of ROW_GLYPH_SLOT.split(' ')) {
+      expect(slot).toHaveClass(token);
+    }
+    expect(slot).toHaveClass('submitting');
+    expect(cursor.querySelector('.result-thinking')).toHaveClass('after:!static');
   });
 
   test('opens the summary on the same glyph rail as the rows it replaces', () => {
@@ -126,10 +150,12 @@ describe('ActivityPhaseGroup', () => {
 
     const trigger = screen.getByRole('button', { name: LABEL });
     expect(trigger).toHaveClass('justify-start', 'gap-2', 'p-0');
-    /** Leading glyph plus the chevron: a summary with no glyph slot sits 24px
-     *  left of every tool row in the same list. */
+    /** Leading glyph plus the chevron, in the slot every row shares: a
+     *  summary without it sits left of the rows it replaces. */
     expect(trigger.querySelectorAll('svg')).toHaveLength(2);
-    expect(trigger.firstElementChild).toHaveClass('size-4', 'shrink-0');
+    for (const token of ROW_GLYPH_SLOT.split(' ')) {
+      expect(trigger.firstElementChild).toHaveClass(token);
+    }
     expect(screen.getByText(LABEL).parentElement).toHaveClass('flex-1', 'text-left');
   });
 
@@ -356,5 +382,22 @@ describe('ActivityPhaseGroup', () => {
 
     fireEvent.transitionEnd(screen.getByTestId('activity-phase-panel'));
     expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+  });
+
+  test('hoists a folded search call verticals out of the card', () => {
+    /** The nested segment renders with `hideAttachments`, standing its own
+     *  `WebSearch` verticals down for this hoist, and `AttachmentGroup` drops
+     *  `web_search` attachments outright — so the card is the only surface
+     *  left for a folded search's images, products and places. */
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent attachments={[searchAttachment]}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const image = screen.getByRole('link', { name: 'A pictured result' });
+    expect(image).toHaveAttribute('href', 'https://example.com/page');
+    /** Outside the fold: collapsing the card must not take the media with it. */
+    expect(screen.getByTestId('activity-phase-panel')).not.toContainElement(image);
   });
 });

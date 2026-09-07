@@ -19,6 +19,7 @@ import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDia
 import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
+import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
@@ -438,7 +439,7 @@ const InFlightSteer = memo(function InFlightSteer({
     {
       key: 'queue',
       label: localize('com_ui_convert_to_queue'),
-      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      icon: <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />,
       onClick: () => {
         void reclaim().then((reclaimed) => {
           if (reclaimed) {
@@ -520,7 +521,7 @@ const InFlightSteer = memo(function InFlightSteer({
         >
           <MorphIcon
             icon={preempting ? ZapOff : Zap}
-            className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500"
+            className={cn('mt-1 h-3.5 w-3.5 shrink-0', STEER_ICON)}
           />
           <span className="sr-only">
             {localize(preempting ? 'com_ui_steer_in_flight_preempt' : 'com_ui_steer_in_flight')}

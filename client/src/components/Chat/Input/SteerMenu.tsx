@@ -7,6 +7,7 @@ import { ArrowUp, CircleHelp, MoreHorizontal } from 'lucide-react';
 import type { Ref } from 'react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { useShortcutAriaKey, useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
+import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -288,7 +289,7 @@ export function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
       icon: (
         <MorphIcon
           icon={next === 'queue' ? Clock : Zap}
-          className={cn('h-4 w-4', next === 'queue' ? 'text-cyan-500' : 'text-amber-500')}
+          className={cn('h-4 w-4', next === 'queue' ? QUEUE_ICON : STEER_ICON)}
         />
       ),
       info: localize('com_nav_info_during_run_action'),
@@ -314,7 +315,10 @@ export function useInterruptToggleEntry(): MenuEntry {
         ? localize('com_ui_wait_for_tool_steps')
         : localize('com_ui_always_interrupt'),
       icon: (
-        <MorphIcon icon={interruptsByDefault ? Zap : ZapOff} className="h-4 w-4 text-amber-500" />
+        <MorphIcon
+          icon={interruptsByDefault ? Zap : ZapOff}
+          className={cn('h-4 w-4', STEER_ICON)}
+        />
       ),
       info: localize(
         !interruptsByDefault && defaultAction === 'queue'

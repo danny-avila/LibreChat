@@ -450,6 +450,8 @@ export const mbToBytes = (mb: number): number => mb * megabyte;
 const defaultSizeLimit = mbToBytes(512);
 const defaultSkillImportSizeLimit = mbToBytes(50);
 const defaultTokenLimit = 100000;
+const defaultContextSizeLimit = mbToBytes(128);
+const defaultContextCharLimit = 1_000_000;
 const assistantsFileConfig = {
   fileLimit: 10,
   fileSizeLimit: defaultSizeLimit,
@@ -484,6 +486,8 @@ export const fileConfig = {
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   fileTokenLimit: defaultTokenLimit,
+  fileContextSizeLimit: defaultContextSizeLimit,
+  fileContextCharLimit: defaultContextCharLimit,
   clientImageResize: {
     enabled: false,
     maxWidth: 1900,
@@ -525,6 +529,8 @@ export const fileConfigSchema = z.object({
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
   fileTokenLimit: z.number().min(0).optional(),
+  fileContextSizeLimit: z.number().min(0).optional(),
+  fileContextCharLimit: z.number().min(0).optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
@@ -1012,6 +1018,14 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.fileTokenLimit !== undefined) {
     mergedConfig.fileTokenLimit = dynamic.fileTokenLimit;
+  }
+
+  if (dynamic.fileContextSizeLimit !== undefined) {
+    mergedConfig.fileContextSizeLimit = mbToBytes(dynamic.fileContextSizeLimit);
+  }
+
+  if (dynamic.fileContextCharLimit !== undefined) {
+    mergedConfig.fileContextCharLimit = dynamic.fileContextCharLimit;
   }
 
   if (dynamic.skills?.fileSizeLimit !== undefined) {

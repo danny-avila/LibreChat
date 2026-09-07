@@ -62,6 +62,7 @@
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e:prepare": "npm run frontend",
+    "test:client-build": "node --test e2e/client-build.test.mjs",
     "e2e": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts",
     "e2e:headed": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --headed",
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
@@ -140,7 +141,10 @@
     "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
     "migrate:code-file-duplicates:dry-run": "node config/migrate-code-file-duplicates.js --dry-run",
     "migrate:code-file-duplicates": "node config/migrate-code-file-duplicates.js",
-    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50"
+    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50",
+    "lighthouse": "npm run e2e:prepare && npm run lighthouse:run",
+    "lighthouse:run": "playwright test --config=e2e/playwright.config.lighthouse.ts",
+    "lighthouse:regression": "cross-env LIGHTHOUSE_REGRESSION=serial-reads npm run lighthouse:run"
   },
   "repository": {
     "type": "git",
@@ -178,6 +182,7 @@
     "globals": "^15.14.0",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
+    "lighthouse": "13.4.1",
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",

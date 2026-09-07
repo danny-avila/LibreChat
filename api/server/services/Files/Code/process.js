@@ -34,6 +34,8 @@ const {
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   sortCodeFilesByDestinationPriority,
+  normalizeArtifactDeliveryFailure,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Tools,
@@ -1429,7 +1431,7 @@ const primeFiles = async (options) => {
         const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
           FileSources.execute_code,
         );
-        const stream = await getDownloadStream(options.req, file.filepath);
+        const stream = await getDownloadStream(options.req, resolveDownloadPath(file));
         /* Reupload preserves the resource identity from the existing
          * ref so codeapi re-buckets under the same sessionKey shape
          * (skill stays skill, user stays user). Without this, a
@@ -2057,7 +2059,7 @@ async function execSandboxImageChunk({
  * @param {string} [params.session_id] - Sandbox session id from the seeded context.
  * @param {Array<{id: string, name: string, session_id?: string}>} [params.files] - File refs to mount.
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
- * @returns {Promise<{stdout?: string, stderr?: string, session_id?: string, files?: Array<Object>} | null>}
+ * @returns {Promise<{stdout?: string, stderr?: string, session_id?: string, files?: Array<Object>, artifact_delivery?: {code: 'artifact_delivery_failed', status: 'partial' | 'failed', attempted: number, delivered: number, failed: number}} | null>}
  */
 async function writeSandboxFile({
   file_path,
@@ -2138,6 +2140,7 @@ async function writeSandboxFile({
       stderr: result.stderr == null ? undefined : String(result.stderr),
       session_id: result.session_id,
       files: result.files,
+      artifact_delivery: normalizeArtifactDeliveryFailure(result.artifact_delivery),
     };
   } catch (error) {
     logAxiosError({

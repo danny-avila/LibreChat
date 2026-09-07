@@ -63,7 +63,15 @@ export const registry: SettingEntry[] = [
     tab: GENERAL,
     section: 'appearance',
     labelKey: 'com_nav_theme',
-    keywords: ['dark', 'light', 'appearance', 'color'],
+    keywords: [
+      'dark',
+      'light',
+      'appearance',
+      'color',
+      'contrast',
+      'high contrast',
+      'accessibility',
+    ],
     Component: ThemeSetting,
   },
   {

@@ -146,6 +146,24 @@ describe('PendingSteerChips — ambiguous delivery retry', () => {
       { preempt: false, createdAt: 1, generationProtocolVersion: 2 },
     );
   });
+
+  it('uses semantic destructive roles for a failed steer', () => {
+    renderChips([], {
+      steers: [
+        {
+          steerId: 'failed-steer',
+          text: 'failed message',
+          status: 'failed',
+          createdAt: 1,
+        },
+      ],
+    });
+
+    const row = screen.getByTestId('steer-message-row');
+    expect(row).toHaveClass('border-border-destructive');
+    expect(row.querySelector('svg')).toHaveClass('text-text-destructive');
+    expect(screen.getByText('com_ui_steer_failed')).toHaveClass('text-text-destructive');
+  });
 });
 
 describe('PendingSteerChips — queued primary availability', () => {
