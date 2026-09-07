@@ -2822,6 +2822,51 @@ describe('MCPManager', () => {
       expect(mockConnection.client.request).toHaveBeenCalled();
     });
 
+    it('passes the OBO-cleaned config into runtime header processing', async () => {
+      const mixedConfig = {
+        ...serverConfig,
+        source: 'yaml' as const,
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'X-Service': 'private-mcp',
+        },
+      };
+      mockResolveOboToken.mockResolvedValue({
+        access_token: 'fresh-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(mixedConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProvider: mockUpstreamTokenProvider,
+      });
+
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            headers: { 'X-Service': 'private-mcp' },
+          }),
+        }),
+      );
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith({
+        'X-Service': 'private-mcp',
+        Authorization: 'Bearer fresh-obo-token',
+      });
+    });
+
     it('should fail closed with a retryable message when per-call OBO refresh has a transient failure', async () => {
       mockResolveOboToken.mockRejectedValue(
         new OboTokenResolutionError(
@@ -3166,6 +3211,152 @@ describe('MCPManager', () => {
       expect(connection.stopReconnecting).not.toHaveBeenCalled();
       expect(getUserConnection).toHaveBeenCalledTimes(1);
       expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
+    });
+
+    it.each([false, true])(
+      'propagates a connection leader recovery budget to a pending checkout joiner (request-scoped=%s)',
+      async (requestScoped) => {
+        const rejection = new Error('HTTP 401 Unauthorized');
+        const checkoutConfig = requestScoped
+          ? {
+              ...serverConfig,
+              headers: {
+                ...serverConfig.headers,
+                'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+              },
+            }
+          : serverConfig;
+        const requestScopedConnections = requestScoped
+          ? {
+              connections: new Map<string, unknown>(),
+              pending: new Map<string, Promise<unknown>>(),
+            }
+          : undefined;
+        const connection = {
+          isConnected: jest.fn().mockResolvedValue(true),
+          isStale: jest.fn().mockReturnValue(false),
+          setRequestHeaders: jest.fn(),
+          stopReconnecting: jest.fn(),
+          isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
+          refreshToolList: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+          on: jest.fn(),
+          removeAllListeners: jest.fn(),
+          dispose: jest.fn().mockResolvedValue(undefined),
+          timeout: 30000,
+          client: { request: jest.fn().mockRejectedValue(rejection) },
+        } as unknown as MCPConnection;
+        const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+        let releaseCreation: (() => void) | undefined;
+        const creationGate = new Promise<void>((resolve) => {
+          releaseCreation = resolve;
+        });
+
+        (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+          async (config) => config,
+        );
+        (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(checkoutConfig);
+        mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+        (MCPConnectionFactory.create as jest.Mock).mockImplementation(
+          async (basic: t.BasicConnectionOptions) => {
+            basic.directBearerRecoveryState!.attempted = true;
+            await creationGate;
+            return connection;
+          },
+        );
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const invocation = () =>
+          manager.callTool({
+            user,
+            serverName,
+            serverConfig: checkoutConfig,
+            toolName: 'mutating_tool',
+            provider: 'openai',
+            requestBody: requestScoped ? { conversationId: 'conversation-1' } : undefined,
+            requestScopedConnections,
+            flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+            upstreamTokenProvider,
+          });
+
+        const leader = invocation();
+        while ((MCPConnectionFactory.create as jest.Mock).mock.calls.length === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        const joiner = invocation();
+        await new Promise((resolve) => setImmediate(resolve));
+        releaseCreation?.();
+
+        await Promise.all([
+          expect(leader).rejects.toMatchObject({
+            code: 'MCP_AUTHENTICATION_REJECTED',
+            connectionRefreshed: false,
+          }),
+          expect(joiner).rejects.toMatchObject({
+            code: 'MCP_AUTHENTICATION_REJECTED',
+            connectionRefreshed: false,
+          }),
+        ]);
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+        expect(connection.client.request).toHaveBeenCalledTimes(2);
+        expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
+      },
+    );
+
+    it('propagates an active direct recovery budget to a checkout waiter', async () => {
+      const rejection = new Error('HTTP 401 Unauthorized');
+      const oldConnection = {
+        isConnected: jest.fn().mockResolvedValue(false),
+      } as unknown as MCPConnection;
+      const replacement = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        stopReconnecting: jest.fn(),
+        isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
+        timeout: 30000,
+        client: { request: jest.fn().mockRejectedValue(rejection) },
+      } as unknown as MCPConnection;
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (config) => config);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest
+        .spyOn(manager, 'getConnection')
+        .mockResolvedValueOnce(oldConnection)
+        .mockResolvedValueOnce(replacement);
+      (
+        manager as unknown as {
+          oauthRecoveries: WeakMap<
+            MCPConnection,
+            {
+              promise: Promise<void>;
+              allowsTakeover: boolean;
+              directBearerRecoveryConsumed: boolean;
+            }
+          >;
+        }
+      ).oauthRecoveries.set(oldConnection, {
+        promise: Promise.resolve(),
+        allowsTakeover: false,
+        directBearerRecoveryConsumed: true,
+      });
+
+      await expect(
+        manager.callTool({
+          user,
+          serverName,
+          serverConfig,
+          toolName: 'mutating_tool',
+          provider: 'openai',
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+          upstreamTokenProvider,
+        }),
+      ).rejects.toMatchObject({
+        code: 'MCP_AUTHENTICATION_REJECTED',
+        connectionRefreshed: false,
+      });
+      expect(replacement.client.request).toHaveBeenCalledTimes(1);
+      expect(replacement.stopReconnecting).not.toHaveBeenCalled();
       expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
     });
 

@@ -33,6 +33,7 @@ import { isEnabled } from '~/utils';
 type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: OAuthLifecycleRelay;
+  directBearerRecoveryState: t.DirectBearerRecoveryState;
 };
 
 /**
@@ -81,6 +82,12 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  /** Recovery state owned by request-scoped promises, which the public store intentionally keeps opaque. */
+  private readonly requestPendingDirectBearerRecoveryStates = new WeakMap<
+    Promise<unknown>,
+    t.DirectBearerRecoveryState
+  >();
+
   private readonly connectionBorrowers = new WeakMap<MCPConnection, number>();
   private readonly connectionBorrowerDrainWaiters = new WeakMap<MCPConnection, Set<() => void>>();
   private readonly deferredConnectionDisposalHolds = new WeakMap<MCPConnection, number>();
@@ -364,7 +371,11 @@ export abstract class UserConnectionManager {
         | undefined;
       if (pending) {
         logger.debug(`[MCP][User: ${userId}] Joining in-flight request-scoped connection attempt`);
-        return pending;
+        const connection = await pending;
+        if (this.requestPendingDirectBearerRecoveryStates.get(pending)?.attempted) {
+          directBearerRecoveryState.attempted = true;
+        }
+        return connection;
       }
 
       const pendingOAuth = new OAuthLifecycleRelay({
@@ -400,6 +411,10 @@ export abstract class UserConnectionManager {
         requestConnectionKey,
         connectionPromise as Promise<unknown>,
       );
+      this.requestPendingDirectBearerRecoveryStates.set(
+        connectionPromise,
+        directBearerRecoveryState,
+      );
 
       try {
         return await connectionPromise;
@@ -426,7 +441,11 @@ export abstract class UserConnectionManager {
           userId,
           serverName,
         });
-        return pending.promise;
+        const connection = await pending.promise;
+        if (pending.directBearerRecoveryState.attempted) {
+          directBearerRecoveryState.attempted = true;
+        }
+        return connection;
       }
     }
 
@@ -460,6 +479,7 @@ export abstract class UserConnectionManager {
       this.pendingConnections.set(lockKey, {
         promise: connectionPromise,
         oauth: pendingOAuth,
+        directBearerRecoveryState,
       });
     }
 

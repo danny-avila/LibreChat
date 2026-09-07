@@ -85,6 +85,7 @@ export class MCPManager extends UserConnectionManager {
       callbacks?: OAuthLifecycleRelay;
       allowsTakeover: boolean;
       takeoverClaimed?: boolean;
+      directBearerRecoveryConsumed?: boolean;
     }
   >();
 
@@ -127,6 +128,9 @@ export class MCPManager extends UserConnectionManager {
       opts.serverConfig?.updatedAt != null &&
       connection.isStale(opts.serverConfig.updatedAt);
     if (recovery && !providedConfigIsNewer) {
+      if (recovery.directBearerRecoveryConsumed && opts.directBearerRecoveryState) {
+        opts.directBearerRecoveryState.attempted = true;
+      }
       if (recovery.callbacks) {
         await recovery.callbacks.add({
           oauthStart: opts.oauthStart,
@@ -776,7 +780,11 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
     });
-    const recoveryEntry = { promise: recovery, allowsTakeover: false };
+    const recoveryEntry = {
+      promise: recovery,
+      allowsTakeover: false,
+      directBearerRecoveryConsumed: true,
+    };
     this.oauthRecoveries.set(connection, recoveryEntry);
     const clearRecovery = () => {
       if (this.oauthRecoveries.get(connection) === recoveryEntry) {
@@ -1019,6 +1027,9 @@ Please follow these instructions when using tools from the respective MCP server
           if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
             break;
           }
+          if (checkoutRecovery.directBearerRecoveryConsumed) {
+            directBearerRecoveryState.attempted = true;
+          }
           if (checkoutRecovery.callbacks) {
             await checkoutRecovery.callbacks.add({
               oauthStart,
@@ -1078,7 +1089,7 @@ Please follow these instructions when using tools from the respective MCP server
           user,
           body: requestBody,
           dbSourced: isDbSourced,
-          options: directBearerRecovery ? bearerConfig : graphProcessedConfig,
+          options: bearerConfig,
           customUserVars,
         });
 
