@@ -216,6 +216,11 @@ export type AddServerResult = {
   config: ParsedServerConfig;
 };
 
+/** Mutable per-creation budget shared by every direct-bearer recovery layer. */
+export interface DirectBearerRecoveryState {
+  attempted: boolean;
+}
+
 export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
@@ -223,6 +228,8 @@ export interface BasicConnectionOptions {
   serverDefinition?: MCPOptions;
   /** Original trusted definition retained when serverConfig already contains request-resolved credentials. */
   directBearerSourceConfig?: ParsedServerConfig;
+  /** Internal one-shot fence shared with the connection owner. */
+  directBearerRecoveryState?: DirectBearerRecoveryState;
   useSSRFProtection?: boolean;
   allowedDomains?: string[] | null;
   /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
@@ -287,8 +294,8 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
   forceNew?: boolean;
   ephemeralConnection?: boolean;
   serverConfig?: ParsedServerConfig;
-  /** Internal one-shot fence for direct bearer rejection during initial tools/list. */
-  directBearerRecoveryAttempted?: boolean;
+  /** Internal one-shot fence shared across connection initialization and initial tools/list. */
+  directBearerRecoveryState?: DirectBearerRecoveryState;
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;

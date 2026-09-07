@@ -127,6 +127,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
+    const directBearerRecoveryState = basic.directBearerRecoveryState ?? { attempted: false };
     const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
       const factory = new this(await this.prepareBasicConnectionOptions(candidate, oauth), oauth);
       return factory.createConnection();
@@ -141,6 +142,10 @@ export class MCPConnectionFactory {
       if (!isOAuthAuthenticationError(error) || this.isRequestCancelled(oauth)) {
         throw error;
       }
+      if (directBearerRecoveryState.attempted) {
+        throw new MCPAuthenticationRejectedError(basic.serverName, false, error);
+      }
+      directBearerRecoveryState.attempted = true;
       const refreshedConfig = await resolveDirectOpenIDBearerConfig({
         config: basic.directBearerSourceConfig ?? basic.serverConfig,
         upstreamTokenProvider: oauth?.upstreamTokenProvider,

@@ -301,6 +301,7 @@ export abstract class UserConnectionManager {
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
   public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
+    const directBearerRecoveryState = opts.directBearerRecoveryState ?? { attempted: false };
     const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
@@ -377,6 +378,7 @@ export abstract class UserConnectionManager {
           forceNew: true,
           ephemeralConnection: true,
           serverConfig: config,
+          directBearerRecoveryState,
           oauthStart: pendingOAuth.start,
           oauthEnd: pendingOAuth.end,
         },
@@ -442,6 +444,7 @@ export abstract class UserConnectionManager {
           forceNew: forceNewConnection,
           ephemeralConnection,
           serverConfig: config,
+          directBearerRecoveryState,
           oauthStart: pendingOAuth.start,
           oauthEnd: pendingOAuth.end,
         },
@@ -494,7 +497,7 @@ export abstract class UserConnectionManager {
       graphTokenResolver,
       ephemeralConnection = false,
       serverConfig: providedConfig,
-      directBearerRecoveryAttempted = false,
+      directBearerRecoveryState = { attempted: false },
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
@@ -675,6 +678,7 @@ export abstract class UserConnectionManager {
          * separate so callback liveness compares against the config that actually owns it. */
         serverDefinition: config,
         ...(usesDirectOpenIDBearerRecovery(config) && { directBearerSourceConfig: config }),
+        directBearerRecoveryState,
         serverName: serverName,
         dbSourced: isUserSourced(runtimeConfig),
         useSSRFProtection,
@@ -748,22 +752,19 @@ export abstract class UserConnectionManager {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
 
-      if (!ephemeralConnection) {
+      const directBearerRecovery = usesDirectOpenIDBearerRecovery(config);
+      if (!ephemeralConnection || directBearerRecovery) {
         const toolListSnapshot = await connection.refreshToolList();
         const toolListAuthenticationError = toolListSnapshot?.authenticationError;
-        if (
-          toolListAuthenticationError &&
-          usesDirectOpenIDBearerRecovery(config) &&
-          user &&
-          upstreamTokenProvider
-        ) {
-          if (directBearerRecoveryAttempted) {
+        if (toolListAuthenticationError && directBearerRecovery && user && upstreamTokenProvider) {
+          if (directBearerRecoveryState.attempted) {
             throw new MCPAuthenticationRejectedError(
               serverName,
               false,
               toolListAuthenticationError,
             );
           }
+          directBearerRecoveryState.attempted = true;
           await resolveDirectOpenIDBearerConfig({
             config,
             upstreamTokenProvider,
@@ -792,13 +793,15 @@ export abstract class UserConnectionManager {
               graphTokenResolver,
               ephemeralConnection,
               serverConfig: config,
-              directBearerRecoveryAttempted: true,
+              directBearerRecoveryState,
             },
             userId,
             clearCooldown,
             creationGuard,
           );
         }
+      }
+      if (!ephemeralConnection) {
         this.assertCreationNotCancelled(creationGuard, userId, serverName);
         if (!this.userConnections.has(userId)) {
           this.userConnections.set(userId, new Map());

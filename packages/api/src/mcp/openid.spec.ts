@@ -32,6 +32,27 @@ describe('direct OpenID bearer recovery', () => {
     expect(upstreamTokenProvider).toHaveBeenCalledWith({ forceRefresh: true });
   });
 
+  it('resolves a bearer placeholder supplied through an operator environment variable', async () => {
+    const variableName = 'LIBRECHAT_TEST_DIRECT_BEARER_HEADER';
+    process.env[variableName] = 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}';
+    const config = {
+      ...directBearerConfig('yaml'),
+      headers: { Authorization: `\${${variableName}}` },
+    };
+
+    try {
+      expect(usesDirectOpenIDBearerRecovery(config)).toBe(true);
+      await expect(
+        resolveDirectOpenIDBearerConfig({
+          config,
+          upstreamTokenProvider: jest.fn().mockResolvedValue({ access_token: 'live-token' }),
+        }),
+      ).resolves.toMatchObject({ headers: { Authorization: 'Bearer live-token' } });
+    } finally {
+      delete process.env[variableName];
+    }
+  });
+
   it.each(['user', 'plugin'] as const)(
     'does not resolve an untrusted %s configuration',
     async (source) => {

@@ -765,6 +765,7 @@ Please follow these instructions when using tools from the respective MCP server
         graphTokenResolver,
         upstreamTokenProvider,
         oboIdentityContext,
+        directBearerRecoveryState: { attempted: true },
       });
       if (requiresEphemeralUserConnection(serverConfig) && !requestScopedConnections) {
         await this.disposeEvictedConnection(

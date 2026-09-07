@@ -4002,6 +4002,49 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
+    it('treats a replacement handshake rejection as terminal without refreshing again', async () => {
+      const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+      const rejectedConnection = {
+        ...mockConnectionInstance,
+        connect: jest.fn().mockRejectedValue(authError),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as jest.Mocked<MCPConnection>;
+      mockMCPConnection.mockImplementationOnce(() => rejectedConnection);
+      mockProcessMCPEnv.mockImplementation(({ options }) => options);
+      const upstreamTokenProvider = jest.fn();
+      const directBearerSourceConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://mcp.example.com',
+        source: 'yaml' as const,
+        openidBearerRecovery: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      } as t.MCPOptions;
+
+      await expect(
+        MCPConnectionFactory.create(
+          {
+            serverName: 'direct-bearer',
+            serverConfig: {
+              type: 'streamable-http',
+              url: 'https://mcp.example.com',
+              source: 'yaml',
+              openidBearerRecovery: true,
+              headers: { Authorization: 'Bearer refreshed-token' },
+            } as t.MCPOptions,
+            directBearerSourceConfig,
+            directBearerRecoveryState: { attempted: true },
+          },
+          { user: mockUser, upstreamTokenProvider },
+        ),
+      ).rejects.toMatchObject({
+        code: 'MCP_AUTHENTICATION_REJECTED',
+        connectionRefreshed: false,
+      } satisfies Partial<MCPAuthenticationRejectedError>);
+
+      expect(mockMCPConnection).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).not.toHaveBeenCalled();
+    });
+
     it('replaces one direct OpenID bearer connection and rediscovers after tools/list rejects it', async () => {
       const staleError = Object.assign(new Error('unauthorized'), { status: 401 });
       const firstConnection = {

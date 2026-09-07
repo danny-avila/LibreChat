@@ -1,3 +1,4 @@
+import { extractEnvVariable } from 'librechat-data-provider';
 import type { UpstreamTokenProvider } from './oauth/obo';
 import type { MCPOptions } from './types';
 import { isRetryableOboExchangeError } from './oauth/obo';
@@ -27,6 +28,11 @@ function getAuthorizationHeader(
   return entry ? { name: entry[0], value: entry[1] } : null;
 }
 
+/** Expands an operator-owned environment indirection before looking for the OpenID placeholder. */
+function getAuthorizationTemplateValue(value: string): string {
+  return extractEnvVariable(value);
+}
+
 /** Whether a config retains the trusted direct-bearer mode after placeholder resolution. */
 export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig): boolean {
   /** OBO is the stronger audience-bound mode and takes precedence when both legacy fields exist. */
@@ -45,7 +51,7 @@ export function usesDirectOpenIDBearerRecovery(config: DirectBearerConfig): bool
   return (
     isDirectOpenIDBearerRecoveryEnabled(config) &&
     authorization != null &&
-    OPENID_ACCESS_TOKEN_PATTERN.test(authorization.value)
+    OPENID_ACCESS_TOKEN_PATTERN.test(getAuthorizationTemplateValue(authorization.value))
   );
 }
 
@@ -103,7 +109,7 @@ export async function resolveDirectOpenIDBearerConfig({
     ...config,
     headers: {
       ...config.headers,
-      [authorization.name]: authorization.value.replace(
+      [authorization.name]: getAuthorizationTemplateValue(authorization.value).replace(
         OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN,
         () => tokens.access_token!,
       ),
