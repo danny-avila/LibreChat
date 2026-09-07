@@ -5334,56 +5334,75 @@ describe('MCPManager', () => {
       expect(requestScopedConnections.pending.size).toBe(0);
     });
 
-    it('disposes a request-scoped connection that finishes after cleanup starts', async () => {
-      const bodyUrlConfig: t.ParsedServerConfig = {
-        type: 'streamable-http',
-        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
-        source: 'yaml',
-        requiresOAuth: false,
-      };
-      const lateConnection = {
-        dispose: jest.fn().mockResolvedValue(undefined),
-        isConnected: jest.fn().mockResolvedValue(true),
-        on: jest.fn(),
-        refreshToolList: jest.fn().mockResolvedValue(undefined),
-      } as unknown as MCPConnection;
-      let finishCreation: ((connection: MCPConnection) => void) | undefined;
-      const creation = new Promise<MCPConnection>((resolve) => {
-        finishCreation = resolve;
-      });
-      const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
-        connections: new Map(),
-        pending: new Map(),
-        cleanupStarted: false,
-      };
-      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
-      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
-        ...options,
-        ...('url' in options && {
-          url: options.url?.replace('{{LIBRECHAT_BODY_MESSAGEID}}', body?.messageId ?? ''),
-        }),
-      }));
-      (MCPConnectionFactory.create as jest.Mock).mockReturnValue(creation);
-      const manager = await MCPManager.createInstance(newMCPServersConfig());
+    it.each(['cleanup', 'mutation'] as const)(
+      'disposes a request-scoped connection that finishes after %s',
+      async (teardown) => {
+        const bodyUrlConfig: t.ParsedServerConfig = {
+          type: 'streamable-http',
+          url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+          source: 'yaml',
+          requiresOAuth: false,
+        };
+        const lateConnection = {
+          dispose: jest.fn().mockResolvedValue(undefined),
+          isConnected: jest.fn().mockResolvedValue(true),
+          on: jest.fn(),
+          refreshToolList: jest.fn().mockResolvedValue(undefined),
+        } as unknown as MCPConnection;
+        let finishCreation: ((connection: MCPConnection) => void) | undefined;
+        const creation = new Promise<MCPConnection>((resolve) => {
+          finishCreation = resolve;
+        });
+        const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
+          connections: new Map(),
+          pending: new Map(),
+          cleanupStarted: false,
+        };
+        mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+        (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+          async (config) => config,
+        );
+        mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+          ...options,
+          ...('url' in options && {
+            url: options.url?.replace('{{LIBRECHAT_BODY_MESSAGEID}}', body?.messageId ?? ''),
+          }),
+        }));
+        (MCPConnectionFactory.create as jest.Mock).mockReturnValue(creation);
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
 
-      const connectionPromise = manager.getUserConnection({
-        serverName,
-        user: mockUser,
-        serverConfig: bodyUrlConfig,
-        requestBody: { messageId: 'message-1' },
-        requestScopedConnections,
-      });
-      await Promise.resolve();
-      requestScopedConnections.cleanupStarted = true;
-      finishCreation?.(lateConnection);
+        const connectionPromise = manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          serverConfig: bodyUrlConfig,
+          requestBody: { messageId: 'message-1' },
+          requestScopedConnections,
+        });
+        for (
+          let attempt = 0;
+          attempt < 20 && !(MCPConnectionFactory.create as jest.Mock).mock.calls.length;
+          attempt++
+        ) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+        if (teardown === 'cleanup') {
+          requestScopedConnections.cleanupStarted = true;
+        } else {
+          await manager.disconnectUserConnection(mockUser.id, serverName);
+        }
+        finishCreation?.(lateConnection);
 
-      await expect(connectionPromise).rejects.toThrow(
-        'Request-scoped connection context is closed',
-      );
-      expect(lateConnection.dispose).toHaveBeenCalledTimes(1);
-      expect(requestScopedConnections.connections.size).toBe(0);
-      expect(requestScopedConnections.pending.size).toBe(0);
-    });
+        await expect(connectionPromise).rejects.toThrow(
+          teardown === 'cleanup'
+            ? 'Request-scoped connection context is closed'
+            : 'cancelled during teardown',
+        );
+        expect(lateConnection.dispose).toHaveBeenCalledTimes(1);
+        expect(requestScopedConnections.connections.size).toBe(0);
+        expect(requestScopedConnections.pending.size).toBe(0);
+      },
+    );
 
     it('should not clear server cooldowns for ephemeral runtime connections', async () => {
       const bodyUrlConfig: t.ParsedServerConfig = {

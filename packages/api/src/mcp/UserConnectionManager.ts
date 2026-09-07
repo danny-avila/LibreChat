@@ -411,7 +411,9 @@ export abstract class UserConnectionManager {
         oauthEnd: opts.oauthEnd,
         logPrefix: `[MCP][User: ${userId}][${serverName}]`,
       });
-      const connectionPromise = this.createUserConnectionInternal(
+      const creationGuard: ConnectionCreationGuard = { cancelledBy: null };
+      this.registerConnectionCreation(requestConnectionKey, creationGuard);
+      const connectionPromise = this.createUserConnectionWithLifecycleRestarts(
         {
           ...opts,
           forceNew: true,
@@ -423,13 +425,19 @@ export abstract class UserConnectionManager {
         },
         userId,
         forceNew === true,
+        creationGuard,
       ).then(async (connection) => {
-        if (requestScopedConnections.cleanupStarted) {
+        try {
+          this.assertCreationNotCancelled(creationGuard, userId, serverName);
+          if (requestScopedConnections.cleanupStarted) {
+            throw new Error(`[MCP][User: ${userId}] Request-scoped connection context is closed`);
+          }
+        } catch (error) {
           await this.disposeEvictedConnection(
             connection,
-            `[MCP][Request-scoped: ${requestConnectionKey}] Closed during connection creation`,
+            `[MCP][Request-scoped: ${requestConnectionKey}] Invalidated during connection creation`,
           );
-          throw new Error(`[MCP][User: ${userId}] Request-scoped connection context is closed`);
+          throw error;
         }
         requestScopedConnections.connections.set(requestConnectionKey, connection);
         return connection;
@@ -447,6 +455,7 @@ export abstract class UserConnectionManager {
       try {
         return await connectionPromise;
       } finally {
+        this.unregisterConnectionCreation(requestConnectionKey, creationGuard);
         if (requestScopedConnections.pending.get(requestConnectionKey) === connectionPromise) {
           requestScopedConnections.pending.delete(requestConnectionKey);
         }
