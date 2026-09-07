@@ -41,9 +41,12 @@ describe('tool role permission maps', () => {
     );
   });
 
-  it('maps native assistant tool types', () => {
+  /** The v1 builder submits `retrieval` for the same capability v2 calls
+   *  `file_search`; missing it leaves legacy assistants ungated. */
+  it('maps native assistant tool types, both spellings of file search', () => {
     expect(assistantToolRolePermissions['code_interpreter']).toBe(PermissionTypes.RUN_CODE);
     expect(assistantToolRolePermissions['file_search']).toBe(PermissionTypes.FILE_SEARCH);
+    expect(assistantToolRolePermissions['retrieval']).toBe(PermissionTypes.FILE_SEARCH);
   });
 });
 
@@ -226,6 +229,21 @@ describe('resolveAssistantToolPermissions', () => {
 
     expect(permitted({ type: 'code_interpreter' })).toBe(false);
     expect(permitted({ type: 'file_search' })).toBe(true);
+  });
+
+  it('drops legacy v1 retrieval when FILE_SEARCH is withheld', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(
+        buildRole({ [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: false } }),
+      );
+    const permitted = await resolveAssistantToolPermissions({
+      req: buildReq(),
+      tools: [{ type: 'retrieval' }],
+      getRoleByName,
+    });
+
+    expect(permitted({ type: 'retrieval' })).toBe(false);
   });
 
   it('never drops function tools, which carry no native grant', async () => {

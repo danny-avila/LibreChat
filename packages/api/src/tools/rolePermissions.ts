@@ -38,6 +38,9 @@ export const toolResourceRolePermissions: Partial<Record<string, PermissionTypes
  */
 export const assistantToolRolePermissions: Partial<Record<string, PermissionTypes>> = {
   [ToolCallTypes.FILE_SEARCH]: PermissionTypes.FILE_SEARCH,
+  /** The v1 builder submits `retrieval` where v2 submits `file_search`; both are
+   *  the same provider capability, so both answer to the same grant. */
+  [ToolCallTypes.RETRIEVAL]: PermissionTypes.FILE_SEARCH,
   [ToolCallTypes.CODE_INTERPRETER]: PermissionTypes.RUN_CODE,
 };
 

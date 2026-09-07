@@ -25,6 +25,7 @@ const {
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
   createLazyAgentHistoryResolver,
+  checkToolRolePermission,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -38,6 +39,7 @@ const {
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
   isEphemeralAgentId,
+  PermissionTypes,
   resolveAllowedStatefulCodeEnvironments,
 } = require('librechat-data-provider');
 const {
@@ -226,7 +228,21 @@ const initializeClient = async ({
    *      allowlist with the toggle on = full accessible catalog. */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
-  const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+  /** Capability alone is not enough: `initializeAgent` rebuilds `bash_tool`,
+   *  `read_file` and the workspace file tools from this flag, after the tool
+   *  loader has already dropped `execute_code` for a denied role. Those handlers
+   *  read and write the attached code environment, so the grant has to travel
+   *  with the flag. Short-circuits before the role read when the deployment has
+   *  the capability off. */
+  const codeEnvAvailable =
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    (await checkToolRolePermission({
+      req,
+      user: req?.user,
+      permissionType: PermissionTypes.RUN_CODE,
+      getRoleByName: db.getRoleByName,
+      context: 'initializeClient',
+    }));
   const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
   const toolIntentsAvailable = enabledCapabilities.has(AgentCapabilities.tool_intents);
   const deferredToolsAvailable = enabledCapabilities.has(AgentCapabilities.deferred_tools);
