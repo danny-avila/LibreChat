@@ -209,7 +209,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     const selector = page.getByTestId('code-approval-mode');
     await expect(selector).toBeVisible();
     await selector.click();
-    await page.getByRole('menuitemradio', { name: new RegExp(`^${mode}`) }).click();
+    const option = page.getByText(mode, { exact: true }).last();
+    await expect(option).toBeVisible({ timeout: 10_000 });
+    await option.click();
     await expect(selector).toContainText(mode);
   }
 
