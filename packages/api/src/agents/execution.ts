@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type {
+  Agents,
   CodeEnvironmentUserConfigSchema,
   CodeEnvironmentUserSettings,
   StatefulCodeEnvironment,
@@ -31,6 +32,135 @@ export interface CodeExecutionContext {
   bridgeWorkerId?: string;
   codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
   codeEnvironmentSettings?: CodeEnvironmentUserSettings;
+}
+
+type CodeExecutionApprovalAgent = {
+  id?: string | null;
+  codeExecutionContext?: CodeExecutionContext | null;
+};
+
+const CODE_EXECUTION_TARGET_HASH = /^[a-f0-9]{64}$/;
+const MAX_CODE_EXECUTION_APPROVAL_TARGETS = 128;
+
+/**
+ * Captures an opaque identity for every stateful code target reachable by a
+ * paused run. Raw base URLs, worker IDs and session hints never enter the
+ * pending-action client projection.
+ */
+export function captureCodeExecutionApprovalBinding(
+  agents: readonly (CodeExecutionApprovalAgent | null | undefined)[],
+): Agents.CodeExecutionApprovalBinding | undefined {
+  const targetsByIdentity = new Map<string, Agents.CodeExecutionApprovalTargetBinding>();
+  for (const agent of agents) {
+    const context = agent?.codeExecutionContext;
+    if (context?.statefulSessions !== true) {
+      continue;
+    }
+    const targetHash = createHash('sha256')
+      .update(
+        JSON.stringify([
+          agent?.id ?? null,
+          context.executionProfile,
+          context.baseUrl,
+          context.codeSessionKey,
+          context.executionRouteKey ?? null,
+          context.runtimeSessionHint ?? null,
+          context.environmentId ?? null,
+          context.environmentType ?? null,
+          context.bridgeWorkerId ?? null,
+        ]),
+      )
+      .digest('hex');
+    const target = { agentId: agent?.id ?? null, targetHash };
+    targetsByIdentity.set(`${target.agentId ?? ''}\u0000${target.targetHash}`, target);
+  }
+  const targets = [...targetsByIdentity.values()];
+  if (targets.length === 0) {
+    return undefined;
+  }
+  /** Relational string comparison is defined over UTF-16 code units. Unlike
+   * localeCompare, this produces the same canonical order on every replica
+   * regardless of its ICU build or process locale. */
+  targets.sort((left, right) => {
+    const leftAgentId = left.agentId ?? '';
+    const rightAgentId = right.agentId ?? '';
+    if (leftAgentId !== rightAgentId) {
+      return leftAgentId < rightAgentId ? -1 : 1;
+    }
+    if (left.targetHash === right.targetHash) {
+      return 0;
+    }
+    return left.targetHash < right.targetHash ? -1 : 1;
+  });
+  return { version: 1, targets };
+}
+
+function isCodeExecutionApprovalBinding(
+  value: unknown,
+): value is Agents.CodeExecutionApprovalBinding {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const binding = value as Partial<Agents.CodeExecutionApprovalBinding>;
+  if (
+    binding.version !== 1 ||
+    !Array.isArray(binding.targets) ||
+    binding.targets.length === 0 ||
+    binding.targets.length > MAX_CODE_EXECUTION_APPROVAL_TARGETS
+  ) {
+    return false;
+  }
+  const identities = new Set<string>();
+  for (const target of binding.targets) {
+    if (
+      target == null ||
+      typeof target !== 'object' ||
+      Array.isArray(target) ||
+      !(
+        target.agentId === null ||
+        (typeof target.agentId === 'string' && target.agentId.length <= 256)
+      ) ||
+      typeof target.targetHash !== 'string' ||
+      !CODE_EXECUTION_TARGET_HASH.test(target.targetHash)
+    ) {
+      return false;
+    }
+    const identity = `${target.agentId ?? ''}\u0000${target.targetHash}`;
+    if (identities.has(identity)) {
+      return false;
+    }
+    identities.add(identity);
+  }
+  return true;
+}
+
+export class CodeExecutionApprovalTargetChangedError extends Error {
+  readonly code = 'CODE_EXECUTION_APPROVAL_TARGET_CHANGED';
+
+  constructor() {
+    super(
+      'The attached code environment changed while this action awaited approval. Retry the request and review the action again before running it.',
+    );
+    this.name = 'CodeExecutionApprovalTargetChangedError';
+  }
+}
+
+/** Backward-compatible for old pauses; present bindings always fail closed. */
+export function assertCodeExecutionApprovalBinding(
+  expected: unknown,
+  agents: readonly (CodeExecutionApprovalAgent | null | undefined)[],
+): void {
+  if (expected == null) {
+    return;
+  }
+  const current = captureCodeExecutionApprovalBinding(agents);
+  if (
+    !isCodeExecutionApprovalBinding(expected) ||
+    current == null ||
+    JSON.stringify(expected.targets) !== JSON.stringify(current.targets)
+  ) {
+    throw new CodeExecutionApprovalTargetChangedError();
+  }
 }
 
 export function createCodeExecutionRouteKey(

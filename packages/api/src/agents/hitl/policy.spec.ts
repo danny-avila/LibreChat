@@ -383,18 +383,27 @@ describe('toClientPendingAction', () => {
         endpoint: 'agents',
         model_parameters: { temperature: 0.5 },
       },
+      codeExecutionBinding: {
+        version: 1,
+        targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
+      },
     });
 
     const clientSafe = toClientPendingAction(full);
     expect(clientSafe).toBeDefined();
     expect(clientSafe?.resumeContext).toBeUndefined();
     expect(clientSafe?.requestFingerprint).toBeUndefined();
+    expect(clientSafe?.codeExecutionBinding).toBeUndefined();
     expect(clientSafe?.actionId).toBe(full.actionId);
     expect(clientSafe?.streamId).toBe('stream-1');
     expect(clientSafe?.payload).toBe(full.payload);
     // Non-mutating: the stored record keeps its replay state for the resume route.
     expect(full.resumeContext).toBeDefined();
     expect(full.requestFingerprint).toBe('fp-hash');
+    expect(full.codeExecutionBinding).toEqual({
+      version: 1,
+      targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
+    });
   });
 
   test('passes through nullish input', () => {

@@ -346,6 +346,8 @@ export interface PendingActionContext {
   requestFingerprint?: string;
   /** Graph-determining fields to replay on resume; see {@link RESUME_CONTEXT_KEYS}. */
   resumeContext?: Record<string, unknown>;
+  /** Opaque server-only binding to the stateful code targets selected at pause time. */
+  codeExecutionBinding?: Agents.CodeExecutionApprovalBinding;
 }
 
 /** Request fields that decide which agent/graph + tool set a turn runs. */
@@ -782,11 +784,13 @@ export function buildPendingAction(
     threadId: ctx.threadId,
     requestFingerprint: ctx.requestFingerprint,
     resumeContext: ctx.resumeContext,
+    codeExecutionBinding: ctx.codeExecutionBinding,
   };
 }
 
 /**
- * Client-facing projection of a pending action. `requestFingerprint` and `resumeContext`
+ * Client-facing projection of a pending action. `requestFingerprint`, `resumeContext`, and
+ * `codeExecutionBinding`
  * are server-only replay state — `resumeContext` in particular carries the resolved
  * model parameters — so every copy that leaves the server (SSE, status, resume state)
  * must go through this. The full record stays in the job store for the resume route.
@@ -800,6 +804,7 @@ export function toClientPendingAction(
   const {
     requestFingerprint: _requestFingerprint,
     resumeContext: _resumeContext,
+    codeExecutionBinding: _codeExecutionBinding,
     ...clientSafe
   } = pendingAction;
   return clientSafe;

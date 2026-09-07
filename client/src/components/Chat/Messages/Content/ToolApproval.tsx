@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import { Check, X, Pencil, MessageSquare, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
+import { boundApprovalLabel } from '~/components/Chat/approval/preview';
 import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
 import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
@@ -62,10 +63,13 @@ export default function ToolApproval({
   approval,
   toolCallId,
   args,
+  showSubmit = true,
 }: {
   approval: NonNullable<Agents.ToolCall['approval']>;
   toolCallId: string;
   args: string | Record<string, unknown> | undefined;
+  /** The composer owns one batch submit; timeline cards keep the historical lead button. */
+  showSubmit?: boolean;
 }) {
   const localize = useLocalize();
   const { actionId, allowed_decisions: allowedDecisions, description } = approval;
@@ -74,6 +78,8 @@ export default function ToolApproval({
     unregisterToolCall,
     setDecision,
     getDecision,
+    getDecisionDraft,
+    setDecisionDraft,
     isReady,
     getStatus,
     getLeadToolCallId,
@@ -86,20 +92,20 @@ export default function ToolApproval({
     retainedDecision != null && allowedDecisions.includes(retainedDecision.decision)
       ? retainedDecision
       : undefined;
-  const [active, setActive] = useState<DecisionType | null>(
-    () => initialDecision?.decision ?? null,
-  );
-  const [editText, setEditText] = useState(() =>
+  const initialEditText =
     initialDecision?.decision === 'edit'
       ? (JSON.stringify(initialDecision.editedArguments, null, 2) ?? '{}')
-      : seedArgs(args),
-  );
-  const [responseText, setResponseText] = useState(() =>
-    initialDecision?.decision === 'respond' ? (initialDecision.responseText ?? '') : '',
-  );
-  const [reason, setReason] = useState(() =>
-    initialDecision?.decision === 'reject' ? (initialDecision.reason ?? '') : '',
-  );
+      : seedArgs(args);
+  const decisionDraft = getDecisionDraft(actionId, toolCallId) ?? {
+    active: initialDecision?.decision ?? null,
+    editText: initialEditText,
+    responseText:
+      initialDecision?.decision === 'respond' ? (initialDecision.responseText ?? '') : '',
+    reason: initialDecision?.decision === 'reject' ? (initialDecision.reason ?? '') : '',
+  };
+  const { active, editText, responseText, reason } = decisionDraft;
+  const updateDecisionDraft = (updates: Partial<typeof decisionDraft>) =>
+    setDecisionDraft(actionId, toolCallId, { ...decisionDraft, ...updates });
 
   useEffect(() => {
     registerToolCall(actionId, toolCallId);
@@ -110,6 +116,8 @@ export default function ToolApproval({
 
   const status = getStatus(actionId);
   const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
+  const safeDescription =
+    description == null ? undefined : boundApprovalLabel(description, 1024).label;
 
   /** Recompute and store this card's decision whenever inputs change. A null
    *  resolution (e.g. invalid edit JSON) clears it so submit stays disabled. */
@@ -195,8 +203,8 @@ export default function ToolApproval({
       data-testid="tool-approval"
       data-tool-call-id={toolCallId}
     >
-      {description != null && description.length > 0 && (
-        <p className="text-sm text-text-secondary">{description}</p>
+      {safeDescription != null && safeDescription.length > 0 && (
+        <p className="text-sm text-text-secondary">{safeDescription}</p>
       )}
       <div className="flex flex-wrap gap-2">
         {allowedDecisions.map((decision) => {
@@ -208,7 +216,7 @@ export default function ToolApproval({
               variant={active === decision ? 'default' : 'outline'}
               disabled={locked}
               aria-pressed={active === decision}
-              onClick={() => setActive((prev) => (prev === decision ? null : decision))}
+              onClick={() => updateDecisionDraft({ active: active === decision ? null : decision })}
               className="inline-flex items-center gap-1.5"
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -223,7 +231,7 @@ export default function ToolApproval({
           <TextareaAutosize
             value={editText}
             disabled={locked}
-            onChange={(e) => setEditText(e.target.value)}
+            onChange={(e) => updateDecisionDraft({ editText: e.target.value })}
             minRows={3}
             maxRows={16}
             className={cn(
@@ -242,7 +250,7 @@ export default function ToolApproval({
         <TextareaAutosize
           value={responseText}
           disabled={locked}
-          onChange={(e) => setResponseText(e.target.value)}
+          onChange={(e) => updateDecisionDraft({ responseText: e.target.value })}
           minRows={2}
           maxRows={12}
           placeholder={localize('com_ui_tool_response_placeholder')}
@@ -255,7 +263,7 @@ export default function ToolApproval({
         <TextareaAutosize
           value={reason}
           disabled={locked}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(e) => updateDecisionDraft({ reason: e.target.value })}
           minRows={1}
           maxRows={6}
           placeholder={localize('com_ui_reject_reason_placeholder')}
@@ -264,7 +272,7 @@ export default function ToolApproval({
         />
       )}
 
-      {isLead && (
+      {showSubmit && isLead && (
         <div className="mt-1 flex items-center gap-3">
           <Button
             size="sm"

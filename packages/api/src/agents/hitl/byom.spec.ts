@@ -5,11 +5,74 @@ import {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
+  isStatefulCodeEnvironmentToolName,
+  markNativeCodeToolApprovalRequests,
   resolveAttachedCodeApprovalMode,
 } from './byom';
 import { canAgentGraphPause } from './admission';
 
 const signal = new AbortController().signal;
+
+test('identifies every built-in tool that can touch a stateful code target', () => {
+  for (const toolName of [
+    'read_file',
+    'write_file',
+    'edit_file',
+    'create_file',
+    'bash_tool',
+    'execute_code',
+    'search_workspace',
+    'list_workspace_files',
+  ]) {
+    expect(isStatefulCodeEnvironmentToolName(toolName)).toBe(true);
+  }
+  expect(isStatefulCodeEnvironmentToolName('mcp__github__create_issue')).toBe(false);
+});
+
+describe('markNativeCodeToolApprovalRequests', () => {
+  const payload = {
+    type: 'tool_approval' as const,
+    action_requests: [
+      { name: 'create_file', arguments: { path: 'one.ts' }, tool_call_id: 'call-1' },
+    ],
+    review_configs: [
+      {
+        action_name: 'create_file',
+        tool_call_id: 'call-1',
+        allowed_decisions: ['approve' as const],
+      },
+    ],
+  };
+
+  test('marks a server-registered native code tool', () => {
+    expect(
+      markNativeCodeToolApprovalRequests(payload, [
+        { toolDefinitions: [{ name: 'create_file', toolType: 'builtin' }] },
+      ]).action_requests[0],
+    ).toMatchObject({ source: 'librechat_code' });
+  });
+
+  test('keeps a same-name user tool generic and strips a forged source', () => {
+    const forged = {
+      ...payload,
+      action_requests: [{ ...payload.action_requests[0], source: 'librechat_code' as const }],
+    };
+    expect(
+      markNativeCodeToolApprovalRequests(forged, [
+        { toolDefinitions: [{ name: 'create_file', toolType: 'action' }] },
+      ]).action_requests[0],
+    ).not.toHaveProperty('source');
+  });
+
+  test('falls back to generic when reachable agents expose conflicting definitions', () => {
+    expect(
+      markNativeCodeToolApprovalRequests(payload, [
+        { toolDefinitions: [{ name: 'create_file', toolType: 'builtin' }] },
+        { toolRegistry: new Map([['create_file', { name: 'create_file', toolType: 'mcp' }]]) },
+      ]).action_requests[0],
+    ).not.toHaveProperty('source');
+  });
+});
 
 describe('createAttachedCodeEnvironmentPolicyHook', () => {
   test('asks before a shell action in an attached environment', async () => {
