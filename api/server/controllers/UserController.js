@@ -312,7 +312,8 @@ const updateUserPluginsController = async (req, res) => {
             `[updateUserPluginsController] Error uninstalling OAuth MCP for ${pluginKey}:`,
             error,
           );
-          ({ status, message } = normalizeHttpError(error));
+          status = 503;
+          message = 'OAuth credential cleanup is temporarily unavailable';
         }
       } else {
         // This handles:

@@ -2109,6 +2109,33 @@ describe('MCPTokenStorage', () => {
       ).toMatchObject({ token: 'enc:rt-1' });
     });
 
+    it('returns committed refresh tokens when distributed lease release fails', async () => {
+      await seedRefreshableTokens('release-failure-srv');
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+      const flowManager = {
+        getLeaseGeneration: jest.fn().mockResolvedValue(3),
+        acquireLease: jest.fn().mockResolvedValue({
+          generation: 3,
+          release: jest.fn().mockRejectedValue(new Error('redis unavailable')),
+        }),
+      };
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(refreshTokens, 'release-failure-srv'),
+          flowManager: flowManager as never,
+        }),
+      ).resolves.toMatchObject({ access_token: 'at-2' });
+
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:release-failure-srv:refresh',
+        }),
+      ).toMatchObject({ token: 'enc:rt-2' });
+    });
+
     it('does not fence a colon-prefixed sibling server', async () => {
       await seedRefreshableTokens('foo:bar');
       let resolveRefresh!: (tokens: MCPOAuthTokens) => void;

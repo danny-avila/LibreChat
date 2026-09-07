@@ -1118,7 +1118,13 @@ export class MCPTokenStorage {
           signal,
         });
       } finally {
-        await persistenceLease?.release();
+        try {
+          await persistenceLease?.release();
+        } catch (releaseError) {
+          logger.warn(`${logPrefix} Failed to release OAuth refresh persistence lease`, {
+            error: releaseError,
+          });
+        }
       }
 
       if (onRefreshSuccess) {

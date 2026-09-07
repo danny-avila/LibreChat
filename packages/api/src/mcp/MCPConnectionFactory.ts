@@ -1398,7 +1398,7 @@ export class MCPConnectionFactory {
 
           // Start monitoring in background — createFlow will find the existing PENDING state
           // written by initFlow above, so metadata arg is unused (pass {} to make that explicit)
-          this.flowManager!.createFlow(newFlowId, 'mcp_oauth', {}).catch(async (error) => {
+          this.waitForSharedOAuthFlow(newFlowId).catch(async (error) => {
             logger.debug(`${this.logPrefix} OAuth flow monitor ended`);
             await this.clearStaleClientIfRejected(flowMetadata.reusedClientCredentialSetId, error);
           });
@@ -1874,7 +1874,7 @@ export class MCPConnectionFactory {
   }
 
   private waitForSharedOAuthFlow(flowId: string): Promise<MCPOAuthTokens | null> {
-    const flow = this.flowManager!.createFlow(flowId, 'mcp_oauth', {});
+    const flow = this.flowManager!.createFlow(flowId, 'mcp_oauth', {}, undefined, false);
     const signal = this.signal;
     if (!signal) {
       return flow;

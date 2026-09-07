@@ -263,7 +263,13 @@ describe('MCPConnectionFactory', () => {
     const resultPromise = factory.handleOAuthRequiredForTest();
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(mockFlowManager.createFlow).toHaveBeenCalledWith('user123:test-server', 'mcp_oauth', {});
+    expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+      'user123:test-server',
+      'mcp_oauth',
+      {},
+      undefined,
+      false,
+    );
 
     abortController.abort(abortReason);
 
@@ -1362,7 +1368,13 @@ describe('MCPConnectionFactory', () => {
       expect(initCallOrder).toBeLessThan(createCallOrder);
 
       // createFlow should receive {} since initFlow already persisted metadata
-      expect(mockFlowManager.createFlow).toHaveBeenCalledWith('flow123', 'mcp_oauth', {});
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        {},
+        undefined,
+        false,
+      );
     });
 
     it('should delete stale flow and create new OAuth flow when existing flow is COMPLETED', async () => {
@@ -1449,6 +1461,8 @@ describe('MCPConnectionFactory', () => {
         'user123:test-server',
         'mcp_oauth',
         {},
+        undefined,
+        false,
       );
     });
 

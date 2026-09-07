@@ -425,6 +425,15 @@ describe('FlowStateManager', () => {
     });
   });
 
+  it('does not recreate a missing flow when monitoring a published attempt', async () => {
+    await expect(
+      flowManager.createFlow('deleted-oauth-flow', 'mcp_oauth', {}, undefined, false),
+    ).rejects.toThrow('mcp_oauth flow not found');
+    await expect(
+      flowManager.getFlowState('deleted-oauth-flow', 'mcp_oauth'),
+    ).resolves.toBeUndefined();
+  });
+
   describe('deleteFlow', () => {
     const flowId = 'test-flow-123';
     const type = 'test-type';
@@ -1264,6 +1273,7 @@ describe('FlowStateManager', () => {
       });
 
       expect(teardown?.generation).toBe(generation + 1);
+      await expect(flowManager.getLeaseGeneration('user:server')).resolves.toBeNull();
       await teardown?.release();
       await expect(
         flowManager.acquireLease('user:server', { expectedGeneration: generation }),
@@ -1273,7 +1283,7 @@ describe('FlowStateManager', () => {
     it('serializes holders and preserves the generation after release', async () => {
       const first = await flowManager.acquireLease('shared-owner');
       expect(first).not.toBeNull();
-      await expect(flowManager.getLeaseGeneration('shared-owner')).resolves.toBeNull();
+      await expect(flowManager.getLeaseGeneration('shared-owner')).resolves.toBe(first?.generation);
       await expect(flowManager.acquireLease('shared-owner', { waitMs: 0 })).resolves.toBeNull();
 
       await first?.release();

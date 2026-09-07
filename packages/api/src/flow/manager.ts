@@ -16,6 +16,7 @@ export interface FlowLease {
 interface InMemoryLeaseState {
   generation: number;
   owner?: string;
+  purpose?: 'operation' | 'teardown';
   leaseUntil?: number;
   expiresAt?: number;
 }
@@ -79,7 +80,7 @@ const READ_LEASE_GENERATION = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local data = cjson.decode(raw)
-if data.owner and data.leaseUntil and data.leaseUntil > tonumber(ARGV[1]) then return -1 end
+if data.owner and data.purpose == 'teardown' and data.leaseUntil and data.leaseUntil > tonumber(ARGV[1]) then return -1 end
 return data.generation or 0
 `;
 
@@ -92,6 +93,7 @@ local expected = tonumber(ARGV[3])
 if expected >= 0 and data.generation ~= expected then return -1 end
 if ARGV[4] == '1' then data.generation = data.generation + 1 end
 data.owner = ARGV[1]
+data.purpose = ARGV[7]
 data.leaseUntil = now + tonumber(ARGV[5])
 redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[6])
 return data.generation
@@ -103,6 +105,7 @@ if not raw then return 0 end
 local data = cjson.decode(raw)
 if data.owner ~= ARGV[1] then return -1 end
 data.owner = nil
+data.purpose = nil
 data.leaseUntil = nil
 redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[2])
 return 1
@@ -130,6 +133,15 @@ export function normalizeExpiresAt(timestamp: number): number {
 
 export class FlowStateManager<T = unknown> {
   private static readonly inMemoryLeases = new Map<string, InMemoryLeaseState>();
+
+  private static evictExpiredInMemoryLeases(now: number): void {
+    for (const [key, lease] of this.inMemoryLeases) {
+      if (lease.expiresAt != null && lease.expiresAt <= now) {
+        this.inMemoryLeases.delete(key);
+      }
+    }
+  }
+
   private keyv: Keyv;
   private ttl: number;
   private monitorTimeout: number;
@@ -197,12 +209,10 @@ export class FlowStateManager<T = unknown> {
       );
       return result < 0 ? null : result;
     }
+    const now = Date.now();
+    FlowStateManager.evictExpiredInMemoryLeases(now);
     const current = FlowStateManager.inMemoryLeases.get(inMemoryKey);
-    if (current?.expiresAt != null && current.expiresAt <= Date.now()) {
-      FlowStateManager.inMemoryLeases.delete(inMemoryKey);
-      return 0;
-    }
-    if (current?.owner && (current.leaseUntil ?? 0) > Date.now()) {
+    if (current?.owner && current.purpose === 'teardown' && (current.leaseUntil ?? 0) > now) {
       return null;
     }
     return current?.generation ?? 0;
@@ -230,6 +240,7 @@ export class FlowStateManager<T = unknown> {
     const retentionMs = 24 * 60 * 60_000;
     while (true) {
       const now = Date.now();
+      FlowStateManager.evictExpiredInMemoryLeases(now);
       let result: number;
       if (redisKey) {
         result = Number(
@@ -240,6 +251,7 @@ export class FlowStateManager<T = unknown> {
             options.advanceGeneration ? '1' : '0',
             String(leaseMs),
             String(retentionMs),
+            options.advanceGeneration ? 'teardown' : 'operation',
           ]),
         );
       } else {
@@ -256,6 +268,7 @@ export class FlowStateManager<T = unknown> {
           FlowStateManager.inMemoryLeases.set(inMemoryKey, {
             generation: result,
             owner,
+            purpose: options.advanceGeneration ? 'teardown' : 'operation',
             leaseUntil: now + leaseMs,
             expiresAt: now + retentionMs,
           });
@@ -551,6 +564,7 @@ export class FlowStateManager<T = unknown> {
     type: string,
     metadata: FlowMetadata = {},
     signal?: AbortSignal,
+    createIfMissing = true,
   ): Promise<T> {
     const flowKey = this.getFlowKey(flowId, type);
 
@@ -566,6 +580,10 @@ export class FlowStateManager<T = unknown> {
     if (existingState) {
       logger.debug(`[${flowKey}] Flow exists on 2nd check`);
       return this.monitorFlow(flowKey, type, signal);
+    }
+
+    if (!createIfMissing) {
+      throw new Error(`${type} flow not found`);
     }
 
     const initialState: FlowState = {
