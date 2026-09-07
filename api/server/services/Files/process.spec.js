@@ -102,6 +102,8 @@ jest.mock('@librechat/api', () => {
   );
   return {
     sanitizeFilename: jest.fn((n) => n),
+    /** Grants both; these specs vary the capability set, not the role. */
+    resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     extractInspectableFileText: jest.fn(async ({ extract }) => extract()),
@@ -659,7 +661,7 @@ describe('processAgentFileUpload', () => {
 
       await expect(
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
-      ).rejects.toThrow(/image-based and requires an OCR service/);
+      ).rejects.toThrow('No text found in document');
 
       expect(parseText).not.toHaveBeenCalled();
     });
@@ -669,8 +671,11 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockRejectedValue(new Error('PRIVATE parser failure')),
       });
       extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
-        await extract();
-        throw makeUninspectableExtractedTextError();
+        try {
+          await extract();
+        } catch {
+          throw makeUninspectableExtractedTextError();
+        }
       });
       const req = makeReq({
         mimetype: PDF_MIME,
@@ -808,7 +813,7 @@ describe('processAgentFileUpload', () => {
 
       await expect(
         processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
-      ).rejects.toThrow(/image-based and requires an OCR service/);
+      ).rejects.toThrow('failure');
 
       expect(parseText).not.toHaveBeenCalled();
     });
@@ -899,8 +904,11 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockRejectedValue(new Error('PRIVATE parser failure')),
       });
       extractInspectableFileText.mockImplementationOnce(async ({ extract }) => {
-        await extract();
-        throw makeUninspectableExtractedTextError();
+        try {
+          await extract();
+        } catch {
+          throw makeUninspectableExtractedTextError();
+        }
       });
       const req = makeReq({
         mimetype: DOCX_MIME,

@@ -106,6 +106,7 @@ module.exports = {
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
+    isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
     ...overrides,
   }),
 

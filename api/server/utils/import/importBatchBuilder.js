@@ -1,9 +1,12 @@
 const { v4: uuidv4 } = require('uuid');
 const {
+  assertConversationImportWriteSize,
   assertModelBoundContent,
   assertConversationImportContentAllowed,
+  executeConversationImportWrites,
 } = require('@librechat/api');
 const {
+  getTenantId,
   logger,
   createFallbackRetentionDate,
   createTempChatExpirationDate,
@@ -14,7 +17,14 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages, getFiles } = require('~/models');
+const {
+  bulkIncrementTagCounts,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  deleteImportedConversations,
+  deleteImportedMessages,
+  getFiles,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
@@ -177,6 +187,13 @@ class ImportBatchBuilder {
    * @throws {Error} If there is an error saving the batch.
    */
   async saveBatch() {
+    const tenantId = getTenantId();
+    assertConversationImportWriteSize({
+      conversations: this.conversations,
+      messages: this.messages,
+      ...(tenantId == null ? {} : { tenantId }),
+    });
+
     await assertConversationContentAllowed(
       this.filters,
       {
@@ -190,17 +207,26 @@ class ImportBatchBuilder {
       },
     );
 
+    const conversationIds = this.conversations.map((convo) => convo.conversationId);
+    const cleanupScope = {
+      user: this.requestUserId,
+      conversationIds,
+      ...(tenantId == null ? {} : { tenantId }),
+    };
+    const tags = this.conversations.flatMap((convo) => convo.tags);
+
     try {
-      const promises = [];
-      promises.push(bulkSaveConvos(this.conversations));
-      promises.push(bulkSaveMessages(this.messages, true));
-      promises.push(
-        bulkIncrementTagCounts(
-          this.requestUserId,
-          this.conversations.flatMap((convo) => convo.tags),
-        ),
-      );
-      await Promise.all(promises);
+      await executeConversationImportWrites({
+        saveConversations: () => bulkSaveConvos(this.conversations),
+        saveMessages: () => bulkSaveMessages(this.messages, true),
+        updateTagCounts: () => bulkIncrementTagCounts(this.requestUserId, tags),
+        deleteMessages: () => deleteImportedMessages(cleanupScope),
+        deleteConversations: () => deleteImportedConversations(cleanupScope),
+        onTagCountError: (error) =>
+          logger.error(`Error updating imported tag counts: ${error.message}`),
+        onCleanupError: (error, resource) =>
+          logger.error(`Error cleaning imported ${resource}: ${error.message}`),
+      });
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
       );

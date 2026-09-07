@@ -5,10 +5,12 @@ const {
   Constants,
   ResourceType,
   ErrorTypes,
+  Permissions,
   EToolResources,
   EModelEndpoint,
   isActionTool,
   actionDelimiter,
+  PermissionTypes,
   AgentCapabilities,
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
@@ -128,8 +130,10 @@ jest.mock('../ActionService', () => ({
 jest.mock('~/server/services/Threads', () => ({
   recordUsage: jest.fn(),
 }));
+const mockGetRoleByName = jest.fn();
 jest.mock('~/models', () => ({
   findPluginAuthsByKeys: jest.fn(),
+  getRoleByName: (...args) => mockGetRoleByName(...args),
 }));
 jest.mock('~/config', () => ({
   getFlowStateManager: jest.fn(() => mockFlowManager),
@@ -170,9 +174,21 @@ const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { ContentFilterError, PENDING_STALE_MS } = require('@librechat/api');
 
+/** Role document shape `checkAccess` reads; both role-gated tools granted. */
+function buildRole(overrides = {}) {
+  return {
+    name: 'USER',
+    permissions: {
+      [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      ...overrides,
+    },
+  };
+}
+
 function createMockReq(capabilities) {
   return {
-    user: { id: 'user_123' },
+    user: { id: 'user_123', role: 'USER' },
     config: {
       endpoints: {
         [EModelEndpoint.agents]: {
@@ -203,6 +219,7 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetMCPServerTools.mockResolvedValue(null);
     mockGetCachedTools.mockResolvedValue(null);
     mockGetUserMCPAuthMap.mockResolvedValue({});
+    mockGetRoleByName.mockResolvedValue(buildRole());
     mockGetServerConfig.mockResolvedValue(undefined);
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
@@ -3687,6 +3704,155 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callsByName.has(rawNameB)).toBe(true);
       expect(callsByName.get(rawNameA).requestBuilder.path).toBe('/echo');
       expect(callsByName.get(rawNameB).requestBuilder.path).toBe('/items');
+    });
+  });
+
+  /**
+   * `AgentCapabilities` is the instance-wide switch; `FILE_SEARCH`/`RUN_CODE` are
+   * the per-role grants. A tool has to clear both, on the definitions path and the
+   * runtime path alike — otherwise a denied user is handed a definition the model
+   * will call and the loader will refuse.
+   */
+  describe('loadAgentTools — tool role permission gating', () => {
+    const capabilities = [
+      AgentCapabilities.tools,
+      AgentCapabilities.file_search,
+      AgentCapabilities.execute_code,
+    ];
+
+    const denyPermission = (deniedType) =>
+      mockGetRoleByName.mockResolvedValue(
+        buildRole({ [deniedType]: { [Permissions.USE]: false } }),
+      );
+
+    beforeEach(() => {
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+    });
+
+    it('omits file_search from definitions when FILE_SEARCH.USE is denied', async () => {
+      denyPermission(PermissionTypes.FILE_SEARCH);
+
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
+        tool_resources: { file_search: { file_ids: ['search-file'] } },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).not.toContain(Tools.file_search);
+      expect(callArgs.tools).toContain(Tools.execute_code);
+    });
+
+    it('does not prime search files for a denied user', async () => {
+      denyPermission(PermissionTypes.FILE_SEARCH);
+
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search] },
+        tool_resources: { file_search: { file_ids: ['search-file'] } },
+        definitionsOnly: true,
+      });
+
+      expect(mockPrimeSearchFiles).not.toHaveBeenCalled();
+    });
+
+    it('omits file_search from the runtime loader when FILE_SEARCH.USE is denied', async () => {
+      denyPermission(PermissionTypes.FILE_SEARCH);
+
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
+        definitionsOnly: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolsUtil.mock.calls[0];
+      expect(callArgs.tools).not.toContain(Tools.file_search);
+      expect(callArgs.tools).toContain(Tools.execute_code);
+    });
+
+    it('omits execute_code when RUN_CODE.USE is denied', async () => {
+      denyPermission(PermissionTypes.RUN_CODE);
+
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
+        tool_resources: { execute_code: { file_ids: ['code-file'] } },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).not.toContain(Tools.execute_code);
+      expect(callArgs.tools).toContain(Tools.file_search);
+      expect(mockPrimeCodeFiles).not.toHaveBeenCalled();
+    });
+
+    /** Dropping `execute_code` from the tool list is not enough: this flag also
+     *  reaches tool classification and the programmatic bash tool, either of
+     *  which would otherwise run code for a role denied `RUN_CODE`. */
+    it('clears codeExecutionEnabled for the definitions payload when RUN_CODE is denied', async () => {
+      denyPermission(PermissionTypes.RUN_CODE);
+
+      await loadAgentTools({
+        req: createMockReq([...capabilities, AgentCapabilities.programmatic_tools]),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.execute_code, 'calculator'] },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.codeExecutionEnabled).toBe(false);
+    });
+
+    it('keeps both tools when the role grants them', async () => {
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toEqual(
+        expect.arrayContaining([Tools.file_search, Tools.execute_code]),
+      );
+      expect(callArgs.codeExecutionEnabled).toBe(true);
+    });
+
+    it('fails closed when the role lookup throws', async () => {
+      mockGetRoleByName.mockRejectedValue(new Error('role lookup failed'));
+
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code, 'calculator'] },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toEqual(['calculator']);
+    });
+
+    it('skips the permission check when the capability is already disabled', async () => {
+      const toolsOnly = [AgentCapabilities.tools];
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(toolsOnly));
+
+      await loadAgentTools({
+        req: createMockReq(toolsOnly),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code, 'calculator'] },
+        definitionsOnly: true,
+      });
+
+      expect(mockGetRoleByName).not.toHaveBeenCalled();
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toEqual(['calculator']);
     });
   });
 });

@@ -444,19 +444,7 @@ describe('document-level paths reach the wire scoped', () => {
     expect(describeLeaks(records)).toBe('');
   });
 
-  /**
-   * KNOWN GAP, found by this probe. Saving an already-persisted document issues
-   * `update` filtered on `_id` alone — the tenant is stamped onto the payload but
-   * never asserted in the predicate. It is scoped by provenance (you can only
-   * fetch a document your tenant can see), so the normal flow is safe, but an
-   * `_id` obtained from an unscoped source — `runAsSystem`, a cached id, a
-   * client-supplied id — writes across tenants unguarded.
-   *
-   * Pinned here rather than fixed: closing it changes runtime behaviour and
-   * belongs in its own change. The assertion is written to FAIL once the
-   * predicate is added, so the fix cannot land without updating this test.
-   */
-  it('doc.save() on a fetched document is scoped by provenance, not by predicate', async () => {
+  it('doc.save() on a fetched document asserts the tenant in its predicate', async () => {
     await asTenant(async () => void (await Widget.create({ name: 'fetched', parts: [] })));
 
     const records = await probe.record(() =>
@@ -469,8 +457,8 @@ describe('document-level paths reach the wire scoped', () => {
 
     const updates = records.filter((record) => record.commandName === 'update');
     expect(updates).toHaveLength(1);
-    expect(updates[0].scoped).toBe(false);
-    expect(updates[0].predicate).toContain('_id');
+    expect(updates[0].predicate).toContain('tenantId');
+    expect(describeLeaks(records)).toBe('');
   });
 
   it('doc.updateOne()', async () => {
@@ -551,5 +539,160 @@ describe('system scope', () => {
     );
 
     expect(unscoped(records)).toHaveLength(1);
+  });
+});
+
+/**
+ * The predicate added to `save()` must harden the cross-tenant case without
+ * refusing writes that were always legitimate.
+ */
+describe('save predicate does not break legitimate writes', () => {
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+  ])(
+    'a document with a %s tenant can be claimed by the active tenant',
+    async (_label, tenantId) => {
+      const created = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        Widget.create({ name: 'pre-tenancy', parts: [], tenantId }),
+      );
+
+      const widget = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        Widget.findById(created._id),
+      );
+      await asTenant(async () => {
+        const scopedWidget = await Widget.findById(created._id);
+        expect(scopedWidget).toBeNull();
+      });
+
+      widget!.name = 'renamed';
+      await asTenant(async () => widget!.save());
+
+      const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+        Widget.findById(created._id).lean(),
+      );
+      expect(fresh!.name).toBe('renamed');
+      expect(fresh!.tenantId).toBe(TENANT);
+    },
+  );
+
+  it('allows only one tenant to claim a legacy document', async () => {
+    const created = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.create({ name: 'legacy-race', parts: [] }),
+    );
+    const [first, second] = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Promise.all([Widget.findById(created._id), Widget.findById(created._id)]),
+    );
+
+    first!.name = 'claimed-a';
+    await asTenant(async () => first!.save());
+
+    second!.name = 'claimed-b';
+    await expect(
+      tenantStorage.run({ tenantId: 'tenant-b' }, async () => second!.save()),
+    ).rejects.toThrow('No document found');
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id).lean(),
+    );
+    expect(fresh).toMatchObject({ name: 'claimed-a', tenantId: TENANT });
+  });
+
+  it('does not trust a projected-out tenantId', async () => {
+    const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      Widget.create({ name: 'projected-foreign', parts: [] }),
+    );
+    const projected = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).select('-tenantId'),
+    );
+    expect(projected!.tenantId).toBeUndefined();
+
+    projected!.name = 'projected-stolen';
+    await expect(asTenant(async () => projected!.save())).rejects.toThrow('No document found');
+    expect(projected!.tenantId).toBeUndefined();
+
+    projected!.name = 'system-recovered';
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => projected!.save());
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(fresh).toMatchObject({ name: 'system-recovered', tenantId: 'tenant-b' });
+  });
+
+  it('rejects tenantId mutation on a persisted document', async () => {
+    const widget = await asTenant(async () => Widget.create({ name: 'tenant-move', parts: [] }));
+
+    widget.tenantId = 'tenant-b';
+    widget.name = 'moved';
+    await expect(asTenant(async () => widget.save())).rejects.toThrow(
+      '[TenantIsolation] Cross-tenant tenantId mutation is not allowed',
+    );
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(widget._id).lean(),
+    );
+    expect(fresh).toMatchObject({ name: 'tenant-move', tenantId: TENANT });
+  });
+
+  it('refuses to save a document belonging to another tenant', async () => {
+    const foreign = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      Widget.create({ name: 'foreign', parts: [] }),
+    );
+
+    const smuggled = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id),
+    );
+
+    await expect(
+      asTenant(async () => {
+        smuggled!.name = 'stolen';
+        await smuggled!.save();
+      }),
+    ).rejects.toThrow('No document found');
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(fresh!.name).toBe('foreign');
+
+    smuggled!.name = 'system-recovered';
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => smuggled!.save());
+
+    const recovered = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(foreign._id).lean(),
+    );
+    expect(recovered!.name).toBe('system-recovered');
+  });
+
+  it('leaves system-scoped saves unfiltered', async () => {
+    const created = await asTenant(async () => Widget.create({ name: 'sys-target', parts: [] }));
+
+    const widget = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id),
+    );
+    widget!.name = 'tenant-renamed';
+    await asTenant(async () => widget!.save());
+
+    const records = await probe.record(() =>
+      tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
+        widget!.name = 'sys-renamed';
+        await widget!.save();
+      }),
+    );
+
+    const updates = records.filter((record) => record.commandName === 'update');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].predicate).not.toContain('tenantId');
+
+    widget!.name = 'sys-renamed-again';
+    await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () => {
+      await widget!.save();
+    });
+
+    const fresh = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, async () =>
+      Widget.findById(created._id).lean(),
+    );
+    expect(fresh!.name).toBe('sys-renamed-again');
   });
 });

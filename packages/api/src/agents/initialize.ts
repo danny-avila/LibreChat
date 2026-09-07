@@ -1016,6 +1016,12 @@ export async function initializeAgent(
   if (conversationId != null && resendFiles) {
     const toolResourceSet = new Set<EToolResources>();
     for (const tool of agent.tools ?? []) {
+      /** `effectiveCodeEnvAvailable` already carries the role grant, so a denied
+       *  role skips the thread walk and the code-file hydration below rather
+       *  than paying for resources the tool loader is about to drop. */
+      if (tool === Tools.execute_code && !effectiveCodeEnvAvailable) {
+        continue;
+      }
       if (EToolResources[tool as keyof typeof EToolResources]) {
         toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
       }

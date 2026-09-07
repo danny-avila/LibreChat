@@ -174,6 +174,8 @@ jest.mock('@librechat/agents', () => ({
 
 jest.mock('@librechat/api', () => ({
   createAgentExecutionContext: (context) => context,
+  /** Grants both by default; the capability set is what these specs vary. */
+  resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
   collectReachableAgents: (roots) => {
     const agents = [];
     const pending = [...roots];

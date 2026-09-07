@@ -3,6 +3,7 @@ import { Providers } from '@librechat/agents';
 import { FileSources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
+import { resolveDownloadPath } from '~/storage/path';
 
 /**
  * Extracts the configured file size limit for a specific provider from fileConfig
@@ -55,7 +56,7 @@ export async function getFileStream(
   }
 
   const { getDownloadStream } = encodingMethods[source];
-  const stream = await getDownloadStream(req, file.filepath);
+  const stream = await getDownloadStream(req, resolveDownloadPath(file));
   let buffer: Buffer | null = await getStream.buffer(stream);
   const content = buffer.toString('base64');
   buffer = null;

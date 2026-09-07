@@ -108,6 +108,7 @@ import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './sk
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
+import { resolveDownloadPath } from '~/storage/path';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -3269,7 +3270,7 @@ async function loadSkillFileTextForAuthoring({
     return { status: 'error', message: 'Download is not supported for this storage backend.' };
   }
 
-  const stream = await strategy.getDownloadStream(req, file.filepath);
+  const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
   const chunks: Uint8Array[] = [];
   let streamedBytes = 0;
   for await (const chunk of stream as AsyncIterable<Uint8Array>) {
@@ -4673,7 +4674,7 @@ async function handleReadFileCall(
       };
     }
 
-    const stream = await strategy.getDownloadStream(req, file.filepath);
+    const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
     const chunks: Uint8Array[] = [];
     // Use the larger binary limit as streaming cap; cheaper type-specific
     // checks happen after binary detection on the assembled buffer.
