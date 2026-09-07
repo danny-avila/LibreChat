@@ -1,4 +1,9 @@
-import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
+import {
+  FileSources,
+  getEndpointFileConfig,
+  mergeFileConfig,
+  fileConfig,
+} from 'librechat-data-provider';
 import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
 import type { RegexLike } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
@@ -35,6 +40,8 @@ export function filterFilesByEndpointConfig(
     files: IMongoFile[] | undefined;
     endpoint?: string | null;
     endpointType?: string | null;
+    skipTotalSizeLimit?: boolean;
+    preserveTextSources?: boolean;
   },
 ): IMongoFile[] {
   return filterFilesByEndpointRuntimeConfig(req.config, params);
@@ -47,9 +54,17 @@ export function filterFilesByEndpointRuntimeConfig(
     files: IMongoFile[] | undefined;
     endpoint?: string | null;
     endpointType?: string | null;
+    skipTotalSizeLimit?: boolean;
+    preserveTextSources?: boolean;
   },
 ): IMongoFile[] {
-  const { files, endpoint, endpointType } = params;
+  const {
+    files,
+    endpoint,
+    endpointType,
+    skipTotalSizeLimit = false,
+    preserveTextSources = false,
+  } = params;
 
   if (!files || files.length === 0) {
     return [];
@@ -85,12 +100,15 @@ export function filterFilesByEndpointRuntimeConfig(
   /** Filter by MIME type */
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
     filteredFiles = filteredFiles.filter((file) => {
-      return isMimeTypeSupported(file.type, supportedMimeTypes);
+      return (
+        (preserveTextSources && (file.source ?? FileSources.local) === FileSources.text) ||
+        isMimeTypeSupported(file.type, supportedMimeTypes)
+      );
     });
   }
 
   /** Filter by total size limit - keep files until total exceeds limit */
-  if (totalSizeLimit !== undefined && totalSizeLimit > 0) {
+  if (!skipTotalSizeLimit && totalSizeLimit !== undefined && totalSizeLimit > 0) {
     let totalSize = 0;
     const withinTotalLimit: IMongoFile[] = [];
 

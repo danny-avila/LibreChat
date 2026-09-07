@@ -21,17 +21,18 @@ function response() {
 
 describe('code environment HTTP handlers', () => {
   test('reports status only for an accessible worker through its current control plane', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue({
-      ok: true,
-      json: jest.fn().mockResolvedValue({
-        protocolVersion: 1,
-        workerId: 'personal-vm',
-        online: true,
-        ready: true,
-        leaseExpiresInMs: 50_000,
-        capabilities: { sandboxProfile: 'native-srt', runtimes: ['bash'] },
-      }),
-    });
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          workerId: 'personal-vm',
+          online: true,
+          ready: true,
+          leaseExpiresInMs: 50_000,
+          capabilities: { sandboxProfile: 'native-srt', runtimes: ['bash'] },
+        }),
+      ),
+    );
     const controlPlane = {
       id: 'self-service',
       name: 'Self service',
@@ -66,14 +67,24 @@ describe('code environment HTTP handlers', () => {
       fetchImpl,
     });
     const res = response();
+    const coalescedRes = response();
 
-    await handlers.status(
-      {
-        user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
-        params: { environmentId: 'personal-vm' },
-      } as never,
-      res as never,
-    );
+    await Promise.all([
+      handlers.status(
+        {
+          user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+          params: { environmentId: 'personal-vm' },
+        } as never,
+        res as never,
+      ),
+      handlers.status(
+        {
+          user: { id: '68b2f0c498f24c1e78fa0001', role: 'USER' },
+          params: { environmentId: 'personal-vm' },
+        } as never,
+        coalescedRes as never,
+      ),
+    ]);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
@@ -83,6 +94,8 @@ describe('code environment HTTP handlers', () => {
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],
     });
+    expect(coalescedRes.body).toEqual(res.body);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://code.example.com/v1/bridge/workers/personal-vm/status',
       expect.objectContaining({ headers: { Authorization: 'Bearer administrator-token' } }),

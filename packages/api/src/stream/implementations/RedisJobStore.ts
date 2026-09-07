@@ -3686,7 +3686,7 @@ export class RedisJobStore implements IJobStoreV2 {
     if (chunks.length === 0) {
       return parts;
     }
-    const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
+    const steersByIndex = new Map<number, Agents.MessageContentComplex>();
     const labelsByIndex = new Map<number, Agents.MessageContentComplex>();
     const reasoningStepsByIndex = new Map<number, string>();
     const reasoningAttemptsByIndex = new Map<number, ReasoningAttemptOverlay>();
@@ -3715,7 +3715,7 @@ export class RedisJobStore implements IJobStoreV2 {
           part?: Agents.MessageContentComplex;
         };
         if (typeof steerData.index === 'number' && steerData.part != null) {
-          steers.push({ index: steerData.index, part: steerData.part });
+          steersByIndex.set(steerData.index, steerData.part);
         }
         continue;
       }
@@ -3777,7 +3777,7 @@ export class RedisJobStore implements IJobStoreV2 {
       }
     }
     if (
-      steers.length === 0 &&
+      steersByIndex.size === 0 &&
       labelsByIndex.size === 0 &&
       reasoningStepsByIndex.size === 0 &&
       reasoningAttemptHighWater === 0 &&
@@ -3786,7 +3786,7 @@ export class RedisJobStore implements IJobStoreV2 {
       return parts;
     }
     const inserts = [
-      ...steers,
+      ...[...steersByIndex.entries()].map(([index, part]) => ({ index, part })),
       ...[...labelsByIndex.entries()].map(([index, part]) => ({ index, part })),
     ];
     inserts.sort((a, b) => a.index - b.index);

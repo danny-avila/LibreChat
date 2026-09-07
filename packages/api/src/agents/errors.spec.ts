@@ -6,6 +6,7 @@ import {
   resolveLangChainError,
   getUserFacingProviderError,
   isFatalAgentInitializationError,
+  AGENT_ATTACHMENT_LIMIT_EXCEEDED,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isStepLimitError,
 } from './errors';
@@ -14,6 +15,7 @@ describe('isFatalAgentInitializationError', () => {
   it.each([
     ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
     ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    AGENT_ATTACHMENT_LIMIT_EXCEEDED,
     AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   ])('classifies %s as fatal', (code) => {
     expect(isFatalAgentInitializationError({ code })).toBe(true);

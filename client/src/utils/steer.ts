@@ -158,6 +158,11 @@ export function applySteerPart(message: TMessage, event: TSteerAppliedEvent): TM
   const content = Array.isArray(message.content) ? message.content : [];
   const existing = getSteerPart(content[index] as TMessageContentParts | undefined);
   if (existing != null && existing.steerId === part.steerId) {
+    if (existing.files?.length && !part.files?.length) {
+      const nextContent = [...content] as TMessageContentParts[];
+      nextContent[index] = part as TMessageContentParts;
+      return { ...message, content: nextContent };
+    }
     return message;
   }
   const nextContent = [...content] as TMessageContentParts[];

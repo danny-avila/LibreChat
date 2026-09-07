@@ -1293,7 +1293,7 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const client = new AgentClient({
       req: {
         user: { id: 'user-123' },
-        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123', isTemporary: true },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
         _resumableStreamId: streamId,
       },
@@ -1446,7 +1446,7 @@ describe('AgentClient - interrupt discovery persistence', () => {
     const client = new AgentClient({
       req: {
         user: { id: 'user-123' },
-        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123', isTemporary: true },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
         _resumableStreamId: streamId,
       },
@@ -2278,12 +2278,15 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         tenantId: 'request-tenant',
-        modelCallbacks: [
+        modelCallbacks: expect.arrayContaining([
           expect.objectContaining({
             name: 'librechat-model-bound-content-filter',
             raiseError: true,
           }),
-        ],
+          expect.objectContaining({
+            name: 'librechat-agent-attachment-memory',
+          }),
+        ]),
       }),
     );
     expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
@@ -2713,6 +2716,138 @@ describe('AgentClient - startup telemetry', () => {
     expect(client.stepLimitReached).toBe(false);
     expect(client.contentParts).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
+    );
+  });
+
+  it('cancels current attachment persistence after combined admission rejects the run', async () => {
+    jest.clearAllMocks();
+    let attachmentLimitError;
+    try {
+      require('@librechat/api').assertAgentAttachmentLimits({
+        attachments: [{ file_id: 'too-large', bytes: 2_000_000 }],
+        fileConfig: { fileContextSizeLimit: 1 },
+      });
+    } catch (error) {
+      attachmentLimitError = error;
+    }
+    expect(attachmentLimitError).toEqual(
+      expect.objectContaining({ code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED' }),
+    );
+    expect(require('@librechat/api').isAgentAttachmentLimitError(attachmentLimitError)).toBe(true);
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockRejectedValue(attachmentLimitError),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const currentFile = { file_id: 'rejected-current', bytes: 600_000 };
+    const cancel = jest.fn();
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { files: [{ file_id: currentFile.file_id }] },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-attachment-limit',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      attachments: [currentFile],
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-attachment-limit';
+    client.responseMessageId = 'response-attachment-limit';
+    client.parentMessageId = 'parent-attachment-limit';
+    client.modelBoundCurrentFiles = [currentFile];
+    client.modelBoundUserMessagePersistence = {
+      cancel,
+      isPending: jest.fn(() => true),
+      start: jest.fn(),
+    };
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(client.options.attachments).toEqual([]);
+    expect(client.modelBoundCurrentFiles).toEqual([]);
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentTypes.ERROR,
+          [ContentTypes.ERROR]: expect.stringContaining('total attachment size'),
+        }),
+      ]),
+    );
+  });
+
+  it('cancels current attachment persistence when its storage object is unavailable', async () => {
+    jest.clearAllMocks();
+    const attachmentError = new (require('@librechat/api').AttachmentObjectNotFoundError)(
+      'missing-current',
+    );
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream: jest.fn().mockRejectedValue(attachmentError),
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const currentFile = { file_id: 'missing-current', bytes: 600_000 };
+    const cancel = jest.fn();
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { files: [{ file_id: currentFile.file_id }] },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-missing-attachment',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      attachments: [currentFile],
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-missing-attachment';
+    client.responseMessageId = 'response-missing-attachment';
+    client.parentMessageId = 'parent-missing-attachment';
+    client.modelBoundCurrentFiles = [currentFile];
+    client.modelBoundUserMessagePersistence = {
+      cancel,
+      isPending: jest.fn(() => true),
+      start: jest.fn(),
+    };
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(client.options.attachments).toEqual([]);
+    expect(client.modelBoundCurrentFiles).toEqual([]);
+    expect(client.contentParts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: ContentTypes.ERROR,
+          [ContentTypes.ERROR]: expect.stringContaining('no longer available'),
+        }),
+      ]),
     );
   });
 
@@ -4433,7 +4568,9 @@ describe('AgentClient - titleConvo', () => {
         file_id: 'request-file',
         filename: 'request.txt',
         source: 'text',
+        text: 'Request file contents',
         type: 'text/plain',
+        bytes: 0,
       };
 
       client.options.attachments = requestAttachments.promise;
@@ -5261,6 +5398,398 @@ describe('AgentClient - titleConvo', () => {
       ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
     });
 
+    it('enforces extracted-text limits on retained history when file replay is disabled', async () => {
+      client.options.resendFiles = false;
+      mockReq.config.fileConfig = { fileContextCharLimit: 10 };
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'historical-context',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Inspect the retained context.',
+              isCreatedByUser: true,
+              fileContext: 'this retained context is over the configured limit',
+            },
+            {
+              messageId: 'msg-1',
+              parentMessageId: 'historical-context',
+              sender: 'User',
+              text: 'Continue.',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+        limitType: 'extracted_text',
+      });
+    });
+
+    it('does not count retained text-only history against endpoint file limits', async () => {
+      client.options.resendFiles = false;
+      mockReq.config.fileConfig = {
+        fileContextCharLimit: 1_000_000,
+        endpoints: { agents: { fileLimit: 1 } },
+      };
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'historical-context-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'First retained context.',
+              isCreatedByUser: true,
+              fileContext: 'first retained file context',
+            },
+            {
+              messageId: 'historical-context-2',
+              parentMessageId: 'historical-context-1',
+              sender: 'User',
+              text: 'Second retained context.',
+              isCreatedByUser: true,
+              fileContext: 'second retained file context',
+            },
+            {
+              messageId: 'msg-1',
+              parentMessageId: 'historical-context-2',
+              sender: 'User',
+              text: 'Continue.',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
+    });
+
+    it('rejects combined historical and current bytes before either batch is encoded', async () => {
+      mockAgent.endpoint = 'Moonshot';
+      client.options.endpointType = EModelEndpoint.custom;
+      client.options.resendFiles = true;
+      mockReq.config.fileConfig = {
+        endpoints: { Moonshot: { fileLimit: 10, totalSizeLimit: 1 } },
+      };
+      const first = {
+        ...makeUploadedFile('history-1', 'one.pdf', 'application/pdf'),
+        bytes: 600_000,
+      };
+      const second = {
+        ...makeUploadedFile('current-1', 'two.pdf', 'application/pdf'),
+        bytes: 600_000,
+      };
+      client.options.attachments = Promise.resolve([second]);
+      require('~/models').getFiles.mockResolvedValue([first]);
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn();
+
+      await expect(
+        client.addPreviousAttachments([
+          {
+            messageId: 'msg-1',
+            isCreatedByUser: true,
+            files: [{ file_id: first.file_id }],
+          },
+        ]),
+      ).rejects.toMatchObject({
+        code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+        limitType: 'bytes',
+      });
+      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('rejects combined historical and scoped bytes before history is encoded', async () => {
+      mockAgent.endpoint = 'Moonshot';
+      client.options.endpointType = EModelEndpoint.custom;
+      client.options.resendFiles = true;
+      mockReq.config.fileConfig = {
+        endpoints: {
+          Moonshot: {
+            fileLimit: 10,
+            totalSizeLimit: 1,
+            supportedMimeTypes: ['^application/pdf$'],
+          },
+        },
+      };
+      const historicalFile = {
+        ...makeUploadedFile('history-1', 'history.pdf', 'application/pdf'),
+        bytes: 600_000,
+      };
+      const scopedFile = {
+        ...makeUploadedFile('scoped-1', 'scoped.pdf', 'application/pdf'),
+        bytes: 600_000,
+      };
+      client.options.agentContextAttachmentsByAgentId = new Map([['primary-agent', [scopedFile]]]);
+      require('~/models').getFiles.mockResolvedValue([historicalFile]);
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn();
+
+      await expect(
+        client.addPreviousAttachments([
+          {
+            messageId: 'msg-1',
+            isCreatedByUser: true,
+            files: [{ file_id: historicalFile.file_id }],
+          },
+        ]),
+      ).rejects.toMatchObject({
+        code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+        limitType: 'bytes',
+      });
+      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('does not count display-only historical artifacts toward model attachment limits', async () => {
+      client.options.resendFiles = true;
+      const artifacts = Array.from({ length: 11 }, (_, index) =>
+        makeUploadedFile(`artifact-${index}`, `artifact-${index}.png`, 'image/png'),
+      );
+      require('~/models').getFiles.mockResolvedValue(artifacts);
+
+      await expect(
+        client.addPreviousAttachments([
+          {
+            messageId: 'assistant-artifacts',
+            isCreatedByUser: false,
+            attachments: artifacts.map(({ file_id }) => ({ file_id })),
+          },
+        ]),
+      ).resolves.toEqual([
+        expect.objectContaining({ attachments: expect.arrayContaining(artifacts) }),
+      ]);
+    });
+
+    it('does not admit endpoint-incompatible historical files to model limits', async () => {
+      mockAgent.endpoint = 'Moonshot';
+      client.options.endpointType = EModelEndpoint.custom;
+      client.options.resendFiles = true;
+      mockReq.config.fileConfig = {
+        endpoints: {
+          Moonshot: { fileLimit: 10, supportedMimeTypes: ['^text/plain$'] },
+        },
+      };
+      const incompatibleFiles = Array.from({ length: 11 }, (_, index) =>
+        makeUploadedFile(`history-${index}`, `history-${index}.bin`, 'application/octet-stream'),
+      );
+      require('~/models').getFiles.mockResolvedValue(incompatibleFiles);
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn();
+
+      await expect(
+        client.addPreviousAttachments(
+          incompatibleFiles.map((file, index) => ({
+            messageId: `msg-${index}`,
+            isCreatedByUser: true,
+            files: [{ file_id: file.file_id }],
+          })),
+        ),
+      ).resolves.toHaveLength(11);
+      expect(Object.values(client.message_file_map).flat()).toEqual([]);
+      expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('does not admit tool-only historical files to model limits', async () => {
+      client.options.resendFiles = true;
+      const toolFiles = Array.from({ length: 11 }, (_, index) => ({
+        ...makeUploadedFile(`tool-history-${index}`, `tool-${index}.txt`, 'text/plain'),
+        embedded: true,
+      }));
+      require('~/models').getFiles.mockResolvedValue(toolFiles);
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn((_message, files) => files);
+
+      await expect(
+        client.addPreviousAttachments(
+          toolFiles.map((file, index) => ({
+            messageId: `tool-msg-${index}`,
+            isCreatedByUser: true,
+            files: [{ file_id: file.file_id }],
+          })),
+        ),
+      ).resolves.toHaveLength(11);
+      expect(Object.values(client.message_file_map).flat()).toEqual([]);
+      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('does not count current tool-only resources toward model attachment admission', async () => {
+      mockReq.config.fileConfig = { endpoints: { openAI: { fileLimit: 1 } } };
+      const toolFiles = Array.from({ length: 10 }, (_, index) => ({
+        ...makeUploadedFile(`tool-current-${index}`, `tool-${index}.txt`, 'text/plain'),
+        embedded: true,
+      }));
+      const modelFile = makeTextFile('model-current', 'model.txt', 'model context');
+      client.options.attachments = [...toolFiles, modelFile];
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Use the available context.',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
+      expect(client.modelBoundCurrentFiles).toEqual([modelFile]);
+    });
+
+    it('processes only endpoint-admitted current files plus tool-only passthrough files', async () => {
+      mockReq.config.fileConfig = {
+        endpoints: { openAI: { fileSizeLimit: 1, supportedMimeTypes: ['^text/plain$'] } },
+      };
+      const oversized = {
+        ...makeUploadedFile('oversized', 'oversized.png', 'image/png'),
+        bytes: 2 * 1024 * 1024,
+      };
+      const oversizedText = {
+        ...makeTextFile('oversized-text', 'oversized.txt', 'must not reach the prompt'),
+        bytes: 2 * 1024 * 1024,
+      };
+      const toolOnly = {
+        ...makeUploadedFile('tool-only', 'tool.txt', 'text/plain'),
+        embedded: true,
+      };
+      const admitted = makeTextFile('admitted', 'admitted.txt', 'model context');
+      client.options.attachments = [oversized, oversizedText, toolOnly, admitted];
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn((_message, files) => files);
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Use the available context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(client.addFileContextToMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-1' }),
+        [admitted],
+      );
+      expect(client.processAttachments).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-1' }),
+        [toolOnly, admitted],
+      );
+      expect(client.options.attachments).toEqual([toolOnly, admitted]);
+      expect(client.message_file_map['msg-1']).toEqual([toolOnly, admitted]);
+    });
+
+    it('defers current attachment persistence until model admission', () => {
+      client.modelBoundCurrentFiles = [makeTextFile('pending', 'pending.txt', 'context')];
+
+      expect(client.shouldDeferUserMessagePersistence()).toBe(true);
+    });
+
+    it('keeps repeated lazy scoped-text admission cumulative across resolutions', () => {
+      mockReq.config.fileConfig = { fileContextCharLimit: 1_000_000 };
+      const repeated = makeTextFile('lazy-context', 'lazy.txt', 'x'.repeat(600_000));
+      const cumulativeInjections = [repeated];
+
+      expect(() => client.assertTurnAttachmentLimits([], cumulativeInjections)).not.toThrow();
+      cumulativeInjections.push(repeated);
+      expect(() => client.assertTurnAttachmentLimits([], cumulativeInjections)).toThrow(
+        expect.objectContaining({
+          code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+          limitType: 'extracted_text',
+        }),
+      );
+    });
+
+    it('keeps live steer attachments cumulative with the initial turn', () => {
+      const initial = {
+        ...makeUploadedFile('initial-large', 'initial.pdf', 'application/pdf'),
+        bytes: 120 * 1024 * 1024,
+      };
+      const steer = {
+        ...makeUploadedFile('steer-large', 'steer.pdf', 'application/pdf'),
+        bytes: 20 * 1024 * 1024,
+      };
+      client.turnSharedAttachmentFiles = [initial];
+      client.turnScopedAttachmentsByAgentId = new Map([['primary-agent', []]]);
+      client.turnAttachmentEndpointsByAgentId = new Map([
+        ['primary-agent', { endpoint: mockAgent.endpoint }],
+      ]);
+
+      expect(() => client.admitSteerAttachments([steer])).toThrow(
+        expect.objectContaining({
+          code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+          limitType: 'bytes',
+        }),
+      );
+      expect(client.turnSharedAttachmentFiles).toEqual([initial]);
+    });
+
+    it('does not charge tool-only steer files to model attachment admission', () => {
+      const toolOnly = {
+        ...makeUploadedFile('steer-tool-only', 'tool-only.bin', 'application/octet-stream'),
+        embedded: true,
+        bytes: 200 * 1024 * 1024,
+      };
+      client.turnSharedAttachmentFiles = [];
+      client.turnScopedAttachmentsByAgentId = new Map([['primary-agent', []]]);
+      client.turnAttachmentEndpointsByAgentId = new Map([
+        ['primary-agent', { endpoint: mockAgent.endpoint }],
+      ]);
+
+      expect(() => client.admitSteerAttachments([toolOnly])).not.toThrow();
+      expect(client.turnSharedAttachmentFiles).toEqual([]);
+    });
+
+    it('excludes tool-only and endpoint-incompatible scoped files from cumulative admission', () => {
+      mockAgent.endpoint = 'Moonshot';
+      client.options.endpointType = EModelEndpoint.custom;
+      mockReq.config.fileConfig = {
+        endpoints: {
+          Moonshot: { fileLimit: 1, supportedMimeTypes: ['^text/plain$'] },
+        },
+      };
+      const filtered = client.getFilteredScopedAttachmentMap(
+        new Set(),
+        new Map([
+          [
+            'primary-agent',
+            [
+              {
+                ...makeUploadedFile('tool-only', 'tool.txt', 'text/plain'),
+                embedded: true,
+              },
+              makeUploadedFile('unsupported', 'unsupported.bin', 'application/octet-stream'),
+              makeTextFile('model-bound', 'model.txt', 'model context'),
+            ],
+          ],
+        ]),
+        [mockAgent],
+      );
+
+      expect([...filtered.values()].flat()).toEqual([
+        expect.objectContaining({ file_id: 'model-bound' }),
+      ]);
+      expect(() =>
+        client.assertTurnAttachmentLimits([], [...filtered.values()].flat()),
+      ).not.toThrow();
+    });
+
     it('filters historical attachment content only when its source survives pruning', async () => {
       const privateText = 'PRIVATE-HISTORICAL-CONTENT';
       mockReq.config.filters = {
@@ -5277,7 +5806,7 @@ describe('AgentClient - titleConvo', () => {
         makeTextFile('historical-file', 'history.txt', privateText),
       ]);
       client.addFileContextToMessage = jest.fn();
-      client.processAttachments = jest.fn();
+      client.processAttachments = jest.fn((_message, files) => files);
 
       const hydratedMessages = await client.addPreviousAttachments([
         {
@@ -5896,6 +6425,54 @@ describe('AgentClient - titleConvo', () => {
           attachmentsByAgentId: new Map([['pure-child-agent', [childContext]]]),
         }),
       );
+    });
+
+    it('keeps historical steer files in cumulative admission for lazy agents', async () => {
+      const historicalSteerFile = {
+        ...makeUploadedFile('steer-history', 'steer.pdf', 'application/pdf'),
+        bytes: 120 * 1024 * 1024,
+      };
+      const childContext = {
+        ...makeUploadedFile('lazy-context', 'lazy.pdf', 'application/pdf'),
+        bytes: 20 * 1024 * 1024,
+      };
+      const resolvedChild = {
+        id: 'lazy-child-agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Lazy child instructions',
+        model_parameters: { model: 'gpt-4' },
+        tools: [],
+        agentContextAttachments: [childContext],
+      };
+      const descriptor = {
+        id: resolvedChild.id,
+        resolve: jest.fn().mockResolvedValue(resolvedChild),
+      };
+      client.modelBoundHistoricalSteerFiles = [historicalSteerFile];
+      mockAgent.lazySubagentConfigs = [descriptor];
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Answer from the child context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      await expect(
+        descriptor.resolve({ signal: new AbortController().signal }),
+      ).rejects.toMatchObject({
+        code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+        limitType: 'bytes',
+      });
     });
   });
 
@@ -7851,7 +8428,10 @@ describe('AgentClient - resumeCompletion content protection', () => {
     expect(mockCreateRun.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         tenantId: 'request-tenant',
-        modelCallbacks: [expect.objectContaining({ name: 'librechat-model-bound-content-filter' })],
+        modelCallbacks: expect.arrayContaining([
+          expect.objectContaining({ name: 'librechat-model-bound-content-filter' }),
+          expect.objectContaining({ name: 'librechat-agent-attachment-memory' }),
+        ]),
         compactionSemanticIndex: compactionSemanticIndex.entries,
       }),
     );
@@ -8013,7 +8593,11 @@ describe('AgentClient - resumeCompletion content protection', () => {
   it('freezes owner-hydrated resume files into the final model callback', async () => {
     mockGetAgentCheckpointer.mockResolvedValue({
       getTuple: jest.fn().mockResolvedValue({
-        checkpoint: { channel_values: { messages: [] } },
+        checkpoint: {
+          channel_values: {
+            messages: [{ role: 'human', files: [{ file_id: 'file-paused' }] }],
+          },
+        },
       }),
     });
     const storedMessage = {
@@ -8029,6 +8613,9 @@ describe('AgentClient - resumeCompletion content protection', () => {
       {
         file_id: 'file-paused',
         filename: 'report.txt',
+        source: 'text',
+        type: 'text/plain',
+        bytes: 10,
         text: 'Safe extracted text',
       },
     ]);
@@ -8049,7 +8636,19 @@ describe('AgentClient - resumeCompletion content protection', () => {
       storedMessages: [storedMessage],
     });
 
-    const [modelBoundCallback] = mockCreateRun.mock.calls[0][0].modelCallbacks;
+    const [modelBoundCallback, attachmentMemoryCallback] =
+      mockCreateRun.mock.calls[0][0].modelCallbacks;
+    expect(attachmentMemoryCallback).toEqual(
+      expect.objectContaining({ name: 'librechat-agent-attachment-memory' }),
+    );
+    expect(context.attachmentMemoryContext).toEqual(
+      expect.objectContaining({
+        conversationId: 'conversation-123',
+        messageId: 'response-123',
+        attachments: [expect.objectContaining({ file_id: 'file-paused' })],
+        countRepeatedExtractedText: true,
+      }),
+    );
     expect(() =>
       modelBoundCallback.handleChatModelStart(undefined, [
         [
@@ -8061,6 +8660,454 @@ describe('AgentClient - resumeCompletion content protection', () => {
         ],
       ]),
     ).not.toThrow();
+  });
+
+  it('reapplies aggregate attachment limits to persistent history on resume', async () => {
+    const historicalFiles = Array.from({ length: 11 }, (_, index) => ({
+      file_id: `resume-history-${index}`,
+      filename: `history-${index}.txt`,
+      source: 'text',
+      type: 'text/plain',
+      text: 'context',
+      bytes: 10,
+    }));
+    require('~/models').getMessages.mockResolvedValue(
+      historicalFiles.map((file, index) => ({
+        messageId: index === historicalFiles.length - 1 ? 'parent-123' : `history-${index}`,
+        parentMessageId: index === 0 ? Constants.NO_PARENT : `history-${index - 1}`,
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'inspect file',
+        files: [{ file_id: file.file_id }],
+      })),
+    );
+    require('~/models').getFiles.mockResolvedValue(historicalFiles);
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: historicalFiles.map((file) => ({
+              role: 'human',
+              files: [{ file_id: file.file_id }],
+            })),
+          },
+        },
+      }),
+    });
+    const context = makeContext(undefined);
+    context.options.req.body.isTemporary = false;
+    context.options.req.config.fileConfig = {
+      endpoints: { agents: { fileLimit: 10 } },
+    };
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+      limitType: 'count',
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('counts a restored request file only once when it is already in the checkpoint', async () => {
+    const retainedFile = {
+      file_id: 'retained-request',
+      filename: 'retained.txt',
+      source: 'text',
+      type: 'text/plain',
+      text: 'x'.repeat(600_000),
+      bytes: 600_000,
+    };
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [{ role: 'human', files: [{ file_id: retainedFile.file_id }] }],
+          },
+        },
+      }),
+    });
+    require('~/models').getFiles.mockResolvedValue([retainedFile]);
+    const resume = jest.fn().mockResolvedValue(undefined);
+    mockCreateRun.mockResolvedValue({ resume, getCalibrationRatio: jest.fn(() => 0) });
+    const context = makeContext(undefined);
+    context.options.attachments = [retainedFile];
+    context.options.req.config.fileConfig = { fileContextCharLimit: 1_000_000 };
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).resolves.toBeUndefined();
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    expect(context.attachmentMemoryContext.attachments).toEqual([retainedFile]);
+  });
+
+  it('limits resume history to files retained by the checkpoint', async () => {
+    const historicalFiles = Array.from({ length: 11 }, (_, index) => ({
+      file_id: `old-history-${index}`,
+      filename: `old-${index}.txt`,
+      source: 'text',
+      type: 'text/plain',
+      text: 'context',
+      bytes: 10,
+    }));
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [{ role: 'human', files: [{ file_id: 'old-history-10' }] }],
+          },
+        },
+      }),
+    });
+    require('~/models').getFiles.mockResolvedValue(historicalFiles);
+    const resume = jest.fn().mockResolvedValue(undefined);
+    mockCreateRun.mockResolvedValue({ resume, getCalibrationRatio: jest.fn(() => 0) });
+    const context = makeContext(undefined);
+    context.options.req.config.fileConfig = {
+      endpoints: { agents: { fileLimit: 10 } },
+    };
+
+    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    expect(context.attachmentMemoryContext.attachments).toEqual([
+      expect.objectContaining({ file_id: 'old-history-10' }),
+    ]);
+  });
+
+  it('counts checkpoint files retained in model state after endpoint policy tightens', async () => {
+    const checkpointFiles = [
+      {
+        file_id: 'retained-1',
+        filename: 'retained-1.pdf',
+        source: 'local',
+        type: 'application/pdf',
+        bytes: 10,
+      },
+      {
+        file_id: 'retained-2',
+        filename: 'retained-2.pdf',
+        source: 'local',
+        type: 'application/pdf',
+        bytes: 10,
+      },
+    ];
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'human',
+                files: checkpointFiles.map(({ file_id }) => ({ file_id })),
+              },
+            ],
+          },
+        },
+      }),
+    });
+    require('~/models').getFiles.mockResolvedValue(checkpointFiles);
+    const context = makeContext(undefined);
+    context.options.req.config.fileConfig = {
+      endpoints: {
+        agents: { fileLimit: 1 },
+      },
+    };
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+      limitType: 'count',
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('reapplies each secondary agent endpoint limit on resume', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const context = makeContext(undefined);
+    context.options.agent.endpoint = 'openAI';
+    context.options.req.config.fileConfig = {
+      endpoints: {
+        openAI: { fileLimit: 10 },
+        Moonshot: { fileLimit: 1, supportedMimeTypes: ['^text/plain$'] },
+      },
+    };
+    context.agentConfigs = new Map([
+      [
+        'secondary',
+        {
+          id: 'secondary',
+          endpoint: 'Moonshot',
+          model_parameters: { model: 'moonshot-v1' },
+          tools: [],
+        },
+      ],
+    ]);
+    context.options.agentContextAttachmentsByAgentId = new Map([
+      [
+        'secondary',
+        [
+          { file_id: 'secondary-1', source: 'text', type: 'text/plain', text: 'one', bytes: 1 },
+          { file_id: 'secondary-2', source: 'text', type: 'text/plain', text: 'two', bytes: 1 },
+        ],
+      ],
+    ]);
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+      limitType: 'count',
+      observed: 2,
+      limit: 1,
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('restores agent-scoped file context before rebuilding a resumed run', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const resume = jest.fn().mockResolvedValue(undefined);
+    mockCreateRun.mockResolvedValue({ resume, getCalibrationRatio: jest.fn(() => 0) });
+    const context = makeContext(undefined);
+    context.options.agentContextAttachmentsByAgentId = new Map([
+      [
+        'agent-123',
+        [
+          {
+            file_id: 'resume-private-context',
+            filename: 'private.txt',
+            source: 'text',
+            type: 'text/plain',
+            text: 'Resume-only private context',
+            bytes: 27,
+          },
+        ],
+      ],
+    ]);
+
+    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+    expect(context.options.agent.additional_instructions).toContain('Resume-only private context');
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('reapplies shared attachment limits after a lazy resume agent resolves', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const resolvedChild = {
+      id: 'lazy-secondary',
+      endpoint: 'Moonshot',
+      model_parameters: { model: 'moonshot-v1' },
+      tools: [],
+    };
+    const resolveLazy = jest.fn().mockResolvedValue(resolvedChild);
+    const descriptor = {
+      id: 'lazy-secondary',
+      resolve: resolveLazy,
+    };
+    const sharedFile = {
+      file_id: 'shared-large',
+      filename: 'shared.txt',
+      source: 'text',
+      type: 'text/plain',
+      text: 'shared context',
+      bytes: 2 * 1024 * 1024,
+    };
+    const context = makeContext(undefined);
+    context.options.agent.endpoint = 'openAI';
+    context.options.agent.lazySubagentConfigs = [descriptor];
+    context.options.attachments = [sharedFile];
+    context.options.req.config.fileConfig = {
+      endpoints: {
+        openAI: { totalSizeLimit: 128 },
+        Moonshot: { totalSizeLimit: 1 },
+      },
+    };
+    mockCreateRun.mockImplementation(async () => ({
+      resume: jest.fn(async () => descriptor.resolve({ signal: new AbortController().signal })),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+      limitType: 'bytes',
+      observed: 2 * 1024 * 1024,
+      limit: 1024 * 1024,
+    });
+    expect(resolveLazy).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes admitted steer files when a lazy resume agent resolves', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const resolvedChild = {
+      id: 'lazy-secondary',
+      endpoint: 'Moonshot',
+      model_parameters: { model: 'moonshot-v1' },
+      tools: [],
+    };
+    const descriptor = {
+      id: 'lazy-secondary',
+      resolve: jest.fn().mockResolvedValue(resolvedChild),
+    };
+    const steerFile = {
+      file_id: 'steer-large',
+      filename: 'steer.txt',
+      source: 'text',
+      type: 'text/plain',
+      text: 'steered context',
+      bytes: 2 * 1024 * 1024,
+    };
+    const context = makeContext(undefined);
+    context.options.agent.endpoint = 'openAI';
+    context.options.agent.lazySubagentConfigs = [descriptor];
+    context.options.req.config.fileConfig = {
+      endpoints: {
+        openAI: { totalSizeLimit: 128 },
+        Moonshot: { totalSizeLimit: 1 },
+      },
+    };
+    mockCreateRun.mockImplementation(async () => ({
+      resume: jest.fn(async () => {
+        context.turnSharedAttachmentFiles.push(steerFile);
+        return descriptor.resolve({ signal: new AbortController().signal });
+      }),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+      limitType: 'bytes',
+      observed: 2 * 1024 * 1024,
+      limit: 1024 * 1024,
+    });
+  });
+
+  it('reserves a lazy resume endpoint before awaiting its scoped context', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const resolvedChild = {
+      id: 'lazy-secondary',
+      endpoint: 'Moonshot',
+      model_parameters: { model: 'moonshot-v1' },
+      tools: [],
+    };
+    const descriptor = {
+      id: 'lazy-secondary',
+      resolve: jest.fn().mockResolvedValue(resolvedChild),
+    };
+    const lateScopedContext = deferred();
+    mockBuildAgentScopedContext.mockImplementationOnce((...args) =>
+      jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
+    );
+    mockBuildAgentScopedContext.mockImplementationOnce(() => lateScopedContext.promise);
+    const context = makeContext(undefined);
+    context.options.agent.endpoint = 'openAI';
+    context.options.agent.lazySubagentConfigs = [descriptor];
+    context.options.req.config.fileConfig = {
+      endpoints: {
+        openAI: { totalSizeLimit: 128 },
+        Moonshot: { totalSizeLimit: 1 },
+      },
+    };
+    mockCreateRun.mockImplementation(async () => ({
+      resume: jest.fn(async () => descriptor.resolve({ signal: new AbortController().signal })),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+
+    const resumePromise = AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+    for (
+      let attempt = 0;
+      attempt < 20 && mockBuildAgentScopedContext.mock.calls.length < 2;
+      attempt++
+    ) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    expect(mockBuildAgentScopedContext).toHaveBeenCalledTimes(2);
+    expect(() =>
+      AgentClient.prototype.admitSteerAttachments.call(context, [
+        {
+          file_id: 'racing-steer',
+          filename: 'racing.txt',
+          source: 'text',
+          type: 'text/plain',
+          text: 'steered context',
+          bytes: 2 * 1024 * 1024,
+        },
+      ]),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'AGENT_ATTACHMENT_LIMIT_EXCEEDED',
+        limitType: 'bytes',
+      }),
+    );
+
+    lateScopedContext.resolve(new Map([['lazy-secondary', '']]));
+    await expect(resumePromise).resolves.toBeUndefined();
+  });
+
+  it('restores scoped file context after a lazy resume agent resolves', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const resolvedChild = {
+      id: 'lazy-secondary',
+      endpoint: 'Moonshot',
+      model_parameters: { model: 'moonshot-v1' },
+      tools: [],
+      agentContextAttachments: [
+        {
+          file_id: 'lazy-private-context',
+          filename: 'lazy-private.txt',
+          source: 'text',
+          type: 'text/plain',
+          text: 'Lazy resume private context',
+          bytes: 27,
+        },
+      ],
+    };
+    const resolveLazy = jest.fn().mockResolvedValue(resolvedChild);
+    const descriptor = {
+      id: 'lazy-secondary',
+      resolve: resolveLazy,
+    };
+    const context = makeContext(undefined);
+    context.options.agent.lazySubagentConfigs = [descriptor];
+    mockCreateRun.mockImplementation(async () => ({
+      resume: jest.fn(async () => descriptor.resolve({ signal: new AbortController().signal })),
+      getCalibrationRatio: jest.fn(() => 0),
+    }));
+
+    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+    expect(resolvedChild.additional_instructions).toContain('Lazy resume private context');
+    expect(resolveLazy).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed when a paused file reference cannot be rehydrated', async () => {

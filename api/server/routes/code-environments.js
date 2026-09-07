@@ -1,8 +1,12 @@
 const express = require('express');
-const { createCodeEnvironmentHttpHandlers } = require('@librechat/api');
+const {
+  createCodeEnvironmentHttpHandlers,
+  codeEnvironmentPairingLimiter,
+  codeEnvironmentStatusIpLimiter,
+  codeEnvironmentStatusLimiter,
+} = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
-const { codeEnvironmentPairingLimiter } = require('~/server/middleware/limiters/code');
 const { getAppConfig, getCodeEnvironmentRegistry } = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
@@ -29,7 +33,12 @@ router.post('/pairings', codeEnvironmentPairingLimiter, (req, res, next) =>
 router.post('/', requireCodeEnvironmentManage, (req, res, next) =>
   getHandlers().register(req, res, next),
 );
-router.get('/:environmentId/status', (req, res, next) => getHandlers().status(req, res, next));
+router.get(
+  '/:environmentId/status',
+  codeEnvironmentStatusIpLimiter,
+  codeEnvironmentStatusLimiter,
+  (req, res, next) => getHandlers().status(req, res, next),
+);
 router.patch('/:environmentId/settings', (req, res, next) =>
   getHandlers().updateSettings(req, res, next),
 );

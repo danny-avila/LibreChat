@@ -5,6 +5,44 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions, ProcessedFile } from '~/types';
 import { resolveDownloadPath } from '~/storage/path';
 
+export class AttachmentObjectNotFoundError extends Error {
+  readonly code = 'ATTACHMENT_OBJECT_NOT_FOUND';
+
+  constructor(readonly fileId: string | undefined) {
+    super('An attached file is no longer available. Remove it, upload it again, and retry.');
+    this.name = 'AttachmentObjectNotFoundError';
+  }
+}
+
+export function isAttachmentObjectNotFoundError(
+  error: unknown,
+): error is AttachmentObjectNotFoundError {
+  return error instanceof AttachmentObjectNotFoundError;
+}
+
+function isStorageNotFoundError(error: unknown): boolean {
+  if (typeof error !== 'object' || error == null) {
+    return false;
+  }
+  const storageError = error as {
+    name?: string;
+    code?: string;
+    status?: number;
+    statusCode?: number;
+    response?: { status?: number };
+    $metadata?: { httpStatusCode?: number };
+  };
+  return (
+    storageError.name === 'NoSuchKey' ||
+    storageError.code === 'NoSuchKey' ||
+    storageError.code === 'ENOENT' ||
+    storageError.status === 404 ||
+    storageError.statusCode === 404 ||
+    storageError.response?.status === 404 ||
+    storageError.$metadata?.httpStatusCode === 404
+  );
+}
+
 /**
  * Extracts the configured file size limit for a specific provider from fileConfig
  * @param req - The server request object containing config
@@ -56,21 +94,28 @@ export async function getFileStream(
   }
 
   const { getDownloadStream } = encodingMethods[source];
-  const stream = await getDownloadStream(req, resolveDownloadPath(file));
-  let buffer: Buffer | null = await getStream.buffer(stream);
-  const content = buffer.toString('base64');
-  buffer = null;
+  try {
+    const stream = await getDownloadStream(req, resolveDownloadPath(file));
+    let buffer: Buffer | null = await getStream.buffer(stream);
+    const content = buffer.toString('base64');
+    buffer = null;
 
-  return {
-    file,
-    content,
-    metadata: {
-      file_id: file.file_id,
-      temp_file_id: file.temp_file_id,
-      filepath: file.filepath,
-      source: file.source,
-      filename: file.filename,
-      type: file.type,
-    },
-  };
+    return {
+      file,
+      content,
+      metadata: {
+        file_id: file.file_id,
+        temp_file_id: file.temp_file_id,
+        filepath: file.filepath,
+        source: file.source,
+        filename: file.filename,
+        type: file.type,
+      },
+    };
+  } catch (error) {
+    if (isStorageNotFoundError(error)) {
+      throw new AttachmentObjectNotFoundError(file.file_id);
+    }
+    throw error;
+  }
 }
