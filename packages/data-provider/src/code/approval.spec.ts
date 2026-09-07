@@ -1,3 +1,4 @@
+import type { CodeApprovalConstraints } from './approval';
 import {
   CODE_APPROVAL_MODES,
   CodeApprovalModeError,
@@ -5,7 +6,6 @@ import {
   resolveCodeApprovalMode,
   resolveCodePermissionDecision,
 } from './approval';
-import type { CodeApprovalConstraints } from './approval';
 
 const constraints: CodeApprovalConstraints = {
   attached: true,
