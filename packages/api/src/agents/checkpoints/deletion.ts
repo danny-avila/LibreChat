@@ -46,8 +46,14 @@ export async function openCheckpointDeletion(
   );
   const ownerPrefix = checkpointOwnerNamespacePrefix(userId, tenantId);
   const rootPrefix = `${ownerPrefix}${hash(rootConversationId ?? null)}:`;
-  const prefix = rootConversationId == null ? ownerPrefix : rootPrefix;
-  const retained = await collection.find({ _id: { $regex: `^${prefix}` } }).toArray();
+  const tenants = tenantId ? [tenantId, undefined] : [undefined];
+  const prefixes = tenants.map((tenant) => {
+    const prefix = checkpointOwnerNamespacePrefix(userId, tenant);
+    return rootConversationId == null ? prefix : `${prefix}${hash(rootConversationId)}:`;
+  });
+  const retained = await collection
+    .find({ $or: prefixes.map((prefix) => ({ _id: { $regex: `^${prefix}` } })) })
+    .toArray();
   const targets = new Map(retained.map((target) => [target._id, target]));
   const version = randomUUID();
   const batchSize = 256;
@@ -102,11 +108,15 @@ export async function openCheckpointDeletion(
       }
     },
     async cleanup() {
-      await deleteOwnedAgentCheckpoints(
-        userId,
-        tenantId,
-        rootConversationId == null ? undefined : conversationIds(),
-        cfg,
+      await Promise.all(
+        tenants.map((tenant) =>
+          deleteOwnedAgentCheckpoints(
+            userId,
+            tenant,
+            rootConversationId == null ? undefined : conversationIds(),
+            cfg,
+          ),
+        ),
       );
       await deleteAgentEventCheckpointReferences(
         [...targets.values()].flatMap((target) => target.checkpoint ?? []),

@@ -1,6 +1,6 @@
 import type { SerializableJobData } from './interfaces/IJobStore';
 
-/** A settled status can precede the terminal owner's final persistence writes. */
+/** A settled status can precede final persistence and terminal host actions. */
 export async function waitForGenerationPersistence(
   streamId: string,
   createdAt: number,
@@ -13,7 +13,8 @@ export async function waitForGenerationPersistence(
     if (
       current == null ||
       current.createdAt !== createdAt ||
-      current.metadata?.terminalPersistencePending !== true
+      (current.metadata?.terminalPersistencePending !== true &&
+        current.metadata?.terminalHostActionPending !== true)
     )
       return;
     if (Date.now() >= deadline) {

@@ -188,7 +188,8 @@ export interface IAgentEventActorSuspension {
   handlingGenerationCreatedAt?: number;
   actionId: string;
   jobCreatedAt: number;
-  status: 'pending' | 'claimed' | 'closed';
+  /** Owned states fence legacy replicas; snapshot readers expose pending/claimed. */
+  status: 'pending' | 'claimed' | 'pending_owned' | 'claimed_owned' | 'closed';
   resumeAttemptId?: string;
   outcome?: 'committed' | 'stale' | 'settled' | 'cancelled';
   closedAt?: Date;

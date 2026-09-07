@@ -577,30 +577,33 @@ describe('deleteUserController', () => {
     );
   });
 
-  it('waits for terminal persistence after an already-settled abort', async () => {
-    const userId = new mongoose.Types.ObjectId();
-    const job = {
-      createdAt: 123,
-      status: 'complete',
-      metadata: { userId: userId.toString(), terminalPersistencePending: true },
-    };
-    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['terminal']);
-    mockGetAgentJob
-      .mockResolvedValueOnce(job)
-      .mockImplementationOnce(async () => {
-        expect(deleteMessages).not.toHaveBeenCalled();
-        expect(mockDeleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
-        return job;
-      })
-      .mockImplementationOnce(async () => {
-        expect(deleteMessages).not.toHaveBeenCalled();
-        return { ...job, metadata: { ...job.metadata, terminalPersistencePending: false } };
-      });
-    mockAbortJob.mockResolvedValueOnce({ success: false, failureReason: 'already_settled' });
-    await deleteUserController({ user: { id: userId.toString(), _id: userId } }, mockRes);
-    expect(mockGetAgentJob).toHaveBeenCalledTimes(3);
-    expect(deleteMessages).toHaveBeenCalled();
-  });
+  it.each(['terminalPersistencePending', 'terminalHostActionPending'])(
+    'waits for %s after an already-settled abort',
+    async (marker) => {
+      const userId = new mongoose.Types.ObjectId();
+      const job = {
+        createdAt: 123,
+        status: 'complete',
+        metadata: { userId: userId.toString(), [marker]: true },
+      };
+      mockGetActiveJobIdsForUser.mockResolvedValueOnce(['terminal']);
+      mockGetAgentJob
+        .mockResolvedValueOnce(job)
+        .mockImplementationOnce(async () => {
+          expect(deleteMessages).not.toHaveBeenCalled();
+          expect(mockDeleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
+          return job;
+        })
+        .mockImplementationOnce(async () => {
+          expect(deleteMessages).not.toHaveBeenCalled();
+          return { ...job, metadata: { ...job.metadata, [marker]: false } };
+        });
+      mockAbortJob.mockResolvedValueOnce({ success: false, failureReason: 'already_settled' });
+      await deleteUserController({ user: { id: userId.toString(), _id: userId } }, mockRes);
+      expect(mockGetAgentJob).toHaveBeenCalledTimes(3);
+      expect(deleteMessages).toHaveBeenCalled();
+    },
+  );
 
   it('retains account data when terminal persistence cannot be confirmed', async () => {
     const userId = new mongoose.Types.ObjectId();

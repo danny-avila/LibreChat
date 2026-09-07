@@ -656,6 +656,15 @@ export function createConversationMethods(
     };
   }
 
+  function readableActorSuspension(
+    suspension: IConversation['agentEventActorSuspension'],
+  ): IAgentEventActorSnapshot['suspension'] {
+    if (suspension == null) return null;
+    if (suspension.status === 'pending_owned') return { ...suspension, status: 'pending' };
+    if (suspension.status === 'claimed_owned') return { ...suspension, status: 'claimed' };
+    return suspension;
+  }
+
   /** Reads the private actor head and every fail-closed reconciliation marker. */
   async function getAgentEventActorSnapshot(input: {
     user: string;
@@ -681,7 +690,7 @@ export function createConversationMethods(
           state: conversation.agentEventActor ?? null,
           reconciliations: conversation.agentEventActorReconciliations ?? [],
           legacyTurn: conversation.agentEventActorLegacyTurn ?? null,
-          suspension: conversation.agentEventActorSuspension ?? null,
+          suspension: readableActorSuspension(conversation.agentEventActorSuspension),
           epoch: conversation.agentEventActorEpoch ?? 0,
         };
   }
@@ -717,7 +726,7 @@ export function createConversationMethods(
             ],
           }
         : {
-            'agentEventActorSuspension.status': 'claimed',
+            'agentEventActorSuspension.status': { $in: ['claimed', 'claimed_owned'] },
             'agentEventActorSuspension.suspension.suspensionId': input.previous.suspensionId,
             'agentEventActorSuspension.suspension.attempt': input.previous.attempt,
             'agentEventActorSuspension.resumeAttemptId': input.previous.resumeAttemptId,
@@ -744,7 +753,7 @@ export function createConversationMethods(
       handlingGenerationCreatedAt: input.handlingGenerationCreatedAt ?? input.jobCreatedAt,
       actionId: input.actionId,
       jobCreatedAt: input.jobCreatedAt,
-      status: 'pending' as const,
+      status: 'pending_owned' as const,
       observedAt: new Date(),
     };
     const storeUpdate = {
@@ -810,7 +819,7 @@ export function createConversationMethods(
         conversationId: input.conversationId,
         subagentThread: { $exists: true },
         agentEventBinding: { $exists: true },
-        'agentEventActorSuspension.status': 'pending',
+        'agentEventActorSuspension.status': { $in: ['pending', 'pending_owned'] },
         'agentEventActorSuspension.suspension.suspensionId': input.suspensionId,
         'agentEventActorSuspension.suspension.attempt': input.attempt,
         'agentEventActorSuspension.actionId': input.actionId,
@@ -820,7 +829,7 @@ export function createConversationMethods(
       },
       {
         $set: {
-          'agentEventActorSuspension.status': 'claimed',
+          'agentEventActorSuspension.status': 'claimed_owned',
           'agentEventActorSuspension.resumeAttemptId': input.resumeAttemptId,
           'agentEventActorSuspension.observedAt': new Date(),
         },
@@ -852,7 +861,7 @@ export function createConversationMethods(
       {
         user: input.user,
         conversationId: input.conversationId,
-        'agentEventActorSuspension.status': 'claimed',
+        'agentEventActorSuspension.status': { $in: ['claimed', 'claimed_owned'] },
         'agentEventActorSuspension.suspension.suspensionId': input.suspensionId,
         'agentEventActorSuspension.suspension.attempt': input.attempt,
         'agentEventActorSuspension.resumeAttemptId': input.resumeAttemptId,
@@ -919,9 +928,9 @@ export function createConversationMethods(
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const suspensionOwner =
       input.claimedResumeAttemptId == null
-        ? { 'agentEventActorSuspension.status': 'pending' }
+        ? { 'agentEventActorSuspension.status': { $in: ['pending', 'pending_owned'] } }
         : {
-            'agentEventActorSuspension.status': 'claimed',
+            'agentEventActorSuspension.status': { $in: ['claimed', 'claimed_owned'] },
             'agentEventActorSuspension.resumeAttemptId': input.claimedResumeAttemptId,
           };
     const cancelled = await Conversation.findOneAndUpdate(
@@ -1102,7 +1111,7 @@ export function createConversationMethods(
       input.settlementAuthority == null
         ? {}
         : {
-            'agentEventActorSuspension.status': 'claimed',
+            'agentEventActorSuspension.status': { $in: ['claimed', 'claimed_owned'] },
             'agentEventActorSuspension.suspension.suspensionId':
               input.settlementAuthority.suspensionId,
             'agentEventActorSuspension.suspension.attempt': input.settlementAuthority.attempt,

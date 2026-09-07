@@ -2938,6 +2938,7 @@ class GenerationJobManagerClass {
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,
         agentEventLegacyTurnToken: jobData.agentEventLegacyTurnToken,
         terminalPersistencePending: jobData.terminalPersistencePending,
+        terminalHostActionPending: jobData.terminalHostActionPending,
         terminalPersistenceStartedAt: jobData.terminalPersistenceStartedAt,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
@@ -9302,10 +9303,19 @@ class GenerationJobManagerClass {
   /** Includes stale paused jobs whose durable checkpoints still belong to an
    * account even though they no longer block ordinary runtime cleanup. */
   async getAccountCleanupJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
-    if (this.jobStore.getRetainedJobIdsByUser == null) {
-      return this.getCleanupBlockingJobIdsForUser(userId, tenantId);
-    }
-    return this.jobStore.getRetainedJobIdsByUser(userId, tenantId);
+    const [retained, hostActions, detachedActions] = await Promise.all([
+      this.jobStore.getRetainedJobIdsByUser?.(userId, tenantId) ??
+        this.getCleanupBlockingJobIdsForUser(userId, tenantId),
+      this.jobStore.getTerminalHostActionJobs?.() ?? [],
+      this.jobStore.getDetachedAgentEventTerminalHostActionJobs?.() ?? [],
+    ]);
+    const pending = [...hostActions, ...detachedActions].filter(
+      (job) =>
+        job.userId === userId &&
+        (!job.tenantId || job.tenantId === tenantId) &&
+        job.terminalHostActionPending === true,
+    );
+    return [...new Set([...retained, ...pending.map((job) => job.streamId)])];
   }
 
   /** Resolves every cleanup-blocking run attached to any target conversation.

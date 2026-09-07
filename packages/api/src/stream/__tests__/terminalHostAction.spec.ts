@@ -27,6 +27,40 @@ describe('GenerationJobManager terminal host actions', () => {
     await manager.destroy();
   });
 
+  it.each(['ordinary', 'detached'])(
+    'account cleanup discovers %s terminal host actions outside owner membership',
+    async (lane) => {
+      const job = await manager.createJob('pending-host', 'user-1', 'conversation');
+      await store.transitionStatus('pending-host', {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: job.createdAt,
+        patch: { completedAt: Date.now(), providerDrained: true, terminalHostActionPending: true },
+      });
+      const terminal = (await store.getJob('pending-host'))!;
+      jest.spyOn(store, 'getRetainedJobIdsByUser').mockResolvedValue([]);
+      const rows = [
+        terminal,
+        { ...terminal, streamId: 'foreign-user', userId: 'user-2' },
+        { ...terminal, streamId: 'foreign-tenant', tenantId: 'tenant-b' },
+      ];
+      jest
+        .spyOn(store, 'getTerminalHostActionJobs')
+        .mockResolvedValue(lane === 'ordinary' ? rows : []);
+      Object.assign(store, {
+        getDetachedAgentEventTerminalHostActionJobs: jest
+          .fn()
+          .mockResolvedValue(lane === 'detached' ? rows : []),
+      });
+      expect(await manager.getAccountCleanupJobIdsForUser('user-1', 'tenant-a')).toEqual([
+        'pending-host',
+      ]);
+      expect((await manager.getJob('pending-host'))?.metadata?.terminalHostActionPending).toBe(
+        true,
+      );
+    },
+  );
+
   it('verifies detached terminal outbox persistence against the exact generation', async () => {
     const streamId = 'conversation-detached-outbox';
     const job = await manager.createJob(streamId, 'user-1', streamId);

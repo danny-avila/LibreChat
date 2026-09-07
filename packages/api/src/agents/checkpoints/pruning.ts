@@ -51,7 +51,7 @@ export async function* historicalActorReferences(
     const cursor = conversations().find(
       {
         user,
-        tenantId: tenantId ?? null,
+        tenantId: tenantId ? { $in: [tenantId, null] } : null,
         subagentThread: { $exists: true },
         ...(ids && { conversationId: { $in: ids.slice(offset, offset + 256) } }),
       },

@@ -161,3 +161,46 @@ test('memory checkpointer conversations can still record and acknowledge deletio
   await deletion.acknowledge();
   expect(await mongoose.connection.db!.collection('cleanup_cp_deletions').countDocuments()).toBe(0);
 });
+
+test('current-tenant deletion recovers tenantless ownership and exact references without erasing another tenant', async () => {
+  const db = mongoose.connection.db!;
+  const current = createCheckpointNamespace('owner', 'tenant-a');
+  const legacy = createCheckpointNamespace('owner');
+  const foreign = createCheckpointNamespace('owner', 'tenant-b');
+  const refs = [
+    { thread_id: 'legacy-thread', checkpoint_ns: 'event-actor/legacy', checkpoint_id: 'proved' },
+    { thread_id: 'legacy-thread', checkpoint_ns: 'event-actor/legacy', checkpoint_id: 'unproved' },
+  ];
+  for (const name of ['cleanup_cp', 'cleanup_writes']) {
+    await db
+      .collection(name)
+      .insertMany([
+        { thread_id: 'current-thread', checkpoint_ns: current },
+        { thread_id: 'legacy-thread', checkpoint_ns: legacy },
+        { thread_id: 'foreign-thread', checkpoint_ns: foreign },
+        ...refs,
+      ]);
+  }
+  await db.collection('conversations').insertOne({
+    user: 'owner',
+    conversationId: 'legacy-thread',
+    subagentThread: {},
+    agentEventActorCleanup: [
+      { threadId: 'legacy-thread', checkpointNs: 'event-actor/legacy', checkpointId: 'proved' },
+    ],
+  });
+  const deletion = await openCheckpointDeletion('owner', 'tenant-a', undefined, cfg);
+  await deletion.remember(['current-thread', 'legacy-thread']);
+  await db.collection('conversations').deleteMany({ user: 'owner' });
+  const retry = await openCheckpointDeletion('owner', 'tenant-a', undefined, cfg);
+  expect(retry.conversationIds().sort()).toEqual(['current-thread', 'legacy-thread']);
+  await retry.cleanup();
+  await retry.acknowledge();
+  for (const name of ['cleanup_cp', 'cleanup_writes']) {
+    const rows = await db.collection(name).find().toArray();
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.checkpoint_ns)).toEqual([foreign, 'event-actor/legacy']);
+    expect(rows.find((row) => row.checkpoint_id)?.checkpoint_id).toBe('unproved');
+  }
+  expect(await db.collection('cleanup_cp_deletions').countDocuments()).toBe(0);
+});

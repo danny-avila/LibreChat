@@ -336,7 +336,11 @@ const convoSchema: Schema<IConversation> = new Schema(
         handlingGenerationCreatedAt: { type: Number, min: 0, default: undefined },
         actionId: { type: String, required: true },
         jobCreatedAt: { type: Number, required: true },
-        status: { type: String, enum: ['pending', 'claimed', 'closed'], required: true },
+        status: {
+          type: String,
+          enum: ['pending', 'claimed', 'pending_owned', 'claimed_owned', 'closed'],
+          required: true,
+        },
         resumeAttemptId: { type: String, default: undefined },
         outcome: {
           type: String,
