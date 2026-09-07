@@ -29,6 +29,10 @@ export {
 export { checkpointOwnerNamespacePrefix } from '../stream/checkpoints';
 
 export { resolveCheckpointerConfig } from './checkpoints/config';
+export {
+  checkpointStorageConfigs,
+  LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY,
+} from './checkpoints/storage';
 export type { ResolvedCheckpointerConfig } from './checkpoints/config';
 export { DEFAULT_CHECKPOINT_TTL_SECONDS } from '../stream/checkpoints';
 

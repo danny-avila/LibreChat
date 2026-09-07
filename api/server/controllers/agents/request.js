@@ -1400,6 +1400,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       jobCreatedAt,
       status,
       conversationId,
+      ...(status === 'requires_action' && client?.checkpointNamespace != null
+        ? { checkpointNamespace: client.checkpointNamespace }
+        : {}),
       clearConversationId,
       error,
     });

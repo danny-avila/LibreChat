@@ -210,7 +210,7 @@ test.each(['conversations', 'messages', 'toolcalls', 'sharedlinks'])(
   },
 );
 
-test('keeps exact legacy proof without TTL indexes and rotates past retained work', async () => {
+test('replays exact legacy proof without TTL indexes and rotates past retained work', async () => {
   const db = mongoose.connection.db!;
   const checkpoint = {
     threadId: 'child',
@@ -233,11 +233,7 @@ test('keeps exact legacy proof without TTL indexes and rotates past retained wor
   });
   const reclaim = createCheckpointDeletionReclaimer(async () => []);
   for (let pass = 0; pass < 6; pass++) await reclaim(1);
-  const retained = await db.collection('agent_checkpoint_deletions').find().toArray();
-  expect(retained).toHaveLength(1);
-  expect(retained[0].checkpoint).toEqual(checkpoint);
-  await db.collection('cleanup_writes').deleteMany({});
-  for (let pass = 0; pass < 3; pass++) await reclaim(1);
+  expect(await db.collection('cleanup_writes').countDocuments()).toBe(0);
   expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
 });
 

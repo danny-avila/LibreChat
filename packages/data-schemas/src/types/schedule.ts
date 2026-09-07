@@ -84,6 +84,7 @@ export interface IScheduleRun {
   scheduledFor: Date;
   firedAt?: Date;
   conversationId?: string;
+  checkpointNamespace?: string;
   status: ScheduleRunStatus;
   error?: string;
   /** Deterministic durable-trigger delivery key for this occurrence, stamped at

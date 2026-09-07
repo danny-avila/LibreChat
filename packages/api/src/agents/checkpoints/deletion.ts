@@ -4,10 +4,14 @@ import { logger } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointReference } from '../checkpointer';
 import type { ResolvedCheckpointerConfig } from './config';
+import {
+  checkpointStorageKey,
+  checkpointStorageConfigs,
+  ownedCheckpointReferences,
+} from './storage';
 import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReferences } from '../checkpointer';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { historicalActorReferences } from './pruning';
-import { resolveCheckpointerConfig } from './config';
 
 interface DeletionTarget {
   _id: string;
@@ -47,16 +51,8 @@ export async function openCheckpointDeletion(
   if (!db || mongoose.connection.readyState !== 1) {
     throw new Error('Checkpoint database is unavailable');
   }
-  const resolved = resolveCheckpointerConfig(cfg);
   const collection = db.collection<DeletionTarget>(DELETION_COLLECTION);
-  const storageKey = (storage: ResolvedCheckpointerConfig) =>
-    hash(
-      JSON.stringify([
-        storage.type,
-        storage.checkpointCollectionName,
-        storage.checkpointWritesCollectionName,
-      ]),
-    );
+  const storageKey = checkpointStorageKey;
   const ownerPrefix = checkpointOwnerNamespacePrefix(userId, tenantId);
   const tenants = tenantId ? [tenantId, undefined] : [undefined];
   const prefixes = tenants.map((tenant) => {
@@ -70,7 +66,9 @@ export async function openCheckpointDeletion(
     .toArray();
   const targets = new Map(retained.map((target) => [target._id, target]));
   const stores = new Map(retained.map((target) => [storageKey(target.storage), target.storage]));
-  stores.set(storageKey(resolved), resolved);
+  for (const storage of await checkpointStorageConfigs(userId, tenantId, cfg)) {
+    stores.set(storageKey(storage), storage);
+  }
   const version = randomUUID();
   const batchSize = 256;
 
@@ -118,6 +116,30 @@ export async function openCheckpointDeletion(
           );
         }
         let batch: DeletionTarget[] = [];
+        for (const [key, storage] of stores) {
+          const rootPrefix = `${ownerPrefix}${key}:${hash(rootConversationId ?? null)}:`;
+          for await (const captured of ownedCheckpointReferences(
+            userId,
+            tenantId,
+            threads,
+            storage,
+          )) {
+            const { checkpoint, conversationId } = captured;
+            batch.push({
+              _id: `${rootPrefix}${hash(conversationId)}:${hash(JSON.stringify([checkpoint.threadId, checkpoint.checkpointNs, checkpoint.checkpointId]))}`,
+              version,
+              threadId: conversationId,
+              userId,
+              tenantId,
+              storage,
+              checkpoint,
+            });
+            if (batch.length === batchSize) {
+              await persist(batch);
+              batch = [];
+            }
+          }
+        }
         for await (const checkpoint of historicalActorReferences(userId, tenantId, threads)) {
           for (const [key, storage] of stores) {
             const rootPrefix = `${ownerPrefix}${key}:${hash(rootConversationId ?? null)}:`;
@@ -173,7 +195,7 @@ export async function openCheckpointDeletion(
   };
 }
 
-/** Retire unused deletion evidence; never erase payload or assume TTL succeeded. */
+/** Replay captured identities after topology deletion; never sweep new generations. */
 export function createCheckpointDeletionReclaimer(
   getOwnerJobs: (userId: string, tenantId?: string) => Promise<string[]>,
 ): (limit: number) => Promise<number> {
@@ -246,7 +268,25 @@ export function createCheckpointDeletionReclaimer(
           jobs = getOwnerJobs(target.userId, target.tenantId);
           jobsByOwner.set(owner, jobs);
         }
-        if ((await jobs).length > 0 || (await hasPersistence(target))) return 0;
+        if ((await jobs).length > 0) return 0;
+        if (target.checkpoint != null) {
+          const conversation = await db
+            .collection(mongoose.models.Conversation?.collection.name ?? 'conversations')
+            .findOne(
+              { user: target.userId, conversationId: target.threadId },
+              { projection: { _id: 1 } },
+            );
+          if (conversation == null) {
+            for (const tenant of target.tenantId ? [target.tenantId, undefined] : [undefined]) {
+              await deleteAgentEventCheckpointReferences(
+                [target.checkpoint],
+                checkpointOwnerNamespacePrefix(target.userId, tenant),
+                { ...target.storage, ttl: target.storage.ttlSeconds },
+              );
+            }
+          }
+        }
+        if (await hasPersistence(target)) return 0;
         return (await collection.deleteOne({ _id: target._id, version: target.version }))
           .deletedCount;
       }),

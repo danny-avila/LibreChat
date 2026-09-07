@@ -12,6 +12,13 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { Binary } from 'mongodb';
 import type { Filter } from 'mongodb';
 
+import type { CheckpointStorageRecord } from './storage';
+import {
+  CHECKPOINT_STORAGE_COLLECTION,
+  LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY,
+  checkpointStorageKey,
+} from './storage';
+
 export const LIBRECHAT_CHECKPOINT_OWNER_KEY = '__librechat_checkpoint_owner';
 export const LIBRECHAT_LEGACY_CHECKPOINT_KEY = '__librechat_legacy_checkpoint_id';
 
@@ -64,6 +71,27 @@ function identity(config: RunnableConfig): {
 
 /** Isolate physical storage by owner while preserving logical SDK references. */
 export class OwnedMongoSaver extends MongoDBSaver {
+  private async recordStorage(config: RunnableConfig): Promise<void> {
+    const namespace = config.configurable?.checkpoint_ns;
+    const candidate =
+      ownerOf(config) ??
+      (typeof namespace === 'string' ? namespace.match(/^lcg:v2:[0-9a-f]{64}:/)?.[0] : undefined) ??
+      config.configurable?.[LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY];
+    if (typeof candidate !== 'string' || !/^lcg:v2:[0-9a-f]{64}:$/.test(candidate)) return;
+    const storage = {
+      type: 'mongo' as const,
+      checkpointCollectionName: this.checkpointCollectionName,
+      checkpointWritesCollectionName: this.checkpointWritesCollectionName,
+    };
+    await this.db
+      .collection<CheckpointStorageRecord>(CHECKPOINT_STORAGE_COLLECTION)
+      .updateOne(
+        { _id: `${candidate}${checkpointStorageKey(storage)}` },
+        { $setOnInsert: { owner: candidate, storage } },
+        { upsert: true },
+      );
+  }
+
   private async tuple(doc: CheckpointRow, owner: string, legacy = false): Promise<CheckpointTuple> {
     const namespace = doc.checkpoint_ns.startsWith(owner)
       ? doc.checkpoint_ns.slice(owner.length)
@@ -202,6 +230,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
     checkpoint: Checkpoint,
     metadata: CheckpointMetadata,
   ): Promise<RunnableConfig> {
+    await this.recordStorage(config);
     const owner = ownerOf(config);
     if (owner == null) return super.put(config, checkpoint, metadata);
     const key = identity(config);
@@ -242,6 +271,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
     writes: PendingWrite[],
     taskId: string,
   ): Promise<void> {
+    await this.recordStorage(config);
     const owner = ownerOf(config);
     if (owner == null) return super.putWrites(config, writes, taskId);
     const key = identity(config);

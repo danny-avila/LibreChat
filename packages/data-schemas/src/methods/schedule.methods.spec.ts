@@ -463,6 +463,29 @@ describe('createScheduleWithSlot (atomic per-user cap)', () => {
 });
 
 describe('recordRunOutcome', () => {
+  it('persists the paused namespace and preserves it when recovery has no namespace projection', async () => {
+    const schedule = await Schedule.create(scheduleData());
+    const row = await ScheduleRun.create(runData(schedule, { conversationId: 'paused-thread' }));
+    const outcome = {
+      scheduleId: schedule.id,
+      scheduledFor: row.scheduledFor,
+      status: 'requires_action' as const,
+      conversationId: 'paused-thread',
+      autoDisableAfterFailures: 3,
+    };
+    await methods.recordRunOutcome({ ...outcome, checkpointNamespace: 'owned-namespace' });
+    await methods.recordRunOutcome(outcome);
+    expect(await methods.getActiveRunsForSchedule(schedule.id)).toEqual([
+      expect.objectContaining({
+        status: 'requires_action',
+        checkpointNamespace: 'owned-namespace',
+      }),
+    ]);
+    expect(await ScheduleRun.findOne({ _id: row._id }).lean()).not.toHaveProperty(
+      'checkpointNamespace',
+    );
+  });
+
   const scheduledFor = new Date('2026-07-20T12:00:00Z');
 
   it('success finalizes the run, increments runCount, and resets failure state', async () => {
