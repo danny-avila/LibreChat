@@ -3,13 +3,17 @@ const request = require('supertest');
 
 const mockLimiter = jest.fn((_req, _res, next) => next());
 const mockRateLimit = jest.fn(() => mockLimiter);
+const mockIpKeyGenerator = jest.fn((ip) => ip);
 
-jest.mock('express-rate-limit', () => mockRateLimit);
+jest.mock('express-rate-limit', () => ({
+  rateLimit: mockRateLimit,
+  ipKeyGenerator: mockIpKeyGenerator,
+}));
 jest.mock('@librechat/api', () => ({
   limiterCache: jest.fn(() => ({})),
 }));
 
-describe('code environment pairing rate limiter', () => {
+describe('code environment rate limiters', () => {
   let originalEnv;
 
   beforeEach(() => {
@@ -54,6 +58,24 @@ describe('code environment pairing rate limiter', () => {
     expect(mockRateLimit).toHaveBeenLastCalledWith(
       expect.objectContaining({ max: 5, windowMs: 3_600_000 }),
     );
+  });
+
+  it('uses a configurable user and normalized IP bucket for status polling', () => {
+    process.env.CODE_ENVIRONMENT_STATUS_USER_MAX = '24';
+    process.env.CODE_ENVIRONMENT_STATUS_USER_WINDOW = '2';
+    const { codeEnvironmentStatusLimiter } = require('./code');
+    const { limiterCache } = require('@librechat/api');
+    const req = { user: { id: 'user-1' }, ip: '2001:db8::1' };
+
+    codeEnvironmentStatusLimiter(req, {}, jest.fn());
+
+    const options = mockRateLimit.mock.calls.at(-1)[0];
+    expect(options).toEqual(
+      expect.objectContaining({ max: 24, windowMs: 120_000, keyGenerator: expect.any(Function) }),
+    );
+    expect(options.keyGenerator(req)).toBe('user-1:2001:db8::1');
+    expect(mockIpKeyGenerator).toHaveBeenCalledWith('2001:db8::1');
+    expect(limiterCache).toHaveBeenCalledWith('code_environment_status_user_limiter');
   });
 
   it('returns an actionable JSON response when the limit is exceeded', async () => {

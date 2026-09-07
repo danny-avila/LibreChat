@@ -17,8 +17,8 @@ import {
   CodeBridgeLifecycleError,
   CodeBridgePairingError,
   CodeBridgeStatusError,
+  createCodeBridgeStatusPoller,
   createCodeBridgePairing,
-  getCodeBridgeWorkerStatus,
   readCodeBridgeSecret,
   revokeCodeBridgeWorker,
 } from './bridge';
@@ -183,6 +183,12 @@ function pairingErrorResponse(error: unknown, res: Response): Response {
   });
 }
 
+function statusErrorCode(reason: CodeBridgeStatusError['reason']): number {
+  if (reason === 'timeout') return 504;
+  if (reason === 'busy') return 503;
+  return 502;
+}
+
 export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps): {
   list: (req: ServerRequest, res: Response) => Promise<Response>;
   register: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -197,6 +203,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   const principalAuthEnabled = deps.principalAuthEnabled ?? isCodeApiJwtAuthEnabled;
   const principalAuthReady = deps.principalAuthReady ?? assertCodeApiJwtSigningReady;
   const principalIsActive = deps.principalIsActive ?? (async () => true);
+  const workerStatus = createCodeBridgeStatusPoller({ fetchImpl: deps.fetchImpl });
 
   async function list(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -691,16 +698,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       return res.status(503).json({ error: 'Code environment status is not configured' });
     }
     try {
-      const workerStatus = await getCodeBridgeWorkerStatus({
+      const currentStatus = await workerStatus({
         baseURL: controlPlane.baseURL,
         token,
         workerId,
-        fetchImpl: deps.fetchImpl,
       });
-      return res.status(200).json({ environmentId, ...workerStatus });
+      return res.status(200).json({ environmentId, ...currentStatus });
     } catch (error) {
       if (error instanceof CodeBridgeStatusError) {
-        return res.status(error.reason === 'timeout' ? 504 : 502).json({
+        return res.status(statusErrorCode(error.reason)).json({
           error: 'Code environment status is unavailable',
           ...(error.upstreamStatus == null ? {} : { upstreamStatus: error.upstreamStatus }),
         });

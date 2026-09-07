@@ -1,7 +1,8 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { limiterCache } = require('@librechat/api');
 
 let configuredCodeEnvironmentPairingLimiter;
+let configuredCodeEnvironmentStatusLimiter;
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -38,4 +39,29 @@ const codeEnvironmentPairingLimiter = (req, res, next) => {
   return configuredCodeEnvironmentPairingLimiter(req, res, next);
 };
 
-module.exports = { codeEnvironmentPairingLimiter };
+const codeEnvironmentStatusLimiter = (req, res, next) => {
+  if (configuredCodeEnvironmentStatusLimiter == null) {
+    const max = positiveInteger(process.env.CODE_ENVIRONMENT_STATUS_USER_MAX, 120);
+    const windowInMinutes = positiveInteger(process.env.CODE_ENVIRONMENT_STATUS_USER_WINDOW, 1);
+
+    configuredCodeEnvironmentStatusLimiter = rateLimit({
+      windowMs: windowInMinutes * 60 * 1000,
+      max,
+      handler: (_limitedReq, limitedRes) =>
+        limitedRes.status(429).json({
+          error: {
+            code: 'code_environment_status_rate_limited',
+            message: 'Code environment status rate limit exceeded.',
+            type: 'rate_limit_error',
+          },
+        }),
+      keyGenerator: (limitedReq) =>
+        `${String(limitedReq.user.id)}:${ipKeyGenerator(limitedReq.ip)}`,
+      store: limiterCache('code_environment_status_user_limiter'),
+    });
+  }
+
+  return configuredCodeEnvironmentStatusLimiter(req, res, next);
+};
+
+module.exports = { codeEnvironmentPairingLimiter, codeEnvironmentStatusLimiter };

@@ -15,6 +15,10 @@ const mockCodeEnvironmentPairingLimiter = jest.fn((_req, _res, next) => {
   middlewareCalls.push('pairing-limit');
   next();
 });
+const mockCodeEnvironmentStatusLimiter = jest.fn((_req, _res, next) => {
+  middlewareCalls.push('status-limit');
+  next();
+});
 const mockRegistry = {};
 const mockGetCodeEnvironmentRegistry = jest.fn(() => mockRegistry);
 const mockHandlers = {
@@ -42,6 +46,7 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 }));
 jest.mock('~/server/middleware/limiters/code', () => ({
   codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
+  codeEnvironmentStatusLimiter: mockCodeEnvironmentStatusLimiter,
 }));
 
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
@@ -112,7 +117,7 @@ describe('code environment routes', () => {
       status: 'ready',
     });
 
-    expect(middlewareCalls).toEqual(['jwt']);
+    expect(middlewareCalls).toEqual(['jwt', 'status-limit']);
     expect(mockHandlers.status).toHaveBeenCalledTimes(1);
   });
 
