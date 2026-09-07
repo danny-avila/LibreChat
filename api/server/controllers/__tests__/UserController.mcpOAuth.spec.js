@@ -236,6 +236,9 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
       serverName: 'test-server',
       findToken: expect.any(Function),
     });
+    expect(mcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      MCPTokenStorage.getClientInfoAndMetadata.mock.invocationCallOrder[0],
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',

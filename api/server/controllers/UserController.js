@@ -287,6 +287,23 @@ const updateUserPluginsController = async (req, res) => {
           );
           ({ status, message } = normalizeHttpError(authService));
         }
+        const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+        try {
+          await invalidateCachedTools({ userId: user.id, serverName });
+        } catch (error) {
+          logger.error(
+            `[updateUserPluginsController] Error fencing MCP connection before OAuth teardown for user ${user.id}:`,
+            error,
+          );
+        }
+        try {
+          await getMCPManager()?.disconnectUserConnection(user.id, serverName);
+        } catch (error) {
+          logger.error(
+            `[updateUserPluginsController] Error disconnecting MCP connection before OAuth teardown for user ${user.id}:`,
+            error,
+          );
+        }
         try {
           // if the MCP server uses OAuth, perform a full cleanup and token revocation
           await maybeUninstallOAuthMCP(user.id, pluginKey, appConfig);
