@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
@@ -80,7 +79,6 @@ import {
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
-import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
@@ -753,7 +751,6 @@ export default function useResumableSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
-  const jotaiStore = useStore();
   const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
@@ -1294,23 +1291,6 @@ export default function useResumableSSE(
         return;
       }
       const startedAsNewConversation = optimisticStreamIdsRef.current.has(currentStreamId);
-      /** Terminal handlers below are fenced by this subscription and its generation.
-       * Clear every key the same run may have occupied, including the temporary
-       * new-chat key, so aborts and resumes from another tab cannot leave a stale
-       * approval card beside an idle composer. */
-      const clearPendingApprovalForTerminal = (conversationId?: string | null) => {
-        const conversationIds = new Set<string>([
-          currentStreamId,
-          ...(conversationId ? [conversationId] : []),
-          ...(currentSubmission.conversation?.conversationId
-            ? [currentSubmission.conversation.conversationId]
-            : []),
-          ...(startedAsNewConversation ? [String(Constants.NEW_CONVO)] : []),
-        ]);
-        for (const id of conversationIds) {
-          jotaiStore.set(pendingApprovalActionFamily(id), null);
-        }
-      };
       const clearAttachedGenerationCreatedAt = () => {
         updateActiveGenerationCreatedAt(currentStreamId, null, generationCreatedAt);
         if (startedAsNewConversation) {
@@ -1467,11 +1447,6 @@ export default function useResumableSSE(
         if (!isCurrentSubscription()) {
           return;
         }
-        const pendingConversationId =
-          pendingAction.conversationId ??
-          currentSubmission.conversation?.conversationId ??
-          currentStreamId;
-        jotaiStore.set(pendingApprovalActionFamily(pendingConversationId), pendingAction);
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
             pendingActionRetryRef.current = requestAnimationFrame(() => {
@@ -1997,7 +1972,6 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
-            clearPendingApprovalForTerminal(finalConvoId);
             clearComposerDrafts(runIndex, currentSubmission.conversation?.conversationId, {
               includeNewChatDraft:
                 !currentSubmission.conversation?.conversationId ||
@@ -2925,7 +2899,6 @@ export default function useResumableSSE(
         resetLive({ ...currentSubmission, userMessage });
         removeActiveJob(currentStreamId);
         clearAttachedGenerationCreatedAt();
-        clearPendingApprovalForTerminal(reconciliationConvoId);
         clearComposerDrafts(runIndex, reconciliationConvoId, {
           includeNewChatDraft:
             !reconciliationConvoId ||
@@ -3197,7 +3170,6 @@ export default function useResumableSSE(
 
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
-          clearPendingApprovalForTerminal(recoveryConvoId);
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
@@ -3297,7 +3269,6 @@ export default function useResumableSSE(
           flushPendingDeltas();
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
-          clearPendingApprovalForTerminal(recoveryConvoId);
           resetLive({ ...currentSubmission, userMessage });
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
@@ -3627,7 +3598,6 @@ export default function useResumableSSE(
           resetLive({ ...currentSubmission, userMessage });
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
-          clearPendingApprovalForTerminal(recoveryConvoId);
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
@@ -3797,7 +3767,6 @@ export default function useResumableSSE(
       addActiveJob,
       setSubmission,
       updateActiveGenerationCreatedAt,
-      jotaiStore,
     ],
   );
 

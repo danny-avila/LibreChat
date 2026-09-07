@@ -32,10 +32,6 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import {
-  PendingToolApprovalButton,
-  PendingToolApprovalPanel,
-} from '~/components/Chat/approval/Review';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
@@ -634,9 +630,6 @@ const ChatForm = memo(function ChatForm({
             {index === 0 && (
               <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
             )}
-            {index === 0 && conversationId != null && (
-              <PendingToolApprovalPanel conversationId={conversationId} />
-            )}
             <SkillsCommand
               index={index}
               textAreaRef={textAreaRef}
@@ -796,9 +789,6 @@ const ChatForm = memo(function ChatForm({
                   setConversation={setConversation}
                   disabled={disableInputs || isSubmitting}
                 />
-                {index === 0 && conversationId != null && (
-                  <PendingToolApprovalButton conversationId={conversationId} />
-                )}
                 <div className="mx-auto flex" />
                 <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
                 {SpeechToText && (

@@ -77,14 +77,6 @@ type ApprovalResumeResponse = {
 const approvalCards = (page: Page) => messagesView(page).getByTestId('tool-approval');
 const approvalCard = (page: Page, toolCallId: string) =>
   messagesView(page).locator(`[data-testid="tool-approval"][data-tool-call-id="${toolCallId}"]`);
-const composerApprovalPanel = (page: Page) => page.locator('#pending-tool-approval-panel');
-
-async function collapseComposerApproval(page: Page) {
-  const panel = composerApprovalPanel(page);
-  await expect(panel).toBeVisible({ timeout: 30000 });
-  await panel.getByRole('button', { name: 'Collapse', exact: true }).click();
-  await expect(panel).toHaveCount(0);
-}
 
 function isResumeRequest(request: Request) {
   return (
@@ -151,13 +143,6 @@ async function startApproval(
   const card = approvalCards(page).first();
   await expect(card).toBeVisible({ timeout: 30000 });
   await expect(card).toContainText(expectedReason);
-  /**
-   * The primary composer review opens automatically above the historical
-   * timeline card. Verify that entry point, then collapse it so these tests
-   * can keep exercising the timeline fallback without an overlay intercepting
-   * its controls. The native BYOM acceptance spec submits through the composer.
-   */
-  await collapseComposerApproval(page);
   return card;
 }
 
@@ -510,7 +495,6 @@ test.describe('tool approvals', () => {
       // decisions, not just the simpler one-call resume path.
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
-      await collapseComposerApproval(page);
       await expect(approvalCards(page)).toHaveCount(2);
 
       const firstCard = approvalCard(page, firstCallId);
@@ -626,7 +610,6 @@ test.describe('tool approvals', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
-      await collapseComposerApproval(page);
       const rehydratedCard = approvalCard(page, toolCallId);
       await expect(rehydratedCard).toBeVisible({ timeout: 30000 });
       await expect(rehydratedCard).toContainText(APPROVAL_REASON);
@@ -634,7 +617,6 @@ test.describe('tool approvals', () => {
       await page.goto(NEW_CHAT_PATH, { waitUntil: 'domcontentloaded' });
       await expect(approvalCards(page)).toHaveCount(0);
       await page.goto(conversationPath, { waitUntil: 'domcontentloaded' });
-      await collapseComposerApproval(page);
       const navigatedCard = approvalCard(page, toolCallId);
       await expect(navigatedCard).toBeVisible({ timeout: 30000 });
       await expect(navigatedCard).toContainText(APPROVAL_REASON);
