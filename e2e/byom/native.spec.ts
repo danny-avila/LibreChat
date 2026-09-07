@@ -183,13 +183,13 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     expect(request.postDataJSON()).toMatchObject({ codeApprovalMode: selectedApprovalMode });
     const { conversationId } = (await admitted.json()) as { conversationId: string };
     if (decision) {
-      const card = page.getByTestId('tool-approval').last();
-      await expect(card).toBeVisible({ timeout: 30_000 });
+      const reviewPanel = page.locator('#pending-tool-approval-panel');
+      await expect(reviewPanel).toBeVisible({ timeout: 30_000 });
       /** The side effect must not occur before the user has decided. */
       if (operation === 'create')
         expect(await readdir(selectedWorker.root)).not.toContain('proof.txt');
-      await card.getByRole('button', { name: decision, exact: true }).click();
-      await card.getByRole('button', { name: 'Submit', exact: true }).click();
+      await reviewPanel.getByRole('button', { name: decision, exact: true }).click();
+      await reviewPanel.getByRole('button', { name: 'Continue', exact: true }).click();
     }
     let result: Message | undefined;
     await expect
