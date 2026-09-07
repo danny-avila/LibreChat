@@ -25,6 +25,7 @@ import { getCodeExecutionRouteKey, type CodeExecutionContext } from './execution
 import { assertSkillFileContentAllowed } from '~/skills/protection';
 import { createSkillContentDigest } from './compatibility';
 import { extractInvokedSkillsFromPayload } from './run';
+import { resolveDownloadPath } from '~/storage/path';
 import { SKILL_FILE_PREFIX } from './skills';
 
 const MAX_INSPECTABLE_SKILL_FILE_BYTES = 10 * 1024 * 1024;
@@ -197,7 +198,7 @@ async function collectSkillUploadFiles(
         );
         return null;
       }
-      const stream = await strategy.getDownloadStream(req, file.filepath);
+      const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
       return { stream, filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}` };
     }),
   );
@@ -402,7 +403,7 @@ async function executePrimeSkillFiles(
           logger.warn('[primeSkillFiles] No download stream for stored skill file');
           continue;
         }
-        const sourceStream = await strategy.getDownloadStream(req, file.filepath);
+        const sourceStream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
         const buffer = await bufferSkillFileStream(sourceStream);
         if (buffer == null) {
           throwIfStoredSkillFileMustBeInspectable(req);

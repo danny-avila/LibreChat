@@ -65,7 +65,7 @@ jobs:
         with:
           name: lighthouse
           path: |
-            .lighthouseci/
+            .lighthouse/
             lighthouse-ci.log
           include-hidden-files: true
           retention-days: 7

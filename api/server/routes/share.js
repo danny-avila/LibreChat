@@ -24,6 +24,7 @@ const {
   createSharedLangfuseSessionResolver,
   recordShareLinkRejection,
   traceIdForMessage,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   logger,
@@ -297,7 +298,7 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 
   // Strip any cache-busting query string (e.g. code-output images add `?v=...`) so
   // the local stream resolves the real filename, not a literal `*.png?v=...` path.
-  const streamPath = (file.storageKey || file.filepath || '').split('?')[0];
+  const streamPath = (resolveDownloadPath(file) || '').split('?')[0];
   const fileStream = await getDownloadStream(req, streamPath);
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
