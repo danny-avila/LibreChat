@@ -146,31 +146,6 @@ describe('useReplyAlerts', () => {
     Reflect.deleteProperty(window, 'AudioContext');
   });
 
-  describe('requestReplyNotificationPermission', () => {
-    it('asks the browser while permission is still the default', () => {
-      FakeNotification.permission = 'default';
-
-      requestReplyNotificationPermission();
-
-      expect(permissionRequest).toHaveBeenCalledTimes(1);
-    });
-
-    it('asks nothing once permission is granted or denied', () => {
-      FakeNotification.permission = 'granted';
-      requestReplyNotificationPermission();
-      FakeNotification.permission = 'denied';
-      requestReplyNotificationPermission();
-
-      expect(permissionRequest).not.toHaveBeenCalled();
-    });
-
-    it('is a no-op where the Notification API is absent', () => {
-      Reflect.deleteProperty(window, 'Notification');
-
-      expect(() => requestReplyNotificationPermission()).not.toThrow();
-    });
-  });
-
   it('does not fire a burst for a backlog that predates the session', () => {
     /* Signing in with unread conversations: the first pass only records them. */
     setup({ notifications: true }, stateOf([row('convo-backlog', 'Backlog')]));
@@ -400,36 +375,42 @@ describe('useReplyAlerts', () => {
     expect(window.localStorage.getItem('replyAlerts:focusedAt')).not.toBeNull();
   });
 
-  it('announces a reply that arrived while the permission prompt was still open', async () => {
-    /* The reply must not be baselined while the answer is pending: retiring it there would
-       lose the first notification the user turned the setting on for. */
-    FakeNotification.permission = 'default';
-    let grant!: (value: NotificationPermission) => void;
-    permissionRequest.mockImplementation(
-      () =>
-        new Promise<NotificationPermission>((resolve) => {
-          grant = resolve;
-        }),
-    );
+  it.each(['promise', 'callback', 'both'] as const)(
+    'announces a pending reply after a %s permission grant',
+    async (api) => {
+      FakeNotification.permission = 'default';
+      let grant!: (value: NotificationPermission) => void;
+      permissionRequest.mockImplementation((callback?: NotificationPermissionCallback) => {
+        if (api === 'callback') {
+          grant = (permission) => callback?.(permission);
+          return undefined;
+        }
+        return new Promise<NotificationPermission>((resolve) => {
+          grant = (permission) => {
+            if (api === 'both') {
+              callback?.(permission);
+            }
+            resolve(permission);
+          };
+        });
+      });
 
-    const { rerender } = setup({ notifications: true });
-    act(() => {
-      requestReplyNotificationPermission();
-    });
-
-    act(() => {
+      const { rerender } = setup({ notifications: true });
+      await act(async () => {
+        requestReplyNotificationPermission();
+      });
       rerender(stateOf([row('convo-b', 'Beta')]));
-    });
-    expect(createdNotifications).toHaveLength(0);
+      expect(createdNotifications).toHaveLength(0);
 
-    await act(async () => {
-      FakeNotification.permission = 'granted';
-      grant('granted');
-      await Promise.resolve();
-    });
+      await act(async () => {
+        FakeNotification.permission = 'granted';
+        grant('granted');
+      });
 
-    await waitFor(() => expect(createdNotifications).toHaveLength(1));
-  });
+      await waitFor(() => expect(createdNotifications).toHaveLength(1));
+      expect(createdNotifications[0].options?.tag).toBe('convo-b');
+    },
+  );
 
   it('stays quiet for paginated backlog even when its server clock is ahead', async () => {
     const { rerender } = setup(

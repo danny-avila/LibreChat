@@ -150,13 +150,19 @@ export const requestReplyNotificationPermission = (): void => {
   if (!('Notification' in window) || Notification.permission !== 'default') {
     return;
   }
-  /* Wrapped rather than chained directly: the legacy callback form of this API returns
-     undefined, and older Safari still ships it. */
-  void Promise.resolve(Notification.requestPermission()).finally(() => {
+  let settled = false;
+  const publishPermission = () => {
+    if (settled) {
+      return;
+    }
+    settled = true;
     for (const listener of permissionListeners) {
       listener();
     }
-  });
+  };
+  /* Callback-only browsers return undefined; dual implementations must publish only once. */
+  const request = Notification.requestPermission(publishPermission);
+  void request?.then(publishPermission, publishPermission);
 };
 
 /**

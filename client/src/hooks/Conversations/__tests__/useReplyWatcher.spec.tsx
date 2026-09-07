@@ -2,7 +2,7 @@ import React from 'react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryObserver, QueryClientProvider } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ConversationCursorData } from '~/utils/convos';
 import {
@@ -810,26 +810,38 @@ describe('useReplyWatcher', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
   });
 
-  it('refreshes the list on a slow tick while the tab stays focused', async () => {
-    /* A schedule or another device can finish a run this tab never streamed and never saw as
-       an active job; while the user sits here, nothing else would ask. */
+  it('refreshes remote sidebar replies while focused with every optional alert disabled', async () => {
     (document.hasFocus as jest.Mock).mockReturnValue(true);
-    const { queryClient } = setup({ badge: true });
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    const { queryClient, cachedConvo, unmount } = setup();
+    const observer = new QueryObserver(queryClient, {
+      queryKey: listKey,
+      staleTime: Infinity,
+      queryFn: async () => ({
+        pages: [
+          {
+            conversations: [
+              { conversationId: CONVO_ID, title: 'Watched', lastResponseAt: RESPONDED_AT },
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null],
+      }),
+    });
+    const unsubscribe = observer.subscribe(() => {});
 
     await act(async () => {
       jest.advanceTimersByTime(60_000);
     });
-    expect(invalidate).not.toHaveBeenCalled();
-    expect(mockListConversations).not.toHaveBeenCalled();
+    expect(isConversationUnseen(cachedConvo())).toBe(false);
 
     await act(async () => {
-      jest.advanceTimersByTime(5 * 60_000);
+      jest.advanceTimersByTime(4 * 60_000);
     });
-
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
-    /* The away poll stays away-only: a focused tab never issues its own list request. */
+    expect(isConversationUnseen(cachedConvo())).toBe(true);
     expect(mockListConversations).not.toHaveBeenCalled();
+    unsubscribe();
+    unmount();
   });
 });
 
