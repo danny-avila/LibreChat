@@ -641,6 +641,17 @@ describe('OpenIDRefreshFlight', () => {
     ).resolves.toBeNull();
   });
 
+  it('keeps cross-worker pre-grant cancellation retryable rather than requiring sign-in', async () => {
+    db.findOpenIDRefreshFlight.mockResolvedValueOnce({
+      status: 'failed',
+      errorMessage: 'OPENID_REFRESH_CANCELLED_BEFORE_GRANT',
+    });
+    await expect(waitForOpenIDRefreshFlight({ key: 'flight-key' })).rejects.toMatchObject({
+      status: 503,
+      retryable: true,
+    });
+  });
+
   it('throws when another worker records a failed flight', async () => {
     db.findOpenIDRefreshFlight.mockResolvedValueOnce({
       status: 'failed',

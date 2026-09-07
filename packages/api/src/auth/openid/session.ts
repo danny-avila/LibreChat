@@ -25,6 +25,7 @@ import type {
 import type { OpenIdSessionDeps, OpenIdSessionParams } from '~/images/session';
 import type { TokenResult } from './flight';
 import {
+  OPENID_REFRESH_CANCELLED_BEFORE_GRANT,
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
   toOpenIDLogArgument,
@@ -1596,8 +1597,13 @@ export function createOpenIDSessionRefreshService(
         let resolvedTokens: MarkedOIDCTokens | null = null;
         let successorRefreshToken: string | undefined;
         let completionIndeterminate = false;
+        let grantStarted = false;
         const publicationEffects = createSessionPublicationEffects();
         try {
+          /** Cancellation before admission must fail the acquired lease. Once a grant
+           * starts, settle its rotating credentials durably even if its caller stops. */
+          signal?.throwIfAborted();
+          grantStarted = true;
           resolvedTokens = await performIdpRefreshGrant(
             req,
             res,
@@ -1724,10 +1730,15 @@ export function createOpenIDSessionRefreshService(
           }
           if (!completionIndeterminate) {
             try {
+              let failure =
+                error instanceof Error ? error : new Error('OpenID session refresh failed');
+              if (!grantStarted && signal?.aborted) {
+                failure = new Error(OPENID_REFRESH_CANCELLED_BEFORE_GRANT);
+              }
               await failOpenIDRefreshFlight({
                 key,
                 ownerId: flight.ownerId,
-                error: error instanceof Error ? error : new Error('OpenID session refresh failed'),
+                error: failure,
               });
             } catch (flightError) {
               logger.warn('[OpenIDSessionRefresh] Failed to mark shared refresh flight failed', {

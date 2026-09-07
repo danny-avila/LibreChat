@@ -2316,6 +2316,93 @@ describe('OpenIDSessionRefresh', () => {
       },
     );
 
+    it('fails an acquired lease when cancelled during acquisition and lets an active joiner proceed', async () => {
+      const expiry = Math.floor(Date.now() / 1000) + 3600;
+      const tokens = {
+        accessToken: makeJwt(expiry),
+        idToken: makeJwt(expiry),
+        refreshToken: 'rt-cancel-acquisition',
+      };
+      const leaderReq = buildReq(tokens);
+      const joinerReq = buildReq(tokens);
+      const controller = new AbortController();
+      const reason = new Error('request cancelled during acquisition');
+      let finishAcquisition;
+      acquireOpenIDRefreshFlight.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishAcquisition = resolve;
+        }),
+      );
+      const refreshed = {
+        access_token: makeJwt(expiry + 3600),
+        refresh_token: 'rt-acquisition-successor',
+        expires_in: 3600,
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce(refreshed);
+      const providerFor = (req) =>
+        createOpenIDSessionTokenProvider({
+          req,
+          user: makeOpenIdUser(),
+          tokenPreference: 'access_token',
+        });
+      const leader = providerFor(leaderReq)({ forceRefresh: true, signal: controller.signal });
+      const outcome = leader.then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      await Promise.resolve();
+      const joiner = providerFor(joinerReq)({ forceRefresh: true });
+      await Promise.resolve();
+      controller.abort(reason);
+      finishAcquisition({ acquired: true, ownerId: 'cancelled-owner' });
+      await expect(outcome).resolves.toEqual({ error: reason });
+      await expect(joiner).resolves.toMatchObject({
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token,
+      });
+      expect(failOpenIDRefreshFlight).toHaveBeenCalledWith({
+        key: 'flight:session-A:rt-cancel-acquisition',
+        ownerId: 'cancelled-owner',
+        error: new Error('OPENID_REFRESH_CANCELLED_BEFORE_GRANT'),
+      });
+      expect(leaderReq.session.save).not.toHaveBeenCalled();
+      expect(joinerReq.session.save).toHaveBeenCalledTimes(1);
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+      expect(failOpenIDRefreshFlight.mock.invocationCallOrder[0]).toBeLessThan(
+        openIdClient.refreshTokenGrant.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('settles a rotating grant that was already admitted before cancellation', async () => {
+      const expiry = Math.floor(Date.now() / 1000) + 3600;
+      const req = buildReq({
+        accessToken: makeJwt(expiry),
+        idToken: makeJwt(expiry),
+        refreshToken: 'rt-admitted',
+      });
+      const controller = new AbortController();
+      let finishGrant;
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishGrant = resolve;
+        }),
+      );
+      const provider = createOpenIDSessionTokenProvider({
+        req,
+        user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
+      });
+      const result = provider({ forceRefresh: true, signal: controller.signal });
+      await Promise.resolve();
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+      controller.abort(new Error('stopped after admission'));
+      finishGrant({ access_token: 'new-access', refresh_token: 'rt-settled', expires_in: 3600 });
+      await expect(result).resolves.toMatchObject({ access_token: 'new-access' });
+      expect(req.session.openidTokens.refreshToken).toBe('rt-settled');
+      expect(completeOpenIDRefreshFlight).toHaveBeenCalled();
+      expect(failOpenIDRefreshFlight).not.toHaveBeenCalled();
+    });
+
     it('keeps an active local joiner when a cross-worker publication follower is cancelled', async () => {
       const expiry = Math.floor(Date.now() / 1000) + 3600;
       const tokens = {

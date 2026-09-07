@@ -11,6 +11,7 @@ import type {
   RefreshKeyInput,
 } from './types';
 import {
+  OPENID_REFRESH_CANCELLED_BEFORE_GRANT,
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
   toOpenIDLogArgument,
@@ -594,6 +595,15 @@ export function createOpenIDRefreshFlightService({
     flight: RefreshFlightRecord | null,
   ): Promise<TokenResult | null> {
     if (!flight) return null;
+    if (
+      flight.status === 'failed' &&
+      flight.errorMessage === OPENID_REFRESH_CANCELLED_BEFORE_GRANT
+    ) {
+      throw Object.assign(new Error('OpenID refresh owner stopped before starting the grant'), {
+        status: 503,
+        retryable: true,
+      });
+    }
     if (flight.status === 'revoked')
       throw new Error(flight.errorMessage || 'OpenID refresh was revoked by logout');
     if (flight.status === 'failed')
