@@ -25,18 +25,12 @@ type LimiterOptions = {
 };
 
 describe('code environment limiters', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   test('uses a bounded per-user pairing bucket', () => {
     const req = { user: { id: 'user-1' } } as Request & { user: { id: string } };
 
     codeEnvironmentPairingLimiter(req, {} as Response, jest.fn());
 
-    const options = mockRateLimit.mock.calls[
-      mockRateLimit.mock.calls.length - 1
-    ]?.[0] as LimiterOptions;
+    const options = mockRateLimit.mock.calls[0]?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 5, windowMs: 3_600_000 }));
     expect(options.keyGenerator(req)).toBe('user-1');
     expect(mockLimiterCache).toHaveBeenCalledWith('code_environment_pairing_user_limiter');
@@ -65,9 +59,7 @@ describe('code environment limiters', () => {
 
     codeEnvironmentStatusLimiter(req, {} as Response, jest.fn());
 
-    const options = mockRateLimit.mock.calls[
-      mockRateLimit.mock.calls.length - 1
-    ]?.[0] as LimiterOptions;
+    const options = mockRateLimit.mock.calls[1]?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 120, windowMs: 60_000 }));
     expect(options.keyGenerator(req)).toBe('user-1');
     expect(mockIpKeyGenerator).not.toHaveBeenCalled();
@@ -79,14 +71,15 @@ describe('code environment limiters', () => {
 
     codeEnvironmentStatusIpLimiter(req, {} as Response, jest.fn());
 
-    const options = mockRateLimit.mock.calls[
-      mockRateLimit.mock.calls.length - 1
-    ]?.[0] as LimiterOptions;
+    const options = mockRateLimit.mock.calls[2]?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 300, windowMs: 60_000 }));
     expect(options.keyGenerator(req)).toBe('2001:db8::1');
     expect(mockIpKeyGenerator).toHaveBeenCalledWith('2001:db8::1');
     expect(mockLimiterCache).toHaveBeenCalledWith('code_environment_status_ip_limiter');
-    expect(options.keyGenerator({} as Request)).toBe('');
-    expect(mockIpKeyGenerator).toHaveBeenLastCalledWith('');
+    expect(options.keyGenerator({ socket: { remoteAddress: '192.0.2.1' } } as Request)).toBe(
+      '192.0.2.1',
+    );
+    expect(mockIpKeyGenerator).toHaveBeenLastCalledWith('192.0.2.1');
+    expect(options.keyGenerator({ socket: {} } as Request)).toBe('unknown');
   });
 });

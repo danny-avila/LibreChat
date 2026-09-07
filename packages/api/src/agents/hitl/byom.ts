@@ -1,5 +1,12 @@
 import { Constants } from '@librechat/agents';
+import {
+  CODE_APPROVAL_MODES,
+  getAllowedCodeApprovalModes,
+  resolveCodeApprovalMode,
+  resolveCodePermissionDecision,
+} from 'librechat-data-provider';
 import type {
+  CodeApprovalMode,
   CodeEnvironmentPermissionDecision,
   CodeEnvironmentUserConfigSchema,
   CodeEnvironmentUserSettings,
@@ -127,12 +134,62 @@ export function collectAttachedCodeEnvironmentPolicySettings(
 function permissionDecision(
   policy: AttachedCodeEnvironmentPolicySettings | undefined,
   category: PermissionCategory,
+  mode?: CodeApprovalMode,
 ): CodeEnvironmentPermissionDecision {
   const field = policy?.configSchema?.permissions?.[category];
   const configuredDecision = policy?.settings?.permissions?.[category];
-  return configuredDecision != null && field?.allowed.includes(configuredDecision) === true
-    ? configuredDecision
-    : (field?.default ?? 'ask');
+  const decision =
+    configuredDecision != null && field?.allowed.includes(configuredDecision) === true
+      ? configuredDecision
+      : (field?.default ?? 'ask');
+  const effectiveMode = getAllowedCodeApprovalModes({
+    environment: 'attached',
+    allowedModes: CODE_APPROVAL_MODES,
+    configSchema: policy?.configSchema,
+    settings: policy?.settings,
+  }).includes(mode ?? 'ask')
+    ? mode
+    : undefined;
+  return resolveCodePermissionDecision({ mode: effectiveMode, category, decision });
+}
+
+export function resolveAttachedCodeApprovalMode(
+  requested: unknown,
+  settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings>,
+  approvalsEnabled = true,
+): CodeApprovalMode | undefined {
+  if (!approvalsEnabled) {
+    if (requested === 'ask') {
+      return undefined;
+    }
+    return resolveCodeApprovalMode(requested, {
+      environment: 'attached',
+      allowedModes: [],
+      enabled: false,
+    });
+  }
+  let resolved: CodeApprovalMode | undefined;
+  let rejection: Error | undefined;
+  for (const policy of settingsByAgentId.values()) {
+    try {
+      resolved = resolveCodeApprovalMode(requested, {
+        environment: 'attached',
+        allowedModes: CODE_APPROVAL_MODES,
+        configSchema: policy.configSchema,
+        settings: policy.settings,
+      });
+    } catch (error) {
+      rejection = error as Error;
+    }
+  }
+  if (resolved == null && rejection != null) throw rejection;
+  return (
+    resolved ??
+    resolveCodeApprovalMode(requested, {
+      environment: 'attached',
+      allowedModes: CODE_APPROVAL_MODES,
+    })
+  );
 }
 
 function exactToolMatcher(toolNames: ReadonlySet<string>): string {
@@ -143,16 +200,18 @@ function exactToolMatcher(toolNames: ReadonlySet<string>): string {
 export function buildAttachedCodeEnvironmentAdmissionHooks(
   attachedAgentIds: ReadonlySet<string>,
   settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
+  mode?: CodeApprovalMode,
 ): ResolvedToolApprovalHook[] {
-  const hook = createAttachedCodeEnvironmentPolicyHook(attachedAgentIds, settingsByAgentId);
+  const hook = createAttachedCodeEnvironmentPolicyHook(attachedAgentIds, settingsByAgentId, mode);
   const hooks: ResolvedToolApprovalHook[] = [];
   const askFileAgents = new Set<string>();
   const askCommandAgents = new Set<string>();
   const skillAuthoringAgents = new Set<string>();
   for (const agentId of attachedAgentIds) {
     const policy = settingsByAgentId.get(agentId);
-    if (permissionDecision(policy, 'fileWrite') === 'ask') askFileAgents.add(agentId);
-    if (permissionDecision(policy, 'commandExecution') === 'ask') askCommandAgents.add(agentId);
+    if (permissionDecision(policy, 'fileWrite', mode) === 'ask') askFileAgents.add(agentId);
+    if (permissionDecision(policy, 'commandExecution', mode) === 'ask')
+      askCommandAgents.add(agentId);
     if (policy?.skillAuthoringAvailable === true) skillAuthoringAgents.add(agentId);
   }
   if (askFileAgents.size > 0) {
@@ -183,6 +242,7 @@ export function buildAttachedCodeEnvironmentAdmissionHooks(
 export function createAttachedCodeEnvironmentPolicyHook(
   attachedAgentIds: ReadonlySet<string>,
   settingsByAgentId: ReadonlyMap<string, AttachedCodeEnvironmentPolicySettings> = new Map(),
+  mode?: CodeApprovalMode,
 ): HookCallback<'PreToolUse'> {
   return async (input) => {
     let category: PermissionCategory | undefined;
@@ -215,7 +275,11 @@ export function createAttachedCodeEnvironmentPolicyHook(
         reason: `${input.toolName} could not be attributed to an attached code environment`,
       };
     }
-    const decision = permissionDecision(settingsByAgentId.get(input.executingAgentId), category);
+    const decision = permissionDecision(
+      settingsByAgentId.get(input.executingAgentId),
+      category,
+      mode,
+    );
     if (decision === 'allow') {
       return { decision };
     }

@@ -35,6 +35,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  CodeApprovalMode,
   TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
@@ -62,6 +63,7 @@ import {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
+  resolveAttachedCodeApprovalMode,
 } from '~/agents/hitl/byom';
 import {
   CHECK_BACKGROUND_TASK_NAME,
@@ -1551,6 +1553,7 @@ export async function createRun({
   messages,
   discoveredToolNames,
   requestBody,
+  codeApprovalMode: requestedCodeApprovalMode,
   user,
   tenantId,
   centralTraceExportEnabled,
@@ -1589,6 +1592,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
+  codeApprovalMode?: CodeApprovalMode;
   user?: IUser;
   tenantId?: string;
   /**
@@ -1975,6 +1979,11 @@ export async function createRun({
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
   const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
   const attachedCodeEnvironmentSettings = collectAttachedCodeEnvironmentPolicySettings(agents);
+  const codeApprovalMode = resolveAttachedCodeApprovalMode(
+    requestedCodeApprovalMode,
+    attachedCodeEnvironmentSettings,
+    agentsEndpointConfig?.toolApproval?.enabled !== false,
+  );
   assertAttachedCodeEnvironmentApprovalSupported({
     hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
     hitlCapable,
@@ -2133,6 +2142,7 @@ export async function createRun({
                   hook: createAttachedCodeEnvironmentPolicyHook(
                     attachedCodeEnvironmentAgentIds,
                     attachedCodeEnvironmentSettings,
+                    codeApprovalMode,
                   ),
                 },
               ]
@@ -2142,6 +2152,9 @@ export async function createRun({
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {
     if (resolvedAgent.codeExecutionContext?.environmentType === 'attached') {
+      // The admission hook closes over these collections. A lazily resolved agent
+      // therefore receives its own current machine policy before its first tool call;
+      // a mode that machine does not permit safely falls back to ask/deny there.
       attachedCodeEnvironmentAgentIds.add(resolvedAgent.id);
       attachedCodeEnvironmentSettings.set(resolvedAgent.id, {
         configSchema: resolvedAgent.codeExecutionContext.codeEnvironmentConfigSchema,

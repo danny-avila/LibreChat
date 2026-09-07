@@ -158,7 +158,9 @@ try {
     endpoints: {
       agents: {
         capabilities: ['tools', 'execute_code', 'stateful_code_sessions'],
-        toolApproval: { enabled: true, mode: 'default', allow: ['read_file'] },
+        /** BYOM supplies the safe Ask baseline. The endpoint bypass permits a
+         * per-turn Accept edits selection without weakening command approvals. */
+        toolApproval: { enabled: true, mode: 'bypass' },
         statefulCodeSessions: {
           allowedEnvironments: ['conversation'],
           principalWorkers: { enabled: true, maxPerUser: 2 },
@@ -172,7 +174,7 @@ try {
               pairing: { allowPrincipalWorkers: true, tokenEnv: 'BYOM_ENROLLMENT_TOKEN' },
               configSchema: {
                 permissions: {
-                  fileWrite: { allowed: ['ask'], default: 'ask' },
+                  fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
                   commandExecution: { allowed: ['ask'], default: 'ask' },
                 },
               },

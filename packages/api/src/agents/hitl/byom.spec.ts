@@ -5,6 +5,7 @@ import {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
+  resolveAttachedCodeApprovalMode,
 } from './byom';
 import { canAgentGraphPause } from './admission';
 
@@ -83,6 +84,122 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
     await expect(
       hook({ toolName: 'bash_tool', executingAgentId: 'attached-agent' } as never, signal),
     ).resolves.toMatchObject({ decision: 'deny' });
+  });
+
+  test('accept edits allows workspace writes but continues asking for commands', async () => {
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'attached-agent',
+        {
+          configSchema: {
+            permissions: {
+              fileWrite: { allowed: ['allow', 'ask'], default: 'ask' },
+              commandExecution: { allowed: ['allow', 'ask'], default: 'ask' },
+            },
+          },
+        },
+      ],
+    ]);
+    const mode = resolveAttachedCodeApprovalMode('acceptEdits', settings);
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['attached-agent']),
+      settings,
+      mode,
+    );
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toEqual({ decision: 'allow' });
+    await expect(
+      hook({ toolName: 'bash_tool', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'ask' });
+  });
+
+  test('rejects accept edits when the attached machine excludes file-write allow', () => {
+    expect(() =>
+      resolveAttachedCodeApprovalMode(
+        'acceptEdits',
+        new Map([
+          [
+            'attached-agent',
+            {
+              configSchema: {
+                permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } },
+              },
+            },
+          ],
+        ]),
+      ),
+    ).toThrow('not permitted');
+  });
+
+  test('keeps a restrictive sibling asking without disabling accept edits elsewhere', async () => {
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'permissive-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['allow', 'ask'], default: 'ask' } },
+          },
+        },
+      ],
+      [
+        'restrictive-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } },
+          },
+        },
+      ],
+    ]);
+    const mode = resolveAttachedCodeApprovalMode('acceptEdits', settings);
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['permissive-agent', 'restrictive-agent']),
+      settings,
+      mode,
+    );
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'permissive-agent' } as never, signal),
+    ).resolves.toEqual({ decision: 'allow' });
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'restrictive-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'ask' });
+  });
+
+  test('applies a restrictive policy discovered after lazy agent resolution', async () => {
+    const attachedIds = new Set<string>(['eager-agent']);
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'eager-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['allow', 'ask'], default: 'ask' } },
+          },
+        },
+      ],
+    ]);
+    const mode = resolveAttachedCodeApprovalMode('acceptEdits', settings);
+    const hook = createAttachedCodeEnvironmentPolicyHook(attachedIds, settings, mode);
+
+    attachedIds.add('lazy-agent');
+    settings.set('lazy-agent', {
+      configSchema: {
+        permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } },
+      },
+    });
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'lazy-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'ask' });
+  });
+
+  test('rejects an explicit mode when approvals are disabled by the administrator', () => {
+    expect(resolveAttachedCodeApprovalMode('ask', new Map(), false)).toBeUndefined();
+    expect(() => resolveAttachedCodeApprovalMode('acceptEdits', new Map(), false)).toThrow(
+      'not permitted',
+    );
+    expect(resolveAttachedCodeApprovalMode(undefined, new Map(), false)).toBeUndefined();
   });
 
   test.each(['create_file', 'edit_file'])(

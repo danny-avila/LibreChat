@@ -1,4 +1,9 @@
 {
+  "com_ui_code_approval_mode": "Code approval mode",
+  "com_ui_code_approval_ask": "Ask before changes",
+  "com_ui_code_approval_ask_description": "Ask before editing files or running commands",
+  "com_ui_code_approval_accept_edits": "Accept edits",
+  "com_ui_code_approval_accept_edits_description": "Allow file edits; continue asking before commands",
   "chat_direction_left_to_right": "Left to Right",
   "chat_direction_right_to_left": "Right to Left",
   "com_a11y_ai_composing": "The AI is still composing.",

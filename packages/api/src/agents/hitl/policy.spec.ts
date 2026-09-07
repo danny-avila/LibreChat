@@ -647,6 +647,12 @@ describe('computeAgentRequestFingerprint', () => {
     expect(computeAgentRequestFingerprint(base)).not.toBe(
       computeAgentRequestFingerprint({ ...base, agent_id: 'agent-2' }),
     );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeApprovalMode: 'acceptEdits' }),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeApprovalMode: null }),
+    );
   });
 
   it('differs when promptPrefix changes (ephemeral instructions)', () => {
@@ -700,6 +706,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       manualSkills: ['code-reviewer'],
       // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
       modelLabel: 'My Opus',
+      codeApprovalMode: 'acceptEdits',
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -714,7 +721,24 @@ describe('pickResumeContext / applyResumeContext', () => {
       timezone: 'America/New_York',
       manualSkills: ['code-reviewer'],
       modelLabel: 'My Opus',
+      codeApprovalMode: 'acceptEdits',
     });
+  });
+
+  it('pins code approval mode across resume and removes a forged upgrade', () => {
+    const restored: Record<string, unknown> = {
+      conversationId: 'c',
+      codeApprovalMode: 'acceptEdits',
+    };
+    applyResumeContext(restored, { endpoint: 'agents', codeApprovalMode: 'ask' });
+    expect(restored.codeApprovalMode).toBe('ask');
+
+    const injected: Record<string, unknown> = {
+      conversationId: 'c',
+      codeApprovalMode: 'acceptEdits',
+    };
+    applyResumeContext(injected, { endpoint: 'agents' });
+    expect('codeApprovalMode' in injected).toBe(false);
   });
 
   it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {

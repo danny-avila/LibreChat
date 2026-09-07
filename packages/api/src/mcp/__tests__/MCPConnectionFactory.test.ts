@@ -106,6 +106,7 @@ describe('MCPConnectionFactory', () => {
     // Cached runtime handlers now delegate before attempting their own refresh,
     // so queued one-shot refresh results must not leak into the next test.
     mockMCPTokenStorage.forceRefreshTokens.mockReset();
+    mockMCPTokenStorage.isRefreshTeardownActive.mockReset().mockReturnValue(false);
     // Clear process-local silent-refresh in-flight map so a leftover entry
     // from a prior test (e.g. one that errored before its `finally` ran)
     // cannot cause a later test to join a stale promise.
@@ -124,6 +125,11 @@ describe('MCPConnectionFactory', () => {
     } as t.MCPOptions;
 
     mockFlowManager = {
+      getLeaseGeneration: jest.fn().mockResolvedValue(0),
+      acquireLease: jest.fn().mockResolvedValue({
+        generation: 0,
+        release: jest.fn().mockResolvedValue(undefined),
+      }),
       initFlow: jest.fn().mockResolvedValue(undefined),
       createFlow: jest.fn(),
       createFlowWithHandler: jest.fn(),
@@ -257,7 +263,13 @@ describe('MCPConnectionFactory', () => {
     const resultPromise = factory.handleOAuthRequiredForTest();
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(mockFlowManager.createFlow).toHaveBeenCalledWith('user123:test-server', 'mcp_oauth', {});
+    expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+      'user123:test-server',
+      'mcp_oauth',
+      {},
+      undefined,
+      false,
+    );
 
     abortController.abort(abortReason);
 
@@ -1356,7 +1368,13 @@ describe('MCPConnectionFactory', () => {
       expect(initCallOrder).toBeLessThan(createCallOrder);
 
       // createFlow should receive {} since initFlow already persisted metadata
-      expect(mockFlowManager.createFlow).toHaveBeenCalledWith('flow123', 'mcp_oauth', {});
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
+        'flow123',
+        'mcp_oauth',
+        {},
+        undefined,
+        false,
+      );
     });
 
     it('should delete stale flow and create new OAuth flow when existing flow is COMPLETED', async () => {
@@ -1443,6 +1461,8 @@ describe('MCPConnectionFactory', () => {
         'user123:test-server',
         'mcp_oauth',
         {},
+        undefined,
+        false,
       );
     });
 
@@ -1521,7 +1541,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
 
-    it('should fall back to interactive OAuth when silent refresh returns null', async () => {
+    it('suppresses interactive OAuth during teardown, then falls back after release', async () => {
       const sseConfig = {
         ...mockServerConfig,
         url: 'https://api.example.com',
@@ -1594,6 +1614,12 @@ describe('MCPConnectionFactory', () => {
         // Expected to fail
       }
 
+      mockMCPTokenStorage.isRefreshTeardownActive.mockReturnValue(true);
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+
+      mockMCPTokenStorage.isRefreshTeardownActive.mockReturnValue(false);
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
       // Silent refresh was attempted, but yielded no tokens.

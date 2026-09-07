@@ -13,6 +13,7 @@ const {
   createAuthIdentityContext,
   MCPOAuthHandler,
   MCPTokenStorage,
+  getMCPServerGeneration,
   setOAuthSession,
   PENDING_STALE_MS,
   getUserMCPAuthMap,
@@ -49,7 +50,8 @@ const {
 } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
-const { invalidateCachedTools } = require('~/server/services/Config');
+const { maybeUninstallOAuthMCP } = require('~/server/services/MCP/oauthCleanup');
+const { invalidateCachedTools, getAppConfig } = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
@@ -214,7 +216,13 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     if (typeof oldState === 'string') {
       await MCPOAuthHandler.deleteStateMapping(oldState, flowManager);
     }
-    const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: getTenantId() };
+    const effectiveConfig = (await resolveAllMcpConfigs(userId))?.[serverName];
+    const metadataWithUrl = {
+      ...flowMetadata,
+      authorizationUrl,
+      tenantId: getTenantId(),
+      ...(effectiveConfig && { serverGeneration: getMCPServerGeneration(effectiveConfig) }),
+    };
     await flowManager.initFlow(oauthFlowId, 'mcp_oauth', metadataWithUrl);
     await MCPOAuthHandler.storeStateMapping(flowMetadata.state, oauthFlowId, flowManager);
     setOAuthCsrfCookie(res, oauthFlowId, OAUTH_CSRF_COOKIE_PATH);
@@ -263,9 +271,16 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                 /** A stale mapping can resolve a superseded attempt's state to the
                  *  current flow (deterministic flow ids); only fail the flow this
                  *  error callback actually belongs to */
-                const flowMeta = await MCPOAuthHandler.getFlowState(flowId, flowManager);
-                if (flowMeta?.state === state) {
-                  await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+                const currentFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+                const flowMeta = currentFlow?.metadata;
+                if (currentFlow && flowMeta?.state === state) {
+                  await flowManager.failFlowIfCurrent(
+                    flowId,
+                    'mcp_oauth',
+                    currentFlow.createdAt,
+                    state,
+                    String(oauthError),
+                  );
                   logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
                     flowId,
                     error: oauthError,
@@ -371,7 +386,11 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     /** Check if this flow has already been completed (idempotency protection) */
     const currentFlowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
-    if (currentFlowState?.status === 'COMPLETED') {
+    if (!currentFlowState) {
+      logger.warn('[MCP OAuth] Flow disappeared before token exchange', { flowId, serverName });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+    if (currentFlowState.status === 'COMPLETED') {
       logger.warn('[MCP OAuth] Flow already completed, preventing duplicate token exchange', {
         flowId,
         serverName,
@@ -408,6 +427,76 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
     await runWithTenant(async () => {
       const oauthHeaders =
         flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
+      const resolveActiveServer = async () => {
+        const [configs, appConfig] = await Promise.all([
+          resolveAllMcpConfigs(flowState.userId),
+          getAppConfig({ userId: flowState.userId, tenantId: getTenantId() }),
+        ]);
+        const activeConfig =
+          configs?.[serverName] ??
+          appConfig?.mcpConfig?.[serverName] ??
+          (await getMCPServersRegistry().getServerConfig(serverName, flowState.userId));
+        if (!activeConfig) {
+          return false;
+        }
+        if (flowState.serverGeneration) {
+          return getMCPServerGeneration(activeConfig) === flowState.serverGeneration;
+        }
+        return activeConfig.url === flowState.serverUrl;
+      };
+      if (!(await resolveActiveServer())) {
+        throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
+      }
+      const rollbackStoredTokens = async (storedTokens) => {
+        const storedMetadata = MCPOAuthHandler.buildStoredClientMetadata(
+          flowState.metadata,
+          flowState.resourceMetadata,
+          flowState.serverUrl,
+          flowState.clientSource,
+        );
+        const revocationMetadata = {
+          serverUrl: flowState.serverUrl,
+          clientId: flowState.clientInfo?.client_id ?? '',
+          clientSecret: flowState.clientInfo?.client_secret ?? '',
+          revocationEndpoint: storedMetadata?.revocation_endpoint,
+          revocationEndpointAuthMethodsSupported:
+            storedMetadata?.revocation_endpoint_auth_methods_supported,
+        };
+        for (const [tokenType, token] of [
+          ['access', storedTokens.access_token],
+          ['refresh', storedTokens.refresh_token],
+        ]) {
+          if (!token) {
+            continue;
+          }
+          try {
+            await MCPOAuthHandler.revokeOAuthToken(
+              serverName,
+              token,
+              tokenType,
+              revocationMetadata,
+              oauthHeaders,
+              flowState.allowedDomains,
+              flowState.allowedAddresses,
+            );
+          } catch (error) {
+            logger.warn(
+              `[MCP OAuth] Failed to revoke ${tokenType} token after callback cancellation:`,
+              error,
+            );
+          }
+        }
+        await MCPTokenStorage.deleteUserTokens({
+          userId: flowState.userId,
+          serverName,
+          deleteToken: async (filter) => {
+            await db.deleteTokens({
+              ...filter,
+              metadataCredentialSetId: storedTokens.credential_set_id,
+            });
+          },
+        });
+      };
       const tokens = await MCPOAuthHandler.completeOAuthFlow(
         flowId,
         code,
@@ -437,6 +526,10 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                   flowState.clientSource,
                 ),
               })) ?? exchangedTokens;
+            if (!(await resolveActiveServer())) {
+              await rollbackStoredTokens(storedTokens);
+              throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
+            }
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
               userId: flowState.userId,
@@ -476,6 +569,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
           return storedTokens;
         },
+        rollbackStoredTokens,
+        { createdAt: currentFlowState.createdAt, state },
       );
       logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
@@ -739,7 +834,12 @@ router.post('/oauth/cancel/:serverName', requireJwtAuth, async (req, res) => {
       });
     }
 
-    await flowManager.failFlow(flowId, 'mcp_oauth', 'User cancelled OAuth flow');
+    await MCPOAuthHandler.failFlowAndDeleteStateMapping(
+      flowId,
+      flowState,
+      flowManager,
+      'User cancelled OAuth flow',
+    );
 
     logger.info(`[MCP OAuth Cancel] Successfully cancelled OAuth flow for ${serverName}`);
 
@@ -1156,7 +1256,7 @@ router.delete(
     requiredPermission: PermissionBits.DELETE,
     resourceIdParam: 'serverName',
   }),
-  deleteMCPServerController,
+  (req, res) => deleteMCPServerController(req, res, maybeUninstallOAuthMCP),
 );
 
 module.exports = router;

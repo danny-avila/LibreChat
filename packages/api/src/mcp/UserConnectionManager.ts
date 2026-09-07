@@ -654,6 +654,9 @@ export abstract class UserConnectionManager {
       });
       const basic: t.BasicConnectionOptions = {
         serverConfig: runtimeConfig,
+        /** Runtime OAuth detection enriches the connection config. Keep the durable definition
+         * separate so callback liveness compares against the config that actually owns it. */
+        serverDefinition: config,
         serverName: serverName,
         dbSourced: isUserSourced(runtimeConfig),
         useSSRFProtection,

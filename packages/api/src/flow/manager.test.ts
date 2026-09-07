@@ -49,6 +49,127 @@ describe('FlowStateManager', () => {
   });
 
   describe('Concurrency Tests', () => {
+    it('atomically updates the default in-memory Keyv envelope', async () => {
+      const keyv = new Keyv({
+        namespace: 'flow-atomic-test',
+        serialize: JSON.stringify,
+        deserialize: JSON.parse,
+      });
+      const manager = new FlowStateManager<string>(keyv, { ttl: 30000, ci: true });
+      await manager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await manager.getFlowState('oauth-flow', 'mcp_oauth');
+
+      await expect(
+        manager.failFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'cancelled',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await manager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'FAILED',
+        error: 'cancelled',
+      });
+    });
+
+    it('treats an expired in-memory envelope as missing during a guarded mutation', async () => {
+      const keyv = new Keyv({
+        namespace: 'flow-expiry-test',
+        serialize: JSON.stringify,
+        deserialize: JSON.parse,
+      });
+      const manager = new FlowStateManager<string>(keyv, { ttl: 30000, ci: true });
+      await manager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await manager.getFlowState('oauth-flow', 'mcp_oauth');
+      const memoryStore = keyv.store as Map<string, string>;
+      const [storedKey, raw] = [...memoryStore.entries()][0];
+      const envelope = JSON.parse(raw);
+      envelope.expires = Date.now() - 1;
+      memoryStore.set(storedKey, JSON.stringify(envelope));
+
+      await expect(
+        manager.completeFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'late-result',
+        ),
+      ).resolves.toBe('missing');
+      expect(memoryStore.has(storedKey)).toBe(false);
+    });
+
+    it('does not delete a replacement OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'new-state' });
+
+      await expect(
+        flowManager.deleteFlowIfCurrent('oauth-flow', 'mcp_oauth', 1, 'old-state'),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'PENDING',
+        metadata: { state: 'new-state' },
+      });
+    });
+
+    it('does not complete a replacement OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'new-state' });
+
+      await expect(
+        flowManager.completeFlowIfCurrent('oauth-flow', 'mcp_oauth', 1, 'old-state', 'old-result'),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'PENDING',
+        metadata: { state: 'new-state' },
+      });
+    });
+
+    it('does not overwrite an already completed OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');
+      await flowManager.completeFlow('oauth-flow', 'mcp_oauth', 'first-result');
+
+      await expect(
+        flowManager.completeFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'second-result',
+        ),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'COMPLETED',
+        result: 'first-result',
+      });
+    });
+
+    it('fails only the observed OAuth attempt', async () => {
+      await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');
+
+      await expect(
+        flowManager.failFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'cancelled',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await flowManager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'FAILED',
+        error: 'cancelled',
+        metadata: { state: 'expected-state' },
+      });
+    });
+
     it('should handle concurrent flow creation and return same result', async () => {
       const flowId = 'test-flow';
       const type = 'test-type';
@@ -302,6 +423,15 @@ describe('FlowStateManager', () => {
 
       await expect(flowManager.initFlow(flowId, type)).rejects.toThrow('Store write failed');
     });
+  });
+
+  it('does not recreate a missing flow when monitoring a published attempt', async () => {
+    await expect(
+      flowManager.createFlow('deleted-oauth-flow', 'mcp_oauth', {}, undefined, false),
+    ).rejects.toThrow('mcp_oauth flow not found');
+    await expect(
+      flowManager.getFlowState('deleted-oauth-flow', 'mcp_oauth'),
+    ).resolves.toBeUndefined();
   });
 
   describe('deleteFlow', () => {
@@ -1129,6 +1259,70 @@ describe('FlowStateManager', () => {
       // Should use failedAt (30s) not createdAt (10m)
       expect(result.isStale).toBe(false);
       expect(result.age).toBeLessThan(60 * 1000);
+    });
+  });
+
+  describe('cross-replica leases', () => {
+    it('rejects stale work after teardown advances the generation', async () => {
+      const generation = await flowManager.getLeaseGeneration('user:server');
+      if (generation === null) {
+        throw new Error('lease unexpectedly active');
+      }
+      const teardown = await flowManager.acquireLease('user:server', {
+        advanceGeneration: true,
+      });
+
+      expect(teardown?.generation).toBe(generation + 1);
+      await expect(flowManager.getLeaseGeneration('user:server')).resolves.toBeNull();
+      await teardown?.release();
+      await expect(
+        flowManager.acquireLease('user:server', { expectedGeneration: generation }),
+      ).resolves.toBeNull();
+    });
+
+    it('serializes holders and preserves the generation after release', async () => {
+      const first = await flowManager.acquireLease('shared-owner');
+      expect(first).not.toBeNull();
+      await expect(flowManager.getLeaseGeneration('shared-owner')).resolves.toBe(first?.generation);
+      await expect(flowManager.acquireLease('shared-owner', { waitMs: 0 })).resolves.toBeNull();
+
+      await first?.release();
+      const second = await flowManager.acquireLease('shared-owner', {
+        expectedGeneration: first?.generation,
+      });
+      expect(second?.generation).toBe(first?.generation);
+      await second?.release();
+    });
+
+    it('expires released in-memory generations after the stale-work horizon', async () => {
+      const now = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+      const teardown = await flowManager.acquireLease('expiring-owner', {
+        advanceGeneration: true,
+      });
+      await teardown?.release();
+      expect(await flowManager.getLeaseGeneration('expiring-owner')).toBe(1);
+
+      clock.mockReturnValue(now + 24 * 60 * 60_000 + 1);
+      expect(await flowManager.getLeaseGeneration('expiring-owner')).toBe(0);
+      clock.mockRestore();
+    });
+
+    it('treats an active pre-purpose lease as teardown during rolling upgrades', async () => {
+      const leases = (
+        FlowStateManager as unknown as {
+          inMemoryLeases: Map<string, Record<string, unknown>>;
+        }
+      ).inMemoryLeases;
+      leases.set('lease:legacy-owner', {
+        generation: 4,
+        owner: 'old-replica',
+        leaseUntil: Date.now() + 60_000,
+        expiresAt: Date.now() + 60_000,
+      });
+
+      await expect(flowManager.getLeaseGeneration('legacy-owner')).resolves.toBeNull();
+      leases.delete('lease:legacy-owner');
     });
   });
 });

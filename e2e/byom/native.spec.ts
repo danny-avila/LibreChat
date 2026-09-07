@@ -41,6 +41,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   const cli = process.env.BYOM_CODE_CLI!;
   const workers: Worker[] = [];
   let selectedWorker: Worker;
+  let selectedApprovalMode: 'ask' | 'acceptEdits' = 'ask';
   const password = `Acceptance-${randomUUID()}`;
   const email = `native-${randomUUID()}@example.com`;
   const registered = await page.request.post('/api/auth/register', {
@@ -156,6 +157,10 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       },
     });
     await page.goto(`/c/new?agent_id=${encodeURIComponent(agent.id)}`);
+    await expect(page.getByTestId('code-approval-mode')).toContainText('Ask before changes', {
+      timeout: 30_000,
+    });
+    selectedApprovalMode = 'ask';
   }
 
   async function turn(operation: string, decision?: 'Approve' | 'Reject') {
@@ -165,8 +170,17 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         ? []
         : await requestJson<Message[]>(page, { path: `/api/messages/${id}`, token });
     const oldIds = new Set(before.map((message) => message.messageId));
+    const requestPromise = page.waitForRequest((request) => {
+      const pathname = new URL(request.url()).pathname;
+      return (
+        request.method() === 'POST' &&
+        (pathname === '/api/agents/chat' || pathname.startsWith('/api/agents/chat/'))
+      );
+    });
     const admitted = await sendMessage(page, `BYOM_ACCEPTANCE:${operation}`);
+    const request = await requestPromise;
     expect(admitted.ok()).toBe(true);
+    expect(request.postDataJSON()).toMatchObject({ codeApprovalMode: selectedApprovalMode });
     const { conversationId } = (await admitted.json()) as { conversationId: string };
     if (decision) {
       const card = page.getByTestId('tool-approval').last();
@@ -205,18 +219,31 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     return outputs.join('\n');
   }
 
+  async function selectApprovalMode(mode: 'Ask before changes' | 'Accept edits') {
+    const selector = page.getByTestId('code-approval-mode');
+    await expect(selector).toBeVisible();
+    await selector.click();
+    await expect(selector).toHaveAttribute('aria-expanded', 'true');
+    await page.getByRole('menuitemradio', { name: new RegExp(`^${mode}`) }).click();
+    await expect(selector).toContainText(mode, { timeout: 10_000 });
+    selectedApprovalMode = mode === 'Accept edits' ? 'acceptEdits' : 'ask';
+  }
+
   try {
     const a = await startWorker('a');
     await select(a);
     expect(await turn('create', 'Approve')).toContain('Created workspace/proof.txt');
     expect(await readFile(path.join(a.root, 'proof.txt'), 'utf8')).toBe('native-original');
     expect(await turn('read')).toContain('native-original');
-    await turn('edit', 'Approve');
+    await selectApprovalMode('Accept edits');
+    await turn('edit');
     expect(await readFile(path.join(a.root, 'proof.txt'), 'utf8')).toBe('native-edited');
     await page.reload();
     expect(await turn('read')).toContain('native-edited');
+    /** Accept edits does not weaken command execution approval. */
     expect(await turn('command', 'Approve')).toContain('native-command-ok');
-    expect(await turn('reject', 'Reject')).toMatch(/reject|denied|declined/i);
+    await selectApprovalMode('Ask before changes');
+    expect(await turn('reject', 'Reject')).toMatch(/blocked|reject|denied|declined/i);
     expect(await readdir(a.root)).not.toContain('rejected.txt');
 
     const b = await startWorker('b');
@@ -237,6 +264,8 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       body: JSON.stringify({
         nativeCommand: true,
         physicalCreate: true,
+        acceptEditsWithoutPrompt: true,
+        commandsStillRequireApproval: true,
         crossTurnEdit: true,
         rejectedWriteAbsent: true,
         twoWorkerIsolation: true,

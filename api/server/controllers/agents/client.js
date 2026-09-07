@@ -55,6 +55,7 @@ const {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   buildAttachedCodeEnvironmentAdmissionHooks,
+  resolveAttachedCodeApprovalMode,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
@@ -1941,6 +1942,14 @@ class AgentClient extends BaseClient {
       );
     }
 
+    const agentsEConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+    const codeApprovalMode = resolveAttachedCodeApprovalMode(
+      this.options.req.body.codeApprovalMode,
+      collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
+      agentsEConfig?.toolApproval?.enabled !== false,
+    );
+
     return removeNullishValues(
       Object.assign(
         {
@@ -1953,6 +1962,7 @@ class AgentClient extends BaseClient {
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
+          codeApprovalMode,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -4303,6 +4313,11 @@ class AgentClient extends BaseClient {
         collectAttachedCodeEnvironmentAgentIds(topLevelAgents);
       const attachedCodeEnvironmentSettings =
         collectAttachedCodeEnvironmentPolicySettings(topLevelAgents);
+      const codeApprovalMode = resolveAttachedCodeApprovalMode(
+        this.options.req.body.codeApprovalMode,
+        attachedCodeEnvironmentSettings,
+        agentsEConfig?.toolApproval?.enabled !== false,
+      );
       const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
         endpoint: agentsEConfig?.toolApproval,
         attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
@@ -4320,6 +4335,7 @@ class AgentClient extends BaseClient {
         ...buildAttachedCodeEnvironmentAdmissionHooks(
           attachedCodeEnvironmentAgentIds,
           attachedCodeEnvironmentSettings,
+          codeApprovalMode,
         ),
       ];
       const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
@@ -4766,6 +4782,7 @@ class AgentClient extends BaseClient {
            *  parent slot before the text step reaches the normal handlers. */
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
+          codeApprovalMode,
           user: createSafeUser(this.options.req?.user),
           traceContext: buildTraceContext(this.options),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
@@ -5509,6 +5526,7 @@ class AgentClient extends BaseClient {
         // steer parts spliced in while the resumed segment streams.
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
+        codeApprovalMode: this.options.req.body.codeApprovalMode,
         user: createSafeUser(this.options.req?.user),
         traceContext: buildTraceContext(this.options),
         tenantId: resolveRequestTenantId(this.options.req ?? {}),
