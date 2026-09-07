@@ -59,6 +59,7 @@ type PreconfiguredOAuthDiscoveryResult = {
 };
 
 const PRECONFIGURED_DISCOVERY_TIMEOUT_MS = 5_000;
+const OAUTH_REVOCATION_TIMEOUT_MS = 5_000;
 
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
@@ -2065,6 +2066,7 @@ export class MCPOAuthHandler {
       method: 'POST',
       body: body.toString(),
       headers,
+      signal: AbortSignal.timeout(OAUTH_REVOCATION_TIMEOUT_MS),
     });
 
     if (!response.ok) {

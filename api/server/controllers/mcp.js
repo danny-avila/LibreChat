@@ -6,6 +6,7 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
+const mongoose = require('mongoose');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
@@ -632,6 +633,17 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
     const { serverName } = req.params;
     const registry = getMCPServersRegistry();
     const existingConfig = await registry.getServerConfig(serverName, userId);
+    const tokenIdentifier = `mcp:${serverName}`;
+    const tokenUserIds = mongoose.models.Token
+      ? await mongoose.models.Token.distinct('userId', {
+          identifier: {
+            $in: [tokenIdentifier, `${tokenIdentifier}:client`, `${tokenIdentifier}:refresh`],
+          },
+        })
+      : [];
+    const affectedUserIds = [
+      ...new Set([userId, ...tokenUserIds.map((id) => id.toString())].filter(Boolean)),
+    ];
     const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
     await invalidateCachedTools({ userId, serverName });
     try {
@@ -649,13 +661,27 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
     try {
-      const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({ userId });
-      await uninstallOAuthMCP?.(
-        userId,
-        `${Constants.mcp_prefix}${serverName}`,
-        { mcpSettings: { allowedDomains, allowedAddresses } },
-        existingConfig,
+      const cleanupResults = await Promise.allSettled(
+        affectedUserIds.map(async (affectedUserId) => {
+          const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
+            userId: affectedUserId,
+          });
+          await uninstallOAuthMCP?.(
+            affectedUserId,
+            `${Constants.mcp_prefix}${serverName}`,
+            { mcpSettings: { allowedDomains, allowedAddresses } },
+            existingConfig,
+          );
+        }),
       );
+      for (const result of cleanupResults) {
+        if (result.status === 'rejected') {
+          logger.warn(
+            `[deleteMCPServerController] OAuth cleanup failed for ${serverName}:`,
+            result.reason,
+          );
+        }
+      }
     } catch (error) {
       logger.warn(
         `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
