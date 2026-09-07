@@ -344,8 +344,9 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
     expect(mockDeleteUserTokens.mock.calls[0][0]).toMatchObject({ userId, serverName });
     expect(mockDeleteTokens).toHaveBeenCalledWith(
-      expect.objectContaining({ metadataCredentialSetId: credentialSetId }),
+      expect.objectContaining({ token: 'encrypted-old-token' }),
     );
+    expect(mockDeleteTokens.mock.calls[0][0]).not.toHaveProperty('metadataCredentialSetId');
 
     expect(mockDeleteFlow).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlow.mock.calls[0][1]).toBe('mcp_get_tokens');
