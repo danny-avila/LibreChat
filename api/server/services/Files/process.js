@@ -571,7 +571,12 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processFileUpload = async ({ req, res, metadata, sseStream }) => {
+/**
+ * @param {OpenAI} [params.openai] - Client the caller already built (the legacy
+ * assistant preflight needs one to authorize). Reused rather than rebuilt, since
+ * constructing it re-reads the user's key.
+ */
+const processFileUpload = async ({ req, res, metadata, sseStream, openai: providedOpenAI }) => {
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -582,8 +587,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file_id, temp_file_id = null } = metadata;
 
   /** @type {OpenAI | undefined} */
-  let openai;
-  if (checkOpenAIStorage(source)) {
+  let openai = providedOpenAI;
+  if (openai == null && checkOpenAIStorage(source)) {
     ({ openai } = await getOpenAIClient({ req }));
   }
 

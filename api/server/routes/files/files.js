@@ -737,7 +737,9 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
  * into provider storage — an authorization failure after the remote upload
  * leaves an untracked file behind and reports 500 for what is a 403.
  *
- * @returns {Promise<boolean>} `false` once a response has been sent.
+ * @returns {Promise<{ ok: boolean, openai?: OpenAI }>} `ok: false` once a
+ * response has been sent. The client it had to build is returned so processing
+ * reuses it rather than re-reading the user's key.
  */
 const assertLegacyAssistantUploadAllowed = async (req, res, metadata) => {
   const isLegacyAssistantAttach =
@@ -746,7 +748,7 @@ const assertLegacyAssistantUploadAllowed = async (req, res, metadata) => {
     !metadata.message_file &&
     !metadata.tool_resource;
   if (!isLegacyAssistantAttach) {
-    return true;
+    return { ok: true };
   }
 
   const { openai } = await getOpenAIClient({ req });
@@ -758,9 +760,9 @@ const assertLegacyAssistantUploadAllowed = async (req, res, metadata) => {
   });
   if ((assistant?.tools ?? []).some((tool) => !isNativeToolPermitted(tool))) {
     res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
-    return false;
+    return { ok: false };
   }
-  return true;
+  return { ok: true, openai };
 };
 
 const handleFileUpload = async (req, res) => {
@@ -791,7 +793,8 @@ const handleFileUpload = async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
     }
 
-    if (!(await assertLegacyAssistantUploadAllowed(req, res, metadata))) {
+    const legacyAssistantUpload = await assertLegacyAssistantUploadAllowed(req, res, metadata);
+    if (!legacyAssistantUpload.ok) {
       return;
     }
 
@@ -811,7 +814,13 @@ const handleFileUpload = async (req, res) => {
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
       openSseStreamIfRequested();
-      return await processFileUpload({ req, res, metadata, sseStream });
+      return await processFileUpload({
+        req,
+        res,
+        metadata,
+        sseStream,
+        openai: legacyAssistantUpload.openai,
+      });
     }
 
     let skipUploadAuth = false;
