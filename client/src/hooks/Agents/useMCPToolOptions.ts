@@ -70,6 +70,27 @@ export function withBooleanOption(
 }
 
 /**
+ * Applies the admin-configured Defer Loading default to freshly added MCP
+ * tools: each tool WITHOUT an existing `tool_options` entry gets
+ * `defer_loading: true` written via {@link withBooleanOption} so the shape
+ * matches a manual toggle. Tools that already carry options are left alone —
+ * the default must never rewrite a prior per-tool choice.
+ */
+export function withDefaultDeferredTools(
+  options: AgentToolOptions,
+  toolIds: string[],
+): AgentToolOptions {
+  let updatedOptions = options;
+  for (const toolId of toolIds) {
+    if (updatedOptions[toolId] != null) {
+      continue;
+    }
+    updatedOptions = withBooleanOption(updatedOptions, toolId, 'defer_loading', true);
+  }
+  return updatedOptions;
+}
+
+/**
  * Counterpart of {@link withBooleanOption} for flags whose ABSENCE means
  * default-on (background-native code execution): enabling clears the entry so
  * the native default applies; disabling persists an explicit `false`, which a

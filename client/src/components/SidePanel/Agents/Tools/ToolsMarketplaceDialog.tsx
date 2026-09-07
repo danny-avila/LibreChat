@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { AgentCapabilities, removeCodeExecutionCaller } from 'librechat-data-provider';
+import { Constants, AgentCapabilities, removeCodeExecutionCaller } from 'librechat-data-provider';
 import {
   Input,
   OGDialog,
@@ -20,11 +20,12 @@ import {
   matchesMcpServer,
   mcpServerIds,
 } from './items/selectors';
+import { useLocalize, useToolFavorites, useAgentCapabilities, useGetAgentsConfig } from '~/hooks';
 import { useAgentFileEntries, useAgentItems, useUninstallToolCredentials } from './hooks';
+import { withDefaultDeferredTools } from '~/hooks/Agents/useMCPToolOptions';
 import { requiresFileManagerRemoval } from './items/capabilities';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { computeToggleAction } from './items/mutations';
-import { useLocalize, useToolFavorites } from '~/hooks';
 import MarketplaceSidebar from './MarketplaceSidebar';
 import MarketplaceCatalog from './MarketplaceCatalog';
 import ItemDialog from './ItemDialog/ItemDialog';
@@ -55,6 +56,12 @@ export default function ToolsMarketplaceDialog({
   const { catalog, selected: selectedItems } = useAgentItems({ agentId });
 
   const { favoriteKeys, toggle: toggleFavorite } = useToolFavorites();
+
+  const { agentsConfig } = useGetAgentsConfig();
+  const { defaultDeferLoadingEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities,
+    agentsConfig?.defaultDeferLoading,
+  );
 
   const [view, setView] = useState<View>('marketplace');
   const [kind, setKind] = useState<Kind>('all');
@@ -111,6 +118,20 @@ export default function ToolsMarketplaceDialog({
     [catalog, search, kind, view, favoriteKeys],
   );
 
+  /** Applies the admin-configured Defer Loading default to freshly added MCP
+   * tools; tools with an existing `tool_options` entry are never rewritten. */
+  const applyDeferLoadingDefault = useCallback(
+    (toolIds: string[]) => {
+      if (!defaultDeferLoadingEnabled || toolIds.length === 0) {
+        return;
+      }
+      setValue('tool_options', withDefaultDeferredTools(getValues('tool_options') ?? {}, toolIds), {
+        shouldDirty: true,
+      });
+    },
+    [defaultDeferLoadingEnabled, getValues, setValue],
+  );
+
   const handleToggle = useCallback(
     (item: AgentItem) => {
       const selected = selectedIds.has(itemKey(item));
@@ -134,6 +155,9 @@ export default function ToolsMarketplaceDialog({
         case 'tool-add': {
           const current = (getValues('tools') ?? []) as string[];
           setValue('tools', Array.from(new Set([...current, patch.id])), { shouldDirty: true });
+          if (patch.id.includes(Constants.mcp_delimiter)) {
+            applyDeferLoadingDefault([patch.id]);
+          }
           break;
         }
         case 'tool-remove': {
@@ -157,6 +181,11 @@ export default function ToolsMarketplaceDialog({
             Array.from(new Set([...current, mcpServerToken(item.id), ...toolIds])),
             { shouldDirty: true },
           );
+          /** Request-scoped servers attach via the `mcp_all` wildcard, which is
+           * not a concrete tool and carries no per-tool options. */
+          if (item.server.requestScoped !== true) {
+            applyDeferLoadingDefault(toolIds);
+          }
           break;
         }
         case 'mcp-remove': {
@@ -175,7 +204,15 @@ export default function ToolsMarketplaceDialog({
           break;
       }
     },
-    [getValues, setValue, selectedIds, uninstallToolCredentials, catalog, fileCounts],
+    [
+      getValues,
+      setValue,
+      selectedIds,
+      uninstallToolCredentials,
+      catalog,
+      fileCounts,
+      applyDeferLoadingDefault,
+    ],
   );
 
   const handleCardClick = useCallback(

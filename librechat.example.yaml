@@ -572,6 +572,10 @@ endpoints:
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
   #     maxCatalogSkills: 20
+  #   # (optional) When true, MCP tools newly added to an agent in the Agent Builder
+  #   # default to "Defer Loading" ON. Users can still opt out per tool. Defaults to false.
+  #   # Only applies when the "deferred_tools" capability is enabled.
+  #   defaultDeferLoading: false
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
   #   # The following capabilities are opt-in and must be added explicitly:
