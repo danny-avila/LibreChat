@@ -940,7 +940,9 @@ describe('MCP Routes', () => {
           access_token: 'test-token',
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
-        mockRegistryInstance.getServerConfig.mockResolvedValue({});
+        mockRegistryInstance.getServerConfig.mockResolvedValue({
+          url: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+        });
 
         const mockMcpManager = createLeasedMcpManager({
           fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
@@ -974,6 +976,7 @@ describe('MCP Routes', () => {
           state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
+          serverUrl: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
           metadata: {},
           clientInfo: {},
           codeVerifier: 'test-verifier',
@@ -1257,6 +1260,7 @@ describe('MCP Routes', () => {
         state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
+        serverUrl: 'https://mcp.example.com/mcp',
         metadata: { toolFlowId: 'tool-flow-123' },
         clientInfo: {},
         codeVerifier: 'test-verifier',
@@ -1507,7 +1511,9 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
-      mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': {} });
+      mockResolveAllMcpConfigs.mockResolvedValue({
+        'test-server': { url: 'https://mcp.example.com/mcp' },
+      });
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -1562,6 +1568,7 @@ describe('MCP Routes', () => {
       mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://mcp.example.com/mcp',
         oauth_headers: { 'X-Registry-Header': 'from-registry' },
       });
       getLogStores.mockReturnValue({});
