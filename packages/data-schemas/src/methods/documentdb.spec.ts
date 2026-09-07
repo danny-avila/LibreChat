@@ -415,15 +415,15 @@ function isJavaScriptSource(expression: ts.Expression): boolean {
   );
 }
 
-/** Receivers on which `$where` is Mongoose's document save-condition bag. */
+/** Receivers on which `$where` is Mongoose's document save-condition bag. `this`
+ * is deliberately absent: Mongoose binds it to a Query in query middleware and
+ * to a Document in document middleware, so it is no tell either way — a
+ * document hook aliases to `document` (as `tenantIsolation.ts` does). */
 const DOCUMENT_RECEIVERS = new Set(['document', 'doc']);
 
 function isDocumentReceiver(expression: ts.Expression): boolean {
   const receiver = unwrapExpression(expression);
-  return (
-    receiver.kind === ts.SyntaxKind.ThisKeyword ||
-    (ts.isIdentifier(receiver) && DOCUMENT_RECEIVERS.has(receiver.text))
-  );
+  return ts.isIdentifier(receiver) && DOCUMENT_RECEIVERS.has(receiver.text);
 }
 
 /**
@@ -431,8 +431,8 @@ function isDocumentReceiver(expression: ts.Expression): boolean {
  * MongoDB's `$where` JavaScript-evaluation operator: `mongoose/lib/model.js` copies
  * its keys into the save filter as ordinary field predicates, so nothing named
  * `$where` reaches the server. The RECEIVER is the tell: the bag lives on a
- * Mongoose document, which this codebase reaches as `document`, `doc` or `this`,
- * and it is read or assigned — never called and never handed code. A `$where` on
+ * Mongoose document, which this codebase reaches as `document` or `doc`, and it
+ * is read or assigned — never called and never handed code. A `$where` on
  * any other receiver, in any position, is the operator, so no amount of
  * indirection on the value or the call (`filter.$where = predicate`,
  * `(query.$where)(js)`, `query.$where.call(…)`, `const w = query.$where`) needs
@@ -803,9 +803,6 @@ describe('Amazon DocumentDB compatibility', () => {
           parse('fixture.ts', `document.$where = Object.keys(rest).length > 0 ? rest : undefined;`),
         ),
       ).toEqual([]);
-      expect(
-        findForbiddenTokens(parse('fixture.ts', `this.$where = { isDeleted: false };`)),
-      ).toEqual([]);
       expect(findForbiddenTokens(parse('fixture.ts', `doc.$where = where;`))).toEqual([]);
       /** ...but every shape that builds a real query still fails. */
       expect(
@@ -849,6 +846,15 @@ describe('Amazon DocumentDB compatibility', () => {
       expect(findForbiddenTokens(parse('fixture.ts', `const w = query.$where;`))).not.toEqual([]);
       expect(
         findForbiddenTokens(parse('fixture.ts', `document.$where('this.a == 1');`)),
+      ).not.toEqual([]);
+      /** `this` is a Query in query middleware and a Document in document
+       * middleware, so it is no tell either way — a document hook aliases to
+       * `document` (as `tenantIsolation.ts` does) rather than earning an exemption. */
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `this.$where.call(this, predicate);`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `this.$where = { isDeleted: false };`)),
       ).not.toEqual([]);
     });
 
