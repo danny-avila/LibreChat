@@ -63,6 +63,7 @@ const {
   generateResponseId,
   isValidationFailure,
   emitResponseCreated,
+  emitResponseFailed,
   createResponseContext,
   createResponseTracker,
   setupStreamingResponse,
@@ -1478,18 +1479,33 @@ const executeResponse = async (envelope, { req, res }) => {
 
         if (request.store === true) {
           completeOutput();
-          await persistResponse({
-            req,
-            conversationId,
-            agentId,
-            agent,
-            previousResponse,
-            inputMessages,
-            parentMessageId,
-            responseId,
-            response: buildResponse(context, tracker, 'completed', usage),
-            visibleOutputTokens: tracker.usage.outputTokens,
-          });
+          try {
+            await persistResponse({
+              req,
+              conversationId,
+              agentId,
+              agent,
+              previousResponse,
+              inputMessages,
+              parentMessageId,
+              responseId,
+              response: buildResponse(context, tracker, 'completed', usage),
+              visibleOutputTokens: tracker.usage.outputTokens,
+            });
+          } catch (error) {
+            const protectionEnabled = hasModelBoundContentProtection(
+              appConfig?.filters,
+              appConfig?.messageFilter?.pii,
+            );
+            const errorCode =
+              !protectionEnabled && typeof error?.code === 'string' ? error.code : undefined;
+            emitResponseFailed(handlerConfig, {
+              type: 'server_error',
+              message: getUserFacingProviderError(error, protectionEnabled),
+              ...(errorCode !== undefined && { code: errorCode }),
+            });
+            return handleExecutionError({ error, res, appConfig });
+          }
         }
 
         finalizeStream(usage);

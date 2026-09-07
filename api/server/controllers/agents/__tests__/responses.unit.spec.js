@@ -341,6 +341,7 @@ jest.mock('@librechat/api', () => ({
     field: 'content',
   }),
   emitResponseCreated: jest.fn(),
+  emitResponseFailed: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
     usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
@@ -1216,11 +1217,19 @@ describe('createResponse controller', () => {
     );
   });
 
-  it('does not emit a completed streaming response when durable storage fails', async () => {
+  it('emits a failed streaming response before DONE when durable storage fails', async () => {
     const api = require('@librechat/api');
     const db = require('~/models');
     api.validateResponseRequest.mockReturnValueOnce({
       request: { ...req.body, stream: true, store: true },
+    });
+    api.emitResponseFailed.mockImplementationOnce(({ res: streamResponse }, error) => {
+      streamResponse.write(
+        `event: response.failed\ndata: ${JSON.stringify({ type: 'response.failed', error })}\n\n`,
+      );
+    });
+    api.writeDone.mockImplementationOnce((streamResponse) => {
+      streamResponse.write('data: [DONE]\n\n');
     });
     res.headersSent = true;
     db.saveConvo.mockRejectedValueOnce(new Error('storage unavailable'));
@@ -1231,7 +1240,20 @@ describe('createResponse controller', () => {
       api.createResponsesEventHandlers.mock.results.at(-1).value;
     expect(completeOutput).toHaveBeenCalledTimes(1);
     expect(finalizeStream).not.toHaveBeenCalled();
+    expect(api.emitResponseFailed).toHaveBeenCalledWith(expect.objectContaining({ res }), {
+      type: 'server_error',
+      message: 'storage unavailable',
+    });
     expect(api.writeDone).toHaveBeenCalledWith(res);
+    expect(api.emitResponseFailed.mock.invocationCallOrder[0]).toBeLessThan(
+      api.writeDone.mock.invocationCallOrder[0],
+    );
+    const eventStream = res.write.mock.calls.map(([chunk]) => chunk).join('');
+    expect(eventStream).toContain('event: response.failed');
+    expect(eventStream.indexOf('event: response.failed')).toBeLessThan(
+      eventStream.indexOf('data: [DONE]'),
+    );
+    expect(eventStream).not.toContain('response.completed');
     expect(res.end).toHaveBeenCalledTimes(1);
   });
 
