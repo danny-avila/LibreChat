@@ -592,6 +592,10 @@ describe('MCP Routes', () => {
     const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
     const { getLogStores } = require('~/cache');
 
+    beforeEach(() => {
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+    });
+
     it('should redirect to error page when OAuth error is received', async () => {
       const response = await request(app).get('/api/mcp/test-server/oauth/callback').query({
         error: 'access_denied',
@@ -3248,6 +3252,7 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockReset();
       MCPOAuthHandler.completeOAuthFlow.mockReset();
       MCPTokenStorage.storeTokens.mockReset();
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
     });
 
     it('should wrap callback body in tenantStorage.run when flowState has tenantId and no current context', async () => {

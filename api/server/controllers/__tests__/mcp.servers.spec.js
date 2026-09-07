@@ -457,6 +457,9 @@ describe('DB-backed server mutation fencing', () => {
 
   it('fences before deletion and fences cross-replica creations before disconnecting', async () => {
     const user = await createUser();
+    mockRegistryInstance.getServerConfig.mockResolvedValue(
+      createDbConfig(new mongoose.Types.ObjectId()),
+    );
     mockRegistryInstance.removeServer.mockResolvedValue(undefined);
     const res = createRes();
 
