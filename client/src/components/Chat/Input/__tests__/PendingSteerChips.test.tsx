@@ -666,9 +666,12 @@ describe('PendingSteerChips — queued hint', () => {
     renderChips([queuedItem], { steering: { duringRunActive: true } });
     const clock = screen.getByRole('img', { name: hintName });
     fireEvent.mouseEnter(clock);
-    fireEvent.mouseMove(clock);
-    /** Ariakit opens a hover tooltip on a timer; allow for a loaded CI shard. */
-    const tooltip = await screen.findByRole('tooltip', {}, { timeout: 4000 });
+    /** Ariakit only counts a pointer as moving when consecutive events differ
+     *  in screen coordinates (its NODE_ENV=test shortcut is off under CI's
+     *  NODE_ENV), and it opens the tooltip on a timer after that. */
+    fireEvent.mouseMove(clock, { screenX: 10, screenY: 10 });
+    fireEvent.mouseMove(clock, { screenX: 20, screenY: 20 });
+    const tooltip = await screen.findByRole('tooltip', {}, { timeout: 3000 });
     expect(tooltip).toHaveTextContent(hintName);
   });
 
