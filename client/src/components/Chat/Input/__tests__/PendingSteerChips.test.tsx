@@ -23,6 +23,7 @@ jest.mock('@librechat/client', () => {
   const { createSteerMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
   return {
     useToastContext: () => ({ showToast: mockShowToast }),
+    TooltipAnchor: jest.requireActual('@librechat/client').TooltipAnchor,
     MorphIcon: createSteerMorphIconMock(),
   };
 });
@@ -653,34 +654,41 @@ describe('PendingSteerChips — queued interrupt-now', () => {
   );
 });
 
-describe('PendingSteerChips — queued caption', () => {
+describe('PendingSteerChips — queued hint', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   const queuedItem = { id: 'q1', text: 'follow up later', createdAt: 1 };
+  const hintName = 'com_ui_steer_queued_info';
 
-  it('explains when queued messages will send while a run is active', () => {
+  it('explains when a queued message will send as a hover hint on its clock icon', async () => {
     renderChips([queuedItem], { steering: { duringRunActive: true } });
-    expect(screen.getByTestId('queued-caption')).toHaveTextContent('com_ui_steer_queued_info');
+    const clock = screen.getByRole('img', { name: hintName });
+    fireEvent.mouseEnter(clock);
+    fireEvent.mouseMove(clock);
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent(hintName);
   });
 
-  it('renders one caption for the whole group, not one per row', () => {
+  it('renders no always-visible caption, so the hint costs no composer height at rest', () => {
+    renderChips([queuedItem], { steering: { duringRunActive: true } });
+    expect(screen.queryByText(hintName)).toBeNull();
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('keeps the hint inside each queued row as its icon, never as a stray child of the list', () => {
     renderChips([queuedItem, { id: 'q2', text: 'and another', createdAt: 2 }], {
       steering: { duringRunActive: true },
     });
-    expect(screen.getAllByTestId('queued-caption')).toHaveLength(1);
+    const rows = screen.getAllByTestId('queued-message-row');
+    const clocks = screen.getAllByRole('img', { name: hintName });
+    expect(clocks).toHaveLength(2);
+    rows.forEach((row, index) => expect(row).toContainElement(clocks[index]));
   });
 
-  it('keeps the caption beside the ARIA list, never as a non-listitem child of it', () => {
-    renderChips([queuedItem], { steering: { duringRunActive: true } });
-    const list = screen.getByRole('list', { name: 'com_ui_queued_messages' });
-    expect(list).not.toContainElement(screen.getByTestId('queued-caption'));
-    expect(list).toContainElement(screen.getByTestId('queued-message-row'));
-  });
-
-  it('omits the caption once the run is over, when rows drain on their own terms', () => {
+  it('omits the hint once the run is over, when rows drain on their own terms', () => {
     renderChips([queuedItem], { steering: { duringRunActive: false } });
-    expect(screen.queryByTestId('queued-caption')).toBeNull();
+    expect(screen.queryByRole('img', { name: hintName })).toBeNull();
   });
 });
