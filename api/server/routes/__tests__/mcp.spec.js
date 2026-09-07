@@ -3236,7 +3236,10 @@ describe('MCP Routes', () => {
         refresh_token: 'edge-refresh-token',
       };
       const mockFlowManager = {
-        getFlowState: jest.fn(),
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+        }),
         completeFlow: jest.fn(),
       };
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
@@ -3321,6 +3324,7 @@ describe('MCP Routes', () => {
           status: 'PENDING',
           createdAt: Date.now(),
         }),
+        completeFlow: jest.fn(),
       });
 
       const response = await request(app)

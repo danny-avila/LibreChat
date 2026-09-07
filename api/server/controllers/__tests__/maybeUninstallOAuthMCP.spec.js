@@ -322,7 +322,7 @@ describe('maybeUninstallOAuthMCP', () => {
     mockRevokeOAuthToken.mockResolvedValue(undefined);
     mockFindToken.mockResolvedValue({ token: 'encrypted-old-token' });
     mockDeleteUserTokens.mockImplementation(async ({ deleteToken }) => {
-      await deleteToken({ userId, type: 'oauth', identifier: `mcp:${serverName}` });
+      await deleteToken({ userId, type: 'mcp_oauth', identifier: `mcp:${serverName}` });
     });
     mockDeleteFlow.mockResolvedValue(undefined);
 
