@@ -24,7 +24,8 @@ export default function CodeApprovalMenu({
 }) {
   const localize = useLocalize();
   const { agentsConfig } = useGetAgentsConfig();
-  const { codeAllowedByAgent, codeEnvironmentId } = useAgentToolPermissions(conversation?.agent_id);
+  const { codeAllowedByAgent, codeEnvironmentId, statefulCodeSessionsAllowedByAgent } =
+    useAgentToolPermissions(conversation?.agent_id);
   const environments = agentsConfig?.statefulCodeSessions?.environments ?? [];
   const environment = codeEnvironmentId
     ? environments.find((candidate) => candidate.id === codeEnvironmentId)
@@ -33,6 +34,7 @@ export default function CodeApprovalMenu({
   if (
     (conversation?.endpointType ?? conversation?.endpoint) !== EModelEndpoint.agents ||
     !codeAllowedByAgent ||
+    !statefulCodeSessionsAllowedByAgent ||
     agentsConfig?.statefulCodeSessions?.approvalsEnabled === false ||
     environment?.type !== 'attached'
   ) {

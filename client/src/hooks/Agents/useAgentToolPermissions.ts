@@ -8,6 +8,7 @@ import { isEphemeralAgent } from '~/common';
 interface AgentToolPermissionsResult {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
+  statefulCodeSessionsAllowedByAgent: boolean;
   tools: string[] | undefined;
   provider?: string;
   codeEnvironmentId?: string | null;
@@ -48,6 +49,11 @@ export default function useAgentToolPermissions(
     [agentData?.code_environment_id, selectedAgent?.code_environment_id],
   );
 
+  const statefulCodeSessionsAllowedByAgent = useMemo(
+    () => agentData?.stateful_code_sessions ?? selectedAgent?.stateful_code_sessions ?? false,
+    [agentData?.stateful_code_sessions, selectedAgent?.stateful_code_sessions],
+  );
+
   const fileSearchAllowedByAgent = useMemo(() => {
     // Check ephemeral agent settings
     if (isEphemeralAgent(agentId)) {
@@ -73,6 +79,7 @@ export default function useAgentToolPermissions(
   return {
     fileSearchAllowedByAgent,
     codeAllowedByAgent,
+    statefulCodeSessionsAllowedByAgent,
     codeEnvironmentId,
     provider,
     tools,

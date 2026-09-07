@@ -25,6 +25,7 @@ describe('CodeApprovalMenu', () => {
     mockUseAgentToolPermissions.mockReturnValue({
       codeAllowedByAgent: true,
       codeEnvironmentId: 'mac',
+      statefulCodeSessionsAllowedByAgent: true,
     });
     mockUseGetAgentsConfig.mockReturnValue({
       agentsConfig: {
@@ -72,6 +73,23 @@ describe('CodeApprovalMenu', () => {
           environments: [{ id: 'mac', name: 'Managed', type: 'managed' }],
         },
       },
+    });
+
+    render(
+      <CodeApprovalMenu
+        conversation={conversation}
+        newConversation={mockNewConversation}
+        disabled={false}
+      />,
+    );
+    expect(screen.queryByTestId('code-approval-mode')).not.toBeInTheDocument();
+  });
+
+  test('hides the control when the agent does not use stateful sessions', () => {
+    mockUseAgentToolPermissions.mockReturnValue({
+      codeAllowedByAgent: true,
+      codeEnvironmentId: 'mac',
+      statefulCodeSessionsAllowedByAgent: false,
     });
 
     render(
