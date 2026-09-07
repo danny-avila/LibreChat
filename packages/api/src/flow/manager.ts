@@ -2,7 +2,6 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
-import { evalKeyvRedisScript } from '../cache/redisClients';
 import { registerShutdownTask } from '../app/shutdown';
 import { math } from '~/utils/math';
 
@@ -12,6 +11,9 @@ interface KeyvRedisStore {
   constructor: { name: string };
   namespace?: string;
   createKeyPrefix(key: string, namespace?: string): string;
+  client?: {
+    eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+  };
 }
 
 const GUARDED_DELETE_FLOW = `
@@ -121,6 +123,14 @@ export class FlowStateManager<T = unknown> {
     return store.createKeyPrefix(key, store.namespace);
   }
 
+  private async evalRedisScript(script: string, key: string, args: string[]): Promise<unknown> {
+    const store = this.keyv.store as KeyvRedisStore;
+    if (typeof store.client?.eval !== 'function') {
+      throw new Error('KeyvRedis store does not expose an atomic eval capability');
+    }
+    return store.client.eval(script, { keys: [key], arguments: args });
+  }
+
   private static guardedResult(result: unknown): GuardedMutationResult {
     if (result === 1) {
       return 'updated';
@@ -170,10 +180,10 @@ export class FlowStateManager<T = unknown> {
     const flowKey = this.getFlowKey(flowId, type);
     const redisKey = this.getRedisKey(flowKey);
     if (redisKey) {
-      const result = await evalKeyvRedisScript(GUARDED_DELETE_FLOW, {
-        keys: [redisKey],
-        arguments: [String(expectedCreatedAt), expectedState],
-      });
+      const result = await this.evalRedisScript(GUARDED_DELETE_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+      ]);
       return FlowStateManager.guardedResult(result);
     }
 
@@ -214,16 +224,13 @@ export class FlowStateManager<T = unknown> {
     const failedAt = Date.now();
     const redisKey = this.getRedisKey(flowKey);
     if (redisKey) {
-      const result = await evalKeyvRedisScript(GUARDED_FAIL_FLOW, {
-        keys: [redisKey],
-        arguments: [
-          String(expectedCreatedAt),
-          expectedState,
-          message,
-          String(failedAt),
-          String(this.ttl),
-        ],
-      });
+      const result = await this.evalRedisScript(GUARDED_FAIL_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+        message,
+        String(failedAt),
+        String(this.ttl),
+      ]);
       return FlowStateManager.guardedResult(result);
     }
 
