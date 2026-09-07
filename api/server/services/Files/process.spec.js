@@ -236,6 +236,7 @@ const {
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
+  processImageFile,
   sweepExpiredFiles,
   startExpiredFileSweep,
 } = require('./process');
@@ -326,6 +327,42 @@ const setupStoredFileUpload = (result = {}) => {
   getStrategyFunctions.mockReturnValue({ handleFileUpload });
   return handleFileUpload;
 };
+
+describe('processImageFile', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('persists a converted PNG MIME type while preserving the original JPEG filename', async () => {
+    const req = makeReq({ mimetype: 'image/jpeg' });
+    req.file.originalname = 'holiday.jpeg';
+    req.config.imageOutputType = 'png';
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      bytes: 42,
+      filepath: '/images/user-123/converted-image__holiday.png',
+      width: 1,
+      height: 1,
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+
+    await processImageFile({
+      req,
+      metadata: { file_id: 'converted-image' },
+      returnFile: true,
+    });
+
+    expect(handleImageUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ file_id: 'converted-image' }),
+    );
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: 'holiday.jpeg',
+        type: 'image/png',
+      }),
+      true,
+    );
+  });
+});
 
 describe('processAgentFileUpload', () => {
   beforeEach(() => {

@@ -108,6 +108,7 @@ const {
   prependFileContext,
   prependQuotes,
   applyAttachmentOnlyText,
+  appendUploadedImageInventory,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
@@ -2236,6 +2237,13 @@ class AgentClient extends BaseClient {
        */
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
+      if (i === orderedMessages.length - 1) {
+        appendUploadedImageInventory({
+          formattedMessage,
+          request: this.options.req,
+          files: turnFiles,
+        });
+      }
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;

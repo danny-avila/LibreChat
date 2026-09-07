@@ -1,4 +1,4 @@
-import { resolveUploadedImageArguments } from './images';
+import { appendUploadedImageInventory, resolveUploadedImageArguments } from './images';
 
 const first = { file_id: 'first', filepath: '/images/user-1/first.png', type: 'image/png' };
 const second = { file_id: 'second', filepath: '/images/user-1/second.jpg', type: 'image/jpeg' };
@@ -137,6 +137,108 @@ describe('resolveUploadedImageArguments', () => {
       file_id: { $in: [attachmentFirst.file_id] },
       user: 'user-1',
     });
+  });
+
+  it('resolves a converted attachment alias by its original filename without weakening canonical MIME checks', async () => {
+    const convertedFile = { ...first, filename: 'holiday.jpeg', type: 'image/png' };
+    const convertedRequest = {
+      body: {
+        files: [
+          {
+            file_id: convertedFile.file_id,
+            filename: convertedFile.filename,
+            type: convertedFile.type,
+          },
+        ],
+      },
+    };
+    const dependencies = createDependencies({
+      findFiles: jest.fn().mockResolvedValue([convertedFile]),
+      encodeImages: jest.fn().mockResolvedValue({
+        image_urls: [{ file_id: convertedFile.file_id, image_url: { url: imageUrls.first } }],
+      }),
+    });
+
+    await expect(
+      resolveUploadedImageArguments({
+        forwardUploadedImages: true,
+        toolArguments: { image: 'attachment:/holiday.jpeg' },
+        request: convertedRequest,
+        user: { id: 'user-1' },
+        dependencies,
+      }),
+    ).resolves.toEqual({ image: imageUrls.first });
+
+    await expect(
+      resolveUploadedImageArguments({
+        forwardUploadedImages: true,
+        toolArguments: { image: '/mnt/data/0.jpeg' },
+        request: convertedRequest,
+        user: { id: 'user-1' },
+        dependencies,
+      }),
+    ).rejects.toThrow('Unable to resolve referenced uploaded image.');
+  });
+
+  it('adds a deterministic payload-free canonical inventory to the current model message once', () => {
+    const formattedMessage = { role: 'user', content: 'Remove the background.' };
+    const updated = appendUploadedImageInventory({
+      formattedMessage,
+      request: {
+        body: {
+          files: [
+            { file_id: 'holiday', filename: 'holiday.jpeg' },
+            { file_id: 'notes', filename: 'notes.txt' },
+            { file_id: 'second', filename: 'another.png' },
+          ],
+        },
+      },
+      files: [
+        {
+          file_id: 'holiday',
+          filename: 'holiday.jpeg',
+          type: 'image/png',
+          filepath: '/uploads/user/holiday.png',
+        },
+        { file_id: 'notes', filename: 'notes.txt', type: 'text/plain' },
+        { file_id: 'second', filename: 'another.png', type: 'image/webp' },
+      ],
+    });
+
+    expect(updated).toBe(true);
+    expect(formattedMessage.content).toContain('/mnt/data/0.png');
+    expect(formattedMessage.content).toContain('/mnt/data/2.webp');
+    expect(formattedMessage.content).toContain('holiday.jpeg');
+    expect(formattedMessage.content).not.toContain('data:');
+    expect(formattedMessage.content).not.toContain('base64');
+    expect(formattedMessage.content).not.toContain('/uploads/user/holiday.png');
+    expect(
+      appendUploadedImageInventory({
+        formattedMessage,
+        request: { body: { files: [] } },
+        files: [],
+      }),
+    ).toBe(false);
+    expect(formattedMessage.content.match(/\/mnt\/data\/0\.png/g)).toHaveLength(1);
+  });
+
+  it('does not let user text suppress the current uploaded-image inventory', () => {
+    const formattedMessage = {
+      role: 'user',
+      content: 'Current uploaded images for MCP tools are ready.',
+    };
+    const inventoryParams = {
+      formattedMessage,
+      request: {
+        body: { files: [{ file_id: 'holiday', filename: 'holiday.jpeg' }] },
+      },
+      files: [{ file_id: 'holiday', filename: 'holiday.jpeg', type: 'image/png' }],
+    };
+
+    expect(appendUploadedImageInventory(inventoryParams)).toBe(true);
+    expect(formattedMessage.content).toContain('/mnt/data/0.png');
+    expect(appendUploadedImageInventory(inventoryParams)).toBe(false);
+    expect(formattedMessage.content.match(/\/mnt\/data\/0\.png/g)).toHaveLength(1);
   });
 
   it('fails closed without reading files for duplicate current-request attachment filenames', async () => {

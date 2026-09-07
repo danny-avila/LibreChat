@@ -17,6 +17,14 @@ foreign, mismatched, unencodable, invalid, or oversized, LibreChat aborts the to
 `mcpManager.callTool` and before the MCP server receives it. The resulting error is bounded
 and does not include image payload data.
 
+For the current Agent request, LibreChat also supplies the model a deterministic image inventory
+with one canonical `/mnt/data/<body.files index>.<normalized image extension>` token per uploaded
+image. The original filename is only a label; for example, a `holiday.jpeg` upload normalized to
+`image/png` is presented as `/mnt/data/0.png`. The inventory contains no encoded image content,
+data URL, filesystem path, foreign attachment, or prior-request state. It informs the model which
+token to use; forwarding still occurs only for opted-in MCP servers and only after the validation
+described above.
+
 ## Privacy and deployment considerations
 
 Enabling this option discloses the referenced uploaded image content to the configured

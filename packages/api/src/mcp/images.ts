@@ -3,11 +3,12 @@ const ATTACHMENT_REFERENCE = /^attachment:\/([^/]+)$/;
 const BASE64_PAYLOAD = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$(?![\s\S])/;
 const DATA_URL = /^data:(image\/[^;,]+);base64,([\s\S]*)$(?![\s\S])/i;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const uploadedImageInventoryMessages = new WeakSet<ImageInventoryMessage>();
 
 type SupportedImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
 type UploadPlaceholder =
   | { kind: 'indexed'; index: number; mimeType: SupportedImageMime }
-  | { kind: 'attachment'; filename: string; mimeType: SupportedImageMime };
+  | { kind: 'attachment'; filename: string };
 
 type ToolArgumentValue =
   | string
@@ -36,7 +37,13 @@ export interface ImageToolUser {
 export interface ImageToolFile {
   file_id: string;
   filename?: string;
+  filepath?: string;
   type?: string;
+}
+
+export interface ImageInventoryMessage {
+  role?: string;
+  content?: string | Array<{ type?: string; text?: string }>;
 }
 
 export interface ImageToolFileQuery {
@@ -121,16 +128,94 @@ function getUploadPlaceholder(value: ToolArgumentValue): UploadPlaceholder | und
   }
 
   const filename = attachmentMatch[1];
-  const extension = filename.match(/\.(png|jpe?g|webp)$/)?.[1];
-  const mimeType = normalizeImageMimeType(extension ? `image/${extension}` : undefined);
-  return mimeType ? { kind: 'attachment', filename, mimeType } : undefined;
+  return { kind: 'attachment', filename };
 }
 
 function getUploadPlaceholderKey(placeholder: UploadPlaceholder): string {
   if (placeholder.kind === 'indexed') {
     return `${placeholder.index}:${placeholder.mimeType}`;
   }
-  return `attachment:${placeholder.filename}:${placeholder.mimeType}`;
+  return `attachment:${placeholder.filename}`;
+}
+
+function getImageExtension(mimeType: SupportedImageMime): 'png' | 'jpeg' | 'webp' {
+  return mimeType.slice('image/'.length) as 'png' | 'jpeg' | 'webp';
+}
+
+function buildUploadedImageInventory(
+  request: ImageToolRequest | undefined,
+  files: readonly ImageToolFile[] | undefined,
+): string | undefined {
+  const filesById = new Map<string, ImageToolFile>();
+  for (const file of files ?? []) {
+    if (!file.file_id || filesById.has(file.file_id)) {
+      continue;
+    }
+    filesById.set(file.file_id, file);
+  }
+
+  const entries = (request?.body?.files ?? []).flatMap((requestFile, index) => {
+    if (typeof requestFile.file_id !== 'string') {
+      return [];
+    }
+    const file = filesById.get(requestFile.file_id);
+    const mimeType = normalizeImageMimeType(file?.type);
+    const filename = file?.filename;
+    if (!mimeType || typeof filename !== 'string' || filename.length === 0) {
+      return [];
+    }
+    return [`- ${JSON.stringify(filename)}: /mnt/data/${index}.${getImageExtension(mimeType)}`];
+  });
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return `Current uploaded images for MCP tools (use the canonical path as the image reference):\n${entries.join('\n')}`;
+}
+
+export function appendUploadedImageInventory({
+  formattedMessage,
+  request,
+  files,
+}: {
+  formattedMessage: ImageInventoryMessage;
+  request?: ImageToolRequest;
+  files?: readonly ImageToolFile[];
+}): boolean {
+  if (formattedMessage.role !== 'user') {
+    return false;
+  }
+
+  if (uploadedImageInventoryMessages.has(formattedMessage)) {
+    return false;
+  }
+
+  const inventory = buildUploadedImageInventory(request, files);
+  if (!inventory) {
+    return false;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = `${formattedMessage.content}\n\n${inventory}`;
+    uploadedImageInventoryMessages.add(formattedMessage);
+    return true;
+  }
+
+  if (!Array.isArray(formattedMessage.content)) {
+    return false;
+  }
+
+  const textPart = formattedMessage.content.find((part) => typeof part.text === 'string');
+  if (textPart) {
+    textPart.text = `${textPart.text}\n\n${inventory}`;
+    uploadedImageInventoryMessages.add(formattedMessage);
+    return true;
+  }
+
+  formattedMessage.content.unshift({ type: 'text', text: inventory });
+  uploadedImageInventoryMessages.add(formattedMessage);
+  return true;
 }
 
 function getRequestImageFiles(request?: ImageToolRequest): Array<ImageToolRequestFile | undefined> {
@@ -274,7 +359,8 @@ export async function resolveUploadedImageArguments({
           })();
     if (
       !requestFile?.file_id ||
-      normalizeImageMimeType(requestFile.type) !== placeholder.mimeType ||
+      (placeholder.kind === 'indexed' &&
+        normalizeImageMimeType(requestFile.type) !== placeholder.mimeType) ||
       (placeholder.kind === 'attachment' && requestFile.filename !== placeholder.filename) ||
       referencedFilesByPlaceholder.has(placeholderKey)
     ) {
@@ -333,9 +419,12 @@ export async function resolveUploadedImageArguments({
       const file = filesById.get(requestFile.file_id!)!;
       const dataUrl = imageUrlsByFileId.get(requestFile.file_id!)!;
       if (
-        normalizeImageMimeType(file.type) !== placeholder.mimeType ||
+        !normalizeImageMimeType(file.type) ||
+        (placeholder.kind === 'indexed' &&
+          normalizeImageMimeType(file.type) !== placeholder.mimeType) ||
         (placeholder.kind === 'attachment' && file.filename !== placeholder.filename) ||
-        dataUrl.mimeType !== placeholder.mimeType
+        (placeholder.kind === 'indexed' && dataUrl.mimeType !== placeholder.mimeType) ||
+        dataUrl.mimeType !== normalizeImageMimeType(file.type)
       ) {
         throw new UnresolvedUploadedImageError();
       }

@@ -5672,6 +5672,46 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
+    it('adds one payload-free canonical inventory for current uploaded images to the model prompt', async () => {
+      const convertedImage = makeUploadedFile('holiday', 'holiday.jpeg', 'image/png');
+      const document = makeTextFile(
+        'notes',
+        'notes.txt',
+        'No image payload belongs in the inventory.',
+      );
+      const secondImage = makeUploadedFile('second', 'second.webp', 'image/webp');
+      mockReq.body.files = [
+        { file_id: convertedImage.file_id, filename: convertedImage.filename },
+        { file_id: document.file_id, filename: document.filename },
+        { file_id: secondImage.file_id, filename: secondImage.filename },
+      ];
+      client.options.attachments = [convertedImage, document, secondImage];
+      client.processAttachments = jest.fn(async (_message, attachments) => attachments);
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-image-inventory',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Remove the background from both uploaded images.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-image-inventory',
+        {},
+      );
+
+      const modelPrompt = result.prompt[0].content;
+      expect(modelPrompt).toContain('/mnt/data/0.png');
+      expect(modelPrompt).toContain('/mnt/data/2.webp');
+      expect(modelPrompt).toContain('holiday.jpeg');
+      expect(modelPrompt).not.toContain('data:');
+      expect(modelPrompt).not.toContain('base64');
+      expect(modelPrompt).not.toContain('/uploads/holiday.jpeg');
+      expect(modelPrompt.match(/\/mnt\/data\/0\.png/g)).toHaveLength(1);
+    });
+
     it('quote-merges historical steer parts into the prompt AND the memory copy', async () => {
       const previousFileContext =
         'Attached document(s):\n```md\n# "previous.txt"\nPrevious turn file body\n```';
