@@ -80,6 +80,8 @@ describe('checkToolRolePermission', () => {
     ).resolves.toBe(false);
   });
 
+  /** Default: a denial blocks the operation, so an unreachable role store must
+   *  deny rather than let the request through. */
   it('fails closed when the role lookup throws', async () => {
     const getRoleByName = jest.fn().mockRejectedValue(new Error('unreachable'));
 
@@ -91,6 +93,20 @@ describe('checkToolRolePermission', () => {
         getRoleByName,
       }),
     ).resolves.toBe(false);
+  });
+
+  it('rethrows for callers that mutate rather than block', async () => {
+    const getRoleByName = jest.fn().mockRejectedValue(new Error('unreachable'));
+
+    await expect(
+      checkToolRolePermission({
+        req: buildReq(),
+        user: buildReq().user as never,
+        permissionType: PermissionTypes.FILE_SEARCH,
+        getRoleByName,
+        throwOnError: true,
+      }),
+    ).rejects.toThrow('unreachable');
   });
 
   it('fails closed without a user', async () => {
@@ -245,6 +261,21 @@ describe('resolveAssistantToolPermissions', () => {
     });
 
     expect(permitted({ type: 'retrieval' })).toBe(false);
+  });
+
+  /** A denial here filters a payload the writers then persist, so an outage
+   *  must abort the write rather than read as "not permitted" — otherwise a
+   *  transient role-database failure permanently strips an assistant's tools. */
+  it('propagates a failed role lookup instead of reporting a denial', async () => {
+    const getRoleByName = jest.fn().mockRejectedValue(new Error('role store unreachable'));
+
+    await expect(
+      resolveAssistantToolPermissions({
+        req: buildReq(),
+        tools: [{ type: 'code_interpreter' }],
+        getRoleByName,
+      }),
+    ).rejects.toThrow('role store unreachable');
   });
 
   it('never drops function tools, which carry no native grant', async () => {

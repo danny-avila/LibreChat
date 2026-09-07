@@ -51,6 +51,15 @@ export interface CheckToolRolePermissionParams {
   getRoleByName: CheckAccessParams['getRoleByName'];
   /** Prefix for the denial log line, e.g. `loadAgentTools`. */
   context?: string;
+  /**
+   * Rethrow when the role lookup itself fails, instead of reporting a denial.
+   *
+   * Denying on error is right where a denial blocks the operation. It is wrong
+   * where a denial instead *filters* a payload the caller then persists: there,
+   * a transient outage would silently strip an assistant's native tools and save
+   * the result. Callers that mutate pass this so the write aborts instead.
+   */
+  throwOnError?: boolean;
 }
 
 /**
@@ -65,6 +74,7 @@ export async function checkToolRolePermission({
   permissionType,
   getRoleByName,
   context = 'toolRolePermissions',
+  throwOnError = false,
 }: CheckToolRolePermissionParams): Promise<boolean> {
   let allowed = false;
   try {
@@ -75,8 +85,11 @@ export async function checkToolRolePermission({
       permissions: [Permissions.USE],
       getRoleByName,
     });
-  } catch {
+  } catch (error) {
     logger.error(`[${context}][User: ${user?.id}] Failed ${permissionType} permission check`);
+    if (throwOnError) {
+      throw error;
+    }
   }
 
   if (!allowed) {
@@ -186,6 +199,11 @@ export interface ResolveAssistantToolPermissionsParams {
  *
  * Native tools run inside the provider and never reach the agent tool loaders,
  * so the assistant writers are where they have to be gated.
+ *
+ * Every caller either persists the filtered payload or rejects the request, so a
+ * role lookup that fails propagates rather than reporting a denial: treating an
+ * outage as "not permitted" here would quietly strip an assistant's native tools
+ * and save that as its new configuration.
  */
 export async function resolveAssistantToolPermissions({
   req,
@@ -213,6 +231,7 @@ export async function resolveAssistantToolPermissions({
       permissionType: assistantToolRolePermissions[type] as PermissionTypes,
       getRoleByName,
       context: 'assistants',
+      throwOnError: true,
     });
     if (!allowed) {
       denied.add(type);

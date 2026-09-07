@@ -36,7 +36,6 @@ const {
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
-  resolveAssistantToolPermissions,
   resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
@@ -608,22 +607,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
-    /** A v1 Knowledge upload posts `assistant_id` with no `tool_resource`, so
-     *  there is no resource name to authorize against. The assistant's own
-     *  native tools are what the file will feed, so read those and require the
-     *  grant for each: otherwise a denied role attaches new inputs to an
-     *  assistant that still carries `retrieval` or `code_interpreter`, without
-     *  passing either writer's filter. */
-    const assistant = await openai.beta.assistants.retrieve(metadata.assistant_id);
-    const isNativeToolPermitted = await resolveAssistantToolPermissions({
-      req,
-      tools: assistant?.tools,
-      getRoleByName: db.getRoleByName,
-    });
-    const deniedTool = (assistant?.tools ?? []).find((tool) => !isNativeToolPermitted(tool));
-    if (deniedTool) {
-      throw new Error(`Forbidden: Insufficient permissions for ${deniedTool.type}`);
-    }
+    /** Authorized at the route before any bytes are sent — see
+     *  `assertLegacyAssistantUploadAllowed` in `~/server/routes/files/files`. */
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });

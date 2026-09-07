@@ -19,6 +19,7 @@ const {
   hasActiveFilePolicy,
   sanitizeFilename,
   checkToolResourceUploadPermission,
+  resolveAssistantToolPermissions,
 } = require('@librechat/api');
 const {
   Time,
@@ -727,6 +728,41 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
+/**
+ * A v1 Knowledge upload posts `assistant_id` with no `tool_resource`, so the
+ * resource map has nothing to authorize against. What the file will feed is the
+ * assistant's own native tools, so read those and require their grants.
+ *
+ * Runs here rather than at attach time so a denied role never gets its bytes
+ * into provider storage — an authorization failure after the remote upload
+ * leaves an untracked file behind and reports 500 for what is a 403.
+ *
+ * @returns {Promise<boolean>} `false` once a response has been sent.
+ */
+const assertLegacyAssistantUploadAllowed = async (req, res, metadata) => {
+  const isLegacyAssistantAttach =
+    isAssistantsEndpoint(metadata.endpoint) &&
+    metadata.assistant_id != null &&
+    !metadata.message_file &&
+    !metadata.tool_resource;
+  if (!isLegacyAssistantAttach) {
+    return true;
+  }
+
+  const { openai } = await getOpenAIClient({ req });
+  const assistant = await openai.beta.assistants.retrieve(metadata.assistant_id);
+  const isNativeToolPermitted = await resolveAssistantToolPermissions({
+    req,
+    tools: assistant?.tools,
+    getRoleByName,
+  });
+  if ((assistant?.tools ?? []).some((tool) => !isNativeToolPermitted(tool))) {
+    res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    return false;
+  }
+  return true;
+};
+
 const handleFileUpload = async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
@@ -753,6 +789,10 @@ const handleFileUpload = async (req, res) => {
     });
     if (!uploadAllowed) {
       return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    }
+
+    if (!(await assertLegacyAssistantUploadAllowed(req, res, metadata))) {
+      return;
     }
 
     await assertUploadContentAllowed({
