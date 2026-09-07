@@ -128,6 +128,7 @@ export interface OpenIDRefreshFlightService {
     key?: string | null;
     timeoutMs?: number;
     intervalMs?: number;
+    requirePublication?: boolean;
   }) => Promise<TokenResult | null>;
   withOpenIDRefreshFlightLease: <T>(args: {
     key?: string | null;
@@ -618,19 +619,22 @@ export function createOpenIDRefreshFlightService({
     key,
     timeoutMs,
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
+    requirePublication = false,
   }: {
     key?: string | null;
     timeoutMs?: number;
     intervalMs?: number;
+    requirePublication?: boolean;
   }): Promise<TokenResult | null> {
     if (!key) return null;
-    const followRenewals = timeoutMs == null;
+    const followRenewals = timeoutMs == null && !requirePublication;
     let deadline = Date.now() + (timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);
     while (Date.now() <= deadline) {
       const flight = await db.findOpenIDRefreshFlight({ key });
       const completed = await readCompletedFlight(flight);
-      if (completed) return completed;
-      if (flight?.status === 'completed') return null;
+      const awaitingPublication = requirePublication && completed?.__deferredPublication;
+      if (completed && !awaitingPublication) return completed;
+      if (flight?.status === 'completed' && !awaitingPublication) return null;
       if (!flight) return null;
       if (followRenewals) {
         deadline = getRenewedWaitDeadline(deadline, flight);

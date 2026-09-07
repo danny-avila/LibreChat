@@ -564,6 +564,46 @@ describe('OpenIDRefreshFlight', () => {
     expect(result).toEqual(tokens);
   });
 
+  it('waits for validated publication instead of returning deferred credentials', async () => {
+    db.findOpenIDRefreshFlight
+      .mockResolvedValueOnce({
+        status: 'completed',
+        ownerId: 'owner-1',
+        encryptedResult: 'encrypted:{"access_token":"unpublished","__deferredPublication":true}',
+      })
+      .mockResolvedValueOnce({
+        status: 'completed',
+        ownerId: 'owner-1',
+        encryptedResult: 'encrypted:{"access_token":"published"}',
+      });
+    await expect(
+      waitForOpenIDRefreshFlight({
+        key: 'flight-key',
+        requirePublication: true,
+        timeoutMs: 1000,
+        intervalMs: 1,
+      }),
+    ).resolves.toEqual({ access_token: 'published' });
+    expect(db.findOpenIDRefreshFlight).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds the publication wait without returning an unvalidated result', async () => {
+    db.findOpenIDRefreshFlight.mockResolvedValue({
+      status: 'completed',
+      ownerId: 'owner-1',
+      expiresAt: new Date(Date.now() + 60000),
+      encryptedResult: 'encrypted:{"access_token":"unpublished","__deferredPublication":true}',
+    });
+    await expect(
+      waitForOpenIDRefreshFlight({
+        key: 'flight-key',
+        requirePublication: true,
+        timeoutMs: 5,
+        intervalMs: 1,
+      }),
+    ).resolves.toBeNull();
+  });
+
   it('throws when another worker records a failed flight', async () => {
     db.findOpenIDRefreshFlight.mockResolvedValueOnce({
       status: 'failed',

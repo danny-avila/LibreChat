@@ -1864,7 +1864,7 @@ describe('OpenIDSessionRefresh', () => {
       });
 
       await expect(leaderPromise).resolves.toBeDefined();
-      await expect(joinerPromise).rejects.toThrow('awaiting identity validation');
+      await expect(joinerPromise).rejects.toMatchObject({ status: 503, retryable: true });
       expect(joinerReq.session.save).not.toHaveBeenCalled();
       expect(storeOpenIdSession).not.toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
@@ -1888,7 +1888,7 @@ describe('OpenIDSessionRefresh', () => {
 
       await expect(
         refreshOpenIDSession(req, buildRes(), makeOpenIdUser(), 'access_token'),
-      ).rejects.toThrow('awaiting identity validation');
+      ).rejects.toMatchObject({ status: 503, retryable: true });
 
       expect(storeOpenIdSession).not.toHaveBeenCalled();
       expect(setRefreshTokenCookie).not.toHaveBeenCalled();
@@ -2209,6 +2209,72 @@ describe('OpenIDSessionRefresh', () => {
         expect.anything(),
       );
       expect(result.access_token).toBe('forced-access-token');
+    });
+
+    it('waits for validated publication when a forced MCP refresh joins a deferred browser refresh', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const tokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-deferred-forced',
+      };
+      const browserReq = buildReq(tokens);
+      const mcpReq = buildReq(tokens);
+      let finishGrant;
+      let publish;
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishGrant = resolve;
+        }),
+      );
+      waitForOpenIDRefreshFlight.mockReturnValueOnce(
+        new Promise((resolve) => {
+          publish = resolve;
+        }),
+      );
+      const browser = refreshOpenIDSession(
+        browserReq,
+        undefined,
+        makeOpenIdUser(),
+        'access_token',
+        undefined,
+        { forceRefresh: true, deferPublication: true },
+      );
+      await Promise.resolve();
+      const provider = createOpenIDSessionTokenProvider({
+        req: mcpReq,
+        user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
+      });
+      const mcp = provider({ forceRefresh: true });
+      await Promise.resolve();
+      const refreshed = {
+        access_token: makeJwt(farFutureExp + 3600),
+        id_token: makeJwt(farFutureExp + 3600),
+        refresh_token: 'rt-published',
+        expires_in: 3600,
+      };
+      finishGrant(refreshed);
+      await browser;
+      for (
+        let attempt = 0;
+        attempt < 20 && !waitForOpenIDRefreshFlight.mock.calls.length;
+        attempt++
+      ) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(waitForOpenIDRefreshFlight).toHaveBeenCalledWith({
+        key: 'flight:session-A:rt-deferred-forced',
+        requirePublication: true,
+      });
+      expect(mcpReq.session.save).not.toHaveBeenCalled();
+      publish({ tokenset: refreshed, __flightOwnerId: 'owner-1' });
+      await expect(mcp).resolves.toMatchObject({
+        access_token: refreshed.access_token,
+        refresh_token: 'rt-published',
+      });
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+      expect(mcpReq.session.openidTokens.refreshToken).toBe('rt-published');
     });
 
     it('waits for a token-reuse flight before starting a rejection-driven forced refresh', async () => {

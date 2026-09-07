@@ -80,7 +80,7 @@ export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
   private readonly recoveryCancellation = new WeakMap<
     Promise<void>,
-    { controller: AbortController; waiters: number }
+    { controller: AbortController; waiters: number; connection: MCPConnection }
   >();
 
   private readonly oauthRecoveries = new WeakMap<
@@ -193,7 +193,17 @@ export class MCPManager extends UserConnectionManager {
       released = true;
       shared.waiters--;
       if (aborted && shared.waiters === 0) {
-        shared.controller.abort(signal?.reason);
+        const abortIfUnowned = () => {
+          if (shared.waiters === 0 && !this.hasConnectionBorrowers(shared.connection)) {
+            shared.controller.abort(signal?.reason);
+          }
+        };
+        if (this.hasConnectionBorrowers(shared.connection)) {
+          /** A leased call registers recovery before releasing its lease after a rejection. */
+          void this.waitForConnectionBorrowersToDrain(shared.connection).then(abortIfUnowned);
+        } else {
+          abortIfUnowned();
+        }
       }
     };
     if (!signal) {
@@ -860,7 +870,11 @@ Please follow these instructions when using tools from the respective MCP server
       directBearerRecoveryConsumed: true,
       directBearerRecoveryState,
     };
-    this.recoveryCancellation.set(recovery, { controller: recoveryController, waiters: 0 });
+    this.recoveryCancellation.set(recovery, {
+      controller: recoveryController,
+      waiters: 0,
+      connection,
+    });
     this.oauthRecoveries.set(connection, recoveryEntry);
     const clearRecovery = () => {
       if (this.oauthRecoveries.get(connection) === recoveryEntry) {

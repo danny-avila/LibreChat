@@ -1229,8 +1229,12 @@ export abstract class UserConnectionManager {
     }
   }
 
+  protected hasConnectionBorrowers(connection: MCPConnection): boolean {
+    return (this.connectionBorrowers.get(connection) ?? 0) > 0;
+  }
+
   protected waitForConnectionBorrowersToDrain(connection: MCPConnection): Promise<void> {
-    if ((this.connectionBorrowers.get(connection) ?? 0) === 0) {
+    if (!this.hasConnectionBorrowers(connection)) {
       return Promise.resolve();
     }
 

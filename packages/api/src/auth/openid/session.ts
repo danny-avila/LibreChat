@@ -107,7 +107,10 @@ interface OpenIDSessionRefreshDeps {
     ownerId?: string;
     error?: Error | null;
   }) => Promise<RefreshFlightRecord | null>;
-  waitForOpenIDRefreshFlight: (args: { key?: string | null }) => Promise<TokenResult | null>;
+  waitForOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    requirePublication?: boolean;
+  }) => Promise<TokenResult | null>;
   assertOpenIDRefreshFlightAvailable: (args: {
     key?: string | null;
     ownerId?: string;
@@ -1421,7 +1424,17 @@ export function createOpenIDSessionRefreshService(
     tokenPreference: TokenPreference;
   }): Promise<MarkedOIDCTokens> {
     if (resolvedTokens.__deferredPublication) {
-      throw new Error('OpenID refresh result is awaiting identity validation');
+      const published = await waitForOpenIDRefreshFlight({ key, requirePublication: true });
+      if (!published || published.__deferredPublication) {
+        throw Object.assign(new Error('OpenID refresh publication is temporarily unavailable'), {
+          status: 503,
+          retryable: true,
+        });
+      }
+      resolvedTokens = cloneResolvedTokens(published);
+      if (published.tokenset) {
+        Object.assign(resolvedTokens, published.tokenset);
+      }
     }
     if (!resolvedTokens.__flightOwnerId) {
       throw new Error('OpenID refresh result is missing its publication generation');
@@ -1908,7 +1921,19 @@ export function createOpenIDSessionRefreshService(
        */
       if (!options.deferPublication) {
         if (resolvedTokens?.__deferredPublication) {
-          throw new Error('OpenID refresh result is awaiting identity validation');
+          if (!sharedFlightKey) {
+            throw new Error('OpenID refresh coordination key is unavailable for publication');
+          }
+          return publishCompletedFlightTokens({
+            key: sharedFlightKey,
+            req,
+            res,
+            user,
+            identityContext,
+            resolvedTokens,
+            predecessorRefreshToken,
+            tokenPreference,
+          });
         }
         const currentSessionTokens = req.session?.openidTokens;
         const alreadyCurrent = Boolean(

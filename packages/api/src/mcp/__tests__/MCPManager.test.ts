@@ -3719,6 +3719,57 @@ describe('MCPManager', () => {
       },
     );
 
+    it.each([true, false])(
+      'accounts for a borrower before it can join recovery (joins=%s)',
+      async (joins) => {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const connection = { stopReconnecting: jest.fn() } as unknown as MCPConnection;
+        const controller = new AbortController();
+        let finish!: () => void;
+        let entered!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const upstreamTokenProvider = jest.fn(async () => {
+          entered();
+          await gate;
+          return { access_token: 'fresh-token' };
+        });
+        const getConnection = jest
+          .spyOn(manager, 'getUserConnection')
+          .mockResolvedValue({} as MCPConnection);
+        manager['retainConnection'](connection);
+        const options = {
+          connection,
+          serverName,
+          serverConfig,
+          user,
+          upstreamTokenProvider,
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+        };
+        const leader = manager['recoverDirectOpenIDBearerConnection']({
+          ...options,
+          signal: controller.signal,
+        });
+        const outcome = leader.catch((error: Error) => error);
+        await started;
+        controller.abort(new Error('leader stopped'));
+        await expect(outcome).resolves.toMatchObject({ message: 'leader stopped' });
+        const waiter = joins ? manager['recoverDirectOpenIDBearerConnection'](options) : undefined;
+        await manager['releaseConnection'](connection);
+        finish();
+        if (waiter) {
+          await expect(waiter).resolves.toBeUndefined();
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(getConnection).toHaveBeenCalledTimes(joins ? 1 : 0);
+        expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('fences a delayed direct-bearer replacement when the server config mutates', async () => {
       const connection = {
         stopReconnecting: jest.fn(),
