@@ -32,7 +32,7 @@ function getAuthorizationTemplateValue(value: string): string {
   return extractEnvVariable(value);
 }
 
-/** OBO owns Authorization when configured. Remove only the lower-priority OpenID template
+/** Explicit OAuth/OBO owns Authorization. Remove only the lower-priority OpenID template
  * before generic runtime expansion can demand or inject the upstream bearer directly. */
 function removeShadowedOpenIDAuthorization(config: DirectBearerConfig): DirectBearerConfig {
   const authorization = getAuthorizationHeader(config);
@@ -51,8 +51,12 @@ function removeShadowedOpenIDAuthorization(config: DirectBearerConfig): DirectBe
 
 /** Whether a trusted operator config explicitly routes its OpenID bearer to this server. */
 export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig): boolean {
-  /** OBO is the stronger audience-bound mode and takes precedence when both legacy fields exist. */
-  if (config.obo != null || config.dbId != null) {
+  /** Explicit credential modes take precedence over the legacy passthrough placeholder. */
+  if (
+    config.obo != null ||
+    (config.oauth != null && config.requiresOAuth !== false) ||
+    config.dbId != null
+  ) {
     return false;
   }
   if (config.source !== 'yaml' && config.source !== 'config') {
@@ -75,16 +79,26 @@ export async function resolveDirectOpenIDBearerConfig({
   config,
   upstreamTokenProvider,
   forceRefresh = false,
+  resolvedConfig,
 }: {
   config: DirectBearerConfig;
   upstreamTokenProvider?: UpstreamTokenProvider;
   forceRefresh?: boolean;
+  resolvedConfig?: MCPOptions;
 }): Promise<DirectBearerConfig> {
-  if (config.obo != null) {
+  if (config.obo != null || (config.oauth != null && config.requiresOAuth !== false)) {
     return removeShadowedOpenIDAuthorization(config);
   }
   if (!usesDirectOpenIDBearerRecovery(config)) {
     return config;
+  }
+  const authorization = getAuthorizationHeader(config);
+  const resolvedAuthorization = resolvedConfig && getAuthorizationHeader(resolvedConfig);
+  if (!forceRefresh && authorization && resolvedAuthorization && 'headers' in config) {
+    return {
+      ...config,
+      headers: { ...config.headers, [authorization.name]: resolvedAuthorization.value },
+    };
   }
   if (!upstreamTokenProvider) {
     /** Keep the established `processMCPEnv` path available to API consumers that only
@@ -126,7 +140,6 @@ export async function resolveDirectOpenIDBearerConfig({
     );
   }
 
-  const authorization = getAuthorizationHeader(config);
   if (!authorization || !('headers' in config)) {
     return config;
   }

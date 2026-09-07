@@ -480,6 +480,7 @@ actions:
 #     headers:
 #       # Trusted operator configs automatically use the live session token and replace the
 #       # connection once after a 401/403. A rejected tools/call is never replayed automatically.
+#       # Enabled oauth or obo configuration takes precedence over this passthrough mode.
 #       Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
 #   puppeteer:
 #     type: stdio

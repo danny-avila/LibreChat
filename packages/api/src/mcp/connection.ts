@@ -26,6 +26,8 @@ import type * as t from './types';
 import {
   extractSSEErrorMessage,
   isOAuthAuthenticationError,
+  isMCPTransportAuthenticationError,
+  MCPTransportAuthenticationError,
   isStandaloneSseConflict,
 } from './errors';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
@@ -993,7 +995,7 @@ interface MCPConnectionParams {
   allowedAddresses?: string[] | null;
   ephemeralConnection?: boolean;
   /** The owner will replace this connection after a tools/list authentication rejection. */
-  suspendToolRefreshOnAuthenticationError?: boolean;
+  directBearerRecoveryEnabled?: boolean;
 }
 
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
@@ -1037,7 +1039,7 @@ export class MCPConnection extends EventEmitter {
   private readonly useSSRFProtection: boolean;
   private readonly allowedAddresses?: string[] | null;
   private readonly ephemeralConnection: boolean;
-  private readonly suspendToolRefreshOnAuthenticationError: boolean;
+  private readonly directBearerRecoveryEnabled: boolean;
   private readonly proxyConfig?: MCPProxyConfig;
   private toolListChangeGeneration = 0;
   private handledToolListChangeGeneration = 0;
@@ -1196,8 +1198,7 @@ export class MCPConnection extends EventEmitter {
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
     this.ephemeralConnection = params.ephemeralConnection === true;
-    this.suspendToolRefreshOnAuthenticationError =
-      params.suspendToolRefreshOnAuthenticationError === true;
+    this.directBearerRecoveryEnabled = params.directBearerRecoveryEnabled === true;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
@@ -1248,6 +1249,7 @@ export class MCPConnection extends EventEmitter {
     /** Capture only the fields needed by the fetch closure; see factory note above. */
     const agents = this.agents;
     const logPrefix = this.getLogPrefix();
+    const rejectDirectBearerAuthentication = this.directBearerRecoveryEnabled;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const requestDispatchers = new Map<string, ManagedDispatcher>();
     const ssrfConnects = new Map<string, ReturnType<typeof createSSRFSafeUndiciConnect>>();
@@ -1363,6 +1365,13 @@ export class MCPConnection extends EventEmitter {
           currentAllowedAddresses,
         );
         const response = await undiciFetch(currentUrlString, currentInit);
+        if (
+          rejectDirectBearerAuthentication &&
+          (response.status === 401 || response.status === 403)
+        ) {
+          await response.body?.cancel().catch(() => undefined);
+          throw new MCPTransportAuthenticationError(response.status);
+        }
         const isMethodPreservingRedirect = response.status === 307 || response.status === 308;
         const responseContext = {
           logPrefix,
@@ -1823,11 +1832,17 @@ export class MCPConnection extends EventEmitter {
   }
 
   /** Queues a live tool-list refresh through the same coalescing path used by notifications. */
-  public async refreshToolList(): Promise<MCPToolsSnapshot | undefined> {
+  public async refreshToolList(signal?: AbortSignal): Promise<MCPToolsSnapshot | undefined> {
+    signal?.throwIfAborted();
     this.toolListChangeGeneration++;
     this.clearToolListRefreshRetry();
-    this.startToolListRefresh();
-    return (await this.toolListRefreshPromise) ?? this.suspendedToolListSnapshot;
+    this.startToolListRefresh(signal);
+    const refresh = this.toolListRefreshPromise;
+    if (signal && refresh) {
+      await this.settlesBefore(refresh, undefined, signal);
+      signal.throwIfAborted();
+    }
+    return (await refresh) ?? this.suspendedToolListSnapshot;
   }
 
   private clearToolListRefreshRetry(): void {
@@ -1858,7 +1873,7 @@ export class MCPConnection extends EventEmitter {
     this.toolListRefreshRetryTimer.unref?.();
   }
 
-  private startToolListRefresh(): void {
+  private startToolListRefresh(signal?: AbortSignal): void {
     if (
       this.isDisposed ||
       this.toolListRefreshSuspended ||
@@ -1868,7 +1883,7 @@ export class MCPConnection extends EventEmitter {
       return;
     }
 
-    this.toolListRefreshPromise = this.refreshChangedTools().finally(() => {
+    this.toolListRefreshPromise = this.refreshChangedTools(signal).finally(() => {
       this.toolListRefreshPromise = null;
       if (
         !this.toolListRefreshRetryTimer &&
@@ -1879,7 +1894,7 @@ export class MCPConnection extends EventEmitter {
     });
   }
 
-  private async refreshChangedTools(): Promise<MCPToolsSnapshot | undefined> {
+  private async refreshChangedTools(signal?: AbortSignal): Promise<MCPToolsSnapshot | undefined> {
     const refreshEpoch = this.toolListRefreshEpoch;
     let latestSnapshot: MCPToolsSnapshot | undefined;
     while (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
@@ -1887,7 +1902,13 @@ export class MCPConnection extends EventEmitter {
       const snapshot: MCPToolsSnapshot =
         this.client.getServerCapabilities()?.tools == null
           ? { tools: [], complete: true, ...(await this.reserveToolsPublicationRevision()) }
-          : await this.fetchToolsSnapshot();
+          : await this.fetchToolsSnapshot(undefined, signal);
+      if (signal?.aborted) {
+        if (this.toolListRefreshEpoch === refreshEpoch) {
+          this.toolListRefreshSuspended = true;
+        }
+        return;
+      }
       latestSnapshot = snapshot;
       if (
         this.toolListRefreshEpoch !== refreshEpoch ||
@@ -1898,7 +1919,7 @@ export class MCPConnection extends EventEmitter {
       }
       /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
       if (!snapshot.complete || snapshot.orderingUnavailable) {
-        if (snapshot.authenticationError && this.suspendToolRefreshOnAuthenticationError) {
+        if (snapshot.authenticationError && this.directBearerRecoveryEnabled) {
           /** Keep the stopped queue's outcome available to an owner arriving after settlement. */
           this.suspendedToolListSnapshot = snapshot;
           this.toolListRefreshSuspended = true;
@@ -2001,6 +2022,9 @@ export class MCPConnection extends EventEmitter {
           );
         }
       } catch (error) {
+        if (this.isDisposed) {
+          throw error;
+        }
         // Check if it's a rate limit error - stop immediately to avoid making it worse
         if (this.isRateLimitError(error)) {
           /**
@@ -2021,7 +2045,11 @@ export class MCPConnection extends EventEmitter {
         }
 
         // Check if it's an OAuth authentication error
-        if (isOAuthAuthenticationError(error)) {
+        if (
+          this.directBearerRecoveryEnabled
+            ? isMCPTransportAuthenticationError(error)
+            : isOAuthAuthenticationError(error)
+        ) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
           const serverUrl = this.url;
@@ -2281,7 +2309,11 @@ export class MCPConnection extends EventEmitter {
       }
 
       // Check if it's an OAuth authentication error
-      if (isOAuthAuthenticationError(error)) {
+      if (
+        this.directBearerRecoveryEnabled
+          ? isMCPTransportAuthenticationError(error)
+          : isOAuthAuthenticationError(error)
+      ) {
         logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
         this.lastConnectionCheckError = error;
         this.connectionState = 'error';
@@ -2487,7 +2519,7 @@ export class MCPConnection extends EventEmitter {
         result = await this.listToolsPage(cursor, remainingMs, signal);
       } catch (error) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
-        return snapshot(false, isOAuthAuthenticationError(error) ? error : undefined);
+        return snapshot(false, isMCPTransportAuthenticationError(error) ? error : undefined);
       }
 
       for (const tool of result.tools) {

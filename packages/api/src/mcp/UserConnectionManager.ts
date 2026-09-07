@@ -385,6 +385,9 @@ export abstract class UserConnectionManager {
             recovery = this.getActiveConnectionRecovery(existing);
             this.propagateDirectBearerRecoveryState(existing, opts.directBearerRecoveryState);
           }
+          if (requestScopedConnections.connections.get(requestConnectionKey) !== existing) {
+            return this.getUserConnection({ ...opts, directBearerRecoveryState });
+          }
           if (connected) {
             logger.debug(`[MCP][User: ${userId}] Reusing request-scoped connection`);
             return existing;
@@ -403,6 +406,8 @@ export abstract class UserConnectionManager {
         if (this.requestPendingDirectBearerRecoveryStates.get(pending)?.attempted) {
           directBearerRecoveryState.attempted = true;
         }
+        directBearerRecoveryState.resolvedConfig =
+          this.requestPendingDirectBearerRecoveryStates.get(pending)?.resolvedConfig;
         return connection;
       }
 
@@ -428,6 +433,7 @@ export abstract class UserConnectionManager {
         creationGuard,
       ).then(async (connection) => {
         try {
+          opts.signal?.throwIfAborted();
           this.assertCreationNotCancelled(creationGuard, userId, serverName);
           if (requestScopedConnections.cleanupStarted) {
             throw new Error(`[MCP][User: ${userId}] Request-scoped connection context is closed`);
@@ -482,6 +488,7 @@ export abstract class UserConnectionManager {
         if (pending.directBearerRecoveryState.attempted) {
           directBearerRecoveryState.attempted = true;
         }
+        directBearerRecoveryState.resolvedConfig = pending.directBearerRecoveryState.resolvedConfig;
         return connection;
       }
     }
@@ -677,6 +684,7 @@ export abstract class UserConnectionManager {
           recovery = this.getActiveConnectionRecovery(connection);
           this.propagateDirectBearerRecoveryState(connection, directBearerRecoveryState);
         }
+        this.assertCreationNotCancelled(creationGuard, userId, serverName);
         if (connected) {
           logger.debug(`[MCP][User: ${userId}] Reusing active connection`);
           await this.updateUserLastActivity(userId);
@@ -718,6 +726,9 @@ export abstract class UserConnectionManager {
           upstreamTokenProvider,
         }));
       signal?.throwIfAborted();
+      if (usesDirectOpenIDBearerRecovery(config)) {
+        directBearerRecoveryState.resolvedConfig = bearerConfig;
+      }
       const runtimeConfig = await this.applyRuntimeOAuthDetection({
         config: bearerConfig,
         user,
@@ -823,7 +834,8 @@ export abstract class UserConnectionManager {
 
       const directBearerRecovery = usesDirectOpenIDBearerRecovery(config);
       if (!ephemeralConnection || directBearerRecovery) {
-        const toolListSnapshot = await connection.refreshToolList();
+        const toolListSnapshot = await connection.refreshToolList(signal);
+        signal?.throwIfAborted();
         const toolListAuthenticationError = toolListSnapshot?.authenticationError;
         if (toolListAuthenticationError && directBearerRecovery && user) {
           if (directBearerRecoveryState.attempted) {
@@ -874,6 +886,7 @@ export abstract class UserConnectionManager {
         }
       }
       if (!ephemeralConnection) {
+        signal?.throwIfAborted();
         this.assertCreationNotCancelled(creationGuard, userId, serverName);
         if (!this.userConnections.has(userId)) {
           this.userConnections.set(userId, new Map());
@@ -883,11 +896,13 @@ export abstract class UserConnectionManager {
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       await this.backfillResolvedInstructions(serverName, config, connection, userId);
+      signal?.throwIfAborted();
       if (!ephemeralConnection) {
         await this.updateUserLastActivity(userId);
         await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
       }
       this.assertCreationNotCancelled(creationGuard, userId, serverName);
+      signal?.throwIfAborted();
       return connection;
     } catch (error) {
       logger.error(`[MCP][User: ${userId}] Failed to establish connection`);

@@ -225,6 +225,36 @@ describe('MCPConnectionFactory', () => {
     }
   });
 
+  it('disposes a direct-bearer transport when cancellation races initialize', async () => {
+    const controller = new AbortController();
+    const config = {
+      type: 'streamable-http' as const,
+      url: 'https://mcp.example.com',
+      source: 'yaml' as const,
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+    };
+    mockProcessMCPEnv.mockImplementation(({ options }) => options);
+    let finishConnect: (() => void) | undefined;
+    mockConnectionInstance.connect.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishConnect = resolve;
+      }),
+    );
+    const factory = new InspectableMCPConnectionFactory(
+      { serverName: 'cancelled-direct', serverConfig: config },
+      { user: mockUser, signal: controller.signal },
+    );
+    const connection = factory.createConnectionForTest();
+    const outcome = connection.catch((error: Error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error('request stopped'));
+    await expect(outcome).resolves.toMatchObject({ message: 'request stopped' });
+    expect(mockConnectionInstance.dispose).toHaveBeenCalledTimes(1);
+    finishConnect?.();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockConnectionInstance.connect).toHaveBeenCalledTimes(1);
+  });
+
   it('aborts only the local waiter for a shared OAuth flow', async () => {
     const abortController = new AbortController();
     const abortReason = new Error('owner request aborted');
@@ -3987,9 +4017,15 @@ describe('MCPConnectionFactory', () => {
         ...directBearerSourceConfig,
         headers: { Authorization: 'Bearer stale-token' },
       } as t.MCPOptions;
+      const directBearerRecoveryState: t.DirectBearerRecoveryState = { attempted: false };
 
       const connection = await MCPConnectionFactory.create(
-        { serverName: 'direct-bearer', serverConfig, directBearerSourceConfig },
+        {
+          serverName: 'direct-bearer',
+          serverConfig,
+          directBearerSourceConfig,
+          directBearerRecoveryState,
+        },
         { user: mockUser, upstreamTokenProvider },
       );
 
@@ -3998,13 +4034,16 @@ describe('MCPConnectionFactory', () => {
       expect(rejectedConnection.dispose).toHaveBeenCalledTimes(1);
       expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
       expect(upstreamTokenProvider).toHaveBeenCalledWith({ forceRefresh: true });
+      expect(directBearerRecoveryState.resolvedConfig).toMatchObject({
+        headers: { Authorization: 'Bearer fresh-token' },
+      });
       expect(mockMCPConnection).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
           serverConfig: expect.objectContaining({
             headers: { Authorization: 'Bearer fresh-token' },
           }),
-          suspendToolRefreshOnAuthenticationError: true,
+          directBearerRecoveryEnabled: true,
         }),
       );
     });

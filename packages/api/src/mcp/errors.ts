@@ -1,6 +1,9 @@
 /**
  * MCP-specific error classes
  */
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
+import { SseError } from '@modelcontextprotocol/sdk/client/sse.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export const MCPErrorCodes = {
@@ -18,6 +21,33 @@ interface OAuthErrorLike {
   status?: number;
   statusCode?: number;
   message?: string;
+}
+
+/** A JSON-RPC tool error is never evidence that the MCP transport rejected its bearer. */
+export function isMCPTransportAuthenticationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || error instanceof McpError) {
+    return false;
+  }
+  if (error instanceof UnauthorizedError) {
+    return true;
+  }
+  const candidate = error as OAuthErrorLike;
+  const status = candidate.status ?? candidate.statusCode;
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  return (
+    (error instanceof StreamableHTTPError || error instanceof SseError) &&
+    (error.code === 401 || error.code === 403)
+  );
+}
+
+/** Preserves the actual HTTP status before legacy SSE reduces a failed POST to plain text. */
+export class MCPTransportAuthenticationError extends Error {
+  constructor(public readonly status: 401 | 403) {
+    super(`MCP transport rejected authentication (HTTP ${status})`);
+    this.name = 'MCPTransportAuthenticationError';
+  }
 }
 
 const OAUTH_HTTP_STATUS_PATTERN =

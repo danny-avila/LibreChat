@@ -28,8 +28,12 @@ import {
   resolveDirectOpenIDBearerConfig,
   usesDirectOpenIDBearerRecovery,
 } from './openid';
+import {
+  isOAuthAuthenticationError,
+  isMCPTransportAuthenticationError,
+  MCPAuthenticationRejectedError,
+} from './errors';
 import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } from './utils';
-import { isOAuthAuthenticationError, MCPAuthenticationRejectedError } from './errors';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from './connection';
@@ -135,10 +139,14 @@ export class MCPConnectionFactory {
         ? (basic.serverConfig as t.ParsedServerConfig)
         : undefined);
     const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
-      const factory = new this(
-        await this.prepareBasicConnectionOptions({ ...candidate, directBearerSourceConfig }, oauth),
+      const prepared = await this.prepareBasicConnectionOptions(
+        { ...candidate, directBearerSourceConfig },
         oauth,
       );
+      if (directBearerSourceConfig) {
+        directBearerRecoveryState.resolvedConfig = prepared.serverConfig;
+      }
+      const factory = new this(prepared, oauth);
       return factory.createConnection();
     };
     if (!directBearerSourceConfig) {
@@ -148,7 +156,7 @@ export class MCPConnectionFactory {
     try {
       return await create(basic);
     } catch (error) {
-      if (!isOAuthAuthenticationError(error) || this.isRequestCancelled(oauth)) {
+      if (!isMCPTransportAuthenticationError(error) || this.isRequestCancelled(oauth)) {
         throw error;
       }
       if (directBearerRecoveryState.attempted) {
@@ -163,7 +171,7 @@ export class MCPConnectionFactory {
       try {
         return await create({ ...basic, serverConfig: refreshedConfig });
       } catch (refreshedError) {
-        if (isOAuthAuthenticationError(refreshedError)) {
+        if (isMCPTransportAuthenticationError(refreshedError)) {
           throw new MCPAuthenticationRejectedError(basic.serverName, false, refreshedError);
         }
         throw refreshedError;
@@ -347,6 +355,7 @@ export class MCPConnectionFactory {
         useSSRFProtection: this.useSSRFProtection,
         allowedAddresses: this.allowedAddresses,
         ephemeralConnection: this.ephemeralConnection,
+        ...(this.directBearerRecoveryEnabled && { directBearerRecoveryEnabled: true }),
       });
 
       oauthHandler = () => {
@@ -676,7 +685,7 @@ export class MCPConnectionFactory {
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
       ...(this.directBearerRecoveryEnabled && {
-        suspendToolRefreshOnAuthenticationError: true,
+        directBearerRecoveryEnabled: true,
       }),
     });
 
@@ -1591,6 +1600,7 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
+    this.signal?.throwIfAborted();
     const baseTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
     // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
     // The transport connect itself is still bounded by initTimeout inside connection.connect(),
@@ -1605,6 +1615,17 @@ export class MCPConnectionFactory {
       ? Math.max(baseTimeout, oauthHandlingTimeout + 60000)
       : baseTimeout;
     const retryController = new AbortController();
+    const callerSignal = this.signal;
+    let onAbort: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      if (callerSignal) {
+        onAbort = () => {
+          retryController.abort(callerSignal.reason);
+          reject(callerSignal.reason);
+        };
+        callerSignal.addEventListener('abort', onAbort, { once: true });
+      }
+    });
     let timeoutId: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
@@ -1614,15 +1635,21 @@ export class MCPConnectionFactory {
     });
 
     try {
-      await Promise.race([this.connectTo(connection, retryController.signal), timeout]);
+      await Promise.race([this.connectTo(connection, retryController.signal), timeout, cancelled]);
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
       retryController.abort();
+      if (onAbort) {
+        callerSignal?.removeEventListener('abort', onAbort);
+      }
     }
 
-    if (await connection.isConnected()) return;
+    callerSignal?.throwIfAborted();
+    const connected = await connection.isConnected(callerSignal);
+    callerSignal?.throwIfAborted();
+    if (connected) return;
     logger.error(`${this.logPrefix} Failed to establish connection.`);
   }
 

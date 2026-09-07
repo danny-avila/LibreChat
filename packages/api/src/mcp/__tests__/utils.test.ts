@@ -691,6 +691,17 @@ describe('isUserSourced', () => {
 });
 
 describe('requiresOAuthMachinery', () => {
+  it('preserves explicit OAuth when a direct bearer placeholder is also present', () => {
+    expect(
+      requiresOAuthMachinery({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        oauth: { client_id: 'explicit-client' },
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      }),
+    ).toBe(true);
+  });
   it('suppresses MCP OAuth for a trusted direct OpenID bearer even if inspection stamped OAuth', () => {
     expect(
       requiresOAuthMachinery({

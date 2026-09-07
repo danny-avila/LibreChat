@@ -9,6 +9,7 @@
  */
 
 import { logger } from '@librechat/data-schemas';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnection } from '~/mcp/connection';
 import { mcpConfig } from '~/mcp/mcpConfig';
 
@@ -50,13 +51,13 @@ const makeTool = (name: string) => ({
 /** Build a bare MCPConnection (no real transport) with an injected, controllable client. */
 function createConnectionWithListTools(
   listTools: jest.Mock,
-  suspendToolRefreshOnAuthenticationError = false,
+  directBearerRecoveryEnabled = false,
 ): MCPConnection {
   const conn = new MCPConnection({
     serverName: 'pagination-test',
     serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
     useSSRFProtection: false,
-    suspendToolRefreshOnAuthenticationError,
+    directBearerRecoveryEnabled,
   });
   conn.client.listTools = listTools;
   return conn;
@@ -497,6 +498,41 @@ describe('MCPConnection.fetchTools pagination', () => {
     const recoveredSnapshot = await conn.refreshToolList();
     expect(recoveredSnapshot?.complete).toBe(true);
     expect(recoveredSnapshot?.authenticationError).toBeUndefined();
+  });
+
+  it('cancels an owned catalog read without retrying it in the background', async () => {
+    const controller = new AbortController();
+    const listTools = jest.fn(
+      (_params, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), {
+            once: true,
+          });
+        }),
+    );
+    const conn = createConnectionWithListTools(listTools, true);
+    Reflect.set(conn, 'connectionState', 'connected');
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+    const read = conn.refreshToolList(controller.signal);
+    const outcome = read.catch((error: Error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error('request stopped'));
+    await expect(outcome).resolves.toMatchObject({ message: 'request stopped' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(Reflect.get(conn, 'toolListRefreshRetryTimer')).toBeNull();
+  });
+
+  it('does not treat a JSON-RPC catalog error mentioning auth as transport rejection', async () => {
+    const conn = createConnectionWithListTools(
+      jest
+        .fn()
+        .mockRejectedValue(
+          new McpError(ErrorCode.InternalError, 'downstream HTTP 401 invalid_token'),
+        ),
+      true,
+    );
+    expect((await conn.fetchToolsSnapshot()).authenticationError).toBeUndefined();
   });
 
   it('keeps ordinary authentication modes eligible for tool-list retry', async () => {

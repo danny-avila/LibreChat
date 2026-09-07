@@ -99,6 +99,34 @@ describe('direct OpenID bearer recovery', () => {
     expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
   });
 
+  it('preserves explicit OAuth and removes its shadowed OpenID template', async () => {
+    const config = {
+      ...directBearerConfig('yaml'),
+      oauth: { client_id: 'explicit-client' },
+    };
+    const upstreamTokenProvider = jest.fn();
+    expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
+    await expect(
+      resolveDirectOpenIDBearerConfig({ config, upstreamTokenProvider }),
+    ).resolves.toMatchObject({ oauth: config.oauth, headers: {} });
+    expect(upstreamTokenProvider).not.toHaveBeenCalled();
+  });
+
+  it('preserves direct bearer selection when OAuth is explicitly disabled', async () => {
+    const config = {
+      ...directBearerConfig('yaml'),
+      oauth: { client_id: 'disabled-client' },
+      requiresOAuth: false,
+    };
+    expect(usesDirectOpenIDBearerRecovery(config)).toBe(true);
+    await expect(
+      resolveDirectOpenIDBearerConfig({
+        config,
+        upstreamTokenProvider: jest.fn().mockResolvedValue({ access_token: 'direct-token' }),
+      }),
+    ).resolves.toMatchObject({ headers: { Authorization: 'Bearer direct-token' } });
+  });
+
   it('removes the shadowed OpenID Authorization template when OBO takes precedence', async () => {
     const config = {
       ...directBearerConfig('yaml'),

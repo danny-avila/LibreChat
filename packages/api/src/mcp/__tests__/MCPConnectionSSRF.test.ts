@@ -319,6 +319,43 @@ async function createOversizedToolResultStreamableServer(
   };
 }
 
+describe('direct bearer HTTP rejection', () => {
+  it.each([
+    ['sse', 401],
+    ['sse', 403],
+    ['streamable-http', 401],
+    ['streamable-http', 403],
+  ] as const)('preserves a structured %s POST status %s', async (type, status) => {
+    const server = http.createServer((_req, res) => {
+      res.writeHead(status);
+      res.end('credential rejected');
+    });
+    const close = trackSockets(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as net.AddressInfo).port}/mcp`;
+    const connection = new MCPConnection({
+      serverName: 'direct-bearer',
+      serverConfig: { type, url },
+      useSSRFProtection: false,
+      directBearerRecoveryEnabled: true,
+    });
+    const createFetch = Reflect.get(connection, 'createFetchFunction') as (
+      getHeaders: () => Record<string, string>,
+    ) => CustomFetch;
+    try {
+      await expect(
+        createFetch.call(connection, () => ({ Authorization: 'Bearer token' }))(url, {
+          method: 'POST',
+          body: '{}',
+        }),
+      ).rejects.toMatchObject({ name: 'MCPTransportAuthenticationError', status });
+    } finally {
+      await connection.dispose();
+      await close();
+    }
+  });
+});
+
 describe('MCP SSRF protection – redirect blocking', () => {
   let redirectServer: TestServer;
   let conn: MCPConnection | null;

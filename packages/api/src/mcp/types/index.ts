@@ -219,6 +219,8 @@ export type AddServerResult = {
 /** Mutable per-creation budget shared by every direct-bearer recovery layer. */
 export interface DirectBearerRecoveryState {
   attempted: boolean;
+  /** Request-local credential snapshot shared with checkout joiners and the first tool call. */
+  resolvedConfig?: MCPOptions;
 }
 
 export interface BasicConnectionOptions {
