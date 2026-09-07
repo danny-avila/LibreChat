@@ -87,6 +87,13 @@ export async function resolveDirectOpenIDBearerConfig({
     return config;
   }
   if (!upstreamTokenProvider) {
+    /** Keep the established `processMCPEnv` path available to API consumers that only
+     * provide the verified request user. Recovery still requires a live session: once
+     * the upstream rejects that bearer, a forced resolution must fail closed rather
+     * than reconnecting with the same stale credential. */
+    if (!forceRefresh) {
+      return config;
+    }
     throw new OpenIDReauthRequiredError(
       'A live OpenID session is required to recover this MCP bearer credential.',
     );

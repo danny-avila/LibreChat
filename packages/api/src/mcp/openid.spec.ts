@@ -129,6 +129,21 @@ describe('direct OpenID bearer recovery', () => {
     ).resolves.toBe(config);
   });
 
+  it('preserves the verified request bearer fallback when no provider is plumbed', async () => {
+    const config = directBearerConfig('yaml');
+
+    await expect(resolveDirectOpenIDBearerConfig({ config })).resolves.toBe(config);
+  });
+
+  it('requires a live provider after the upstream bearer is rejected', async () => {
+    await expect(
+      resolveDirectOpenIDBearerConfig({
+        config: directBearerConfig('yaml'),
+        forceRefresh: true,
+      }),
+    ).rejects.toBeInstanceOf(OpenIDReauthRequiredError);
+  });
+
   it('returns a transport-neutral reauthentication error when forced refresh is unavailable', async () => {
     await expect(
       resolveDirectOpenIDBearerConfig({
