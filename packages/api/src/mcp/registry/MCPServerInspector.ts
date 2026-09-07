@@ -11,10 +11,10 @@ import {
 } from '~/mcp/utils';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
+import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
-import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { isEnabled } from '~/utils';
 
 /**

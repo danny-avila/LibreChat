@@ -372,7 +372,9 @@ describe('MCPManager', () => {
         serverConfig: { type: 'streamable-http', url: 'http://localhost/mcp' },
         useSSRFProtection: false,
       });
-      const refreshToolList = jest.spyOn(connection, 'refreshToolList').mockResolvedValue();
+      const refreshToolList = jest
+        .spyOn(connection, 'refreshToolList')
+        .mockResolvedValue(undefined);
       const getMany = jest.fn().mockResolvedValue(new Map([['dynamic', connection]]));
       mockAppConnections({ getMany });
       (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
