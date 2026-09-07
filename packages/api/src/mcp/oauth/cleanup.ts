@@ -220,6 +220,7 @@ export async function cleanupMCPServerOAuth({
       );
     }
   } catch (error) {
+    tokens = null;
     logger.warn(
       `[maybeUninstallOAuthMCP] Unable to load OAuth tokens for ${serverName}; clearing local token state.`,
       error,
