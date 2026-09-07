@@ -399,6 +399,117 @@ describe('AttachFileMenu', () => {
     });
   });
 
+  describe('single-click attach mode (interface.attachFileMode: single)', () => {
+    /** Captures the picker's accept filter and fires a change so the resource ref is observed. */
+    function stubPicker(file: File, onClick?: (accept: string) => void) {
+      const originalClick = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function click() {
+        onClick?.(this.accept);
+        Object.defineProperty(this, 'files', { configurable: true, value: [file] });
+        fireEvent.change(this);
+      };
+      return () => {
+        HTMLInputElement.prototype.click = originalClick;
+      };
+    }
+
+    function setupSingle(
+      interfaceConfig: Record<string, unknown>,
+      permissions: { codeAllowedByAgent?: boolean; fileSearchAllowedByAgent?: boolean } = {},
+    ) {
+      setupMocks();
+      mockUseGetStartupConfig.mockReturnValue({
+        data: { sharePointFilePickerEnabled: false, interface: interfaceConfig },
+      });
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: true,
+        fileSearchEnabled: true,
+        codeEnabled: true,
+      });
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: permissions.fileSearchAllowedByAgent ?? true,
+        codeAllowedByAgent: permissions.codeAllowedByAgent ?? true,
+        provider: undefined,
+      });
+    }
+
+    it('opens the picker for the code environment with one click and no menu', () => {
+      setupSingle({ attachFileMode: 'single' });
+      const handleFileChange = jest.fn();
+      mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange });
+      const clicks: string[] = [];
+      const restore = stubPicker(new File(['data'], 'data.csv', { type: 'text/csv' }), (accept) =>
+        clicks.push(accept),
+      );
+
+      try {
+        renderMenu({ endpointType: EModelEndpoint.agents });
+        expect(screen.queryByRole('button', { name: /attach file options/i })).toBeNull();
+        expect(screen.queryByTestId('dropdown-popup')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Attach Files' }));
+      } finally {
+        restore();
+      }
+
+      expect(clicks).toEqual(['']);
+      expect(screen.queryByTestId('dropdown-menu')).toBeNull();
+      expect(handleFileChange).toHaveBeenCalledTimes(1);
+      expect(handleFileChange).toHaveBeenCalledWith(
+        expect.any(Object),
+        EToolResources.execute_code,
+      );
+    });
+
+    it('sends files to the provider path with its picker filter when that is the target', () => {
+      setupSingle({ attachFileMode: 'single', attachFileDefaultTarget: 'provider' });
+      const handleFileChange = jest.fn();
+      mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange });
+      const clicks: string[] = [];
+      const restore = stubPicker(new File(['img'], 'cat.png', { type: 'image/png' }), (accept) =>
+        clicks.push(accept),
+      );
+
+      try {
+        renderMenu({ endpointType: EModelEndpoint.agents });
+        fireEvent.click(screen.getByRole('button', { name: 'Attach Files' }));
+      } finally {
+        restore();
+      }
+
+      /** Agents without a resolved provider only take images, like the "Upload Image" entry. */
+      expect(clicks).toEqual(['image/*,.heif,.heic']);
+      expect(handleFileChange).toHaveBeenCalledWith(expect.any(Object), undefined);
+    });
+
+    it('falls back to the menu when the target is not available to the agent', () => {
+      setupSingle({ attachFileMode: 'single' }, { codeAllowedByAgent: false });
+
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+
+      expect(screen.queryByRole('button', { name: 'Attach Files' })).toBeNull();
+      openMenu();
+      expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
+      expect(screen.queryByText('Upload to Code Environment')).not.toBeInTheDocument();
+    });
+
+    it('keeps the menu in the default mode even when a target is configured', () => {
+      setupSingle({ attachFileDefaultTarget: 'execute_code' });
+
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+
+      openMenu();
+      expect(screen.getByText('Upload to Code Environment')).toBeInTheDocument();
+    });
+
+    it('respects the disabled prop in single-click mode', () => {
+      setupSingle({ attachFileMode: 'single' });
+
+      renderMenu({ disabled: true, endpointType: EModelEndpoint.agents });
+
+      expect(screen.getByRole('button', { name: 'Attach Files' })).toBeDisabled();
+    });
+  });
+
   describe('SharePoint Integration', () => {
     it('shows SharePoint option when enabled', () => {
       setupMocks();

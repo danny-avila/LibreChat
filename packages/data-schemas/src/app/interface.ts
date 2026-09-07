@@ -60,6 +60,8 @@ export async function loadDefaultInterface({
     fileSearch: interfaceConfig?.fileSearch,
     fileCitations: interfaceConfig?.fileCitations,
     defaultPinnedTools: interfaceConfig?.defaultPinnedTools,
+    attachFileMode: interfaceConfig?.attachFileMode,
+    attachFileDefaultTarget: interfaceConfig?.attachFileDefaultTarget,
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
     remoteAgents: interfaceConfig?.remoteAgents,

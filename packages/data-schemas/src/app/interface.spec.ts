@@ -224,6 +224,33 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.defaultPinnedTools).toEqual(['artifacts', 'execute_code', 'mcp']);
   });
 
+  it('passes through the configured attach-file mode and target', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        attachFileMode: 'single',
+        attachFileDefaultTarget: 'provider',
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.attachFileMode).toBe('single');
+    expect(interfaceConfig?.attachFileDefaultTarget).toBe('provider');
+  });
+
+  it('omits the attach-file mode and target when not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('attachFileMode');
+    expect(interfaceConfig).not.toHaveProperty('attachFileDefaultTarget');
+  });
+
   it('omits default pinned tools when not explicitly configured', async () => {
     const interfaceConfig = await loadDefaultInterface({
       config: {},

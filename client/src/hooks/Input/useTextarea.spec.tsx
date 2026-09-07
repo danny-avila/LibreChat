@@ -14,7 +14,9 @@ const mockForceResize = jest.fn();
 const mockInsertTextAtCursor = jest.fn();
 const mockResolvePastedTextFile = jest.fn();
 const mockRouteFiles = jest.fn();
-const mockGetUploadOptions = jest.fn(() => [EToolResources.context]);
+const mockGetUploadOptions = jest.fn((): (EToolResources | undefined)[] => [
+  EToolResources.context,
+]);
 const mockSetFilesLoading = jest.fn();
 const mockShowToast = jest.fn();
 const mockOpenModal = jest.fn();
@@ -29,6 +31,7 @@ let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
 let mockIsSubmitting = false;
 let mockIsUploadConfigPending = false;
+let mockSingleTarget: { target: EToolResources | undefined } | null = null;
 let mockConversation: { endpoint: string; conversationId?: string } = {
   endpoint: 'openAI',
   conversationId: 'convo-1',
@@ -102,6 +105,7 @@ jest.mock('~/hooks/Files/useUploadOptions', () => ({
     getOptions: mockGetUploadOptions,
     uploadsDisabled: false,
     isConfigPending: mockIsUploadConfigPending,
+    singleTarget: mockSingleTarget,
   })),
 }));
 
@@ -178,6 +182,7 @@ describe('useTextarea long-paste fallback', () => {
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
+    mockSingleTarget = null;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockSetValue.mockReset();
@@ -860,6 +865,40 @@ describe('useTextarea long-paste fallback', () => {
     expect(consoleError).toHaveBeenCalledWith('clipboard file routing error', error);
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it('routes pasted files to the single attach target instead of opening the chooser', async () => {
+    mockSingleTarget = { target: EToolResources.execute_code };
+    mockGetUploadOptions.mockReturnValue([undefined, EToolResources.execute_code]);
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent([new File(['x'], 'data.csv', { type: 'text/csv' })]);
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalled());
+    expect(mockRouteFiles).toHaveBeenCalledWith(
+      expect.any(Array),
+      EToolResources.execute_code,
+      undefined,
+    );
+    expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it('opens the chooser for pasted files the single attach target cannot take', async () => {
+    mockSingleTarget = { target: EToolResources.execute_code };
+    mockGetUploadOptions.mockReturnValue([undefined, EToolResources.context]);
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent([new File(['x'], 'photo.png', { type: 'image/png' })]);
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockOpenModal).toHaveBeenCalled());
+    expect(mockRouteFiles).not.toHaveBeenCalled();
   });
 
   it('routes a paste to context while the file config is still pending', async () => {

@@ -1855,6 +1855,16 @@ export const interfaceSchema = z
     fileCitations: z.boolean().optional(),
     /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
     defaultPinnedTools: z.array(z.string()).optional(),
+    /** How the composer's attach-file button behaves. `menu` (default) opens a dropdown of every
+     *  upload destination; `single` skips it and sends files straight to `attachFileDefaultTarget`
+     *  with one click. Drag-and-drop and paste follow the same target. Falls back to the menu when
+     *  that target is not available for the current agent. */
+    attachFileMode: z.enum(['menu', 'single']).optional(),
+    /** Upload destination for `attachFileMode: 'single'` (default `execute_code`). `provider` hands
+     *  the file to the model provider directly, like the "Upload to Provider" menu entry. */
+    attachFileDefaultTarget: z
+      .enum(['execute_code', 'provider', 'context', 'file_search'])
+      .optional(),
     buildInfo: z.boolean().optional(),
     remoteAgents: z
       .object({
@@ -1980,6 +1990,8 @@ export const interfaceSchema = z
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
+export type TAttachFileMode = NonNullable<TInterfaceConfig['attachFileMode']>;
+export type TAttachFileTarget = NonNullable<TInterfaceConfig['attachFileDefaultTarget']>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import {
   Tools,
@@ -9,11 +9,11 @@ import {
 } from 'librechat-data-provider';
 import type { EToolResources } from 'librechat-data-provider';
 import useAgentToolPermissions from '~/hooks/Agents/useAgentToolPermissions';
+import { getViableUploadOptions, resolveSingleAttachTarget } from '~/utils';
+import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
-import { useGetFileConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
-import { getViableUploadOptions } from '~/utils';
 import { useDragDropContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
 
@@ -30,6 +30,7 @@ export default function useUploadOptions() {
     ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
   const { provider, tools } = useAgentToolPermissions(agentId, ephemeralAgent);
+  const { data: startupConfig } = useGetStartupConfig();
   const {
     data: fileConfig = null,
     isError: isFileConfigError,
@@ -48,6 +49,27 @@ export default function useUploadOptions() {
   const isSavedAgent = agentId != null && agentId !== '' && !isEphemeralAgent(agentId);
   const fileSearchAllowedByAgent = !isSavedAgent || (tools?.includes(Tools.file_search) ?? false);
   const codeAllowedByAgent = !isSavedAgent || (tools?.includes(Tools.execute_code) ?? false);
+
+  /** `interface.attachFileMode: 'single'` routes drops and pastes to one destination without asking. */
+  const interfaceConfig = startupConfig?.interface;
+  const singleTarget = useMemo(
+    () =>
+      resolveSingleAttachTarget(interfaceConfig, {
+        fileSearchEnabled: capabilities.fileSearchEnabled,
+        codeEnabled: capabilities.codeEnabled,
+        contextEnabled: capabilities.contextEnabled,
+        fileSearchAllowedByAgent,
+        codeAllowedByAgent,
+      }),
+    [
+      interfaceConfig,
+      capabilities.fileSearchEnabled,
+      capabilities.codeEnabled,
+      capabilities.contextEnabled,
+      fileSearchAllowedByAgent,
+      codeAllowedByAgent,
+    ],
+  );
 
   const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
   const uploadsDisabled = endpointFileConfig.disabled === true;
@@ -83,5 +105,5 @@ export default function useUploadOptions() {
     ],
   );
 
-  return { getOptions, uploadsDisabled, isConfigPending };
+  return { getOptions, uploadsDisabled, isConfigPending, singleTarget };
 }

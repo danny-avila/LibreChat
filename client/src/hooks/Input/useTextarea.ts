@@ -75,6 +75,7 @@ export default function useTextarea({
     getOptions: getUploadOptions,
     uploadsDisabled,
     isConfigPending: isUploadConfigPending,
+    singleTarget: singleAttachTarget,
   } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
@@ -350,13 +351,25 @@ export default function useTextarea({
         }
 
         const usePreferred = preferred != null && options.includes(preferred);
-        if (!usePreferred && options.length > 1) {
+        /** Single-click attach mode: a caller's explicit destination still wins, otherwise the
+         * configured target takes the paste without a chooser when these files can go there. */
+        const useSingleTarget =
+          !usePreferred &&
+          singleAttachTarget != null &&
+          options.includes(singleAttachTarget.target);
+        if (!usePreferred && !useSingleTarget && options.length > 1) {
           setFilesLoading(false);
           openModal(clipboardFiles);
           return false;
         }
 
-        return await upload(usePreferred ? preferred : options[0]);
+        let destination = options[0];
+        if (usePreferred) {
+          destination = preferred;
+        } else if (useSingleTarget) {
+          destination = singleAttachTarget.target;
+        }
+        return await upload(destination);
       } catch (error) {
         console.error('clipboard file routing error', error);
         setFilesLoading(false);
@@ -372,6 +385,7 @@ export default function useTextarea({
       setFilesLoading,
       getUploadOptions,
       isUploadConfigPending,
+      singleAttachTarget,
     ],
   );
 

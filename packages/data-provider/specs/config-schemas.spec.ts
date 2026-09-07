@@ -1432,6 +1432,30 @@ describe('interfaceSchema', () => {
 
     expect(result.defaultPinnedTools).toBeUndefined();
   });
+
+  it('accepts the single-click attach mode with a target', () => {
+    const result = interfaceSchema.parse({
+      attachFileMode: 'single',
+      attachFileDefaultTarget: 'execute_code',
+    });
+
+    expect(result.attachFileMode).toBe('single');
+    expect(result.attachFileDefaultTarget).toBe('execute_code');
+  });
+
+  it('leaves the attach mode and target undefined when not provided (menu behavior)', () => {
+    const result = interfaceSchema.parse({ modelSelect: true });
+
+    expect(result.attachFileMode).toBeUndefined();
+    expect(result.attachFileDefaultTarget).toBeUndefined();
+  });
+
+  it.each([[{ attachFileMode: 'popup' }], [{ attachFileDefaultTarget: 'artifacts' }]])(
+    'rejects unknown attach mode or target %j',
+    (value) => {
+      expect(interfaceSchema.safeParse(value).success).toBe(false);
+    },
+  );
 });
 
 describe('summarizationTriggerSchema', () => {

@@ -28,6 +28,7 @@ import type {
   FileConfig,
   FileSources,
   RegexLike,
+  TInterfaceConfig,
 } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
@@ -592,6 +593,49 @@ export const getViableUploadOptions = (
     options.push(EToolResources.context);
   }
   return options;
+};
+
+export type AttachTargetContext = Pick<
+  UploadOptionContext,
+  | 'fileSearchEnabled'
+  | 'codeEnabled'
+  | 'contextEnabled'
+  | 'fileSearchAllowedByAgent'
+  | 'codeAllowedByAgent'
+>;
+
+/** The one destination `attachFileMode: 'single'` sends files to; `undefined` is the provider. */
+export type SingleAttachTarget = { target: EToolResources | undefined };
+
+/**
+ * Resolves the fixed upload destination for `interface.attachFileMode: 'single'`, or `null` when
+ * the attach button should keep offering the menu: the mode is not `single`, or the configured
+ * `attachFileDefaultTarget` (default `execute_code`) is not available to the current agent —
+ * the capability is off, or a saved agent does not carry the tool. `provider` maps to the
+ * `undefined` tool resource the provider upload path uses.
+ */
+export const resolveSingleAttachTarget = (
+  interfaceConfig: Pick<TInterfaceConfig, 'attachFileMode' | 'attachFileDefaultTarget'> | undefined,
+  ctx: AttachTargetContext,
+): SingleAttachTarget | null => {
+  if (interfaceConfig?.attachFileMode !== 'single') {
+    return null;
+  }
+  switch (interfaceConfig.attachFileDefaultTarget ?? 'execute_code') {
+    case 'provider':
+      return { target: undefined };
+    case 'context':
+      return ctx.contextEnabled ? { target: EToolResources.context } : null;
+    case 'file_search':
+      return ctx.fileSearchEnabled && ctx.fileSearchAllowedByAgent
+        ? { target: EToolResources.file_search }
+        : null;
+    case 'execute_code':
+    default:
+      return ctx.codeEnabled && ctx.codeAllowedByAgent
+        ? { target: EToolResources.execute_code }
+        : null;
+  }
 };
 
 /**

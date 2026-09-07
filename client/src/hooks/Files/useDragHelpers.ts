@@ -29,19 +29,21 @@ export default function useDragHelpers() {
     [conversation?.endpoint],
   );
 
-  const { getOptions } = useUploadOptions();
+  const { getOptions, singleTarget } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
 
   /** Use refs to avoid re-creating the drop handler */
   const conversationRef = useRef(conversation);
   const getOptionsRef = useRef(getOptions);
+  const singleTargetRef = useRef(singleTarget);
   const routeFilesRef = useRef(routeFiles);
   const openModalRef = useRef(openModal);
   const isAssistantsRef = useRef(isAssistants);
 
   conversationRef.current = conversation;
   getOptionsRef.current = getOptions;
+  singleTargetRef.current = singleTarget;
   routeFilesRef.current = routeFiles;
   openModalRef.current = openModal;
   isAssistantsRef.current = isAssistants;
@@ -82,6 +84,13 @@ export default function useDragHelpers() {
       const options = getOptionsRef.current(item.files);
       if (options.length === 0) {
         showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
+        return;
+      }
+      /** Single-click attach mode: the configured destination takes the drop without a chooser,
+       * as long as these files can go there. */
+      const singleTarget = singleTargetRef.current;
+      if (singleTarget != null && options.includes(singleTarget.target)) {
+        routeFilesRef.current(item.files, singleTarget.target);
         return;
       }
       if (options.length === 1) {

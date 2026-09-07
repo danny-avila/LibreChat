@@ -41,10 +41,10 @@ import {
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { SharePointPickerDialog } from '~/components/SharePoint';
+import { cn, resolveSingleAttachTarget } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
-import { cn } from '~/utils';
 
 type FileUploadType =
   | 'image'
@@ -135,6 +135,57 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
+  /** Which provider upload path applies: decides the picker filter and the menu label. */
+  const providerUpload = useMemo(() => {
+    let currentProvider = provider || endpoint;
+
+    // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+    if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+      currentProvider = Providers.OPENROUTER;
+    }
+
+    const isAzureWithResponsesApi =
+      (currentProvider === EModelEndpoint.azureOpenAI ||
+        endpointType === EModelEndpoint.azureOpenAI) &&
+      useResponsesApi === true;
+
+    const documentsSupported =
+      isDocumentSupportedProvider(endpointType) ||
+      isDocumentSupportedProvider(currentProvider) ||
+      isAzureWithResponsesApi;
+
+    let fileType: FileUploadType = 'image';
+    if (documentsSupported) {
+      fileType = 'image_document';
+      if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
+        fileType = 'image_document_video_audio';
+      } else if (currentProvider === Providers.BEDROCK || endpointType === EModelEndpoint.bedrock) {
+        fileType = 'image_document_extended';
+      }
+    }
+    return { documentsSupported, fileType };
+  }, [provider, endpoint, endpointType, useResponsesApi]);
+
+  /** `interface.attachFileMode: 'single'`: one click sends files to a fixed destination, no menu. */
+  const singleTarget = useMemo(
+    () =>
+      resolveSingleAttachTarget(startupConfig?.interface, {
+        codeEnabled: capabilities.codeEnabled,
+        contextEnabled: capabilities.contextEnabled,
+        fileSearchEnabled: capabilities.fileSearchEnabled,
+        codeAllowedByAgent,
+        fileSearchAllowedByAgent,
+      }),
+    [
+      startupConfig?.interface,
+      capabilities.codeEnabled,
+      capabilities.contextEnabled,
+      capabilities.fileSearchEnabled,
+      codeAllowedByAgent,
+      fileSearchAllowedByAgent,
+    ],
+  );
+
   const handleUploadClick = useCallback(
     (fileType?: FileUploadType) => {
       if (!inputRef.current) {
@@ -177,37 +228,12 @@ const AttachFileMenu = ({
     const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
-      let currentProvider = provider || endpoint;
-
-      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
-      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
-        currentProvider = Providers.OPENROUTER;
-      }
-
-      const isAzureWithResponsesApi =
-        (currentProvider === EModelEndpoint.azureOpenAI ||
-          endpointType === EModelEndpoint.azureOpenAI) &&
-        useResponsesApi === true;
-
-      if (
-        isDocumentSupportedProvider(endpointType) ||
-        isDocumentSupportedProvider(currentProvider) ||
-        isAzureWithResponsesApi
-      ) {
+      if (providerUpload.documentsSupported) {
         items.push({
           label: localize('com_ui_upload_provider'),
           onClick: () => {
             setToolResource(undefined);
-            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
-              fileType = 'image_document_video_audio';
-            } else if (
-              currentProvider === Providers.BEDROCK ||
-              endpointType === EModelEndpoint.bedrock
-            ) {
-              fileType = 'image_document_extended';
-            }
-            onAction(fileType);
+            onAction(providerUpload.fileType);
           },
           icon: <FileImageIcon className="icon-md" />,
         });
@@ -216,7 +242,7 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
             setToolResource(undefined);
-            onAction('image');
+            onAction(providerUpload.fileType);
           },
           icon: <ImageUpIcon className="icon-md" />,
         });
@@ -285,11 +311,8 @@ const AttachFileMenu = ({
     return localItems;
   }, [
     localize,
-    endpoint,
-    provider,
-    endpointType,
     capabilities,
-    useResponsesApi,
+    providerUpload,
     handleUploadClick,
     setEphemeralAgent,
     sharePointEnabled,
@@ -297,6 +320,48 @@ const AttachFileMenu = ({
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
   ]);
+
+  const handleSingleAttach = useCallback(() => {
+    if (singleTarget == null) {
+      return;
+    }
+    const { target } = singleTarget;
+    toolResourceRef.current = target;
+    if (target === EToolResources.execute_code || target === EToolResources.file_search) {
+      setEphemeralAgent((prev) => ({
+        ...prev,
+        [target]: true,
+      }));
+    }
+    handleUploadClick(target === undefined ? providerUpload.fileType : undefined);
+  }, [singleTarget, providerUpload.fileType, handleUploadClick, setEphemeralAgent]);
+
+  const triggerClassName =
+    'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50';
+
+  /** Single-click mode: a plain button that opens the file picker for the configured destination. */
+  const singleTrigger = (
+    <TooltipAnchor
+      render={
+        <button
+          type="button"
+          disabled={isUploadDisabled}
+          id="attach-file-menu-button"
+          aria-label={localize('com_sidepanel_attach_files')}
+          aria-keyshortcuts={uploadFileAriaKey}
+          onClick={handleSingleAttach}
+          className={triggerClassName}
+        >
+          <div className="flex w-full items-center justify-center gap-2">
+            <AttachmentIcon />
+          </div>
+        </button>
+      }
+      id="attach-file-menu-button"
+      description={uploadFileTooltip}
+      disabled={isUploadDisabled}
+    />
+  );
 
   const menuTrigger = (
     <TooltipAnchor
@@ -306,10 +371,7 @@ const AttachFileMenu = ({
           id="attach-file-menu-button"
           aria-label="Attach File Options"
           aria-keyshortcuts={uploadFileAriaKey}
-          className={cn(
-            'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
-            isPopoverActive && 'bg-surface-composer-hover',
-          )}
+          className={cn(triggerClassName, isPopoverActive && 'bg-surface-composer-hover')}
         >
           <div className="flex w-full items-center justify-center gap-2">
             <AttachmentIcon />
@@ -339,18 +401,22 @@ const AttachFileMenu = ({
           toolResourceRef.current = undefined;
         }}
       >
-        <DropdownPopup
-          menuId="attach-file-menu"
-          className="overflow-visible"
-          isOpen={isPopoverActive}
-          setIsOpen={setIsPopoverActive}
-          modal={false}
-          portal={true}
-          unmountOnHide={true}
-          trigger={menuTrigger}
-          items={dropdownItems}
-          iconClassName="mr-0"
-        />
+        {singleTarget != null ? (
+          singleTrigger
+        ) : (
+          <DropdownPopup
+            menuId="attach-file-menu"
+            className="overflow-visible"
+            isOpen={isPopoverActive}
+            setIsOpen={setIsPopoverActive}
+            modal={false}
+            portal={true}
+            unmountOnHide={true}
+            trigger={menuTrigger}
+            items={dropdownItems}
+            iconClassName="mr-0"
+          />
+        )}
       </FileUpload>
       <SharePointPickerDialog
         isOpen={isSharePointDialogOpen}
