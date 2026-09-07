@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.14
+version: 1.3.15
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -36,10 +36,24 @@ cache: true
 # only Authorization upstream, so a tenant Langfuse behind its own proxy is not
 # covered even when the collector receives these.
 #
+# Traces carry the internal user id as the Langfuse userId and no user or
+# request metadata unless langfuse.trace opts in. userIdField picks the user
+# field that becomes the trace userId (id, email, username, name, openidId,
+# samlId, ldapId, googleId, githubId, discordId, appleId, facebookId); a user
+# without a value for that field keeps the internal id. The two allowlists copy
+# fields into trace metadata as librechat.user.<field> (the userId fields plus
+# role and provider) and librechat.conversation.id, librechat.endpoint,
+# librechat.endpoint.type, librechat.provider, librechat.model,
+# librechat.model.label, librechat.spec.
+#
 # langfuse:
 #   headers:
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
 #     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
+#   trace:
+#     userIdField: email
+#     userMetadataFields: [email, username, role, provider]
+#     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -200,6 +214,9 @@ interface:
   # A deployment with Redis-backed resumable streams can run this on every replica.
   # A single-process deployment without Redis must also set
   # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
+  # Scheduled agents that can pause require both `USE_REDIS_STREAMS=true` for
+  # shared action state and a durable shared checkpointer for graph continuation.
+  # MongoDB is currently the built-in durable checkpointer (and the default).
   # schedules:
   #   use: true
   #   create: true
@@ -563,14 +580,59 @@ endpoints:
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
-  #   # (optional) Process-wide event-driven agent rollout controls. Deploy support to
-  #   # every API replica before enabling either producer during a subsequent rollout.
+  #     # Personal BYOM enrollment. Requires allowPrincipalWorkers on a control plane.
+  #     # Omitted values default to enabled and five registered environments per user.
+  #     # Principal config overrides may tighten, but cannot raise, this ceiling.
+  #     # Lowering the limit, or disabling enrollment, does not revoke existing machines.
+  #     # This counts registered environments across control planes, not online workers.
+  #     principalWorkers:
+  #       enabled: true
+  #       maxPerUser: 25
+  #     # Route an agent to an operator-managed Code API or to a Code API whose
+  #     # `remote-bridge` backend leases work to an outbound @librechat/code worker.
+  #     environments:
+  #       - id: managed-default
+  #         name: Managed Code API
+  #         type: managed
+  #         baseURL: https://code.example.com/v1
+  #         default: true
+  #       - id: engineering-vm
+  #         name: Engineering VM
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Pins an administrator-managed environment to one worker.
+  #         owner: deployment
+  #         pairing:
+  #           workerId: engineering-vm
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #       - id: personal-workers
+  #         name: Personal Code Workers
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Lets authenticated users create principal-bound environments and
+  #         # receive a one-time code for an outbound @librechat/code worker.
+  #         # The administrator secret stays in the named environment variable.
+  #         owner: deployment
+  #         # Optionally expose only these bounded preferences to environment owners.
+  #         configSchema:
+  #           permissions:
+  #             fileWrite:
+  #               allowed: [allow, ask, deny]
+  #               default: ask
+  #             commandExecution:
+  #               allowed: [ask, deny]
+  #               default: ask
+  #         pairing:
+  #           allowPrincipalWorkers: true
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #   # (optional) Trusted origin for internal event delivery. By default, LibreChat
+  #   # uses its own bound listener; override only for an internal TLS/front-door route.
   #   eventDriven:
-  #     childTurns: false
-  #     completionWakeups: false
-  #     # Optional trusted origin for internal trigger delivery. By default, LibreChat
-  #     # uses its own bound listener; override only for an internal TLS/front-door route.
   #     # selfUrl: 'https://librechat.internal'
+  #   # (optional) Automatic conversational delivery for supported completed background tasks.
+  #   # Enabled by default; set false to keep background tools and subagents poll-only.
+  #   backgroundTasks:
+  #     completionWakeups: true
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
@@ -585,6 +647,21 @@ endpoints:
   #   checkpointer:
   #     type: mongo # mongo (default) or memory (single-process development only)
   #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
+  #   # (optional) Authenticate machine clients for the Agent Management API.
+  #   # Each verified OAuth client is bound server-side to one existing LibreChat
+  #   # user and tenant; that user's normal role and Agent ACLs still apply.
+  #   managementApi:
+  #     auth:
+  #       oidc:
+  #         enabled: true
+  #         issuer: 'https://identity.example.com/'
+  #         audience: 'https://librechat.example.com/agents'
+  #         # jwksUri: 'https://identity.example.com/.well-known/jwks.json'
+  #       clients:
+  #         - clientId: 'machine-client-id'
+  #           # subject: 'provider-specific-service-principal-subject'
+  #           userId: '507f1f77bcf86cd799439011'
+  #           tenantId: 'tenant-id'
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -625,7 +702,7 @@ endpoints:
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     # Multi-region endpoints: us, eu, global
   #     # IMPORTANT: specific regional endpoints only serve Claude Sonnet 4.6 and earlier. Newer
-  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5) require "global" or a multi-region value
+  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5/5.1) require "global" or a multi-region value
   #     # ("us"/"eu") and will 404 on a specific region. "global" also avoids the 10% regional premium.
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
@@ -644,6 +721,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-fable-5-1"
   #     #   - "claude-fable-5"
   #     #   - "claude-opus-5"
   #     #   - "claude-opus-4-8"
@@ -657,6 +735,8 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-fable-5.1:
+  #         deploymentName: claude-fable-5-1
   #       claude-fable-5:
   #         deploymentName: claude-fable-5
   #       claude-opus-5:
@@ -810,40 +890,6 @@ endpoints:
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
-
-    # Helicone Example
-    - name: 'Helicone'
-      # For `apiKey` and `baseURL`, you can use environment variables that you define.
-      # recommended environment variables:
-      apiKey: '${HELICONE_KEY}'
-      baseURL: 'https://ai-gateway.helicone.ai'
-      headers:
-        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
-      models:
-        default:
-          ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
-        fetch: true
-      titleConvo: true
-      titleModel: 'gpt-4o-mini'
-      modelDisplayLabel: 'Helicone'
-      iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/helicone.png
-
-    # Portkey AI Example
-    - name: 'Portkey'
-      apiKey: 'dummy'
-      baseURL: 'https://api.portkey.ai/v1'
-      headers:
-        x-portkey-api-key: '${PORTKEY_API_KEY}'
-        x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
-      models:
-        default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
-        fetch: true
-      titleConvo: true
-      titleModel: 'current_model'
-      summarize: false
-      summaryModel: 'current_model'
-      modelDisplayLabel: 'Portkey'
-      iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
@@ -1011,6 +1057,8 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Keenable (search provider; keyless by default, a key only lifts rate limits)
+#   keenableApiKey: '${KEENABLE_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
@@ -1073,6 +1121,40 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Keenable as both search provider and scraper example — a fully keyless web
+# search stack: no API key for any of the three categories. The public search and
+# fetch endpoints are rate-limited; a key only lifts the cap.
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: keenable
+#   rerankerType: none          # Rerankers all require a key; 'none' skips reranking
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoints used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: search API URL override (fetch uses KEENABLE_FETCH_URL)
+#   keenableSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 8)
+#     # site: example.com       # Restrict search to a single domain
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   keenableScraperOptions:
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each fetch
+#     timeout: 15000            # HTTP request timeout in milliseconds (max 120000)
+#
+# Keenable search paired with another scraper (Firecrawl here) also works; each
+# category is configured independently:
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#
+# The reverse (someone else's search, Keenable as the scraper) also works. Pin
+# the stack for every user as shown below, or leave the providers unpinned so
+# each user can save this same keyless combination in the API-key dialog:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   scraperProvider: keenable
+#   rerankerType: none
 #
 # SearXNG as the search provider example:
 # webSearch:
@@ -1138,6 +1220,11 @@ endpoints:
 # under any source so each input surface can use a different policy. Starter
 # ids are closed to the catalog below. Custom regexes use bounded,
 # linear-time syntax; unsupported constructs are rejected at config load.
+# `action` defaults to `block`. Set it to `audit` for a shadow rollout that
+# records raw-free findings without rejecting or modifying content. Redaction
+# is intentionally not an action yet because safe replacement requires a
+# mutation-aware boundary and match spans; configuring an unsupported action
+# is rejected rather than silently treated as enforcement.
 # Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
 # to disable starters while retaining any configured custom patterns.
 # Enabling or changing this policy does not rewrite or delete stored records.
@@ -1161,6 +1248,7 @@ endpoints:
 #   messages:
 #     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
+#       action: audit # `block` (default) or `audit`
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #       customPatterns:

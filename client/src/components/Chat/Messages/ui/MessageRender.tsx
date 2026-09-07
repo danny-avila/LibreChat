@@ -9,6 +9,7 @@ import {
   getMessageAriaLabel,
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
+import { parseWakeupText } from '~/components/Chat/Messages/Content/Parts/wakeup';
 import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
@@ -17,6 +18,7 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import Wakeup from '~/components/Chat/Messages/Content/Wakeup';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
@@ -130,6 +132,10 @@ const MessageRender = memo(function MessageRender({
   );
 
   const { hasParallelContent } = useContentMetadata(msg);
+  const wakeupDisplay = useMemo(
+    () => (msg?.isCreatedByUser === true ? parseWakeupText(msg.text) : null),
+    [msg?.isCreatedByUser, msg?.text],
+  );
   const messageId = msg?.messageId ?? '';
   const messageContextValue = useMemo(
     () => ({
@@ -164,6 +170,7 @@ const MessageRender = memo(function MessageRender({
       hasParallelContent={hasParallelContent}
       fullWidth={maximizeChatSpace}
       isEditing={edit}
+      plain={wakeupDisplay != null && !edit}
       footer={
         <SubRow classes={cn(messageFooterClasses, msg.isCreatedByUser && 'justify-end')}>
           {/* A user turn is right-aligned, so its retry navigation belongs at the
@@ -207,20 +214,24 @@ const MessageRender = memo(function MessageRender({
       }
     >
       <MessageContext.Provider value={messageContextValue}>
-        <MessageContent
-          ask={ask}
-          edit={edit}
-          isLast={isLast}
-          text={msg.text || ''}
-          message={msg}
-          enterEdit={enterEdit}
-          error={!!(msg.error ?? false)}
-          isSubmitting={isSubmitting}
-          unfinished={msg.unfinished ?? false}
-          isCreatedByUser={msg.isCreatedByUser ?? true}
-          siblingIdx={siblingIdx ?? 0}
-          setSiblingIdx={setSiblingIdx ?? (() => ({}))}
-        />
+        {wakeupDisplay != null && !edit ? (
+          <Wakeup display={wakeupDisplay} conversationId={conversation?.conversationId} />
+        ) : (
+          <MessageContent
+            ask={ask}
+            edit={edit}
+            isLast={isLast}
+            text={msg.text || ''}
+            message={msg}
+            enterEdit={enterEdit}
+            error={!!(msg.error ?? false)}
+            isSubmitting={isSubmitting}
+            unfinished={msg.unfinished ?? false}
+            isCreatedByUser={msg.isCreatedByUser ?? true}
+            siblingIdx={siblingIdx ?? 0}
+            setSiblingIdx={setSiblingIdx ?? (() => ({}))}
+          />
+        )}
       </MessageContext.Provider>
     </MessageRow>
   );

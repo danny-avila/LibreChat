@@ -175,6 +175,7 @@ const categorizeFileForToolResources = ({
  */
 export const primeResources = async ({
   req,
+  principal,
   appConfig,
   getFiles,
   filterFiles,
@@ -183,7 +184,8 @@ export const primeResources = async ({
   tool_resources: _tool_resources,
   agentId,
 }: {
-  req: ServerRequest & { user?: IUser };
+  req?: ServerRequest & { user?: IUser };
+  principal?: Pick<IUser, 'id' | 'role'>;
   appConfig?: AppConfig;
   requestFileSet: Set<string>;
   attachments: Promise<Array<TFile | null>> | undefined;
@@ -197,6 +199,7 @@ export const primeResources = async ({
   agentContextAttachments: Array<TFile | undefined> | undefined;
   tool_resources: AgentToolResources | undefined;
 }> => {
+  const resourcePrincipal = principal ?? req?.user;
   const requestAttachments: Array<TFile> = [];
   const agentContextAttachments: Array<TFile> = [];
   const persistedToolResources = sanitizePersistedToolResources(_tool_resources);
@@ -287,11 +290,11 @@ export const primeResources = async ({
         {},
       );
 
-      if (filterFiles && req.user?.id && agentId) {
+      if (filterFiles && resourcePrincipal?.id && agentId) {
         persistedResourceFiles = await filterFiles({
           files: persistedResourceFiles,
-          userId: req.user.id,
-          role: req.user.role,
+          userId: resourcePrincipal.id,
+          role: resourcePrincipal.role,
           agentId,
         });
       }

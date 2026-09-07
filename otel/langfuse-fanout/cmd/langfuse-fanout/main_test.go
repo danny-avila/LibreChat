@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -1047,7 +1049,7 @@ func TestTraceProxyRecordsPrometheusMetrics(t *testing.T) {
 	defer collector.Close()
 
 	gw := newTestGatewayWithCollector(collector.URL)
-	body := buildTraceRequest(t, nil)
+	body := buildTraceRequest(t, map[string]string{tenantIDAttribute: "tenant-123"})
 	req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu"+otelTracePath, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("Authorization", "Basic tenant")
@@ -1059,11 +1061,126 @@ func TestTraceProxyRecordsPrometheusMetrics(t *testing.T) {
 	}
 
 	metrics := scrapeMetrics(t, gw)
-	if !strings.Contains(metrics, `langfuse_fanout_trace_exports_total{destination="tenant_eu",result="success"} 1`) {
+	if !strings.Contains(metrics, `langfuse_fanout_trace_exports_total{destination="tenant_eu",result="success",tenant_id="tenant-123"} 1`) {
 		t.Fatalf("missing trace export metric:\n%s", metrics)
 	}
 	if !strings.Contains(metrics, `langfuse_fanout_upstream_requests_total{destination="collector",operation="trace_collector",status_class="2xx"} 1`) {
 		t.Fatalf("missing upstream collector metric:\n%s", metrics)
+	}
+}
+
+func TestTraceProxyBoundsTenantMetricLabels(t *testing.T) {
+	t.Parallel()
+
+	metrics := newGatewayMetrics()
+	for i := 0; i < maxTenantMetricLabels+10; i++ {
+		metrics.recordTraceExport(centralName, "success", fmt.Sprintf("tenant-%d", i))
+	}
+	metrics.recordTraceExport(centralName, "success", strings.Repeat("x", 129))
+
+	metricFamilies, err := metrics.registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range metricFamilies {
+		if family.GetName() != "langfuse_fanout_trace_exports_total" {
+			continue
+		}
+		if got, want := len(family.Metric), maxTenantMetricLabels+2; got != want {
+			t.Fatalf("trace metric children = %d, want %d", got, want)
+		}
+		labels := make(map[string]struct{}, len(family.Metric))
+		for _, metric := range family.Metric {
+			for _, label := range metric.Label {
+				if label.GetName() == "tenant_id" {
+					labels[label.GetValue()] = struct{}{}
+				}
+			}
+		}
+		for _, label := range []string{overflowTenantID, invalidTenantID} {
+			if _, ok := labels[label]; !ok {
+				t.Fatalf("missing bounded tenant label %q", label)
+			}
+		}
+		return
+	}
+	t.Fatal("missing trace export metric family")
+}
+
+func TestTraceProxyBoundsUnknownDestinationLabel(t *testing.T) {
+	t.Parallel()
+
+	gw := newTestGatewayWithCollector("http://collector.invalid")
+	gw.recordTraceExport(route{destination: "attacker-controlled"}, "error", "tenant-123")
+
+	metrics := scrapeMetrics(t, gw)
+	if !strings.Contains(metrics, `langfuse_fanout_trace_exports_total{destination="central",result="error",tenant_id="tenant-123"} 1`) {
+		t.Fatalf("missing bounded trace destination metric:\n%s", metrics)
+	}
+}
+
+func TestExtractTraceTenantID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("protobuf", func(t *testing.T) {
+		body := buildTraceRequest(t, map[string]string{tenantIDAttribute: "tenant-123"})
+		if tenantID := extractTraceTenantID(body, "application/x-protobuf"); tenantID != "tenant-123" {
+			t.Fatalf("tenant ID = %q", tenantID)
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		body := []byte(`{"resourceSpans":[{"scopeSpans":[{"spans":[{"attributes":[{"key":"librechat.tenant.id","value":{"stringValue":"tenant-456"}}]}]}]}]}`)
+		if tenantID := extractTraceTenantID(body, "application/json"); tenantID != "tenant-456" {
+			t.Fatalf("tenant ID = %q", tenantID)
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		body := buildTraceRequest(t, nil)
+		if tenantID := extractTraceTenantID(body, "application/x-protobuf"); tenantID != unknownTenantID {
+			t.Fatalf("tenant ID = %q", tenantID)
+		}
+	})
+
+	t.Run("multiple", func(t *testing.T) {
+		tenantIDs := map[string]struct{}{"tenant-1": {}, "tenant-2": {}}
+		if tenantID := resolveTraceTenantID(tenantIDs); tenantID != multipleTenantIDs {
+			t.Fatalf("tenant ID = %q", tenantID)
+		}
+	})
+
+	t.Run("sentinels are outside tenant ID grammar", func(t *testing.T) {
+		validTenantID := regexp.MustCompile(`^[-a-zA-Z0-9_.]+$`)
+		for _, sentinel := range []string{unknownTenantID, multipleTenantIDs} {
+			if validTenantID.MatchString(sentinel) {
+				t.Fatalf("sentinel %q is a valid tenant ID", sentinel)
+			}
+		}
+	})
+}
+
+func TestMalformedTenantTraceRecordsErrorMetric(t *testing.T) {
+	t.Parallel()
+
+	gw := newTestGatewayWithCollector("http://collector.invalid")
+	req := httptest.NewRequest(
+		http.MethodPost,
+		tenantPrefix+"eu"+otelTracePath,
+		bytes.NewReader([]byte("not protobuf")),
+	)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Authorization", "Basic tenant")
+	resp := httptest.NewRecorder()
+
+	gw.handle(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	metrics := scrapeMetrics(t, gw)
+	if !strings.Contains(metrics, `langfuse_fanout_trace_exports_total{destination="tenant_eu",result="error",tenant_id="<unknown>"} 1`) {
+		t.Fatalf("missing invalid trace export metric:\n%s", metrics)
 	}
 }
 

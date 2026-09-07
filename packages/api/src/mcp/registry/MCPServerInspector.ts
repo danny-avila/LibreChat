@@ -177,8 +177,10 @@ export class MCPServerInspector {
   public static async getToolCatalog(
     serverName: string,
     connection: MCPConnection,
+    deadlineMs?: number,
+    signal?: AbortSignal,
   ): Promise<{ tools: t.LCAvailableTools; publicationRevision?: string }> {
-    const snapshot = await connection.fetchOrderedToolsSnapshot();
+    const snapshot = await connection.fetchOrderedToolsSnapshot(deadlineMs, signal);
     if (!snapshot.complete) {
       throw new Error(`Incomplete tools/list snapshot for MCP server ${serverName}`);
     }

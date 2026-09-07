@@ -64,7 +64,7 @@ function AgentSelect({
         provider: createProviderOption(fullAgent.provider),
         label: fullAgent.name ?? '',
         value: fullAgent.id || '',
-        icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
+        icon: isGlobal ? <EarthIcon className="icon-lg text-status-success" /> : null,
       };
 
       const capabilities: TAgentCapabilities = {
@@ -100,6 +100,8 @@ function AgentSelect({
         avatar_preview: fullAgent.avatar?.filepath ?? '',
         avatar_action: null,
         stateful_code_environment: fullAgent.stateful_code_environment ?? 'user',
+        code_environment_id: fullAgent.code_environment_id,
+        git_identity: fullAgent.git_identity,
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {
@@ -170,11 +172,17 @@ function AgentSelect({
        * the flag). The builder has no control left for it and the runtime
        * treats it as "no skills", yet the section would render the selection
        * as active. Normalize to enabled so the form matches what the UI
-       * shows and a later save persists the displayed behavior. */
+       * shows and a later save persists the displayed behavior.
+       *
+       * An explicit `skills_scope` is exempt: `none` deliberately keeps the
+       * allowlist so returning to `selected` restores it, and flipping the
+       * flag there would persist skills-enabled on an agent shown as Off,
+       * which `skillDeps` reads as permission to inject authoring tools. */
       if (
         Array.isArray(formValues.skills) &&
         formValues.skills.length > 0 &&
-        formValues.skills_enabled !== true
+        formValues.skills_enabled !== true &&
+        formValues.skills_scope === undefined
       ) {
         formValues.skills_enabled = true;
       }

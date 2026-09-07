@@ -7,6 +7,7 @@ on:
       - 'client/**'
       - 'config/**'
       - 'packages/**'
+      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - 'eslint.config.mjs'
@@ -40,6 +41,8 @@ jobs:
           # config via git show — a shallow checkout breaks both.
           fetch-depth: 0
 
+      # scripts/static-checks.mts mirrors these filters to run the same checks
+      # locally on a commit's diff — keep the two in sync.
       - name: Detect affected checks
         id: paths
         uses: dorny/paths-filter@v4
@@ -70,11 +73,19 @@ jobs:
               - 'packages/data-schemas/src/**'
               - '.github/workflows/static-checks.yml'
               - '!**.md'
+            runner:
+              - 'scripts/static-checks.mts'
+              - '.github/workflows/static-checks.yml'
             unused_packages:
               - 'api/**'
               - 'client/**'
               - 'packages/api/**'
               - 'packages/client/**'
+              # Every workspace manifest the JSON validation step covers, plus
+              # the ones whose dependencies feed the unused-package calculation
+              # through api/package.json's @librechat/data-schemas entry.
+              - 'packages/data-provider/package.json'
+              - 'packages/data-schemas/package.json'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/static-checks.yml'
@@ -202,6 +213,23 @@ jobs:
       # Directory args, not `npm run lint`: the root brace-expansion@^5
       # override breaks minimatch@3's brace expansion, so that script's
       # braced glob crashes on a clean install; dir args never brace-expand.
+      # scripts/static-checks.mts runs these same checks locally from the
+      # pre-commit hook, and nothing else in this job loads it: ESLint has no
+      # flat-config match for scripts/**/*.mts. Run it against the PR's own
+      # diff so a syntax error or a broken filter fails here rather than in
+      # every contributor's next commit.
+      - name: Smoke the local static-checks runner
+        id: runner
+        if: always() && steps.paths.outputs.runner == 'true'
+        continue-on-error: true
+        run: |
+          BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
+          node scripts/static-checks.mts --against "$BASE_SHA" --list
+          # An explicit target, because --list never executes a check and a
+          # script-only PR activates no group — so neither would exercise the
+          # execution path this step exists to protect.
+          node scripts/static-checks.mts package.json --only json
+
       - name: Validate ESLint config on config changes
         id: eslint_config
         if: always() && steps.paths.outputs.eslint_config == 'true'
@@ -393,7 +421,7 @@ jobs:
         if: always() && steps.paths.outputs.unused_packages == 'true'
         continue-on-error: true
         run: |
-          for FILE in package.json client/package.json api/package.json packages/client/package.json; do
+          for FILE in package.json client/package.json api/package.json packages/api/package.json packages/client/package.json packages/data-provider/package.json packages/data-schemas/package.json; do
             if [[ -f "$FILE" ]]; then
               jq empty "$FILE" || (echo "::error title=Invalid JSON::$FILE is invalid" && exit 1)
             fi
@@ -642,6 +670,7 @@ jobs:
           ESLINT_CONFIG_OUTCOME: ${{ steps.eslint_config.outcome }}
           PRETTIER_OUTCOME: ${{ steps.prettier.outcome }}
           IMPORT_SORT_OUTCOME: ${{ steps.import_sort.outcome }}
+          RUNNER_OUTCOME: ${{ steps.runner.outcome }}
           CACHE_DATA_PROVIDER_OUTCOME: ${{ steps.cache-data-provider.outcome }}
           CONFIG_DATA_PROVIDER_OUTCOME: ${{ steps.config_data_provider.outcome }}
           CACHE_DATA_SCHEMAS_OUTCOME: ${{ steps.cache-data-schemas.outcome }}
@@ -678,6 +707,7 @@ jobs:
           record_failure "ESLint config validation" "$ESLINT_CONFIG_OUTCOME"
           record_failure "Prettier" "$PRETTIER_OUTCOME"
           record_failure "Import sorting" "$IMPORT_SORT_OUTCOME"
+          record_failure "Local static-checks runner" "$RUNNER_OUTCOME"
           record_failure "Config data-provider cache" "$CACHE_DATA_PROVIDER_OUTCOME"
           record_failure "Config data-provider build" "$CONFIG_DATA_PROVIDER_OUTCOME"
           record_failure "Config data-schemas cache" "$CACHE_DATA_SCHEMAS_OUTCOME"

@@ -200,7 +200,11 @@ describe('canAccessSharedLink', () => {
       await canAccessSharedLink(req, res, next as unknown as NextFunction);
 
       expect(next).toHaveBeenCalled();
-      expect((req as unknown as Record<string, unknown>).shareResourceId).toBe(link._id.toString());
+      expect(req).toMatchObject({
+        shareResourceId: link._id.toString(),
+        shareConversationId: 'convo1',
+        shareOwnerId: userId.toString(),
+      });
     });
 
     test('returns 401 for anonymous access when ALLOW_SHARED_LINKS_PUBLIC is not set', async () => {

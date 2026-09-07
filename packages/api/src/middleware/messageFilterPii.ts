@@ -32,12 +32,15 @@ import {
   isContentTraversalLimitError,
 } from '../protection/adapters/nested';
 import {
+  getBoundedAskUserAnswerValues,
+  serializeAskUserAnswerVariants,
+} from '../agents/hitl/resume';
+import {
   extractFileContent,
   extractStoredMessageContent,
 } from '../protection/adapters/submissions';
 import { createLegacyPiiInspector, toLegacyPiiMatch } from '../protection/legacy';
 import { extractMessageContent } from '../protection/adapters/messages';
-import { serializeAskUserAnswerVariants } from '../agents/hitl/resume';
 import { extractChatContent } from '../protection/adapters/chat';
 import { contentFilterBlockResponse } from './contentFilter';
 import { inspectContent } from '../protection/runtime';
@@ -219,10 +222,9 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       typeof req.body.answers === 'object' &&
       !Array.isArray(req.body.answers)
     ) {
+      const answers = getBoundedAskUserAnswerValues(req.body.answers);
       const answerCandidates = [
-        ...Object.values(req.body.answers).filter(
-          (answer): answer is string => typeof answer === 'string' && answer.length > 0,
-        ),
+        ...answers.filter((answer) => answer.length > 0),
         ...serializeAskUserAnswerVariants(req.body.answers),
       ];
       fragments.push(

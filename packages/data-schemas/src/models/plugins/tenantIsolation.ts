@@ -1,78 +1,32 @@
-import type { Schema, Query, Aggregate, UpdateQuery } from 'mongoose';
-import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import logger from '~/config/winston';
+import type { Schema, Query, Aggregate } from 'mongoose';
+import type { TenantDocument, TenantUpdate } from '~/tenant/policy';
+import {
+  tenantFilter,
+  scopeReplacement,
+  currentTenantScope,
+  resolveTenantScope,
+  stampTenantOnDocument,
+  sanitizeTenantMutation,
+  resetTenantStrictCache,
+  warnOnInvalidStrictSetting,
+} from '~/tenant/policy';
 
-let _strictMode: boolean | undefined;
-
-function isStrict(): boolean {
-  return (_strictMode ??= process.env.TENANT_ISOLATION_STRICT === 'true');
-}
+/**
+ * Mongoose binding for the engine-neutral tenant-isolation policy.
+ *
+ * Every rule enforced here is defined in `~/tenant/policy`; this module only
+ * adapts Mongoose's middleware surface to it, so a second storage engine can
+ * reuse the same decisions without reimplementing them.
+ */
 
 /** Resets the cached strict-mode flag. Exposed for test teardown only. */
 export function _resetStrictCache(): void {
-  _strictMode = undefined;
+  resetTenantStrictCache();
 }
 
-if (
-  process.env.TENANT_ISOLATION_STRICT &&
-  process.env.TENANT_ISOLATION_STRICT !== 'true' &&
-  process.env.TENANT_ISOLATION_STRICT !== 'false'
-) {
-  logger.warn(
-    `[TenantIsolation] TENANT_ISOLATION_STRICT="${process.env.TENANT_ISOLATION_STRICT}" ` +
-      'is not "true" or "false"; defaulting to non-strict mode.',
-  );
-}
+warnOnInvalidStrictSetting();
 
 const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
-
-const VALUE_OPERATORS = ['$set', '$setOnInsert'] as const;
-const STRIP_OPERATORS = ['$unset', '$rename'] as const;
-
-/**
- * Strips `tenantId` from update payloads when it matches the current tenant
- * (or no context is active). Throws on cross-tenant mutations.
- *
- * `$unset`/`$rename` always strip — unsetting/renaming tenantId is never valid.
- * Empty operator objects are removed after stripping to avoid MongoDB errors.
- */
-function sanitizeTenantIdMutation(update: UpdateQuery<unknown> | null): void {
-  if (!update) {
-    return;
-  }
-
-  const currentTenantId = getTenantId();
-
-  for (const op of VALUE_OPERATORS) {
-    const payload = update[op] as Record<string, unknown> | undefined;
-    if (payload && 'tenantId' in payload) {
-      if (currentTenantId && payload.tenantId !== currentTenantId) {
-        throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
-      }
-      delete payload.tenantId;
-      if (Object.keys(payload).length === 0) {
-        delete (update as Record<string, unknown>)[op];
-      }
-    }
-  }
-
-  for (const op of STRIP_OPERATORS) {
-    const payload = update[op] as Record<string, unknown> | undefined;
-    if (payload && 'tenantId' in payload) {
-      delete payload.tenantId;
-      if (Object.keys(payload).length === 0) {
-        delete (update as Record<string, unknown>)[op];
-      }
-    }
-  }
-
-  if ('tenantId' in update) {
-    if (currentTenantId && update.tenantId !== currentTenantId) {
-      throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
-    }
-    delete (update as Record<string, unknown>).tenantId;
-  }
-}
 
 /**
  * Mongoose schema plugin that enforces tenant-level data isolation.
@@ -91,47 +45,38 @@ export function applyTenantIsolation(schema: Schema): void {
   s[TENANT_ISOLATION_APPLIED] = true;
 
   const queryMiddleware = function (this: Query<unknown, unknown>) {
-    const tenantId = getTenantId();
-
-    if (!tenantId && isStrict()) {
-      throw new Error('[TenantIsolation] Query attempted without tenant context in strict mode');
+    const filter = tenantFilter(resolveTenantScope('Query'));
+    if (filter) {
+      this.where(filter);
     }
-
-    if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
-      return;
-    }
-
-    this.where({ tenantId });
   };
 
   const updateGuard = function (this: Query<unknown, unknown>) {
-    const tenantId = getTenantId();
-    if (tenantId === SYSTEM_TENANT_ID) {
+    const scope = currentTenantScope();
+    if (scope.kind === 'system') {
       return;
     }
-    sanitizeTenantIdMutation(this.getUpdate() as UpdateQuery<unknown> | null);
 
-    const update = this.getUpdate() as Record<string, unknown> | null;
-    if (update && Object.keys(update).length === 0) {
+    const result = sanitizeTenantMutation(scope, this.getUpdate() as TenantUpdate | null, 'guard');
+    if (result.changed) {
+      this.setUpdate(result.update);
+    }
+
+    if (result.emptied) {
       this.where({ _id: { $in: [] } });
       this.setOptions({ upsert: false });
     }
   };
 
   const replaceGuard = function (this: Query<unknown, unknown>) {
-    const tenantId = getTenantId();
-    if (tenantId === SYSTEM_TENANT_ID) {
+    const scope = currentTenantScope();
+    if (scope.kind === 'system') {
       return;
     }
-    const replacement = this.getUpdate() as Record<string, unknown> | null;
-    if (!replacement) {
-      return;
-    }
-    if ('tenantId' in replacement && replacement.tenantId !== tenantId) {
-      throw new Error('[TenantIsolation] Modifying tenantId via replacement is not allowed');
-    }
-    if (tenantId && !('tenantId' in replacement)) {
-      replacement.tenantId = tenantId;
+
+    const result = scopeReplacement(scope, this.getUpdate() as TenantDocument | null);
+    if (result.changed && result.replacement) {
+      this.setUpdate(result.replacement);
     }
   };
 
@@ -156,60 +101,27 @@ export function applyTenantIsolation(schema: Schema): void {
   schema.pre('findOneAndReplace', replaceGuard);
 
   schema.pre('aggregate', function (this: Aggregate<unknown>) {
-    const tenantId = getTenantId();
-
-    if (!tenantId && isStrict()) {
-      throw new Error(
-        '[TenantIsolation] Aggregate attempted without tenant context in strict mode',
-      );
+    const filter = tenantFilter(resolveTenantScope('Aggregate'));
+    if (filter) {
+      this.pipeline().unshift({ $match: filter });
     }
-
-    if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
-      return;
-    }
-
-    this.pipeline().unshift({ $match: { tenantId } });
   });
 
   schema.pre('save', function () {
-    const tenantId = getTenantId();
-
-    if (!tenantId && isStrict()) {
-      throw new Error('[TenantIsolation] Save attempted without tenant context in strict mode');
-    }
-
-    if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
-      if (!this.tenantId) {
-        this.tenantId = tenantId;
-      } else if (isStrict() && this.tenantId !== tenantId) {
-        throw new Error(
-          '[TenantIsolation] Document tenantId does not match current tenant context',
-        );
-      }
-    }
+    stampTenantOnDocument(resolveTenantScope('Save'), this as unknown as TenantDocument);
   });
 
   schema.pre('insertMany', function (next, docs) {
-    const tenantId = getTenantId();
-
-    if (!tenantId && isStrict()) {
-      return next(
-        new Error('[TenantIsolation] insertMany attempted without tenant context in strict mode'),
-      );
-    }
-
-    if (tenantId && tenantId !== SYSTEM_TENANT_ID && Array.isArray(docs)) {
-      for (const doc of docs) {
-        if (!doc.tenantId) {
-          doc.tenantId = tenantId;
-        } else if (isStrict() && doc.tenantId !== tenantId) {
-          return next(
-            new Error('[TenantIsolation] Document tenantId does not match current tenant context'),
-          );
+    try {
+      const scope = resolveTenantScope('insertMany');
+      if (Array.isArray(docs)) {
+        for (const doc of docs) {
+          stampTenantOnDocument(scope, doc as TenantDocument);
         }
       }
+    } catch (error) {
+      return next(error as Error);
     }
-
     next();
   });
 }

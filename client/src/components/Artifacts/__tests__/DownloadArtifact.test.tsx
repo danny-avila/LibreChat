@@ -22,6 +22,20 @@ jest.mock('~/Providers/EditorContext', () => ({
   useCodeState: () => ({ currentCode: undefined }),
 }));
 
+/* MorphIcon renders a single morphing <svg> with no per-icon class, so map
+ * the lucide icon data it was handed back to a stable name instead. */
+jest.mock('@librechat/client', () => {
+  const { createMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  const { Download, CircleCheckBig } = jest.requireActual('lucide');
+  return {
+    ...jest.requireActual('@librechat/client'),
+    MorphIcon: createMorphIconMock([
+      [Download, 'download'],
+      [CircleCheckBig, 'circle-check-big'],
+    ]),
+  };
+});
+
 jest.mock('~/components/Chat/Messages/Content/Parts/LogLink', () => ({
   useAttachmentLink: () => ({ handleDownload: mockFileDownload }),
   isLocallyStoredSource: (source?: string) =>
@@ -118,7 +132,7 @@ describe('DownloadArtifact', () => {
     // The preview HTML must NOT be serialized into a blob download.
     expect(createObjectURL).not.toHaveBeenCalled();
     // A delivered file flips the button to the success checkmark.
-    expect(container.querySelector('.lucide-circle-check-big')).not.toBeNull();
+    expect(container.querySelector('[data-icon="circle-check-big"]')).not.toBeNull();
   });
 
   it('does NOT show success when the original-file download fails', async () => {
@@ -130,8 +144,8 @@ describe('DownloadArtifact', () => {
       fireEvent.click(screen.getByRole('button'));
     });
     expect(mockFileDownload).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('.lucide-circle-check-big')).toBeNull();
-    expect(container.querySelector('.lucide-download')).not.toBeNull();
+    expect(container.querySelector('[data-icon="circle-check-big"]')).toBeNull();
+    expect(container.querySelector('[data-icon="download"]')).not.toBeNull();
   });
 
   it('serializes content as a blob for a non-file-backed (LLM-authored) artifact', async () => {

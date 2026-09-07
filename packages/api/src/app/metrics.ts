@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import { Registry, collectDefaultMetrics, Counter, Gauge, Histogram } from 'prom-client';
+import { logger, setAgentEventActorReceiptMetricObserver } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Mongoose } from 'mongoose';
 import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
@@ -129,6 +129,24 @@ export interface PrometheusMetrics {
   metricsRouter: Router;
 }
 
+export interface AgentEventActorStorageMetricsSnapshot {
+  retainedByResolution: Record<
+    'checkpoint_verified' | 'action_compensated' | 'history_repaired',
+    number
+  >;
+  expiryEligible: number;
+  retryDeliveries: number;
+  deadDeliveries: number;
+  pendingReconciliations: number;
+  oldestPendingAgeSeconds: number;
+}
+
+export interface MetricsOptions {
+  collectAgentEventActorStorageMetrics?: () => Promise<AgentEventActorStorageMetricsSnapshot>;
+}
+
+const AGENT_EVENT_ACTOR_STORAGE_METRICS_CACHE_MS = 60_000;
+
 export type OpenIDUserLookupResult = 'found' | 'not_found' | 'migration' | 'auth_failed' | 'error';
 export type GenerationJobStore = 'memory' | 'redis';
 export type GenerationJobResult = 'created' | 'completed' | 'error' | 'aborted' | 'abort_failed';
@@ -150,6 +168,8 @@ export type RumProxyResult =
   | 'collector_5xx'
   | 'collector_error'
   | 'collector_timeout';
+export type ShareLinkOperation = 'create' | 'update';
+export type ShareLinkRejectionCode = 'TARGET_MESSAGE_NOT_FOUND' | 'NO_MESSAGES';
 export type RedisClient = 'ioredis' | 'keyv';
 export type RedisOperationStatus = 'success' | 'error';
 
@@ -217,6 +237,14 @@ let rumProxyMetrics: RumProxyMetrics = {
   recordRequest: () => undefined,
 };
 
+type ShareLinkMetrics = {
+  recordRejection: (operation: ShareLinkOperation, code: ShareLinkRejectionCode) => void;
+};
+
+let shareLinkMetrics: ShareLinkMetrics = {
+  recordRejection: () => undefined,
+};
+
 type RedisOperationMetrics = {
   recordOperation: (
     client: RedisClient,
@@ -252,9 +280,13 @@ const resetMetricRecorders = (): void => {
   rumProxyMetrics = {
     recordRequest: () => undefined,
   };
+  shareLinkMetrics = {
+    recordRejection: () => undefined,
+  };
   redisOperationMetrics = {
     recordOperation: () => undefined,
   };
+  setAgentEventActorReceiptMetricObserver();
 };
 
 export function recordGenerationJob(store: GenerationJobStore, result: GenerationJobResult): void {
@@ -307,6 +339,13 @@ export function recordAgentStartupResult(result: AgentStartupResult): void {
 
 export function recordRumProxyRequest(endpoint: RumProxyEndpoint, result: RumProxyResult): void {
   rumProxyMetrics.recordRequest(endpoint, result);
+}
+
+export function recordShareLinkRejection(
+  operation: ShareLinkOperation,
+  code: ShareLinkRejectionCode,
+): void {
+  shareLinkMetrics.recordRejection(operation, code);
 }
 
 export function recordRedisOperation(
@@ -429,7 +468,7 @@ export function instrumentMongooseQueryMetrics(mongoose: Mongoose): void {
   queryPrototype[instrumented] = true;
 }
 
-export function createMetrics(): PrometheusMetrics {
+export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
   if (!isMetricsConfigured()) {
     resetMetricRecorders();
     return {
@@ -624,6 +663,13 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const shareLinkRejections = new Counter({
+    name: 'share_link_rejections_total',
+    help: 'Shared link publication rejections by operation and bounded domain code',
+    labelNames: ['operation', 'code'] as const,
+    registers: [registry],
+  });
+
   const redisOperations = new Counter({
     name: 'redis_operations_total',
     help: 'Logical Redis operations by client, use case, operation, and status',
@@ -638,6 +684,78 @@ export function createMetrics(): PrometheusMetrics {
     buckets: [0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
     registers: [registry],
   });
+
+  const agentEventActorReceiptOperations = new Counter({
+    name: 'agent_event_actor_receipt_operations_total',
+    help: 'Event actor receipt storage operations by bounded outcome and resolution',
+    labelNames: ['operation', 'outcome', 'resolution'] as const,
+    registers: [registry],
+  });
+
+  const agentEventActorReceiptsRetained = new Gauge({
+    name: 'agent_event_actor_receipts_retained',
+    help: 'Delivery-owned event actor receipts currently retained for replay',
+    labelNames: ['resolution'] as const,
+    registers: [registry],
+  });
+  const agentEventActorReceiptsExpiryEligible = new Gauge({
+    name: 'agent_event_actor_receipts_expiry_eligible',
+    help: 'Retained event actor receipts whose Mongo TTL deadline has elapsed',
+    registers: [registry],
+  });
+  const agentEventActorReconciliationsPending = new Gauge({
+    name: 'agent_event_actor_reconciliations_pending',
+    help: 'Active event actor reconciliation markers awaiting a terminal delivery receipt',
+    registers: [registry],
+  });
+  const agentEventActorOldestReconciliationAge = new Gauge({
+    name: 'agent_event_actor_oldest_reconciliation_age_seconds',
+    help: 'Age in seconds of the oldest active event actor reconciliation marker',
+    registers: [registry],
+  });
+  const agentEventActorDeliveries = new Gauge({
+    name: 'agent_event_actor_deliveries',
+    help: 'Current retrying and dead delivery rows visible to the receipt ledger',
+    labelNames: ['state'] as const,
+    registers: [registry],
+  });
+
+  setAgentEventActorReceiptMetricObserver(({ operation, outcome, resolution }) => {
+    agentEventActorReceiptOperations.inc({
+      operation,
+      outcome,
+      resolution: resolution ?? 'none',
+    });
+  });
+
+  let actorStorageMetricsCache:
+    | { snapshot: AgentEventActorStorageMetricsSnapshot; expiresAt: number }
+    | undefined;
+  let actorStorageMetricsCollection: Promise<
+    AgentEventActorStorageMetricsSnapshot | undefined
+  > | null = null;
+  const collectActorStorageMetrics = async () => {
+    const now = Date.now();
+    if (actorStorageMetricsCache != null && actorStorageMetricsCache.expiresAt > now) {
+      return actorStorageMetricsCache.snapshot;
+    }
+    actorStorageMetricsCollection ??= Promise.resolve(
+      options.collectAgentEventActorStorageMetrics?.(),
+    )
+      .then((snapshot) => {
+        if (snapshot != null) {
+          actorStorageMetricsCache = {
+            snapshot,
+            expiresAt: Date.now() + AGENT_EVENT_ACTOR_STORAGE_METRICS_CACHE_MS,
+          };
+        }
+        return snapshot;
+      })
+      .finally(() => {
+        actorStorageMetricsCollection = null;
+      });
+    return actorStorageMetricsCollection;
+  };
 
   generationJobMetrics = {
     recordJob: (store, result) => generationJobs.inc({ store, result }),
@@ -657,6 +775,10 @@ export function createMetrics(): PrometheusMetrics {
 
   rumProxyMetrics = {
     recordRequest: (endpoint, result) => rumProxyRequests.inc({ endpoint, result }),
+  };
+
+  shareLinkMetrics = {
+    recordRejection: (operation, code) => shareLinkRejections.inc({ operation, code }),
   };
 
   redisOperationMetrics = {
@@ -777,8 +899,22 @@ export function createMetrics(): PrometheusMetrics {
       return;
     }
 
-    void registry
-      .metrics()
+    void Promise.resolve()
+      .then(async () => {
+        const snapshot = await collectActorStorageMetrics();
+        if (snapshot == null) {
+          return;
+        }
+        for (const [resolution, count] of Object.entries(snapshot.retainedByResolution)) {
+          agentEventActorReceiptsRetained.set({ resolution }, count);
+        }
+        agentEventActorReceiptsExpiryEligible.set(snapshot.expiryEligible);
+        agentEventActorReconciliationsPending.set(snapshot.pendingReconciliations);
+        agentEventActorOldestReconciliationAge.set(snapshot.oldestPendingAgeSeconds);
+        agentEventActorDeliveries.set({ state: 'retry' }, snapshot.retryDeliveries);
+        agentEventActorDeliveries.set({ state: 'dead' }, snapshot.deadDeliveries);
+      })
+      .then(() => registry.metrics())
       .then((metrics) => {
         res.set('Content-Type', registry.contentType);
         res.end(metrics);

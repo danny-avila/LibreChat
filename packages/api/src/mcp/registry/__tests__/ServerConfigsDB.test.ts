@@ -40,6 +40,13 @@ const createSSEConfig = (
 
 let dbMethods: ReturnType<CreateMethodsType>;
 
+/** `Model.find` overloads reduce the spy's inferred arguments to an empty tuple,
+ *  so the recorded calls are re-typed here and mapped to their filter. */
+function aclFindFilters(spy: jest.SpyInstance): Array<Record<string, unknown>> {
+  const calls = spy.mock.calls as unknown as Array<[Record<string, unknown>]>;
+  return calls.map(([filter]) => filter);
+}
+
 beforeAll(async () => {
   // Set encryption keys BEFORE importing modules that use crypto
   process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -1357,6 +1364,103 @@ describe('ServerConfigsDB', () => {
         expect(Object.keys(result)).toHaveLength(1);
         expect(result['agent-only-server']).toBeDefined();
         expect(result['agent-only-server'].consumeOnly).toBe(true);
+      });
+
+      it('should bound the agent ACL query to agents that reference MCP servers', async () => {
+        const config = createSSEConfig('Bounded Server');
+        const created = await serverConfigsDB.add('temp', config, userId);
+
+        const Agent = mongoose.models.Agent;
+        const referencingAgent = await Agent.create({
+          id: 'referencing-agent',
+          name: 'Referencing Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+          mcpServerNames: [created.serverName],
+        });
+        // Accessible to userId2 but references no MCP server: these must not
+        // inflate the agent-side ACL query (#14016)
+        const spectatorAgent = await Agent.create({
+          id: 'spectator-agent',
+          name: 'Spectator Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+        });
+
+        const agentRole = await mongoose.models.AccessRole.findOne({
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        });
+        for (const agent of [referencingAgent, spectatorAgent]) {
+          await mongoose.models.AclEntry.create({
+            principalType: PrincipalType.USER,
+            principalModel: PrincipalModel.USER,
+            principalId: new mongoose.Types.ObjectId(userId2),
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            permBits: PermissionBits.VIEW,
+            roleId: agentRole!._id,
+            grantedBy: new mongoose.Types.ObjectId(userId),
+          });
+        }
+
+        const findSpy = jest.spyOn(mongoose.models.AclEntry, 'find');
+        try {
+          const result = await serverConfigsDB.getAll(userId2);
+          expect(result['bounded-server']?.consumeOnly).toBe(true);
+
+          const agentSideFilters = aclFindFilters(findSpy).filter(
+            (filter) => filter.resourceType === ResourceType.AGENT,
+          );
+          expect(agentSideFilters).toHaveLength(1);
+          const boundIds = (agentSideFilters[0]?.resourceId as { $in?: unknown[] } | undefined)
+            ?.$in;
+          expect(boundIds).toHaveLength(1);
+          expect(String(boundIds?.[0])).toBe(referencingAgent._id.toString());
+        } finally {
+          findSpy.mockRestore();
+        }
+      });
+
+      it('should skip the agent ACL query entirely when no agent references MCP servers', async () => {
+        const config = createSSEConfig('Unreferenced Server');
+        await serverConfigsDB.add('temp', config, userId);
+
+        const Agent = mongoose.models.Agent;
+        const agent = await Agent.create({
+          id: 'plain-agent',
+          name: 'Plain Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+        });
+        const agentRole = await mongoose.models.AccessRole.findOne({
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        });
+        await mongoose.models.AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: new mongoose.Types.ObjectId(userId2),
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          permBits: PermissionBits.VIEW,
+          roleId: agentRole!._id,
+          grantedBy: new mongoose.Types.ObjectId(userId),
+        });
+
+        const findSpy = jest.spyOn(mongoose.models.AclEntry, 'find');
+        try {
+          const result = await serverConfigsDB.getAll(userId2);
+          expect(result['unreferenced-server']).toBeUndefined();
+
+          const agentSideFilters = aclFindFilters(findSpy).filter(
+            (filter) => filter.resourceType === ResourceType.AGENT,
+          );
+          expect(agentSideFilters).toHaveLength(0);
+        } finally {
+          findSpy.mockRestore();
+        }
       });
 
       it('should deduplicate servers with both direct and agent access', async () => {

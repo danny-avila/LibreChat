@@ -306,6 +306,15 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('does not inspect an oversized batched ask-user answer before resume validation', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { answers: { environment: 'x'.repeat(16_001), credentials: `the key is ${SK}` } },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
   it('rejects a blocked pattern spanning serialized batch answers', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       {

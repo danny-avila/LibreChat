@@ -11,7 +11,7 @@ const USER_FACING_UPLOAD_ERRORS = [
 
 const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
 const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu;
-const FILENAME_SEGMENT_MAX_BYTES = 255;
+export const FILENAME_SEGMENT_MAX_BYTES = 255;
 
 function sanitizeFilenameSegment(segment: string): string {
   const asciiSanitized = Array.from(segment.normalize('NFC'), (char) => {
@@ -61,6 +61,25 @@ function truncateLeafWithSuffix(leaf: string, suffix: string, maxBytes: number):
   }
   const stemBudget = maxBytes - extBytes - suffixBytes;
   return truncateUtf8Bytes(stem, stemBudget) + suffix + ext;
+}
+
+/**
+ * Composes a leaf as `<stem><suffix><ext>`, trimming the stem so the result
+ * stays inside `maxBytes`. Unlike {@link truncateLeafWithSuffix}, whose suffix
+ * marks a truncation and is therefore only applied when one happens, this
+ * always applies the suffix — callers use it to disambiguate one name from
+ * another, so a trim that dropped the suffix would hand back the name they
+ * were trying to move away from.
+ */
+export function appendLeafSuffix(leaf: string, suffix: string, maxBytes: number): string {
+  const ext = path.extname(leaf);
+  const stem = path.basename(leaf, ext);
+  const suffixBytes = utf8ByteLength(suffix);
+  const extBytes = utf8ByteLength(ext);
+  if (extBytes + suffixBytes >= maxBytes) {
+    return truncateUtf8Bytes(`${stem}${suffix}${ext}`, maxBytes);
+  }
+  return `${truncateUtf8Bytes(stem, maxBytes - extBytes - suffixBytes)}${suffix}${ext}`;
 }
 
 /**
@@ -161,7 +180,7 @@ const ARTIFACT_PATH_TOTAL_MAX_BYTES = 512;
  * collision becomes likely, vs. the realistic ceiling of single-digit
  * artifacts per turn).
  */
-function deterministicHexSuffix(input: string): string {
+export function deterministicHexSuffix(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex').slice(0, 6);
 }
 

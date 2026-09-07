@@ -1,10 +1,45 @@
 import {
+  EModelEndpoint,
   MAX_SUBAGENTS,
   setMaxSubagents,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_GRAPH_SUBAGENT_MEMBERS,
+  Providers,
 } from 'librechat-data-provider';
-import { agentCreateSchema, agentUpdateSchema, agentSubagentsSchema } from './validation';
+import type { Agent } from 'librechat-data-provider';
+import type { Request, Response } from 'express';
+import {
+  agentCreateSchema,
+  agentUpdateSchema,
+  agentSubagentsSchema,
+  validateAgentModel,
+} from './validation';
+
+describe('agent Git identity validation', () => {
+  const base = { provider: 'openAI', model: 'gpt-4o-mini', tools: [] };
+
+  it('accepts and trims a valid commit identity', () => {
+    expect(
+      agentCreateSchema.parse({
+        ...base,
+        git_identity: { name: '  Coding Agent  ', email: '  agent@example.com  ' },
+      }).git_identity,
+    ).toEqual({ name: 'Coding Agent', email: 'agent@example.com' });
+  });
+
+  it.each([
+    { name: '', email: 'agent@example.com' },
+    { name: 'Coding Agent\nInjected', email: 'agent@example.com' },
+    { name: 'Coding Agent', email: 'not-an-email' },
+  ])('rejects an unsafe or incomplete identity: %j', (git_identity) => {
+    expect(agentCreateSchema.safeParse({ ...base, git_identity }).success).toBe(false);
+  });
+
+  it('accepts null only when updating to clear a configured identity', () => {
+    expect(agentCreateSchema.safeParse({ ...base, git_identity: null }).success).toBe(false);
+    expect(agentUpdateSchema.parse({ git_identity: null })).toEqual({ git_identity: null });
+  });
+});
 
 describe('agentSubagentsSchema', () => {
   const graph = {
@@ -341,5 +376,58 @@ describe('agentUpdateSchema with subagents', () => {
     expect(result.tool_resources).toEqual({
       execute_code: { file_ids: ['kept'] },
     });
+  });
+});
+
+describe('validateAgentModel', () => {
+  const request = {} as Request<unknown, unknown, unknown>;
+  const response = {} as Response;
+  const logViolation = jest.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    logViolation.mockClear();
+  });
+
+  it('uses the Google catalog for a Vertex AI agent', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'gemini-3.7-flash' } as Agent,
+      modelsConfig: { [EModelEndpoint.google]: ['gemini-3.7-flash'] },
+      logViolation,
+    });
+
+    expect(result).toEqual({ isValid: true });
+    expect(logViolation).not.toHaveBeenCalled();
+  });
+
+  it('uses an exact Vertex AI catalog when configured', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'custom-vertex-model' } as Agent,
+      modelsConfig: {
+        [EModelEndpoint.google]: ['gemini-3.7-flash'],
+        [Providers.VERTEXAI]: ['custom-vertex-model'],
+      },
+      logViolation,
+    });
+
+    expect(result).toEqual({ isValid: true });
+    expect(logViolation).not.toHaveBeenCalled();
+  });
+
+  it('rejects a model absent from the shared Google catalog', async () => {
+    const result = await validateAgentModel({
+      req: request,
+      res: response,
+      agent: { provider: Providers.VERTEXAI, model: 'gemini-not-available' } as Agent,
+      modelsConfig: { [EModelEndpoint.google]: ['gemini-3.7-flash'] },
+      logViolation,
+    });
+
+    expect(result.isValid).toBe(false);
+    expect(result.error?.message).toContain('illegal_model_request');
+    expect(logViolation).toHaveBeenCalledTimes(1);
   });
 });

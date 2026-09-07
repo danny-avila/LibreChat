@@ -159,6 +159,10 @@ const ui = extract((state: State) => {
     modelTrigger: target(state, 'button[aria-label="Select a model"]', 'Model selector'),
     hitlModelSpec: target(state, '[role="option"]', HITL_MODEL_SPEC, HITL_MODEL_SPEC),
     stagingOption: target(state, 'button', 'Answer Staging', HITL_OPTION, true),
+    stagingSelected: Array.from(
+      state.document.querySelectorAll('button[aria-pressed="true"]'),
+    ).some((element) => element.textContent?.trim() === HITL_OPTION),
+    answerSubmit: target(state, 'button:not([disabled])', 'Submit answer', 'Submit'),
   };
 });
 
@@ -189,6 +193,9 @@ export const hitlLifecycleActions = actions((): Action[] => {
     if (!pausedReloadIssued) {
       pausedReloadIssued = true;
       return ['Reload'];
+    }
+    if (state.stagingSelected) {
+      return clickOrWait(state.answerSubmit);
     }
     return clickOrWait(state.stagingOption);
   }

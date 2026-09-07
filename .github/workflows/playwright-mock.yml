@@ -260,7 +260,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: client/dist
-          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/scripts/post-build.cjs', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
 
       - name: Build client app
         if: steps.cache-client-app.outputs.cache-hit != 'true'
@@ -532,8 +532,13 @@ jobs:
 
   e2e:
     name: e2e
+    # `!cancelled()`, not `always()`: the gate has to survive a failed shard to report it, but a
+    # run superseded by `cancel-in-progress` has nothing to adjudicate. Under `always()` it was
+    # still dispatched onto a fresh runner while every other job went `cancelled`, then read
+    # `needs.e2e_shards.result == 'cancelled'` and exited 1 — so each superseded push left this
+    # required check red instead of cancelled. Matches the two lanes it gates.
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&

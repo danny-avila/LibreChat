@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import type { IMessage } from '~/types/message';
+import { agentFadingContextDefinition } from './fading';
 
 const messageSchema: Schema<IMessage> = new Schema(
   {
@@ -155,6 +156,30 @@ const messageSchema: Schema<IMessage> = new Schema(
       select: false,
       default: undefined,
     },
+    subagentActivityProjection: {
+      type: {
+        taskId: { type: String, required: true },
+        version: { type: Number, enum: [1], required: true },
+        activityJson: { type: String, required: true },
+        truncated: { type: Boolean, required: true },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
+    /** Bounded, display-safe identity for an event-authored child turn. */
+    subagentTriggerProjection: {
+      type: {
+        version: { type: Number, enum: [1], required: true },
+        eventType: { type: String, required: true },
+        sourceType: { type: String, required: true },
+        occurredAt: { type: Date, required: true },
+        expectedActionToolName: { type: String },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     /** Durable, server-only marker used to make detached retries at-most-once. */
     subagentTask: {
       type: {
@@ -211,6 +236,7 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: {
         calibrationRatio: { type: Number },
         encoding: { type: String },
+        ...agentFadingContextDefinition,
       },
       _id: false,
       default: undefined,
@@ -282,6 +308,15 @@ messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1, tenantId: 1 }, { unique: true });
 messageSchema.index({ tenantId: 1, isTemporary: 1, createdAt: -1, _id: -1 });
+/** Insights attributes assistant activity from the persisted top-level agent model. */
+messageSchema.index({
+  tenantId: 1,
+  isTemporary: 1,
+  isCreatedByUser: 1,
+  model: 1,
+  createdAt: -1,
+  _id: -1,
+});
 messageSchema.index({
   tenantId: 1,
   isTemporary: 1,

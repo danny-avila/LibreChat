@@ -178,6 +178,15 @@ const OPENID_CREDENTIAL_PLACEHOLDER_PATTERN =
   /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|ID_TOKEN|TOKEN)\}\}/;
 
 /**
+ * The credential placeholders that specifically need a usable *access* token, which is all
+ * `isOpenIDTokenValid` reports on. `ID_TOKEN` is absent because `processOpenIDPlaceholders`
+ * validates the ID token's own expiry, so an ID-token header still resolves while no access
+ * token is stored. Non-global so `exec` stays stateless.
+ */
+const OPENID_ACCESS_CREDENTIAL_PLACEHOLDER_PATTERN =
+  /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|TOKEN)\}\}/;
+
+/**
  * Replaces resolvable-but-unresolved placeholders with an empty string so
  * LibreChat's internal template syntax is never sent upstream as if it were
  * real user data (e.g. a gateway trusting a literal
@@ -336,7 +345,7 @@ function processSingleValue({
   if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
     value = processOpenIDPlaceholders(value, openidTokenInfo);
   } else if (openidTokenInfo) {
-    const unresolvable = OPENID_CREDENTIAL_PLACEHOLDER_PATTERN.exec(value);
+    const unresolvable = OPENID_ACCESS_CREDENTIAL_PLACEHOLDER_PATTERN.exec(value);
     if (unresolvable) {
       logger.warn(
         `OpenID token is expired or unavailable; cannot resolve ${unresolvable[0]} for the current request`,
@@ -345,6 +354,12 @@ function processSingleValue({
         `OpenID token is expired or unavailable; re-authentication is required to resolve ${unresolvable[0]}`,
       );
     }
+    /**
+     * `isOpenIDTokenValid` reports on the access token alone, so an ID token placeholder is not
+     * its to refuse: `processOpenIDPlaceholders` validates the ID token's own expiry and raises
+     * if it is stale. Every other placeholder keeps its literal-then-strip behaviour here.
+     */
+    value = processOpenIDPlaceholders(value, openidTokenInfo, ['ID_TOKEN']);
   }
 
   if (body) {

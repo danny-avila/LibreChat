@@ -1,3 +1,5 @@
+import { resolveModelCatalogKey } from 'librechat-data-provider';
+
 type ProviderOption = string | { value?: string | number | null };
 
 export function getAvailableModelSelection(model: string, models: readonly string[]): string {
@@ -16,7 +18,7 @@ export function getAvailableAgentSelection({
   models: Record<string, string[] | undefined>;
 }): { provider: string; model: string } {
   const providerExists =
-    models[provider] != null &&
+    models[resolveModelCatalogKey(provider, models)] != null &&
     providers.some((option) =>
       typeof option === 'string' ? option === provider : option.value === provider,
     );
@@ -27,6 +29,9 @@ export function getAvailableAgentSelection({
 
   return {
     provider,
-    model: getAvailableModelSelection(model, models[provider] ?? []),
+    model: getAvailableModelSelection(
+      model,
+      models[resolveModelCatalogKey(provider, models)] ?? [],
+    ),
   };
 }

@@ -49,6 +49,7 @@ export const subagentThreadHasTaskEvidence = (
   view: SubagentThreadView | undefined,
   taskId: string,
 ): boolean =>
+  view?.turns?.some((turn) => turn.taskId === taskId) === true ||
   view?.messages.some(
     (message) =>
       message.messageId === `${taskId}:user` || message.messageId === `${taskId}:assistant`,

@@ -23,22 +23,23 @@ function MCPSelectContent() {
       return [];
     }
     const selectedSet = new Set(manager.mcpValues);
-    return manager.selectableServers?.filter((s) => selectedSet.has(s.serverName));
+    return manager.selectableServers?.filter((s) => selectedSet.has(s.serverName)) ?? [];
   }, [manager?.selectableServers, manager?.mcpValues]);
 
+  /** Counts what the menu actually offers, never the raw selection: a name the
+   *  catalog has not returned — or one the admin has hidden — renders no row,
+   *  and billing it to the badge reads as a server that cannot be turned off. */
   const displayText = useMemo(() => {
-    const selectedCount = manager?.mcpValues?.length ?? 0;
+    const selectedCount = selectedServers.length;
     if (selectedCount === 0) {
       return null;
     }
     if (selectedCount === 1) {
-      const server = manager?.selectableServers?.find(
-        (s) => s.serverName === manager?.mcpValues?.[0],
-      );
-      return server?.config?.title || manager?.mcpValues?.[0];
+      const server = selectedServers[0];
+      return server.config?.title || server.serverName;
     }
     return localize('com_ui_x_selected', { 0: selectedCount });
-  }, [manager?.selectableServers, manager?.mcpValues, localize]);
+  }, [selectedServers, localize]);
 
   if (!manager) {
     return null;

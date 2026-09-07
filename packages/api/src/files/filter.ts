@@ -1,5 +1,5 @@
 import { getEndpointFileConfig, mergeFileConfig, fileConfig } from 'librechat-data-provider';
-import type { IMongoFile } from '@librechat/data-schemas';
+import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
 import type { RegexLike } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 
@@ -37,13 +37,25 @@ export function filterFilesByEndpointConfig(
     endpointType?: string | null;
   },
 ): IMongoFile[] {
+  return filterFilesByEndpointRuntimeConfig(req.config, params);
+}
+
+/** Request-free endpoint file-policy adapter used by Agent execution hosts. */
+export function filterFilesByEndpointRuntimeConfig(
+  appConfig: AppConfig | undefined,
+  params: {
+    files: IMongoFile[] | undefined;
+    endpoint?: string | null;
+    endpointType?: string | null;
+  },
+): IMongoFile[] {
   const { files, endpoint, endpointType } = params;
 
   if (!files || files.length === 0) {
     return [];
   }
 
-  const mergedFileConfig = mergeFileConfig(req.config?.fileConfig);
+  const mergedFileConfig = mergeFileConfig(appConfig?.fileConfig);
   const endpointFileConfig = getEndpointFileConfig({
     fileConfig: mergedFileConfig,
     endpoint,

@@ -1,3 +1,4 @@
+import './helpers/setupCredsEnv';
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
@@ -103,6 +104,89 @@ describe('MCPServersRegistry', () => {
       expect(Object.keys(configs)).toHaveLength(2);
       expect(configs).toHaveProperty('app_server');
       expect(configs).toHaveProperty('user_server');
+    });
+
+    it('should partition read-through entries by tenant', async () => {
+      const { tenantStorage } = await import('@librechat/data-schemas');
+      const dbGetAll = jest.spyOn(registry['dbConfigsRepo'], 'getAll');
+      dbGetAll.mockResolvedValueOnce({ tenant_a_server: testParsedConfig });
+      dbGetAll.mockResolvedValueOnce({ tenant_b_server: testParsedConfig });
+
+      /** The DB read behind each miss is tenant-filtered, so the cached maps
+       *  must never cross tenants even for the same userId. */
+      const inA = await tenantStorage.run(
+        { tenantId: 'tenant-a' },
+        async () => await registry.getAllServerConfigs('user-1'),
+      );
+      const inB = await tenantStorage.run(
+        { tenantId: 'tenant-b' },
+        async () => await registry.getAllServerConfigs('user-1'),
+      );
+
+      expect(Object.keys(inA)).toEqual(['tenant_a_server']);
+      expect(Object.keys(inB)).toEqual(['tenant_b_server']);
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+
+      /** Within one tenant the entry is reused without a second DB read. */
+      const inAAgain = await tenantStorage.run(
+        { tenantId: 'tenant-a' },
+        async () => await registry.getAllServerConfigs('user-1'),
+      );
+      expect(Object.keys(inAAgain)).toEqual(['tenant_a_server']);
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not join or erase a single-flight fetch from another generation', async () => {
+      let resolveOld!: (value: Record<string, t.ParsedServerConfig>) => void;
+      let resolveFresh!: (value: Record<string, t.ParsedServerConfig>) => void;
+      let signalOldStarted!: () => void;
+      let signalFreshStarted!: () => void;
+      const oldResult = new Promise<Record<string, t.ParsedServerConfig>>((resolve) => {
+        resolveOld = resolve;
+      });
+      const freshResult = new Promise<Record<string, t.ParsedServerConfig>>((resolve) => {
+        resolveFresh = resolve;
+      });
+      const oldStarted = new Promise<void>((resolve) => {
+        signalOldStarted = resolve;
+      });
+      const freshStarted = new Promise<void>((resolve) => {
+        signalFreshStarted = resolve;
+      });
+      const dbGetAll = jest
+        .spyOn(registry['dbConfigsRepo'], 'getAll')
+        .mockImplementationOnce(async () => {
+          signalOldStarted();
+          return oldResult;
+        })
+        .mockImplementationOnce(async () => {
+          signalFreshStarted();
+          return freshResult;
+        });
+
+      const oldRequest = registry.getAllServerConfigs('user-1');
+      await oldStarted;
+      expect(dbGetAll).toHaveBeenCalledTimes(1);
+
+      await registry['readThroughCacheAll'].invalidateAll();
+      const freshRequest = registry.getAllServerConfigs('user-1');
+      await freshStarted;
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+
+      resolveOld({ old_server: testParsedConfig });
+      await expect(oldRequest).resolves.toEqual({ old_server: testParsedConfig });
+
+      const joinedFreshRequest = registry.getAllServerConfigs('user-1');
+
+      resolveFresh({ fresh_server: testParsedConfig });
+      await expect(freshRequest).resolves.toEqual({ fresh_server: testParsedConfig });
+      await expect(joinedFreshRequest).resolves.toEqual({ fresh_server: testParsedConfig });
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+
+      await expect(registry.getAllServerConfigs('user-1')).resolves.toEqual({
+        fresh_server: testParsedConfig,
+      });
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
     });
 
     it('should keep YAML servers authoritative when a DB server has the same name', async () => {

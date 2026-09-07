@@ -80,8 +80,15 @@ async function captureRunConfig(
   agent = makeAgent(),
   subagentTasks?: SubagentTaskConfig,
 ): Promise<Record<string, unknown>> {
+  return captureAgentsRunConfig([agent], subagentTasks);
+}
+
+async function captureAgentsRunConfig(
+  agents: Array<ReturnType<typeof makeAgent>>,
+  subagentTasks?: SubagentTaskConfig,
+): Promise<Record<string, unknown>> {
   await createRun({
-    agents: [agent] as never,
+    agents: agents as never,
     signal: new AbortController().signal,
     streaming: true,
     streamUsage: true,
@@ -187,11 +194,65 @@ describe('createRun code-tool eager/session wiring', () => {
         toolInput: {},
         toolOutput: JSON.stringify({ background_task_id: 'task-1', status: 'running' }),
         toolUseId: 'call-1',
+        executingAgentId: 'agent_1',
       },
       new AbortController().signal,
     );
     expect(JSON.parse(result.updatedOutput as string).message).toContain(
       'the host will resume you',
     );
+  });
+
+  it('keeps wakeup guidance off an ephemeral spawning agent in a shared run', async () => {
+    const subagentTasks: HostSubagentTaskConfig = {
+      store: new InMemorySubagentTaskStore(),
+      scopeId: 'owner:mixed-parent-run',
+      completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+    };
+    const spawningAgent = {
+      subagents: { enabled: true, allowSelf: true },
+      toolDefinitions: [],
+      toolRegistry: new Map(),
+    };
+    const runConfig = await captureAgentsRunConfig(
+      [
+        makeAgent({ ...spawningAgent, id: 'agent_durable' }),
+        makeAgent({ ...spawningAgent, id: 'openAI__gpt-4o' }),
+      ],
+      subagentTasks,
+    );
+    const [durableInput, ephemeralInput] = (
+      runConfig.graphConfig as { agents: Array<Record<string, unknown>> }
+    ).agents;
+    const pollDescription = (input: Record<string, unknown>) =>
+      (input.toolDefinitions as Array<{ name: string; description: string }>).find(
+        (definition) => definition.name === CHECK_BACKGROUND_TASK_NAME,
+      )?.description;
+
+    expect(pollDescription(durableInput)).toContain('automatic completion delivery');
+    expect(pollDescription(ephemeralInput)).not.toContain('automatic completion delivery');
+
+    const hooks = runConfig.hooks as HookRegistry;
+    const [matcher] = hooks.getMatchers('PostToolUse');
+    const hookInput = {
+      hook_event_name: 'PostToolUse' as const,
+      runId: 'run-1',
+      toolName: 'subagent',
+      toolInput: {},
+      toolOutput: JSON.stringify({ background_task_id: 'task-1', status: 'running' }),
+      toolUseId: 'call-1',
+    };
+    await expect(
+      matcher.hooks[0](
+        { ...hookInput, executingAgentId: 'openAI__gpt-4o' },
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({});
+    await expect(
+      matcher.hooks[0](
+        { ...hookInput, executingAgentId: 'agent_durable' },
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ updatedOutput: expect.any(String) }));
   });
 });

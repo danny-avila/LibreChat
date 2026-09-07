@@ -1,13 +1,21 @@
 import { z } from 'zod';
 import {
   MemoryScope,
+  SkillsScope,
   getMaxSubagents,
+  agentGitIdentitySchema,
+  resolveModelCatalogKey,
   ViolationTypes,
   ErrorTypes,
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_GRAPH_SUBAGENT_MEMBERS,
 } from 'librechat-data-provider';
-import type { Agent, TModelsConfig, AgentSubagentsConfig } from 'librechat-data-provider';
+import type {
+  Agent,
+  AgentGitIdentity,
+  TModelsConfig,
+  AgentSubagentsConfig,
+} from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 
 /**
@@ -399,6 +407,10 @@ export const agentSubagentsSchema: z.ZodOptional<z.ZodType<AgentSubagentsConfig>
   .optional();
 
 /** Base agent schema with all common fields */
+const agentCodeEnvironmentIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+const agentGitIdentityUpdateSchema: z.ZodType<AgentGitIdentity | null | undefined> =
+  agentGitIdentitySchema.nullable();
+
 export const agentBaseSchema: z.ZodObject<
   {
     name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -428,6 +440,8 @@ export const agentBaseSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     /** @deprecated Use edges instead */
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -485,6 +499,8 @@ export const agentBaseSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
+    git_identity: typeof agentGitIdentitySchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -549,6 +565,8 @@ export const agentBaseSchema: z.ZodObject<
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   skills_enabled: z.boolean().optional(),
+  skill_authoring_enabled: z.boolean().optional(),
+  skills_scope: z.nativeEnum(SkillsScope).optional(),
   memory_scope: z.nativeEnum(MemoryScope).optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
@@ -557,6 +575,8 @@ export const agentBaseSchema: z.ZodObject<
   hide_sequential_outputs: z.boolean().optional(),
   stateful_code_sessions: z.boolean().optional(),
   stateful_code_environment: z.enum(['user', 'agent-user', 'conversation']).optional(),
+  code_environment_id: agentCodeEnvironmentIdSchema.optional(),
+  git_identity: agentGitIdentitySchema,
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),
@@ -596,6 +616,8 @@ export const agentCreateSchema: z.ZodObject<
     model_parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
@@ -652,6 +674,8 @@ export const agentCreateSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
+    git_identity: typeof agentGitIdentitySchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -727,6 +751,8 @@ export const agentUpdateSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
@@ -783,6 +809,8 @@ export const agentUpdateSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    git_identity: typeof agentGitIdentityUpdateSchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -866,6 +894,8 @@ export const agentUpdateSchema: z.ZodObject<
   'strip'
 > = agentBaseSchema.extend({
   avatar: z.union([agentAvatarSchema, z.null()]).optional(),
+  code_environment_id: agentCodeEnvironmentIdSchema.nullable().optional(),
+  git_identity: agentGitIdentityUpdateSchema,
   provider: z.string().optional(),
   model: z.string().nullable().optional(),
 });
@@ -923,7 +953,7 @@ export async function validateAgentModel(
     };
   }
 
-  const availableModels = modelsConfig[endpoint];
+  const availableModels = modelsConfig[resolveModelCatalogKey(endpoint, modelsConfig)];
   if (!availableModels) {
     return {
       isValid: false,

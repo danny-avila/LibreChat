@@ -2,10 +2,14 @@ const axios = require('axios');
 const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
-jest.mock('@librechat/api', () => ({
-  generateShortLivedToken: jest.fn(),
-  logAxiosError: jest.fn(),
-}));
+jest.mock('@librechat/api', () => {
+  const { selectFileCitationSources } = jest.requireActual('@librechat/api');
+  return {
+    generateShortLivedToken: jest.fn(),
+    logAxiosError: jest.fn(),
+    selectFileCitationSources,
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
