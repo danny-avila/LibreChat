@@ -58,6 +58,7 @@ interface CleanupDeletedUsersParams {
   resolveAllowlists: (
     userId: string,
   ) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+  fenceAndDisconnectUser?: (userId: string) => Promise<void>;
   uninstallOAuthMCP?: (
     userId: string,
     pluginKey: string,
@@ -76,6 +77,7 @@ export async function cleanupDeletedMCPServerOAuthUsers({
   getTokenUserIds,
   getUserPrincipals,
   resolveAllowlists,
+  fenceAndDisconnectUser,
   uninstallOAuthMCP,
 }: CleanupDeletedUsersParams): Promise<void> {
   const tokenUserIdsAfterDelete = (await getTokenUserIds()).map(String);
@@ -84,6 +86,7 @@ export async function cleanupDeletedMCPServerOAuthUsers({
   ];
   const affectedUserIds = [ownerUserId];
   const sharedCandidates = candidateUserIds.filter((userId) => userId !== ownerUserId);
+  const failures: unknown[] = [];
 
   for (let offset = 0; offset < sharedCandidates.length; offset += OAUTH_CLEANUP_CONCURRENCY) {
     const batch = sharedCandidates.slice(offset, offset + OAUTH_CLEANUP_CONCURRENCY);
@@ -91,6 +94,7 @@ export async function cleanupDeletedMCPServerOAuthUsers({
     for (let index = 0; index < results.length; index++) {
       const result = results[index];
       if (result.status === 'rejected') {
+        failures.push(result.reason);
         logger.warn(
           `[cleanupDeletedMCPServerOAuthUsers] Failed to resolve MCP principals for user ${batch[index]}:`,
           result.reason,
@@ -115,6 +119,7 @@ export async function cleanupDeletedMCPServerOAuthUsers({
     const batch = affectedUserIds.slice(offset, offset + OAUTH_CLEANUP_CONCURRENCY);
     const results = await Promise.allSettled(
       batch.map(async (userId) => {
+        await fenceAndDisconnectUser?.(userId);
         const { allowedDomains, allowedAddresses } = await resolveAllowlists(userId);
         await uninstallOAuthMCP?.(
           userId,
@@ -126,12 +131,16 @@ export async function cleanupDeletedMCPServerOAuthUsers({
     );
     for (const result of results) {
       if (result.status === 'rejected') {
+        failures.push(result.reason);
         logger.warn(
           `[cleanupDeletedMCPServerOAuthUsers] OAuth cleanup failed for ${serverName}:`,
           result.reason,
         );
       }
     }
+  }
+  if (failures.length > 0) {
+    throw new Error(`OAuth cleanup failed for ${serverName} (${failures.length} operation(s))`);
   }
 }
 
@@ -261,32 +270,77 @@ export async function cleanupMCPServerOAuth({
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   /** Snapshot exact encrypted values before cancelling the flow. Later cleanup can then remove
    * this authorization without matching credentials written by a replacement attempt. */
-  const tokenSnapshot = new Map<string, string>();
-  const tokenGenerationSnapshot = new Map<string, string>();
-  const snapshotResults = await Promise.allSettled(
-    oauthTokenKeys(serverName).map(async ({ type, identifier }) => {
-      const record = await dependencies.findToken({ userId, type, identifier });
-      if (record?.token) {
-        const key = `${type}:${identifier}`;
-        tokenSnapshot.set(key, record.token);
-        const metadata =
-          record.metadata instanceof Map
-            ? Object.fromEntries(record.metadata)
-            : (record.metadata ?? {});
-        if (typeof metadata.credential_set_id === 'string') {
-          tokenGenerationSnapshot.set(key, metadata.credential_set_id);
-        }
-      }
-    }),
-  );
-  for (const result of snapshotResults) {
-    if (result.status === 'rejected') {
-      logger.warn(
-        `[maybeUninstallOAuthMCP] Failed to snapshot OAuth token state for ${serverName}:`,
-        result.reason,
-      );
+  const tokenKeys = oauthTokenKeys(serverName);
+  const clientTokenKey = tokenKeys[0];
+  type TokenRecord = Awaited<ReturnType<TokenMethods['findToken']>>;
+  const getCredentialSetId = (record: TokenRecord): string | undefined => {
+    if (!record) {
+      return undefined;
+    }
+    const metadata =
+      record.metadata instanceof Map
+        ? Object.fromEntries(record.metadata)
+        : (record.metadata ?? {});
+    return typeof metadata.credential_set_id === 'string' ? metadata.credential_set_id : undefined;
+  };
+  let tokenRecords = new Map<string, TokenRecord>();
+  /** The client record is the credential-set commit marker. Bookending the remaining reads with
+   * it prevents teardown from combining records on opposite sides of a concurrent callback. */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const clientBefore = await dependencies.findToken({ userId, ...clientTokenKey });
+    const remainingRecords = await Promise.all(
+      tokenKeys
+        .slice(1)
+        .map(async (key) => [key, await dependencies.findToken({ userId, ...key })] as const),
+    );
+    const clientAfter = await dependencies.findToken({ userId, ...clientTokenKey });
+    const candidate = new Map<string, TokenRecord>([
+      [`${clientTokenKey.type}:${clientTokenKey.identifier}`, clientAfter],
+      ...remainingRecords.map(
+        ([key, record]) => [`${key.type}:${key.identifier}`, record] as const,
+      ),
+    ]);
+    const presentRecords = [...candidate.values()].filter(
+      (record): record is NonNullable<TokenRecord> => record != null,
+    );
+    const generations = presentRecords
+      .map(getCredentialSetId)
+      .filter((generation): generation is string => generation != null);
+    const clientUnchanged =
+      clientBefore?.token === clientAfter?.token &&
+      getCredentialSetId(clientBefore) === getCredentialSetId(clientAfter);
+    const generationCoherent =
+      generations.length === 0 ||
+      (generations.length === presentRecords.length && new Set(generations).size === 1);
+    if (clientUnchanged && generationCoherent) {
+      tokenRecords = candidate;
+      break;
     }
   }
+  if (tokenRecords.size === 0) {
+    throw new Error(`Unable to obtain a coherent OAuth credential snapshot for ${serverName}`);
+  }
+  const tokenSnapshot = new Map<string, string>();
+  const tokenGenerationSnapshot = new Map<string, string>();
+  for (const [key, record] of tokenRecords) {
+    if (!record?.token) {
+      continue;
+    }
+    tokenSnapshot.set(key, record.token);
+    const metadata =
+      record.metadata instanceof Map
+        ? Object.fromEntries(record.metadata)
+        : (record.metadata ?? {});
+    if (typeof metadata.credential_set_id === 'string') {
+      tokenGenerationSnapshot.set(key, metadata.credential_set_id);
+    }
+  }
+  const findSnapshottedToken: TokenMethods['findToken'] = async (query) => {
+    if (!query.type || !query.identifier) {
+      return null;
+    }
+    return tokenRecords.get(`${query.type}:${query.identifier}`) ?? null;
+  };
   const serverConfig =
     serverConfigOverride ??
     (await dependencies.getServerConfig(serverName, userId)) ??
@@ -301,7 +355,7 @@ export async function cleanupMCPServerOAuth({
       clientTokenData = await dependencies.tokenStorage.getClientInfoAndMetadata({
         userId,
         serverName,
-        findToken: dependencies.findToken,
+        findToken: findSnapshottedToken,
       });
       const clientKey = `mcp_oauth_client:mcp:${serverName}:client`;
       if (
@@ -320,7 +374,7 @@ export async function cleanupMCPServerOAuth({
         tokens = await dependencies.tokenStorage.getTokens({
           userId,
           serverName,
-          findToken: dependencies.findToken,
+          findToken: findSnapshottedToken,
         });
         if (tokens) {
           dependencies.tokenStorage.assertCredentialSetBinding(

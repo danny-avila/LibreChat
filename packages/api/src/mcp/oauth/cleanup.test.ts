@@ -47,6 +47,108 @@ describe('getMCPServerGeneration', () => {
 });
 
 describe('cleanupMCPServerOAuth', () => {
+  it('fails before deletion when a credential snapshot read fails', async () => {
+    const deleteTokens = jest.fn();
+
+    await expect(
+      cleanupMCPServerOAuth({
+        userId: 'user-1',
+        pluginKey: 'mcp_test-server',
+        dependencies: {
+          flowManager: { deleteFlow: jest.fn() } as never,
+          oauthHandler: {
+            generateFlowId: jest.fn(),
+            generateTokenFlowId: jest.fn(),
+            deleteFlowAndStateMapping: jest.fn(),
+            revokeOAuthToken: jest.fn(),
+          },
+          tokenStorage: {
+            deleteUserTokens: jest.fn(),
+            getClientInfoAndMetadata: jest.fn(),
+            getTokens: jest.fn(),
+            assertCredentialSetBinding: jest.fn(),
+          },
+          findToken: jest.fn().mockRejectedValue(new Error('database unavailable')),
+          deleteTokens,
+          getServerConfig: jest.fn(),
+          isRegisteredOAuthServer: jest.fn(),
+        },
+      }),
+    ).rejects.toThrow('database unavailable');
+
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it('retries when callback persistence crosses the credential snapshot', async () => {
+    const deleteTokens = jest.fn();
+    let clientRead = 0;
+    const findToken = jest.fn(async ({ type }: { type?: string }) => {
+      const generation =
+        type === 'mcp_oauth_client' && clientRead++ === 0 ? 'old-generation' : 'new-generation';
+      return {
+        token: `encrypted-${generation}-${type}`,
+        metadata: { credential_set_id: generation },
+      } as never;
+    });
+    const deleteUserTokens = jest.fn(
+      async ({
+        userId,
+        serverName,
+        deleteToken,
+      }: {
+        userId: string;
+        serverName: string;
+        deleteToken: (filter: {
+          userId: string;
+          type: string;
+          identifier: string;
+        }) => Promise<void>;
+      }) => {
+        const identifier = `mcp:${serverName}`;
+        await Promise.all([
+          deleteToken({ userId, type: 'mcp_oauth_client', identifier: `${identifier}:client` }),
+          deleteToken({ userId, type: 'mcp_oauth', identifier }),
+          deleteToken({
+            userId,
+            type: 'mcp_oauth_refresh',
+            identifier: `${identifier}:refresh`,
+          }),
+        ]);
+      },
+    );
+
+    await cleanupMCPServerOAuth({
+      userId: 'user-1',
+      pluginKey: 'mcp_test-server',
+      serverConfigOverride: { type: 'streamable-http', url: 'https://example.com/mcp' },
+      dependencies: {
+        flowManager: { deleteFlow: jest.fn() } as never,
+        oauthHandler: {
+          generateFlowId: jest.fn(() => 'user-1:test-server'),
+          generateTokenFlowId: jest.fn(() => 'user-1:test-server'),
+          deleteFlowAndStateMapping: jest.fn(),
+          revokeOAuthToken: jest.fn(),
+        },
+        tokenStorage: {
+          deleteUserTokens,
+          getClientInfoAndMetadata: jest.fn(),
+          getTokens: jest.fn(),
+          assertCredentialSetBinding: jest.fn(),
+        },
+        findToken: findToken as never,
+        deleteTokens,
+        getServerConfig: jest.fn(),
+        isRegisteredOAuthServer: jest.fn(),
+      },
+    });
+
+    expect(findToken).toHaveBeenCalledTimes(8);
+    expect(deleteTokens).toHaveBeenCalledTimes(3);
+    for (const [filter] of deleteTokens.mock.calls) {
+      expect(filter.token).toContain('new-generation');
+    }
+  });
+
   it('deletes only token records snapshotted before flow cancellation', async () => {
     const deleteTokens = jest.fn();
     const findToken = jest.fn(async ({ type }: { type?: string }) =>

@@ -51,7 +51,7 @@ const {
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { maybeUninstallOAuthMCP } = require('~/server/services/MCP/oauthCleanup');
-const { invalidateCachedTools } = require('~/server/services/Config');
+const { invalidateCachedTools, getAppConfig } = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
@@ -428,9 +428,13 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       const oauthHeaders =
         flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
       const resolveActiveServer = async () => {
-        const configs = await resolveAllMcpConfigs(flowState.userId);
+        const [configs, appConfig] = await Promise.all([
+          resolveAllMcpConfigs(flowState.userId),
+          getAppConfig({ userId: flowState.userId, tenantId: getTenantId() }),
+        ]);
         const activeConfig =
           configs?.[serverName] ??
+          appConfig?.mcpConfig?.[serverName] ??
           (await getMCPServersRegistry().getServerConfig(serverName, flowState.userId));
         if (!activeConfig) {
           return false;

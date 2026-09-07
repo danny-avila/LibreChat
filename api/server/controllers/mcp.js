@@ -681,6 +681,13 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
         getUserPrincipals: (candidateUserId) => db.getUserPrincipals({ userId: candidateUserId }),
         resolveAllowlists: (candidateUserId) =>
           registry.resolveAllowlists({ userId: candidateUserId }),
+        fenceAndDisconnectUser: async (candidateUserId) => {
+          if (candidateUserId === userId) {
+            return;
+          }
+          await fenceCommittedMCPMutation({ userId: candidateUserId, serverName });
+          await disconnectLocalMCPServer(candidateUserId, serverName);
+        },
         uninstallOAuthMCP,
       });
     } catch (error) {
@@ -688,6 +695,7 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
         `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
         error,
       );
+      throw error;
     }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {

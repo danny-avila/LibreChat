@@ -164,6 +164,10 @@ jest.mock('~/server/services/PluginService', () => ({
   getUserPluginAuthValue: jest.fn(),
 }));
 
+jest.mock('~/server/services/MCP/oauthCleanup', () => ({
+  maybeUninstallOAuthMCP: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
@@ -1260,6 +1264,38 @@ describe('MCP Routes', () => {
       expect(response.headers.location).toContain('/oauth/error');
       expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
       expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+    });
+
+    it('keeps a Config callback live when inspected config resolution omits the server', async () => {
+      const flowId = 'test-user-id:test-server';
+      const rawConfig = {
+        type: 'streamable-http',
+        url: 'https://runtime.example.com/{{LIBRECHAT_USER_ID}}',
+      };
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
+      };
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/server/services/Config').getAppConfig.mockResolvedValueOnce({
+        mcpConfig: { 'test-server': rawConfig },
+      });
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        serverUrl: 'https://runtime.example.com/test-user-id',
+        serverGeneration: `config:${JSON.stringify(rawConfig)}`,
+      });
+      MCPOAuthHandler.completeOAuthFlow.mockRejectedValue(new Error('stop after liveness check'));
+      mockResolveAllMcpConfigs.mockResolvedValue({});
+      mockRegistryInstance.getServerConfig.mockResolvedValue(undefined);
+
+      await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${generateTestCsrfToken(flowId)}`])
+        .query({ code: 'test-auth-code', state: flowId });
+
+      expect(MCPOAuthHandler.completeOAuthFlow).toHaveBeenCalled();
     });
 
     it('should handle OAuth callback successfully', async () => {

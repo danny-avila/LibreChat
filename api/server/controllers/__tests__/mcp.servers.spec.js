@@ -529,6 +529,11 @@ describe('DB-backed server mutation fencing', () => {
         expect.any(Object),
         expect.objectContaining({ dbId: dbId.toString() }),
       );
+      expect(require('~/server/services/Config').invalidateCachedTools).toHaveBeenCalledWith({
+        userId: sharedUser.id,
+        serverName: 'github',
+      });
+      expect(mockMcpManager.disconnectUserConnection).toHaveBeenCalledWith(sharedUser.id, 'github');
     } finally {
       tokenSnapshot.mockRestore();
     }
