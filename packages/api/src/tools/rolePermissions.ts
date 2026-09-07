@@ -136,3 +136,88 @@ export async function resolveToolRolePermissions({
 
   return (tool: string) => granted.get(tool) ?? true;
 }
+
+export interface CheckToolResourceUploadParams {
+  req?: ServerRequest;
+  /** `tool_resource` as posted by the client. */
+  toolResource?: string | null;
+  getRoleByName: CheckAccessParams['getRoleByName'];
+}
+
+/**
+ * Authorizes an upload destined for a role-gated tool resource. Shared by every
+ * upload handler that accepts `tool_resource` — the ordinary `/files` route and
+ * `/files/images`, which routes agent uploads of its own.
+ *
+ * Resolves to `allowed` for a resource that carries no role permission.
+ */
+export async function checkToolResourceUploadPermission({
+  req,
+  toolResource,
+  getRoleByName,
+}: CheckToolResourceUploadParams): Promise<boolean> {
+  const permissionType = toolResource != null ? toolResourceRolePermissions[toolResource] : null;
+  if (permissionType == null) {
+    return true;
+  }
+
+  return await checkToolRolePermission({
+    req,
+    user: req?.user as CheckAccessParams['user'],
+    permissionType,
+    getRoleByName,
+    context: 'upload',
+  });
+}
+
+export interface ResolveAssistantToolPermissionsParams {
+  req?: ServerRequest;
+  /** Tools as posted: names, or provider definitions carrying a `type`. */
+  tools?: Array<string | { type?: string } | null | undefined> | null;
+  getRoleByName: CheckAccessParams['getRoleByName'];
+}
+
+/**
+ * Resolves which native Assistants tools the role may configure, and returns a
+ * synchronous predicate for filtering a tool payload.
+ *
+ * Native tools run inside the provider and never reach the agent tool loaders,
+ * so the assistant writers are where they have to be gated.
+ */
+export async function resolveAssistantToolPermissions({
+  req,
+  tools,
+  getRoleByName,
+}: ResolveAssistantToolPermissionsParams): Promise<
+  (tool: string | { type?: string } | null | undefined) => boolean
+> {
+  const toolType = (tool: string | { type?: string } | null | undefined) =>
+    typeof tool === 'string' ? tool : tool?.type;
+  const requested = new Set(
+    (tools ?? [])
+      .map(toolType)
+      .filter((type): type is string => type != null && assistantToolRolePermissions[type] != null),
+  );
+  if (requested.size === 0) {
+    return () => true;
+  }
+
+  const denied = new Set<string>();
+  for (const type of requested) {
+    const allowed = await checkToolRolePermission({
+      req,
+      user: req?.user as CheckAccessParams['user'],
+      permissionType: assistantToolRolePermissions[type] as PermissionTypes,
+      getRoleByName,
+      context: 'assistants',
+    });
+    if (!allowed) {
+      denied.add(type);
+    }
+  }
+
+  return (tool) => {
+    const type = toolType(tool);
+    return type == null || !denied.has(type);
+  };
+}

@@ -12,6 +12,7 @@ const {
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
+  checkToolResourceUploadPermission,
 } = require('@librechat/api');
 const {
   isAssistantsEndpoint,
@@ -44,6 +45,18 @@ router.post('/', async (req, res) => {
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req, image: true });
+
+    /** The Code Files UI routes image uploads here instead of `/files`, so the
+     * same role gate has to run before any content inspection — otherwise an
+     * image is a way around the tool-resource boundary. */
+    const uploadAllowed = await checkToolResourceUploadPermission({
+      req,
+      toolResource: metadata.tool_resource,
+      getRoleByName: db.getRoleByName,
+    });
+    if (!uploadAllowed) {
+      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    }
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,

@@ -18,8 +18,7 @@ const {
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
-  checkAccess,
-  toolResourceRolePermissions,
+  checkToolResourceUploadPermission,
 } = require('@librechat/api');
 const {
   Time,
@@ -29,7 +28,6 @@ const {
   ResourceType,
   EModelEndpoint,
   EToolResources,
-  Permissions,
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
@@ -748,20 +746,13 @@ const handleFileUpload = async (req, res) => {
 
     /** Check the role permission before any content inspection: a forbidden upload
      * must be rejected without reading or embedding the file. */
-    const requiredPermission = toolResourceRolePermissions[metadata.tool_resource];
-    if (requiredPermission != null) {
-      const hasAccess = await checkAccess({
-        user: req.user,
-        permissionType: requiredPermission,
-        permissions: [Permissions.USE],
-        getRoleByName,
-      });
-      if (!hasAccess) {
-        logger.warn(
-          `[${requiredPermission}] Forbidden: Insufficient permissions for User ${req.user.id}: ${Permissions.USE}`,
-        );
-        return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
-      }
+    const uploadAllowed = await checkToolResourceUploadPermission({
+      req,
+      toolResource: metadata.tool_resource,
+      getRoleByName,
+    });
+    if (!uploadAllowed) {
+      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
     }
 
     await assertUploadContentAllowed({

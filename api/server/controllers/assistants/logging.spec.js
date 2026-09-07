@@ -10,8 +10,7 @@ const mockUpdateAssistantDoc = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }));
 jest.mock('@librechat/api', () => ({
-  assistantToolRolePermissions: { file_search: 'FILE_SEARCH', code_interpreter: 'RUN_CODE' },
-  checkToolRolePermission: jest.fn(async () => true),
+  resolveAssistantToolPermissions: jest.fn(async () => () => true),
 }));
 jest.mock('librechat-data-provider', () => ({
   FileContext: { avatar: 'avatar' },

@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { checkToolRolePermission, assistantToolRolePermissions } = require('@librechat/api');
+const { resolveAssistantToolPermissions } = require('@librechat/api');
 const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
@@ -11,46 +11,6 @@ const {
 const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 const { updateAssistantDoc, getRoleByName } = require('~/models');
 const { getOpenAIClient } = require('./helpers');
-
-/**
- * Native Assistants tools (`file_search`, `code_interpreter`) run inside the
- * provider, so they never reach the agent tool loaders where the role grant is
- * enforced. Drop them where the assistant is configured instead — otherwise a
- * role denied `FILE_SEARCH` or `RUN_CODE` keeps the capability simply by
- * pointing an assistant straight at the provider.
- *
- * @param {ServerRequest} req
- * @param {Array<string | { type?: string }>} [tools] - Tools as posted.
- * @returns {Promise<(tool: string | { type?: string }) => boolean>} Predicate;
- * `true` for anything that is not a role-gated native tool.
- */
-const resolveNativeToolPermissions = async (req, tools) => {
-  const toolType = (tool) => (typeof tool === 'string' ? tool : tool?.type);
-  const requested = new Set(
-    (tools ?? [])
-      .map(toolType)
-      .filter((type) => type != null && assistantToolRolePermissions[type] != null),
-  );
-  if (requested.size === 0) {
-    return () => true;
-  }
-
-  const denied = new Set();
-  for (const type of requested) {
-    const allowed = await checkToolRolePermission({
-      req,
-      user: req?.user,
-      permissionType: assistantToolRolePermissions[type],
-      getRoleByName,
-      context: 'assistants',
-    });
-    if (!allowed) {
-      denied.add(type);
-    }
-  }
-
-  return (tool) => !denied.has(toolType(tool));
-};
 
 /**
  * Create an assistant.
@@ -84,7 +44,11 @@ const createAssistant = async (req, res) => {
       toolDefinitions,
       accessibleServerNames,
     });
-    const isNativeToolPermitted = await resolveNativeToolPermissions(req, tools);
+    const isNativeToolPermitted = await resolveAssistantToolPermissions({
+      req,
+      tools,
+      getRoleByName,
+    });
 
     assistantData.tools = healedTools
       .map((tool) => {
@@ -214,7 +178,11 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     toolDefinitions,
     accessibleServerNames,
   });
-  const isNativeToolPermitted = await resolveNativeToolPermissions(req, updateData.tools);
+  const isNativeToolPermitted = await resolveAssistantToolPermissions({
+    req,
+    tools: updateData.tools,
+    getRoleByName,
+  });
   for (const tool of healedTools) {
     /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
      *  the assistants runtime — drop them even when posted directly, since

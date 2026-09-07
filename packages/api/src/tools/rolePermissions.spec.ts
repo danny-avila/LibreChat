@@ -7,6 +7,8 @@ import {
   resolveToolRolePermissions,
   toolResourceRolePermissions,
   assistantToolRolePermissions,
+  resolveAssistantToolPermissions,
+  checkToolResourceUploadPermission,
 } from './rolePermissions';
 
 const buildRole = (overrides: Record<string, unknown> = {}) =>
@@ -150,5 +152,94 @@ describe('resolveToolRolePermissions', () => {
 
     expect(getRoleByName).not.toHaveBeenCalled();
     expect(canUse(Tools.file_search)).toBe(true);
+  });
+});
+
+describe('checkToolResourceUploadPermission', () => {
+  it('allows a resource that carries no role permission', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await expect(
+      checkToolResourceUploadPermission({
+        req: buildReq(),
+        toolResource: EToolResources.context,
+        getRoleByName,
+      }),
+    ).resolves.toBe(true);
+    expect(getRoleByName).not.toHaveBeenCalled();
+  });
+
+  it('allows an upload with no tool resource at all', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await expect(
+      checkToolResourceUploadPermission({ req: buildReq(), getRoleByName }),
+    ).resolves.toBe(true);
+  });
+
+  /** The Code Files UI posts images under `execute_code` through a separate
+   *  handler, so both upload routes have to reach the same verdict. */
+  it('denies a code-bearing upload when RUN_CODE is withheld', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+
+    await expect(
+      checkToolResourceUploadPermission({
+        req: buildReq(),
+        toolResource: EToolResources.execute_code,
+        getRoleByName,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      checkToolResourceUploadPermission({
+        req: buildReq(),
+        toolResource: EToolResources.code_interpreter,
+        getRoleByName,
+      }),
+    ).resolves.toBe(false);
+  });
+});
+
+describe('resolveAssistantToolPermissions', () => {
+  it('keeps native tools the role grants', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue(buildRole());
+    const permitted = await resolveAssistantToolPermissions({
+      req: buildReq(),
+      tools: [{ type: 'code_interpreter' }, { type: 'file_search' }],
+      getRoleByName,
+    });
+
+    expect(permitted({ type: 'code_interpreter' })).toBe(true);
+    expect(permitted({ type: 'file_search' })).toBe(true);
+  });
+
+  it('drops only the native tool whose grant is missing', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+    const permitted = await resolveAssistantToolPermissions({
+      req: buildReq(),
+      tools: [{ type: 'code_interpreter' }, { type: 'file_search' }],
+      getRoleByName,
+    });
+
+    expect(permitted({ type: 'code_interpreter' })).toBe(false);
+    expect(permitted({ type: 'file_search' })).toBe(true);
+  });
+
+  it('never drops function tools, which carry no native grant', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+    const permitted = await resolveAssistantToolPermissions({
+      req: buildReq(),
+      tools: [{ type: 'code_interpreter' }],
+      getRoleByName,
+    });
+
+    expect(permitted({ type: 'function' })).toBe(true);
+    expect(permitted('calculator')).toBe(true);
+    expect(permitted(undefined)).toBe(true);
   });
 });
