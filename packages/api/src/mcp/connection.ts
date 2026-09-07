@@ -2660,6 +2660,15 @@ export class MCPConnection extends EventEmitter {
       };
     }
 
+    if (
+      startEpoch === this.toolListRefreshEpoch &&
+      !signal?.aborted &&
+      (deadlineMs == null || Date.now() < deadlineMs) &&
+      this.suspendedToolListSnapshot
+    ) {
+      return this.suspendedToolListSnapshot;
+    }
+
     return { tools: [], complete: false };
   }
 

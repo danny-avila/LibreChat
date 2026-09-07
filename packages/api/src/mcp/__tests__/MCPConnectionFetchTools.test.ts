@@ -135,6 +135,60 @@ describe('MCPConnection.fetchTools pagination', () => {
     });
   });
 
+  it.each([
+    { notificationFirst: true, interruption: 'none' },
+    { notificationFirst: false, interruption: 'none' },
+    { notificationFirst: true, interruption: 'abort' },
+    { notificationFirst: true, interruption: 'disconnect' },
+  ])(
+    'orders auth rejection with notificationFirst=$notificationFirst, interruption=$interruption',
+    async ({ notificationFirst, interruption }) => {
+      let releaseStale!: (value: { tools: ReturnType<typeof makeTool>[] }) => void;
+      let rejectRefresh!: (error: Error) => void;
+      const stale = new Promise<{ tools: ReturnType<typeof makeTool>[] }>((resolve) => {
+        releaseStale = resolve;
+      });
+      const refresh = new Promise<never>((_, reject) => {
+        rejectRefresh = reject;
+      });
+      const listTools = jest.fn().mockReturnValueOnce(stale).mockReturnValueOnce(refresh);
+      const conn = createConnectionWithListTools(listTools, true);
+      Reflect.set(conn, 'connectionState', 'connected');
+      jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+      const authenticationError = Object.assign(new Error('Unauthorized'), { status: 401 });
+
+      const controller = new AbortController();
+      const requested = conn.fetchOrderedToolsSnapshot(undefined, controller.signal);
+      await Promise.resolve();
+      const notified = conn.refreshToolList();
+      if (notificationFirst) {
+        rejectRefresh(authenticationError);
+        await notified;
+        if (interruption === 'abort') {
+          controller.abort();
+        } else if (interruption === 'disconnect') {
+          await conn.disconnect();
+        }
+        releaseStale({ tools: [makeTool('stale')] });
+      } else {
+        releaseStale({ tools: [makeTool('stale')] });
+        await Promise.resolve();
+        rejectRefresh(authenticationError);
+        await notified;
+      }
+
+      if (interruption === 'none') {
+        await expect(requested).resolves.toEqual(
+          expect.objectContaining({ complete: false, authenticationError }),
+        );
+      } else {
+        await expect(requested).resolves.toEqual({ tools: [], complete: false });
+      }
+      expect(listTools).toHaveBeenCalledTimes(2);
+      await conn.disconnect();
+    },
+  );
+
   it('follows nextCursor across pages, concatenating every tool and passing the cursor back', async () => {
     const listTools = jest.fn(async (params?: { cursor?: string }) => {
       switch (params?.cursor) {
