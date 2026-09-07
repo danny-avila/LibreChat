@@ -36,6 +36,7 @@ const {
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -570,7 +571,12 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
-const processFileUpload = async ({ req, res, metadata, sseStream }) => {
+/**
+ * @param {OpenAI} [params.openai] - Client the caller already built (the legacy
+ * assistant preflight needs one to authorize). Reused rather than rebuilt, since
+ * constructing it re-reads the user's key.
+ */
+const processFileUpload = async ({ req, res, metadata, sseStream, openai: providedOpenAI }) => {
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -581,8 +587,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file_id, temp_file_id = null } = metadata;
 
   /** @type {OpenAI | undefined} */
-  let openai;
-  if (checkOpenAIStorage(source)) {
+  let openai = providedOpenAI;
+  if (openai == null && checkOpenAIStorage(source)) {
     ({ openai } = await getOpenAIClient({ req }));
   }
 
@@ -606,6 +612,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
+    /** Authorized at the route before any bytes are sent — see
+     *  `assertLegacyAssistantUploadAllowed` in `~/server/routes/files/files`. */
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });
@@ -702,7 +710,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
-    const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
+    const isCodeEnabled =
+      (await checkCapability(req, AgentCapabilities.execute_code)) &&
+      (await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName, context: 'fileUpload' }))
+        .runCode;
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
@@ -746,7 +757,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       executionProfile: 'default',
     });
   } else if (tool_resource === EToolResources.file_search) {
-    const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
+    const isFileSearchEnabled =
+      (await checkCapability(req, AgentCapabilities.file_search)) &&
+      (await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName, context: 'fileUpload' }))
+        .fileSearch;
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }

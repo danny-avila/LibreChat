@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { resolveAssistantToolPermissions } = require('@librechat/api');
 const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
@@ -8,7 +9,7 @@ const {
   toProviderToolDefinition,
 } = require('~/server/services/MCP');
 const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
-const { updateAssistantDoc } = require('~/models');
+const { updateAssistantDoc, getRoleByName } = require('~/models');
 const { getOpenAIClient } = require('./helpers');
 
 /**
@@ -43,6 +44,11 @@ const createAssistant = async (req, res) => {
       toolDefinitions,
       accessibleServerNames,
     });
+    const isNativeToolPermitted = await resolveAssistantToolPermissions({
+      req,
+      tools,
+      getRoleByName,
+    });
 
     assistantData.tools = healedTools
       .map((tool) => {
@@ -71,7 +77,16 @@ const createAssistant = async (req, res) => {
       })
       .filter((tool) => tool)
       .flat()
-      .map(toProviderToolDefinition);
+      .map(toProviderToolDefinition)
+      .filter((tool) => {
+        if (isNativeToolPermitted(tool)) {
+          return true;
+        }
+        logger.warn(
+          `[/assistants] Dropping role-denied native tool from assistant payload: ${tool?.type}`,
+        );
+        return false;
+      });
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -163,6 +178,11 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
     toolDefinitions,
     accessibleServerNames,
   });
+  const isNativeToolPermitted = await resolveAssistantToolPermissions({
+    req,
+    tools: updateData.tools,
+    getRoleByName,
+  });
   for (const tool of healedTools) {
     /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
      *  the assistants runtime — drop them even when posted directly, since
@@ -196,6 +216,13 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
           tools.push(updatedTool);
         }
       }
+      continue;
+    }
+
+    if (!isNativeToolPermitted(actualTool)) {
+      logger.warn(
+        `[/assistants] Dropping role-denied native tool from assistant payload: ${actualTool.type}`,
+      );
       continue;
     }
 

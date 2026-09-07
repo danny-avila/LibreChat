@@ -197,6 +197,8 @@ jest.mock('@librechat/agents', () => ({
 
 jest.mock('@librechat/api', () => ({
   createAgentExecutionContext: (context) => context,
+  /** Grants both by default; the capability set is what these specs vary. */
+  resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
   SAFE_CONVERSATION_TITLE: 'New Chat',
   resolveConversationTitle: (...args) => mockResolveConversationTitle(...args),
   /** Pass-through: the controller strips UI-only activity-label parts

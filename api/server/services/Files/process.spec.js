@@ -102,6 +102,8 @@ jest.mock('@librechat/api', () => {
   );
   return {
     sanitizeFilename: jest.fn((n) => n),
+    /** Grants both; these specs vary the capability set, not the role. */
+    resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     extractInspectableFileText: jest.fn(async ({ extract }) => extract()),

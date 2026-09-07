@@ -54,6 +54,8 @@ const {
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
+  checkToolRolePermission,
+  resolveToolRolePermissions,
 } = require('@librechat/api');
 const {
   Time,
@@ -69,6 +71,7 @@ const {
   isActionTool,
   actionDelimiter,
   ImageVisionTool,
+  PermissionTypes,
   hasActivePiiFields,
   hasActivePiiPatterns,
   openapiToFunction,
@@ -107,7 +110,7 @@ const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSe
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { findPluginAuthsByKeys } = require('~/models');
+const { findPluginAuthsByKeys, getRoleByName } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
@@ -136,6 +139,32 @@ const getActiveToolResources = (toolResources, tools) => {
 
   return Object.keys(activeResources).length > 0 ? activeResources : null;
 };
+
+/** Deployment switch guarding each role-gated tool. Spelled out rather than
+ *  inferred from the tool name so the two enums can drift apart safely. */
+const toolCapabilityGates = {
+  [Tools.file_search]: AgentCapabilities.file_search,
+  [Tools.execute_code]: AgentCapabilities.execute_code,
+};
+
+/**
+ * Resolves the role grants for an agent's gated tools. A tool already switched
+ * off by its `AgentCapabilities` entry is skipped, so a disabled deployment
+ * costs no role read and logs no denial.
+ *
+ * @param {ServerRequest} req
+ * @param {string[]} [tools] - The agent's configured tool names.
+ * @param {Set<string>} enabledCapabilities
+ * @returns {Promise<(tool: string) => boolean>} Predicate; `true` for any tool
+ * that carries no role permission.
+ */
+const resolveAgentToolPermissions = (req, tools, enabledCapabilities) =>
+  resolveToolRolePermissions({
+    req,
+    tools,
+    getRoleByName,
+    isEligible: (tool) => enabledCapabilities.has(toolCapabilityGates[tool]),
+  });
 
 const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
   const filters = req.config?.filters;
@@ -781,9 +810,14 @@ async function loadToolDefinitionsWrapper({
   const actionsEnabled = checkCapability(AgentCapabilities.actions);
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
   const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const canUseTool = await resolveAgentToolPermissions(req, agent.tools, enabledCapabilities);
+  /** Gates the sandbox everywhere it is reachable, not just the `execute_code`
+   *  entry in `filteredTools`: this flag also drives tool classification and the
+   *  programmatic bash tool, which would otherwise run code for a denied role. */
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    canUseTool(Tools.execute_code);
   const resolvedCodeExecutionContext =
     codeExecutionContext ??
     resolveCodeExecutionContext({
@@ -804,10 +838,10 @@ async function loadToolDefinitionsWrapper({
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return checkCapability(AgentCapabilities.file_search) && canUseTool(tool);
     }
     if (tool === Tools.execute_code) {
-      return checkCapability(AgentCapabilities.execute_code);
+      return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     }
     if (tool === Tools.web_search) {
       return checkCapability(AgentCapabilities.web_search);
@@ -1575,13 +1609,14 @@ async function loadAgentTools({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
+  const canUseTool = await resolveAgentToolPermissions(req, agent.tools, enabledCapabilities);
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return checkCapability(AgentCapabilities.file_search) && canUseTool(tool);
     } else if (tool === Tools.execute_code) {
-      return checkCapability(AgentCapabilities.execute_code);
+      return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     } else if (tool === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;
@@ -1643,7 +1678,8 @@ async function loadAgentTools({
 
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    canUseTool(Tools.execute_code);
   const statefulCodeSessions =
     codeExecutionEnabled &&
     enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
@@ -2031,9 +2067,18 @@ async function loadToolsForExecution({
   if (actionsEnabled === undefined) {
     actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
   }
+  /** Short-circuits before the role read, so an agent without `execute_code` or a
+   *  deployment with the capability off pays nothing for the check. */
   const codeExecutionEnabled =
     enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
-    agent?.tools?.includes(Tools.execute_code) === true;
+    agent?.tools?.includes(Tools.execute_code) === true &&
+    (await checkToolRolePermission({
+      req,
+      user: req?.user,
+      permissionType: PermissionTypes.RUN_CODE,
+      getRoleByName,
+      context: 'loadToolsForExecution',
+    }));
 
   /** Resolve the trusted endpoint/profile from the actually executing agent.
    * This stays per-agent across handoffs and subagents; no graph-global stateful

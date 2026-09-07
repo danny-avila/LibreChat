@@ -131,7 +131,11 @@ const callTool = async (req, res) => {
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;
     if (toolAccessPermType[toolId]) {
+      /** `req` is what puts this read in the request cache, so the shared
+       *  `loadTools` gate below resolves the same grant for free instead of
+       *  issuing a second serial role lookup before the sandbox call. */
       hasAccess = await checkAccess({
+        req,
         user: req.user,
         permissionType: toolAccessPermType[toolId],
         permissions: [Permissions.USE],
