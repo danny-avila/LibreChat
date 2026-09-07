@@ -789,6 +789,40 @@ export async function forkAgentEventCheckpoint(
   return { ...target, checkpointId };
 }
 
+/** Retain exact reference evidence until every dependent row has been removed. */
+export async function deleteAgentEventCheckpointReference(
+  reference: AgentEventCheckpointReference,
+  cfg?: TCheckpointerConfig,
+): Promise<void> {
+  const resolved = resolveCheckpointerConfig(cfg);
+  if (resolved.type === 'memory') {
+    return;
+  }
+  const db = mongoose.connection.db;
+  if (!db || mongoose.connection.readyState !== 1) {
+    throw new Error('Mongo checkpoint storage is unavailable');
+  }
+  const checkpoints = db.collection(resolved.checkpointCollectionName);
+  const anchor = {
+    thread_id: reference.threadId,
+    checkpoint_ns: reference.checkpointNs,
+    checkpoint_id: reference.checkpointId,
+  };
+  if (!(await checkpoints.findOne(anchor, { projection: { _id: 1 } }))) {
+    return;
+  }
+  const scope = {
+    thread_id: reference.threadId,
+    checkpoint_ns: generationNamespaceFilter(reference.checkpointNs),
+  };
+  await db.collection(resolved.checkpointWritesCollectionName).deleteMany(scope);
+  await checkpoints.deleteMany({
+    ...scope,
+    $nor: [{ checkpoint_ns: reference.checkpointNs, checkpoint_id: reference.checkpointId }],
+  });
+  await checkpoints.deleteOne(anchor);
+}
+
 /** Reads the terminal checkpoint produced inside one invocation namespace. */
 export async function captureAgentEventCheckpoint(
   threadId: string,

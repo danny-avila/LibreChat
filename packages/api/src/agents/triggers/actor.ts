@@ -761,7 +761,7 @@ export async function executeAgentEventActor<T>(
         }
         ownedActionAdmissionId = undefined;
       }
-      await checkpoints.remove(request.invocation.fork, input.checkpointer);
+      await checkpoints.removeOwned(request.invocation.fork, input.checkpointer);
       const released = await deps.resolveReconciliation({
         user: input.user,
         conversationId: input.conversationId,
@@ -900,6 +900,7 @@ export async function resumeAgentEventActor<T>(
   deps: AgentEventActorDependencies,
 ): Promise<ExecuteAgentEventActorResult<T>> {
   const checkpoints = createOwnedActorCheckpoints(input.user, input.tenantId);
+  let checkpointStorageNamespace: string | null = null;
   let value: T | undefined;
   let invocationError: unknown;
   let observedState: IAgentEventActorState | null | undefined;
@@ -976,11 +977,14 @@ export async function resumeAgentEventActor<T>(
         throw new Error('Event actor suspension claim could not be projected to its job');
       }
       try {
+        checkpointStorageNamespace =
+          (await checkpoints.resolveNamespace(request.suspension.checkpoint, input.checkpointer)) ??
+          null;
+        if (checkpointStorageNamespace == null) {
+          throw new Error('Signed event actor checkpoint is no longer available');
+        }
         value = await input.resume({
-          checkpointNamespace: await checkpoints.resolveNamespace(
-            request.suspension.checkpoint,
-            input.checkpointer,
-          ),
+          checkpointNamespace: checkpointStorageNamespace,
           ...(request.suspension.checkpoint.checkpointId == null
             ? {}
             : { checkpointId: request.suspension.checkpoint.checkpointId }),
@@ -1011,6 +1015,7 @@ export async function resumeAgentEventActor<T>(
           request.suspension.checkpoint.checkpointNs,
           request.suspension.invocation.invocationId,
           input.checkpointer,
+          checkpointStorageNamespace,
         );
         if (checkpoint?.checkpointId == null) {
           throw new Error('Re-paused event actor has no observable interrupt checkpoint');
@@ -1058,6 +1063,7 @@ export async function resumeAgentEventActor<T>(
           request.suspension.checkpoint.checkpointNs,
           request.suspension.invocation.invocationId,
           input.checkpointer,
+          checkpointStorageNamespace,
         );
       } catch (error) {
         return {

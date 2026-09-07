@@ -7,22 +7,26 @@ import type { EventActorInterrupt } from '@librechat/agents';
 import {
   captureAgentEventCheckpoint,
   deleteAgentCheckpoint,
+  deleteAgentEventCheckpointReference,
   forkAgentEventCheckpoint,
   getAgentCheckpointer,
 } from '../checkpointer';
 import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } from './actor';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
+import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { createAgentContextFingerprint } from '../compatibility';
 
 jest.mock('../checkpointer', () => ({
   ...jest.requireActual('../checkpointer'),
   captureAgentEventCheckpoint: jest.fn(),
   deleteAgentCheckpoint: jest.fn(),
+  deleteAgentEventCheckpointReference: jest.fn(),
   forkAgentEventCheckpoint: jest.fn(),
   getAgentCheckpointer: jest.fn(),
 }));
 
 const mockedCapture = jest.mocked(captureAgentEventCheckpoint);
+const mockedDeleteReference = jest.mocked(deleteAgentEventCheckpointReference);
 const mockedDelete = jest.mocked(deleteAgentCheckpoint);
 const mockedFork = jest.mocked(forkAgentEventCheckpoint);
 const mockedGetCheckpointer = jest.mocked(getAgentCheckpointer);
@@ -42,7 +46,11 @@ describe('event actor host adapter', () => {
     legacyTurn = null;
     nextCheckpoint = 1;
     jest.clearAllMocks();
-    mockedGetCheckpointer.mockResolvedValue({ getTuple: jest.fn().mockResolvedValue({}) } as never);
+    mockedGetCheckpointer.mockResolvedValue({
+      getTuple: jest.fn(async (config) => ({
+        checkpoint: { id: config.configurable.checkpoint_id },
+      })),
+    } as never);
     mockedFork.mockImplementation(async (source, checkpointNs) => ({
       ...source,
       checkpointNs,
@@ -54,6 +62,8 @@ describe('event actor host adapter', () => {
     }));
     mockedDelete.mockReset();
     mockedDelete.mockResolvedValue();
+    mockedDeleteReference.mockReset();
+    mockedDeleteReference.mockResolvedValue();
   });
 
   afterAll(() => {
@@ -181,6 +191,7 @@ describe('event actor host adapter', () => {
     expect(dependencies.storeSuspension).toHaveBeenCalledTimes(1);
     expect(dependencies.commitState).not.toHaveBeenCalled();
     expect(mockedDelete).not.toHaveBeenCalled();
+    expect(mockedDeleteReference).not.toHaveBeenCalled();
   });
 
   it('preserves a pause reached after the expected action in the same fresh segment', async () => {
@@ -260,14 +271,14 @@ describe('event actor host adapter', () => {
         invocationId: 'event-cancelled',
       }),
     );
-    expect(mockedDelete).toHaveBeenCalledWith(
-      conversationId,
+    expect(mockedDeleteReference).toHaveBeenCalledWith(
+      {
+        ...paused.execution.suspension.checkpoint,
+        checkpointNs:
+          checkpointOwnerNamespacePrefix('user-1') +
+          paused.execution.suspension.checkpoint.checkpointNs,
+      },
       undefined,
-      undefined,
-      expect.objectContaining({
-        throwOnError: true,
-        checkpointNamespace: paused.execution.suspension.checkpoint.checkpointNs,
-      }),
     );
   });
 
@@ -494,14 +505,14 @@ describe('event actor host adapter', () => {
         resumeAttemptId: 'resume-second',
       }),
     );
-    expect(mockedDelete).toHaveBeenCalledWith(
-      conversationId,
+    expect(mockedDeleteReference).toHaveBeenCalledWith(
+      {
+        ...repaused.execution.suspension.checkpoint,
+        checkpointNs:
+          checkpointOwnerNamespacePrefix('user-1') +
+          repaused.execution.suspension.checkpoint.checkpointNs,
+      },
       undefined,
-      undefined,
-      expect.objectContaining({
-        throwOnError: true,
-        checkpointNamespace: repaused.execution.suspension.checkpoint.checkpointNs,
-      }),
     );
     expect(dependencies.commitState).not.toHaveBeenCalled();
   });
@@ -1078,10 +1089,11 @@ describe('event actor host adapter', () => {
     );
     expect(dependencies.resolveReconciliation).not.toHaveBeenCalled();
     expect(mockedDelete).not.toHaveBeenCalled();
+    expect(mockedDeleteReference).not.toHaveBeenCalled();
   });
 
   it('retains an applied fork when its terminal checkpoint cannot be observed', async () => {
-    mockedCapture.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    mockedCapture.mockResolvedValueOnce(null);
     const dependencies = deps();
     await expect(
       executeAgentEventActor(
@@ -1106,6 +1118,7 @@ describe('event actor host adapter', () => {
       }),
     );
     expect(mockedDelete).not.toHaveBeenCalled();
+    expect(mockedDeleteReference).not.toHaveBeenCalled();
   });
 
   it('retains applied-action evidence when result context capture fails', async () => {
@@ -1141,6 +1154,7 @@ describe('event actor host adapter', () => {
     );
     expect(mockedCapture).not.toHaveBeenCalled();
     expect(mockedDelete).not.toHaveBeenCalled();
+    expect(mockedDeleteReference).not.toHaveBeenCalled();
   });
 
   it('recovers an indeterminate cleanup after the actor head was committed', async () => {
@@ -1157,7 +1171,7 @@ describe('event actor host adapter', () => {
         checkpointNs: 'event-actor/old',
       },
     };
-    mockedDelete.mockRejectedValueOnce(new Error('checkpoint cleanup unavailable'));
+    mockedDeleteReference.mockRejectedValueOnce(new Error('checkpoint cleanup unavailable'));
     const dependencies = deps();
     const result = await executeAgentEventActor(
       {
@@ -1230,6 +1244,7 @@ describe('event actor host adapter', () => {
       }),
     );
     expect(mockedDelete).not.toHaveBeenCalled();
+    expect(mockedDeleteReference).not.toHaveBeenCalled();
   });
 
   it('still records reconciliation when an indeterminate commit cannot be read back', async () => {
@@ -1282,6 +1297,7 @@ describe('event actor host adapter', () => {
       }),
     );
     expect(mockedDelete).not.toHaveBeenCalled();
+    expect(mockedDeleteReference).not.toHaveBeenCalled();
   });
 
   it('does not clear a checkpoint marker before durable history is verified', async () => {
