@@ -3974,7 +3974,6 @@ describe('MCPConnectionFactory', () => {
         type: 'streamable-http' as const,
         url: 'https://mcp.example.com',
         source: 'yaml' as const,
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
       const serverConfig = {
@@ -4016,7 +4015,6 @@ describe('MCPConnectionFactory', () => {
         type: 'streamable-http' as const,
         url: 'https://mcp.example.com',
         source: 'yaml' as const,
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
 
@@ -4028,7 +4026,6 @@ describe('MCPConnectionFactory', () => {
               type: 'streamable-http',
               url: 'https://mcp.example.com',
               source: 'yaml',
-              openidBearerRecovery: true,
               headers: { Authorization: 'Bearer refreshed-token' },
             } as t.MCPOptions,
             directBearerSourceConfig,
@@ -4078,7 +4075,6 @@ describe('MCPConnectionFactory', () => {
         type: 'streamable-http' as const,
         url: 'https://mcp.example.com',
         source: 'yaml' as const,
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
 
@@ -4127,7 +4123,6 @@ describe('MCPConnectionFactory', () => {
         type: 'streamable-http' as const,
         url: 'https://mcp.example.com',
         source: 'yaml' as const,
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
 
@@ -4161,7 +4156,6 @@ describe('MCPConnectionFactory', () => {
         type: 'streamable-http' as const,
         url: 'https://mcp.example.com',
         source: 'yaml' as const,
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
 

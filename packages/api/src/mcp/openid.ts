@@ -12,7 +12,6 @@ const OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN = /\{\{LIBRECHAT_OPENID_(?:ACCESS_
 type DirectBearerConfig = MCPOptions & {
   dbId?: string;
   source?: 'yaml' | 'config' | 'user' | 'plugin';
-  openidBearerRecovery?: boolean;
 };
 
 function getAuthorizationHeader(
@@ -33,26 +32,25 @@ function getAuthorizationTemplateValue(value: string): string {
   return extractEnvVariable(value);
 }
 
-/** Whether a config retains the trusted direct-bearer mode after placeholder resolution. */
+/** Whether a trusted operator config explicitly routes its OpenID bearer to this server. */
 export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig): boolean {
   /** OBO is the stronger audience-bound mode and takes precedence when both legacy fields exist. */
-  if (config.obo != null || config.openidBearerRecovery !== true || config.dbId != null) {
+  if (config.obo != null || config.dbId != null) {
     return false;
   }
   if (config.source !== 'yaml' && config.source !== 'config') {
     return false;
   }
-  return getAuthorizationHeader(config) != null;
+  const authorization = getAuthorizationHeader(config);
+  return (
+    authorization != null &&
+    OPENID_ACCESS_TOKEN_PATTERN.test(getAuthorizationTemplateValue(authorization.value))
+  );
 }
 
 /** Whether a trusted direct-bearer config still needs its live placeholder resolved. */
 export function usesDirectOpenIDBearerRecovery(config: DirectBearerConfig): boolean {
-  const authorization = getAuthorizationHeader(config);
-  return (
-    isDirectOpenIDBearerRecoveryEnabled(config) &&
-    authorization != null &&
-    OPENID_ACCESS_TOKEN_PATTERN.test(getAuthorizationTemplateValue(authorization.value))
-  );
+  return isDirectOpenIDBearerRecoveryEnabled(config);
 }
 
 /** Resolves the live bearer before a connection or request reaches the MCP transport. */

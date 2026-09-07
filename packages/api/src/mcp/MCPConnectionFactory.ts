@@ -70,6 +70,7 @@ export class MCPConnectionFactory {
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
   protected readonly ephemeralConnection: boolean;
+  protected readonly directBearerRecoveryEnabled: boolean;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -128,11 +129,19 @@ export class MCPConnectionFactory {
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
     const directBearerRecoveryState = basic.directBearerRecoveryState ?? { attempted: false };
+    const directBearerSourceConfig =
+      basic.directBearerSourceConfig ??
+      (isDirectOpenIDBearerRecoveryEnabled(basic.serverConfig)
+        ? (basic.serverConfig as t.ParsedServerConfig)
+        : undefined);
     const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
-      const factory = new this(await this.prepareBasicConnectionOptions(candidate, oauth), oauth);
+      const factory = new this(
+        await this.prepareBasicConnectionOptions({ ...candidate, directBearerSourceConfig }, oauth),
+        oauth,
+      );
       return factory.createConnection();
     };
-    if (!isDirectOpenIDBearerRecoveryEnabled(basic.serverConfig)) {
+    if (!directBearerSourceConfig) {
       return create(basic);
     }
 
@@ -147,7 +156,7 @@ export class MCPConnectionFactory {
       }
       directBearerRecoveryState.attempted = true;
       const refreshedConfig = await resolveDirectOpenIDBearerConfig({
-        config: basic.directBearerSourceConfig ?? basic.serverConfig,
+        config: directBearerSourceConfig,
         upstreamTokenProvider: oauth?.upstreamTokenProvider,
         forceRefresh: true,
       });
@@ -186,8 +195,16 @@ export class MCPConnectionFactory {
       logger.debug('[MCP] [Discovery] Cancelled or out of budget before discovery began');
       return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
     }
+    const directBearerSourceConfig =
+      basic.directBearerSourceConfig ??
+      (usesDirectOpenIDBearerRecovery(basic.serverConfig)
+        ? (basic.serverConfig as t.ParsedServerConfig)
+        : undefined);
     const discover = async (candidate: t.BasicConnectionOptions): Promise<ToolDiscoveryResult> => {
-      const prepared = await this.prepareBasicConnectionOptions(candidate, options);
+      const prepared = await this.prepareBasicConnectionOptions(
+        { ...candidate, directBearerSourceConfig },
+        options,
+      );
       if (options != null && 'useOAuth' in options) {
         const factory = new this(prepared, { ...options, returnOnOAuth: true });
         return factory.discoverToolsInternal();
@@ -196,9 +213,8 @@ export class MCPConnectionFactory {
       return factory.discoverToolsInternal();
     };
 
-    const directBearerRecovery = usesDirectOpenIDBearerRecovery(basic.serverConfig);
     const initial = await discover(basic);
-    if (!directBearerRecovery || !this.hasDiscoveryAuthenticationRejection(initial)) {
+    if (!directBearerSourceConfig || !this.hasDiscoveryAuthenticationRejection(initial)) {
       return initial;
     }
 
@@ -209,7 +225,7 @@ export class MCPConnectionFactory {
       return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
     }
     const refreshedConfig = await resolveDirectOpenIDBearerConfig({
-      config: basic.serverConfig,
+      config: directBearerSourceConfig,
       upstreamTokenProvider: options?.upstreamTokenProvider,
       forceRefresh: true,
     });
@@ -251,13 +267,20 @@ export class MCPConnectionFactory {
       config: basic.serverConfig,
       upstreamTokenProvider: options?.upstreamTokenProvider,
     });
+    const directBearerSourceConfig =
+      basic.directBearerSourceConfig ??
+      (usesDirectOpenIDBearerRecovery(basic.serverConfig)
+        ? (basic.serverConfig as t.ParsedServerConfig)
+        : undefined);
     const preparedBasic =
-      bearerConfig === basic.serverConfig
+      bearerConfig === basic.serverConfig &&
+      directBearerSourceConfig === basic.directBearerSourceConfig
         ? basic
         : {
             ...basic,
             serverConfig: bearerConfig,
             serverDefinition: basic.serverDefinition ?? basic.serverConfig,
+            directBearerSourceConfig,
           };
 
     if (basic.dbSourced || !options?.graphTokenResolver) {
@@ -530,6 +553,9 @@ export class MCPConnectionFactory {
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
     this.ephemeralConnection = basic.ephemeralConnection === true;
+    this.directBearerRecoveryEnabled = isDirectOpenIDBearerRecoveryEnabled(
+      basic.directBearerSourceConfig ?? basic.serverConfig,
+    );
     this.connectionTimeout = options?.connectionTimeout;
     this.deadlineMs = options?.deadlineMs;
     this.signal = options?.signal;
@@ -1637,7 +1663,7 @@ export class MCPConnectionFactory {
         }
 
         if (
-          (this.useOAuth || isDirectOpenIDBearerRecoveryEnabled(this.serverConfig)) &&
+          (this.useOAuth || this.directBearerRecoveryEnabled) &&
           isOAuthAuthenticationError(error)
         ) {
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);

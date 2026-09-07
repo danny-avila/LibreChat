@@ -89,40 +89,14 @@ describe('MCPOptionsSchema', () => {
     });
   });
 
-  it('accepts direct OpenID bearer recovery for operator configuration', () => {
+  it('accepts the direct OpenID bearer placeholder for operator configuration', () => {
     const result = MCPOptionsSchema.safeParse({
       type: 'streamable-http',
       url: 'https://mcp-server.com/http',
-      openidBearerRecovery: true,
       headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
     });
 
     expect(result.success).toBe(true);
-  });
-
-  it.each([
-    { type: 'stdio', command: 'node', args: ['server.js'] },
-    { type: 'websocket', url: 'wss://mcp-server.com/ws' },
-  ])('rejects direct OpenID bearer recovery for $type transport', (transport) => {
-    const result = MCPOptionsSchema.safeParse({
-      ...transport,
-      openidBearerRecovery: true,
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it('strips direct OpenID bearer recovery from user-authored configuration', () => {
-    const result = MCPServerUserInputSchema.safeParse({
-      type: 'streamable-http',
-      url: 'https://mcp-server.com/http',
-      openidBearerRecovery: true,
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect('openidBearerRecovery' in result.data).toBe(false);
-    }
   });
 });
 
@@ -817,7 +791,6 @@ describe('MCP_USER_INPUT_FIELDS', () => {
     expect(MCP_USER_INPUT_FIELDS.has('timeout')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('chatMenu')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('requiresOAuth')).toBe(false);
-    expect(MCP_USER_INPUT_FIELDS.has('openidBearerRecovery')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('customUserVars')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('oauth_headers')).toBe(false);
 

@@ -104,7 +104,6 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'headers',
   'proxy',
   'requiresOAuth',
-  'openidBearerRecovery',
   'apiKey',
   'oauth',
   'oauth_headers',

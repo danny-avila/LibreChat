@@ -86,7 +86,6 @@ describe('MCPServerInspector', () => {
         type: 'streamable-http' as const,
         url: 'https://api.example.com/mcp',
         source: 'yaml' as const,
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
 

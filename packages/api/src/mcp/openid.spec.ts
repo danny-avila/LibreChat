@@ -1,18 +1,16 @@
-import type { MCPOptions } from './types';
+import type { StreamableHTTPOptions } from './types';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPAuthenticationRefreshError } from './errors';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 const directBearerConfig = (
   source: 'yaml' | 'config' | 'user' | 'plugin',
-): MCPOptions & {
+): StreamableHTTPOptions & {
   source: typeof source;
-  openidBearerRecovery: true;
 } => ({
   type: 'streamable-http',
   url: 'https://mcp.example.com',
   source,
-  openidBearerRecovery: true,
   headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
 });
 
@@ -67,8 +65,27 @@ describe('direct OpenID bearer recovery', () => {
     },
   );
 
-  it('requires the explicit recovery opt-in', () => {
-    const config = { ...directBearerConfig('yaml'), openidBearerRecovery: false };
+  it('requires explicit trusted provenance even when the placeholder is present', () => {
+    const config = { ...directBearerConfig('yaml'), source: undefined };
+
+    expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
+  });
+
+  it('rejects a database-backed config even if its source marker is spoofed', () => {
+    const config = { ...directBearerConfig('config'), dbId: 'user-server' };
+
+    expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
+  });
+
+  it('enables recovery from the trusted placeholder without a separate opt-in', () => {
+    expect(usesDirectOpenIDBearerRecovery(directBearerConfig('yaml'))).toBe(true);
+  });
+
+  it('does not infer direct bearer recovery without the Authorization placeholder', () => {
+    const config = {
+      ...directBearerConfig('yaml'),
+      headers: { Authorization: 'Bearer static-token' },
+    };
 
     expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
   });

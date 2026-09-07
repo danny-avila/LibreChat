@@ -687,7 +687,9 @@ export abstract class UserConnectionManager {
         ephemeralConnection,
       };
 
-      const useOAuth = requiresOAuthMachinery(runtimeConfig);
+      const useOAuth = usesDirectOpenIDBearerRecovery(config)
+        ? false
+        : requiresOAuthMachinery(runtimeConfig);
       let connectionOptions: t.OAuthConnectionOptions | t.UserConnectionContext;
       if (useOAuth) {
         if (!flowManager) {

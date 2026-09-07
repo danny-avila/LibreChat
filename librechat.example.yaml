@@ -478,8 +478,9 @@ actions:
 #     type: streamable-http
 #     url: https://mcp.example.com/mcp
 #     headers:
+#       # Trusted operator configs automatically use the live session token and replace the
+#       # connection once after a 401/403. A rejected tools/call is never replayed automatically.
 #       Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
-#     openidBearerRecovery: true  # opt in to live session refresh and one connection replacement after 401/403
 #   puppeteer:
 #     type: stdio
 #     command: npx

@@ -2579,7 +2579,6 @@ describe('User parameter passing tests', () => {
           type: 'streamable-http',
           url: 'https://direct.example.com',
           source: 'yaml',
-          openidBearerRecovery: true,
           headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
         },
         availableTools: {

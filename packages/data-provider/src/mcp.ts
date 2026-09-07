@@ -207,12 +207,6 @@ const BaseOptionsSchema = z.object({
    */
   requiresOAuth: z.boolean().optional(),
   /**
-   * Refreshes a trusted operator-configured direct OpenID bearer when the live
-   * session credential expires or the MCP server rejects it. User and Agent
-   * Plugin server definitions cannot enable this capability.
-   */
-  openidBearerRecovery: z.boolean().optional(),
-  /**
    * OAuth configuration for SSE and Streamable HTTP transports
    * - Optional: OAuth can be auto-discovered on 401 responses
    * - Pre-configured confidential clients must pin both OAuth endpoints
@@ -303,7 +297,6 @@ export function hasProcessMCPServerConfig(value: unknown): boolean {
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('stdio').default('stdio'),
   obo: z.undefined().optional(),
-  openidBearerRecovery: z.undefined().optional(),
   /**
    * The executable to run to start the server.
    */
@@ -350,7 +343,6 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
 export const WebSocketOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('websocket').default('websocket'),
   obo: z.undefined().optional(),
-  openidBearerRecovery: z.undefined().optional(),
   url: z
     .string()
     .transform((val: string) => extractEnvVariable(val))
@@ -445,7 +437,6 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     chatMenu: true,
     serverInstructions: true,
     requiresOAuth: true,
-    openidBearerRecovery: true,
     customUserVars: true,
     oauth_headers: true,
   });

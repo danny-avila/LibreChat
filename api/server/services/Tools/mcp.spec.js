@@ -454,7 +454,6 @@ describe('reinitMCPServer — direct bearer authentication outcomes', () => {
           type: 'streamable-http',
           url: 'https://mcp.example.com',
           source: 'yaml',
-          openidBearerRecovery: true,
           headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
         },
       }),

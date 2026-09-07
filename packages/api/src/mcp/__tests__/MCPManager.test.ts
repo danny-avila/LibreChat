@@ -3066,7 +3066,6 @@ describe('MCPManager', () => {
       type: 'streamable-http' as const,
       url: 'https://api.example.com/mcp',
       source: 'yaml' as const,
-      openidBearerRecovery: true,
       headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
     };
     const user = {
@@ -3794,7 +3793,6 @@ describe('MCPManager', () => {
         type: 'streamable-http',
         url: 'https://mcp.example.com/mcp',
         source: 'yaml',
-        openidBearerRecovery: true,
         headers: {
           Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
           'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
@@ -3852,7 +3850,6 @@ describe('MCPManager', () => {
         type: 'streamable-http',
         url: 'https://mcp.example.com/mcp',
         source: 'yaml',
-        openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       };
       const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'stale-token' });
