@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { BSON, ObjectId } from 'mongodb';
 import { Constants, tMessageSchema, tPresetSchema } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
@@ -97,8 +98,9 @@ const COERCED_NUMBER_OPTION_FIELDS = [
 
 const SOURCE_RETENTION_FIELDS = ['isTemporary', 'expiredAt'] as const;
 const UNSAFE_MESSAGE_FIELDS = new Set(['contextMeta']);
+const importMessageSchema = tMessageSchema.extend({ addedConvo: z.boolean().optional() });
 const MESSAGE_FIELDS = new Set([
-  ...Object.keys(tMessageSchema.shape).filter((field) => !UNSAFE_MESSAGE_FIELDS.has(field)),
+  ...Object.keys(importMessageSchema.shape).filter((field) => !UNSAFE_MESSAGE_FIELDS.has(field)),
   'children',
   'content',
   'files',
@@ -339,6 +341,7 @@ function assertMessage(
   depth: number,
   budget: TraversalBudget,
   recursive: boolean,
+  messageIds: Set<string>,
 ): asserts value is JsonObject {
   reserveTraversalNode(depth, budget);
   if (!isJsonObject(value)) {
@@ -346,12 +349,17 @@ function assertMessage(
   }
   assertAllowedFields(value, MESSAGE_FIELDS, location);
   for (const field of SOURCE_RETENTION_FIELDS) delete value[field];
-  const parsedMessage = tMessageSchema.safeParse(value);
+  const parsedMessage = importMessageSchema.safeParse(value);
   if (!parsedMessage.success) {
     throw new ConversationImportError(`Field "${location}" is not a valid message`, {
       cause: parsedMessage.error,
     });
   }
+  const id = parsedMessage.data.messageId;
+  if (!id || id === Constants.NO_PARENT || messageIds.has(id)) {
+    throw new ConversationImportError(`Field "${location}" must have a unique message ID`);
+  }
+  messageIds.add(id);
   for (const field of ['createdAt', 'updatedAt', 'clientTimestamp'] as const) {
     const timestamp = value[field];
     if (
@@ -422,6 +430,7 @@ function assertMessage(
       depth + 1,
       budget,
       recursive,
+      messageIds,
     );
   }
 }
@@ -436,19 +445,14 @@ function assertMessages(
     throw new ConversationImportError(`Field "${location}" must be an array`);
   }
   const messages: JsonObject[] = [];
-  const byId = new Map<string, JsonObject>();
+  const messageIds = new Set<string>();
   const children = new Map<string, JsonObject[]>();
   const ordered: JsonObject[] = [];
   for (let index = 0; index < value.length; index++) {
     const message = value[index];
-    assertMessage(message, `${location}[${index}]`, 1, budget, recursive);
+    assertMessage(message, `${location}[${index}]`, 1, budget, recursive, messageIds);
     messages.push(message);
     if (recursive) continue;
-    const id = message.messageId as string;
-    if (id === Constants.NO_PARENT || byId.has(id)) {
-      throw new ConversationImportError(`Field "${location}" must have unique message IDs`);
-    }
-    byId.set(id, message);
     const parentId = message.parentMessageId as string | undefined;
     if (!parentId || parentId === Constants.NO_PARENT) {
       ordered.push(message);
@@ -460,7 +464,7 @@ function assertMessages(
   }
   if (recursive) return messages;
   for (const parentId of children.keys()) {
-    if (!byId.has(parentId)) {
+    if (!messageIds.has(parentId)) {
       throw new ConversationImportError(`Field "${location}" references a missing parent`);
     }
   }

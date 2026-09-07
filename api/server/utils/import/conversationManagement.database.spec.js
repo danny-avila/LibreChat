@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { createModels, tenantStorage } = require('@librechat/data-schemas');
+const { createModels, tenantStorage, CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
 const { Constants, EModelEndpoint } = require('librechat-data-provider');
 
 jest.mock('~/server/services/Config', () => ({
@@ -48,6 +48,84 @@ describe('importConversations database compatibility', () => {
       await mongoServer.stop();
     }
   });
+
+  it.each([false, true])(
+    'round-trips client-visible added-conversation markers (recursive=%s)',
+    async (recursive) => {
+      const filepath = path.join(tempDir, 'client-export.json');
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+        await mongoose.models.Conversation.create({
+          conversationId: 'source',
+          user: 'owner',
+          endpoint: EModelEndpoint.openAI,
+        });
+        await mongoose.models.Message.create(
+          [
+            {
+              messageId: 'root-a',
+              parentMessageId: Constants.NO_PARENT,
+              addedConvo: false,
+              text: 'Primary conversation',
+            },
+            {
+              messageId: 'child',
+              parentMessageId: 'root-a',
+              addedConvo: true,
+              text: 'Added conversation',
+            },
+            {
+              messageId: 'root-b',
+              parentMessageId: Constants.NO_PARENT,
+              addedConvo: true,
+              text: 'Separate branch',
+            },
+          ].map((message) => ({
+            ...message,
+            user: 'owner',
+            conversationId: 'source',
+            sender: 'User',
+            isCreatedByUser: true,
+          })),
+        );
+        const messages = await db.getMessages(
+          { user: 'owner', conversationId: 'source' },
+          CLIENT_MESSAGE_SELECT,
+        );
+        const byId = new Map(messages.map((message) => [message.messageId, message]));
+        const collection = recursive
+          ? {
+              messagesTree: [
+                { ...byId.get('root-a'), children: [byId.get('child')] },
+                byId.get('root-b'),
+              ],
+            }
+          : { messages };
+        await fs.writeFile(
+          filepath,
+          JSON.stringify({
+            conversationId: 'source',
+            endpoint: EModelEndpoint.openAI,
+            recursive,
+            ...collection,
+          }),
+        );
+        await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+        const imported = await mongoose.models.Message.find({
+          user: 'owner',
+          conversationId: { $ne: 'source' },
+        }).lean();
+        expect(imported).toHaveLength(3);
+        const byText = new Map(imported.map((message) => [message.text, message]));
+        expect(byText.get('Primary conversation').addedConvo).toBe(false);
+        expect(byText.get('Added conversation').addedConvo).toBe(true);
+        expect(byText.get('Separate branch').addedConvo).toBe(true);
+        expect(byText.get('Added conversation').parentMessageId).toBe(
+          byText.get('Primary conversation').messageId,
+        );
+        expect(byText.get('Separate branch').parentMessageId).toBe(Constants.NO_PARENT);
+      });
+    },
+  );
 
   it('preserves forward parent references and parent-first timestamps in flat exports', async () => {
     const filepath = path.join(tempDir, 'forward-parents.json');

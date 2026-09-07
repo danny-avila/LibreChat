@@ -100,6 +100,58 @@ describe('createConversationImportOperation', () => {
     expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['messages', 'messagesTree'])(
+    'validates message identities across the entire recursive %s tree',
+    async (collection) => {
+      const message = (messageId: string, children: object[] = []) => ({
+        ...baseExport.messages[0],
+        messageId,
+        children,
+      });
+      const trees = [
+        [message('root', [message('root')])],
+        [message('root', [message('child'), message('child')])],
+        [message('root-a', [message('shared')]), message('root-b', [message('shared')])],
+        [message('')],
+        [message(baseExport.messages[0].parentMessageId)],
+      ];
+      for (const tree of trees) {
+        const { messages: _messages, ...conversation } = baseExport;
+        const { deps } = createDependencies(
+          JSON.stringify({ ...conversation, recursive: true, [collection]: tree }),
+        );
+        await expect(
+          createConversationImportOperation(deps)({
+            filepath: '/tmp/invalid-tree.json',
+            requestUserId: 'owner',
+            format: 'librechat',
+          }),
+        ).rejects.toBeInstanceOf(ConversationImportError);
+        expect(deps.getImporter).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each(['true', 1, {}, null])(
+    'rejects a non-boolean addedConvo marker: %j',
+    async (addedConvo) => {
+      const { deps } = createDependencies(
+        JSON.stringify({
+          ...baseExport,
+          messages: [{ ...baseExport.messages[0], addedConvo }],
+        }),
+      );
+      await expect(
+        createConversationImportOperation(deps)({
+          filepath: '/tmp/invalid-marker.json',
+          requestUserId: 'owner',
+          format: 'librechat',
+        }),
+      ).rejects.toBeInstanceOf(ConversationImportError);
+      expect(deps.getImporter).not.toHaveBeenCalled();
+    },
+  );
+
   it('runs a valid LibreChat export with the authenticated owner and import configuration', async () => {
     const { deps, importer } = createDependencies(JSON.stringify(baseExport));
     const operation = createConversationImportOperation(deps);
