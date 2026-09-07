@@ -899,7 +899,7 @@ describe('createResponse controller', () => {
         messageId: 'input-new',
         parentMessageId: previousMessage.messageId,
       }),
-      { context: 'Responses API - save user input' },
+      { context: 'Responses API - save input' },
     );
     expect(db.saveMessage).toHaveBeenNthCalledWith(
       2,
@@ -918,6 +918,182 @@ describe('createResponse controller', () => {
         appendMessageIds: ['mongo-input-new', 'mongo-resp_mock-123'],
         noUpsert: true,
       }),
+    );
+  });
+
+  it('persists every accepted input role in one linked continuation chain', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    const toolCalls = [
+      {
+        id: 'call-weather',
+        type: 'function',
+        function: { name: 'weather', arguments: '{"city":"Paris"}' },
+      },
+    ];
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: { ...req.body, store: true },
+    });
+    api.convertInputToMessages.mockReturnValueOnce([
+      { role: 'system', content: 'Be concise', messageId: 'input-system' },
+      {
+        role: 'assistant',
+        content: '',
+        messageId: 'input-call',
+        tool_calls: toolCalls,
+      },
+      {
+        role: 'tool',
+        content: 'Sunny',
+        messageId: 'input-output',
+        tool_call_id: 'call-weather',
+      },
+      { role: 'user', content: 'Thanks', messageId: 'input-user' },
+    ]);
+    db.saveMessage.mockImplementation(async (_context, params) => ({
+      ...params,
+      _id: `mongo-${params.messageId}`,
+    }));
+
+    await createResponse(req, res);
+
+    expect(
+      db.saveMessage.mock.calls.slice(0, 4).map(([, message]) => ({
+        messageId: message.messageId,
+        parentMessageId: message.parentMessageId,
+        isCreatedByUser: message.isCreatedByUser,
+        isUserSubmitted: message.isUserSubmitted,
+        metadata: message.metadata,
+      })),
+    ).toEqual([
+      {
+        messageId: 'input-system',
+        parentMessageId: null,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        metadata: { responsesInput: { role: 'system' } },
+      },
+      {
+        messageId: 'input-call',
+        parentMessageId: 'input-system',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        metadata: { responsesInput: { role: 'assistant', tool_calls: toolCalls } },
+      },
+      {
+        messageId: 'input-output',
+        parentMessageId: 'input-call',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        metadata: { responsesInput: { role: 'tool', tool_call_id: 'call-weather' } },
+      },
+      {
+        messageId: 'input-user',
+        parentMessageId: 'input-output',
+        isCreatedByUser: true,
+        isUserSubmitted: true,
+        metadata: { responsesInput: { role: 'user' } },
+      },
+    ]);
+    expect(db.saveMessage).toHaveBeenNthCalledWith(
+      5,
+      expect.anything(),
+      expect.objectContaining({
+        messageId: 'resp_mock-123',
+        parentMessageId: 'input-user',
+      }),
+      { context: 'Responses API - save assistant response' },
+    );
+    expect(db.saveConvo).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        appendMessageIds: [
+          'mongo-input-system',
+          'mongo-input-call',
+          'mongo-input-output',
+          'mongo-input-user',
+          'mongo-resp_mock-123',
+        ],
+      }),
+    );
+  });
+
+  it('restores persisted response input roles and tool metadata for continuation', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    const { formatAgentMessages } = require('@librechat/agents');
+    const conversationId = '11111111-1111-4111-8111-111111111111';
+    const responseMessage = {
+      messageId: 'resp_previous',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Done',
+    };
+    const resolution = {
+      status: 'found',
+      reference: {
+        conversation: { conversationId, user: 'user-123' },
+        conversationId,
+        responseMessage,
+      },
+    };
+    api.resolveStoredResponse.mockResolvedValueOnce(resolution).mockResolvedValueOnce(resolution);
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: { ...req.body, previous_response_id: responseMessage.messageId },
+    });
+    api.convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Continue' }]);
+    db.getMessages.mockResolvedValueOnce([
+      {
+        messageId: 'input-system',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: 'Be concise',
+        metadata: { responsesInput: { role: 'system' } },
+      },
+      {
+        messageId: 'input-call',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: '',
+        metadata: {
+          responsesInput: {
+            role: 'assistant',
+            tool_calls: [
+              {
+                id: 'call-weather',
+                type: 'function',
+                function: { name: 'weather', arguments: '{"city":"Paris"}' },
+              },
+            ],
+          },
+        },
+      },
+      {
+        messageId: 'input-output',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: 'Sunny',
+        metadata: { responsesInput: { role: 'tool', tool_call_id: 'call-weather' } },
+      },
+      responseMessage,
+    ]);
+
+    await createResponse(req, res);
+
+    expect(formatAgentMessages).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({ role: 'system', content: 'Be concise' }),
+        expect.objectContaining({
+          role: 'assistant',
+          tool_calls: [expect.objectContaining({ id: 'call-weather' })],
+        }),
+        expect.objectContaining({ role: 'tool', content: 'Sunny', tool_call_id: 'call-weather' }),
+        expect.objectContaining({ role: 'assistant', content: 'Done' }),
+        { role: 'user', content: 'Continue' },
+      ],
+      {},
+      expect.any(Set),
     );
   });
 
@@ -1887,7 +2063,7 @@ describe('createResponse controller', () => {
 
     it('should proceed when conversation is owned by user', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
-      const { getConvo } = require('~/models');
+      const { getConvo, getMessages } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -1897,6 +2073,9 @@ describe('createResponse controller', () => {
         },
       });
       getConvo.mockResolvedValueOnce({ conversationId: 'resp_abc', user: 'user-123' });
+      getMessages.mockResolvedValueOnce([
+        { messageId: 'existing', isCreatedByUser: false, text: 'Existing history' },
+      ]);
 
       await createResponse(req, res);
       expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
@@ -1906,6 +2085,32 @@ describe('createResponse controller', () => {
         expect.any(String),
         expect.any(String),
       );
+    });
+
+    it('rejects a UUID continuation whose visible history is empty', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo, getMessages } = require('~/models');
+      const conversationId = '11111111-1111-4111-8111-111111111111';
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Continue.',
+          stream: false,
+          previous_response_id: conversationId,
+        },
+      });
+      getConvo.mockResolvedValueOnce({ conversationId, user: 'user-123' });
+      getMessages.mockResolvedValueOnce([]);
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        404,
+        'Conversation history not found',
+        'not_found',
+      );
+      expect(require('@librechat/api').createRun).not.toHaveBeenCalled();
     });
 
     it('rejects a remote response continuation of a view-only subagent thread', async () => {
@@ -1945,7 +2150,7 @@ describe('createResponse controller', () => {
 
     it('does not recreate a continued conversation deleted before persistence', async () => {
       const { validateResponseRequest } = require('@librechat/api');
-      const { getConvo, saveConvo, saveMessage } = require('~/models');
+      const { getConvo, getMessages, saveConvo, saveMessage } = require('~/models');
       validateResponseRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -1959,6 +2164,9 @@ describe('createResponse controller', () => {
         conversationId: '11111111-1111-4111-8111-111111111111',
         user: 'user-123',
       });
+      getMessages.mockResolvedValueOnce([
+        { messageId: 'existing', isCreatedByUser: false, text: 'Existing history' },
+      ]);
       saveConvo.mockResolvedValueOnce(null);
 
       await createResponse(req, res);

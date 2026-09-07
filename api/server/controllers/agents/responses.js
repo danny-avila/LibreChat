@@ -330,6 +330,11 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
 
     // Convert stored messages to internal format
     return selectStoredResponseHistory(messages, responseMessageId).map((msg) => {
+      const responsesInput = msg.metadata?.responsesInput;
+      let role = responsesInput?.role;
+      if (!['system', 'user', 'assistant', 'tool'].includes(role)) {
+        role = msg.isCreatedByUser ? 'user' : 'assistant';
+      }
       let text;
       if (typeof msg.text === 'string') {
         text = msg.text;
@@ -337,7 +342,7 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
         text = String(msg.text);
       }
       const internalMsg = {
-        role: msg.isCreatedByUser ? 'user' : 'assistant',
+        role,
         content: Array.isArray(msg.content) ? msg.content : (text ?? ''),
         messageId: msg.messageId,
         isCreatedByUser: msg.isCreatedByUser === true,
@@ -350,6 +355,13 @@ async function loadPreviousMessages(conversationId, userId, responseMessageId) {
         }),
         ...(Array.isArray(msg.userSubmittedMessageFieldPaths) && {
           userSubmittedMessageFieldPaths: msg.userSubmittedMessageFieldPaths,
+        }),
+        ...(typeof responsesInput?.name === 'string' && { name: responsesInput.name }),
+        ...(typeof responsesInput?.tool_call_id === 'string' && {
+          tool_call_id: responsesInput.tool_call_id,
+        }),
+        ...(Array.isArray(responsesInput?.tool_calls) && {
+          tool_calls: responsesInput.tool_calls,
         }),
       };
 
@@ -374,31 +386,45 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId, pa
   const messageIds = [];
   let currentParentMessageId = parentMessageId;
   for (const msg of inputMessages) {
+    const messageId = msg.messageId || nanoid();
+    let sender = 'Agent';
     if (msg.role === 'user') {
-      const messageId = msg.messageId || nanoid();
-      const message = await db.saveMessage(
-        {
-          userId: req?.user?.id,
-          isTemporary: req?.body?.isTemporary,
-          interfaceConfig: req?.config?.interfaceConfig,
-        },
-        {
-          messageId,
-          conversationId,
-          parentMessageId: currentParentMessageId,
-          isCreatedByUser: true,
-          text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          sender: 'User',
-          endpoint: EModelEndpoint.agents,
-          model: agentId,
-        },
-        { context: 'Responses API - save user input' },
-      );
-      if (message?._id != null) {
-        messageIds.push(message._id);
-      }
-      currentParentMessageId = messageId;
+      sender = 'User';
+    } else if (msg.role === 'tool') {
+      sender = 'Tool';
     }
+    const message = await db.saveMessage(
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
+      {
+        messageId,
+        conversationId,
+        parentMessageId: currentParentMessageId,
+        isCreatedByUser: msg.role === 'user',
+        isUserSubmitted: true,
+        text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        ...(Array.isArray(msg.content) && { content: msg.content }),
+        sender,
+        endpoint: EModelEndpoint.agents,
+        model: agentId,
+        metadata: {
+          responsesInput: {
+            role: msg.role,
+            ...(typeof msg.name === 'string' && { name: msg.name }),
+            ...(typeof msg.tool_call_id === 'string' && { tool_call_id: msg.tool_call_id }),
+            ...(Array.isArray(msg.tool_calls) && { tool_calls: msg.tool_calls }),
+          },
+        },
+      },
+      { context: 'Responses API - save input' },
+    );
+    if (message?._id != null) {
+      messageIds.push(message._id);
+    }
+    currentParentMessageId = messageId;
   }
   return { parentMessageId: currentParentMessageId, messageIds };
 }
@@ -766,7 +792,7 @@ const executeResponse = async (envelope, { req, res }) => {
             previousResponse.responseMessage?.messageId,
           )
         : [];
-      if (previousResponse?.responseMessage != null && previousMessages.length === 0) {
+      if (previousResponse != null && previousMessages.length === 0) {
         return sendResponsesErrorResponse(res, 404, 'Conversation history not found', 'not_found');
       }
       if (previousResponse) {

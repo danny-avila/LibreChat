@@ -4,11 +4,12 @@ import {
   buildAggregatedResponse,
   convertInputToMessages,
   createAggregatorEventHandlers,
+  createResponseContext,
   createResponseAggregator,
   createResponsesEventHandlers,
   buildResponsesUsage,
 } from '../service';
-import { createResponseTracker } from '../handlers';
+import { buildResponse, createResponseTracker } from '../handlers';
 
 describe('response usage aggregation', () => {
   const context: ResponseContext = {
@@ -96,6 +97,16 @@ describe('response usage aggregation', () => {
 
     const completed = writes.find((chunk) => chunk.startsWith('data: {'));
     expect(JSON.parse(completed?.slice(6) ?? '{}').response.usage).toEqual(usage);
+  });
+
+  it('reports the validated storage choice in JSON and streaming responses', () => {
+    const storedContext = createResponseContext(
+      { model: 'agent_test', input: 'Hello', store: true },
+      'resp_stored',
+    );
+
+    expect(buildAggregatedResponse(storedContext, createResponseAggregator()).store).toBe(true);
+    expect(buildResponse(storedContext, createResponseTracker(), 'completed').store).toBe(true);
   });
 });
 
