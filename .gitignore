@@ -192,5 +192,5 @@ codedb.snapshot
 scripts/activity-labels/results/
 
 !e2e/lighthouse/librechat.yaml
-/.lighthouseci/
+/.lighthouse/
 /e2e/lighthouse/.test-results/
