@@ -42,7 +42,7 @@ describe('event actor host adapter', () => {
     legacyTurn = null;
     nextCheckpoint = 1;
     jest.clearAllMocks();
-    mockedGetCheckpointer.mockResolvedValue({} as never);
+    mockedGetCheckpointer.mockResolvedValue({ getTuple: jest.fn().mockResolvedValue({}) } as never);
     mockedFork.mockImplementation(async (source, checkpointNs) => ({
       ...source,
       checkpointNs,
@@ -137,7 +137,10 @@ describe('event actor host adapter', () => {
         invocationId: 'event-paused',
         event: { id: 'event-paused', type: 'turn' },
         signal: new AbortController().signal,
-        invoke: async () => 'paused-response',
+        invoke: async ({ checkpointNamespace }) => {
+          expect(checkpointNamespace).toMatch(/^lcg:v2:[0-9a-f]{64}:event-actor\//);
+          return 'paused-response';
+        },
         readAppliedAction: () => undefined,
         readSuspension: () => ({
           actionId: 'action-paused',
@@ -158,7 +161,10 @@ describe('event actor host adapter', () => {
         version: 1,
         attempt: 0,
         invocation: { invocationId: 'event-paused' },
-        checkpoint: { checkpointId: 'checkpoint-1' },
+        checkpoint: {
+          checkpointId: 'checkpoint-1',
+          checkpointNs: expect.stringMatching(/^event-actor\//),
+        },
         interrupt: {
           id: 'interrupt-paused',
           payload: { type: 'ask_user_question', question: 'Continue?' },
@@ -334,7 +340,8 @@ describe('event actor host adapter', () => {
         resumeAttemptId: 'resume-cross-executor',
         resumeValue: { approved: true },
         signal: new AbortController().signal,
-        resume: async () => {
+        resume: async ({ checkpointNamespace }) => {
+          expect(checkpointNamespace).toMatch(/^lcg:v2:[0-9a-f]{64}:event-actor\//);
           action = { toolName: 'submit_move', toolCallId: 'call-resumed' };
           return 'resumed-response';
         },
@@ -642,7 +649,7 @@ describe('event actor host adapter', () => {
     ]);
     expect(mockedFork).toHaveBeenCalledWith(
       expect.objectContaining({ checkpointId: 'checkpoint-1' }),
-      expect.stringMatching(/^event-actor\//),
+      expect.stringMatching(/^lcg:v2:[0-9a-f]{64}:event-actor\//),
       'event-2',
       undefined,
       undefined,
@@ -1034,7 +1041,7 @@ describe('event actor host adapter', () => {
       undefined,
       expect.objectContaining({
         throwOnError: true,
-        checkpointNamespace: expect.stringMatching(/^event-actor\//),
+        checkpointNamespace: expect.stringMatching(/^lcg:v2:[0-9a-f]{64}:event-actor\//),
       }),
     );
     expect(state.generation).toBe(1);
@@ -1074,7 +1081,7 @@ describe('event actor host adapter', () => {
   });
 
   it('retains an applied fork when its terminal checkpoint cannot be observed', async () => {
-    mockedCapture.mockResolvedValueOnce(null);
+    mockedCapture.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
     const dependencies = deps();
     await expect(
       executeAgentEventActor(
