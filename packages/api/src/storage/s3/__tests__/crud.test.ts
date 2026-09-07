@@ -1131,6 +1131,21 @@ describe('S3 CRUD', () => {
       );
     });
 
+    it('streams by the recorded key even when the stored URL no longer parses', async () => {
+      const { getS3FileStream } = await import('../crud');
+      const { resolveDownloadPath } = await import('~/storage/path');
+      const file = {
+        filepath: 'not a url: presigned link expired and was overwritten',
+        storageKey: 'uploads/user123/Ársreikningur 2025.pdf',
+      };
+
+      await getS3FileStream({} as ServerRequest, resolveDownloadPath(file));
+
+      const [call] = s3Mock.commandCalls(GetObjectCommand);
+      expect(call.args[0].input.Key).toBe(file.storageKey);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
     it('handles errors when retrieving stream', async () => {
       s3Mock.on(GetObjectCommand).rejects(new Error('Stream error'));
 

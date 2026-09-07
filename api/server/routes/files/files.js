@@ -18,6 +18,7 @@ const {
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Time,
@@ -700,7 +701,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         return res.status(501).send('Not Implemented');
       }
 
-      const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
+      const fileStream = await getDownloadStream(req, resolveDownloadPath(file));
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);

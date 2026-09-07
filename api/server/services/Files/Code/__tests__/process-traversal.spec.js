@@ -20,6 +20,7 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
     sanitizeArtifactPath: mockSanitizeArtifactPath,

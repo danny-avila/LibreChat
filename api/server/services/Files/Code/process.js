@@ -35,6 +35,7 @@ const {
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Tools,
@@ -1430,7 +1431,7 @@ const primeFiles = async (options) => {
         const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
           FileSources.execute_code,
         );
-        const stream = await getDownloadStream(options.req, file.filepath);
+        const stream = await getDownloadStream(options.req, resolveDownloadPath(file));
         /* Reupload preserves the resource identity from the existing
          * ref so codeapi re-buckets under the same sessionKey shape
          * (skill stays skill, user stays user). Without this, a

@@ -31,6 +31,7 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
+import type { StoredFileRef } from '~/storage/path';
 import type { ServerRequest } from '~/types';
 import {
   assertRemoteFileURL,
@@ -280,9 +281,7 @@ export function getStorageMetadataForKey(
   };
 }
 
-export function resolveStoredS3Key(
-  file: Pick<TFile, 'filepath'> & { storageKey?: string | null },
-): string {
+export function resolveStoredS3Key(file: StoredFileRef): string {
   return file.storageKey || extractKeyFromS3Url(file.filepath);
 }
 
