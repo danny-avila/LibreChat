@@ -1,4 +1,4 @@
-import type { Model } from 'mongoose';
+import type { FilterQuery, Model } from 'mongoose';
 
 interface IToolCallData {
   messageId?: string;
@@ -28,6 +28,7 @@ export function createToolCallMethods(mongoose: typeof import('mongoose')): {
   deleteToolCalls: (
     userId: string,
     conversationId?: string,
+    tenantId?: string | null,
   ) => Promise<import('mongodb').DeleteResult>;
   getToolCallById: (id: string) => Promise<
     | (import('mongoose').FlattenMaps<{
@@ -194,12 +195,18 @@ export function createToolCallMethods(mongoose: typeof import('mongoose')): {
   async function deleteToolCalls(
     userId: string,
     conversationId?: string,
+    tenantId?: string | null,
   ): Promise<import('mongodb').DeleteResult> {
     try {
       const ToolCall = mongoose.models.ToolCall as Model<IToolCallData>;
-      const query: Record<string, string> = { user: userId };
+      const query: FilterQuery<IToolCallData> = { user: userId };
       if (conversationId) {
         query.conversationId = conversationId;
+      }
+      if (tenantId === null) {
+        Object.assign(query, { tenantId: { $exists: false } });
+      } else if (tenantId !== undefined) {
+        Object.assign(query, { tenantId });
       }
       return await ToolCall.deleteMany(query);
     } catch (error) {

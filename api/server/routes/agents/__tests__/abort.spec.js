@@ -78,6 +78,7 @@ jest.mock('~/server/routes/agents/v1', () => ({
   v1: require('express').Router(),
 }));
 jest.mock('~/server/routes/agents/management', () => require('express').Router());
+jest.mock('~/server/routes/agents/conversations', () => require('express').Router());
 
 // Import after mocks
 const agentRoutes = require('~/server/routes/agents/index');

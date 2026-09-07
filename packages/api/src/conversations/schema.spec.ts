@@ -1,0 +1,185 @@
+import { Types } from 'mongoose';
+import { ContentTypes } from 'librechat-data-provider';
+import type { ConversationMessageResource } from '@librechat/data-schemas';
+import {
+  ConversationManagementError,
+  conversationListSchema,
+  conversationUpdateSchema,
+  decodeConversationCursor,
+  encodeConversationCursor,
+  projectConversationMessage,
+} from './schema';
+
+describe('conversation management request schemas', () => {
+  it('applies page limits and strict update validation', () => {
+    expect(conversationListSchema.parse({})).toEqual({ limit: 20 });
+    expect(conversationListSchema.parse({ limit: '100' })).toEqual({ limit: 100 });
+    expect(() => conversationListSchema.parse({ limit: '101' })).toThrow();
+    expect(() => conversationListSchema.parse({ unknown: 'field' })).toThrow();
+    expect(() => conversationUpdateSchema.parse({})).toThrow();
+    expect(() => conversationUpdateSchema.parse({ title: '   ' })).toThrow();
+    expect(() => conversationUpdateSchema.parse({ title: 'ok', unknown: true })).toThrow();
+  });
+
+  it('normalizes tags and supports an explicit archive filter without defaulting it', () => {
+    expect(
+      conversationListSchema.parse({ tags: ['beta', 'alpha', 'beta'], isArchived: 'false' }),
+    ).toEqual({ limit: 20, tags: ['alpha', 'beta'], isArchived: false });
+    expect(conversationListSchema.parse({})).not.toHaveProperty('isArchived');
+    expect(conversationUpdateSchema.parse({ tags: [' one ', 'one', 'two'] })).toEqual({
+      tags: ['one', 'two'],
+    });
+  });
+});
+
+describe('conversation management cursors', () => {
+  const boundary = {
+    date: '2026-09-06T12:34:56.789Z',
+    id: new Types.ObjectId().toHexString(),
+  };
+
+  it('round-trips only within the bound resource and filter scope', () => {
+    const cursor = encodeConversationCursor('conversations', boundary, 'owner/tenant/filter-a');
+
+    expect(decodeConversationCursor(cursor, 'conversations', 'owner/tenant/filter-a')).toEqual(
+      boundary,
+    );
+    expect(() => decodeConversationCursor(cursor, 'messages', 'owner/tenant/filter-a')).toThrow(
+      ConversationManagementError,
+    );
+    expect(() =>
+      decodeConversationCursor(cursor, 'conversations', 'owner/tenant/filter-b'),
+    ).toThrow(ConversationManagementError);
+  });
+
+  it.each([
+    ['non-base64url', '%%%'],
+    ['invalid JSON', Buffer.from('{').toString('base64url')],
+    [
+      'invalid identifier',
+      Buffer.from(
+        JSON.stringify({
+          v: 1,
+          kind: 'conversations',
+          date: boundary.date,
+          id: 'not-an-object-id',
+          scope: '0'.repeat(64),
+        }),
+      ).toString('base64url'),
+    ],
+  ])('rejects a %s cursor before it reaches Mongo', (_label, cursor) => {
+    expect(() => decodeConversationCursor(cursor, 'conversations', 'scope')).toThrow(
+      ConversationManagementError,
+    );
+  });
+});
+
+describe('conversation message projection', () => {
+  it('keeps supported visible content variants and strips stored internal fields', () => {
+    const source = {
+      _id: new Types.ObjectId(),
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+      text: 'Visible message',
+      sender: 'assistant',
+      isCreatedByUser: false,
+      createdAt: new Date('2026-09-06T12:00:00.000Z'),
+      updatedAt: new Date('2026-09-06T12:00:01.000Z'),
+      content: [
+        {
+          type: ContentTypes.AGENT_UPDATE,
+          agent_update: {
+            index: 0,
+            runId: 'run-1',
+            agentId: 'agent-1',
+            credentials: 'must-not-leak',
+          },
+        },
+        {
+          type: ContentTypes.TEXT,
+          text: 'hello',
+          tenantId: 'must-not-leak',
+          storageKey: 'must-not-leak',
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'call-1',
+            name: 'weather',
+            args: { city: 'Paris' },
+            output: [{ temperature: 20 }],
+            credentials: { token: 'must-not-leak' },
+          },
+          providerCredential: 'must-not-leak',
+        },
+        {
+          type: ContentTypes.IMAGE_URL,
+          image_url: { url: 'https://example.test/image.png', detail: 'high' },
+          bucket: 'must-not-leak',
+        },
+        {
+          type: ContentTypes.VIDEO_URL,
+          video_url: { url: 'https://example.test/video.mp4', storage: 'must-not-leak' },
+        },
+        {
+          type: ContentTypes.INPUT_AUDIO,
+          input_audio: { data: 'audio-data', format: 'wav', apiKey: 'must-not-leak' },
+        },
+        {
+          type: ContentTypes.AGENT_UPDATE,
+          agent_update: { credentials: 'must-not-leak' },
+        },
+        { type: 'unknown', credentials: 'must-not-leak' },
+      ],
+      user: 'must-not-leak',
+      tenantId: 'must-not-leak',
+      endpoint: 'must-not-leak',
+      credentials: { token: 'must-not-leak' },
+    } as unknown as ConversationMessageResource;
+
+    const result = projectConversationMessage(source);
+
+    expect(result).toMatchObject({
+      id: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+      text: 'Visible message',
+      sender: 'assistant',
+      isCreatedByUser: false,
+      createdAt: '2026-09-06T12:00:00.000Z',
+      updatedAt: '2026-09-06T12:00:01.000Z',
+    });
+    expect(result.content).toEqual([
+      {
+        type: ContentTypes.AGENT_UPDATE,
+        agent_update: { index: 0, runId: 'run-1', agentId: 'agent-1' },
+      },
+      { type: ContentTypes.TEXT, text: 'hello' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call-1',
+          name: 'weather',
+          args: { city: 'Paris' },
+          output: [{ temperature: 20 }],
+        },
+      },
+      {
+        type: ContentTypes.IMAGE_URL,
+        image_url: { url: 'https://example.test/image.png', detail: 'high' },
+      },
+      {
+        type: ContentTypes.VIDEO_URL,
+        video_url: { url: 'https://example.test/video.mp4' },
+      },
+      {
+        type: ContentTypes.INPUT_AUDIO,
+        input_audio: { data: 'audio-data', format: 'wav' },
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(
+      /must-not-leak|tenantId|storageKey|providerCredential|credentials|apiKey/,
+    );
+  });
+});

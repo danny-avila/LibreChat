@@ -391,3 +391,16 @@ describe('deleteAllSharedLinksWithCleanup', () => {
     expect(aclAfter).toHaveLength(0);
   });
 });
+
+test('tenantless clear-all preserves historical named-tenant links and ACLs', async () => {
+  const tenantless = await createTestLink({ conversationId: 'same' });
+  const named = await createTestLink({ conversationId: 'same', tenantId: 'historical' });
+  await grantCreationPermissions(tenantless._id, userId, true);
+  await grantCreationPermissions(named._id, userId, true);
+  expect((await deleteAllSharedLinksWithCleanup(userId, null)).deletedCount).toBe(1);
+  expect(await SharedLink.findById(named._id)).not.toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(await AclEntry.countDocuments({ resourceId: named._id })).toBeGreaterThan(0);
+  expect(await AclEntry.countDocuments({ resourceId: tenantless._id })).toBe(0);
+  expect((await deleteAllSharedLinksWithCleanup(userId)).deletedCount).toBe(1);
+});

@@ -43,6 +43,13 @@ export type AssignConversationToProjectResult = {
   projectId: string | null;
 };
 
+function optionalTenantFilter<T>(tenantId?: string | null): FilterQuery<T> {
+  if (tenantId === null) {
+    return { tenantId: { $exists: false } } as FilterQuery<T>;
+  }
+  return (tenantId === undefined ? {} : { tenantId }) as FilterQuery<T>;
+}
+
 export interface ChatProjectMethods {
   createChatProject(user: string, input: CreateChatProjectInput): Promise<IChatProject>;
   getChatProject(user: string, projectId: string): Promise<IChatProject | null>;
@@ -189,10 +196,12 @@ function createCursorFilter(
 function visibleProjectConversationFilter(
   user: string,
   projectId: string,
+  tenantId?: string | null,
 ): FilterQuery<IConversation> {
+  const tenantFilter = optionalTenantFilter<IConversation>(tenantId);
   return {
     $and: [
-      { user, chatProjectId: projectId },
+      { user, chatProjectId: projectId, ...tenantFilter },
       { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
       buildRetentionVisibilityFilter<IConversation>(),
     ],
@@ -216,6 +225,7 @@ export async function refreshChatProjectStatsForUser(
   mongoose: typeof import('mongoose'),
   user: string,
   projectId: string,
+  tenantId?: string | null,
 ): Promise<IChatProject | null> {
   if (!isValidObjectIdString(projectId)) {
     return null;
@@ -223,8 +233,9 @@ export async function refreshChatProjectStatsForUser(
 
   const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
   const Conversation = mongoose.models.Conversation as Model<IConversation>;
-  const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
-  const conversationFilter = visibleProjectConversationFilter(user, projectId);
+  const tenantFilter = optionalTenantFilter<IChatProjectDocument>(tenantId);
+  const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user, ...tenantFilter };
+  const conversationFilter = visibleProjectConversationFilter(user, projectId, tenantId);
 
   for (let attempt = 0; attempt < PROJECT_STATS_REFRESH_MAX_ATTEMPTS; attempt++) {
     const snapshot = await ChatProject.findOne(projectFilter)
@@ -272,6 +283,7 @@ export async function updateChatProjectLastConversationForUser(
   projectId: string,
   conversation: Pick<IConversation, 'conversationId' | 'createdAt' | 'updatedAt'>,
   incrementCount = false,
+  tenantId?: string | null,
 ): Promise<void> {
   if (!isValidObjectIdString(projectId) || !conversation.conversationId) {
     return;
@@ -283,7 +295,8 @@ export async function updateChatProjectLastConversationForUser(
     lastConversationId: conversation.conversationId,
   };
   const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
-  const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
+  const tenantFilter = optionalTenantFilter<IChatProjectDocument>(tenantId);
+  const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user, ...tenantFilter };
 
   if (!incrementCount) {
     await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
@@ -315,11 +328,11 @@ export async function updateChatProjectLastConversationForUser(
    */
   const Conversation = mongoose.models.Conversation as Model<IConversation>;
   const stillVisible = await Conversation.exists({
-    ...visibleProjectConversationFilter(user, projectId),
+    ...visibleProjectConversationFilter(user, projectId, tenantId),
     conversationId: conversation.conversationId,
   });
   if (!stillVisible) {
-    await refreshChatProjectStatsForUser(mongoose, user, projectId);
+    await refreshChatProjectStatsForUser(mongoose, user, projectId, tenantId);
   }
 }
 

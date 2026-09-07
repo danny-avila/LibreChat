@@ -324,6 +324,36 @@ describe('Conversation Operations', () => {
       expect(refreshedProject?.lastConversationId).toBe(firstConversationId);
     });
 
+    it('returns the committed conversation when derived project bookkeeping fails', async () => {
+      const project = await ChatProject.create({ user: mockCtx.userId, name: 'Project Stats' });
+      const conversationId = uuidv4();
+      const chatProjectId = project._id!.toString();
+      await saveConvo(mockCtx, {
+        conversationId,
+        title: 'Before',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId,
+      });
+      const updateOneSpy = jest.spyOn(ChatProject, 'findOneAndUpdate').mockReturnValueOnce({
+        lean: () => Promise.reject(new Error('project stats unavailable')),
+      } as unknown as ReturnType<typeof ChatProject.findOneAndUpdate>);
+
+      try {
+        const result = await saveConvo(
+          mockCtx,
+          { conversationId, title: 'After' },
+          { noUpsert: true, appendMessageIds: [] },
+        );
+
+        expect(result).toMatchObject({ conversationId, title: 'After', chatProjectId });
+        await expect(Conversation.findOne({ conversationId }).lean()).resolves.toMatchObject({
+          title: 'After',
+        });
+      } finally {
+        updateOneSpy.mockRestore();
+      }
+    });
+
     it('bulkSaveConvos keeps owned project ids and strips orphan ones', async () => {
       const project = await ChatProject.create({
         user: mockCtx.userId,
@@ -739,14 +769,15 @@ describe('Conversation Operations', () => {
       });
 
       /** Alternating requests can split every retry, and exhausting them still proves
-       * nothing about whether the chat exists, so it must not become a 404 either. */
-      it('does not report a missing chat when every archive retry is split', async () => {
+       * nothing about whether the chat exists; an unapplied write must report failure. */
+      it('reports failure without applying metadata when every archive retry is split', async () => {
         const conversationId = uuidv4();
         const original = new Date('2026-03-01T12:00:00.000Z');
         await Conversation.collection.insertOne({
           conversationId,
           user: 'user123',
           title: 'Perpetually split',
+          tags: ['original'],
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           isArchived: true,
@@ -781,12 +812,15 @@ describe('Conversation Operations', () => {
         try {
           const archived = await saveConvo(
             { userId: 'user123' },
-            { conversationId, isArchived: true },
-            { preserveUpdatedAt: true, noUpsert: true },
+            { conversationId, isArchived: true, title: 'Requested', tags: ['requested'] },
+            { preserveUpdatedAt: true, noUpsert: true, expectedTags: ['original'] },
           );
 
-          expect(archived).not.toBeNull();
-          expect(archived?.conversationId).toBe(conversationId);
+          expect(archived).toEqual({ message: 'Error saving conversation' });
+          expect(await Conversation.findOne({ conversationId }).lean()).toMatchObject({
+            title: 'Perpetually split',
+            tags: ['original'],
+          });
         } finally {
           writeSpy.mockRestore();
         }
@@ -1154,6 +1188,54 @@ describe('Conversation Operations', () => {
       expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
       const stored = await Conversation.findOne({ conversationId }).lean();
       expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
+    });
+  });
+
+  describe('saveConvo expectedTags', () => {
+    const ctx = { userId: 'metadata-user' };
+    const conversationId = 'metadata-conversation';
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({ user: ctx.userId });
+      await saveConvo(
+        ctx,
+        { conversationId, title: 'original', tags: ['previous'] },
+        { appendMessageIds: [] },
+      );
+    });
+
+    it('applies a metadata update only to the expected committed tag state', async () => {
+      const committed = await saveConvo(
+        ctx,
+        { conversationId, title: 'committed', tags: ['next'] },
+        { noUpsert: true, appendMessageIds: [], expectedTags: ['previous'] },
+      );
+      const stale = await saveConvo(
+        ctx,
+        { conversationId, title: 'stale', tags: ['other'] },
+        { noUpsert: true, appendMessageIds: [], expectedTags: ['previous'] },
+      );
+
+      expect(committed?.tags).toEqual(['next']);
+      expect(stale).toBeNull();
+      await expect(
+        Conversation.findOne({ user: ctx.userId, conversationId }).lean(),
+      ).resolves.toMatchObject({ title: 'committed', tags: ['next'] });
+    });
+
+    it('matches an empty expected state for a legacy conversation without tags', async () => {
+      await Conversation.collection.updateOne(
+        { user: ctx.userId, conversationId },
+        { $unset: { tags: '' } },
+      );
+
+      const result = await saveConvo(
+        ctx,
+        { conversationId, tags: ['next'] },
+        { noUpsert: true, appendMessageIds: [], expectedTags: [] },
+      );
+
+      expect(result?.tags).toEqual(['next']);
     });
   });
 
@@ -2140,6 +2222,15 @@ describe('Conversation Operations', () => {
 
     it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
       await expect(
+        deleteConvos('user123', { conversationId: 'already-absent' }, { allowEmpty: true }),
+      ).resolves.toEqual({
+        acknowledged: true,
+        deletedCount: 0,
+        messages: { deletedCount: 0 },
+        conversationIds: ['already-absent'],
+      });
+
+      await expect(
         deleteConvos(
           'user123',
           { conversationId: { $in: ['already-absent'] } },
@@ -2233,7 +2324,7 @@ describe('Conversation Operations', () => {
       expect(tag?.count).toBe(1);
     });
 
-    it('should clamp tag counts at zero and never go negative', async () => {
+    it('preserves signed tag decrements until delayed increments arrive', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 0, position: 1 });
       const convoId = uuidv4();
       await Conversation.create({
@@ -2246,7 +2337,7 @@ describe('Conversation Operations', () => {
       await deleteConvos('user123', { conversationId: convoId });
 
       const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(0);
+      expect(tag?.count).toBe(-1);
     });
 
     it('should not touch tags belonging to another user', async () => {

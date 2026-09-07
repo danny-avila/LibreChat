@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IConversation } from '..';
 import type { IConversationTag } from '~/schema/conversationTag';
 import { createConversationTagMethods, decrementTagCounts } from './conversationTag';
+import { tenantStorage } from '~/config/tenantContext';
 import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
@@ -16,6 +17,10 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let ConversationTag: mongoose.Model<IConversationTag>;
 let Conversation: mongoose.Model<IConversation>;
 let deleteConversationTag: ReturnType<typeof createConversationTagMethods>['deleteConversationTag'];
+let getConversationTags: ReturnType<typeof createConversationTagMethods>['getConversationTags'];
+let reconcileConversationTagCounts: ReturnType<
+  typeof createConversationTagMethods
+>['reconcileConversationTagCounts'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -31,6 +36,8 @@ beforeAll(async () => {
   // Create methods from factory
   const methods = createConversationTagMethods(mongoose);
   deleteConversationTag = methods.deleteConversationTag;
+  getConversationTags = methods.getConversationTags;
+  reconcileConversationTagCounts = methods.reconcileConversationTagCounts;
 
   await mongoose.connect(mongoUri);
 });
@@ -138,11 +145,147 @@ describe('ConversationTag model - $pullAll operations', () => {
   });
 });
 
+describe('reconcileConversationTagCounts', () => {
+  const userId = new mongoose.Types.ObjectId().toString();
+
+  it('commutes when a later transition reconciles before its predecessor', async () => {
+    await Conversation.create({
+      conversationId: 'committed',
+      user: userId,
+      endpoint: 'openAI',
+      tags: ['blue'],
+    });
+    await reconcileConversationTagCounts(userId, ['red'], ['blue']);
+
+    await expect(getConversationTags(userId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tag: 'red', count: 0 }),
+        expect.objectContaining({ tag: 'blue', count: 1 }),
+      ]),
+    );
+
+    await reconcileConversationTagCounts(userId, [], ['red']);
+
+    await expect(
+      ConversationTag.findOne({ user: userId, tag: 'red' }).lean(),
+    ).resolves.toMatchObject({ count: 0 });
+    await expect(
+      ConversationTag.findOne({ user: userId, tag: 'blue' }).lean(),
+    ).resolves.toMatchObject({ count: 1 });
+  });
+});
+
+describe('authoritative public tag counts', () => {
+  const user = 'count-owner';
+
+  it('recovers a missing catalog entry after failed reconciliation and read repair', async () => {
+    await Conversation.create({
+      conversationId: 'committed',
+      user,
+      endpoint: 'openAI',
+      tags: ['new', 'new'],
+    });
+    const write = jest
+      .spyOn(ConversationTag, 'bulkWrite')
+      .mockRejectedValueOnce(new Error('transient'));
+    await expect(reconcileConversationTagCounts(user, [], ['new'])).rejects.toThrow('transient');
+    write.mockRejectedValueOnce(new Error('still unavailable'));
+    await expect(getConversationTags(user)).rejects.toThrow('Error getting conversation tags');
+    write.mockRestore();
+    await expect(getConversationTags(user)).resolves.toEqual([
+      expect.objectContaining({ tag: 'new', count: 1 }),
+    ]);
+    await expect(getConversationTags(user)).resolves.toEqual([
+      expect.objectContaining({ tag: 'new', count: 1 }),
+    ]);
+  });
+
+  it.each(['delete', 'rename'])(
+    'ignores delayed signed deltas after catalog %s',
+    async (action) => {
+      const methods = createConversationTagMethods(mongoose);
+      await Conversation.create({
+        conversationId: 'committed',
+        user,
+        endpoint: 'openAI',
+        tags: ['blue'],
+      });
+      await reconcileConversationTagCounts(user, ['red'], ['blue']);
+      if (action === 'delete') await methods.deleteConversationTag(user, 'red');
+      else await methods.updateConversationTag(user, 'red', { tag: 'renamed' });
+      await reconcileConversationTagCounts(user, [], ['red']);
+      const tags = await getConversationTags(user);
+      expect(tags.find((tag) => tag.tag === 'blue')).toMatchObject({ count: 1 });
+      expect(tags.filter((tag) => tag.tag !== 'blue').every((tag) => tag.count === 0)).toBe(true);
+    },
+  );
+
+  it('separates named and tenantless counts and preserves catalog metadata', async () => {
+    await Conversation.create([
+      { conversationId: 'plain', user, endpoint: 'openAI', tags: ['shared'] },
+      { conversationId: 'foreign', user: 'foreign', endpoint: 'openAI', tags: ['shared'] },
+    ]);
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await Conversation.create({
+        conversationId: 'named',
+        user,
+        endpoint: 'openAI',
+        tags: ['shared', 'shared'],
+      });
+      await ConversationTag.create({
+        user,
+        tag: 'empty',
+        count: 999,
+        description: 'Keep me',
+        position: 3,
+      });
+      expect(await getConversationTags(user)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ tag: 'shared', count: 1, tenantId: 'tenant-a' }),
+          expect.objectContaining({ tag: 'empty', count: 0, description: 'Keep me', position: 3 }),
+        ]),
+      );
+    });
+    expect(await getConversationTags(user, null)).toEqual([
+      expect.objectContaining({ tag: 'shared', count: 1 }),
+    ]);
+    expect(
+      (await ConversationTag.find({ user }).lean()).filter((tag) => tag.tag === 'shared'),
+    ).toHaveLength(2);
+  });
+
+  it('returns committed counts from create and rename responses', async () => {
+    const methods = createConversationTagMethods(mongoose);
+    await Conversation.create({
+      conversationId: 'committed',
+      user,
+      endpoint: 'openAI',
+      tags: ['red'],
+    });
+    await ConversationTag.create({ user, tag: 'red', count: -7, position: 1 });
+    expect(await methods.createConversationTag(user, { tag: 'red' })).toMatchObject({ count: 1 });
+    expect(await methods.updateConversationTag(user, 'red', { tag: 'blue' })).toMatchObject({
+      count: 1,
+    });
+    expect(await methods.deleteConversationTag(user, 'blue')).toMatchObject({ count: 0 });
+  });
+});
+
 describe('decrementTagCounts', () => {
   const userId = new mongoose.Types.ObjectId().toString();
 
   const readCount = async (tag: string, user: string = userId) =>
     (await ConversationTag.findOne({ user, tag }).lean())?.count;
+
+  it('preserves a delayed metadata increment across deletion of another tagged conversation', async () => {
+    await ConversationTag.create({ tag: 'red', user: userId, position: 1, count: 1 });
+    await reconcileConversationTagCounts(userId, ['red'], ['blue']);
+    await decrementTagCounts(mongoose, userId, ['red']);
+    expect(await readCount('red')).toBe(-1);
+    await reconcileConversationTagCounts(userId, [], ['red']);
+    expect(await readCount('red')).toBe(0);
+    expect(await readCount('blue')).toBe(1);
+  });
 
   it('decrements once per tag occurrence', async () => {
     await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 5 });
@@ -160,28 +303,28 @@ describe('decrementTagCounts', () => {
     expect(await readCount('work')).toBe(0);
   });
 
-  it('clamps at zero when the decrement exceeds the current count', async () => {
+  it('retains signed deltas when decrements precede increments', async () => {
     await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 1 });
 
     await decrementTagCounts(mongoose, userId, ['work', 'work', 'work']);
 
-    expect(await readCount('work')).toBe(0);
+    expect(await readCount('work')).toBe(-2);
   });
 
-  it('leaves a zero count at zero', async () => {
+  it('retains a decrement of a zero count', async () => {
     await ConversationTag.create({ tag: 'empty', user: userId, position: 1, count: 0 });
 
     await decrementTagCounts(mongoose, userId, ['empty']);
 
-    expect(await readCount('empty')).toBe(0);
+    expect(await readCount('empty')).toBe(-1);
   });
 
-  it('clamps pre-existing negative drift to zero', async () => {
+  it('preserves an existing negative delta', async () => {
     await ConversationTag.create({ tag: 'drift', user: userId, position: 1, count: -3 });
 
     await decrementTagCounts(mongoose, userId, ['drift']);
 
-    expect(await readCount('drift')).toBe(0);
+    expect(await readCount('drift')).toBe(-4);
   });
 
   it('treats a missing count as zero', async () => {
@@ -189,10 +332,10 @@ describe('decrementTagCounts', () => {
 
     await decrementTagCounts(mongoose, userId, ['legacy']);
 
-    expect(await readCount('legacy')).toBe(0);
+    expect(await readCount('legacy')).toBe(-1);
   });
 
-  it('converges to zero under concurrent decrements exceeding the count', async () => {
+  it('combines concurrent decrements without discarding negative deltas', async () => {
     await ConversationTag.create({ tag: 'race', user: userId, position: 1, count: 3 });
 
     await Promise.all([
@@ -200,7 +343,7 @@ describe('decrementTagCounts', () => {
       decrementTagCounts(mongoose, userId, ['race', 'race']),
     ]);
 
-    expect(await readCount('race')).toBe(0);
+    expect(await readCount('race')).toBe(-1);
   });
 
   it("leaves other users' tags untouched", async () => {
