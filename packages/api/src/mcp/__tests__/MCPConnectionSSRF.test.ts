@@ -1018,7 +1018,11 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       const config = {
         type: 'sse' as const,
         url: `http://127.0.0.1:${port}/sse`,
-        headers: { Authorization: 'Bearer old-token', 'X-Operator': 'configured' },
+        headers: {
+          Authorization: 'Bearer old-token',
+          'X-Access-Token': 'old-token',
+          'X-Operator': 'configured',
+        },
       };
       conn = new MCPConnection({
         serverName: 'sse-live-bearer',
@@ -1029,7 +1033,11 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       const transport = await conn['constructTransport'](config);
       try {
         await transport.start();
-        conn.setRequestHeaders({ AUTHORIZATION: 'Bearer fresh-token', 'X-Request': 'private' });
+        conn.setRequestHeaders({
+          AUTHORIZATION: 'Bearer fresh-token',
+          'X-Access-Token': 'fresh-token',
+          'X-Request': 'private',
+        });
         stream?.end();
         await reconnect;
         expect(requests[0].authorization).toBe('Bearer old-token');
@@ -1037,6 +1045,9 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
           directBearerRecoveryEnabled ? 'Bearer fresh-token' : 'Bearer old-token',
         );
         expect(requests[1]['x-operator']).toBe('configured');
+        expect(requests[1]['x-access-token']).toBe(
+          directBearerRecoveryEnabled ? 'fresh-token' : 'old-token',
+        );
         expect(requests[1]['x-request']).toBeUndefined();
       } finally {
         await transport.close();

@@ -8,6 +8,8 @@ import { isAbortError } from '~/utils/errors';
 
 const OPENID_ACCESS_TOKEN_PATTERN = /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|TOKEN)\}\}/;
 const OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN = /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|TOKEN)\}\}/g;
+/** Request-local snapshots carry the opaque token without serializing it as new config metadata. */
+const resolvedAccessTokens = new WeakMap<MCPOptions, string>();
 
 type DirectBearerConfig = MCPOptions & {
   dbId?: string;
@@ -32,7 +34,57 @@ function getAuthorizationTemplateValue(value: string): string {
   return extractEnvVariable(value);
 }
 
-/** Explicit OAuth/OBO owns Authorization. Remove only the lower-priority OpenID template
+function apiKeyOwnsAuthorization(config: DirectBearerConfig): boolean {
+  const apiKey = config.apiKey;
+  return !!(
+    apiKey?.source === 'admin' &&
+    apiKey.key &&
+    (apiKey.authorization_type !== 'custom' ||
+      apiKey.custom_header?.toLowerCase() === 'authorization')
+  );
+}
+
+function resolveAccessTokenPlaceholders(
+  config: DirectBearerConfig,
+  token: string,
+): DirectBearerConfig {
+  const resolve = (value: string) => {
+    const template = extractEnvVariable(value);
+    return OPENID_ACCESS_TOKEN_PATTERN.test(template)
+      ? template.replace(OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN, () => token)
+      : value;
+  };
+  const resolveMap = (values: Record<string, string>) =>
+    Object.fromEntries(Object.entries(values).map(([key, value]) => [key, resolve(value)]));
+  const resolved = { ...config };
+  if ('headers' in resolved && resolved.headers) {
+    resolved.headers = resolveMap(resolved.headers);
+  }
+  if ('oauth_headers' in resolved && resolved.oauth_headers) {
+    resolved.oauth_headers = resolveMap(resolved.oauth_headers);
+  }
+  if ('url' in resolved) {
+    resolved.url = resolve(resolved.url);
+  }
+  if ('env' in resolved && resolved.env) {
+    resolved.env = resolveMap(resolved.env);
+  }
+  if ('args' in resolved && resolved.args) {
+    resolved.args = resolved.args.map(resolve);
+  }
+  if (resolved.oauth) {
+    resolved.oauth = Object.fromEntries(
+      Object.entries(resolved.oauth).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? resolve(value) : value,
+      ]),
+    );
+  }
+  resolvedAccessTokens.set(resolved, token);
+  return resolved;
+}
+
+/** Explicit OAuth/OBO/API keys own Authorization. Remove only the lower-priority OpenID template
  * before generic runtime expansion can demand or inject the upstream bearer directly. */
 function removeShadowedOpenIDAuthorization(config: DirectBearerConfig): DirectBearerConfig {
   const authorization = getAuthorizationHeader(config);
@@ -54,6 +106,7 @@ export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig):
   /** Explicit credential modes take precedence over the legacy passthrough placeholder. */
   if (
     config.obo != null ||
+    apiKeyOwnsAuthorization(config) ||
     (config.oauth != null && config.requiresOAuth !== false) ||
     config.dbId != null
   ) {
@@ -86,13 +139,21 @@ export async function resolveDirectOpenIDBearerConfig({
   forceRefresh?: boolean;
   resolvedConfig?: MCPOptions;
 }): Promise<DirectBearerConfig> {
-  if (config.obo != null || (config.oauth != null && config.requiresOAuth !== false)) {
+  if (
+    config.obo != null ||
+    apiKeyOwnsAuthorization(config) ||
+    (config.oauth != null && config.requiresOAuth !== false)
+  ) {
     return removeShadowedOpenIDAuthorization(config);
   }
   if (!usesDirectOpenIDBearerRecovery(config)) {
     return config;
   }
   const authorization = getAuthorizationHeader(config);
+  const resolvedToken = resolvedConfig && resolvedAccessTokens.get(resolvedConfig);
+  if (!forceRefresh && resolvedToken != null) {
+    return resolveAccessTokenPlaceholders(config, resolvedToken);
+  }
   const resolvedAuthorization = resolvedConfig && getAuthorizationHeader(resolvedConfig);
   if (!forceRefresh && authorization && resolvedAuthorization && 'headers' in config) {
     return {
@@ -143,14 +204,5 @@ export async function resolveDirectOpenIDBearerConfig({
   if (!authorization || !('headers' in config)) {
     return config;
   }
-  return {
-    ...config,
-    headers: {
-      ...config.headers,
-      [authorization.name]: getAuthorizationTemplateValue(authorization.value).replace(
-        OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN,
-        () => tokens.access_token!,
-      ),
-    },
-  };
+  return resolveAccessTokenPlaceholders(config, tokens.access_token);
 }

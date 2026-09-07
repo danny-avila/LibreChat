@@ -478,10 +478,7 @@ export abstract class UserConnectionManager {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
         logger.debug(`[MCP][User: ${userId}] Joining in-flight connection attempt`);
-        const mutationFence =
-          config && usesDirectOpenIDBearerRecovery(config)
-            ? this.createConnectionMutationFence(userId, serverName)
-            : undefined;
+        const mutationFence = this.createConnectionMutationFence(userId, serverName);
         try {
           await pending.oauth.add({
             oauthStart: opts.oauthStart,

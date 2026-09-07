@@ -78,6 +78,11 @@ const OAUTH_RECOVERY_RECONNECT_DELAY_MS = 2000;
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private readonly recoveryCancellation = new WeakMap<
+    Promise<void>,
+    { controller: AbortController; waiters: number }
+  >();
+
   private readonly oauthRecoveries = new WeakMap<
     MCPConnection,
     {
@@ -176,32 +181,50 @@ export class MCPManager extends UserConnectionManager {
   }
 
   private waitForActiveRecovery(recovery: Promise<void>, signal?: AbortSignal): Promise<void> {
+    const shared = this.recoveryCancellation.get(recovery);
+    if (shared) {
+      shared.waiters++;
+    }
+    let released = false;
+    const release = (aborted: boolean) => {
+      if (released || !shared) {
+        return;
+      }
+      released = true;
+      shared.waiters--;
+      if (aborted && shared.waiters === 0) {
+        shared.controller.abort(signal?.reason);
+      }
+    };
     if (!signal) {
-      return recovery;
+      return recovery.finally(() => release(false));
     }
 
     return new Promise<void>((resolve, reject) => {
       const onRecoveryResolved = () => {
+        release(false);
         signal.removeEventListener('abort', onAbort);
         resolve();
       };
       const onRecoveryRejected = (error: unknown) => {
+        release(false);
         signal.removeEventListener('abort', onAbort);
         reject(error);
       };
       const onAbort = () => {
+        release(true);
         signal.removeEventListener('abort', onAbort);
         const reason = signal.reason;
         reject(reason instanceof Error ? reason : new Error('OAuth recovery wait aborted'));
       };
 
+      recovery.then(onRecoveryResolved, onRecoveryRejected);
       if (signal.aborted) {
         onAbort();
         return;
       }
 
       signal.addEventListener('abort', onAbort, { once: true });
-      recovery.then(onRecoveryResolved, onRecoveryRejected);
     });
   }
 
@@ -765,31 +788,30 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<void> {
     const existing = this.oauthRecoveries.get(connection);
     if (existing) {
-      return this.waitForActiveRecovery(
-        existing.promise.then(() => {
-          if (existing.directBearerRecoveryState) {
-            Object.assign(directBearerRecoveryState, existing.directBearerRecoveryState);
-          }
-        }),
-        signal,
-      );
+      return this.waitForActiveRecovery(existing.promise, signal).then(() => {
+        if (existing.directBearerRecoveryState) {
+          Object.assign(directBearerRecoveryState, existing.directBearerRecoveryState);
+        }
+      });
     }
 
     const mutationFence = this.createConnectionMutationFence(user.id, serverName);
+    const recoveryController = new AbortController();
+    const recoverySignal = recoveryController.signal;
     const recovery = Promise.resolve().then(async () => {
       let replacementPromise: Promise<MCPConnection>;
       try {
-        signal?.throwIfAborted();
+        recoverySignal.throwIfAborted();
         const refreshedConfig = await resolveDirectOpenIDBearerConfig({
           config: serverConfig,
           upstreamTokenProvider,
           forceRefresh: true,
         });
         directBearerRecoveryState.resolvedConfig = refreshedConfig;
-        signal?.throwIfAborted();
+        recoverySignal.throwIfAborted();
         connection.stopReconnecting();
         await this.waitForConnectionBorrowersToDrain(connection);
-        signal?.throwIfAborted();
+        recoverySignal.throwIfAborted();
         const requestConnectionKey = `${user.id}:${serverName}`;
         if (requestScopedConnections?.connections.get(requestConnectionKey) === connection) {
           requestScopedConnections.connections.delete(requestConnectionKey);
@@ -799,7 +821,7 @@ Please follow these instructions when using tools from the respective MCP server
           );
         }
         mutationFence.assertCurrent();
-        signal?.throwIfAborted();
+        recoverySignal.throwIfAborted();
         /** Invocation is synchronous through the replacement's own guard registration, closing
          * the mutation window before this outer reservation is released. */
         replacementPromise = this.getUserConnection({
@@ -819,7 +841,7 @@ Please follow these instructions when using tools from the respective MCP server
           oboIdentityContext,
           directBearerRecoveryState,
           directBearerResolvedConfig: refreshedConfig,
-          signal,
+          signal: recoverySignal,
         });
       } finally {
         mutationFence.release();
@@ -838,6 +860,7 @@ Please follow these instructions when using tools from the respective MCP server
       directBearerRecoveryConsumed: true,
       directBearerRecoveryState,
     };
+    this.recoveryCancellation.set(recovery, { controller: recoveryController, waiters: 0 });
     this.oauthRecoveries.set(connection, recoveryEntry);
     const clearRecovery = () => {
       if (this.oauthRecoveries.get(connection) === recoveryEntry) {

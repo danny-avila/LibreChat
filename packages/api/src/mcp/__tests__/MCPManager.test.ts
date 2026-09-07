@@ -3644,6 +3644,81 @@ describe('MCPManager', () => {
       },
     );
 
+    it.each(['refresh', 'drain', 'initialize'] as const)(
+      'keeps shared recovery alive after its leader aborts during %s',
+      async (stage) => {
+        const leaderAbort = new AbortController();
+        const waiterAbort = new AbortController();
+        let entered!: () => void;
+        let finish!: () => void;
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const gate = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        const pause = async () => {
+          entered();
+          await gate;
+        };
+        const connection = { stopReconnecting: jest.fn() } as unknown as MCPConnection;
+        const replacement = {} as MCPConnection;
+        const upstreamTokenProvider = jest.fn(async () => {
+          if (stage === 'refresh') {
+            await pause();
+          }
+          return { access_token: 'fresh-token' };
+        });
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        jest
+          .spyOn(
+            manager as unknown as {
+              waitForConnectionBorrowersToDrain: (connection: MCPConnection) => Promise<void>;
+            },
+            'waitForConnectionBorrowersToDrain',
+          )
+          .mockImplementation(async () => {
+            if (stage === 'drain') {
+              await pause();
+            }
+          });
+        const getConnection = jest
+          .spyOn(manager, 'getUserConnection')
+          .mockImplementation(async (options) => {
+            if (stage === 'initialize') {
+              await pause();
+            }
+            options.signal?.throwIfAborted();
+            return replacement;
+          });
+        const options = {
+          connection,
+          serverName,
+          serverConfig,
+          user,
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+          upstreamTokenProvider,
+        };
+        const leader = manager['recoverDirectOpenIDBearerConnection']({
+          ...options,
+          signal: leaderAbort.signal,
+        });
+        const leaderOutcome = leader.catch((error: Error) => error);
+        await started;
+        const waiter = manager['recoverDirectOpenIDBearerConnection']({
+          ...options,
+          signal: waiterAbort.signal,
+        });
+        leaderAbort.abort(new Error('leader stopped'));
+        await expect(leaderOutcome).resolves.toMatchObject({ message: 'leader stopped' });
+        finish();
+        await expect(waiter).resolves.toBeUndefined();
+        expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+        expect(getConnection).toHaveBeenCalledTimes(1);
+        expect(getConnection.mock.calls[0][0].signal?.aborted).toBe(false);
+      },
+    );
+
     it('fences a delayed direct-bearer replacement when the server config mutates', async () => {
       const connection = {
         stopReconnecting: jest.fn(),
@@ -4387,16 +4462,18 @@ describe('MCPManager', () => {
       },
     );
 
-    it.each([
-      { stage: 'initialize', cancelJoiner: false, mutate: false },
-      { stage: 'catalog', cancelJoiner: false, mutate: false },
-      { stage: 'initialize', cancelJoiner: true, mutate: false },
-      { stage: 'catalog', cancelJoiner: true, mutate: false },
-      { stage: 'initialize', cancelJoiner: false, mutate: true },
-      { stage: 'catalog', cancelJoiner: false, mutate: true },
-    ])(
-      'isolates a stopped creation leader during $stage (cancelJoiner=$cancelJoiner, mutate=$mutate)',
-      async ({ stage, cancelJoiner, mutate }) => {
+    it.each(
+      [
+        { stage: 'initialize', cancelJoiner: false, mutate: false },
+        { stage: 'catalog', cancelJoiner: false, mutate: false },
+        { stage: 'initialize', cancelJoiner: true, mutate: false },
+        { stage: 'catalog', cancelJoiner: true, mutate: false },
+        { stage: 'initialize', cancelJoiner: false, mutate: true },
+        { stage: 'catalog', cancelJoiner: false, mutate: true },
+      ].flatMap((scenario) => ['direct', 'oauth', 'custom'].map((mode) => ({ ...scenario, mode }))),
+    )(
+      'isolates a stopped $mode creation leader during $stage (cancelJoiner=$cancelJoiner, mutate=$mutate)',
+      async ({ stage, cancelJoiner, mutate, mode }) => {
         const leaderAbort = new AbortController();
         const joinerAbort = new AbortController();
         const candidate = newUserConnection();
@@ -4419,7 +4496,11 @@ describe('MCPManager', () => {
           type: 'streamable-http',
           url: 'https://mcp.example.com',
           source: 'yaml',
-          headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+          headers: {
+            Authorization:
+              mode === 'direct' ? 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' : '{{MCP_API_KEY}}',
+          },
+          ...(mode === 'oauth' && { oauth: { client_id: 'test-client' }, requiresOAuth: true }),
         };
         mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
         (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
@@ -4428,7 +4509,7 @@ describe('MCPManager', () => {
         (MCPConnectionFactory.create as jest.Mock)
           .mockReset()
           .mockImplementationOnce((basic: t.BasicConnectionOptions) => {
-            basic.directBearerRecoveryState!.attempted = true;
+            basic.directBearerRecoveryState!.attempted = mode === 'direct';
             return stage === 'initialize' ? waitForAbort() : Promise.resolve(candidate);
           })
           .mockResolvedValue(replacement);
@@ -4438,6 +4519,8 @@ describe('MCPManager', () => {
           serverConfig: config,
           user: mockUser,
           upstreamTokenProvider: jest.fn().mockResolvedValue({ access_token: 'token' }),
+          customUserVars: { MCP_API_KEY: 'custom-key' },
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
         };
         const leader = manager.getUserConnection({ ...opts, signal: leaderAbort.signal });
         const leaderOutcome = leader.catch((error: Error) => error);
@@ -4465,7 +4548,7 @@ describe('MCPManager', () => {
           expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
           expect(MCPConnectionFactory.create).toHaveBeenLastCalledWith(
             expect.objectContaining({
-              directBearerRecoveryState: expect.objectContaining({ attempted: true }),
+              directBearerRecoveryState: expect.objectContaining({ attempted: mode === 'direct' }),
             }),
             expect.objectContaining({ signal: joinerAbort.signal }),
           );

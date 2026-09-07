@@ -140,10 +140,10 @@ export class MCPConnectionFactory {
         : undefined);
     const create = async (candidate: t.BasicConnectionOptions): Promise<MCPConnection> => {
       const prepared = await this.prepareBasicConnectionOptions(
-        { ...candidate, directBearerSourceConfig },
+        { ...candidate, directBearerSourceConfig, directBearerRecoveryState },
         oauth,
       );
-      if (directBearerSourceConfig) {
+      if (directBearerSourceConfig && !directBearerRecoveryState.resolvedConfig) {
         directBearerRecoveryState.resolvedConfig = prepared.serverConfig;
       }
       const factory = new this(prepared, oauth);
@@ -168,6 +168,7 @@ export class MCPConnectionFactory {
         upstreamTokenProvider: oauth?.upstreamTokenProvider,
         forceRefresh: true,
       });
+      directBearerRecoveryState.resolvedConfig = refreshedConfig;
       try {
         return await create({ ...basic, serverConfig: refreshedConfig });
       } catch (refreshedError) {
@@ -275,6 +276,9 @@ export class MCPConnectionFactory {
       config: basic.serverConfig,
       upstreamTokenProvider: options?.upstreamTokenProvider,
     });
+    if (basic.directBearerRecoveryState && usesDirectOpenIDBearerRecovery(basic.serverConfig)) {
+      basic.directBearerRecoveryState.resolvedConfig = bearerConfig;
+    }
     const directBearerSourceConfig =
       basic.directBearerSourceConfig ??
       (usesDirectOpenIDBearerRecovery(basic.serverConfig)

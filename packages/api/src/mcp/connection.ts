@@ -1604,16 +1604,20 @@ export class MCPConnection extends EventEmitter {
                   resolvedInit?.headers,
                   headers,
                 );
-                const liveBearer = this.directBearerRecoveryEnabled
-                  ? this.getRequestHeaders()?.authorization
+                const liveHeaders = this.directBearerRecoveryEnabled
+                  ? this.getRequestHeaders()
                   : undefined;
-                if (liveBearer != null) {
+                if (liveHeaders) {
                   for (const key of Object.keys(fetchHeaders)) {
-                    if (key.toLowerCase() === 'authorization') {
+                    const normalized = key.toLowerCase();
+                    if (
+                      sseConfiguredSecretHeaderKeys.has(normalized) &&
+                      liveHeaders[normalized] != null
+                    ) {
                       delete fetchHeaders[key];
+                      fetchHeaders[normalized] = liveHeaders[normalized];
                     }
                   }
-                  fetchHeaders.authorization = liveBearer;
                 }
                 return undiciFetch(urlString, {
                   ...resolvedInit,

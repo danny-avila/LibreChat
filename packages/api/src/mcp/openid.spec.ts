@@ -2,6 +2,7 @@ import type { StreamableHTTPOptions } from './types';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPAuthenticationRefreshError } from './errors';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
+import { processMCPEnv } from '~/utils/env';
 
 const directBearerConfig = (
   source: 'yaml' | 'config' | 'user' | 'plugin',
@@ -15,6 +16,81 @@ const directBearerConfig = (
 });
 
 describe('direct OpenID bearer recovery', () => {
+  it.each(['basic', 'bearer', 'custom'] as const)(
+    'gives an admin %s Authorization key precedence',
+    async (authorization_type) => {
+      const config = {
+        ...directBearerConfig('yaml'),
+        headers: { authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        apiKey: {
+          source: 'admin' as const,
+          key: 'operator-key',
+          authorization_type,
+          custom_header: 'aUtHoRiZaTiOn',
+        },
+      };
+      const upstreamTokenProvider = jest.fn();
+      expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
+      const resolved = await resolveDirectOpenIDBearerConfig({ config, upstreamTokenProvider });
+      const runtime = processMCPEnv({ options: resolved });
+      expect('headers' in runtime && Object.values(runtime.headers ?? {})).toEqual([
+        authorization_type === 'custom'
+          ? 'operator-key'
+          : `${authorization_type === 'basic' ? 'Basic' : 'Bearer'} operator-key`,
+      ]);
+      expect(upstreamTokenProvider).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps direct recovery when the admin key owns a separate header', () => {
+    expect(
+      usesDirectOpenIDBearerRecovery({
+        ...directBearerConfig('yaml'),
+        apiKey: {
+          source: 'admin',
+          key: 'key',
+          authorization_type: 'custom',
+          custom_header: 'X-Api-Key',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it.each([false, true])(
+    'uses one live token in every supported field and snapshot reuse (forced=%s)',
+    async (forceRefresh) => {
+      const config = {
+        ...directBearerConfig('yaml'),
+        url: 'https://mcp.example.com/{{LIBRECHAT_OPENID_TOKEN}}/{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'X-Access-Token': '{{LIBRECHAT_OPENID_TOKEN}}',
+        },
+        oauth_headers: { 'X-Access-Token': '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      };
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+      const resolved = await resolveDirectOpenIDBearerConfig({
+        config,
+        upstreamTokenProvider,
+        forceRefresh,
+      });
+      const reused = await resolveDirectOpenIDBearerConfig({
+        config: {
+          ...config,
+          url: config.url.replace('/{{LIBRECHAT_BODY_CONVERSATIONID}}', '/new-request'),
+        },
+        resolvedConfig: resolved,
+        upstreamTokenProvider,
+      });
+      expect(reused).toMatchObject({
+        url: 'https://mcp.example.com/fresh-token/new-request',
+        headers: { Authorization: 'Bearer fresh-token', 'X-Access-Token': 'fresh-token' },
+        oauth_headers: { 'X-Access-Token': 'fresh-token' },
+      });
+      expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+      expect(processMCPEnv({ options: reused })).toMatchObject(reused);
+    },
+  );
   it.each(['yaml', 'config'] as const)('resolves a trusted %s configuration', async (source) => {
     const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'live-token' });
 
