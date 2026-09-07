@@ -6810,8 +6810,6 @@ class GenerationJobManagerClass {
 
     if ((await subscriberAdmission) === true) {
       runtime.everHadSubscriber = true;
-      runtime.earlyEventBufferClosed = true;
-      this.resetEarlyEventBuffer(runtime);
     }
 
     const detached = !runtime.hasSubscriber;
