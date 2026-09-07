@@ -1503,6 +1503,36 @@ export default function useResumableSSE(
       ];
 
       /**
+       * A regenerate seeds the renamed response from `submission.initialResponse`
+       * rather than the store tail (an edited resubmission seeds from its
+       * content), so a part committed to the placeholder only in the store would
+       * be dropped by the first run step's rename. Keep the submission the step
+       * handler receives in step with the placeholder this pane mutated.
+       */
+      const syncSubmissionPlaceholder = (updated: TMessage) => {
+        if (updated.messageId !== currentSubmission.initialResponse?.messageId) {
+          return;
+        }
+        currentSubmission = { ...currentSubmission, initialResponse: updated };
+        submissionRef.current = currentSubmission;
+      };
+
+      /**
+       * Edit-and-resubmit keeps the retained prefix on the client while the
+       * server indexes only the NEW content, so every server-claimed index —
+       * run steps (`useStepHandler`), labels and steers — shifts past it or
+       * lands inside the prefix and overwrites kept content. The captured
+       * length is used over the live array because a resume sync replaces
+       * `initialResponse.content` with the server's completion-local snapshot.
+       */
+      const editPrefixLength = () =>
+        currentSubmission.editedContent != null && !editPrefixClearedRef.current
+          ? (currentSubmission.editPrefixLength ??
+            currentSubmission.initialResponse?.content?.length ??
+            0)
+          : 0;
+
+      /**
        * Places an injected steer part on the in-flight response message and
        * resolves its pending chip. Same bounded next-frame retry as pending
        * actions for the inject-before-render race (the assistant placeholder
@@ -1551,7 +1581,13 @@ export default function useResumableSSE(
           retryNextFrame();
           return;
         }
-        const updated = applySteerPart(messages[index], event);
+        const prefixLength = editPrefixLength();
+        const updated = applySteerPart(
+          messages[index],
+          typeof event.index === 'number' && prefixLength > 0
+            ? { ...event, index: event.index + prefixLength }
+            : event,
+        );
         if (updated !== messages[index]) {
           /** Stamped only when the inline part is actually committed, in the
            *  same batch, so its first render sees the flag and plays the
@@ -1570,6 +1606,7 @@ export default function useResumableSSE(
           nextMessages[index] = updated;
           setMessages(nextMessages);
           syncStepMessage(updated);
+          syncSubmissionPlaceholder(updated);
         }
       };
 
@@ -1621,12 +1658,7 @@ export default function useResumableSSE(
          *  space — a label shifting differently from its tools would overwrite
          *  another part, and a gap fill would miss its own reservation and
          *  leave the placeholder pending forever. */
-        const prefixLength =
-          currentSubmission.editedContent != null && !editPrefixClearedRef.current
-            ? (currentSubmission.editPrefixLength ??
-              (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
-              0)
-            : 0;
+        const prefixLength = editPrefixLength();
         const phasePart = event.part as TActivityLabelEvent['part'] & {
           activity_label_type?: 'phase';
           activity_start_index?: number;
@@ -1681,6 +1713,7 @@ export default function useResumableSSE(
           nextMessages[index] = updated;
           setMessages(nextMessages);
           syncStepMessage(updated);
+          syncSubmissionPlaceholder(updated);
         }
       };
 
@@ -1707,12 +1740,7 @@ export default function useResumableSSE(
           retryNextFrame();
           return;
         }
-        const prefixLength =
-          currentSubmission.editedContent != null && !editPrefixClearedRef.current
-            ? (currentSubmission.editPrefixLength ??
-              (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
-              0)
-            : 0;
+        const prefixLength = editPrefixLength();
         let contentIndex = event.index + prefixLength;
         if (
           prefixLength > 0 &&
