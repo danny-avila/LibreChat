@@ -5,7 +5,7 @@ const {
   createConversationDeletionService,
   createConversationImportHandler,
   createConversationManagementHandlers,
-  generateCheckAccess,
+  createConversationTagAccess,
   openCheckpointDeletion,
   deleteConvoSharedLinksWithCleanup,
   GenerationJobManager,
@@ -16,7 +16,6 @@ const {
   validateConversationUpdate,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { checkBan, configMiddleware, createImportLimiters } = require('~/server/middleware');
 const { createStorage, importFileFilter } = require('~/server/routes/files/multer');
 const { importConversations } = require('~/server/utils/import');
@@ -51,11 +50,7 @@ const importHandler = createConversationImportHandler({
   cleanupUpload: fs.promises.unlink,
   getRoleByName: db.getRoleByName,
 });
-const checkBookmarkAccess = generateCheckAccess({
-  permissionType: PermissionTypes.BOOKMARKS,
-  permissions: [Permissions.USE],
-  getRoleByName: db.getRoleByName,
-});
+const checkTagAccess = createConversationTagAccess({ getRoleByName: db.getRoleByName });
 
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
 const importUpload = multer({
@@ -76,13 +71,6 @@ function handleImportUpload(req, res, next) {
     }
     return next();
   });
-}
-
-function checkTagAccess(req, res, next) {
-  if (req.body?.tags === undefined) {
-    return next();
-  }
-  return checkBookmarkAccess(req, res, next);
 }
 
 router.use(preAuthTenantMiddleware);

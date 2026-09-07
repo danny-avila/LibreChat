@@ -1,4 +1,3 @@
-import { waitForGenerationPersistence } from '../stream/persistence';
 import type { ConversationMethods, MessageMethods, ToolCallMethods } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { logger as Logger } from '@librechat/data-schemas';
@@ -9,6 +8,7 @@ import type {
 import type { GenerationJobManager as GenerationManager } from '../stream/GenerationJobManager';
 import type { deleteConvoSharedLinksWithCleanup as deleteLinks } from '../shared-links/service';
 import type { SubagentThreadTaskStore } from '../agents/subagentThreads';
+import { waitForGenerationPersistence } from '../stream/persistence';
 
 type ConversationFilter = Parameters<ConversationMethods['deleteConvos']>[1];
 type DeletionResult = Awaited<ReturnType<ConversationMethods['deleteConvos']>>;

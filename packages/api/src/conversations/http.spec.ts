@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Readable } from 'stream';
 import type { ConversationImportHandlerDeps } from './http';
 import { ConversationImportError, createConversationImportOperation } from './import';
-import { createConversationImportHandler } from './http';
+import { createConversationImportHandler, createConversationTagAccess } from './http';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -231,5 +231,35 @@ describe('conversation management import HTTP handler', () => {
     expect(result.body).toEqual({
       error: { code: 'invalid_request', message: 'Invalid request' },
     });
+  });
+});
+
+describe('conversation tag access envelope', () => {
+  it.each([
+    { allowed: false, body: { tags: ['red'] }, status: 403, code: 'permission_denied' },
+    { allowed: true, body: { tags: ['red'] }, status: 200, code: undefined },
+    { allowed: false, body: { title: 'Hello' }, status: 200, code: undefined },
+    { allowed: 'error', body: { tags: ['red'] }, status: 500, code: 'internal_error' },
+  ])('maps access outcome $allowed for $body', async ({ allowed, body, status, code }) => {
+    const getRoleByName = jest.fn();
+    if (allowed === 'error') getRoleByName.mockRejectedValue(new Error('role unavailable'));
+    else getRoleByName.mockResolvedValue({ permissions: { BOOKMARKS: { USE: allowed } } });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: 'owner', role: 'USER' };
+      next();
+    });
+    app.patch('/', createConversationTagAccess({ getRoleByName }), (_req, res) => {
+      res.json({ saved: true });
+    });
+    const result = await request(app).patch('/').send(body);
+    expect(result.status).toBe(status);
+    if (code) expect(result.body.error.code).toBe(code);
+    if (status === 403)
+      expect(result.body).toEqual({
+        error: { code: 'permission_denied', message: 'Permission denied' },
+      });
+    if ('title' in body) expect(getRoleByName).not.toHaveBeenCalled();
   });
 });

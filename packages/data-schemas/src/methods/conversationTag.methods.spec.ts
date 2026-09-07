@@ -178,7 +178,7 @@ describe('reconcileConversationTagCounts', () => {
 describe('authoritative public tag counts', () => {
   const user = 'count-owner';
 
-  it('recovers a missing catalog entry after failed reconciliation and read repair', async () => {
+  it('reads stable derived tags without writes after reconciliation fails', async () => {
     await Conversation.create({
       conversationId: 'committed',
       user,
@@ -189,8 +189,11 @@ describe('authoritative public tag counts', () => {
       .spyOn(ConversationTag, 'bulkWrite')
       .mockRejectedValueOnce(new Error('transient'));
     await expect(reconcileConversationTagCounts(user, [], ['new'])).rejects.toThrow('transient');
-    write.mockRejectedValueOnce(new Error('still unavailable'));
-    await expect(getConversationTags(user)).rejects.toThrow('Error getting conversation tags');
+    write.mockClear();
+    const first = await getConversationTags(user);
+    expect(await getConversationTags(user)).toEqual(first);
+    expect(write).not.toHaveBeenCalled();
+    expect(await ConversationTag.countDocuments({ user })).toBe(0);
     write.mockRestore();
     await expect(getConversationTags(user)).resolves.toEqual([
       expect.objectContaining({ tag: 'new', count: 1 }),
@@ -251,7 +254,56 @@ describe('authoritative public tag counts', () => {
     ]);
     expect(
       (await ConversationTag.find({ user }).lean()).filter((tag) => tag.tag === 'shared'),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
+  });
+
+  it.each(['rename', 'delete'])('does not repair catalog rows during %s', async (action) => {
+    const methods = createConversationTagMethods(mongoose);
+    await Conversation.create({
+      conversationId: 'interleaved',
+      user,
+      endpoint: 'openAI',
+      tags: ['red'],
+    });
+    await ConversationTag.create({ user, tag: 'red', count: 1, position: 1 });
+    const updateMany = Conversation.collection.updateMany.bind(Conversation.collection);
+    const write = jest
+      .spyOn(Conversation.collection, 'updateMany')
+      .mockImplementationOnce(async (...args) => {
+        if (action === 'delete') await getConversationTags(user);
+        const result = await updateMany(...args);
+        if (action === 'rename') await getConversationTags(user);
+        return result;
+      });
+    try {
+      if (action === 'rename') await methods.updateConversationTag(user, 'red', { tag: 'blue' });
+      else await methods.deleteConversationTag(user, 'red');
+    } finally {
+      write.mockRestore();
+    }
+    expect(await ConversationTag.find({ user }).distinct('tag')).toEqual(
+      action === 'rename' ? ['blue'] : [],
+    );
+    expect((await getConversationTags(user)).map(({ tag, count }) => ({ tag, count }))).toEqual(
+      action === 'rename' ? [{ tag: 'blue', count: 1 }] : [],
+    );
+  });
+
+  it('allows explicit rename and deletion of tags with no catalog row', async () => {
+    const methods = createConversationTagMethods(mongoose);
+    await Conversation.create({
+      conversationId: 'derived',
+      user,
+      endpoint: 'openAI',
+      tags: ['red', 'green'],
+    });
+    expect(await methods.updateConversationTag(user, 'red', { tag: 'blue' })).toMatchObject({
+      count: 1,
+    });
+    expect(await methods.deleteConversationTag(user, 'green')).toMatchObject({ count: 0 });
+    expect((await getConversationTags(user)).map(({ tag, count }) => ({ tag, count }))).toEqual([
+      { tag: 'blue', count: 1 },
+    ]);
   });
 
   it('returns committed counts from create and rename responses', async () => {

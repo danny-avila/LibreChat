@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type { FilterQuery, Model } from 'mongoose';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
@@ -227,26 +228,27 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const catalogKeys = new Set(tags.map((tag) => countKey(tag.tag, tag.tenantId)));
       const missing = counts.filter(({ _id }) => !catalogKeys.has(countKey(_id.tag, _id.tenantId)));
 
-      // Conversation tags are authoritative. Recover catalog metadata even when a
-      // post-commit update failed; legacy cached counters never supply public counts.
-      for (let offset = 0; offset < missing.length; offset += 100) {
-        await tenantSafeBulkWrite(
-          ConversationTag,
-          missing.slice(offset, offset + 100).map(({ _id }) => ({
-            updateOne: {
-              filter: { user, tag: _id.tag, ...optionalTenantFilter(_id.tenantId) },
-              update: { $setOnInsert: { position: 0 } },
-              upsert: true,
-            },
-          })),
-        );
-      }
-      const catalog =
-        missing.length > 0 ? await ConversationTag.find(scope).sort({ position: 1 }).lean() : tags;
-      return catalog.map((tag) => ({
-        ...tag,
-        count: byTag.get(countKey(tag.tag, tag.tenantId)) ?? 0,
-      }));
+      // Missing catalog metadata is a read-only view of committed membership.
+      // Routes mutate tags by name; these presentation IDs are never persistence keys.
+      return [
+        ...tags.map((tag) => ({ ...tag, count: byTag.get(countKey(tag.tag, tag.tenantId)) ?? 0 })),
+        ...missing.map(({ _id, count }) => ({
+          _id: new mongoose.Types.ObjectId(
+            createHash('sha256')
+              .update(JSON.stringify([user, _id.tenantId, _id.tag]))
+              .digest('hex')
+              .slice(0, 24),
+          ),
+          __v: 0,
+          user,
+          ...(_id.tenantId == null ? {} : { tenantId: _id.tenantId }),
+          tag: _id.tag,
+          count,
+          position: 0,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        })),
+      ].sort((a, b) => a.position - b.position);
     } catch (error) {
       logger.error('[getConversationTags] Error getting conversation tags', error);
       throw new Error('Error getting conversation tags');
@@ -325,6 +327,14 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     }
   }
 
+  async function findMutableTag(user: string, tag: string) {
+    const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+    const existing = await ConversationTag.findOne({ user, tag }).lean();
+    if (existing) return existing;
+    if (!(await mongoose.models.Conversation.exists({ user, tags: tag }))) return null;
+    return createConversationTag(user, { tag });
+  }
+
   /**
    * Adjusts positions of tags when a tag's position is changed.
    */
@@ -379,7 +389,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const Conversation = mongoose.models.Conversation;
       const { tag: newTag, description, position } = data;
 
-      const existingTag = await ConversationTag.findOne({ user, tag: oldTag }).lean();
+      const existingTag = await findMutableTag(user, oldTag);
       if (!existingTag) {
         return null;
       }
@@ -442,6 +452,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
       const Conversation = mongoose.models.Conversation;
 
+      if (!(await findMutableTag(user, tag))) return null;
       const deletedTag = await ConversationTag.findOneAndDelete({ user, tag }).lean();
       if (!deletedTag) {
         return null;
@@ -538,8 +549,8 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     }
   }
 
-  /** Maintains legacy cached deltas after a metadata commit. Public reads recover
-   * missing catalog entries and derive counts independently of these writes. */
+  /** Maintains legacy cached deltas after a metadata commit. Public reads derive
+   * catalog membership and counts independently of these writes. */
   async function reconcileConversationTagCounts(
     user: string,
     previousTags: string[],

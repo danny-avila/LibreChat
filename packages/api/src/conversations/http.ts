@@ -32,6 +32,35 @@ export function validateConversationUpdate(
   next();
 }
 
+export function createConversationTagAccess({
+  getRoleByName,
+}: Pick<ConversationImportHandlerDeps, 'getRoleByName'>): RequestHandler {
+  return async (req, res, next): Promise<void> => {
+    if (req.body?.tags === undefined) {
+      next();
+      return;
+    }
+    try {
+      const allowed = await checkAccessWithRequestCache({
+        req,
+        user: req.user as CheckAccessParams['user'],
+        permissionType: PermissionTypes.BOOKMARKS,
+        permissions: [Permissions.USE],
+        getRoleByName,
+      });
+      if (allowed) {
+        next();
+        return;
+      }
+      const mapped = mapConversationManagementError('permission_denied');
+      res.status(mapped.status).json(mapped.body);
+    } catch (error) {
+      const mapped = mapConversationManagementError('internal_error', error);
+      res.status(mapped.status).json(mapped.body);
+    }
+  };
+}
+
 export function createConversationImportHandler({
   importConversations,
   cleanupUpload,
