@@ -1,8 +1,8 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ChildConversationTurn } from './adapters';
 import SubagentConversation from './SubagentConversation';
+import { ChatSurfaceHarness } from 'test/harness';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -108,9 +108,9 @@ const turns: ChildConversationTurn[] = [
 describe('SubagentConversation', () => {
   it('renders host triggers and child activity through the main chat row and content modules', () => {
     const { container } = render(
-      <RecoilRoot>
+      <ChatSurfaceHarness>
         <SubagentConversation turns={turns} />
-      </RecoilRoot>,
+      </ChatSurfaceHarness>,
     );
 
     expect(screen.getAllByText('com_ui_subagent_trigger_parent_dispatch')).toHaveLength(2);
@@ -154,9 +154,9 @@ describe('SubagentConversation', () => {
       { ...turns[0], activity: { ...turns[0].activity, activityTruncated: true } },
     ];
     render(
-      <RecoilRoot>
+      <ChatSurfaceHarness>
         <SubagentConversation turns={shortened} onLoadTurnDetails={loadDetails} />
-      </RecoilRoot>,
+      </ChatSurfaceHarness>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_show_full_activity' }));
@@ -179,9 +179,9 @@ describe('SubagentConversation', () => {
     };
 
     render(
-      <RecoilRoot>
+      <ChatSurfaceHarness>
         <SubagentConversation turns={[turns[1], secondEvent]} />
-      </RecoilRoot>,
+      </ChatSurfaceHarness>,
     );
 
     expect(

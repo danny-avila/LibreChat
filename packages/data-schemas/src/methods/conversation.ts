@@ -1,7 +1,14 @@
 import { Buffer } from 'node:buffer';
 import { RetentionMode } from 'librechat-data-provider';
-import type { AnyBulkWriteOperation, FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import type { DeleteResult } from 'mongoose';
+import type {
+  AnyBulkWriteOperation,
+  DeleteResult,
+  FilterQuery,
+  Model,
+  SortOrder,
+  Types,
+} from 'mongoose';
+import type { SearchParams } from 'meilisearch';
 import type {
   IAgentEventActorCheckpoint,
   IAgentEventActorReconciliation,
@@ -17,6 +24,7 @@ import type {
   ISharedLink,
   ISubagentThreadReservation,
 } from '~/types';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { MessageMethods } from './message';
 import {
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
@@ -34,6 +42,7 @@ import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
+import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -43,6 +52,13 @@ import logger from '~/config/winston';
 
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
+/** MeiliSearch's default `pagination.maxTotalHits` ceiling. */
+const MEILI_SEARCH_LIMIT = 1000;
+/** Ceiling for a single conversation page; the sidebar's largest request is 100. */
+const MAX_CONVO_PAGE_SIZE = 100;
+const DEFAULT_CONVO_PAGE_SIZE = 25;
+const escapeMeiliFilterValue = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 function validateAgentEventActorSuspension(
   conversationId: string,
@@ -241,6 +257,8 @@ export interface ConversationMethods {
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
+      /** Same-tenant persisted agent already resolved by the request layer. */
+      initialAgentId?: string | null;
       /** `_id`s of messages this save just wrote. When present, they are appended with
        *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
        *  every save without this option still rebuilds the array from the database. */
@@ -468,6 +486,7 @@ export interface ConversationMethods {
 
 export interface ConversationMethodDeps
   extends Pick<MessageMethods, 'getMessages' | 'deleteMessages'> {
+  searchMessages?: MessageMethods['searchMessages'];
   deleteAgentQueuedTurns?: (
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
@@ -996,6 +1015,15 @@ export function createConversationMethods(
             input.contextMeta.encoding.length > MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH)))
     ) {
       throw new RangeError('Event actor context calibration is invalid');
+    }
+    if (
+      input.contextMeta?.fadingTiers != null &&
+      !isAgentFadingTierEntries(input.contextMeta.fadingTiers)
+    ) {
+      throw new RangeError('Event actor context fading tiers are invalid');
+    }
+    if (input.contextMeta?.fading != null && !isAgentFadingTier(input.contextMeta.fading)) {
+      throw new RangeError('Event actor context fading tier is invalid');
     }
     if (
       input.compactionSemanticIndex != null &&
@@ -2098,6 +2126,7 @@ export function createConversationMethods(
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
+      initialAgentId?: string | null;
       appendMessageIds?: Types.ObjectId[];
     },
   ) {
@@ -2111,12 +2140,14 @@ export function createConversationMethods(
 
       const appendMessageIds = metadata?.appendMessageIds;
       const update: Record<string, unknown> = { ...convo, user: userId };
+      delete update.initial_agent_id;
       if (appendMessageIds == null) {
         update.messages = await getMessages({ conversationId, user: userId }, '_id');
       } else {
         delete update.messages;
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
+      delete unsetFields.initial_agent_id;
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
         const chatProjectId = typeof update.chatProjectId === 'string' ? update.chatProjectId : '';
@@ -2203,6 +2234,14 @@ export function createConversationMethods(
         timestampOptions.timestamps = false;
       }
 
+      const canUpsert = metadata?.noUpsert !== true;
+      const initialAgentId =
+        canUpsert &&
+        typeof metadata?.initialAgentId === 'string' &&
+        metadata.initialAgentId.trim() !== ''
+          ? metadata.initialAgentId
+          : null;
+
       const buildOperation = (setFields: Record<string, unknown>) => {
         const operation: Record<string, unknown> = { $set: setFields };
         if (appendMessageIds != null && appendMessageIds.length > 0) {
@@ -2215,14 +2254,14 @@ export function createConversationMethods(
           ? (createdAtOnInsert ??
             (!preserveUpdatedAt && update.updatedAt instanceof Date ? update.updatedAt : undefined))
           : createdAtOnInsert;
-        if (createdAtForInsert) {
-          operation.$setOnInsert = { createdAt: createdAtForInsert };
-        }
+        operation.$setOnInsert = {
+          initial_agent_id: initialAgentId,
+          ...(createdAtForInsert ? { createdAt: createdAtForInsert } : {}),
+        };
         return operation;
       };
 
       const baseFilter = { conversationId, user: userId };
-      const canUpsert = metadata?.noUpsert !== true;
       const runUpdate = (
         filter: Record<string, unknown>,
         operation: Record<string, unknown>,
@@ -2481,6 +2520,7 @@ export function createConversationMethods(
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
         const sanitized = { ...convo };
+        delete sanitized.initial_agent_id;
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
           if (ownedProjects.has(`${sanitized.user}:${sanitized.chatProjectId}`)) {
             affectedProjectStats.set(`${sanitized.user}:${sanitized.chatProjectId}`, {
@@ -2510,7 +2550,10 @@ export function createConversationMethods(
               conversationId: sanitized.conversationId,
               user: sanitized.user,
             },
-            update: sanitized,
+            update: {
+              $set: sanitized,
+              $setOnInsert: { initial_agent_id: null },
+            },
             upsert: true,
             timestamps: false,
           },
@@ -2573,7 +2616,7 @@ export function createConversationMethods(
     user: string,
     {
       cursor,
-      limit = 25,
+      limit = DEFAULT_CONVO_PAGE_SIZE,
       isArchived = false,
       pinned = false,
       tags,
@@ -2593,7 +2636,13 @@ export function createConversationMethods(
       projectId?: string;
     } = {},
   ) {
-    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation> &
+      Pick<SchemaWithMeiliMethods, 'meiliSearch'>;
+    /* `.limit(0)` is "no limit" to MongoDB and a negative one caps to a single batch, so an
+       unclamped page size hands the caller the whole collection rather than a page of it. */
+    const pageSize = Number.isFinite(limit)
+      ? Math.min(Math.max(Math.trunc(limit), 1), MAX_CONVO_PAGE_SIZE)
+      : DEFAULT_CONVO_PAGE_SIZE;
     const filters: FilterQuery<IConversation>[] = [{ user } as FilterQuery<IConversation>];
     if (isArchived) {
       filters.push({ isArchived: true } as FilterQuery<IConversation>);
@@ -2624,23 +2673,43 @@ export function createConversationMethods(
 
     if (search) {
       try {
-        const meiliResults = await (
-          Conversation as unknown as {
-            meiliSearch: (
-              query: string,
-              options: Record<string, string>,
-            ) => Promise<{
-              hits: Array<{ conversationId: string }>;
-            }>;
+        const searchParams: SearchParams = {
+          filter: `user = "${escapeMeiliFilterValue(user)}"`,
+          limit: MEILI_SEARCH_LIMIT,
+          attributesToRetrieve: ['conversationId', 'originalConversationId'],
+        };
+        const [convoResults, messageHits] = await Promise.all([
+          Conversation.meiliSearch(search, searchParams),
+          deps?.searchMessages
+            ? deps.searchMessages(search, searchParams).then(
+                (results) => (Array.isArray(results.hits) ? results.hits : []),
+                (error) => {
+                  logger.error(
+                    '[getConvosByCursor] Message search failed, using title matches only',
+                    error,
+                  );
+                  return [];
+                },
+              )
+            : [],
+        ]);
+        const matchingIds = new Set<string>();
+        for (const hit of convoResults.hits ?? []) {
+          if (typeof hit.conversationId === 'string') {
+            matchingIds.add(hit.conversationId);
           }
-        ).meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
-          : [];
-        if (!matchingIds.length) {
+        }
+        for (const hit of messageHits) {
+          if (typeof hit.conversationId === 'string') {
+            matchingIds.add(hit.conversationId);
+          }
+        }
+        if (!matchingIds.size) {
           return { conversations: [], nextCursor: null };
         }
-        filters.push({ conversationId: { $in: matchingIds } } as FilterQuery<IConversation>);
+        filters.push({
+          conversationId: { $in: [...matchingIds] },
+        } as FilterQuery<IConversation>);
       } catch (error) {
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
         throw new Error('Error during meiliSearch');
@@ -2748,11 +2817,11 @@ export function createConversationMethods(
           'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
         )
         .sort(sortObj)
-        .limit(limit + 1)
+        .limit(pageSize + 1)
         .lean<IConversation[]>();
 
       let nextCursor: string | null = null;
-      if (convos.length > limit) {
+      if (convos.length > pageSize) {
         convos.pop();
         const lastReturned = convos[convos.length - 1];
         const sortValues: Record<string, string | Date | null | undefined> = {

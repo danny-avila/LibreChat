@@ -23,6 +23,7 @@ import type {
   IdempotencyClaimResult,
   ParkedSteerClaim,
 } from '~/stream/interfaces/IJobStore';
+import type { EarlyBufferOverflowState } from '../../types/earlyBufferRecovery';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobStatusTransitionDeadlineError,
@@ -368,7 +369,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
           active: true,
           verified: true,
           status: current.status,
-          ...(current.conversationId !== undefined && { conversationId: current.conversationId }),
+          ...(current.conversationId !== undefined && {
+            conversationId: current.conversationId,
+          }),
         });
       }
       if (
@@ -382,7 +385,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
         active: current?.status === 'running' || current?.status === 'requires_action',
         verified: currentCreatedAt != null,
         ...(current !== undefined && { status: current.status }),
-        ...(current?.conversationId !== undefined && { conversationId: current.conversationId }),
+        ...(current?.conversationId !== undefined && {
+          conversationId: current.conversationId,
+        }),
       });
     };
 
@@ -533,7 +538,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
         checkpointNamespace: String(createdAt),
       }),
       ...(conversationId !== undefined && { conversationId }),
-      ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
+      ...(idempotencyClientRequestId !== undefined && {
+        idempotencyClientRequestId,
+      }),
       ...(recoveredSteerId !== undefined && { recoveredSteerId }),
       providerAbortReady: false,
       ...(providerExecutionId != null && { providerDrained: true }),
@@ -890,7 +897,10 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (existing && existing.expiresAt > now) {
       return { claimed: false, existing: existing.value };
     }
-    this.idempotencyClaims.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
+    this.idempotencyClaims.set(key, {
+      value,
+      expiresAt: now + ttlSeconds * 1000,
+    });
     return { claimed: true, existing: value };
   }
 
@@ -1162,7 +1172,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
           patch: {
             completedAt: now,
             error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
-            ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
+            ...(job.agentEventDeliveryKey != null && {
+              terminalHostActionPending: true,
+            }),
           },
           clear: [
             'pendingAction',
@@ -1446,7 +1458,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (existing) {
       existing.contentParts = contentParts;
     } else {
-      this.contentState.set(streamId, { contentParts, graphRef: null, collectedUsage: [] });
+      this.contentState.set(streamId, {
+        contentParts,
+        graphRef: null,
+        collectedUsage: [],
+      });
     }
   }
 
@@ -1465,7 +1481,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (existing) {
       existing.collectedUsage = collectedUsage;
     } else {
-      this.contentState.set(streamId, { contentParts: [], graphRef: null, collectedUsage });
+      this.contentState.set(streamId, {
+        contentParts: [],
+        graphRef: null,
+        collectedUsage,
+      });
     }
   }
 
@@ -1487,8 +1507,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
   async getContentParts(
     streamId: string,
     expectedCreatedAt?: number,
+    _options?: { durableOnly?: boolean },
   ): Promise<{
     content: Agents.MessageContentComplex[];
+    reconstructedEventCount?: number;
+    durableEventCount?: number;
   } | null> {
     if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
       return null;
@@ -1499,7 +1522,105 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     return {
       content: state.contentParts,
+      ...(_options?.durableOnly === true && {
+        reconstructedEventCount: state.contentParts.length,
+        durableEventCount: state.contentParts.length,
+      }),
     };
+  }
+
+  async settleEarlyBufferRecovery(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    settlement: Pick<
+      EarlyBufferOverflowState,
+      'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
+    >,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    const overflow = job?.earlyBufferOverflow;
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      overflow?.id !== overflowId ||
+      overflow.recoveryOutcome != null
+    ) {
+      return false;
+    }
+    job.earlyBufferOverflow = { ...overflow, ...settlement };
+    return true;
+  }
+
+  async finalizeEarlyBufferOverflow(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    finalizedOverflow: EarlyBufferOverflowState,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    const overflow = job?.earlyBufferOverflow;
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      overflow?.id !== overflowId ||
+      overflow.persistencePending !== true ||
+      overflow.recoveryOutcome != null
+    ) {
+      return false;
+    }
+    job.earlyBufferOverflow = finalizedOverflow;
+    return true;
+  }
+
+  async hasSubscriberAttached(streamId: string, expectedCreatedAt: number): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    return job?.createdAt === expectedCreatedAt && job.firstSubscriberAttachedAt != null;
+  }
+
+  async claimFirstSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    attachedAt: number,
+    subscriberId: string,
+    leaseExpiresAt: number,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt) {
+      return false;
+    }
+    job.activeSubscriberLeases ??= {};
+    job.activeSubscriberLeases[subscriberId] = leaseExpiresAt;
+    const firstSubscriber = job.firstSubscriberAttachedAt == null;
+    job.firstSubscriberAttachedAt ??= attachedAt;
+    return firstSubscriber;
+  }
+
+  async detachSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    subscriberId: string,
+  ): Promise<void> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt) {
+      return;
+    }
+    delete job.activeSubscriberLeases?.[subscriberId];
+  }
+
+  async hasActiveSubscriber(
+    streamId: string,
+    expectedCreatedAt: number,
+    observedAt: number,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (job?.createdAt !== expectedCreatedAt) {
+      return false;
+    }
+    for (const [subscriberId, expiresAt] of Object.entries(job.activeSubscriberLeases ?? {})) {
+      if (expiresAt <= observedAt) {
+        delete job.activeSubscriberLeases?.[subscriberId];
+      }
+    }
+    return Object.keys(job.activeSubscriberLeases ?? {}).length > 0;
   }
 
   /**
@@ -1685,7 +1806,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
     ) {
       return [];
     }
-    return (this.claimedSteers.get(streamId) ?? []).map((item) => ({ ...item }));
+    return (this.claimedSteers.get(streamId) ?? []).map((item) => ({
+      ...item,
+    }));
   }
 
   async getSteerReceipt(streamId: string, clientSteerId: string): Promise<SteerReceipt | null> {
@@ -1713,7 +1836,10 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const existingEntry = this.steerReceipts.get(streamId)?.get(receiptInput.clientSteerId);
     if (existingEntry != null && existingEntry.expiresAt > Date.now()) {
       this.normalizeSteerReceipt(streamId, existingEntry);
-      return { ...existingEntry.receipt, item: { ...existingEntry.receipt.item } };
+      return {
+        ...existingEntry.receipt,
+        item: { ...existingEntry.receipt.item },
+      };
     }
     if (existingEntry != null) {
       this.steerReceipts.get(streamId)?.delete(receiptInput.clientSteerId);
@@ -2126,7 +2252,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (receipt != null) {
       receipt.item = { ...item };
     }
-    return { outcome: 'armed', revision: item.preemptRevision, item: { ...item } };
+    return {
+      outcome: 'armed',
+      revision: item.preemptRevision,
+      item: { ...item },
+    };
   }
 
   async downgradeSteerPreempts(
@@ -2442,7 +2572,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
       const parsed = JSON.parse(parked.payload) as {
         userId: string;
         tenantId?: string;
-        steers?: Array<{ steerId: string; clientSteerId?: string; recoveringCreatedAt?: number }>;
+        steers?: Array<{
+          steerId: string;
+          clientSteerId?: string;
+          recoveringCreatedAt?: number;
+        }>;
       };
       if (!Array.isArray(parsed.steers)) {
         return;
@@ -2492,7 +2626,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
     parsedPayload?: {
       userId: string;
       tenantId?: string;
-      steers?: Array<{ steerId: string; clientSteerId?: string; recoveringCreatedAt?: number }>;
+      steers?: Array<{
+        steerId: string;
+        clientSteerId?: string;
+        recoveringCreatedAt?: number;
+      }>;
     },
     parsedLeasedItem?: {
       steerId: string;

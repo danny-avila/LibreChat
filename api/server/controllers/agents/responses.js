@@ -1,7 +1,7 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -13,7 +13,7 @@ const {
   createRun,
   applyContextToAgent,
   buildInitialToolSessions,
-  buildToolSet,
+  buildRunToolSet,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
   createAgentExecutionContext,
@@ -53,6 +53,8 @@ const {
   getSafeErrorMetadata,
   getUserFacingProviderError,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
+  resolveRecursionLimit,
   getRemoteAgentPermissions,
   resolveAgentScopedSkillIds,
   // Responses API
@@ -452,11 +454,14 @@ async function saveConversation(req, conversationId, agentId, agent) {
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
-      agentId,
+      agent_id: agentId,
       ...(title != null && { title }),
       model: agent?.model,
     },
-    { context: 'Responses API - save conversation' },
+    {
+      context: 'Responses API - save conversation',
+      initialAgentId: agent?.id === agentId ? agentId : null,
+    },
   );
 }
 
@@ -1004,7 +1009,13 @@ const executeResponse = async (envelope, { req, res }) => {
       // Merge previous messages with new input
       const allMessages = [...previousMessages, ...inputMessages];
 
-      const toolSet = buildToolSet(primaryConfig);
+      const toolSet = buildRunToolSet(
+        primaryConfig,
+        handoffAgentConfigs.values(),
+        undefined,
+        allMessages,
+        true,
+      );
       const formatted = formatAgentMessages(stripActivityLabelParts(allMessages), {}, toolSet);
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
@@ -1145,7 +1156,7 @@ const executeResponse = async (envelope, { req, res }) => {
               }
             },
           },
-          on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+          on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
           on_run_step_completed: { handle: () => {} },
           on_chain_stream: { handle: () => {} },
           on_chain_end: { handle: () => {} },
@@ -1174,7 +1185,8 @@ const executeResponse = async (envelope, { req, res }) => {
           customHandlers: handlers,
           initialSessions,
           requestBody: mcpRequestBody,
-          user: { id: userId },
+          user: { ...createSafeUser(req.user), id: userId },
+          traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
@@ -1195,6 +1207,7 @@ const executeResponse = async (envelope, { req, res }) => {
             requestBody: mcpRequestBody,
             ...(userMCPAuthMap != null && { userMCPAuthMap }),
           },
+          recursionLimit: resolveRecursionLimit(agentsEConfig, agent),
           signal: execution.signal,
           streamMode: 'values',
           version: 'v2',
@@ -1357,7 +1370,7 @@ const executeResponse = async (envelope, { req, res }) => {
               }
             },
           },
-          on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+          on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
           on_run_step_completed: { handle: () => {} },
           on_chain_stream: { handle: () => {} },
           on_chain_end: { handle: () => {} },
@@ -1385,7 +1398,8 @@ const executeResponse = async (envelope, { req, res }) => {
           customHandlers: handlers,
           initialSessions,
           requestBody: mcpRequestBody,
-          user: { id: userId },
+          user: { ...createSafeUser(req.user), id: userId },
+          traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
@@ -1405,6 +1419,7 @@ const executeResponse = async (envelope, { req, res }) => {
             requestBody: mcpRequestBody,
             ...(userMCPAuthMap != null && { userMCPAuthMap }),
           },
+          recursionLimit: resolveRecursionLimit(agentsEConfig, agent),
           signal: execution.signal,
           streamMode: 'values',
           version: 'v2',
@@ -1527,7 +1542,7 @@ const createResponse = async (req, res) => {
       protocol: 'responses',
       requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
       receivedAt,
-      principal: req.user,
+      principal: req.tenantId == null ? req.user : { ...req.user, tenantId: req.tenantId },
       payload: validation.request,
     });
   } catch (error) {

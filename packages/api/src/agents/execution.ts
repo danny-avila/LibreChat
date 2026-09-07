@@ -1,8 +1,15 @@
 import { createHash } from 'node:crypto';
+import { logger } from '@librechat/data-schemas';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
-import type { StatefulCodeEnvironment, TAgentsEndpoint } from 'librechat-data-provider';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  StatefulCodeEnvironment,
+  TAgentsEndpoint,
+} from 'librechat-data-provider';
 
 export const CODE_API_EXPECTED_PROFILE_HEADER = 'X-CodeAPI-Expected-Profile';
+export const CODE_API_BRIDGE_WORKER_HEADER = 'X-LibreChat-Code-Worker-ID';
 
 export type CodeExecutionProfile = 'default' | 'stateful';
 export type CodeEnvironmentConfig = NonNullable<
@@ -21,16 +28,23 @@ export interface CodeExecutionContext {
   statefulSessions: boolean;
   environmentId?: string;
   environmentType?: CodeEnvironmentConfig['type'];
+  bridgeWorkerId?: string;
+  codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
+  codeEnvironmentSettings?: CodeEnvironmentUserSettings;
 }
 
 export function createCodeExecutionRouteKey(
   profile: CodeExecutionProfile,
-  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL'>,
+  environment?: Pick<CodeEnvironmentConfig, 'id' | 'baseURL' | 'workerId' | 'pairing'>,
 ): string {
   if (profile === 'default' || environment == null) {
     return profile;
   }
-  const identity = JSON.stringify([environment.id, environment.baseURL.trim().replace(/\/+$/, '')]);
+  const identity = JSON.stringify([
+    environment.id,
+    environment.baseURL.trim().replace(/\/+$/, ''),
+    environment.workerId ?? environment.pairing?.workerId ?? '',
+  ]);
   return `stateful:${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
 }
 
@@ -102,14 +116,24 @@ function resolveConfiguredEnvironment(params: {
   environments?: readonly CodeEnvironmentConfig[];
 }): CodeEnvironmentConfig | undefined {
   const { environmentId, environments } = params;
+  const executableEnvironments = environments?.filter(
+    (environment) =>
+      !(
+        environment.pairing?.allowPrincipalWorkers === true &&
+        environment.pairing.workerId == null &&
+        environment.workerId == null
+      ),
+  );
   if (environmentId) {
-    const configured = environments?.find((environment) => environment.id === environmentId);
+    const configured = executableEnvironments?.find(
+      (environment) => environment.id === environmentId,
+    );
     if (!configured) {
       throw new Error(`Stateful code environment "${environmentId}" is not configured.`);
     }
     return configured;
   }
-  return environments?.find((environment) => environment.default === true);
+  return executableEnvironments?.find((environment) => environment.default === true);
 }
 
 export function resolveCodeExecutionContext(params: {
@@ -152,11 +176,64 @@ export function resolveCodeExecutionContext(params: {
     statefulSessions: true,
     environmentId: configuredEnvironment?.id,
     environmentType: configuredEnvironment?.type,
+    bridgeWorkerId: configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+    codeEnvironmentConfigSchema: configuredEnvironment?.configSchema,
+    codeEnvironmentSettings: configuredEnvironment?.settings,
   };
 }
 
 export function codeExecutionHeaders(
-  context: Pick<CodeExecutionContext, 'executionProfile'>,
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
 ): Record<string, string> {
-  return { [CODE_API_EXPECTED_PROFILE_HEADER]: context.executionProfile };
+  return {
+    [CODE_API_EXPECTED_PROFILE_HEADER]: context.executionProfile,
+    ...(context.bridgeWorkerId != null
+      ? { [CODE_API_BRIDGE_WORKER_HEADER]: context.bridgeWorkerId }
+      : {}),
+  };
+}
+
+/**
+ * The cause belongs in the message rather than in winston metadata. A caught
+ * value passed as metadata is merged onto the log record, so a rejection
+ * carrying `tenantId`, `userId` or `event_name` would overwrite the request
+ * identity this log exists to provide; and any metadata makes `format.splat()`
+ * treat a `%s` in the cause as a substitution token. Every read is guarded:
+ * `String()` throws on a null-prototype object and a proxy can throw from a
+ * `name` or `message` accessor, either of which would otherwise replace the
+ * rejection with a formatting error and log nothing.
+ */
+function describeAuthFailure(error: unknown): string {
+  try {
+    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  } catch {
+    return 'undescribable rejection';
+  }
+}
+
+/**
+ * `@librechat/agents` replaces any throw from this callback with a fixed
+ * "not authorized" string before the model or the operator sees it, and its own
+ * console diagnostic carries no request or user id. This log is the only
+ * request-correlated record of why the headers could not be resolved.
+ */
+export async function codeExecutionAuthHeaders(
+  authHeaders: (
+    bridgeWorkerId?: string,
+  ) => Promise<Record<string, string>> | Record<string, string>,
+  context: Pick<CodeExecutionContext, 'executionProfile' | 'bridgeWorkerId'>,
+): Promise<Record<string, string>> {
+  try {
+    return {
+      ...(await authHeaders(context.bridgeWorkerId)),
+      ...codeExecutionHeaders(context),
+    };
+  } catch (error) {
+    logger.error(
+      `[codeExecutionAuthHeaders] Failed to resolve Code API auth headers | Profile: ${context.executionProfile}` +
+        (context.bridgeWorkerId != null ? ` | Worker: ${context.bridgeWorkerId}` : '') +
+        ` | Cause: ${describeAuthFailure(error)}`,
+    );
+    throw error;
+  }
 }

@@ -10,18 +10,28 @@ jest.mock('@librechat/api', () => ({
 
 const {
   ContentFilterError,
+  MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES,
   contentFilterBlockResponse,
   extractConversationImportContent,
   inspectContent,
 } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages, getFiles } = require('~/models');
+const {
+  bulkIncrementTagCounts,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  deleteImportedConversations,
+  deleteImportedMessages,
+  getFiles,
+} = require('~/models');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 
 jest.mock('~/models', () => ({
   bulkIncrementTagCounts: jest.fn(),
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
+  deleteImportedConversations: jest.fn(),
+  deleteImportedMessages: jest.fn(),
   getFiles: jest.fn(),
 }));
 
@@ -70,6 +80,8 @@ describe('ImportBatchBuilder content filtering', () => {
     bulkIncrementTagCounts.mockResolvedValue();
     bulkSaveConvos.mockResolvedValue();
     bulkSaveMessages.mockResolvedValue();
+    deleteImportedConversations.mockResolvedValue();
+    deleteImportedMessages.mockResolvedValue();
     getFiles.mockResolvedValue([]);
   });
 
@@ -255,6 +267,38 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(bulkSaveConvos).toHaveBeenCalledTimes(1);
     expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
     expect(bulkIncrementTagCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an oversized conversation before starting any bulk write', async () => {
+    const builder = createBuilder(undefined);
+    builder.conversations[0].title = 'x'.repeat(16 * 1024 * 1024);
+
+    await expect(builder.saveBatch()).rejects.toThrow(
+      `at most ${MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES} bytes`,
+    );
+
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
+  });
+
+  it('cleans only the generated owner scope when a message write fails', async () => {
+    const builder = createBuilder(undefined);
+    const writeError = new Error('message write failed');
+    bulkSaveMessages.mockRejectedValueOnce(writeError);
+
+    await expect(builder.saveBatch()).rejects.toBe(writeError);
+
+    const scope = {
+      user: 'user-123',
+      conversationIds: [builder.conversations[0].conversationId],
+    };
+    expect(deleteImportedMessages).toHaveBeenCalledWith(scope);
+    expect(deleteImportedConversations).toHaveBeenCalledWith(scope);
+    expect(bulkSaveConvos.mock.invocationCallOrder[0]).toBeLessThan(
+      bulkSaveMessages.mock.invocationCallOrder[0],
+    );
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
   });
 
   it('blocks opaque imported content before starting any bulk write', async () => {

@@ -13,7 +13,7 @@ const {
   getCodeApiAuthHeaders,
   getCodeExecutionBaseUrl,
   createCodeExecutionRouteKey,
-  CODE_API_EXPECTED_PROFILE_HEADER,
+  codeExecutionHeaders,
 } = require('@librechat/api');
 
 const axios = createAxiosInstance();
@@ -29,7 +29,7 @@ const MAX_FILE_SIZE = 150 * 1024 * 1024;
  *   `kind: 'user', id: <userId>`; for skill/agent re-downloads pass
  *   the kind+id (+version for skill) from the file's `metadata.codeEnvRef`.
  * @param {ServerRequest} req - Current authenticated request.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful'}} [route]
+ * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
  *   Trusted host-selected Code API route.
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
@@ -38,7 +38,7 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route 
   try {
     const baseURL = route.baseUrl ?? getCodeBaseURL();
     const query = buildCodeEnvDownloadQuery(identity);
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       method: 'get',
@@ -48,7 +48,10 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route 
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
         ...(route.executionProfile
-          ? { [CODE_API_EXPECTED_PROFILE_HEADER]: route.executionProfile }
+          ? codeExecutionHeaders({
+              executionProfile: route.executionProfile,
+              bridgeWorkerId: route.bridgeWorkerId,
+            })
           : {}),
       },
       httpAgent: codeServerHttpAgent,
@@ -81,8 +84,6 @@ async function deleteCodeEnvFile(req, file) {
     return;
   }
 
-  const missingOrUnsupportedStatuses = new Set([404, 405]);
-  const authHeaders = await getCodeApiAuthHeaders(req);
   for (const [executionRouteKey, ref] of refs) {
     const executionProfile = ref.executionProfile ?? 'default';
     const environments =
@@ -122,45 +123,40 @@ async function deleteCodeEnvFile(req, file) {
       id: ref.id,
       ...(ref.kind === 'skill' ? { version: ref.version } : {}),
     });
-    const baseRequest = {
-      method: 'delete',
-      headers: {
-        'User-Agent': 'LibreChat/1.0',
-        ...authHeaders,
-        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
-      },
-      httpAgent: codeServerHttpAgent,
-      httpsAgent: codeServerHttpsAgent,
-      timeout: 15000,
-    };
-    const urls = [
-      `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
-      `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
-    ];
-
-    let lastError;
-    let deleted = false;
-    for (const url of urls) {
-      try {
-        await axios({ ...baseRequest, url });
-        deleted = true;
-        break;
-      } catch (error) {
-        lastError = error;
-        if (!missingOrUnsupportedStatuses.has(error.response?.status)) {
-          throw error;
-        }
-      }
-    }
-    if (!deleted && lastError) {
-      logAxiosError({
-        error: lastError,
-        message: `Error deleting code environment file: ${lastError.message}`,
+    const bridgeWorkerId =
+      configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId;
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
+    /* codeapi has mounted DELETE at `/files/:session_id/:fileId` since its
+     * first release. The file-server's own `/sessions/:id/objects/:fileId`
+     * only gained DELETE in LibreChat-AI/code-interpreter#85, so trying it
+     * first cost a guaranteed 404 against every older deployment. */
+    try {
+      await axios({
+        method: 'delete',
+        url: `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
+        headers: {
+          'User-Agent': 'LibreChat/1.0',
+          ...authHeaders,
+          ...codeExecutionHeaders({
+            executionProfile,
+            bridgeWorkerId,
+          }),
+        },
+        httpAgent: codeServerHttpAgent,
+        httpsAgent: codeServerHttpsAgent,
+        timeout: 15000,
       });
-      if (lastError.response?.status === 404) {
-        continue;
+    } catch (error) {
+      if (error.response?.status !== 404) {
+        throw error;
       }
-      throw new Error(lastError.message || 'An error occurred during file deletion.');
+      /* Already gone. Logged rather than swallowed: a 404 from a
+       * misconfigured base URL is indistinguishable from one for an absent
+       * object, and this branch drops the file's record either way. */
+      logAxiosError({
+        error,
+        message: `Code environment object already absent: ${error.message}`,
+      });
     }
   }
 }
@@ -186,6 +182,7 @@ async function deleteCodeEnvFile(req, file) {
  * @param {number} [params.version] - Required when `kind === 'skill'`; absent otherwise.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  * @returns {Promise<{ storage_session_id: string; file_id: string }>}
  *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
@@ -199,6 +196,7 @@ async function uploadCodeEnvFile({
   version,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
 }) {
   try {
     const form = new FormData();
@@ -206,7 +204,7 @@ async function uploadCodeEnvFile({
     appendCodeEnvFile(form, stream, filename);
 
     const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req);
+    const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
       headers: {
@@ -215,7 +213,7 @@ async function uploadCodeEnvFile({
         'User-Agent': 'LibreChat/1.0',
         'User-Id': req.user.id,
         ...authHeaders,
-        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+        ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -267,6 +265,7 @@ async function uploadCodeEnvFile({
  *   `inherited: true`, never as a generated artifact.
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
+ * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
  * @returns {Promise<{ storage_session_id: string; files: Array<{ fileId: string; filename: string }> }>}
  * @throws {Error} If the batch upload fails entirely.
  */
@@ -279,6 +278,7 @@ async function batchUploadCodeEnvFiles({
   read_only = false,
   codeApiBaseUrl,
   executionProfile,
+  bridgeWorkerId,
 }) {
   const form = new FormData();
   appendCodeEnvFileIdentity(form, { kind, id, version });
@@ -290,7 +290,7 @@ async function batchUploadCodeEnvFiles({
   }
 
   const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
-  const authHeaders = await getCodeApiAuthHeaders(req);
+  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   /** @type {import('axios').AxiosRequestConfig} */
   const options = {
     headers: {
@@ -299,7 +299,7 @@ async function batchUploadCodeEnvFiles({
       'User-Agent': 'LibreChat/1.0',
       'User-Id': req.user.id,
       ...authHeaders,
-      ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
+      ...(executionProfile ? codeExecutionHeaders({ executionProfile, bridgeWorkerId }) : {}),
     },
     httpAgent: codeServerHttpAgent,
     httpsAgent: codeServerHttpsAgent,

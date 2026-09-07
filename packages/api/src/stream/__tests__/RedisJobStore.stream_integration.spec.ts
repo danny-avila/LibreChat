@@ -1757,6 +1757,82 @@ describe('RedisJobStore Integration Tests', () => {
       await instance2.destroy();
     });
 
+    test('reports the generation-wide durable count after chunk trimming', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `trimmed-chunk-frontier-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      for (let i = 0; i < 3; i++) {
+        await store.appendChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: String(i) } } },
+        });
+      }
+      await ioredisClient.xtrim(`stream:{${streamId}}:chunks`, 'MAXLEN', 1);
+      for (let i = 3; i < 5; i++) {
+        await store.appendChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: String(i) } } },
+        });
+      }
+
+      const result = await store.getContentParts(streamId, job.createdAt, { durableOnly: true });
+
+      expect(result).toMatchObject({
+        reconstructedEventCount: 3,
+        durableEventCount: 5,
+      });
+
+      await store.destroy();
+    });
+
+    test('repairs the durable count after an append from a legacy writer', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `mixed-writer-frontier-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      for (let i = 0; i < 3; i++) {
+        await store.appendChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: String(i) } } },
+        });
+      }
+      await ioredisClient.xadd(
+        `stream:{${streamId}}:chunks`,
+        '*',
+        'event',
+        JSON.stringify({
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: 'legacy' } } },
+        }),
+      );
+      await store.appendChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'current' } } },
+      });
+
+      const result = await store.getContentParts(streamId, job.createdAt, { durableOnly: true });
+
+      expect(result).toMatchObject({
+        reconstructedEventCount: 5,
+        durableEventCount: 5,
+      });
+
+      await store.destroy();
+    });
+
     test('should share run steps between instances', async () => {
       if (!ioredisClient) {
         return;

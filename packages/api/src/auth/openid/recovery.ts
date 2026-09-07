@@ -100,6 +100,12 @@ interface SendOpenIDAuthResponseInput {
     },
   ) => Promise<void>;
   preparePublication?: boolean;
+  /**
+   * A fresh authorization-code login supersedes whatever token set the Express session still
+   * holds from an earlier authentication. The advanced-session comparison exists for refresh
+   * races and must not republish that stale set in place of the tokens the IdP just issued.
+   */
+  discardSessionTokens?: boolean;
 }
 
 export interface OpenIDRefreshRecoveryService {
@@ -191,6 +197,7 @@ export interface OpenIDRefreshRecoveryDeps {
     key: string;
     ownerId: string;
     tokens: SharedOpenIDRefreshResult;
+    onWriteStart?: () => void;
   }) => Promise<RefreshFlightRecord | null>;
   failOpenIDRefreshFlight: (args: {
     key: string;
@@ -678,6 +685,7 @@ export function createOpenIDRefreshRecoveryService(
     publicationGeneration,
     commitPublication,
     preparePublication = true,
+    discardSessionTokens = false,
   }: SendOpenIDAuthResponseInput): Promise<string | undefined> {
     const userId = user._id.toString();
     const publicationIdentity = predecessorIdentity ?? {
@@ -719,8 +727,10 @@ export function createOpenIDRefreshRecoveryService(
             publicationGeneration: sharedGeneration,
             commitPublication: async () => {},
             preparePublication: false,
+            discardSessionTokens,
           });
         }
+        let completionStarted = false;
         return withOpenIDRefreshFlightLease({
           key,
           ownerId: flight.ownerId,
@@ -743,10 +753,14 @@ export function createOpenIDRefreshRecoveryService(
                   ? new Date(flight.flight.createdAt).getTime()
                   : Date.now(),
               },
+              discardSessionTokens,
               commitPublication: async (appAuthToken, publishedTokenset, metadata) => {
                 const completed = await completeOpenIDRefreshFlight({
                   key,
                   ownerId: flight.ownerId,
+                  onWriteStart: () => {
+                    completionStarted = true;
+                  },
                   tokens: {
                     tokenset: publishedTokenset,
                     claims: { sub: openidSubject ?? user.openidId ?? userId },
@@ -764,6 +778,22 @@ export function createOpenIDRefreshRecoveryService(
                 markLeaseSettled();
               },
             }),
+        }).catch(async (error) => {
+          /** A completion write may have succeeded despite a lost acknowledgement. */
+          if (!completionStarted) {
+            try {
+              await failOpenIDRefreshFlight({
+                key,
+                ownerId: flight.ownerId,
+                error: error instanceof Error ? error : new Error('OpenID publication failed'),
+              });
+            } catch (flightError) {
+              logger.warn('[refreshController] Failed to settle authentication publication', {
+                error: toOpenIDLogArgument(flightError),
+              });
+            }
+          }
+          throw error;
         });
       }
     }
@@ -775,6 +805,9 @@ export function createOpenIDRefreshRecoveryService(
       await new Promise<void>((resolve, reject) => {
         reload((error?: Error | null) => (error ? reject(error) : resolve()));
       });
+    }
+    if (discardSessionTokens && req?.session?.openidTokens) {
+      delete req.session.openidTokens;
     }
     let effectiveTokenset = tokenset;
     let effectiveExistingRefreshToken = existingRefreshToken;

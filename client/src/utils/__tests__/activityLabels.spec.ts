@@ -7,6 +7,7 @@ import {
   lastCursorContentIdx,
   lastVisibleContentIdx,
   offsetActivityPhaseBoundary,
+  findActivityLabelMessageIndex,
 } from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
@@ -653,20 +654,46 @@ describe('groupActivityPhases — synthesized folds', () => {
     expect(foldOf(failed)?.labelPart.status).toBe('failed');
   });
 
-  it('stands down when the message carries parallel content', () => {
-    const parallel = {
-      ...(toolPart('t2') as object),
-      groupId: 'g1',
-    } as unknown as TMessageContentParts;
+  const inLane = (part: TMessageContentParts, agentId: string): TMessageContentParts =>
+    ({ ...(part as object), agentId, groupId: 1 }) as unknown as TMessageContentParts;
 
+  it('stands down when the message carries parallel content', () => {
     expect(
       groupActivityPhases([
-        toolPart('t1'),
-        childLabel('Read the config'),
-        parallel,
-        childLabel('Checked the callers'),
+        inLane(toolPart('t1'), 'agent_a'),
+        inLane(childLabel('Read the config'), 'agent_a'),
+        inLane(toolPart('t2'), 'agent_b'),
+        inLane(childLabel('Checked the callers'), 'agent_b'),
       ]),
     ).toBeUndefined();
+  });
+
+  it('folds a labeled run whose group id is backed by one agent', () => {
+    /** A multi-agent graph stamps a group id on every starting node, so an
+     *  agent that merely has subagents available carries one on its own
+     *  output. It renders sequentially, so it folds like any other run. */
+    const segments = groupActivityPhases([
+      inLane(toolPart('t1'), 'agent_a'),
+      inLane(childLabel('Read the config'), 'agent_a'),
+      inLane(toolPart('t2'), 'agent_a'),
+      inLane(childLabel('Checked the callers'), 'agent_a'),
+    ]);
+
+    expect(foldOf(segments)).toMatchObject({ synthesized: true, contentIndices: [0, 1, 2, 3] });
+  });
+
+  it("takes the caller's lane scan instead of repeating it", () => {
+    /** `ContentParts` already scans the message for lanes; passing the answer
+     *  keeps a streamed delta to one pass, and must decide identically. */
+    const run = [
+      inLane(toolPart('t1'), 'agent_a'),
+      inLane(childLabel('Read the config'), 'agent_a'),
+      inLane(toolPart('t2'), 'agent_a'),
+      inLane(childLabel('Checked the callers'), 'agent_a'),
+    ];
+
+    expect(foldOf(groupActivityPhases(run, new Set()))).toMatchObject({ synthesized: true });
+    expect(groupActivityPhases(run, new Set([1]))).toBeUndefined();
   });
 
   it('never folds a span a server marker already claims', () => {
@@ -807,5 +834,29 @@ describe('groupActivityPhases — what a fold may not swallow', () => {
         childLabel('Checked the callers'),
       ]),
     ).toBeUndefined();
+  });
+});
+
+describe('findActivityLabelMessageIndex', () => {
+  const user: TMessage = { ...buildMessage([]), messageId: 'user-1', isCreatedByUser: true };
+  const placeholder: TMessage = { ...buildMessage([]), messageId: 'user-1_' };
+  const older: TMessage = { ...buildMessage([]), messageId: 'older-response' };
+  const event = {
+    index: 0,
+    part: labelPart(),
+    responseMessageId: 'server-resp',
+  } as TActivityLabelEvent;
+
+  it("falls back to the pane's own placeholder before the first run step renames it", () => {
+    expect(findActivityLabelMessageIndex([user, placeholder], event, ['user-1_'])).toBe(1);
+  });
+
+  it('never guesses by position when the event names a row the pane has not rendered', () => {
+    expect(findActivityLabelMessageIndex([user, older], event)).toBe(-1);
+    expect(findActivityLabelMessageIndex([user, older], event, [undefined, null])).toBe(-1);
+  });
+
+  it('ignores a placeholder id that names a user message', () => {
+    expect(findActivityLabelMessageIndex([user, older], event, ['user-1'])).toBe(-1);
   });
 });

@@ -19,12 +19,13 @@
  * ```
  */
 import { nanoid } from 'nanoid';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
   MessageFilterConfig,
   MessageFilterPiiConfig,
   StatefulCodeEnvironment,
+  TAgentsEndpoint,
 } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
@@ -45,6 +46,7 @@ import type {
 } from '~/protection';
 import type { InitializeAgentParams as CoreInitializeAgentParams } from '../initialize';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { LangfuseTraceContext } from '~/langfuse/identity';
 import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
 import {
@@ -73,6 +75,7 @@ import { contentFilterUninspectableResponse } from '~/protection/files';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { getUserFacingProviderError } from '../errors';
 import { collectReachableAgents } from '../traversal';
+import { resolveRecursionLimit } from '../config';
 import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
 
@@ -164,6 +167,7 @@ interface InitializedAgent {
   subagentAgentConfigs?: InitializedAgent[];
   /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
   intentToolNames?: string[];
+  recursion_limit?: number;
   [key: string]: unknown;
 }
 
@@ -253,6 +257,7 @@ type CreateRunFn = (params: {
   customHandlers: Record<string, EventHandler>;
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
+  traceContext?: LangfuseTraceContext;
   tenantId?: string;
   appConfig?: CreateRunAppConfig;
   tokenCounter?: (message: unknown) => number;
@@ -797,6 +802,7 @@ export async function createAgentChatCompletion(
         customHandlers: eventHandlers,
         requestBody: mcpRequestBody,
         user: safeUser,
+        traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
         appConfig: selectCreateRunAppConfig(deps.appConfig),
       });
@@ -819,6 +825,10 @@ export async function createAgentChatCompletion(
                 ? { intentToolNames: initializedAgent.intentToolNames }
                 : {}),
             },
+            recursionLimit: resolveRecursionLimit(
+              agentsConfig as Partial<TAgentsEndpoint> | undefined,
+              initializedAgent,
+            ),
             signal: abortController.signal,
             streamMode: 'values',
             version: 'v2',
