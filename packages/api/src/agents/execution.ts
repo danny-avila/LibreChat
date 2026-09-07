@@ -50,10 +50,11 @@ const MAX_CODE_EXECUTION_APPROVAL_TARGETS = 128;
 export function captureCodeExecutionApprovalBinding(
   agents: readonly (CodeExecutionApprovalAgent | null | undefined)[],
 ): Agents.CodeExecutionApprovalBinding | undefined {
-  const targets = agents.flatMap((agent) => {
+  const targetsByIdentity = new Map<string, Agents.CodeExecutionApprovalTargetBinding>();
+  for (const agent of agents) {
     const context = agent?.codeExecutionContext;
     if (context?.statefulSessions !== true) {
-      return [];
+      continue;
     }
     const targetHash = createHash('sha256')
       .update(
@@ -70,16 +71,27 @@ export function captureCodeExecutionApprovalBinding(
         ]),
       )
       .digest('hex');
-    return [{ agentId: agent?.id ?? null, targetHash }];
-  });
+    const target = { agentId: agent?.id ?? null, targetHash };
+    targetsByIdentity.set(`${target.agentId ?? ''}\u0000${target.targetHash}`, target);
+  }
+  const targets = [...targetsByIdentity.values()];
   if (targets.length === 0) {
     return undefined;
   }
-  targets.sort(
-    (left, right) =>
-      (left.agentId ?? '').localeCompare(right.agentId ?? '') ||
-      left.targetHash.localeCompare(right.targetHash),
-  );
+  /** Relational string comparison is defined over UTF-16 code units. Unlike
+   * localeCompare, this produces the same canonical order on every replica
+   * regardless of its ICU build or process locale. */
+  targets.sort((left, right) => {
+    const leftAgentId = left.agentId ?? '';
+    const rightAgentId = right.agentId ?? '';
+    if (leftAgentId !== rightAgentId) {
+      return leftAgentId < rightAgentId ? -1 : 1;
+    }
+    if (left.targetHash === right.targetHash) {
+      return 0;
+    }
+    return left.targetHash < right.targetHash ? -1 : 1;
+  });
   return { version: 1, targets };
 }
 

@@ -382,6 +382,25 @@ describe('stateful code approval target binding', () => {
     expect(() => assertCodeExecutionApprovalBinding(binding, [second, first])).not.toThrow();
   });
 
+  it('deduplicates snapshots and orders targets independently of replica locale', () => {
+    const laterByCodeUnit = {
+      id: 'agent-ä',
+      codeExecutionContext: context({ bridgeWorkerId: 'worker-umlaut' }),
+    };
+    const earlierByCodeUnit = {
+      id: 'agent-z',
+      codeExecutionContext: context({ bridgeWorkerId: 'worker-z' }),
+    };
+
+    const binding = captureCodeExecutionApprovalBinding([
+      laterByCodeUnit,
+      earlierByCodeUnit,
+      earlierByCodeUnit,
+    ]);
+
+    expect(binding?.targets.map((target) => target.agentId)).toEqual(['agent-z', 'agent-ä']);
+  });
+
   it.each([
     ['route', { executionRouteKey: 'stateful:route-b' }],
     ['worker', { bridgeWorkerId: 'worker-b' }],
