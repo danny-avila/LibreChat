@@ -3953,14 +3953,56 @@ describe('MCPConnectionFactory', () => {
       expect(result.connection).toBe(mockConnectionInstance);
     });
 
+    it('forces one direct bearer refresh when the initial connection handshake rejects it', async () => {
+      const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+      const rejectedConnection = {
+        ...mockConnectionInstance,
+        connect: jest.fn().mockRejectedValue(authError),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as jest.Mocked<MCPConnection>;
+      const refreshedConnection = {
+        ...mockConnectionInstance,
+        connect: jest.fn().mockResolvedValue(undefined),
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as jest.Mocked<MCPConnection>;
+      mockMCPConnection
+        .mockImplementationOnce(() => rejectedConnection)
+        .mockImplementationOnce(() => refreshedConnection);
+      mockProcessMCPEnv.mockImplementation(({ options }) => options);
+      const upstreamTokenProvider = jest
+        .fn()
+        .mockResolvedValueOnce({ access_token: 'stale-token' })
+        .mockResolvedValueOnce({ access_token: 'fresh-token' });
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://mcp.example.com',
+        source: 'yaml' as const,
+        openidBearerRecovery: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      } as t.MCPOptions;
+
+      const connection = await MCPConnectionFactory.create(
+        { serverName: 'direct-bearer', serverConfig },
+        { user: mockUser, upstreamTokenProvider },
+      );
+
+      expect(connection).toBe(refreshedConnection);
+      expect(rejectedConnection.connect).toHaveBeenCalledTimes(1);
+      expect(rejectedConnection.dispose).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+    });
+
     it('replaces one direct OpenID bearer connection and rediscovers after tools/list rejects it', async () => {
       const staleError = Object.assign(new Error('unauthorized'), { status: 401 });
       const firstConnection = {
         ...mockConnectionInstance,
         connect: jest.fn().mockResolvedValue(undefined),
         isConnected: jest.fn().mockResolvedValue(true),
-        fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: false }),
-        getLastToolListAuthenticationError: jest.fn().mockReturnValue(staleError),
+        fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+          tools: [],
+          complete: false,
+          authenticationError: staleError,
+        }),
         dispose: jest.fn().mockResolvedValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       const refreshedConnection = {
@@ -3970,7 +4012,6 @@ describe('MCPConnectionFactory', () => {
         fetchOrderedToolsSnapshot: jest
           .fn()
           .mockResolvedValue({ tools: mockTools, complete: true }),
-        getLastToolListAuthenticationError: jest.fn().mockReturnValue(undefined),
       } as unknown as jest.Mocked<MCPConnection>;
       mockMCPConnection
         .mockImplementationOnce(() => firstConnection)
@@ -4014,8 +4055,11 @@ describe('MCPConnectionFactory', () => {
           ...mockConnectionInstance,
           connect: jest.fn().mockResolvedValue(undefined),
           isConnected: jest.fn().mockResolvedValue(true),
-          fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: false }),
-          getLastToolListAuthenticationError: jest.fn().mockReturnValue(authError),
+          fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+            tools: [],
+            complete: false,
+            authenticationError: authError,
+          }),
           dispose: jest.fn().mockResolvedValue(undefined),
         }) as unknown as jest.Mocked<MCPConnection>;
       mockMCPConnection
@@ -4042,6 +4086,41 @@ describe('MCPConnectionFactory', () => {
       ).rejects.toBeInstanceOf(MCPAuthenticationRejectedError);
       expect(upstreamTokenProvider).toHaveBeenCalledTimes(2);
       expect(mockMCPConnection).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not force-refresh after an authentication rejection when discovery was cancelled', async () => {
+      const controller = new AbortController();
+      const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+      const rejectedConnection = {
+        ...mockConnectionInstance,
+        connect: jest.fn().mockResolvedValue(undefined),
+        isConnected: jest.fn().mockResolvedValue(true),
+        fetchOrderedToolsSnapshot: jest.fn().mockImplementation(async () => {
+          controller.abort();
+          return { tools: [], complete: false, authenticationError: authError };
+        }),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as jest.Mocked<MCPConnection>;
+      mockMCPConnection.mockImplementationOnce(() => rejectedConnection);
+      mockProcessMCPEnv.mockImplementation(({ options }) => options);
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'stale-token' });
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://mcp.example.com',
+        source: 'yaml' as const,
+        openidBearerRecovery: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      } as t.MCPOptions;
+
+      const result = await MCPConnectionFactory.discoverTools(
+        { serverName: 'direct-bearer', serverConfig },
+        { user: mockUser, upstreamTokenProvider, signal: controller.signal },
+      );
+
+      expect(result.tools).toBeNull();
+      expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
+      expect(mockMCPConnection).toHaveBeenCalledTimes(1);
     });
 
     it('does not expose an incomplete discovery snapshot as authoritative', async () => {

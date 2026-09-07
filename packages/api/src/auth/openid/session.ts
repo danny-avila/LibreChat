@@ -1867,7 +1867,28 @@ export function createOpenIDSessionRefreshService(
       );
     }
 
-    const inFlight = inFlightRefreshes.get(key);
+    const forcedKey = `${key}:forced`;
+    /** A rejection-driven refresh must not join a normal flight that may merely reuse
+     * the rejected-but-unexpired token. Join and publish that flight first, then force
+     * a distinct refresh so rotating refresh-token state remains serialized. */
+    const normalFlight = inFlightRefreshes.get(key);
+    if (options.forceRefresh && normalFlight) {
+      await refreshOpenIDSession(req, res, user, tokenPreference, identityContext, {
+        ...options,
+        forceRefresh: false,
+      });
+      /** The normal flight is resolved at this point. Remove it defensively before
+       * the forced pass so promise-cleanup scheduling cannot make us rejoin it. */
+      if (inFlightRefreshes.get(key) === normalFlight) {
+        inFlightRefreshes.delete(key);
+      }
+      return refreshOpenIDSession(req, res, user, tokenPreference, identityContext, options);
+    }
+
+    /** Normal callers may safely join a forced flight and receive its fresher result. */
+    const inFlightKey = !options.forceRefresh && inFlightRefreshes.has(forcedKey) ? forcedKey : key;
+    const ownedFlightKey = options.forceRefresh ? forcedKey : inFlightKey;
+    const inFlight = inFlightRefreshes.get(ownedFlightKey);
     if (inFlight) {
       const predecessorRefreshToken = req?.session?.openidTokens?.refreshToken;
       const sharedFlightKey = createOpenIDRefreshFlightKey({
@@ -1876,7 +1897,9 @@ export function createOpenIDSessionRefreshService(
         refreshToken: predecessorRefreshToken,
         identityContext,
       });
-      logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(key)})`);
+      logger.debug(
+        `[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(ownedFlightKey)})`,
+      );
       const resolvedTokens = await inFlight;
       /**
        * The leader mutated only its own request's session. Copy the resolved
@@ -1931,11 +1954,11 @@ export function createOpenIDSessionRefreshService(
       options.forceRefresh,
       options.deferPublication,
     ).finally(() => {
-      if (inFlightRefreshes.get(key) === promise) {
-        inFlightRefreshes.delete(key);
+      if (inFlightRefreshes.get(ownedFlightKey) === promise) {
+        inFlightRefreshes.delete(ownedFlightKey);
       }
     });
-    inFlightRefreshes.set(key, promise);
+    inFlightRefreshes.set(ownedFlightKey, promise);
     /** Swallow rejection on the cleanup chain; the original is delivered to the awaiter. */
     promise.catch(() => {});
     return promise;

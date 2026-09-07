@@ -14,6 +14,7 @@ import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
+import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { isEnabled } from '~/utils';
 
 /**
@@ -123,6 +124,11 @@ export class MCPServerInspector {
   }
 
   private async detectOAuth(): Promise<void> {
+    if (isDirectOpenIDBearerRecoveryEnabled(this.config)) {
+      this.config.requiresOAuth = false;
+      this.config.oauthMetadata = null;
+      return;
+    }
     if (this.config.requiresOAuth != null) return;
     if (hasRuntimeUrlPlaceholders(this.config)) return;
     if (this.config.url == null || this.config.startup === false) {

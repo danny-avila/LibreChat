@@ -1,7 +1,7 @@
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { ValidationError, MongoServerError, CustomError } from '~/types';
-import { MCPAuthenticationRejectedError } from '~/mcp/errors';
+import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { ErrorController, createCustomError } from './error';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
@@ -266,6 +266,21 @@ describe('ErrorController', () => {
         message: error.message,
         retryable: true,
         connectionRefreshed: true,
+      });
+    });
+  });
+
+  describe('MCPAuthenticationRefreshError handling', () => {
+    it('returns a retryable service-unavailable response', () => {
+      const error = new MCPAuthenticationRefreshError(new Error('identity provider unavailable'));
+
+      ErrorController(error, mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(503);
+      expect(mockRes.send).toHaveBeenCalledWith({
+        code: 'MCP_AUTHENTICATION_REFRESH_FAILED',
+        message: error.message,
+        retryable: true,
       });
     });
   });

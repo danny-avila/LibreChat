@@ -2,7 +2,7 @@ import { ErrorTypes } from 'librechat-data-provider';
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
-import { MCPAuthenticationRejectedError } from '~/mcp/errors';
+import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { buildTenantIsolationErrorLogContext } from './auth';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
@@ -98,6 +98,15 @@ export const ErrorController = (
         message: err.message,
         retryable: err.retryable,
         connectionRefreshed: err.connectionRefreshed,
+      });
+    }
+
+    if (err instanceof MCPAuthenticationRefreshError) {
+      logger.warn('MCP bearer refresh temporarily unavailable: ' + err.message);
+      return res.status(err.statusCode).send({
+        code: err.code,
+        message: err.message,
+        retryable: err.retryable,
       });
     }
 

@@ -1,6 +1,9 @@
 import type { UpstreamTokenProvider } from './oauth/obo';
 import type { MCPOptions } from './types';
+import { isRetryableOboExchangeError } from './oauth/obo';
+import { MCPAuthenticationRefreshError } from './errors';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
+import { isAbortError } from '~/utils/errors';
 
 const OPENID_ACCESS_TOKEN_PATTERN = /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|TOKEN)\}\}/;
 const OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN = /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|TOKEN)\}\}/g;
@@ -21,14 +24,11 @@ function getAuthorizationHeader(
   const entry = Object.entries(config.headers).find(
     ([name]) => name.toLowerCase() === 'authorization',
   );
-  if (!entry || !OPENID_ACCESS_TOKEN_PATTERN.test(entry[1])) {
-    return null;
-  }
-  return { name: entry[0], value: entry[1] };
+  return entry ? { name: entry[0], value: entry[1] } : null;
 }
 
-/** Whether an operator explicitly trusted this direct OpenID bearer configuration to recover. */
-export function usesDirectOpenIDBearerRecovery(config: DirectBearerConfig): boolean {
+/** Whether a config retains the trusted direct-bearer mode after placeholder resolution. */
+export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig): boolean {
   if (config.openidBearerRecovery !== true || config.dbId != null) {
     return false;
   }
@@ -36,6 +36,16 @@ export function usesDirectOpenIDBearerRecovery(config: DirectBearerConfig): bool
     return false;
   }
   return getAuthorizationHeader(config) != null;
+}
+
+/** Whether a trusted direct-bearer config still needs its live placeholder resolved. */
+export function usesDirectOpenIDBearerRecovery(config: DirectBearerConfig): boolean {
+  const authorization = getAuthorizationHeader(config);
+  return (
+    isDirectOpenIDBearerRecoveryEnabled(config) &&
+    authorization != null &&
+    OPENID_ACCESS_TOKEN_PATTERN.test(authorization.value)
+  );
 }
 
 /** Resolves the live bearer before a connection or request reaches the MCP transport. */
@@ -61,6 +71,12 @@ export async function resolveDirectOpenIDBearerConfig({
   try {
     tokens = await upstreamTokenProvider({ forceRefresh });
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    if (isRetryableOboExchangeError(error)) {
+      throw new MCPAuthenticationRefreshError(error);
+    }
     const reauthError = new OpenIDReauthRequiredError(
       'The OpenID session could not refresh the MCP bearer credential. Please sign in again.',
     );
@@ -68,6 +84,11 @@ export async function resolveDirectOpenIDBearerConfig({
     throw reauthError;
   }
   if (!tokens?.access_token) {
+    /** A verified bearer-authenticated request has no Express session to refresh. Its
+     * strategy-populated user token remains the authoritative non-forced fallback. */
+    if (!forceRefresh) {
+      return config;
+    }
     throw new OpenIDReauthRequiredError(
       'The OpenID session has no usable MCP bearer credential. Please sign in again.',
     );
@@ -83,7 +104,7 @@ export async function resolveDirectOpenIDBearerConfig({
       ...config.headers,
       [authorization.name]: authorization.value.replace(
         OPENID_ACCESS_TOKEN_REPLACEMENT_PATTERN,
-        tokens.access_token,
+        () => tokens.access_token!,
       ),
     },
   };

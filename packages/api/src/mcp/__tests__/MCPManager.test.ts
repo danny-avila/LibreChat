@@ -3120,6 +3120,83 @@ describe('MCPManager', () => {
         expect.objectContaining({ forceNew: true, serverConfig }),
       );
     });
+
+    it('installs an ephemeral replacement in the request-scoped store without leaking the old connection', async () => {
+      const rejection = new Error('HTTP 401 Unauthorized');
+      const scopedConfig = {
+        ...serverConfig,
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      };
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        stopReconnecting: jest.fn(),
+        isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
+        timeout: 30000,
+        client: { request: jest.fn().mockRejectedValue(rejection) },
+      } as unknown as MCPConnection;
+      const replacement = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const requestScopedConnections = {
+        connections: new Map([[`${user.id}:${serverName}`, connection]]),
+        pending: new Map(),
+      };
+      const upstreamTokenProvider = jest
+        .fn()
+        .mockResolvedValueOnce({ access_token: 'current-token' })
+        .mockResolvedValueOnce({ access_token: 'refreshed-token' });
+
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (config) => config);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(scopedConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const disposeEvicted = jest
+        .spyOn(
+          manager as unknown as {
+            disposeEvictedConnection: (
+              connection: MCPConnection,
+              logPrefix: string,
+            ) => Promise<void>;
+          },
+          'disposeEvictedConnection',
+        )
+        .mockResolvedValue(undefined);
+      jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValueOnce(connection)
+        .mockImplementationOnce(async () => {
+          requestScopedConnections.connections.set(`${user.id}:${serverName}`, replacement);
+          return replacement;
+        });
+
+      await expect(
+        manager.callTool({
+          user,
+          serverName,
+          serverConfig: scopedConfig,
+          toolName: 'mutating_tool',
+          provider: 'openai',
+          requestBody: { conversationId: 'conversation-1' } as Parameters<
+            typeof manager.callTool
+          >[0]['requestBody'],
+          requestScopedConnections,
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+          upstreamTokenProvider,
+        }),
+      ).rejects.toMatchObject({ code: 'MCP_AUTHENTICATION_REJECTED' });
+
+      expect(disposeEvicted).toHaveBeenCalledWith(
+        connection,
+        expect.stringContaining('Request-scoped'),
+      );
+      expect(requestScopedConnections.connections.get(`${user.id}:${serverName}`)).toBe(
+        replacement,
+      );
+      expect(connection.client.request).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getConnection', () => {

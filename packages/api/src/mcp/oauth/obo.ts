@@ -118,7 +118,7 @@ export class OboTokenResolutionError extends Error {
   }
 }
 
-function isRetryableOboExchangeError(error: unknown): boolean {
+export function isRetryableOboExchangeError(error: unknown): boolean {
   const taggedRetryable = getErrorRetryableFlag(error);
   if (taggedRetryable != null) {
     return taggedRetryable;

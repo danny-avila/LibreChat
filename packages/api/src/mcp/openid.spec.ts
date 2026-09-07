@@ -1,5 +1,6 @@
 import type { MCPOptions } from './types';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
+import { MCPAuthenticationRefreshError } from './errors';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 const directBearerConfig = (
@@ -51,12 +52,49 @@ describe('direct OpenID bearer recovery', () => {
     expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
   });
 
-  it('returns a transport-neutral reauthentication error when refresh is unavailable', async () => {
+  it('preserves the verified request bearer fallback when no session is available', async () => {
+    const config = directBearerConfig('yaml');
+
+    await expect(
+      resolveDirectOpenIDBearerConfig({
+        config,
+        upstreamTokenProvider: jest.fn().mockResolvedValue(null),
+      }),
+    ).resolves.toBe(config);
+  });
+
+  it('returns a transport-neutral reauthentication error when forced refresh is unavailable', async () => {
     await expect(
       resolveDirectOpenIDBearerConfig({
         config: directBearerConfig('yaml'),
         upstreamTokenProvider: jest.fn().mockResolvedValue(null),
+        forceRefresh: true,
       }),
     ).rejects.toBeInstanceOf(OpenIDReauthRequiredError);
+  });
+
+  it('preserves transient provider failures for the calling transport', async () => {
+    const transient = Object.assign(new Error('service unavailable'), { status: 503 });
+
+    await expect(
+      resolveDirectOpenIDBearerConfig({
+        config: directBearerConfig('yaml'),
+        upstreamTokenProvider: jest.fn().mockRejectedValue(transient),
+      }),
+    ).rejects.toMatchObject({
+      name: 'MCPAuthenticationRefreshError',
+      cause: transient,
+    } satisfies Partial<MCPAuthenticationRefreshError>);
+  });
+
+  it('substitutes opaque access tokens without interpreting replacement patterns', async () => {
+    const resolved = await resolveDirectOpenIDBearerConfig({
+      config: directBearerConfig('yaml'),
+      upstreamTokenProvider: jest.fn().mockResolvedValue({ access_token: "opaque-$&-$`-$'" }),
+    });
+
+    expect('headers' in resolved ? resolved.headers?.Authorization : undefined).toBe(
+      "Bearer opaque-$&-$`-$'",
+    );
   });
 });

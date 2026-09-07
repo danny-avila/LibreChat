@@ -707,6 +707,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd,
     customUserVars,
     requestBody,
+    requestScopedConnections,
     graphTokenResolver,
     upstreamTokenProvider,
     oboIdentityContext,
@@ -722,6 +723,7 @@ Please follow these instructions when using tools from the respective MCP server
     oauthEnd?: () => Promise<void>;
     customUserVars?: Record<string, string>;
     requestBody?: RequestBody;
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore;
     graphTokenResolver?: GraphTokenResolver;
     upstreamTokenProvider?: UpstreamTokenProvider;
     oboIdentityContext?: AuthIdentityContext;
@@ -740,7 +742,15 @@ Please follow these instructions when using tools from the respective MCP server
       });
       connection.stopReconnecting();
       await this.waitForConnectionBorrowersToDrain(connection);
-      await this.getUserConnection({
+      const requestConnectionKey = `${user.id}:${serverName}`;
+      if (requestScopedConnections?.connections.get(requestConnectionKey) === connection) {
+        requestScopedConnections.connections.delete(requestConnectionKey);
+        await this.disposeEvictedConnection(
+          connection,
+          `[MCP][Request-scoped: ${requestConnectionKey}]`,
+        );
+      }
+      const replacement = await this.getUserConnection({
         serverName,
         serverConfig,
         user,
@@ -751,11 +761,17 @@ Please follow these instructions when using tools from the respective MCP server
         oauthEnd,
         customUserVars,
         requestBody,
+        requestScopedConnections,
         graphTokenResolver,
         upstreamTokenProvider,
         oboIdentityContext,
-        signal,
       });
+      if (requiresEphemeralUserConnection(serverConfig) && !requestScopedConnections) {
+        await this.disposeEvictedConnection(
+          replacement,
+          `[MCP][User: ${user.id}][${serverName}] Unowned recovery replacement`,
+        );
+      }
     });
     const recoveryEntry = { promise: recovery, allowsTakeover: false };
     this.oauthRecoveries.set(connection, recoveryEntry);
@@ -1215,6 +1231,7 @@ Please follow these instructions when using tools from the respective MCP server
             oauthEnd,
             customUserVars,
             requestBody,
+            requestScopedConnections,
             graphTokenResolver,
             upstreamTokenProvider,
             oboIdentityContext,
@@ -1301,6 +1318,7 @@ Please follow these instructions when using tools from the respective MCP server
               oauthEnd,
               customUserVars,
               requestBody,
+              requestScopedConnections,
               graphTokenResolver,
               upstreamTokenProvider,
               oboIdentityContext,

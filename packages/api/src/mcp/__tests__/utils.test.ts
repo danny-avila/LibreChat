@@ -20,6 +20,7 @@ import {
   isUserSourced,
   validateMCPServerConfig,
   requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
   isChatSelectableMCPServer,
   filterChatSelectableMCPServers,
 } from '~/mcp/utils';
@@ -686,6 +687,21 @@ describe('isUserSourced', () => {
 
   it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
     expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('requiresOAuthMachinery', () => {
+  it('suppresses MCP OAuth for a trusted direct OpenID bearer even if inspection stamped OAuth', () => {
+    expect(
+      requiresOAuthMachinery({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        requiresOAuth: true,
+        openidBearerRecovery: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      }),
+    ).toBe(false);
   });
 });
 

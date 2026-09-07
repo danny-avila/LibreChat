@@ -1000,6 +1000,8 @@ type MCPListToolsResult = Awaited<ReturnType<Client['listTools']>>;
 export interface MCPToolsSnapshot {
   tools: MCPListToolsResult['tools'];
   complete: boolean;
+  /** Authentication rejection observed by this exact catalog read. */
+  authenticationError?: unknown;
   /** Ordering ticket reserved before this snapshot's `tools/list`; app scope only. */
   publicationRevision?: string;
   /** Set when reserving that ticket failed, which is retryable — unlike a scope that simply
@@ -1019,8 +1021,6 @@ export class MCPConnection extends EventEmitter {
   private isReconnecting = false;
   private isInitializing = false;
   private reconnectAttempts = 0;
-  /** Preserves a tools/list bearer rejection without treating it as server-health failure. */
-  private lastToolListAuthenticationError?: unknown;
   /** Set once per transport, so only the first of a conflict's repeat reports escalates. */
   private reportedStandaloneSseConflict = false;
   private agents: Dispatcher[] = [];
@@ -1039,7 +1039,7 @@ export class MCPConnection extends EventEmitter {
   private toolListChangeGeneration = 0;
   private handledToolListChangeGeneration = 0;
   private toolListRefreshFailures = 0;
-  private toolListRefreshPromise: Promise<void> | null = null;
+  private toolListRefreshPromise: Promise<MCPToolsSnapshot | undefined> | null = null;
   private toolListRefreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private toolListRefreshEpoch = 0;
   private toolListRefreshSuspended = false;
@@ -1816,11 +1816,11 @@ export class MCPConnection extends EventEmitter {
   }
 
   /** Queues a live tool-list refresh through the same coalescing path used by notifications. */
-  public async refreshToolList(): Promise<void> {
+  public async refreshToolList(): Promise<MCPToolsSnapshot | undefined> {
     this.toolListChangeGeneration++;
     this.clearToolListRefreshRetry();
     this.startToolListRefresh();
-    await this.toolListRefreshPromise;
+    return (await this.toolListRefreshPromise) ?? undefined;
   }
 
   private clearToolListRefreshRetry(): void {
@@ -1872,14 +1872,16 @@ export class MCPConnection extends EventEmitter {
     });
   }
 
-  private async refreshChangedTools(): Promise<void> {
+  private async refreshChangedTools(): Promise<MCPToolsSnapshot | undefined> {
     const refreshEpoch = this.toolListRefreshEpoch;
+    let latestSnapshot: MCPToolsSnapshot | undefined;
     while (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
       const targetGeneration = this.toolListChangeGeneration;
       const snapshot: MCPToolsSnapshot =
         this.client.getServerCapabilities()?.tools == null
           ? { tools: [], complete: true, ...(await this.reserveToolsPublicationRevision()) }
           : await this.fetchToolsSnapshot();
+      latestSnapshot = snapshot;
       if (
         this.toolListRefreshEpoch !== refreshEpoch ||
         this.toolListRefreshSuspended ||
@@ -1889,8 +1891,9 @@ export class MCPConnection extends EventEmitter {
       }
       /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
       if (!snapshot.complete || snapshot.orderingUnavailable) {
-        if (this.lastToolListAuthenticationError) {
-          return;
+        if (snapshot.authenticationError) {
+          this.toolListRefreshSuspended = true;
+          return snapshot;
         }
         this.toolListRefreshFailures++;
         this.scheduleToolListRefreshRetry();
@@ -1907,6 +1910,7 @@ export class MCPConnection extends EventEmitter {
       };
       this.dispatchToolsChanged(snapshot.tools, snapshot.publicationRevision);
     }
+    return latestSnapshot;
   }
 
   private dispatchToolsChanged(
@@ -2424,7 +2428,6 @@ export class MCPConnection extends EventEmitter {
     deadlineMs?: number,
     signal?: AbortSignal,
   ): Promise<MCPToolsSnapshot> {
-    this.lastToolListAuthenticationError = undefined;
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
@@ -2444,9 +2447,10 @@ export class MCPConnection extends EventEmitter {
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     let totalBytes = 0;
-    const snapshot = (complete: boolean): MCPToolsSnapshot => ({
+    const snapshot = (complete: boolean, authenticationError?: unknown): MCPToolsSnapshot => ({
       tools: allTools,
       complete,
+      ...(authenticationError != null && { authenticationError }),
       ...ordering,
     });
 
@@ -2468,10 +2472,12 @@ export class MCPConnection extends EventEmitter {
         return snapshot(false);
       }
 
-      const result = await this.listToolsPage(cursor, remainingMs, signal);
-      if (result == null) {
+      let result: MCPListToolsResult;
+      try {
+        result = await this.listToolsPage(cursor, remainingMs, signal);
+      } catch (error) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
-        return snapshot(false);
+        return snapshot(false, isOAuthAuthenticationError(error) ? error : undefined);
       }
 
       for (const tool of result.tools) {
@@ -2652,12 +2658,12 @@ export class MCPConnection extends EventEmitter {
     );
   }
 
-  /** Fetches a single `tools/list` page, returning null (and logging) on failure so pagination can stop gracefully. */
+  /** Fetches one `tools/list` page. The public snapshot interface classifies any rejection. */
   private async listToolsPage(
     cursor: string | undefined,
     timeoutMs: number,
     signal?: AbortSignal,
-  ): Promise<MCPListToolsResult | null> {
+  ): Promise<MCPListToolsResult> {
     try {
       return await this.client.listTools(cursor != null ? { cursor } : undefined, {
         timeout: timeoutMs,
@@ -2665,16 +2671,9 @@ export class MCPConnection extends EventEmitter {
         signal,
       });
     } catch (error) {
-      if (isOAuthAuthenticationError(error)) {
-        this.lastToolListAuthenticationError = error;
-      }
       this.emitError(error, 'Failed to fetch tools');
-      return null;
+      throw error;
     }
-  }
-
-  public getLastToolListAuthenticationError(): unknown {
-    return this.lastToolListAuthenticationError;
   }
 
   async fetchPrompts(): Promise<t.MCPPrompt[]> {

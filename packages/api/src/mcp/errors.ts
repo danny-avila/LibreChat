@@ -8,6 +8,7 @@ export const MCPErrorCodes = {
   INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
   OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
   AUTHENTICATION_REJECTED: 'MCP_AUTHENTICATION_REJECTED',
+  AUTHENTICATION_REFRESH_FAILED: 'MCP_AUTHENTICATION_REFRESH_FAILED',
 } as const;
 
 export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
@@ -306,6 +307,22 @@ export class MCPAuthenticationRejectedError extends Error {
     this.retryable = connectionRefreshed;
     this.cause = cause;
     Object.setPrototypeOf(this, MCPAuthenticationRejectedError.prototype);
+  }
+}
+
+/** A temporary upstream-session refresh failure, distinct from expired login state. */
+export class MCPAuthenticationRefreshError extends Error {
+  public readonly code: 'MCP_AUTHENTICATION_REFRESH_FAILED' =
+    MCPErrorCodes.AUTHENTICATION_REFRESH_FAILED;
+
+  public readonly statusCode = 503;
+  public readonly retryable = true;
+
+  constructor(cause?: unknown) {
+    super('The OpenID session could not refresh the MCP bearer credential temporarily.');
+    this.name = 'MCPAuthenticationRefreshError';
+    this.cause = cause;
+    Object.setPrototypeOf(this, MCPAuthenticationRefreshError.prototype);
   }
 }
 

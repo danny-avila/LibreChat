@@ -2210,6 +2210,45 @@ describe('OpenIDSessionRefresh', () => {
       );
       expect(result.access_token).toBe('forced-access-token');
     });
+
+    it('waits for a token-reuse flight before starting a rejection-driven forced refresh', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const sessionTokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-force-after-reuse',
+      };
+      let releaseReuse;
+      assertOpenIDRefreshSessionGenerationAvailable.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseReuse = resolve;
+        }),
+      );
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'forced-after-reuse',
+        expires_in: 3600,
+      });
+      const provider = createOpenIDSessionTokenProvider({
+        req: buildReq(sessionTokens),
+        user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
+      });
+
+      const reuse = provider();
+      await Promise.resolve();
+      const forced = provider({ forceRefresh: true });
+      await Promise.resolve();
+
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+      releaseReuse();
+      await expect(reuse).resolves.toEqual(
+        expect.objectContaining({ refresh_token: sessionTokens.refreshToken }),
+      );
+      await expect(forced).resolves.toEqual(
+        expect.objectContaining({ access_token: 'forced-after-reuse' }),
+      );
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+    });
   });
 
   /**
