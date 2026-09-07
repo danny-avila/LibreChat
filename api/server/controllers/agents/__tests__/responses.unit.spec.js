@@ -662,7 +662,7 @@ describe('createResponse controller', () => {
     );
 
     const request = createResponse(req, res);
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
     res.once.mock.calls[0][1]();
     finishEnrollment(mockExecution);
     await request;
@@ -2298,6 +2298,63 @@ describe('createResponse controller', () => {
       );
     });
 
+    it('starts agent and stored-response lookups together before enrollment', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const conversationId = '11111111-1111-4111-8111-111111111111';
+      const responseMessage = {
+        messageId: 'resp_previous',
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Previous output',
+      };
+      const reference = {
+        conversation: { conversationId, user: 'user-123' },
+        conversationId,
+        responseMessage,
+      };
+      let finishAgentLookup;
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Continue.',
+          stream: false,
+          previous_response_id: responseMessage.messageId,
+        },
+      });
+      db.getAgent.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishAgentLookup = resolve;
+          }),
+      );
+      api.resolveStoredResponse.mockResolvedValueOnce({ status: 'found', reference });
+      db.getMessages.mockResolvedValueOnce([
+        { messageId: 'existing', isCreatedByUser: false, text: 'Existing history' },
+      ]);
+
+      const pendingResponse = createResponse(req, res);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(db.getAgent).toHaveBeenCalledWith({ id: 'agent-123' });
+      expect(api.resolveStoredResponse).toHaveBeenCalledWith(
+        { getConvo: db.getConvo, getMessage: db.getMessage },
+        'user-123',
+        responseMessage.messageId,
+      );
+      expect(mockEnrollAgentExecution).not.toHaveBeenCalled();
+
+      finishAgentLookup({
+        id: 'agent-123',
+        name: 'Test Agent',
+        provider: 'anthropic',
+        model_parameters: {},
+      });
+      await pendingResponse;
+
+      expect(mockEnrollAgentExecution).toHaveBeenCalledTimes(1);
+    });
+
     it('loads history while post-enrollment conversation revalidation is pending', async () => {
       const api = require('@librechat/api');
       const db = require('~/models');
@@ -2408,6 +2465,47 @@ describe('createResponse controller', () => {
         'not_found',
       );
       expect(require('@librechat/api').createRun).not.toHaveBeenCalled();
+    });
+
+    it('returns a server error when continuation history cannot be read', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const conversationId = '11111111-1111-4111-8111-111111111111';
+      const reference = {
+        conversation: { conversationId, user: 'user-123' },
+        conversationId,
+        responseMessage: null,
+      };
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Continue.',
+          stream: false,
+          previous_response_id: conversationId,
+        },
+      });
+      api.resolveStoredResponse.mockResolvedValueOnce({ status: 'found', reference });
+      api.revalidateStoredResponseConversation.mockResolvedValueOnce({
+        status: 'found',
+        reference,
+      });
+      db.getMessages.mockRejectedValueOnce(new Error('history read failed'));
+
+      await createResponse(req, res);
+
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        'history read failed',
+        'server_error',
+      );
+      expect(api.sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        404,
+        expect.any(String),
+        'not_found',
+      );
+      expect(api.createRun).not.toHaveBeenCalled();
     });
 
     it('rejects a remote response continuation of a view-only subagent thread', async () => {

@@ -321,71 +321,66 @@ function extractResponseRequestContent(request, messageFragments) {
  * @returns {Promise<Array>} Messages from the conversation
  */
 async function loadPreviousMessages(conversationId, userId, responseMessageId) {
-  try {
-    const messages = await db.getMessages({
-      conversationId,
-      user: userId,
-      ...buildRetentionVisibilityFilter(),
-    });
-    if (!messages || messages.length === 0) {
-      return [];
-    }
-
-    // Convert stored messages to internal format
-    return selectStoredResponseHistory(messages, responseMessageId).flatMap((msg) => {
-      const responsesOutput = msg.metadata?.responsesOutput;
-      if (Array.isArray(responsesOutput)) {
-        const restoredOutput = convertToInternalMessages(responsesOutput);
-        if (restoredOutput.length > 0) {
-          return restoredOutput.map((outputMessage) => ({
-            ...outputMessage,
-            messageId: msg.messageId,
-            isCreatedByUser: false,
-            isUserSubmitted: false,
-          }));
-        }
-      }
-      const responsesInput = msg.metadata?.responsesInput;
-      let role = responsesInput?.role;
-      if (!['system', 'user', 'assistant', 'tool'].includes(role)) {
-        role = msg.isCreatedByUser ? 'user' : 'assistant';
-      }
-      let text;
-      if (typeof msg.text === 'string') {
-        text = msg.text;
-      } else if (msg.text != null) {
-        text = String(msg.text);
-      }
-      const internalMsg = {
-        role,
-        content: Array.isArray(msg.content) ? msg.content : (text ?? ''),
-        messageId: msg.messageId,
-        isCreatedByUser: msg.isCreatedByUser === true,
-        ...(text !== undefined && { text }),
-        ...(typeof msg.isUserSubmitted === 'boolean' && {
-          isUserSubmitted: msg.isUserSubmitted,
-        }),
-        ...(Array.isArray(msg.userSubmittedPaths) && {
-          userSubmittedPaths: msg.userSubmittedPaths,
-        }),
-        ...(Array.isArray(msg.userSubmittedMessageFieldPaths) && {
-          userSubmittedMessageFieldPaths: msg.userSubmittedMessageFieldPaths,
-        }),
-        ...(typeof responsesInput?.name === 'string' && { name: responsesInput.name }),
-        ...(typeof responsesInput?.tool_call_id === 'string' && {
-          tool_call_id: responsesInput.tool_call_id,
-        }),
-        ...(Array.isArray(responsesInput?.tool_calls) && {
-          tool_calls: responsesInput.tool_calls,
-        }),
-      };
-
-      return [internalMsg];
-    });
-  } catch (error) {
-    logger.error('[Responses API] Error loading previous messages:', getSafeErrorMetadata(error));
+  const messages = await db.getMessages({
+    conversationId,
+    user: userId,
+    ...buildRetentionVisibilityFilter(),
+  });
+  if (!messages || messages.length === 0) {
     return [];
   }
+
+  // Convert stored messages to internal format
+  return selectStoredResponseHistory(messages, responseMessageId).flatMap((msg) => {
+    const responsesOutput = msg.metadata?.responsesOutput;
+    if (Array.isArray(responsesOutput)) {
+      const restoredOutput = convertToInternalMessages(responsesOutput);
+      if (restoredOutput.length > 0) {
+        return restoredOutput.map((outputMessage) => ({
+          ...outputMessage,
+          messageId: msg.messageId,
+          isCreatedByUser: false,
+          isUserSubmitted: false,
+        }));
+      }
+    }
+    const responsesInput = msg.metadata?.responsesInput;
+    let role = responsesInput?.role;
+    if (!['system', 'user', 'assistant', 'tool'].includes(role)) {
+      role = msg.isCreatedByUser ? 'user' : 'assistant';
+    }
+    let text;
+    if (typeof msg.text === 'string') {
+      text = msg.text;
+    } else if (msg.text != null) {
+      text = String(msg.text);
+    }
+    const internalMsg = {
+      role,
+      content: Array.isArray(msg.content) ? msg.content : (text ?? ''),
+      messageId: msg.messageId,
+      isCreatedByUser: msg.isCreatedByUser === true,
+      ...(text !== undefined && { text }),
+      ...(typeof msg.isUserSubmitted === 'boolean' && {
+        isUserSubmitted: msg.isUserSubmitted,
+      }),
+      ...(Array.isArray(msg.userSubmittedPaths) && {
+        userSubmittedPaths: msg.userSubmittedPaths,
+      }),
+      ...(Array.isArray(msg.userSubmittedMessageFieldPaths) && {
+        userSubmittedMessageFieldPaths: msg.userSubmittedMessageFieldPaths,
+      }),
+      ...(typeof responsesInput?.name === 'string' && { name: responsesInput.name }),
+      ...(typeof responsesInput?.tool_call_id === 'string' && {
+        tool_call_id: responsesInput.tool_call_id,
+      }),
+      ...(Array.isArray(responsesInput?.tool_calls) && {
+        tool_calls: responsesInput.tool_calls,
+      }),
+    };
+
+    return [internalMsg];
+  });
 }
 
 /**
@@ -750,8 +745,32 @@ const executeResponse = async (envelope, { req, res }) => {
     );
   }
 
-  // Look up the agent
-  const agent = await db.getAgent({ id: agentId });
+  const previousResponseId = request.previous_response_id;
+  if (previousResponseId != null && typeof previousResponseId !== 'string') {
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      'previous_response_id must be a string',
+      'invalid_request',
+    );
+  }
+
+  let agent;
+  let resolution = null;
+  try {
+    [agent, resolution] = await Promise.all([
+      db.getAgent({ id: agentId }),
+      previousResponseId == null
+        ? Promise.resolve(null)
+        : resolveStoredResponse(
+            { getConvo: db.getConvo, getMessage: db.getMessage },
+            principal.userId,
+            previousResponseId,
+          ),
+    ]);
+  } catch (error) {
+    return handleExecutionError({ error, res, appConfig });
+  }
   if (!agent) {
     return sendResponsesErrorResponse(
       res,
@@ -763,25 +782,7 @@ const executeResponse = async (envelope, { req, res }) => {
   }
 
   let previousResponse = null;
-  if (request.previous_response_id != null) {
-    if (typeof request.previous_response_id !== 'string') {
-      return sendResponsesErrorResponse(
-        res,
-        400,
-        'previous_response_id must be a string',
-        'invalid_request',
-      );
-    }
-    let resolution;
-    try {
-      resolution = await resolveStoredResponse(
-        { getConvo: db.getConvo, getMessage: db.getMessage },
-        principal.userId,
-        request.previous_response_id,
-      );
-    } catch (error) {
-      return handleExecutionError({ error, res, appConfig });
-    }
+  if (resolution != null) {
     if (resolution.status === 'read_only') {
       return sendResponsesErrorResponse(
         res,
