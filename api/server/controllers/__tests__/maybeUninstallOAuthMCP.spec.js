@@ -69,6 +69,10 @@ jest.mock('librechat-data-provider', () => ({
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(() => ({
+    acquireLease: jest.fn().mockResolvedValue({
+      generation: 1,
+      release: jest.fn().mockResolvedValue(undefined),
+    }),
     deleteFlow: (...args) => mockDeleteFlow(...args),
   })),
   getMCPServersRegistry: jest.fn(() => ({

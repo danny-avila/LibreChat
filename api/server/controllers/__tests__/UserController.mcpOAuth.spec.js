@@ -141,6 +141,10 @@ function createRequest() {
 
 function setupMCPMocks() {
   const flowManager = {
+    acquireLease: jest.fn().mockResolvedValue({
+      generation: 1,
+      release: jest.fn().mockResolvedValue(undefined),
+    }),
     deleteFlow: jest.fn().mockResolvedValue(true),
   };
   const mcpManager = {
