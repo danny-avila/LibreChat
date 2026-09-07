@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { emptyCheckpoint, INTERRUPT } from '@langchain/langgraph-checkpoint';
+import type { ActorCheckpointScope } from './ownership';
 import {
   getAgentCheckpointer,
   deleteOwnedAgentCheckpoints,
@@ -8,6 +9,7 @@ import {
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
   __resetCheckpointerForTests,
 } from '../checkpointer';
+import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { createOwnedActorCheckpoints } from './actor';
 
 const cfg = { type: 'mongo' as const };
@@ -44,120 +46,187 @@ async function write(namespace: string, graphNamespace = '', paused = false) {
   return checkpoint.id;
 }
 
-test('actor forks and paused subgraphs remain owner-cleanable without TTL or lifecycle evidence', async () => {
+test('registered actor scopes remain readable by the pre-change saver and owner-cleanable without TTL', async () => {
   const owner = createOwnedActorCheckpoints('user', 'tenant');
   const other = createOwnedActorCheckpoints('other', 'tenant');
   const otherTenant = createOwnedActorCheckpoints('user', 'other');
-  const logical = 'event-actor/same-logical';
-  const checkpointId = await write(owner.namespace(logical));
-  const source = { threadId: 'actor-thread', checkpointNs: logical, checkpointId };
+  await owner.register('actor-thread', 'event-actor/head', cfg);
+  const checkpointId = await write('event-actor/head');
+  const source = { threadId: 'actor-thread', checkpointNs: 'event-actor/head', checkpointId };
   const fork = await owner.fork(source, 'event-actor/fork', 'next', cfg);
   expect(fork?.checkpointNs).toBe('event-actor/fork');
-  expect(await owner.capture('actor-thread', 'event-actor/fork', 'next', cfg)).toEqual(fork);
-  await write(owner.namespace('event-actor/fork'), 'nested', true);
-  await write(other.namespace(logical), '', true);
-  await write(otherTenant.namespace(logical), '', true);
+  const saver = (await getAgentCheckpointer(cfg))!;
+  expect(
+    (
+      await saver.getTuple({
+        configurable: {
+          thread_id: 'actor-thread',
+          checkpoint_ns: '',
+          checkpoint_id: fork?.checkpointId,
+          [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: 'event-actor/fork',
+        },
+      })
+    )?.checkpoint.id,
+  ).toBe(fork?.checkpointId);
+  await write('event-actor/fork', 'nested', true);
+  await other.register('actor-thread', 'event-actor/other', cfg);
+  await write('event-actor/other', '', true);
+  await otherTenant.register('actor-thread', 'event-actor/other-tenant', cfg);
+  await write('event-actor/other-tenant', '', true);
   for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
     await mongoose.connection.db!.collection(name).dropIndexes();
   }
   await deleteOwnedAgentCheckpoints('user', 'tenant', ['actor-thread'], cfg);
   for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
     const rows = await mongoose.connection.db!.collection(name).find().toArray();
-    expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.checkpoint_ns).sort()).toEqual(
-      [other.namespace(logical), otherTenant.namespace(logical)].sort(),
-    );
+    expect(rows.map((row) => row.checkpoint_ns).sort()).toEqual([
+      'event-actor/other',
+      'event-actor/other-tenant',
+    ]);
   }
 });
 
-test('legacy heads fork into owned storage while signed legacy pauses keep their pending writes', async () => {
-  const owner = createOwnedActorCheckpoints('user');
-  const checkpointNs = 'event-actor/legacy';
-  const checkpointId = await write(checkpointNs);
-  const source = { threadId: 'actor-thread', checkpointNs, checkpointId };
-  expect(await owner.fork(source, 'event-actor/new', 'next', cfg)).toEqual({
-    ...source,
+test('registration refuses another owner and never adopts an unregistered legacy payload', async () => {
+  const owner = createOwnedActorCheckpoints('owner');
+  const other = createOwnedActorCheckpoints('other');
+  await owner.register('actor-thread', 'event-actor/fresh', cfg);
+  await expect(other.register('actor-thread', 'event-actor/fresh', cfg)).rejects.toThrow();
+  const legacyId = await write('event-actor/legacy', '', true);
+  await expect(owner.register('actor-thread', 'event-actor/legacy', cfg)).rejects.toThrow();
+  expect(await owner.capture('actor-thread', 'event-actor/legacy', 'new', cfg)).toBeNull();
+  await owner.removeOwned({ threadId: 'actor-thread', checkpointNs: 'event-actor/legacy' }, cfg);
+  expect(
+    await mongoose.connection
+      .db!.collection('agent_checkpoints')
+      .findOne({ checkpoint_id: legacyId }),
+  ).not.toBeNull();
+});
+
+test('legacy heads fork without changing the SDK wire namespace', async () => {
+  const owner = createOwnedActorCheckpoints('owner');
+  const checkpointId = await write('event-actor/legacy');
+  const reference = { threadId: 'actor-thread', checkpointNs: 'event-actor/legacy', checkpointId };
+  expect(await owner.fork(reference, 'event-actor/new', 'next', cfg)).toEqual({
+    ...reference,
     checkpointNs: 'event-actor/new',
   });
-  await write(checkpointNs, '', true);
-  expect(await owner.resolveNamespace(source, cfg)).toBe(checkpointNs);
-  expect(await owner.resolveNamespace({ ...source, checkpointNs: 'event-actor/new' }, cfg)).toBe(
-    owner.namespace('event-actor/new'),
-  );
+  expect(await owner.resolveNamespace(reference, cfg)).toBe('event-actor/legacy');
   expect(
-    await owner.resolveNamespace({ ...source, checkpointNs: 'event-actor/missing' }, cfg),
+    await owner.resolveNamespace({ ...reference, checkpointId: 'missing' }, cfg),
   ).toBeUndefined();
-  await owner.remove(source, cfg);
-  await owner.remove({ ...source, checkpointNs: 'event-actor/new' }, cfg);
-  for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
-    expect(await mongoose.connection.db!.collection(name).countDocuments()).toBe(0);
-  }
 });
 
-test('fresh capture and cleanup cannot touch a colliding legacy principal', async () => {
-  const owner = createOwnedActorCheckpoints('new-owner');
-  const checkpointNs = 'event-actor/collision';
-  const legacyId = await write(checkpointNs, '', true);
-  expect(await owner.capture('actor-thread', checkpointNs, 'new', cfg)).toBeNull();
-  const checkpointId = await write(owner.namespace(checkpointNs), '', true);
-  await owner.remove({ threadId: 'actor-thread', checkpointNs, checkpointId }, cfg);
-  await owner.removeOwned({ threadId: 'actor-thread', checkpointNs }, cfg);
+test('conversation cleanup consumes exact legacy heads and closed suspensions before losing evidence', async () => {
+  const headId = await write('event-actor/legacy-head', '', true);
+  const pauseId = await write('event-actor/legacy-closed', '', true);
+  const foreignId = await write('event-actor/foreign', '', true);
+  const reference = (checkpointNs: string, checkpointId: string) => ({
+    threadId: 'actor-thread',
+    checkpointNs,
+    checkpointId,
+  });
+  await mongoose.connection.db!.collection('conversations').insertMany([
+    {
+      user: 'owner',
+      conversationId: 'actor-thread',
+      subagentThread: {},
+      agentEventActor: { checkpoint: reference('event-actor/legacy-head', headId) },
+      agentEventActorSuspension: {
+        status: 'closed',
+        suspension: { checkpoint: reference('event-actor/legacy-closed', pauseId) },
+      },
+    },
+    {
+      user: 'foreign',
+      conversationId: 'actor-thread',
+      subagentThread: {},
+      agentEventActor: { checkpoint: reference('event-actor/foreign', foreignId) },
+    },
+  ]);
+  await deleteOwnedAgentCheckpoints('owner', undefined, ['actor-thread'], cfg);
   for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
     const rows = await mongoose.connection.db!.collection(name).find().toArray();
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ checkpoint_ns: checkpointNs, checkpoint_id: legacyId });
+    expect(rows[0].checkpoint_id).toBe(foreignId);
   }
-  await owner.remove({ threadId: 'actor-thread', checkpointNs, checkpointId }, cfg);
-  expect(await mongoose.connection.db!.collection('agent_checkpoints').countDocuments()).toBe(1);
+  expect(await mongoose.connection.db!.collection('conversations').countDocuments()).toBe(2);
 });
 
-test('historical selection uses the exact ID and retains its deletion anchor across failure', async () => {
+test('failed pruning retains both outbox and exact anchor until a later retry succeeds', async () => {
   const owner = createOwnedActorCheckpoints('owner');
-  const checkpointNs = 'event-actor/history';
-  const checkpointId = await write(checkpointNs, '', true);
-  await write(checkpointNs, 'nested', true);
-  const ownedId = await write(owner.namespace(checkpointNs), '', true);
-  const reference = { threadId: 'actor-thread', checkpointNs, checkpointId };
-  const selected = await owner.resolveNamespace(reference, cfg);
-  expect(selected).toBe(checkpointNs);
-  expect(await owner.capture('actor-thread', checkpointNs, 'resume', cfg, selected)).toMatchObject({
-    checkpointId,
-    checkpointNs,
+  const checkpointId = await write('event-actor/prune', '', true);
+  await write('event-actor/prune', 'nested', true);
+  const reference = { threadId: 'actor-thread', checkpointNs: 'event-actor/prune', checkpointId };
+  await mongoose.connection.db!.collection('conversations').insertOne({
+    user: 'owner',
+    conversationId: 'actor-thread',
+    agentEventActorCleanup: [reference],
   });
   const original = mongoose.mongo.Collection.prototype.deleteMany;
   const failure = jest
     .spyOn(mongoose.mongo.Collection.prototype, 'deleteMany')
     .mockImplementationOnce(original)
-    .mockRejectedValueOnce(new Error('checkpoint deletion interrupted'));
-  await expect(owner.remove(reference, cfg)).rejects.toThrow('checkpoint deletion interrupted');
+    .mockRejectedValueOnce(new Error('interrupted cleanup'));
+  await expect(owner.drain('actor-thread', cfg)).rejects.toThrow('interrupted cleanup');
   failure.mockRestore();
   expect(
     await mongoose.connection
       .db!.collection('agent_checkpoints')
       .findOne({ checkpoint_id: checkpointId }),
   ).not.toBeNull();
-  await owner.remove(reference, cfg);
-  for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
-    const rows = await mongoose.connection.db!.collection(name).find().toArray();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      checkpoint_ns: owner.namespace(checkpointNs),
-      checkpoint_id: ownedId,
-    });
-  }
+  expect(
+    (await mongoose.connection.db!.collection('conversations').findOne({ user: 'owner' }))
+      ?.agentEventActorCleanup,
+  ).toEqual([reference]);
+  await owner.drain('actor-thread', cfg);
+  expect(
+    (await mongoose.connection.db!.collection('conversations').findOne({ user: 'owner' }))
+      ?.agentEventActorCleanup,
+  ).toEqual([]);
+  expect(await mongoose.connection.db!.collection('agent_checkpoints').countDocuments()).toBe(0);
 });
 
-test('retrying an absent historical reference never deletes a newer owned scope', async () => {
+test('owner records survive missing conversations and partial payload deletion for retry', async () => {
   const owner = createOwnedActorCheckpoints('owner');
-  const checkpointNs = 'event-actor/reused-logical';
-  const checkpointId = await write(checkpointNs);
-  const reference = { threadId: 'actor-thread', checkpointNs, checkpointId };
-  await owner.remove(reference, cfg);
-  const newerId = await write(owner.namespace(checkpointNs), '', true);
-  await owner.remove(reference, cfg);
-  for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
-    expect(
-      await mongoose.connection.db!.collection(name).findOne({ checkpoint_id: newerId }),
-    ).not.toBeNull();
-  }
+  await owner.register('actor-thread', 'event-actor/orphan', cfg);
+  await write('event-actor/orphan', '', true);
+  await mongoose.connection.db!.collection('agent_checkpoints').deleteMany({});
+  const failure = jest
+    .spyOn(mongoose.mongo.Collection.prototype, 'deleteMany')
+    .mockRejectedValueOnce(new Error('unavailable'));
+  await expect(deleteOwnedAgentCheckpoints('owner', undefined, undefined, cfg)).rejects.toThrow(
+    'unavailable',
+  );
+  failure.mockRestore();
+  expect(
+    await mongoose.connection.db!.collection('agent_checkpoints_actor_owners').countDocuments(),
+  ).toBe(1);
+  await deleteOwnedAgentCheckpoints('owner', undefined, undefined, cfg);
+  expect(await mongoose.connection.db!.collection('agent_checkpoint_writes').countDocuments()).toBe(
+    0,
+  );
+  expect(
+    await mongoose.connection.db!.collection('agent_checkpoints_actor_owners').countDocuments(),
+  ).toBe(0);
+});
+
+test('owner scope cleanup uses bounded batches', async () => {
+  const scopes = Array.from({ length: 300 }, (_, i) => ({
+    _id: String(i),
+    owner: checkpointOwnerNamespacePrefix('owner'),
+    threadId: 'actor-thread',
+    checkpointNs: `event-actor/${i}`,
+  }));
+  await mongoose.connection
+    .db!.collection<ActorCheckpointScope>('agent_checkpoints_actor_owners')
+    .insertMany(scopes);
+  const spy = jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany');
+  await deleteOwnedAgentCheckpoints('owner', undefined, undefined, cfg);
+  const predicates = spy.mock.calls.flatMap(([filter]) => (filter?.$or ? [filter.$or] : []));
+  expect(predicates.length).toBeGreaterThan(2);
+  expect(predicates.every((or) => or.length <= 128)).toBe(true);
+  spy.mockRestore();
+  expect(
+    await mongoose.connection.db!.collection('agent_checkpoints_actor_owners').countDocuments(),
+  ).toBe(0);
 });

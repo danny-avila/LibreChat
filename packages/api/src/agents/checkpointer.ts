@@ -13,11 +13,14 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IndexBuildOptions } from '@librechat/data-schemas';
 import type { RunnableConfig } from '@langchain/core/runnables';
-import {
-  DEFAULT_CHECKPOINT_TTL_SECONDS,
-  checkpointOwnerNamespacePrefix,
-} from '../stream/checkpoints';
+import type { ResolvedCheckpointerConfig } from './checkpoints/config';
+import { deleteOwnedActorCheckpointScopes, getActorCheckpointScope } from './checkpoints/ownership';
+import { checkpointOwnerNamespacePrefix } from '../stream/checkpoints';
+import { historicalActorReferences } from './checkpoints/pruning';
+import { resolveCheckpointerConfig } from './checkpoints/config';
 
+export { resolveCheckpointerConfig } from './checkpoints/config';
+export type { ResolvedCheckpointerConfig } from './checkpoints/config';
 export { DEFAULT_CHECKPOINT_TTL_SECONDS } from '../stream/checkpoints';
 
 /**
@@ -548,18 +551,6 @@ function sweepStale<T>(map: Map<string, T>, timeOf: (value: T) => number): void 
   }
 }
 
-const DEFAULT_CHECKPOINT_COLLECTION = 'agent_checkpoints';
-const DEFAULT_CHECKPOINT_WRITES_COLLECTION = 'agent_checkpoint_writes';
-
-/** Checkpointer settings with all defaults applied. */
-export interface ResolvedCheckpointerConfig {
-  type: 'mongo' | 'memory';
-  /** Approval window / TTL in seconds. */
-  ttlSeconds: number;
-  checkpointCollectionName: string;
-  checkpointWritesCollectionName: string;
-}
-
 /**
  * Exact checkpoint ids present before a legacy, unscoped generation is claimed.
  *
@@ -574,23 +565,6 @@ export interface AgentCheckpointGeneration {
    * legacy generation's nested LangGraph namespaces during deletion. */
   checkpointNamespace?: string;
   checkpointIds: string[];
-}
-
-/**
- * Apply defaults to the YAML `endpoints.agents.checkpointer` block. Mirrors
- * {@link resolveRecursionLimit} — the schema stays descriptive, defaults live here.
- */
-export function resolveCheckpointerConfig(
-  cfg: TCheckpointerConfig | undefined,
-): ResolvedCheckpointerConfig {
-  return {
-    type: cfg?.type ?? 'mongo',
-    ttlSeconds:
-      typeof cfg?.ttl === 'number' && cfg.ttl > 0 ? cfg.ttl : DEFAULT_CHECKPOINT_TTL_SECONDS,
-    checkpointCollectionName: cfg?.checkpointCollectionName ?? DEFAULT_CHECKPOINT_COLLECTION,
-    checkpointWritesCollectionName:
-      cfg?.checkpointWritesCollectionName ?? DEFAULT_CHECKPOINT_WRITES_COLLECTION,
-  };
 }
 
 /** Approval-window milliseconds from the resolved config; drives pending-action expiry. */
@@ -793,10 +767,10 @@ export async function forkAgentEventCheckpoint(
 export async function deleteAgentEventCheckpointReference(
   reference: AgentEventCheckpointReference,
   cfg?: TCheckpointerConfig,
-): Promise<void> {
+): Promise<boolean> {
   const resolved = resolveCheckpointerConfig(cfg);
   if (resolved.type === 'memory') {
-    return;
+    return false;
   }
   const db = mongoose.connection.db;
   if (!db || mongoose.connection.readyState !== 1) {
@@ -809,7 +783,7 @@ export async function deleteAgentEventCheckpointReference(
     checkpoint_id: reference.checkpointId,
   };
   if (!(await checkpoints.findOne(anchor, { projection: { _id: 1 } }))) {
-    return;
+    return false;
   }
   const scope = {
     thread_id: reference.threadId,
@@ -821,6 +795,7 @@ export async function deleteAgentEventCheckpointReference(
     $nor: [{ checkpoint_ns: reference.checkpointNs, checkpoint_id: reference.checkpointId }],
   });
   await checkpoints.deleteOne(anchor);
+  return true;
 }
 
 /** Reads the terminal checkpoint produced inside one invocation namespace. */
@@ -930,6 +905,17 @@ async function buildMongoSaver(
         },
       ),
     );
+    try {
+      await buildIndexWithRetry(
+        () =>
+          mongoose.connection
+            .db!.collection(`${resolved.checkpointCollectionName}_actor_owners`)
+            .createIndex({ owner: 1, threadId: 1 }),
+        'actor_checkpoint_owners.owner',
+      );
+    } catch (error) {
+      logger.warn('[checkpointer] Actor ownership index unavailable:', error);
+    }
     logger.info('[checkpointer] Durable Mongo checkpointer ready for agent continuation');
     return saver;
   } catch (err) {
@@ -1119,6 +1105,31 @@ export async function deleteOwnedAgentCheckpoints(
   if (!db || mongoose.connection.readyState !== 1) {
     throw new Error('Checkpoint database is unavailable');
   }
+  for await (const reference of historicalActorReferences(userId, tenantId, conversationIds)) {
+    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
+    if (scope != null && scope.owner !== checkpointOwnerNamespacePrefix(userId, tenantId)) {
+      continue;
+    }
+    await deleteAgentEventCheckpointReference(reference, cfg);
+  }
+  await deleteOwnedActorCheckpointScopes(
+    userId,
+    tenantId,
+    conversationIds,
+    async (scopes) => {
+      const filter = {
+        $or: scopes.map((scope) => ({
+          thread_id: scope.threadId,
+          checkpoint_ns: generationNamespaceFilter(scope.checkpointNs),
+        })),
+      };
+      await Promise.all([
+        db.collection(resolved.checkpointCollectionName).deleteMany(filter),
+        db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
+      ]);
+    },
+    cfg,
+  );
   const checkpoint_ns = { $regex: `^${checkpointOwnerNamespacePrefix(userId, tenantId)}` };
   const ids = conversationIds == null ? undefined : [...new Set(conversationIds)];
   const batchSize = 256;

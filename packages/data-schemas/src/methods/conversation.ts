@@ -50,6 +50,21 @@ import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
+const ACTOR_CHECKPOINT_FIELDS = [
+  'agentEventActor',
+  'agentEventActorCleanup',
+  'agentEventActorReconciliations',
+  'agentEventActorSuspension',
+] as const;
+
+function stripActorCheckpointFields(record: Record<string, unknown>): void {
+  for (const key of Object.keys(record)) {
+    if (ACTOR_CHECKPOINT_FIELDS.some((field) => key === field || key.startsWith(`${field}.`))) {
+      delete record[key];
+    }
+  }
+}
+
 const AGENT_EVENT_ACTOR_RECEIPT_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_AGENT_EVENT_ACTOR_SUSPENSION_BYTES = 64 * 1_024;
 /** MeiliSearch's default `pagination.maxTotalHits` ceiling. */
@@ -1049,6 +1064,9 @@ export function createConversationMethods(
             'agentEventActor.checkpoint.threadId': input.expected.checkpoint.threadId,
             'agentEventActor.checkpoint.checkpointId': input.expected.checkpoint.checkpointId,
             'agentEventActor.checkpoint.checkpointNs': input.expected.checkpoint.checkpointNs,
+            'agentEventActor.previousCheckpoint': input.expected.previousCheckpoint ?? {
+              $exists: false,
+            },
             ...(input.expected.contextFingerprint == null
               ? { 'agentEventActor.contextFingerprint': { $exists: false } }
               : {
@@ -1138,6 +1156,11 @@ export function createConversationMethods(
                 'agentEventActorSuspension.observedAt': new Date(),
               }),
         },
+        ...(input.expected?.previousCheckpoint == null
+          ? {}
+          : {
+              $addToSet: { agentEventActorCleanup: input.expected.previousCheckpoint },
+            }),
         $unset: { 'agentEventActorReconciliations.$.error': 1 },
       },
       { new: false, timestamps: false },
@@ -2141,6 +2164,7 @@ export function createConversationMethods(
       const appendMessageIds = metadata?.appendMessageIds;
       const update: Record<string, unknown> = { ...convo, user: userId };
       delete update.initial_agent_id;
+      stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
         update.messages = await getMessages({ conversationId, user: userId }, '_id');
       } else {
@@ -2148,6 +2172,7 @@ export function createConversationMethods(
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
       delete unsetFields.initial_agent_id;
+      stripActorCheckpointFields(unsetFields);
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
         const chatProjectId = typeof update.chatProjectId === 'string' ? update.chatProjectId : '';
@@ -2521,6 +2546,7 @@ export function createConversationMethods(
       const bulkOps = conversations.map((convo) => {
         const sanitized = { ...convo };
         delete sanitized.initial_agent_id;
+        stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
           if (ownedProjects.has(`${sanitized.user}:${sanitized.chatProjectId}`)) {
             affectedProjectStats.set(`${sanitized.user}:${sanitized.chatProjectId}`, {

@@ -174,6 +174,55 @@ describe('Conversation Operations', () => {
       expect(savedConvo?.title).toBe('Test Conversation');
     });
 
+    it('rejects actor checkpoint ownership evidence through ordinary saves and imports', async () => {
+      const forged = {
+        agentEventActor: {
+          generation: 1,
+          checkpoint: {
+            threadId: 'other',
+            checkpointNs: 'event-actor/other',
+            checkpointId: 'other',
+          },
+        },
+        agentEventActorCleanup: [
+          { threadId: 'other', checkpointNs: 'event-actor/other', checkpointId: 'other' },
+        ],
+        agentEventActorReconciliations: [
+          {
+            checkpoint: {
+              threadId: 'other',
+              checkpointNs: 'event-actor/other',
+              checkpointId: 'other',
+            },
+          },
+        ],
+        agentEventActorSuspension: { status: 'closed' },
+        'agentEventActor.checkpoint': {
+          threadId: 'other',
+          checkpointNs: 'event-actor/other',
+          checkpointId: 'other',
+        },
+        'agentEventActorCleanup.0': {
+          threadId: 'other',
+          checkpointNs: 'event-actor/other',
+          checkpointId: 'other',
+        },
+      };
+      await saveConvo(mockCtx, { ...mockConversationData, ...forged });
+      await methods.bulkSaveConvos([{ ...mockConversationData, user: mockCtx.userId, ...forged }]);
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select(
+          '+agentEventActor +agentEventActorCleanup +agentEventActorReconciliations +agentEventActorSuspension',
+        )
+        .lean();
+      for (const field of Object.keys(forged)) {
+        expect(saved).not.toHaveProperty(field);
+      }
+    });
+
     it('sets immutable agent attribution from server metadata only on insert', async () => {
       await saveConvo(
         mockCtx,
@@ -4737,6 +4786,10 @@ describe('Conversation Operations', () => {
         },
         prunableCheckpoint: checkpoint('one'),
       });
+      const pendingPruning = await Conversation.findOne({ conversationId })
+        .select('+agentEventActorCleanup')
+        .lean();
+      expect(pendingPruning?.agentEventActorCleanup).toEqual([checkpoint('one')]);
       await expect(finishInvocation('three', checkpoint('three'))).resolves.toBe(true);
       await expect(
         methods.getAgentEventActorSnapshot({

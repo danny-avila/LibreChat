@@ -236,6 +236,18 @@ const convoSchema: Schema<IConversation> = new Schema(
     /** Fail-closed invocation proof. Active records block later turns through checkpoint,
      * history, and outcome settlement; settled receipts no longer block new IDs but keep
      * delayed owners from reacquiring an invocation that already applied its action. */
+    agentEventActorCleanup: {
+      type: [
+        {
+          threadId: { type: String, required: true },
+          checkpointId: { type: String, required: true },
+          checkpointNs: { type: String, required: true },
+          _id: false,
+        },
+      ],
+      default: undefined,
+      select: false,
+    },
     agentEventActorReconciliations: {
       type: [
         {

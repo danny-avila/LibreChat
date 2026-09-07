@@ -13,8 +13,32 @@ import {
 } from '../checkpointer';
 import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } from './actor';
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
-import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { createAgentContextFingerprint } from '../compatibility';
+
+jest.mock('../checkpoints/ownership', () => {
+  const records = new Map();
+  return {
+    registerActorCheckpointScope: jest.fn(async (user, tenantId, threadId, checkpointNs) => {
+      const { checkpointOwnerNamespacePrefix } = jest.requireActual('../../stream/checkpoints');
+      records.set(checkpointNs, {
+        _id: checkpointNs,
+        owner: checkpointOwnerNamespacePrefix(user, tenantId),
+        threadId,
+        checkpointNs,
+      });
+    }),
+    getActorCheckpointScope: jest.fn(
+      async (_threadId, checkpointNs) => records.get(checkpointNs) ?? null,
+    ),
+    acknowledgeActorCheckpointScope: jest.fn(async (scope) => {
+      records.delete(scope.checkpointNs);
+    }),
+  };
+});
+jest.mock('../checkpoints/pruning', () => ({
+  drainActorPruning: jest.fn(async () => undefined),
+  acknowledgeActorPruning: jest.fn(async () => undefined),
+}));
 
 jest.mock('../checkpointer', () => ({
   ...jest.requireActual('../checkpointer'),
@@ -63,7 +87,7 @@ describe('event actor host adapter', () => {
     mockedDelete.mockReset();
     mockedDelete.mockResolvedValue();
     mockedDeleteReference.mockReset();
-    mockedDeleteReference.mockResolvedValue();
+    mockedDeleteReference.mockResolvedValue(true);
   });
 
   afterAll(() => {
@@ -148,7 +172,7 @@ describe('event actor host adapter', () => {
         event: { id: 'event-paused', type: 'turn' },
         signal: new AbortController().signal,
         invoke: async ({ checkpointNamespace }) => {
-          expect(checkpointNamespace).toMatch(/^lcg:v2:[0-9a-f]{64}:event-actor\//);
+          expect(checkpointNamespace).toMatch(/^event-actor\//);
           return 'paused-response';
         },
         readAppliedAction: () => undefined,
@@ -274,9 +298,7 @@ describe('event actor host adapter', () => {
     expect(mockedDeleteReference).toHaveBeenCalledWith(
       {
         ...paused.execution.suspension.checkpoint,
-        checkpointNs:
-          checkpointOwnerNamespacePrefix('user-1') +
-          paused.execution.suspension.checkpoint.checkpointNs,
+        checkpointNs: paused.execution.suspension.checkpoint.checkpointNs,
       },
       undefined,
     );
@@ -352,7 +374,7 @@ describe('event actor host adapter', () => {
         resumeValue: { approved: true },
         signal: new AbortController().signal,
         resume: async ({ checkpointNamespace }) => {
-          expect(checkpointNamespace).toMatch(/^lcg:v2:[0-9a-f]{64}:event-actor\//);
+          expect(checkpointNamespace).toMatch(/^event-actor\//);
           action = { toolName: 'submit_move', toolCallId: 'call-resumed' };
           return 'resumed-response';
         },
@@ -508,9 +530,7 @@ describe('event actor host adapter', () => {
     expect(mockedDeleteReference).toHaveBeenCalledWith(
       {
         ...repaused.execution.suspension.checkpoint,
-        checkpointNs:
-          checkpointOwnerNamespacePrefix('user-1') +
-          repaused.execution.suspension.checkpoint.checkpointNs,
+        checkpointNs: repaused.execution.suspension.checkpoint.checkpointNs,
       },
       undefined,
     );
@@ -660,7 +680,7 @@ describe('event actor host adapter', () => {
     ]);
     expect(mockedFork).toHaveBeenCalledWith(
       expect.objectContaining({ checkpointId: 'checkpoint-1' }),
-      expect.stringMatching(/^lcg:v2:[0-9a-f]{64}:event-actor\//),
+      expect.stringMatching(/^event-actor\//),
       'event-2',
       undefined,
       undefined,
@@ -1052,7 +1072,7 @@ describe('event actor host adapter', () => {
       undefined,
       expect.objectContaining({
         throwOnError: true,
-        checkpointNamespace: expect.stringMatching(/^lcg:v2:[0-9a-f]{64}:event-actor\//),
+        checkpointNamespace: expect.stringMatching(/^event-actor\//),
       }),
     );
     expect(state.generation).toBe(1);

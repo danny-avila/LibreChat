@@ -251,6 +251,7 @@ export async function executeAgentEventActor<T>(
       if (context.signal.aborted) {
         throw context.signal.reason;
       }
+      await checkpoints.drain(input.conversationId, input.checkpointer);
       const snapshot = await deps.getSnapshot({
         user: input.user,
         conversationId: input.conversationId,
@@ -415,6 +416,7 @@ export async function executeAgentEventActor<T>(
       if (!(await getAgentCheckpointer(input.checkpointer))) {
         throw new Error('Event actor checkpoint forks require a durable Mongo checkpointer');
       }
+      await checkpoints.register(input.conversationId, request.checkpointNs, input.checkpointer);
       return {
         ...request,
         continuation: 'cold',
@@ -526,7 +528,7 @@ export async function executeAgentEventActor<T>(
       }
       try {
         value = await input.invoke({
-          checkpointNamespace: checkpoints.namespace(invocation.fork.checkpointNs),
+          checkpointNamespace: invocation.fork.checkpointNs,
           ...(invocation.fork.checkpointId == null
             ? {}
             : { checkpointId: invocation.fork.checkpointId }),
@@ -663,6 +665,9 @@ export async function executeAgentEventActor<T>(
           ? undefined
           : {
               generation: request.expectedHead.generation,
+              ...(observedState.previousCheckpoint == null
+                ? {}
+                : { previousCheckpoint: observedState.previousCheckpoint }),
               checkpoint: {
                 threadId: expectedHeadCheckpoint!.threadId,
                 checkpointId: expectedCheckpointId!,
@@ -730,6 +735,7 @@ export async function executeAgentEventActor<T>(
       }
       if (committed.prunableCheckpoint != null) {
         await checkpoints.remove(committed.prunableCheckpoint, input.checkpointer);
+        await checkpoints.acknowledgePruning(committed.prunableCheckpoint);
       }
       return { status: 'committed', head: toHead(input.conversationId, committed.state) };
     },
@@ -937,6 +943,7 @@ export async function resumeAgentEventActor<T>(
       if (deps.claimSuspension == null) {
         throw new Error('Event actor suspension claim storage is unavailable');
       }
+      await checkpoints.drain(input.conversationId, input.checkpointer);
       const snapshot = await deps.getSnapshot(owner);
       const hostSuspension = snapshot?.suspension;
       if (
@@ -1152,6 +1159,9 @@ export async function resumeAgentEventActor<T>(
           ? undefined
           : {
               generation: observedState.generation,
+              ...(observedState.previousCheckpoint == null
+                ? {}
+                : { previousCheckpoint: observedState.previousCheckpoint }),
               checkpoint: observedState.checkpoint,
               ...(observedState.contextFingerprint == null
                 ? {}
@@ -1208,6 +1218,7 @@ export async function resumeAgentEventActor<T>(
       }
       if (committed.prunableCheckpoint != null) {
         await checkpoints.remove(committed.prunableCheckpoint, input.checkpointer);
+        await checkpoints.acknowledgePruning(committed.prunableCheckpoint);
       }
       return { status: 'committed', head: toHead(input.conversationId, committed.state) };
     },
