@@ -184,6 +184,10 @@ const storedOAuthBinding = {
 beforeEach(() => {
   jest.clearAllMocks();
   getTenantId.mockReturnValue(undefined);
+  mockFindToken.mockImplementation(async ({ type }) => ({
+    token: `encrypted-${type}`,
+    metadata: { credential_set_id: credentialSetId },
+  }));
 });
 
 describe('updateUserPluginsController MCP OAuth cleanup', () => {
