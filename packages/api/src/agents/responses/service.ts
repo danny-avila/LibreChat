@@ -100,6 +100,10 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     return { valid: false, error: 'stream must be a boolean' };
   }
 
+  if (request.store === true && request.isTemporary === true) {
+    return { valid: false, error: 'store: true cannot be combined with isTemporary: true' };
+  }
+
   if (request.temperature !== undefined) {
     const temp = request.temperature as number;
     if (typeof temp !== 'number' || temp < 0 || temp > 2) {

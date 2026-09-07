@@ -362,10 +362,11 @@ export function selectStoredResponseHistory(
   messages: IMessage[],
   responseMessageId?: string,
 ): IMessage[] {
-  if (responseMessageId == null) {
-    return messages;
+  const targetId = responseMessageId ?? messages[messages.length - 1]?.messageId;
+  if (targetId == null) {
+    return [];
   }
-  const targetIndex = messages.findIndex((message) => message.messageId === responseMessageId);
+  const targetIndex = messages.findIndex((message) => message.messageId === targetId);
   if (targetIndex < 0) {
     return [];
   }

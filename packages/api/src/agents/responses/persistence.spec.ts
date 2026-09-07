@@ -180,6 +180,20 @@ describe('Responses persistence', () => {
       'input-a',
       'resp_a',
     ]);
+    const uuidHistory = selectStoredResponseHistory(messages);
+    expect(uuidHistory.map((item) => item.messageId)).toEqual(['root', 'input-b', 'resp_b']);
+    const continued = [
+      ...messages,
+      message({
+        messageId: 'next-input',
+        parentMessageId: uuidHistory[uuidHistory.length - 1]?.messageId,
+      }),
+      message({ messageId: 'resp_next', parentMessageId: 'next-input' }),
+    ];
+    expect(selectStoredResponseHistory(continued, 'resp_next')).toEqual([
+      ...uuidHistory,
+      ...continued.slice(-2),
+    ]);
   });
 
   it('supports flat legacy Responses history without admitting malformed branches', () => {
@@ -193,7 +207,9 @@ describe('Responses persistence', () => {
     ];
 
     expect(selectStoredResponseHistory(legacy, 'resp_old')).toEqual(legacy);
+    expect(selectStoredResponseHistory(legacy)).toEqual(legacy);
     expect(selectStoredResponseHistory(broken, 'resp_broken')).toEqual([]);
+    expect(selectStoredResponseHistory(broken)).toEqual([]);
   });
 
   it('prepends the flat legacy prefix when a canonical branch reaches its last flat response', () => {

@@ -8,8 +8,40 @@ import {
   createResponseAggregator,
   createResponsesEventHandlers,
   buildResponsesUsage,
+  validateResponseRequest,
 } from '../service';
 import { buildResponse, createResponseTracker } from '../handlers';
+
+describe('response storage validation', () => {
+  it.each([false, true])(
+    'rejects temporary stored responses before execution (stream=%s)',
+    (stream) => {
+      expect(
+        validateResponseRequest({
+          model: 'agent_test',
+          input: 'Hello',
+          store: true,
+          isTemporary: true,
+          stream,
+        }),
+      ).toEqual({
+        valid: false,
+        error: 'store: true cannot be combined with isTemporary: true',
+      });
+    },
+  );
+
+  it.each([
+    { store: true, isTemporary: false },
+    { store: true },
+    { store: false, isTemporary: true },
+    { isTemporary: true },
+  ])('preserves supported storage choices %j', (options) => {
+    expect(validateResponseRequest({ model: 'agent_test', input: 'Hello', ...options }).valid).toBe(
+      true,
+    );
+  });
+});
 
 describe('response usage aggregation', () => {
   const context: ResponseContext = {
