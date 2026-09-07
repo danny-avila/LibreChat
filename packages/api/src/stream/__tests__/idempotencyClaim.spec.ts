@@ -1030,10 +1030,11 @@ describe('GenerationJobManager start-generation claim', () => {
       settleAppend = resolve;
     });
     jest.spyOn(store, 'appendChunk').mockImplementationOnce(() => delayedAppend);
-    await manager.emitChunk(streamId, {
+    const predecessorEmission = manager.emitChunk(streamId, {
       event: 'on_message_delta',
       data: { delta: 'in-flight predecessor output' },
     });
+    await Promise.resolve();
 
     const replacement = await manager.createJob(streamId, 'user-1', streamId, {
       initialMetadata: { generationProtocolVersion: 2 },
@@ -1042,6 +1043,7 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(replacement.abortController.signal.aborted).toBe(false);
 
     settleAppend(false);
+    await expect(predecessorEmission).rejects.toThrow('Durable chunk append was fenced out');
     await Promise.resolve();
     await Promise.resolve();
 
