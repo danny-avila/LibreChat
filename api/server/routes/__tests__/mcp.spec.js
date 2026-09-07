@@ -927,6 +927,7 @@ describe('MCP Routes', () => {
           state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
+          serverUrl: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
           metadata: {},
           clientInfo: {},
           codeVerifier: 'test-verifier',
@@ -990,7 +991,7 @@ describe('MCP Routes', () => {
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
-        mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': mergedServerConfig });
+        mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': mergedServerConfig });
 
         const fetchOrderedToolsSnapshot = jest
           .fn()
@@ -1035,6 +1036,7 @@ describe('MCP Routes', () => {
           state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
+          serverUrl: 'https://override.example.com/mcp',
           metadata: {},
           clientInfo: {},
           codeVerifier: 'test-verifier',
@@ -1057,7 +1059,7 @@ describe('MCP Routes', () => {
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
-        mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': mergedServerConfig });
+        mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': mergedServerConfig });
         require('@librechat/api').getUserMCPAuthMap.mockResolvedValueOnce({
           [`mcp_test-server`]: { LITELLM_KEY: 'sk-real-user-key' },
         });
@@ -1102,6 +1104,7 @@ describe('MCP Routes', () => {
           state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
+          serverUrl: 'https://override.example.com/mcp',
           metadata: {},
           clientInfo: {},
           codeVerifier: 'test-verifier',
@@ -1121,7 +1124,7 @@ describe('MCP Routes', () => {
         });
         MCPTokenStorage.storeTokens.mockResolvedValue();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
-        mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': mergedServerConfig });
+        mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': mergedServerConfig });
         require('@librechat/api').getUserMCPAuthMap.mockClear();
 
         const mockMcpManager = createLeasedMcpManager({
@@ -1317,6 +1320,7 @@ describe('MCP Routes', () => {
         mockFlowManager,
         {},
         expect.any(Function),
+        expect.any(Function),
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1503,6 +1507,7 @@ describe('MCP Routes', () => {
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': {} });
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -1531,6 +1536,7 @@ describe('MCP Routes', () => {
         mockFlowManager,
         { 'X-Custom-Auth': 'header-value' },
         expect.any(Function),
+        expect.any(Function),
       );
       expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
     });
@@ -1545,6 +1551,7 @@ describe('MCP Routes', () => {
         state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
+        serverUrl: 'https://mcp.example.com/mcp',
         metadata: { toolFlowId: 'tool-flow-123' },
         clientInfo: {},
         codeVerifier: 'test-verifier',
@@ -1584,6 +1591,7 @@ describe('MCP Routes', () => {
         'auth-code',
         mockFlowManager,
         { 'X-Registry-Header': 'from-registry' },
+        expect.any(Function),
         expect.any(Function),
       );
       expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
@@ -1721,6 +1729,7 @@ describe('MCP Routes', () => {
         state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
+        serverUrl: 'https://mcp.example.com/mcp',
         metadata: { toolFlowId: 'tool-flow-request-scoped' },
         clientInfo: {},
         codeVerifier: 'test-verifier',

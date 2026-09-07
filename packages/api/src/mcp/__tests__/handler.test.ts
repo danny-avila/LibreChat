@@ -1798,6 +1798,45 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
+    it('rolls back persisted tokens when teardown cancels the flow before settlement', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://example.com/mcp',
+            codeVerifier: 'test-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn().mockResolvedValue(false),
+        failFlow: jest.fn().mockResolvedValue(false),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+      mockExchangeAuthorization.mockResolvedValue({
+        access_token: 'test-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+      const persistBeforeComplete = jest.fn(async (tokens: MCPOAuthTokens) => tokens);
+      const rollbackPersistedTokens = jest.fn(async () => undefined);
+
+      await expect(
+        MCPOAuthHandler.completeOAuthFlow(
+          'test-flow-id',
+          'test-auth-code',
+          mockFlowManager,
+          {},
+          persistBeforeComplete,
+          rollbackPersistedTokens,
+        ),
+      ).rejects.toThrow('OAuth flow was cancelled before completion');
+
+      expect(rollbackPersistedTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ access_token: 'test-token' }),
+      );
+    });
+
     it('passes headers to token refresh', async () => {
       mockDiscoverAuthorizationServerMetadata.mockImplementation(async (_, options) => {
         await options?.fetchFn?.('http://example.com/.well-known/oauth-authorization-server', {});

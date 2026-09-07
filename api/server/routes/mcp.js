@@ -432,6 +432,56 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       if (!(await resolveActiveServer())) {
         throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
       }
+      const rollbackStoredTokens = async (storedTokens) => {
+        const storedMetadata = MCPOAuthHandler.buildStoredClientMetadata(
+          flowState.metadata,
+          flowState.resourceMetadata,
+          flowState.serverUrl,
+          flowState.clientSource,
+        );
+        const revocationMetadata = {
+          serverUrl: flowState.serverUrl,
+          clientId: flowState.clientInfo?.client_id ?? '',
+          clientSecret: flowState.clientInfo?.client_secret ?? '',
+          revocationEndpoint: storedMetadata?.revocation_endpoint,
+          revocationEndpointAuthMethodsSupported:
+            storedMetadata?.revocation_endpoint_auth_methods_supported,
+        };
+        for (const [tokenType, token] of [
+          ['access', storedTokens.access_token],
+          ['refresh', storedTokens.refresh_token],
+        ]) {
+          if (!token) {
+            continue;
+          }
+          try {
+            await MCPOAuthHandler.revokeOAuthToken(
+              serverName,
+              token,
+              tokenType,
+              revocationMetadata,
+              oauthHeaders,
+              flowState.allowedDomains,
+              flowState.allowedAddresses,
+            );
+          } catch (error) {
+            logger.warn(
+              `[MCP OAuth] Failed to revoke ${tokenType} token after callback cancellation:`,
+              error,
+            );
+          }
+        }
+        await MCPTokenStorage.deleteUserTokens({
+          userId: flowState.userId,
+          serverName,
+          deleteToken: async (filter) => {
+            await db.deleteTokens({
+              ...filter,
+              metadataCredentialSetId: storedTokens.credential_set_id,
+            });
+          },
+        });
+      };
       const tokens = await MCPOAuthHandler.completeOAuthFlow(
         flowId,
         code,
@@ -462,54 +512,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                 ),
               })) ?? exchangedTokens;
             if (!(await resolveActiveServer())) {
-              const storedMetadata = MCPOAuthHandler.buildStoredClientMetadata(
-                flowState.metadata,
-                flowState.resourceMetadata,
-                flowState.serverUrl,
-                flowState.clientSource,
-              );
-              const revocationMetadata = {
-                serverUrl: flowState.serverUrl,
-                clientId: flowState.clientInfo?.client_id ?? '',
-                clientSecret: flowState.clientInfo?.client_secret ?? '',
-                revocationEndpoint: storedMetadata?.revocation_endpoint,
-                revocationEndpointAuthMethodsSupported:
-                  storedMetadata?.revocation_endpoint_auth_methods_supported,
-              };
-              for (const [tokenType, token] of [
-                ['access', exchangedTokens.access_token],
-                ['refresh', exchangedTokens.refresh_token],
-              ]) {
-                if (!token) {
-                  continue;
-                }
-                try {
-                  await MCPOAuthHandler.revokeOAuthToken(
-                    serverName,
-                    token,
-                    tokenType,
-                    revocationMetadata,
-                    oauthHeaders,
-                    flowState.allowedDomains,
-                    flowState.allowedAddresses,
-                  );
-                } catch (error) {
-                  logger.warn(
-                    `[MCP OAuth] Failed to revoke ${tokenType} token after ${serverName} was deleted:`,
-                    error,
-                  );
-                }
-              }
-              await MCPTokenStorage.deleteUserTokens({
-                userId: flowState.userId,
-                serverName,
-                deleteToken: async (filter) => {
-                  await db.deleteTokens({
-                    ...filter,
-                    metadataCredentialSetId: storedTokens.credential_set_id,
-                  });
-                },
-              });
+              await rollbackStoredTokens(storedTokens);
               throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
             }
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
@@ -551,6 +554,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
           return storedTokens;
         },
+        rollbackStoredTokens,
       );
       logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 

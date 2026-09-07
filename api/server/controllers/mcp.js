@@ -31,6 +31,7 @@ const {
   ResourceType,
   PermissionBits,
   PermissionTypes,
+  PrincipalType,
   MCP_USER_INPUT_FIELDS,
   MCPServerUserInputSchema,
 } = require('librechat-data-provider');
@@ -634,16 +635,23 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
     const registry = getMCPServersRegistry();
     const existingConfig = await registry.getServerConfig(serverName, userId);
     const tokenIdentifier = `mcp:${serverName}`;
-    const tokenUserIds = mongoose.models.Token
-      ? await mongoose.models.Token.distinct('userId', {
-          identifier: {
-            $in: [tokenIdentifier, `${tokenIdentifier}:client`, `${tokenIdentifier}:refresh`],
-          },
-        })
-      : [];
-    const affectedUserIds = [
-      ...new Set([userId, ...tokenUserIds.map((id) => id.toString())].filter(Boolean)),
-    ];
+    const getTokenUserIds = () =>
+      mongoose.models.Token
+        ? mongoose.models.Token.distinct('userId', {
+            identifier: {
+              $in: [tokenIdentifier, `${tokenIdentifier}:client`, `${tokenIdentifier}:refresh`],
+            },
+          })
+        : Promise.resolve([]);
+    const tokenUserIdsBeforeDelete = await getTokenUserIds();
+    const aclEntries =
+      existingConfig?.dbId && mongoose.models.AclEntry
+        ? await mongoose.models.AclEntry.find({
+            resourceType: ResourceType.MCPSERVER,
+            resourceId: existingConfig.dbId,
+            permBits: { $bitsAnySet: PermissionBits.VIEW },
+          }).lean()
+        : [];
     const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
     await invalidateCachedTools({ userId, serverName });
     try {
@@ -661,6 +669,36 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
     try {
+      /** A second snapshot catches callbacks that stored credentials after the first snapshot but
+       * before the committed deletion became visible. Restrict identifier matches to principals
+       * that could access this exact DB resource so a same-name Config-tier server is untouched. */
+      const tokenUserIdsAfterDelete = await getTokenUserIds();
+      const candidateUserIds = [
+        ...new Set(
+          [userId, ...tokenUserIdsBeforeDelete, ...tokenUserIdsAfterDelete]
+            .filter(Boolean)
+            .map((id) => id.toString()),
+        ),
+      ];
+      const affectedUserIds = [];
+      for (const candidateUserId of candidateUserIds) {
+        if (candidateUserId === userId) {
+          affectedUserIds.push(candidateUserId);
+          continue;
+        }
+        const principals = await db.getUserPrincipals({ userId: candidateUserId });
+        const hadAccess = aclEntries.some((entry) =>
+          principals.some(
+            (principal) =>
+              principal.principalType === entry.principalType &&
+              (principal.principalType === PrincipalType.PUBLIC ||
+                principal.principalId?.toString() === entry.principalId?.toString()),
+          ),
+        );
+        if (hadAccess) {
+          affectedUserIds.push(candidateUserId);
+        }
+      }
       const cleanupResults = await Promise.allSettled(
         affectedUserIds.map(async (affectedUserId) => {
           const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({

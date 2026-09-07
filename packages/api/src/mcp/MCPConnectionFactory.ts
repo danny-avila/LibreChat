@@ -18,6 +18,7 @@ import type * as t from './types';
 import {
   MCPTokenStorage,
   MCPOAuthHandler,
+  getMCPServerGeneration,
   OboTokenResolutionError,
   ReauthenticationRequiredError,
   resolveOboToken,
@@ -1329,7 +1330,12 @@ export class MCPConnectionFactory {
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
-          const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+          const metadataWithUrl = {
+            ...flowMetadata,
+            authorizationUrl,
+            tenantId: this.tenantId,
+            serverGeneration: getMCPServerGeneration(this.serverConfig as t.ParsedServerConfig),
+          };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
           await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
 
@@ -1732,7 +1738,12 @@ export class MCPConnectionFactory {
       reusedClientCredentialSetId = flowMetadata.reusedClientCredentialSetId;
 
       // Store flow state BEFORE redirecting so the callback can find it
-      const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+      const metadataWithUrl = {
+        ...flowMetadata,
+        authorizationUrl,
+        tenantId: this.tenantId,
+        serverGeneration: getMCPServerGeneration(this.serverConfig as t.ParsedServerConfig),
+      };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
       await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
 

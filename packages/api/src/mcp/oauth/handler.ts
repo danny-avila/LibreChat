@@ -1159,6 +1159,7 @@ export class MCPOAuthHandler {
     flowManager: FlowStateManager<MCPOAuthTokens>,
     oauthHeaders: Record<string, string>,
     persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
+    rollbackPersistedTokens?: (tokens: MCPOAuthTokens) => Promise<void>,
   ): Promise<MCPOAuthTokens> {
     try {
       /** Flow state which contains our metadata */
@@ -1233,7 +1234,11 @@ export class MCPOAuthHandler {
       }
 
       /** Now wake flow waiters with the persisted token snapshot. */
-      await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
+      const completed = await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
+      if (completed === false) {
+        await rollbackPersistedTokens?.(mcpTokens);
+        throw new Error('OAuth flow was cancelled before completion');
+      }
 
       return mcpTokens;
     } catch (error) {

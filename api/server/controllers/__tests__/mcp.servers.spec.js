@@ -496,6 +496,44 @@ describe('DB-backed server mutation fencing', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('cleans credentials created by an authorized shared user during server deletion', async () => {
+    const owner = await createUser();
+    const sharedUser = await createUser();
+    const dbId = new mongoose.Types.ObjectId();
+    await grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: sharedUser.id,
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: dbId,
+      accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+      grantedBy: owner.id,
+    });
+    mockRegistryInstance.getServerConfig.mockResolvedValue(createDbConfig(dbId));
+    mockRegistryInstance.removeServer.mockResolvedValue(undefined);
+    const tokenSnapshot = jest
+      .spyOn(mongoose.models.Token, 'distinct')
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([new mongoose.Types.ObjectId(sharedUser.id)]);
+
+    try {
+      await deleteMCPServerController(
+        { user: owner, params: { serverName: 'github' } },
+        createRes(),
+        mockMaybeUninstallOAuthMCP,
+      );
+
+      expect(tokenSnapshot).toHaveBeenCalledTimes(2);
+      expect(mockMaybeUninstallOAuthMCP).toHaveBeenCalledWith(
+        sharedUser.id,
+        'mcp_github',
+        expect.any(Object),
+        expect.objectContaining({ dbId: dbId.toString() }),
+      );
+    } finally {
+      tokenSnapshot.mockRestore();
+    }
+  });
+
   it('does not delete the registry entry when the distributed fence fails', async () => {
     const user = await createUser();
     require('~/server/services/Config').invalidateCachedTools.mockRejectedValue(
