@@ -61,6 +61,7 @@ export type HasCapabilityFn = (
 
 export type RequireCapabilityFn = (
   capability: SystemCapability,
+  options?: { platformOnly?: boolean },
 ) => (req: ServerRequest, res: Response, next: NextFunction) => Promise<void>;
 
 export type HasConfigCapabilityFn = (
@@ -265,7 +266,10 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     return hasCapability(user, sectionCap);
   }
 
-  function requireCapability(capability: SystemCapability) {
+  function requireCapability(
+    capability: SystemCapability,
+    { platformOnly = false }: { platformOnly?: boolean } = {},
+  ) {
     return async (req: ServerRequest, res: Response, next: NextFunction) => {
       try {
         if (!req.user) {
@@ -282,7 +286,7 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
         const user: CapabilityUser = {
           id,
           role: req.user.role ?? '',
-          tenantId: (req.user as CapabilityUser).tenantId,
+          ...(platformOnly ? {} : { tenantId: (req.user as CapabilityUser).tenantId }),
           idOnTheSource: req.user.idOnTheSource ?? null,
         };
 

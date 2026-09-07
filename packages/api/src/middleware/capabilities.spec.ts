@@ -149,6 +149,49 @@ describe('generateCapabilityCheck', () => {
       expect(statusMock).not.toHaveBeenCalled();
     });
 
+    it('omits tenant scope for platform-only capability checks', async () => {
+      mockReq.user = {
+        id: 'user-123',
+        role: 'ADMIN',
+        tenantId: 'tenant-1',
+      } as ServerRequest['user'];
+      mockGetUserPrincipals.mockResolvedValue(adminPrincipals);
+      mockHasCapabilityForPrincipals.mockResolvedValue(true);
+
+      const middleware = requireCapability(SystemCapabilities.MANAGE_CODE_ENVIRONMENTS, {
+        platformOnly: true,
+      });
+      await middleware(mockReq as ServerRequest, mockRes as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockHasCapabilityForPrincipals).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capability: SystemCapabilities.MANAGE_CODE_ENVIRONMENTS,
+          tenantId: undefined,
+        }),
+      );
+    });
+
+    it('rejects a tenant-only grant for a platform-only capability check', async () => {
+      mockReq.user = {
+        id: 'user-123',
+        role: 'ADMIN',
+        tenantId: 'tenant-1',
+      } as ServerRequest['user'];
+      mockGetUserPrincipals.mockResolvedValue(adminPrincipals);
+      mockHasCapabilityForPrincipals.mockImplementation(({ tenantId }) =>
+        Promise.resolve(tenantId === 'tenant-1'),
+      );
+
+      const middleware = requireCapability(SystemCapabilities.MANAGE_CODE_ENVIRONMENTS, {
+        platformOnly: true,
+      });
+      await middleware(mockReq as ServerRequest, mockRes as Response, mockNext);
+
+      expect(mockNext).not.toHaveBeenCalled();
+      expect(statusMock).toHaveBeenCalledWith(403);
+    });
+
     it('returns 403 when user lacks the capability', async () => {
       mockReq.user = { id: 'user-456', role: 'USER' } as ServerRequest['user'];
       mockGetUserPrincipals.mockResolvedValue(userPrincipals);
