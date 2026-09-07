@@ -1871,7 +1871,10 @@ describe('MCP Routes', () => {
     it('should use original flow state credentials when storing tokens', async () => {
       // mockRegistryInstance is defined at the top of the file
       const mockFlowManager = {
-        getFlowState: jest.fn(),
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+        }),
         completeFlow: jest.fn().mockResolvedValue(),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
@@ -3313,6 +3316,12 @@ describe('MCP Routes', () => {
         token_type: 'bearer',
       });
       MCPTokenStorage.storeTokens.mockResolvedValue();
+      require('~/config').getFlowStateManager.mockReturnValue({
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+        }),
+      });
 
       const response = await request(app)
         .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
