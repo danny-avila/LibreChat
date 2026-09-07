@@ -404,6 +404,23 @@ function findPipelineUpdates(sourceFile: ts.SourceFile): string[] {
  * ignoring prose — the rewrites explain themselves by naming the construct —
  * and type members, which never reach the engine (Mongoose documents declare
  * a `$where` field). */
+/**
+ * Mongoose's `Document.prototype.$where` is a per-document save-condition bag, not
+ * MongoDB's `$where` JavaScript-evaluation operator: `mongoose/lib/model.js` copies
+ * its keys into the save filter as ordinary field predicates, so nothing named
+ * `$where` reaches the server. Only a dotted read or write of that property is
+ * exempt -- a literal `'$where'`, an object-literal `{ $where: ... }` and a computed
+ * `obj['$where']` still fail, since those are how a real query is built.
+ */
+function isMongooseDocumentWhere(node: ts.Node): boolean {
+  return (
+    ts.isIdentifier(node) &&
+    node.text === '$where' &&
+    ts.isPropertyAccessExpression(node.parent) &&
+    node.parent.name === node
+  );
+}
+
 function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
   if (OPERATOR_GUARDS.has(sourceFile.fileName)) {
     return [];
@@ -411,8 +428,9 @@ function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
   const offenses: string[] = [];
   const visit = (node: ts.Node): void => {
     if (
-      ts.isStringLiteralLike(node) ||
-      (ts.isIdentifier(node) && !ts.isPropertySignature(node.parent))
+      !isMongooseDocumentWhere(node) &&
+      (ts.isStringLiteralLike(node) ||
+        (ts.isIdentifier(node) && !ts.isPropertySignature(node.parent)))
     ) {
       for (const token of FORBIDDEN_TOKENS) {
         if (node.text === token || node.text.startsWith(`${token}.`)) {
@@ -730,6 +748,21 @@ describe('Amazon DocumentDB compatibility', () => {
           parse('fixture.ts', `interface Doc { $where: Record<string, unknown> }`),
         ),
       ).toEqual([]);
+      /** Mongoose's document save-condition bag: read and write both stay exempt. */
+      expect(findForbiddenTokens(parse('fixture.ts', `const where = document.$where;`))).toEqual(
+        [],
+      );
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `document.$where = { tenantId: predicate };`)),
+      ).toEqual([]);
+      /** ...but every shape that builds a real query still fails. */
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `const filter = { $where: 'this.a == 1' };`)),
+      ).not.toEqual([]);
+      expect(findForbiddenTokens(parse('fixture.ts', `const op = '$where';`))).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter['$where'] = 'this.a == 1';`)),
+      ).not.toEqual([]);
     });
 
     it.each([
