@@ -80,7 +80,9 @@ function QuoteCount({ count, label }: { count: number; label: string }) {
 /**
  * The one fact a queued row needs to convey ("did my message vanish?" it did
  * not) rides the clock as a hover hint and its accessible name while a run is
- * pending, instead of a caption row that costs composer height at rest.
+ * pending, instead of a caption row that costs composer height at rest. The
+ * anchor is a tab stop with a visible ring so keyboard users reach the same
+ * hint: the tooltip opens on focus-visible as well as on hover.
  */
 function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
   if (warning) {
@@ -94,7 +96,8 @@ function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
       description={hint}
       role="img"
       aria-label={hint}
-      className="flex shrink-0 cursor-help"
+      tabIndex={0}
+      className="flex shrink-0 cursor-help rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
     >
       <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />
     </TooltipAnchor>

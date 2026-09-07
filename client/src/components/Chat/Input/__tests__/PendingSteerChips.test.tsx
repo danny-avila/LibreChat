@@ -667,6 +667,17 @@ describe('PendingSteerChips — queued hint', () => {
     const clock = screen.getByRole('img', { name: hintName });
     fireEvent.mouseEnter(clock);
     fireEvent.mouseMove(clock);
+    /** Ariakit opens a hover tooltip on a timer; allow for a loaded CI shard. */
+    const tooltip = await screen.findByRole('tooltip', {}, { timeout: 4000 });
+    expect(tooltip).toHaveTextContent(hintName);
+  });
+
+  it('reaches the same hint from the keyboard: the clock is a tab stop and opens on focus', async () => {
+    const user = userEvent.setup();
+    renderChips([queuedItem], { steering: { duringRunActive: true } });
+    const clock = screen.getByRole('img', { name: hintName });
+    await user.tab();
+    expect(clock).toHaveFocus();
     const tooltip = await screen.findByRole('tooltip');
     expect(tooltip).toHaveTextContent(hintName);
   });
