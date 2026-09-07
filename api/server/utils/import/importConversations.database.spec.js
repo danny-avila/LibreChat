@@ -4,7 +4,10 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createModels, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
-const { MAX_CONVERSATION_IMPORT_BSON_BYTES } = require('@librechat/api');
+const {
+  MAX_CONVERSATION_IMPORT_BSON_BYTES,
+  MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES,
+} = require('@librechat/api');
 const { Constants, EModelEndpoint } = require('librechat-data-provider');
 
 jest.mock('~/server/services/Config', () => ({
@@ -105,7 +108,7 @@ describe('importConversations database hardening', () => {
       tenantStorage.run({ tenantId, userId: owner }, async () =>
         importConversations({ filepath, requestUserId: owner, userRole: 'USER' }),
       ),
-    ).rejects.toThrow('storage size limit');
+    ).rejects.toThrow(`at most ${MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES} bytes`);
 
     await new Promise((resolve) => setTimeout(resolve, 100));
     await expect(fs.stat(filepath)).rejects.toMatchObject({ code: 'ENOENT' });

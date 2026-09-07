@@ -10,6 +10,7 @@ jest.mock('@librechat/api', () => ({
 
 const {
   ContentFilterError,
+  MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES,
   contentFilterBlockResponse,
   extractConversationImportContent,
   inspectContent,
@@ -272,7 +273,9 @@ describe('ImportBatchBuilder content filtering', () => {
     const builder = createBuilder(undefined);
     builder.conversations[0].title = 'x'.repeat(16 * 1024 * 1024);
 
-    await expect(builder.saveBatch()).rejects.toThrow('storage size limit');
+    await expect(builder.saveBatch()).rejects.toThrow(
+      `at most ${MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES} bytes`,
+    );
 
     expect(bulkSaveConvos).not.toHaveBeenCalled();
     expect(bulkSaveMessages).not.toHaveBeenCalled();

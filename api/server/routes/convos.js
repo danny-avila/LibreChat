@@ -782,6 +782,9 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (re
     if (isContentFilterError(error)) {
       return res.status(error.statusCode).json(error.body);
     }
+    if (isConversationImportError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error forking conversation:', error);
     res.status(500).send('Error forking conversation');
   }
@@ -809,6 +812,9 @@ router.post(
       res.status(201).json(result);
     } catch (error) {
       if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
+      if (isConversationImportError(error)) {
         return res.status(error.statusCode).json(error.body);
       }
       logger.error('Error duplicating conversation:', error);

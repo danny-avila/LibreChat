@@ -5,6 +5,7 @@ const {
   createShareContentPreflight,
   isEnabled,
   isContentFilterError,
+  isConversationImportError,
   generateCheckAccess,
   grantCreationPermissions,
   ensureLinkPermissions,
@@ -437,6 +438,9 @@ if (allowSharedLinks) {
         return res.status(201).json(result);
       } catch (error) {
         if (isContentFilterError(error)) {
+          return res.status(error.statusCode).json(error.body);
+        }
+        if (isConversationImportError(error)) {
           return res.status(error.statusCode).json(error.body);
         }
         if (error?.code !== 'SHARE_REVISION_MISMATCH') {

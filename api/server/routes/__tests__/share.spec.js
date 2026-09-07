@@ -112,6 +112,7 @@ jest.mock('@librechat/api', () => ({
     (error) =>
       error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
   ),
+  isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -1527,6 +1528,23 @@ describe('share fork route', () => {
     const response = await request(buildApp()).post('/api/share/share-123/fork');
 
     expect(response.status).toBe(500);
+  });
+
+  it('returns an actionable client error when a cloned record is oversized', async () => {
+    const message = 'Each imported conversation or message must be at most 16711680 bytes';
+    const error = Object.assign(new Error(message), {
+      name: 'ConversationImportError',
+      code: 'invalid_request',
+      statusCode: 413,
+      body: { error: 'invalid_request', message },
+    });
+    forkSharedConversation.mockRejectedValue(error);
+
+    const response = await request(buildApp()).post('/api/share/share-123/fork');
+
+    expect(response.status).toBe(413);
+    expect(response.body).toEqual(error.body);
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('answers 409 when the viewer forks a payload the owner has republished', async () => {
