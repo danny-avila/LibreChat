@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { CODE_APPROVAL_MODES } from 'librechat-data-provider';
 
 // @ts-ignore
 export const conversationPreset: {
@@ -305,7 +306,7 @@ export const conversationPreset: {
   },
   codeApprovalMode: {
     type: String,
-    enum: ['ask', 'acceptEdits'],
+    enum: [...CODE_APPROVAL_MODES],
   },
   /* assistants */
   assistant_id: {
