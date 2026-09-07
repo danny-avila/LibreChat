@@ -93,6 +93,66 @@ describe('RedisJobStore Integration Tests', () => {
     process.env = originalEnv;
   });
 
+  test.each([false, true])(
+    'owner cleanup recovers legacy terminal membership once (detached=%s)',
+    async (detached) => {
+      expect(ioredisClient).not.toBeNull();
+      const redis = ioredisClient!;
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const old = new RedisJobStore(redis, { userJobsSetTtl: 1, requiresActionTtl: 120 });
+      const id = 'owner-terminal-recovery';
+      const job = await old.createJob(id, 'owner', id, 'tenant');
+      if (detached)
+        await old.updateJob(id, { agentEventInvocationKey: 'invocation' }, job.createdAt);
+      await old.transitionStatus(id, {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: job.createdAt,
+        patch: { completedAt: Date.now(), providerDrained: true, terminalHostActionPending: true },
+      });
+      const key = 'stream:user:{tenant:owner}:jobs';
+      await redis.del(key);
+      await old.destroy();
+      const store = new RedisJobStore(redis, { userJobsSetTtl: 1, requiresActionTtl: 120 });
+      try {
+        const global = jest.spyOn(store, 'getTerminalHostActionJobs');
+        const detachedGlobal = jest.spyOn(store, 'getDetachedAgentEventTerminalHostActionJobs');
+        await store.initialize();
+        expect(await store.getCleanupJobIdsByUser('owner', 'tenant')).toEqual([id]);
+        expect(await redis.ttl(key)).toBeGreaterThan(60);
+        expect(await store.getActiveJobIdsByUser('owner', 'tenant')).toEqual([]);
+        expect(await store.getCleanupJobIdsByUser('owner', 'tenant')).toEqual([id]);
+        expect(await store.getCleanupJobIdsByUser('foreign', 'tenant')).toEqual([]);
+        expect(global).toHaveBeenCalledTimes(1);
+        expect(detachedGlobal).toHaveBeenCalledTimes(1);
+        await redis.persist(key);
+        await store.getCleanupJobIdsByUser('owner', 'tenant');
+        expect(await redis.ttl(key)).toBe(-1);
+        await store.clearTerminalHostAction(id, job.createdAt);
+        expect(await store.getCleanupJobIdsByUser('owner', 'tenant')).toEqual([]);
+        expect(await redis.smembers(key)).toEqual([]);
+      } finally {
+        await store.destroy();
+      }
+    },
+  );
+
+  test('owner cleanup fails closed when startup recovery fails and retries it', async () => {
+    expect(ioredisClient).not.toBeNull();
+    const { RedisJobStore } = await import('../implementations/RedisJobStore');
+    const store = new RedisJobStore(ioredisClient!);
+    const read = jest
+      .spyOn(store, 'getTerminalHostActionJobs')
+      .mockRejectedValueOnce(new Error('index unavailable'));
+    try {
+      await expect(store.getCleanupJobIdsByUser('owner')).rejects.toThrow('index unavailable');
+      await expect(store.getCleanupJobIdsByUser('owner')).resolves.toEqual([]);
+      expect(read).toHaveBeenCalledTimes(2);
+    } finally {
+      await store.destroy();
+    }
+  });
+
   describe('Job CRUD Operations', () => {
     test('should create and retrieve a job', async () => {
       if (!ioredisClient) {

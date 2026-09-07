@@ -200,7 +200,7 @@ describe('RedisJobStore', () => {
 
     // ARGV[5] is the terminal job TTL. The persistence owner/recovery path
     // gets five minutes even when ordinary completed records are immediate.
-    expect(evalTransition.mock.calls[0][16]).toBe('300');
+    expect(evalTransition.mock.calls.find((call) => call[1] === 10)?.[16]).toBe('300');
   });
 
   test('retains the generation epoch beyond the paused job TTL', async () => {
@@ -217,7 +217,7 @@ describe('RedisJobStore', () => {
       expectCreatedAt: 123456,
     });
 
-    const transitionCall = evalTransition.mock.calls[0];
+    const transitionCall = evalTransition.mock.calls.find((call) => call[1] === 10)!;
     expect(transitionCall[0]).toContain(
       'redis.call("SET", KEYS[8], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
     );
@@ -1064,7 +1064,7 @@ describe('RedisJobStore', () => {
     expect(sadd.mock.invocationCallOrder[0]).toBeLessThan(
       evalTransition.mock.invocationCallOrder[0],
     );
-    const transitionCall = evalTransition.mock.calls[0];
+    const transitionCall = evalTransition.mock.calls.find((call) => call[1] === 10)!;
     expect(transitionCall[16]).toBe('86400');
     expect(transitionCall[18]).toBe('86400');
     expect(transitionCall[19]).toBe('86400');
@@ -1124,7 +1124,7 @@ describe('RedisJobStore', () => {
       'stream:terminal_host_action',
       '["stream-detached-host-action",100]',
     ]);
-    const transitionCall = evalTransition.mock.calls[0];
+    const transitionCall = evalTransition.mock.calls.find((call) => call[1] === 10)!;
     expect(transitionCall).toContain('status');
     expect(transitionCall).toContain('detached_terminal_pending_v1');
     expect(transitionCall).toContain('detachedAgentEventTerminalStatus');
@@ -1141,6 +1141,7 @@ describe('RedisJobStore', () => {
     const srem = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      eval: jest.fn().mockResolvedValue(1),
       smembers: jest.fn().mockResolvedValue([member]),
       srem,
       sadd: jest.fn().mockResolvedValue(1),
@@ -1189,6 +1190,7 @@ describe('RedisJobStore', () => {
       isCluster: true,
       eval: evalClear,
       srem,
+      hgetall: jest.fn().mockResolvedValue({}),
     } as unknown as Cluster;
     const store = new RedisJobStore(redis, {
       completedTtl: 300,

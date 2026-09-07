@@ -3092,9 +3092,30 @@ class GenerationJobManagerClass {
     return runtime;
   }
 
-  /**
-   * Get a job by streamId.
-   */
+  /** Durable deletion evidence does not depend on a replica's runtime attachment. */
+  async getCleanupJob(
+    streamId: string,
+  ): Promise<Pick<t.GenerationJob, 'createdAt' | 'status' | 'metadata'> | undefined> {
+    let job = await this.jobStore.getJob(streamId);
+    if (job?.terminalPersistencePending === true) {
+      await this.recoverStaleTerminalPersistence(job);
+      job = await this.jobStore.getJob(streamId);
+    }
+    if (job == null) return undefined;
+    return {
+      createdAt: job.createdAt,
+      status: job.status,
+      metadata: {
+        userId: job.userId,
+        tenantId: job.tenantId,
+        conversationId: job.conversationId,
+        providerDrained: job.providerDrained,
+        terminalPersistencePending: job.terminalPersistencePending,
+        terminalHostActionPending: job.terminalHostActionPending,
+      },
+    };
+  }
+
   async getJob(streamId: string): Promise<t.GenerationJob | undefined> {
     let jobData = await this.jobStore.getJob(streamId);
     if (!jobData) {
@@ -9287,11 +9308,18 @@ class GenerationJobManagerClass {
   /** Returns every generation whose provider can still mutate user-owned data,
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    const ownerQuery = this.jobStore.getCleanupJobIdsByUser;
+    const readOwner = (tenant?: string) =>
+      ownerQuery != null
+        ? ownerQuery.call(this.jobStore, userId, tenant)
+        : this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenant);
     const [current, legacy, hostActions, detachedActions] = await Promise.all([
-      this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId),
-      tenantId == null ? [] : this.jobStore.getCleanupBlockingJobIdsByUser(userId),
-      this.jobStore.getTerminalHostActionJobs?.() ?? [],
-      this.jobStore.getDetachedAgentEventTerminalHostActionJobs?.() ?? [],
+      readOwner(tenantId),
+      tenantId == null ? [] : readOwner(),
+      ownerQuery == null ? (this.jobStore.getTerminalHostActionJobs?.() ?? []) : [],
+      ownerQuery == null
+        ? (this.jobStore.getDetachedAgentEventTerminalHostActionJobs?.() ?? [])
+        : [],
     ]);
     const pending = [...hostActions, ...detachedActions].filter(
       (job) =>

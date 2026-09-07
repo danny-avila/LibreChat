@@ -544,6 +544,7 @@ export function createSchedulesService(
       return {
         status: job.status,
         createdAt: job.createdAt,
+        checkpointNamespace: job.checkpointNamespace,
         scheduleId: job.scheduleId,
         scheduledFor: job.scheduledFor,
         createdEventEmitted: job.createdEventEmitted === true,
@@ -1352,8 +1353,16 @@ export function createSchedulesService(
       // the prune afterwards is scoped to exactly this set, so checkpoints a
       // replacement turn writes after this point can never be swept up by it.
       const checkpointGeneration =
-        run.status === 'requires_action' && run.conversationId
-          ? await captureAgentCheckpointGeneration(run.conversationId, checkpointer)
+        run.status === 'requires_action' &&
+        run.conversationId &&
+        live.known &&
+        (live.job == null || isThisGeneration)
+          ? await captureAgentCheckpointGeneration(run.conversationId, checkpointer, {
+              ...(isThisGeneration &&
+                live.job?.checkpointNamespace && {
+                  checkpointNamespace: live.job.checkpointNamespace,
+                }),
+            })
           : undefined;
       // Same abort-in-flight deferral as quiesce: post-abort job state (status `aborted`,
       // or absence once the abort deleted the job) appears before the owner has persisted

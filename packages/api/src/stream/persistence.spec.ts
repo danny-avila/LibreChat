@@ -9,11 +9,11 @@ test('waits for the captured terminal epoch to finish persistence', async () => 
   expect(read).toHaveBeenCalledTimes(2);
 });
 
-test('does not wait on a replacement epoch', async () => {
+test('fails closed on a replacement epoch', async () => {
   const read = jest
     .fn()
     .mockResolvedValue({ createdAt: 2, metadata: { terminalPersistencePending: true } });
-  await waitForGenerationPersistence('run', 1, read);
+  await expect(waitForGenerationPersistence('run', 1, read)).rejects.toThrow('Generation replaced');
   expect(read).toHaveBeenCalledTimes(1);
 });
 

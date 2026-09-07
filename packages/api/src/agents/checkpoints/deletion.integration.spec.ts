@@ -164,7 +164,7 @@ test('memory checkpointer conversations can still record and acknowledge deletio
   ).toBe(0);
 });
 
-test('reclaims unused evidence without a client retry and keeps effective stores separate', async () => {
+test('reclaims only empty recorded stores and discovers remaining work across configurations', async () => {
   const other = {
     ...cfg,
     checkpointCollectionName: 'custom_cp',
@@ -182,9 +182,9 @@ test('reclaims unused evidence without a client retry and keeps effective stores
   const reclaim = createCheckpointDeletionReclaimer(getJobs);
   expect(await reclaim(25)).toBe(1);
   expect(getJobs).toHaveBeenCalledTimes(1);
-  expect((await openCheckpointDeletion('owner', 'tenant', 'root', cfg)).conversationIds()).toEqual(
-    [],
-  );
+  expect((await openCheckpointDeletion('owner', 'tenant', 'root', cfg)).conversationIds()).toEqual([
+    'child',
+  ]);
   expect(
     (await openCheckpointDeletion('owner', 'tenant', 'root', other)).conversationIds(),
   ).toEqual(['child']);
@@ -303,4 +303,91 @@ test('current-tenant deletion recovers tenantless ownership and exact references
     expect(rows.find((row) => row.checkpoint_id)?.checkpoint_id).toBe('unproved');
   }
   expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
+});
+
+test.each(['mongo', 'memory'] as const)(
+  'replays a failed cascade against recorded stores after switching to %s',
+  async (type) => {
+    const db = mongoose.connection.db!;
+    const next = {
+      type,
+      checkpointCollectionName: 'next_cp',
+      checkpointWritesCollectionName: 'next_writes',
+    };
+    const ns = createCheckpointNamespace('owner', 'tenant');
+    const foreign = createCheckpointNamespace('foreign', 'tenant');
+    for (const name of ['cleanup_cp', 'cleanup_writes', 'next_cp', 'next_writes']) {
+      await db.collection(name).insertMany([
+        { thread_id: 'child', checkpoint_ns: ns },
+        { thread_id: 'child', checkpoint_ns: foreign },
+        { thread_id: 'unrelated', checkpoint_ns: ns },
+      ]);
+    }
+    const original = await openCheckpointDeletion('owner', 'tenant', 'root', cfg);
+    await original.remember(['child']);
+    const attempt = await openCheckpointDeletion('owner', 'tenant', 'root', next);
+    expect(attempt.conversationIds()).toEqual(['child']);
+    await attempt.remember(attempt.conversationIds());
+    const remove = mongoose.mongo.Collection.prototype.deleteMany;
+    jest
+      .spyOn(mongoose.mongo.Collection.prototype, 'deleteMany')
+      .mockImplementationOnce(async () => {
+        throw new Error('store unavailable');
+      });
+    await expect(attempt.cleanup()).rejects.toThrow('store unavailable');
+    jest.restoreAllMocks();
+    expect(remove).toBe(mongoose.mongo.Collection.prototype.deleteMany);
+    expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(2);
+    const retry = await openCheckpointDeletion('owner', 'tenant', 'root', next);
+    await retry.cleanup();
+    for (const name of [
+      'cleanup_cp',
+      'cleanup_writes',
+      ...(type === 'mongo' ? ['next_cp', 'next_writes'] : []),
+    ]) {
+      expect(
+        await db
+          .collection(name)
+          .find({}, { projection: { _id: 0 } })
+          .toArray(),
+      ).toEqual([
+        { thread_id: 'child', checkpoint_ns: foreign },
+        { thread_id: 'unrelated', checkpoint_ns: ns },
+      ]);
+    }
+    await retry.acknowledge();
+    expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
+  },
+);
+
+test('a failed owner deletion leaves no sibling delete running when the fence can reopen', async () => {
+  const db = mongoose.connection.db!;
+  const intent = await openCheckpointDeletion('owner', 'tenant', undefined, cfg);
+  await intent.remember(['thread']);
+  const remove = mongoose.mongo.Collection.prototype.deleteMany;
+  const writesStarted = jest.fn();
+  let releaseWrites!: () => void;
+  const heldWrites = new Promise<void>((resolve) => {
+    releaseWrites = resolve;
+  });
+  jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany').mockImplementation(async function (
+    this: InstanceType<typeof mongoose.mongo.Collection>,
+    filter,
+    options,
+  ) {
+    if (this.collectionName === 'cleanup_cp') throw new Error('checkpoint delete failed');
+    writesStarted();
+    await heldWrites;
+    return remove.call(this, filter, options);
+  });
+  try {
+    await expect(intent.cleanup()).rejects.toThrow('checkpoint delete failed');
+    expect(writesStarted).not.toHaveBeenCalled();
+    expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(1);
+  } finally {
+    releaseWrites();
+    jest.restoreAllMocks();
+  }
+  await intent.cleanup();
+  await intent.acknowledge();
 });

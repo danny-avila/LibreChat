@@ -954,6 +954,10 @@ export interface IJobStore {
   destroy(): Promise<void>;
   getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
 
+  /** Complete owner cleanup query, including terminal host work and legacy-index recovery.
+   * Managers retain the global-index fallback for older third-party stores. */
+  getCleanupJobIdsByUser?(userId: string, tenantId?: string): Promise<string[]>;
+
   /** Enumerates every extant job in the owner's retained index, including a
    * stale paused generation that account deletion must erase before its worker
    * finalizes it. Optional custom stores fall back to cleanup-blocking jobs. */

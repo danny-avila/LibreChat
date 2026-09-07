@@ -103,7 +103,7 @@ jest.mock('@librechat/api', () => ({
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
   GenerationJobManager: {
     getAccountCleanupJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
-    getJob: (...args) => mockGetAgentJob(...args),
+    getCleanupJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
   deleteAgentCheckpoints: (...args) => mockDeleteAgentCheckpoints(...args),

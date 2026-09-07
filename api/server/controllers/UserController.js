@@ -426,7 +426,7 @@ const deleteUserController = async (req, res) => {
     const activeAgentJobs = await Promise.all(
       activeAgentRuns.map(async (streamId) => ({
         streamId,
-        job: await GenerationJobManager.getJob(streamId),
+        job: await GenerationJobManager.getCleanupJob(streamId),
       })),
     );
     const ownedAgentJobs = activeAgentJobs.filter(
@@ -448,7 +448,7 @@ const deleteUserController = async (req, res) => {
     await Promise.all(
       ownedAgentJobs.map(({ streamId, job }) =>
         waitForGenerationPersistence(streamId, job.createdAt, (id) =>
-          GenerationJobManager.getJob(id),
+          GenerationJobManager.getCleanupJob(id),
         ),
       ),
     );

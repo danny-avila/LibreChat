@@ -12,9 +12,11 @@ export async function waitForGenerationPersistence(
   const deadline = Date.now() + timeoutMs;
   while (true) {
     const current = await readJob(streamId);
+    if (current != null && current.createdAt !== createdAt) {
+      throw new Error(`Generation replaced during deletion: ${streamId}`);
+    }
     if (
       current == null ||
-      current.createdAt !== createdAt ||
       (current.metadata?.terminalPersistencePending !== true &&
         current.metadata?.terminalHostActionPending !== true)
     )

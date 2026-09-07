@@ -247,7 +247,7 @@ async function readGenerationForDeletion(conversationId) {
   let lastError;
   for (let attempt = 1; attempt <= GENERATION_LOOKUP_ATTEMPTS; attempt += 1) {
     try {
-      return await GenerationJobManager.getJob(conversationId);
+      return await GenerationJobManager.getCleanupJob(conversationId);
     } catch (error) {
       lastError = error;
       if (attempt < GENERATION_LOOKUP_ATTEMPTS) {
@@ -333,7 +333,7 @@ async function confirmAgentGenerationsDrained(
           );
         }
         await waitForGenerationPersistence(conversationId, job.createdAt, (id) =>
-          GenerationJobManager.getJob(id),
+          GenerationJobManager.getCleanupJob(id),
         );
       } catch (error) {
         logger.warn('Deleted child generation drain failed', error);

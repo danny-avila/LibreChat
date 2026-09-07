@@ -37,6 +37,7 @@ describe('GenerationJobManager terminal host actions', () => {
         expectCreatedAt: job.createdAt,
         patch: { completedAt: Date.now(), providerDrained: true, terminalHostActionPending: true },
       });
+      Object.assign(store, { getCleanupJobIdsByUser: undefined });
       const terminal = (await store.getJob('pending-host'))!;
       jest.spyOn(store, 'getRetainedJobIdsByUser').mockResolvedValue([]);
       const rows = [
@@ -73,6 +74,49 @@ describe('GenerationJobManager terminal host actions', () => {
       );
     },
   );
+
+  it('owner queries retain terminal obligations through active polling without global scans', async () => {
+    const job = await manager.createJob('owner-host', 'user-1', 'conversation');
+    await store.transitionStatus('owner-host', {
+      from: 'running',
+      to: 'complete',
+      expectCreatedAt: job.createdAt,
+      patch: { completedAt: Date.now(), providerDrained: true, terminalHostActionPending: true },
+    });
+    const global = jest.spyOn(store, 'getTerminalHostActionJobs');
+    expect(await manager.getActiveJobIdsForUser('user-1')).toEqual([]);
+    expect(await manager.getCleanupBlockingJobIdsForUser('user-1')).toEqual(['owner-host']);
+    expect(global).not.toHaveBeenCalled();
+    await store.clearTerminalHostAction('owner-host', job.createdAt);
+    expect(await manager.getCleanupBlockingJobIdsForUser('user-1')).toEqual([]);
+  });
+
+  it('durable cleanup preserves stale terminal-persistence recovery', async () => {
+    const job = await manager.createJob('stale-persistence', 'user-1', 'conversation');
+    await store.transitionStatus('stale-persistence', {
+      from: 'running',
+      to: 'complete',
+      expectCreatedAt: job.createdAt,
+      patch: { completedAt: 1, terminalPersistenceStartedAt: 1, terminalPersistencePending: true },
+    });
+    expect(await manager.getCleanupJob('stale-persistence')).toMatchObject({
+      createdAt: job.createdAt,
+      metadata: { terminalPersistencePending: false },
+    });
+  });
+
+  it('durable cleanup still sees a replacement when runtime attachment loses its epoch', async () => {
+    const first = await store.createJob('remote', 'user-1', 'conversation');
+    const read = store.getJob.bind(store);
+    const replacement = await store.createJob('remote', 'user-1', 'conversation');
+    jest.spyOn(store, 'getJob').mockResolvedValueOnce(first).mockImplementation(read);
+    expect(await manager.getJob('remote')).toBeUndefined();
+    expect(await manager.getCleanupJob('remote')).toMatchObject({
+      createdAt: replacement.createdAt,
+      status: 'running',
+      metadata: { userId: 'user-1' },
+    });
+  });
 
   it('verifies detached terminal outbox persistence against the exact generation', async () => {
     const streamId = 'conversation-detached-outbox';

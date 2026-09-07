@@ -374,6 +374,37 @@ describe('deleteScheduleForOwner', () => {
     return { service, methods };
   }
 
+  it.each([undefined, 'lcg:v2:owner:generation'])(
+    'passes the matching paused job namespace (%s) through the raw projection to capture',
+    async (checkpointNamespace) => {
+      const scheduledFor = '2026-01-01T00:00:00.000Z';
+      const { service } = makeDeleteHarness({
+        scheduleId: 's1',
+        scheduledFor: new Date(scheduledFor),
+        conversationId: 'c1',
+        status: 'requires_action',
+      });
+      mockJobStore = {
+        getJob: jest.fn(async () => ({
+          status: 'requires_action',
+          createdAt: 1,
+          scheduleId: 's1',
+          scheduledFor,
+          checkpointNamespace,
+        })),
+      } as unknown as typeof mockJobStore;
+      const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+      manager.abortJob = jest.fn(async () => ({ success: true }));
+      checkpointerModule.captureAgentCheckpointGeneration.mockClear();
+      await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
+      expect(checkpointerModule.captureAgentCheckpointGeneration).toHaveBeenCalledWith(
+        'c1',
+        undefined,
+        checkpointNamespace == null ? {} : { checkpointNamespace },
+      );
+    },
+  );
+
   it('settles a pause hand-off after the exact provider drain is confirmed', async () => {
     const { service, methods } = makeDeleteHarness({
       scheduleId: 's1',

@@ -478,6 +478,33 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     expect(await saver!.getTuple(readConfig(threadB))).toBeDefined();
   });
 
+  it('scheduled namespace capture prunes root and nested writes while preserving a replacement', async () => {
+    const db = mongoose.connection.db!;
+    const threadId = 'scheduled-owned-run';
+    const namespace = createCheckpointNamespace('owner', 'tenant');
+    const replacement = createCheckpointNamespace('owner', 'tenant');
+    const rows = [namespace, `${namespace}|child`, replacement, ''].map((checkpoint_ns) => ({
+      thread_id: threadId,
+      checkpoint_ns,
+      checkpoint_id: 'same-checkpoint-id',
+    }));
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      await db.collection(name).insertMany(rows.map((row) => ({ ...row })));
+    }
+    const capture = await captureAgentCheckpointGeneration(threadId, MONGO_CFG, {
+      checkpointNamespace: namespace,
+      throwOnError: true,
+    });
+    expect(capture?.checkpointIds).toContain('same-checkpoint-id');
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, capture, { throwOnError: true });
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      expect(await db.collection(name).distinct('checkpoint_ns', { thread_id: threadId })).toEqual(
+        expect.arrayContaining([replacement, '']),
+      );
+      expect(await db.collection(name).countDocuments({ thread_id: threadId })).toBe(2);
+    }
+  });
+
   it('generation-scoped cleanup preserves a replacement checkpoint on the same thread', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;

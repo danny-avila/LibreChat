@@ -1210,10 +1210,8 @@ export async function deleteOwnedAgentCheckpoints(
         },
       }),
     };
-    await Promise.all([
-      db.collection(resolved.checkpointCollectionName).deleteMany(filter),
-      db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
-    ]);
+    await db.collection(resolved.checkpointCollectionName).deleteMany(filter);
+    await db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter);
   }
 }
 

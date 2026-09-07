@@ -116,7 +116,7 @@ describe('Convos Routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     moderatedTexts.length = 0;
-    generationJobManager.getJob.mockResolvedValue(null);
+    generationJobManager.getCleanupJob.mockResolvedValue(null);
     generationJobManager.abortJob.mockResolvedValue({ success: true });
     generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([]);
     generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([]);
@@ -475,7 +475,7 @@ describe('Convos Routes', () => {
       });
       deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
       deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
-      generationJobManager.getJob.mockImplementation(async (conversationId) => ({
+      generationJobManager.getCleanupJob.mockImplementation(async (conversationId) => ({
         metadata: {
           userId: 'test-user-123',
           conversationId,
@@ -513,7 +513,7 @@ describe('Convos Routes', () => {
         deletedCount: 1,
         conversationIds: ['paused-event-child'],
       });
-      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (conversationId) =>
         conversationId === 'paused-event-child'
           ? {
               metadata: { userId: 'test-user-123' },
@@ -537,7 +537,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([
         'resp-new-conversation',
       ]);
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'resp-new-conversation'
           ? {
               conversationId: 'conversation-not-yet-persisted',
@@ -573,7 +573,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForUser
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce(['resp-gap']);
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'resp-gap'
           ? {
               metadata: {
@@ -865,7 +865,7 @@ describe('Convos Routes', () => {
     it('drains owner remote runs before the empty-filter deletion snapshot', async () => {
       const createdAt = Date.now();
       generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue(['resp-new']);
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'resp-new'
           ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
           : null,
@@ -895,7 +895,7 @@ describe('Convos Routes', () => {
         deletedCount: 1,
         conversationIds: ['paused-event-child'],
       });
-      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (conversationId) =>
         conversationId === 'paused-event-child'
           ? {
               metadata: { userId: 'test-user-123' },
@@ -924,14 +924,16 @@ describe('Convos Routes', () => {
           conversationIds: ['paused-event-child'],
         };
       });
-      generationJobManager.getJob.mockRejectedValue(new Error('generation store unavailable'));
+      generationJobManager.getCleanupJob.mockRejectedValue(
+        new Error('generation store unavailable'),
+      );
 
       const response = await request(app)
         .delete('/api/convos')
         .send({ arg: { thread_id: 'thread-abc' } });
 
       expect(response.status).toBe(500);
-      expect(generationJobManager.getJob).toHaveBeenCalledTimes(3);
+      expect(generationJobManager.getCleanupJob).toHaveBeenCalledTimes(3);
       expect(deleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
     });
 
@@ -982,7 +984,7 @@ describe('Convos Routes', () => {
         deletedCount: 2,
         conversationIds: ['parent-conversation', 'child-conversation'],
       });
-      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (conversationId) =>
         conversationId === 'child-conversation'
           ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
           : null,
@@ -1014,7 +1016,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
         'resp_remote-run',
       ]);
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'resp_remote-run'
           ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
           : null,
@@ -1099,7 +1101,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue(
         Object.keys(jobs),
       );
-      generationJobManager.getJob.mockImplementation(async (streamId) => {
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) => {
         const job = jobs[streamId];
         return job == null ? null : { ...job, status: 'complete', createdAt: Date.now() };
       });
@@ -1235,7 +1237,7 @@ describe('Convos Routes', () => {
             conversationId === 'parent-conversation' ? 'run-parent' : 'run-child',
           ),
       );
-      generationJobManager.getJob.mockImplementation(async (streamId) => {
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) => {
         const job = jobs[streamId];
         return job == null ? null : { ...job, status: 'complete', createdAt: Date.now() };
       });
@@ -1268,7 +1270,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
         'legacy-run',
       ]);
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'legacy-run'
           ? {
               metadata: {
@@ -1312,7 +1314,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
         'resp_terminal-run',
       ]);
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'resp_terminal-run'
           ? {
               metadata: { userId: 'test-user-123', providerDrained: false },
@@ -1343,7 +1345,7 @@ describe('Convos Routes', () => {
       generationJobManager.getCleanupBlockingJobIdsForConversations.mockImplementation(async () =>
         deletionCommitted ? ['resp_late-run'] : [],
       );
-      generationJobManager.getJob.mockImplementation(async (streamId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (streamId) =>
         streamId === 'resp_late-run'
           ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
           : null,
@@ -1441,7 +1443,7 @@ describe('Convos Routes', () => {
           conversationIds: ['parent-conversation', 'child-conversation'],
         };
       });
-      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+      generationJobManager.getCleanupJob.mockImplementation(async (conversationId) =>
         conversationId === 'child-conversation'
           ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
           : null,
@@ -1487,7 +1489,7 @@ describe('Convos Routes', () => {
           ],
         });
         let relatedReads = 0;
-        generationJobManager.getJob.mockImplementation(async (conversationId) => {
+        generationJobManager.getCleanupJob.mockImplementation(async (conversationId) => {
           if (conversationId !== 'related-generation') return null;
           relatedReads += 1;
           return {
@@ -1511,7 +1513,7 @@ describe('Convos Routes', () => {
           awaitProviderDrain: true,
         });
         expect(relatedReads).toBeGreaterThanOrEqual(3);
-        expect(generationJobManager.getJob).not.toHaveBeenCalledWith('unrelated-generation');
+        expect(generationJobManager.getCleanupJob).not.toHaveBeenCalledWith('unrelated-generation');
         expect(deleteConvos).toHaveBeenCalledTimes(2);
       },
     );

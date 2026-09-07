@@ -58,7 +58,7 @@ jest.mock('@librechat/api', () => ({
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
   GenerationJobManager: {
     getAccountCleanupJobIdsForUser: (...args) => mockGetCleanupBlockingJobIdsForUser(...args),
-    getJob: (...args) => mockGetAgentJob(...args),
+    getCleanupJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
   getOwnedAgentCheckpointScope: jest.fn(() => undefined),
@@ -66,7 +66,17 @@ jest.mock('@librechat/api', () => ({
     (result) => result?.success === true || result?.failureReason === 'already_settled',
   ),
   deleteOwnedAgentCheckpoints: jest.fn(),
-  openCheckpointDeletion: jest.fn(async () => ({ acknowledge: jest.fn() })),
+  waitForGenerationPersistence: jest.requireActual(
+    '../../../../packages/api/src/stream/persistence.ts',
+  ).waitForGenerationPersistence,
+  openCheckpointDeletion: jest.fn(async (userId, tenantId, _root, cfg) => ({
+    remember: jest.fn(),
+    cleanup: () =>
+      jest
+        .requireMock('@librechat/api')
+        .deleteOwnedAgentCheckpoints(userId, tenantId, undefined, cfg),
+    acknowledge: jest.fn(),
+  })),
 }));
 
 jest.mock('~/models', () => ({
@@ -273,7 +283,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
   });
 
-  it('deletes owner checkpoints before account persistence after job records expire', async () => {
+  it('deletes owner checkpoints before erasing the account after job records expire', async () => {
     const req = {
       user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },
       body: {},
@@ -288,7 +298,7 @@ describe('deleteUserController - 2FA enforcement', () => {
       ttl: 60,
     });
     expect(deleteOwnedAgentCheckpoints.mock.invocationCallOrder[0]).toBeLessThan(
-      mockDeleteConvos.mock.invocationCallOrder[0],
+      mockDeleteUserById.mock.invocationCallOrder[0],
     );
   });
 
