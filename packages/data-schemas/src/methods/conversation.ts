@@ -2142,7 +2142,9 @@ export function createConversationMethods(
       const update: Record<string, unknown> = { ...convo, user: userId };
       delete update.initial_agent_id;
       if (appendMessageIds == null) {
-        update.messages = await getMessages({ conversationId, user: userId }, '_id');
+        update.messages = await getMessages({ conversationId, user: userId }, '_id', {
+          includePendingResponses: true,
+        });
       } else {
         delete update.messages;
       }

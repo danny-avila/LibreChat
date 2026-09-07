@@ -228,7 +228,12 @@ describe('resolveStoredResponse with Mongo tenant scope', () => {
       const messages = await methods.getMessages({ user: OWNER, conversationId });
 
       expect(rebuilt?.messages).toHaveLength(2);
-      expect(filterCommittedResponseMessages(messages)).toEqual([]);
+      expect(messages).toEqual([]);
+      expect(await methods.getMessage({ user: OWNER, messageId: responseId })).toBeNull();
+      expect(await methods.getMessagesByCursor({ user: OWNER, conversationId })).toEqual({
+        messages: [],
+        nextCursor: null,
+      });
       await expect(resolveStoredResponse(lookup(), OWNER, responseId)).resolves.toEqual({
         status: 'not_found',
       });
@@ -275,6 +280,41 @@ describe('resolveStoredResponse with Mongo tenant scope', () => {
       await expect(resolveStoredResponse(lookup(), OWNER, responseId)).resolves.toMatchObject({
         status: 'found',
         reference: { responseMessage: { messageId: responseId } },
+      });
+    });
+  });
+
+  it('keeps an ambiguously failed publication hidden from ordinary reads', async () => {
+    const conversationId = 'b2bb41c5-5c41-4e3b-8488-d110386d6315';
+    const responseId = 'resp_failed_publication';
+    await asTenant(TENANT_A, async () => {
+      await expect(
+        persistStoredResponse({
+          deps: {
+            ...methods,
+            commitStoredResponseTurn: async () => {
+              throw new Error('unavailable');
+            },
+          },
+          context: { userId: OWNER, isTemporary: false },
+          conversation: {
+            data: { conversationId, endpoint: EModelEndpoint.agents, title: 'failed turn' },
+            initialAgentId: null,
+            isContinuation: false,
+          },
+          inputMessages: [{ role: 'user', content: 'question' }],
+          parentMessageId: null,
+          responseId,
+          response: storedResponse({ id: responseId }),
+          agentId: 'agent-1',
+        }),
+      ).rejects.toThrow();
+      expect(await Message.find({ user: OWNER, conversationId })).toHaveLength(2);
+      expect(await methods.getMessages({ user: OWNER, conversationId })).toEqual([]);
+      expect(await methods.getMessage({ user: OWNER, messageId: responseId })).toBeNull();
+      expect(await methods.getMessagesByCursor({ user: OWNER, conversationId })).toEqual({
+        messages: [],
+        nextCursor: null,
       });
     });
   });

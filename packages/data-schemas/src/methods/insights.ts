@@ -14,6 +14,7 @@ import type {
 } from 'librechat-data-provider';
 import type { Model, PipelineStage } from 'mongoose';
 import type { IConversation, IMessage, IUser } from '~/types';
+import { committedMessageStages } from '~/utils/responses';
 
 export type InsightsOptions = TInsightsParams & {
   tenantId?: string;
@@ -206,6 +207,7 @@ function messageScope(
         };
   return [
     { $match: attributedMatch },
+    ...committedMessageStages(),
     {
       $lookup: {
         from: 'conversations',

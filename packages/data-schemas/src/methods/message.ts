@@ -7,6 +7,7 @@ import type { AppConfig, IConversation, IMessage } from '~/types';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { readVisibleMessages } from '~/utils/responses';
 import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
@@ -426,6 +427,8 @@ export const CLIENT_MESSAGE_SELECT: string = [
 ].join(' ');
 
 interface MessageQueryOptions {
+  /** Internal manifest maintenance must retain staged row references. */
+  includePendingResponses?: boolean;
   limit?: number;
   sort?: Record<string, 1 | -1> | false;
 }
@@ -711,6 +714,7 @@ export interface MessageMethods {
       sortOrder?: 1 | -1;
       limit?: number;
       cursor?: string | null;
+      select?: string;
     },
   ): Promise<{ messages: IMessage[]; nextCursor: string | null }>;
   searchMessages(
@@ -2091,6 +2095,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      if (options.includePendingResponses !== true) {
+        return await readVisibleMessages(Message, filter, select, options);
+      }
       const query = Message.find(filter);
       if (select) {
         query.select(select);
@@ -3132,7 +3139,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function getMessage({ user, messageId }: { user: string; messageId: string }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      return await Message.findOne({ user, messageId }).lean<IMessage>();
+      const messages = await readVisibleMessages(Message, { user, messageId }, undefined, {
+        limit: 1,
+      });
+      return messages[0] ?? null;
     } catch (err) {
       logger.error('Error getting message:', err);
       throw err;
@@ -3220,14 +3230,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (cursor) {
       queryFilter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
     }
-    const query = Message.find(queryFilter);
-    if (select) {
-      query.select(select);
-    }
-    const messages = await query
-      .sort({ [sortField]: sortOrder })
-      .limit(limit + 1)
-      .lean<IMessage[]>();
+    const messages = await readVisibleMessages(Message, queryFilter, select, {
+      sort: { [sortField]: sortOrder },
+      limit: limit + 1,
+    });
 
     let nextCursor: string | null = null;
     if (messages.length > limit) {
@@ -3253,7 +3259,31 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (typeof Message.meiliSearch !== 'function') {
       throw new Error('MeiliSearch plugin not registered on Message model');
     }
-    return Message.meiliSearch(query, searchOptions, hydrate);
+    const results = await Message.meiliSearch(query, searchOptions, hydrate);
+    if (results.hits.length === 0) {
+      return results;
+    }
+    const identities = results.hits.flatMap((hit) =>
+      typeof hit.messageId === 'string' && typeof hit.user === 'string'
+        ? [{ messageId: hit.messageId, user: hit.user }]
+        : [],
+    );
+    if (identities.length === 0) {
+      return { ...results, hits: [] };
+    }
+    const visible = await readVisibleMessages(
+      mongoose.models.Message as Model<IMessage>,
+      { $or: identities },
+      'messageId user',
+      { sort: false },
+    );
+    const visibleIds = new Set(
+      visible.map((message) => JSON.stringify([message.user, message.messageId])),
+    );
+    return {
+      ...results,
+      hits: results.hits.filter((hit) => visibleIds.has(JSON.stringify([hit.user, hit.messageId]))),
+    };
   }
 
   return {

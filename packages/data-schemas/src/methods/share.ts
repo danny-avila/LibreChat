@@ -10,6 +10,7 @@ import {
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { readVisibleMessages } from '~/utils/responses';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { CLIENT_MESSAGE_SELECT } from './message';
 import logger from '~/config/winston';
@@ -834,22 +835,20 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         ? SharedLink.findOne({ _id: shareObjectId, ...activeExpirationFilter<t.ISharedLink>() })
         : SharedLink.findOne({ shareId, ...activeExpirationFilter<t.ISharedLink>() });
 
-      const share = (await query
-        .populate({
-          path: 'messages',
-          select: CLIENT_MESSAGE_SELECT,
-        })
-        .select('-__v')
-        .lean()) as (t.ISharedLink & { messages: t.IMessage[] }) | null;
+      const share = await query.select('-__v').lean<t.ISharedLink>();
 
       if (!share?.conversationId) {
         return null;
       }
 
       /** Filtered messages based on targetMessageId if present (branch-specific sharing) */
-      let messagesToShare: t.IMessage[] = share.messages;
+      let messagesToShare = await readVisibleMessages(
+        mongoose.models.Message as Model<t.IMessage>,
+        { _id: { $in: share.messages ?? [] } },
+        CLIENT_MESSAGE_SELECT,
+      );
       if (share.targetMessageId) {
-        messagesToShare = getMessagesUpToTarget(share.messages, share.targetMessageId);
+        messagesToShare = getMessagesUpToTarget(messagesToShare, share.targetMessageId);
       }
 
       // Keep anonymous ids consistent within a response without retaining a
@@ -1106,7 +1105,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     }
     let preflightFailed = false;
     try {
-      const Message = mongoose.models.Message as SchemaWithMeiliMethods;
+      const Message = mongoose.models.Message as Model<t.IMessage>;
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const Conversation = mongoose.models.Conversation as SchemaWithMeiliMethods;
 
@@ -1119,7 +1118,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         })
           .select('-_id -__v -user')
           .lean() as Promise<t.ISharedLink | null>,
-        Message.find({ conversationId, user }).sort({ createdAt: 1 }).lean(),
+        readVisibleMessages(Message, { conversationId, user }),
       ]);
 
       if (existingShare) {
@@ -1284,7 +1283,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     let preflightFailed = false;
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const Message = mongoose.models.Message as SchemaWithMeiliMethods;
+      const Message = mongoose.models.Message as Model<t.IMessage>;
       const share = (await SharedLink.findOne({ shareId, user })
         .select('-_id -__v -user')
         .lean()) as t.ISharedLink | null;
@@ -1293,9 +1292,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         throw new ShareServiceError('Share not found', 'SHARE_NOT_FOUND');
       }
 
-      const updatedMessages = await Message.find({ conversationId: share.conversationId, user })
-        .sort({ createdAt: 1 })
-        .lean();
+      const updatedMessages = await readVisibleMessages(Message, {
+        conversationId: share.conversationId,
+        user,
+      });
 
       if (updatedMessages.length === 0) {
         throw new ShareServiceError('No messages to share', 'NO_MESSAGES');
@@ -1463,18 +1463,20 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   ): Promise<t.SharedFileSnapshot | t.SharedFileSnapshot[] | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({
+      const share = await SharedLink.findOne({
         shareId,
         ...activeExpirationFilter<t.ISharedLink>(),
-      })
-        .populate({ path: 'messages', select: '-_id -__v -user' })
-        .lean()) as (t.ISharedLink & { messages: t.IMessage[] }) | null;
+      }).lean<t.ISharedLink>();
 
       if (!share) {
         return null;
       }
 
-      let messages: t.IMessage[] = share.messages ?? [];
+      let messages = await readVisibleMessages(
+        mongoose.models.Message as Model<t.IMessage>,
+        { _id: { $in: share.messages ?? [] } },
+        '-_id -__v -user',
+      );
       if (share.targetMessageId) {
         messages = getMessagesUpToTarget(messages, share.targetMessageId);
       }
