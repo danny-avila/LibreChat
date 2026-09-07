@@ -2,6 +2,7 @@ const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { v5: uuidv5 } = require('uuid');
 const {
   Constants,
+  ContentTypes,
   EModelEndpoint,
   ErrorTypes,
   ViolationTypes,
@@ -53,6 +54,7 @@ const {
   saveMessage,
   saveConvo,
   getMessages,
+  getMessage,
   getConvo,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
@@ -147,6 +149,96 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
   }
 
   return `${messageId.replace(/_+$/, '')}_`;
+}
+
+/**
+ * Manual compaction runs as a summarize-only turn hung off the branch's leaf.
+ * It needs an existing branch to summarize, and it cannot be combined with the
+ * turn shapes that create or rewrite a user message.
+ * @returns {{ status: number, code: string, error: string } | null}
+ */
+function getCompactionRejection(req, { conversationId, parentMessageId }) {
+  if (req.config?.summarization?.enabled === false) {
+    return {
+      status: 400,
+      code: 'COMPACTION_DISABLED',
+      error: 'Context compaction is disabled for this deployment.',
+    };
+  }
+  if (!conversationId || conversationId === Constants.NEW_CONVO) {
+    return {
+      status: 400,
+      code: 'INVALID_COMPACTION_REQUEST',
+      error: 'Compaction requires an existing conversation.',
+    };
+  }
+  if (
+    typeof parentMessageId !== 'string' ||
+    parentMessageId.length === 0 ||
+    parentMessageId === Constants.NO_PARENT
+  ) {
+    return {
+      status: 400,
+      code: 'INVALID_COMPACTION_REQUEST',
+      error: 'Compaction requires the message to compact up to.',
+    };
+  }
+  const { isContinued, isRegenerate, editedContent, responseMessageId } = req.body ?? {};
+  if (isContinued || isRegenerate || editedContent != null || responseMessageId) {
+    return {
+      status: 400,
+      code: 'INVALID_COMPACTION_REQUEST',
+      error: 'Compaction cannot be combined with an edit, regenerate, or continue.',
+    };
+  }
+  return null;
+}
+
+/** The leaf's content is a bare summary: the branch is already compacted up to here. */
+function isCompactionSummary(message) {
+  const content = message?.content;
+  return (
+    Array.isArray(content) &&
+    content.length > 0 &&
+    content.every((part) => part?.type === ContentTypes.SUMMARY)
+  );
+}
+
+/**
+ * The leaf a compaction hangs off, in the user-message slot the job metadata
+ * and the abort path read. Identity only: the row itself stays in history
+ * untouched, and the job must not carry the leaf's full content.
+ */
+function projectCompactionAnchor(message) {
+  return {
+    messageId: message.messageId,
+    parentMessageId: message.parentMessageId,
+    conversationId: message.conversationId,
+    isCreatedByUser: message.isCreatedByUser === true,
+    text: '',
+  };
+}
+
+/**
+ * The id the turn's user message is created under. A compaction creates no
+ * user message: its "user message" slot holds the leaf it summarizes up to,
+ * and a bound event turn keys the id off its task.
+ * @returns {string}
+ */
+function resolvePreallocatedUserMessageId({
+  isCompaction,
+  parentMessageId,
+  eventTaskId,
+  overrideUserMessageId,
+  overrideParentMessageId,
+}) {
+  if (isCompaction) {
+    return parentMessageId;
+  }
+  if (eventTaskId != null) {
+    return `${eventTaskId}:user`;
+  }
+  return overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID();
 }
 
 function getPreliminaryUserMessage(
@@ -615,6 +707,51 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   const userId = req.user.id;
   const tenantId = req.user.tenantId;
+  const isCompaction = req.body?.compact === true;
+  if (isCompaction) {
+    const rejection = getCompactionRejection(req, {
+      conversationId: reqConversationId,
+      parentMessageId,
+    });
+    if (rejection) {
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(
+        res,
+        rejection.status,
+        { code: rejection.code, error: rejection.error },
+        generationProtocolVersion,
+      );
+    }
+  }
+  const compactionAnchor = isCompaction
+    ? await getMessage({ user: userId, messageId: parentMessageId })
+    : null;
+  if (isCompaction) {
+    if (compactionAnchor == null || compactionAnchor.conversationId !== reqConversationId) {
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(
+        res,
+        404,
+        {
+          code: 'COMPACTION_ANCHOR_NOT_FOUND',
+          error: 'The message to compact up to was not found.',
+        },
+        generationProtocolVersion,
+      );
+    }
+    if (isCompactionSummary(compactionAnchor)) {
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(
+        res,
+        409,
+        {
+          code: 'NOTHING_TO_COMPACT',
+          error: 'The conversation is already compacted up to this point.',
+        },
+        generationProtocolVersion,
+      );
+    }
+  }
   const rawClientRequestId = req.body?.clientRequestId;
   if (
     rawClientRequestId != null &&
@@ -1355,10 +1492,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   if (eventTaskId != null) {
     req._agentEventTaskId = eventTaskId;
   }
-  const preallocatedUserMessageId =
-    eventTaskId == null
-      ? (overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID())
-      : `${eventTaskId}:user`;
+  const preallocatedUserMessageId = resolvePreallocatedUserMessageId({
+    isCompaction,
+    parentMessageId,
+    eventTaskId,
+    overrideUserMessageId,
+    overrideParentMessageId,
+  });
   const overrideConversationId = rawOverrideConversationId
     ? rawOverrideConversationId.split(Constants.COMMON_DIVIDER)[0]
     : undefined;
@@ -1441,11 +1581,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     const endpointIconURL = getEndpointIconURL(req, endpointOption);
     const responseModel = getAgentResponseModel(req, endpointOption);
-    const preliminaryUserMessage = getPreliminaryUserMessage(
-      { ...req.body, messageId: preallocatedUserMessageId },
-      conversationId,
-      req._agentEventTriggerProjection,
-    );
+    const preliminaryUserMessage = isCompaction
+      ? projectCompactionAnchor(compactionAnchor)
+      : getPreliminaryUserMessage(
+          { ...req.body, messageId: preallocatedUserMessageId },
+          conversationId,
+          req._agentEventTriggerProjection,
+        );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,
       ...(recoveredSteerId && { recoveredSteerId }),
@@ -2149,6 +2291,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           getReqData,
           isContinued,
           isRegenerate,
+          isCompaction,
           editedContent,
           conversationId,
           parentMessageId,

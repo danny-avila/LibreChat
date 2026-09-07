@@ -438,6 +438,10 @@ class BaseClient {
 
     const [overrideConvoId, overrideUserMessageId] = this.processOverideIds();
     const { isEdited, isContinued } = opts;
+    if (opts.isCompaction === true) {
+      /** The leaf stands in for the user message and is already persisted. */
+      this.skipSaveUserMessage = true;
+    }
     const user = opts.user ?? null;
     this.user = user;
     const saveOptions = this.getSaveOptions();
@@ -497,6 +501,49 @@ class BaseClient {
     };
   }
 
+  /**
+   * The message a compaction turn hangs off: the branch's leaf, presented in
+   * the user-message slot so the response parents onto it and every consumer
+   * of `userMessage` (progress, job metadata, the abort path) keeps working.
+   * Identity fields only: the row stays in history untouched, and the object
+   * mirrored into job metadata must not carry the leaf's full content.
+   * @param {string} parentMessageId
+   * @returns {TMessage}
+   */
+  getCompactionAnchor(parentMessageId) {
+    const leaf = this.currentMessages[this.currentMessages.length - 1];
+    if (leaf == null || leaf.messageId !== parentMessageId) {
+      throw new Error('Compaction requires an existing branch to summarize');
+    }
+    return {
+      messageId: leaf.messageId,
+      parentMessageId: leaf.parentMessageId,
+      conversationId: leaf.conversationId,
+      isCreatedByUser: leaf.isCreatedByUser === true,
+      text: '',
+    };
+  }
+
+  /**
+   * The message the turn hangs off: a fresh user message, the edited message
+   * already in history, or (for a compaction) the branch's leaf.
+   * @returns {TMessage}
+   */
+  resolveStartUserMessage({ opts, message, userMessageId, parentMessageId, conversationId }) {
+    if (opts.isCompaction) {
+      return this.getCompactionAnchor(parentMessageId);
+    }
+    if (opts.isEdited) {
+      return this.currentMessages[this.currentMessages.length - 2];
+    }
+    return this.createUserMessage({
+      messageId: userMessageId,
+      parentMessageId,
+      conversationId,
+      text: message,
+    });
+  }
+
   async handleStartMethods(message, opts) {
     const {
       user,
@@ -510,14 +557,13 @@ class BaseClient {
     } = await this.setMessageOptions(opts);
     this.options.startupTelemetry?.mark('history_loaded');
 
-    const userMessage = opts.isEdited
-      ? this.currentMessages[this.currentMessages.length - 2]
-      : this.createUserMessage({
-          messageId: userMessageId,
-          parentMessageId,
-          conversationId,
-          text: message,
-        });
+    const userMessage = this.resolveStartUserMessage({
+      opts,
+      message,
+      userMessageId,
+      parentMessageId,
+      conversationId,
+    });
 
     /**
      * Attach quoted excerpts (the "Add to chat" selections from `req.body.quotes`)
@@ -527,7 +573,7 @@ class BaseClient {
      * merged into the model-facing text later, per message, in `buildMessages`,
      * keeping the stored `text` clean while the count stays consistent.
      */
-    if (!opts.isEdited) {
+    if (!opts.isEdited && !opts.isCompaction) {
       const referencedQuotes = getReferencedQuotes(this.options.req?.body?.quotes);
       if (referencedQuotes != null) {
         userMessage.quotes = referencedQuotes;
@@ -729,7 +775,7 @@ class BaseClient {
         }
       }
       this.continued = true;
-    } else {
+    } else if (opts.isCompaction !== true) {
       this.currentMessages.push(userMessage);
     }
 
@@ -771,7 +817,8 @@ class BaseClient {
     this.assertBuiltModelBoundContent(payload);
     this.options.startupTelemetry?.mark('messages_built');
 
-    if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
+    /** A compaction anchor is the persisted leaf, whose own count must stay. */
+    if (tokenCountMap && tokenCountMap[userMessage.messageId] && opts.isCompaction !== true) {
       userMessage.tokenCount = tokenCountMap[userMessage.messageId];
       logger.debug('[BaseClient] userMessage', {
         messageId: userMessage.messageId,
@@ -1092,6 +1139,7 @@ class BaseClient {
     }
 
     if (
+      opts.isCompaction !== true &&
       this.contextMeta?.calibrationRatio > 0 &&
       this.contextMeta.calibrationRatio !== 1 &&
       userMessage.tokenCount > 0

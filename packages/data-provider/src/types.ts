@@ -133,6 +133,9 @@ export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
     isRegenerate?: boolean;
+    /** Manual context compaction: summarize the branch up to `parentMessageId`
+     *  and end without a reply. No user message is created. */
+    compact?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
@@ -189,6 +192,9 @@ export type TSubmission = {
   /** Client-only full message context used to restore branch siblings after scoped regenerate. */
   regenerateMessages?: TMessage[];
   isRegenerate?: boolean;
+  /** Manual context compaction; shaped like a regenerate on the client (no new
+   *  user bubble) and sent to the server as a summarize-only turn. */
+  compact?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;

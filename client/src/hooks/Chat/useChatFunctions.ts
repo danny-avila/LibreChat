@@ -291,6 +291,7 @@ export default function useChatFunctions({
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
+      compact = false,
       overrideMessages,
       overrideFiles,
       targetResponseMessageId,
@@ -312,9 +313,12 @@ export default function useChatFunctions({
      * regenerate of an already-validated file-only turn.
      */
     const replayFileCount = overrideFiles?.length ?? 0;
+    /** A compaction sends no text: it replays the branch, like a regenerate,
+     *  with the response placeholder parented onto the leaf. */
+    const regenerateShaped = isRegenerate || compact;
     if (
       !!isSubmitting ||
-      (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
+      (!regenerateShaped && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
     ) {
       return false;
     }
@@ -398,7 +402,7 @@ export default function useChatFunctions({
     let manualSkills = overrideManualSkills;
     if (manualSkills == null) {
       manualSkills =
-        isRegenerate || isContinued || isEdited
+        regenerateShaped || isContinued || isEdited
           ? []
           : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
     }
@@ -419,7 +423,7 @@ export default function useChatFunctions({
     if (quotesSupported) {
       if (overrideQuotes != null) {
         quotes = overrideQuotes;
-      } else if (!isRegenerate && !isContinued && !isEdited) {
+      } else if (!regenerateShaped && !isContinued && !isEdited) {
         quotes = drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
       }
     }
@@ -471,7 +475,7 @@ export default function useChatFunctions({
       navigate(`/c/new${projectSearch}`);
     }
 
-    const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
+    const targetParentMessageId = regenerateShaped ? messageId : latestMessage?.parentMessageId;
     /**
      * If the user regenerated or resubmitted the message, the current parent is technically
      * the latest user message, which is passed into `ask`; otherwise, we can rely on the
@@ -535,7 +539,9 @@ export default function useChatFunctions({
       isCreatedByUser: true,
       parentMessageId,
       conversationId,
-      messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
+      /** A compaction's "user message" is the leaf itself, so an error lands under it. */
+      messageId:
+        (isContinued || compact) && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
       /**
@@ -554,7 +560,8 @@ export default function useChatFunctions({
       quotes: quotes.length > 0 ? quotes : undefined,
     };
 
-    const submissionFiles = overrideFiles ?? targetParentMessage?.files;
+    /** The leaf's files already sit in history; a compaction re-attaches nothing. */
+    const submissionFiles = compact ? undefined : (overrideFiles ?? targetParentMessage?.files);
     const reuseFiles =
       (isRegenerate || (overrideFiles != null && overrideFiles.length)) &&
       submissionFiles &&
@@ -609,13 +616,14 @@ export default function useChatFunctions({
     /** Set only for edited resubmissions; see `TSubmission.editPrefixLength`. */
     let editPrefixLength: number | undefined;
     const initialResponseId =
-      responseMessageId ?? `${isRegenerate ? messageId : intermediateId}`.replace(/_+$/, '') + '_';
+      responseMessageId ??
+      `${regenerateShaped ? messageId : intermediateId}`.replace(/_+$/, '') + '_';
 
     const initialResponse: TMessage = {
       sender: responseSender,
       text: '',
       endpoint: endpoint ?? '',
-      parentMessageId: isRegenerate ? messageId : intermediateId,
+      parentMessageId: regenerateShaped ? messageId : intermediateId,
       messageId: initialResponseId,
       thread_id,
       conversationId,
@@ -697,14 +705,14 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
-    const submissionMessages = isRegenerate
+    const submissionMessages = regenerateShaped
       ? getRegenerateSubmissionMessages({
           messages: currentMessages,
           targetResponseMessage,
           initialResponseId: initialResponse.messageId,
         })
       : currentMessages;
-    const regenerateMessages = isRegenerate ? [...currentMessages] : undefined;
+    const regenerateMessages = regenerateShaped ? [...currentMessages] : undefined;
 
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
@@ -723,7 +731,8 @@ export default function useChatFunctions({
       regenerateMessages,
       isEdited: isEditOrContinue,
       isContinued,
-      isRegenerate,
+      isRegenerate: regenerateShaped,
+      ...(compact && { compact: true }),
       initialResponse,
       isTemporary,
       ephemeralAgent,
@@ -738,7 +747,7 @@ export default function useChatFunctions({
       queuedMessageOrigin: overrideQueuedMessageOrigin,
     };
 
-    if (isRegenerate) {
+    if (regenerateShaped) {
       setMessages([...submissionMessages, initialResponse]);
       focusRegeneratedResponse(initialResponse.parentMessageId);
     } else {

@@ -318,19 +318,43 @@ function captureRunContextMeta(client) {
   });
 }
 
+/** Text of a summary content part; empty for anything else. */
+function getSummaryPartText(part) {
+  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+    return '';
+  }
+  return part.content
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * A compaction turn's response is its summary. The run emits no text, so a
+ * completion without a usable summary part means the summarizer produced
+ * nothing (empty output, or a provider error the run step recorded), and the
+ * turn fails instead of persisting an empty assistant message.
+ * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
+ */
+function markCompactionSummary(contentParts) {
+  const summary = contentParts.find(
+    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
+  );
+  if (summary == null) {
+    throw Object.assign(new Error('Compaction produced no summary'), {
+      code: 'COMPACTION_FAILED',
+    });
+  }
+  summary.initiatedBy = 'user';
+}
+
 function getLatestEventActorSummary(contentParts) {
   if (!Array.isArray(contentParts)) {
     return undefined;
   }
   for (let index = contentParts.length - 1; index >= 0; index -= 1) {
     const part = contentParts[index];
-    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-      continue;
-    }
-    const text = part.content
-      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-      .join('')
-      .trim();
+    const text = getSummaryPartText(part);
     if (text.length === 0) {
       continue;
     }
@@ -3502,8 +3526,16 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    if (this.isCompactionTurn()) {
+      markCompactionSummary(completion);
+    }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
+  }
+
+  /** A manual compaction runs the graph summarize-only: the summary is the response. */
+  isCompactionTurn() {
+    return this.options?.req?.body?.compact === true;
   }
 
   /**
@@ -4787,6 +4819,7 @@ class AgentClient extends BaseClient {
           traceContext: buildTraceContext(this.options),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
+          summarizeOnly: this.isCompactionTurn(),
           appConfig,
           tokenCounter,
           /** Bills subagent child-run model calls — foreground usage joins

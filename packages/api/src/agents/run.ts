@@ -1563,6 +1563,7 @@ export async function createRun({
   indexTokenCountMap,
   initialSessions,
   summarizationConfig,
+  summarizeOnly = false,
   compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
@@ -1619,6 +1620,12 @@ export async function createRun({
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
+  /**
+   * Manual compaction: the primary agent summarizes the history outright and
+   * the run ends after the summary without a model call. Applies to the
+   * primary agent only; a chained or delegated agent never runs.
+   */
+  summarizeOnly?: boolean;
   /** Bounded, source-addressed navigation guidance derived with provider messages. */
   compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
@@ -2021,6 +2028,9 @@ export async function createRun({
   }
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
+    if (summarizeOnly && agent === agents[0]) {
+      agentInput.summarizeOnly = true;
+    }
     const subagentConfigs = buildSubagentConfigs(
       agent,
       agentInput,
