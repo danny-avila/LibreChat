@@ -225,6 +225,47 @@ export function readResolvedConversationFiles(
   return resolved.files ?? [];
 }
 
+export interface ResolveResendToolResourcesParams {
+  /** Tool names as configured on the agent. */
+  tools?: string[] | null;
+  /** `execute_code` capability AND the caller's `RUN_CODE` grant. */
+  codeEnvAvailable: boolean;
+  /**
+   * `file_search` capability AND the caller's `FILE_SEARCH` grant. `undefined`
+   * where the caller resolved neither, which leaves priming as it was.
+   */
+  fileSearchAvailable?: boolean;
+}
+
+/**
+ * Tool resources whose prior-turn files this run re-hydrates on resend.
+ *
+ * Both role-gated tools are filtered here rather than after hydration, because
+ * priming is not free: the files are read, their usage counters are bumped, and
+ * they are primed into `tool_resources` for a tool the loader is about to drop.
+ * Each flag is the deployment capability AND the role grant, so this reaches the
+ * same verdict the loader will.
+ */
+export function resolveResendToolResources({
+  tools,
+  codeEnvAvailable,
+  fileSearchAvailable,
+}: ResolveResendToolResourcesParams): Set<EToolResources> {
+  const toolResourceSet = new Set<EToolResources>();
+  for (const tool of tools ?? []) {
+    if (tool === Tools.execute_code && !codeEnvAvailable) {
+      continue;
+    }
+    if (tool === Tools.file_search && fileSearchAvailable === false) {
+      continue;
+    }
+    if (EToolResources[tool as keyof typeof EToolResources]) {
+      toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
+    }
+  }
+  return toolResourceSet;
+}
+
 function getMaxCatalogSkills(runtime: AgentExecutionContext): number | undefined {
   const endpoints = runtime.appConfig?.endpoints as
     | Record<string, { skills?: { maxCatalogSkills?: number } } | undefined>
@@ -595,6 +636,14 @@ export interface InitializeAgentParams {
   skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether `file_search` is available to this caller — the capability AND the
+   * `FILE_SEARCH` role grant. Read only when re-hydrating a conversation's
+   * prior-turn files: `false` skips priming resources for a tool the loader will
+   * drop anyway. Absent leaves priming unconditional, so a caller that has not
+   * resolved the grant keeps its current behavior.
+   */
+  fileSearchAvailable?: boolean;
   /**
    * Whether the `run_in_background` capability is enabled for this run. When
    * true, tools the agent opted in via `tool_options[name].run_in_background`
@@ -1014,18 +1063,14 @@ export async function initializeAgent(
    * on handoff agents would fail to find previously attached files.
    */
   if (conversationId != null && resendFiles) {
-    const toolResourceSet = new Set<EToolResources>();
-    for (const tool of agent.tools ?? []) {
-      /** `effectiveCodeEnvAvailable` already carries the role grant, so a denied
-       *  role skips the thread walk and the code-file hydration below rather
-       *  than paying for resources the tool loader is about to drop. */
-      if (tool === Tools.execute_code && !effectiveCodeEnvAvailable) {
-        continue;
-      }
-      if (EToolResources[tool as keyof typeof EToolResources]) {
-        toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
-      }
-    }
+    /** Both flags already carry their role grant, so a denied role skips the
+     *  thread walk and the hydration below rather than paying for resources the
+     *  tool loader is about to drop. */
+    const toolResourceSet = resolveResendToolResources({
+      tools: agent.tools,
+      codeEnvAvailable: effectiveCodeEnvAvailable,
+      fileSearchAvailable: params.fileSearchAvailable,
+    });
 
     const getThreadMessages = db.getMessages;
     /** Falsy anchors cannot match a parent chain, so they get no walk. */

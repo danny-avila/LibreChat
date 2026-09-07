@@ -121,9 +121,10 @@ export interface ChatCompletionDependencies {
    */
   appConfig?: AppConfig;
   /**
-   * Supply to have `codeEnvAvailable` respect the caller's `RUN_CODE` grant as
-   * well as the deployment capability. Optional so existing embedders keep
-   * their current behavior; without it this route is gated by capability alone.
+   * Supply to have `codeEnvAvailable` and `fileSearchAvailable` respect the
+   * caller's `RUN_CODE` / `FILE_SEARCH` grants as well as the deployment
+   * capabilities. Optional so existing embedders keep their current behavior;
+   * without it this route is gated by capability alone.
    */
   getRoleByName?: Parameters<typeof resolveToolRoleGrants>[0]['getRoleByName'];
   /** Tool execute options for event-driven tool execution */
@@ -202,6 +203,13 @@ interface InitializeAgentParams {
    * skips the expansion (same semantics as the in-repo controllers).
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether `file_search` is available to this caller — the capability AND, when
+   * the embedder wires `getRoleByName`, the `FILE_SEARCH` grant. Read only when
+   * re-hydrating a conversation's prior-turn files; absent / `undefined` leaves
+   * that priming unconditional.
+   */
+  fileSearchAvailable?: boolean;
   /**
    * Whether the admin-level `stateful_code_sessions` capability is enabled.
    * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
@@ -684,6 +692,14 @@ export async function createAgentChatCompletion(
       capabilityAllowsCodeEnv === true && deps.getRoleByName != null
         ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).runCode
         : capabilityAllowsCodeEnv;
+    const capabilityAllowsFileSearch = capabilityEnabled(AgentCapabilities.file_search);
+    /** The same pairing for the other gated tool, read only by the resend-file
+     *  priming inside `initializeAgent`. The grant resolution is memoized on the
+     *  request, so pairing both flags costs one role read. */
+    const fileSearchAvailable =
+      capabilityAllowsFileSearch === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).fileSearch
+        : capabilityAllowsFileSearch;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
@@ -732,6 +748,7 @@ export async function createAgentChatCompletion(
       allowedProviders,
       isInitialAgent: true,
       codeEnvAvailable,
+      fileSearchAvailable,
       statefulSessionsAvailable,
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,

@@ -26,20 +26,24 @@ const CLASSIFIED = {
   // -- Gates: capability AND grant --------------------------------------------
   /** 7 gates + 2 map entries + 2 warning-list entries. */
   'api/server/services/ToolService.js': 11,
-  /** `codeEnvAvailable`, paired after the startup batch. */
-  'api/server/services/Endpoints/agents/initialize.js': 1,
-  /** `codeEnvAvailable` for the OpenAI-compatible route. */
-  'api/server/controllers/agents/openai.js': 1,
-  /** `codeEnvAvailable` for the Responses route. */
-  'api/server/controllers/agents/responses.js': 1,
+  /** `codeEnvAvailable` and `fileSearchAvailable`, both paired after the
+   *  startup batch from the one grant read that batch joins. */
+  'api/server/services/Endpoints/agents/initialize.js': 2,
+  /** `codeEnvAvailable` and `fileSearchAvailable` for the OpenAI-compatible
+   *  route, both paired with the shared grant read. */
+  'api/server/controllers/agents/openai.js': 2,
+  /** `codeEnvAvailable` and `fileSearchAvailable` for the Responses route,
+   *  both paired with the shared grant read. */
+  'api/server/controllers/agents/responses.js': 2,
   /** `codeEnvAvailable` for the memory-agent initializer. */
   'api/server/controllers/agents/client.js': 1,
   /** Upload processing: the code-environment and file-search branches. */
   'api/server/services/Files/process.js': 2,
   /** Agent-management upload purposes. */
   'api/server/routes/agents/management.js': 2,
-  /** One gate, paired when the embedder wires `getRoleByName`; one in a comment. */
-  'packages/api/src/agents/openai/service.ts': 2,
+  /** Two gates, each paired when the embedder wires `getRoleByName`; one in a
+   *  comment. */
+  'packages/api/src/agents/openai/service.ts': 3,
 
   // -- Not gates ---------------------------------------------------------------
   /** The upload-resource map entry, and one mention in a doc comment. */
