@@ -198,8 +198,7 @@ const mergeTimestamps = async (
  *
  * - **Foreground.** `useActiveJobs` is already mounted by the sidebar and already polls while any
  *   job runs, so watching an id leave that set costs no extra request. Completion then fetches
- *   just that conversation rather than refetching the whole list, unless the cache was already
- *   stamped by the tab that held the stream.
+ *   just that conversation rather than refetching the whole list.
  * - **Away.** Job-set watching is unreliable here: a short run can start and finish between two
  *   polls, leaving no transition to observe. Polling the first page of the list instead reports
  *   the reply whether or not the job was ever seen running. Gated on any of the three away
@@ -214,7 +213,6 @@ export default function useReplyWatcher() {
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = activeJobsData?.activeJobIds;
   const runningRef = useRef<Set<string> | null>(null);
-  const observedStampRef = useRef<Map<string, string | undefined>>(new Map());
   /** Reply stamps whose list refetch has already been attempted for a conversation no cache
    *  knows, keyed by id. Keyed on the stamp rather than the id alone so a later reply to the
    *  same conversation earns a fresh attempt, while repeated polls carrying the same reply do
@@ -233,18 +231,6 @@ export default function useReplyWatcher() {
     const previous = runningRef.current;
     runningRef.current = running;
 
-    /* What the cache held when the job was first seen running. Comparing that against what it
-       holds at completion answers "did anything stamp this?" without ordering a server-stamped
-       timestamp against the browser clock, which skew alone could invert. */
-    for (const conversationId of running) {
-      if (!observedStampRef.current.has(conversationId)) {
-        observedStampRef.current.set(
-          conversationId,
-          findConvoInAllQueries(queryClient, conversationId)?.lastResponseAt,
-        );
-      }
-    }
-
     if (previous === null) {
       return;
     }
@@ -253,14 +239,9 @@ export default function useReplyWatcher() {
       if (running.has(conversationId)) {
         continue;
       }
-      const stampWhenObserved = observedStampRef.current.get(conversationId);
-      observedStampRef.current.delete(conversationId);
-      /* The tab holding the stream stamps the list cache in its final handler; when the stamp
-         has already moved since this tab saw the job start, the fetch is redundant. */
-      const cachedStamp = findConvoInAllQueries(queryClient, conversationId)?.lastResponseAt;
-      if (cachedStamp !== undefined && cachedStamp !== stampWhenObserved) {
-        continue;
-      }
+      /* Successive jobs can keep the same conversation continuously active. A stamp delivered
+         during that interval may belong to an earlier run, so only a completion fetch can
+         establish the final reply. The merge leaves already-delivered stamps alone. */
       dataService
         .getConversationById(conversationId)
         .then((convo) => mergeTimestamps(queryClient, convo, aggregateRevealedRef.current, true))
