@@ -415,23 +415,39 @@ function isJavaScriptSource(expression: ts.Expression): boolean {
   );
 }
 
+/** Receivers on which `$where` is Mongoose's document save-condition bag. */
+const DOCUMENT_RECEIVERS = new Set(['document', 'doc']);
+
+function isDocumentReceiver(expression: ts.Expression): boolean {
+  const receiver = unwrapExpression(expression);
+  return (
+    receiver.kind === ts.SyntaxKind.ThisKeyword ||
+    (ts.isIdentifier(receiver) && DOCUMENT_RECEIVERS.has(receiver.text))
+  );
+}
+
 /**
  * Mongoose's `Document.prototype.$where` is a per-document save-condition bag, not
  * MongoDB's `$where` JavaScript-evaluation operator: `mongoose/lib/model.js` copies
  * its keys into the save filter as ordinary field predicates, so nothing named
- * `$where` reaches the server. The bag is only ever READ or ASSIGNED AN OBJECT, so
- * a dotted `$where` is exempt in exactly those two positions. Every way of
- * building the operator still fails: a literal `'$where'`, an object-literal
- * `{ $where: ... }`, a computed `obj['$where']`, a dotted access that is CALLED
- * (Mongoose's `Query.prototype.$where(js)` sends the operator), and a dotted
- * access ASSIGNED CODE (`filter.$where = 'this.a == 1'`).
+ * `$where` reaches the server. The RECEIVER is the tell: the bag lives on a
+ * Mongoose document, which this codebase reaches as `document`, `doc` or `this`,
+ * and it is read or assigned — never called and never handed code. A `$where` on
+ * any other receiver, in any position, is the operator, so no amount of
+ * indirection on the value or the call (`filter.$where = predicate`,
+ * `(query.$where)(js)`, `query.$where.call(…)`, `const w = query.$where`) needs
+ * tracing: every one of them fails on the receiver alone.
  */
 function isMongooseDocumentWhere(node: ts.Node): boolean {
   if (!ts.isIdentifier(node) || node.text !== '$where') {
     return false;
   }
   const access = node.parent;
-  if (!ts.isPropertyAccessExpression(access) || access.name !== node) {
+  if (
+    !ts.isPropertyAccessExpression(access) ||
+    access.name !== node ||
+    !isDocumentReceiver(access.expression)
+  ) {
     return false;
   }
   const use = access.parent;
@@ -787,6 +803,10 @@ describe('Amazon DocumentDB compatibility', () => {
           parse('fixture.ts', `document.$where = Object.keys(rest).length > 0 ? rest : undefined;`),
         ),
       ).toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `this.$where = { isDeleted: false };`)),
+      ).toEqual([]);
+      expect(findForbiddenTokens(parse('fixture.ts', `doc.$where = where;`))).toEqual([]);
       /** ...but every shape that builds a real query still fails. */
       expect(
         findForbiddenTokens(parse('fixture.ts', `const filter = { $where: 'this.a == 1' };`)),
@@ -810,6 +830,25 @@ describe('Amazon DocumentDB compatibility', () => {
       ).not.toEqual([]);
       expect(
         findForbiddenTokens(parse('fixture.ts', `filter.$where = () => this.a == 1;`)),
+      ).not.toEqual([]);
+      /** The receiver decides, so indirection on the value or the call changes nothing. */
+      expect(
+        findForbiddenTokens(
+          parse('fixture.ts', `const predicate = 'this.a == 1';\nfilter.$where = predicate;`),
+        ),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where = buildPredicate(ids);`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `(query.$where)('this.a == 1');`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `query.$where.call(query, 'this.a == 1');`)),
+      ).not.toEqual([]);
+      expect(findForbiddenTokens(parse('fixture.ts', `const w = query.$where;`))).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `document.$where('this.a == 1');`)),
       ).not.toEqual([]);
     });
 
