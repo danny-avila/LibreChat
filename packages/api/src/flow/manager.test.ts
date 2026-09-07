@@ -1307,5 +1307,22 @@ describe('FlowStateManager', () => {
       expect(await flowManager.getLeaseGeneration('expiring-owner')).toBe(0);
       clock.mockRestore();
     });
+
+    it('treats an active pre-purpose lease as teardown during rolling upgrades', async () => {
+      const leases = (
+        FlowStateManager as unknown as {
+          inMemoryLeases: Map<string, Record<string, unknown>>;
+        }
+      ).inMemoryLeases;
+      leases.set('lease:legacy-owner', {
+        generation: 4,
+        owner: 'old-replica',
+        leaseUntil: Date.now() + 60_000,
+        expiresAt: Date.now() + 60_000,
+      });
+
+      await expect(flowManager.getLeaseGeneration('legacy-owner')).resolves.toBeNull();
+      leases.delete('lease:legacy-owner');
+    });
   });
 });

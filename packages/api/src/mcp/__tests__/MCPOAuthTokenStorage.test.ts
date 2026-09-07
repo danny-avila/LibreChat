@@ -2050,6 +2050,34 @@ describe('MCPTokenStorage', () => {
       expect(storedRefresh!.token).toBe('enc:rt-2');
     });
 
+    it('rechecks single-flight ownership after the asynchronous generation read', async () => {
+      await seedRefreshableTokens('generation-yield-srv');
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+      const flowManager = {
+        getLeaseGeneration: jest.fn(async () => {
+          await new Promise((resolve) => setImmediate(resolve));
+          return 0;
+        }),
+        acquireLease: jest.fn().mockResolvedValue({
+          generation: 0,
+          release: jest.fn().mockResolvedValue(undefined),
+        }),
+      };
+      const params = {
+        ...refreshParams(refreshTokens, 'generation-yield-srv'),
+        flowManager: flowManager as never,
+      };
+
+      const [first, second] = await Promise.all([
+        MCPTokenStorage.forceRefreshTokens(params),
+        MCPTokenStorage.forceRefreshTokens(params),
+      ]);
+
+      expect(refreshTokens).toHaveBeenCalledTimes(1);
+      expect(first).toMatchObject({ access_token: 'at-2' });
+      expect(second).toMatchObject({ access_token: 'at-2' });
+    });
+
     it('aborts and joins an in-flight refresh before teardown continues', async () => {
       await seedRefreshableTokens('teardown-srv');
       const refreshTokens = jest.fn(

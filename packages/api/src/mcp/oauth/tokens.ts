@@ -849,12 +849,6 @@ export class MCPTokenStorage {
     }
 
     const leaseId = getMCPOAuthLeaseId(userId, serverName);
-    const leaseGeneration = flowManager ? await flowManager.getLeaseGeneration(leaseId) : undefined;
-    if (leaseGeneration === null) {
-      logger.debug(`${logPrefix} Skipping token refresh while OAuth teardown owns the lease`);
-      return null;
-    }
-
     /**
      * The shared redemption is owner-neutral: no caller's `AbortSignal` is
      * threaded into the execution, so an impatient waiter (e.g. the silent
@@ -863,15 +857,32 @@ export class MCPTokenStorage {
      * execution itself is bounded by the internal stale-abort controller below.
      */
     const executionController = new AbortController();
-    const refreshPromise = this.executeTokenRefresh({
-      ...params,
-      refreshTokens,
-      createToken,
-      signal: executionController.signal,
-      leaseId,
-      leaseGeneration,
-    }).finally(() => {
-      clearTimeout(staleTimer);
+    const staleTimerRef: { current?: NodeJS.Timeout } = {};
+    /** Reserve the local single-flight slot before the asynchronous distributed-fence read. */
+    const refreshPromise = (async () => {
+      const leaseGeneration = flowManager
+        ? await flowManager.getLeaseGeneration(leaseId)
+        : undefined;
+      if (leaseGeneration === null) {
+        logger.debug(`${logPrefix} Skipping token refresh while OAuth teardown owns the lease`);
+        return null;
+      }
+      if (this.refreshTeardownCounts.has(ownerKey)) {
+        logger.debug(`${logPrefix} Skipping token refresh during OAuth teardown`);
+        return null;
+      }
+      return this.executeTokenRefresh({
+        ...params,
+        refreshTokens,
+        createToken,
+        signal: executionController.signal,
+        leaseId,
+        leaseGeneration,
+      });
+    })().finally(() => {
+      if (staleTimerRef.current) {
+        clearTimeout(staleTimerRef.current);
+      }
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
         this.inflightRefreshes.delete(refreshKey);
         this.inflightRefreshControllers.delete(refreshKey);
@@ -897,7 +908,7 @@ export class MCPTokenStorage {
      * same re-authentication the proactive deletion would force on every
      * stall, while deletion would also foreclose the silent recovery paths.
      */
-    const staleTimer = setTimeout(() => {
+    staleTimerRef.current = setTimeout(() => {
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
         logger.warn(
           `${logPrefix} Aborting stalled in-flight token refresh after ${MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS}ms`,
@@ -905,7 +916,7 @@ export class MCPTokenStorage {
         executionController.abort();
       }
     }, MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS);
-    staleTimer.unref?.();
+    staleTimerRef.current.unref?.();
     this.inflightRefreshes.set(refreshKey, refreshPromise);
     this.inflightRefreshControllers.set(refreshKey, executionController);
     this.inflightRefreshOwners.set(refreshKey, ownerKey);

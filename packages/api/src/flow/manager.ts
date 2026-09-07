@@ -80,7 +80,7 @@ const READ_LEASE_GENERATION = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local data = cjson.decode(raw)
-if data.owner and data.purpose == 'teardown' and data.leaseUntil and data.leaseUntil > tonumber(ARGV[1]) then return -1 end
+if data.owner and data.purpose ~= 'operation' and data.leaseUntil and data.leaseUntil > tonumber(ARGV[1]) then return -1 end
 return data.generation or 0
 `;
 
@@ -212,7 +212,7 @@ export class FlowStateManager<T = unknown> {
     const now = Date.now();
     FlowStateManager.evictExpiredInMemoryLeases(now);
     const current = FlowStateManager.inMemoryLeases.get(inMemoryKey);
-    if (current?.owner && current.purpose === 'teardown' && (current.leaseUntil ?? 0) > now) {
+    if (current?.owner && current.purpose !== 'operation' && (current.leaseUntil ?? 0) > now) {
       return null;
     }
     return current?.generation ?? 0;
