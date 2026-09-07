@@ -24,27 +24,23 @@ type LimiterOptions = {
 };
 
 describe('code environment limiters', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   test('uses a bounded per-user pairing bucket', () => {
-    const req = { user: { id: 'user-1' } } as Request;
+    const req = { user: { id: 'user-1' } } as unknown as Request;
 
     codeEnvironmentPairingLimiter(req, {} as Response, jest.fn());
 
-    const options = mockRateLimit.mock.calls.at(-1)?.[0] as LimiterOptions;
+    const options = mockRateLimit.mock.calls[0]?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 5, windowMs: 3_600_000 }));
     expect(options.keyGenerator(req)).toBe('user-1');
     expect(mockLimiterCache).toHaveBeenCalledWith('code_environment_pairing_user_limiter');
   });
 
   test('keys status user limits by immutable user ID', () => {
-    const req = { user: { id: 'user-1' }, ip: '2001:db8::1' } as Request;
+    const req = { user: { id: 'user-1' }, ip: '2001:db8::1' } as unknown as Request;
 
     codeEnvironmentStatusLimiter(req, {} as Response, jest.fn());
 
-    const options = mockRateLimit.mock.calls.at(-1)?.[0] as LimiterOptions;
+    const options = mockRateLimit.mock.calls[1]?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 120, windowMs: 60_000 }));
     expect(options.keyGenerator(req)).toBe('user-1');
     expect(mockIpKeyGenerator).not.toHaveBeenCalled();
@@ -52,11 +48,11 @@ describe('code environment limiters', () => {
   });
 
   test('applies an independent normalized IP status limit', () => {
-    const req = { user: { id: 'user-1' }, ip: '2001:db8::1' } as Request;
+    const req = { user: { id: 'user-1' }, ip: '2001:db8::1' } as unknown as Request;
 
     codeEnvironmentStatusIpLimiter(req, {} as Response, jest.fn());
 
-    const options = mockRateLimit.mock.calls.at(-1)?.[0] as LimiterOptions;
+    const options = mockRateLimit.mock.calls[2]?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 300, windowMs: 60_000 }));
     expect(options.keyGenerator(req)).toBe('2001:db8::1');
     expect(mockIpKeyGenerator).toHaveBeenCalledWith('2001:db8::1');
