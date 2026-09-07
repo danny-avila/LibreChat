@@ -131,16 +131,21 @@ describe('buildApprovalPreview', () => {
 
   test('reveals and bounds generic tool labels and descriptions', () => {
     const preview = buildApprovalPreview({
-      name: `run\nspoof\u202e${'x'.repeat(500)}`,
-      description: `explain\r${'y'.repeat(2000)}`,
+      name: `run\nspoof\u061c\u200e\u200f\u206a${'x'.repeat(500)}`,
+      description: `explain\r\u0085${'y'.repeat(2000)}`,
       tool_call_id: 'call-1',
       arguments: { value: 'safe' },
     });
 
     expect(preview.toolName).toContain('\\u000a');
+    expect(preview.toolName).toContain('\\u061c');
+    expect(preview.toolName).toContain('\\u200e');
+    expect(preview.toolName).toContain('\\u200f');
+    expect(preview.toolName).toContain('\\u206a');
     expect(preview.toolName).not.toContain('\n');
     expect(preview.toolName.length).toBeLessThanOrEqual(256);
     expect(preview.description).toContain('\\u000d');
+    expect(preview.description).toContain('\\u0085');
     expect(preview.description?.length).toBeLessThanOrEqual(1024);
     expect(preview.truncated).toBe(true);
   });

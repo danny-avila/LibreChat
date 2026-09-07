@@ -18,7 +18,7 @@ export interface ApprovalPreview {
 
 /* eslint-disable no-control-regex -- reviewing hidden controls requires matching the C0 ranges */
 const CONTROL_CHARACTERS =
-  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u206f]/g;
 /* eslint-enable no-control-regex */
 
 function revealControlCharacters(value: string): string {
@@ -29,7 +29,8 @@ function revealControlCharacters(value: string): string {
 }
 
 /* eslint-disable no-control-regex -- headings must reveal even ordinary whitespace controls */
-const TARGET_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
+const TARGET_CONTROL_CHARACTERS =
+  /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u206f]/g;
 /* eslint-enable no-control-regex */
 
 export function boundApprovalLabel(
