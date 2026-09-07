@@ -2050,6 +2050,33 @@ describe('MCPTokenStorage', () => {
       expect(storedRefresh!.token).toBe('enc:rt-2');
     });
 
+    it('aborts and joins an in-flight refresh before teardown continues', async () => {
+      await seedRefreshableTokens('teardown-srv');
+      const refreshTokens = jest.fn(
+        (_token, _metadata, signal) =>
+          new Promise<MCPOAuthTokens>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new Error('teardown fence')), {
+              once: true,
+            });
+          }),
+      );
+
+      const refresh = MCPTokenStorage.forceRefreshTokens(
+        refreshParams(refreshTokens, 'teardown-srv'),
+      );
+      await waitFor(() => refreshTokens.mock.calls.length > 0);
+      await MCPTokenStorage.fenceRefreshes('u1', 'teardown-srv');
+
+      await expect(refresh).resolves.toBeNull();
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:teardown-srv:refresh',
+        }),
+      ).toMatchObject({ token: 'enc:rt-1' });
+    });
+
     it('getTokens joins an in-flight refresh instead of replaying the consumed refresh token', async () => {
       // Mirrors issue #14583: a silent refresh (401-triggered) is mid-redemption
       // when an expired-token read fires its own refresh. Without single-flight,

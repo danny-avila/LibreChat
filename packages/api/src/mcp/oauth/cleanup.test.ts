@@ -151,9 +151,15 @@ describe('cleanupMCPServerOAuth', () => {
 
   it('deletes only token records snapshotted before flow cancellation', async () => {
     const deleteTokens = jest.fn();
-    const findToken = jest.fn(async ({ type }: { type?: string }) =>
-      type === 'mcp_oauth' ? ({ token: 'encrypted-old-access' } as never) : null,
-    );
+    const findToken = jest.fn(async ({ type }: { type?: string }) => {
+      if (type === 'mcp_oauth') {
+        return {
+          token: 'encrypted-old-access',
+          metadata: { credential_set_id: 'partially-versioned' },
+        } as never;
+      }
+      return type === 'mcp_oauth_refresh' ? ({ token: 'encrypted-legacy-refresh' } as never) : null;
+    });
     const deleteUserTokens = jest.fn(
       async ({
         userId,
@@ -212,7 +218,7 @@ describe('cleanupMCPServerOAuth', () => {
       },
     });
 
-    expect(deleteTokens).toHaveBeenCalledTimes(1);
+    expect(deleteTokens).toHaveBeenCalledTimes(2);
     expect(deleteTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       type: 'mcp_oauth',
