@@ -3160,6 +3160,21 @@ export function createConversationMethods(
           }
         }
       };
+      if (recoveryConversationIds.length > 0) {
+        await deps?.deleteAgentQueuedTurns?.(
+          user,
+          recoveryConversationIds.map((conversationId) =>
+            hasExplicitTenant
+              ? {
+                  conversationId,
+                  ...(options?.tenantId == null ? {} : { tenantId: options.tenantId }),
+                }
+              : { conversationId, allTenants: true },
+          ),
+        );
+        await options?.beforeDelete?.(recoveryConversationIds);
+      }
+
       while (pending.length > 0) {
         const wave = pending.filter((conversation) => !seen.has(conversation.conversationId));
         if (wave.length === 0) {
@@ -3201,20 +3216,6 @@ export function createConversationMethods(
         ...recoveryConversationIds,
         ...deletedConversations.map((conversation) => conversation.conversationId),
       ];
-
-      if (recoveryConversationIds.length > 0) {
-        await deps?.deleteAgentQueuedTurns?.(
-          user,
-          recoveryConversationIds.map((conversationId) =>
-            hasExplicitTenant
-              ? {
-                  conversationId,
-                  ...(options?.tenantId == null ? {} : { tenantId: options.tenantId }),
-                }
-              : { conversationId, allTenants: true },
-          ),
-        );
-      }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
 

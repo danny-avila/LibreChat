@@ -224,10 +224,10 @@ describe('deleteConvos explicit tenant boundaries', () => {
     await expect(countBoundary(TENANT_B)).resolves.toEqual({ conversations: 2, messages: 2 });
     await expect(countBoundary(null)).resolves.toEqual({ conversations: 2, messages: 2 });
     expect(deleteAgentQueuedTurns).toHaveBeenNthCalledWith(1, OWNER, [
-      { conversationId: CHILD_ID, tenantId: TENANT_A },
+      { conversationId: ROOT_ID, tenantId: TENANT_A },
     ]);
     expect(deleteAgentQueuedTurns).toHaveBeenNthCalledWith(2, OWNER, [
-      { conversationId: ROOT_ID, tenantId: TENANT_A },
+      { conversationId: CHILD_ID, tenantId: TENANT_A },
     ]);
     expect(tagCounts.get('a-child-tag')).toBe(0);
     expect(tagCounts.get('a-root-tag')).toBe(1);

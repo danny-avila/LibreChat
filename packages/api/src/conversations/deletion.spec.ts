@@ -1,4 +1,9 @@
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createMethods, createModels, tenantStorage } from '@librechat/data-schemas';
 import type { ConversationDeletionDeps } from './deletion';
+import { openCheckpointDeletion } from '../agents/checkpoints/deletion';
+import { createCheckpointNamespace } from '../stream/checkpoints';
 import { createConversationDeletionService } from './deletion';
 
 function intent(initial: string[] = []) {
@@ -196,6 +201,113 @@ describe('conversation deletion recovery', () => {
       );
       expect(deletion.acknowledge).toHaveBeenCalledTimes(1);
       expect(deletion.conversationIds()).toEqual([]);
+    },
+  );
+});
+
+describe('missing-root deletion with real persistence', () => {
+  let server: MongoMemoryServer;
+  beforeAll(async () => {
+    createModels(mongoose);
+    server = await MongoMemoryServer.create();
+    await mongoose.connect(server.getUri());
+  });
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await mongoose.connection.db!.dropDatabase();
+  });
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await server.stop();
+  });
+
+  it.each([false, true])(
+    'captures missing roots before erasing remnants and retries failed capture (message=%s)',
+    async (hasMessage) => {
+      const cfg = {
+        type: 'mongo' as const,
+        checkpointCollectionName: 'recovery_cp',
+        checkpointWritesCollectionName: 'recovery_writes',
+      };
+      const ownNamespace = createCheckpointNamespace('aaaaaaaaaaaaaaaaaaaaaaaa', 'tenant');
+      const foreignNamespace = createCheckpointNamespace('bbbbbbbbbbbbbbbbbbbbbbbb', 'tenant');
+      const otherTenantNamespace = createCheckpointNamespace(
+        'aaaaaaaaaaaaaaaaaaaaaaaa',
+        'other-tenant',
+      );
+      for (const name of ['recovery_cp', 'recovery_writes']) {
+        await mongoose.connection.db!.collection(name).insertMany(
+          [ownNamespace, foreignNamespace, otherTenantNamespace].map((checkpoint_ns) => ({
+            thread_id: 'missing-root',
+            checkpoint_ns,
+            checkpoint_id: 'checkpoint',
+          })),
+        );
+      }
+      await tenantStorage.run({ tenantId: 'tenant' }, async () => {
+        if (hasMessage) {
+          await mongoose.models.Message.create({
+            user: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+            conversationId: 'missing-root',
+            messageId: 'orphan',
+            sender: 'assistant',
+            text: 'remaining evidence',
+          });
+        }
+        const firstIntent = await openCheckpointDeletion(
+          'aaaaaaaaaaaaaaaaaaaaaaaa',
+          'tenant',
+          'missing-root',
+          cfg,
+        );
+        jest.spyOn(firstIntent, 'remember').mockRejectedValueOnce(new Error('capture unavailable'));
+        const opener = jest.fn(openCheckpointDeletion).mockResolvedValueOnce(firstIntent);
+        const service = createConversationDeletionService({
+          db: createMethods(mongoose),
+          openCheckpointDeletion: opener,
+          subagentThreadTaskStore: {
+            planCancellationForConversations: jest.fn().mockResolvedValue({ leases: [] }),
+            cancelPlan: jest.fn().mockResolvedValue(0),
+          },
+          GenerationJobManager: {
+            getCleanupBlockingJobIdsForConversations: jest.fn().mockResolvedValue([]),
+            getCleanupJob: jest.fn().mockResolvedValue(null),
+          },
+          deleteConvoSharedLinksWithCleanup: jest.fn().mockResolvedValue(undefined),
+          isStopConfirmed: () => true,
+          logger: { warn: jest.fn() },
+        } as unknown as ConversationDeletionDeps);
+        const remove = () =>
+          service.deleteConversations(
+            'aaaaaaaaaaaaaaaaaaaaaaaa',
+            { conversationId: 'missing-root' },
+            'tenant',
+            cfg,
+            {
+              allowMissingRoot: true,
+            },
+          );
+        await expect(remove()).rejects.toThrow('capture unavailable');
+        expect(
+          await mongoose.models.Message.countDocuments({ user: 'aaaaaaaaaaaaaaaaaaaaaaaa' }),
+        ).toBe(hasMessage ? 1 : 0);
+        expect(await mongoose.connection.db!.collection('recovery_cp').countDocuments()).toBe(3);
+        await expect(remove()).resolves.toMatchObject({ conversationIds: ['missing-root'] });
+        expect(
+          await mongoose.models.Message.countDocuments({ user: 'aaaaaaaaaaaaaaaaaaaaaaaa' }),
+        ).toBe(0);
+        for (const name of ['recovery_cp', 'recovery_writes']) {
+          const remaining = await mongoose.connection.db!.collection(name).find().toArray();
+          expect(remaining.map((row) => row.checkpoint_ns).sort()).toEqual(
+            [foreignNamespace, otherTenantNamespace].sort(),
+          );
+        }
+        expect(
+          (
+            await openCheckpointDeletion('aaaaaaaaaaaaaaaaaaaaaaaa', 'tenant', 'missing-root', cfg)
+          ).conversationIds(),
+        ).toEqual([]);
+      });
     },
   );
 });

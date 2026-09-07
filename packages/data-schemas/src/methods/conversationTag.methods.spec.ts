@@ -85,6 +85,30 @@ describe('ConversationTag model - $pullAll operations', () => {
       expect(remaining).toHaveLength(0);
     });
 
+    it('returns the committed deletion without a fallible count read', async () => {
+      await ConversationTag.create({ tag: 'removed', user: userId, position: 1, count: 77 });
+      await Conversation.create({
+        conversationId: 'tag-delete',
+        user: userId,
+        endpoint: 'openAI',
+        tags: ['removed'],
+      });
+      const count = jest
+        .spyOn(Conversation, 'countDocuments')
+        .mockRejectedValue(new Error('count unavailable'));
+      try {
+        await expect(deleteConversationTag(userId, 'removed')).resolves.toMatchObject({
+          tag: 'removed',
+          count: 0,
+        });
+        expect(count).not.toHaveBeenCalled();
+        expect(await ConversationTag.findOne({ user: userId, tag: 'removed' })).toBeNull();
+        expect((await Conversation.findOne({ user: userId }).lean())?.tags).toEqual([]);
+      } finally {
+        count.mockRestore();
+      }
+    });
+
     it('should return null when the tag does not exist', async () => {
       const result = await deleteConversationTag(userId, 'nonexistent');
       expect(result).toBeNull();

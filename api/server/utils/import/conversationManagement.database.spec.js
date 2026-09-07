@@ -49,6 +49,58 @@ describe('importConversations database compatibility', () => {
     }
   });
 
+  it('preserves forward parent references and parent-first timestamps in flat exports', async () => {
+    const filepath = path.join(tempDir, 'forward-parents.json');
+    const messages = [
+      ['child', 'parent'],
+      ['sibling', 'parent'],
+      ['parent', 'root'],
+      ['root', Constants.NO_PARENT],
+    ].map(([messageId, parentMessageId]) => ({
+      messageId,
+      parentMessageId,
+      conversationId: 'source',
+      sender: 'User',
+      text: messageId,
+      isCreatedByUser: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }));
+    await fs.writeFile(
+      filepath,
+      JSON.stringify({
+        conversationId: 'source',
+        endpoint: EModelEndpoint.openAI,
+        recursive: false,
+        messages,
+      }),
+    );
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+      const [conversation] = await db.listConversationResources('owner', 'tenant-a', { limit: 10 });
+      const saved = await db.listConversationMessageResources(
+        'owner',
+        'tenant-a',
+        conversation.conversationId,
+        { limit: 10 },
+      );
+      expect(saved).toHaveLength(4);
+      const byText = new Map(saved.map((message) => [message.text, message]));
+      for (const source of messages) {
+        const clone = byText.get(source.text);
+        expect(clone.messageId).not.toBe(source.messageId);
+        if (source.parentMessageId === Constants.NO_PARENT) {
+          expect(clone.parentMessageId).toBe(Constants.NO_PARENT);
+          continue;
+        }
+        const parent = byText.get(source.parentMessageId);
+        expect(clone.parentMessageId).toBe(parent.messageId);
+        expect(new Date(clone.createdAt).getTime()).toBeGreaterThan(
+          new Date(parent.createdAt).getTime(),
+        );
+      }
+    });
+  });
+
   it('persists a tagged branched conversation only for the authenticated owner and tenant', async () => {
     const filepath = path.join(tempDir, 'conversation.json');
     const owner = 'authenticated-user';

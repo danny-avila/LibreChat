@@ -465,7 +465,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         { $inc: { position: -1 } },
       );
 
-      return withCommittedCount(deletedTag);
+      return { ...deletedTag, count: 0 };
     } catch (error) {
       logger.error('[deleteConversationTag] Error deleting conversation tag', error);
       throw new Error('Error deleting conversation tag');

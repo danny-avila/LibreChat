@@ -1,5 +1,5 @@
 import { BSON, ObjectId } from 'mongodb';
-import { tMessageSchema, tPresetSchema } from 'librechat-data-provider';
+import { Constants, tMessageSchema, tPresetSchema } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Document } from 'mongodb';
 import {
@@ -339,7 +339,7 @@ function assertMessage(
   depth: number,
   budget: TraversalBudget,
   recursive: boolean,
-): void {
+): asserts value is JsonObject {
   reserveTraversalNode(depth, budget);
   if (!isJsonObject(value)) {
     throw new ConversationImportError(`Field "${location}" must be a message object`);
@@ -431,13 +431,48 @@ function assertMessages(
   location: string,
   budget: TraversalBudget,
   recursive: boolean,
-): void {
+): JsonObject[] {
   if (!Array.isArray(value)) {
     throw new ConversationImportError(`Field "${location}" must be an array`);
   }
+  const messages: JsonObject[] = [];
+  const byId = new Map<string, JsonObject>();
+  const children = new Map<string, JsonObject[]>();
+  const ordered: JsonObject[] = [];
   for (let index = 0; index < value.length; index++) {
-    assertMessage(value[index], `${location}[${index}]`, 1, budget, recursive);
+    const message = value[index];
+    assertMessage(message, `${location}[${index}]`, 1, budget, recursive);
+    messages.push(message);
+    if (recursive) continue;
+    const id = message.messageId as string;
+    if (id === Constants.NO_PARENT || byId.has(id)) {
+      throw new ConversationImportError(`Field "${location}" must have unique message IDs`);
+    }
+    byId.set(id, message);
+    const parentId = message.parentMessageId as string | undefined;
+    if (!parentId || parentId === Constants.NO_PARENT) {
+      ordered.push(message);
+      continue;
+    }
+    const siblings = children.get(parentId) ?? [];
+    siblings.push(message);
+    children.set(parentId, siblings);
   }
+  if (recursive) return messages;
+  for (const parentId of children.keys()) {
+    if (!byId.has(parentId)) {
+      throw new ConversationImportError(`Field "${location}" references a missing parent`);
+    }
+  }
+  for (let index = 0; index < ordered.length; index++) {
+    for (const child of children.get(ordered[index].messageId as string) ?? []) {
+      ordered.push(child);
+    }
+  }
+  if (ordered.length !== messages.length) {
+    throw new ConversationImportError(`Field "${location}" contains a parent cycle`);
+  }
+  return ordered;
 }
 
 export function prepareLibreChatConversationImport(
@@ -523,12 +558,13 @@ export function prepareLibreChatConversationImport(
       'The recursive flag must match the LibreChat message collection shape',
     );
   }
-  assertMessages(
+  const messages = assertMessages(
     hasMessages ? value.messages : value.messagesTree,
     hasMessages ? 'conversation.messages' : 'conversation.messagesTree',
     { nodes: 0 },
     value.recursive === true,
   );
+  value[hasMessages ? 'messages' : 'messagesTree'] = messages;
   return value;
 }
 

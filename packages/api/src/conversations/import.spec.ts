@@ -65,6 +65,41 @@ function createDependencies(fileData: string, fileSize = Buffer.byteLength(fileD
 }
 
 describe('createConversationImportOperation', () => {
+  it.each([
+    [
+      'duplicate IDs',
+      [
+        ['same', null],
+        ['same', null],
+      ],
+    ],
+    ['missing parents', [['child', 'missing']]],
+    [
+      'cycles',
+      [
+        ['a', 'b'],
+        ['b', 'a'],
+      ],
+    ],
+    ['self references', [['a', 'a']]],
+  ])('rejects flat graphs with %s before selecting an importer', async (_label, graph) => {
+    const messages = graph.map(([messageId, parent]) => ({
+      ...baseExport.messages[0],
+      messageId,
+      parentMessageId: parent ?? baseExport.messages[0].parentMessageId,
+    }));
+    const { deps } = createDependencies(JSON.stringify({ ...baseExport, messages }));
+    await expect(
+      createConversationImportOperation(deps)({
+        filepath: '/tmp/invalid-graph.json',
+        requestUserId: 'owner',
+        format: 'librechat',
+      }),
+    ).rejects.toBeInstanceOf(ConversationImportError);
+    expect(deps.getImporter).not.toHaveBeenCalled();
+    expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
+  });
+
   it('runs a valid LibreChat export with the authenticated owner and import configuration', async () => {
     const { deps, importer } = createDependencies(JSON.stringify(baseExport));
     const operation = createConversationImportOperation(deps);
