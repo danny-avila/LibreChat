@@ -31,6 +31,7 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
+import type { StoredFileRef } from '~/storage/path';
 import type { ServerRequest } from '~/types';
 import {
   assertRemoteFileURL,
@@ -280,9 +281,7 @@ export function getStorageMetadataForKey(
   };
 }
 
-export function resolveStoredS3Key(
-  file: Pick<TFile, 'filepath'> & { storageKey?: string | null },
-): string {
+export function resolveStoredS3Key(file: StoredFileRef): string {
   return file.storageKey || extractKeyFromS3Url(file.filepath);
 }
 
@@ -638,6 +637,27 @@ export async function saveURLToS3(
   return filepath;
 }
 
+/**
+ * Decodes a key taken from a URL path.
+ *
+ * `URL.pathname` is percent-encoded, but S3 object keys are raw UTF-8 and the AWS SDK encodes
+ * them again when it signs the request. Returning the encoded pathname therefore asks S3 for a
+ * literally different key (`%C3%81rsreikningur.pdf` instead of `Ársreikningur.pdf`) and every
+ * read of a file whose name contains a non-ASCII character fails with `NoSuchKey`. Keys made of
+ * ASCII are unaffected, which is why this only shows up for non-English filenames.
+ *
+ * Malformed sequences fall back to the raw value rather than throwing — a key that cannot be
+ * decoded is still worth attempting.
+ */
+function decodeKeyFromUrlPath(key: string): string {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    logger.warn(`[extractKeyFromS3Url] Could not decode key, using it as-is: ${key}`);
+    return key;
+  }
+}
+
 export function extractKeyFromS3Url(fileUrlOrKey: string): string {
   if (!fileUrlOrKey) {
     throw new Error('Invalid input: URL or key is empty');
@@ -659,7 +679,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
         (endpointUrl.pathname.endsWith('/') ? 0 : 1) +
         bucketName.length +
         1;
-      const key = url.pathname.substring(startPos);
+      const key = decodeKeyFromUrlPath(url.pathname.substring(startPos));
       if (!key) {
         logger.warn(
           `[extractKeyFromS3Url] Extracted key is empty for endpoint path-style URL: ${fileUrlOrKey}`,
@@ -677,7 +697,7 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
     ) {
       const firstSlashIndex = pathname.indexOf('/');
       if (firstSlashIndex > 0) {
-        const key = pathname.substring(firstSlashIndex + 1);
+        const key = decodeKeyFromUrlPath(pathname.substring(firstSlashIndex + 1));
         if (key === '') {
           logger.warn(
             `[extractKeyFromS3Url] Extracted key is empty after removing bucket name from URL: ${fileUrlOrKey}`,
@@ -695,8 +715,9 @@ export function extractKeyFromS3Url(fileUrlOrKey: string): string {
       return '';
     }
 
-    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${pathname}`);
-    return pathname;
+    const key = decodeKeyFromUrlPath(pathname);
+    logger.debug(`[extractKeyFromS3Url] fileUrlOrKey: ${fileUrlOrKey}, Extracted key: ${key}`);
+    return key;
   } catch (error) {
     if (fileUrlOrKey.startsWith('http://') || fileUrlOrKey.startsWith('https://')) {
       logger.error(

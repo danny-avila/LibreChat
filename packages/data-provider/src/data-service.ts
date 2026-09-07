@@ -22,7 +22,9 @@ import * as r from './roles';
 export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
+    if (Array.isArray(value)) {
+      value.forEach((item) => query.append(key, String(item)));
+    } else if (value !== undefined && value !== null && value !== '') {
       query.set(key, String(value));
     }
   }
@@ -70,6 +72,10 @@ export function deleteUser(payload?: t.TDeleteUserRequest): Promise<unknown> {
 
 export function getCodeEnvironments(): Promise<t.TCodeEnvironmentsResponse> {
   return request.get(endpoints.codeEnvironments());
+}
+
+export function getCodeEnvironmentStatus(id: string): Promise<t.TCodeEnvironmentStatusResponse> {
+  return request.get(endpoints.codeEnvironmentStatus(id));
 }
 
 export function pairCodeEnvironment(payload: {

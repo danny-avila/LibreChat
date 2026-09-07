@@ -19,7 +19,6 @@ import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import { useLocalize, useHasAccess, useAuthContext, useToolFavorites } from '~/hooks';
 import { CreateSkillDialog } from '~/components/Skills/dialogs';
-import { skillsSelectionTransition } from './items/mutations';
 import { useSkillsInfiniteQuery } from '~/data-provider';
 import MarketplaceCatalog from './MarketplaceCatalog';
 import { CategoryIcon } from '~/components/Prompts';
@@ -140,26 +139,14 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
     [catalog, search, category, view, favoriteKeys],
   );
 
+  /** Only the allowlist changes here: the section's mode control owns
+   *  `skills_enabled` and `skills_scope`, and the picker is reachable only from
+   *  `selected` mode. */
   const applySkillsSelection = useCallback(
     (next: string[]) => {
       setValue('skills', next, { shouldDirty: true });
-      const transition = skillsSelectionTransition(
-        next,
-        getValues('skills_enabled'),
-        getValues('skill_authoring_enabled'),
-        getValues('skills_scope'),
-      );
-      if (transition.enabled !== undefined) {
-        setValue('skills_enabled', transition.enabled, { shouldDirty: true });
-      }
-      if (transition.authoringEnabled !== undefined) {
-        setValue('skill_authoring_enabled', transition.authoringEnabled, { shouldDirty: true });
-      }
-      if (transition.scope !== undefined) {
-        setValue('skills_scope', transition.scope, { shouldDirty: true });
-      }
     },
-    [getValues, setValue],
+    [setValue],
   );
 
   const handleSkillCreated = useCallback(

@@ -380,9 +380,195 @@ describe('File Methods', () => {
         true,
       );
 
-      const files = await fileMethods.getExpiredFiles(100, now);
+      const files = await fileMethods.getExpiredFiles(100, { now });
 
       expect(files.map((file) => file.file_id)).toEqual([expiredFileId]);
+    });
+
+    /** Seeds a sweep-eligible file, then drives its retry state through the
+     *  same methods the sweep itself uses. */
+    const seedExpiredFile = async ({
+      file_id,
+      expiredAt,
+      attempts = 0,
+      retryAt,
+    }: {
+      file_id: string;
+      expiredAt: Date;
+      attempts?: number;
+      retryAt?: Date;
+    }) => {
+      await fileMethods.createFile(
+        {
+          file_id,
+          user: new mongoose.Types.ObjectId(),
+          filename: `${file_id}.txt`,
+          filepath: `/uploads/${file_id}.txt`,
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt,
+        },
+        true,
+      );
+      for (let i = 0; i < attempts; i++) {
+        await fileMethods.incrementFileDeletionAttempts(file_id);
+      }
+      if (retryAt) {
+        await fileMethods.deferExpiredFile(file_id, retryAt);
+      }
+    };
+
+    it('holds back files whose deletion backoff has not elapsed', async () => {
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const readyFileId = uuidv4();
+      const backedOffFileId = uuidv4();
+
+      await seedExpiredFile({
+        file_id: backedOffFileId,
+        expiredAt: new Date('2029-12-01T00:00:00.000Z'),
+        attempts: 2,
+        retryAt: new Date('2030-01-01T00:00:01.000Z'),
+      });
+      await seedExpiredFile({
+        file_id: readyFileId,
+        expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        attempts: 2,
+        retryAt: new Date('2029-12-31T23:00:00.000Z'),
+      });
+
+      const files = await fileMethods.getExpiredFiles(100, { now });
+
+      expect(files.map((file) => file.file_id)).toEqual([readyFileId]);
+    });
+
+    it('holds a parked file back without excluding it for good', async () => {
+      const parkedFileId = uuidv4();
+      const retriableFileId = uuidv4();
+
+      /* The parked file expired first, so with nothing holding it back it
+       * sorts to the front of every batch and a limit-sized run of them
+       * starves everything that expired afterwards. */
+      await seedExpiredFile({
+        file_id: parkedFileId,
+        expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+        attempts: 10,
+        retryAt: new Date('2030-02-01T00:00:00.000Z'),
+      });
+      await seedExpiredFile({
+        file_id: retriableFileId,
+        expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        attempts: 9,
+      });
+
+      const parked = await fileMethods.getExpiredFiles(100, {
+        now: new Date('2030-01-01T00:00:00.000Z'),
+      });
+      expect(parked.map((file) => file.file_id)).toEqual([retriableFileId]);
+
+      /* Nothing is excluded permanently — a record reused for different
+       * content in the meantime gets its object swept rather than stranded. */
+      const afterPark = await fileMethods.getExpiredFiles(100, {
+        now: new Date('2030-02-01T00:00:01.000Z'),
+      });
+      expect(afterPark.map((file) => file.file_id)).toEqual([parkedFileId, retriableFileId]);
+    });
+
+    it('leaves retry state alone on writes that touch the record', async () => {
+      const fileId = uuidv4();
+      await seedExpiredFile({
+        file_id: fileId,
+        expiredAt: new Date('2029-01-01T00:00:00.000Z'),
+        attempts: 4,
+        retryAt: new Date('2030-02-01T00:00:00.000Z'),
+      });
+
+      /* `prepareImagesLocal` clears the upload TTL with nothing but the id
+       * on every reuse of an image, the deferred preview only transitions
+       * `status`, and `processCodeOutput` repurposes a row for new content.
+       * None of them need to reason about sweep bookkeeping: the deferral
+       * is a deadline, so the worst a survivor can do is delay. */
+      await fileMethods.updateFile({ file_id: fileId });
+      await fileMethods.updateFile({ file_id: fileId, status: 'ready' });
+
+      const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(file.deletionAttempts).toBe(4);
+      expect(file.deletionRetryAt).toEqual(new Date('2030-02-01T00:00:00.000Z'));
+    });
+
+    it('records retry bookkeeping without posing as a content write', async () => {
+      const fileId = uuidv4();
+      await seedExpiredFile({ file_id: fileId, expiredAt: new Date('2029-01-01T00:00:00.000Z') });
+      const [before] = (await fileMethods.getFiles({ file_id: fileId }))!;
+
+      /* `processCodeOutput` falls back to `updatedAt` as the writer-order
+       * stamp for records predating `metadata.sourceDispatchedAt`. A sweep
+       * that bumped it would look like a newer content writer and a
+       * background harvest would drop its attachment. */
+      await fileMethods.incrementFileDeletionAttempts(fileId);
+      await fileMethods.deferExpiredFile(fileId, new Date('2030-06-01T00:00:00.000Z'));
+
+      const [after] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(after.deletionAttempts).toBe(1);
+      expect(after.updatedAt).toEqual(before.updatedAt);
+    });
+  });
+
+  describe('deferExpiredFile', () => {
+    const createDeferrableFile = async (file_id: string) => {
+      await fileMethods.createFile(
+        {
+          file_id,
+          user: new mongoose.Types.ObjectId(),
+          filename: 'deferred.txt',
+          filepath: '/uploads/deferred.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-31T00:00:00.000Z'),
+        },
+        true,
+      );
+    };
+
+    it('stamps the next retry and counts the attempt', async () => {
+      const fileId = uuidv4();
+      const retryAt = new Date('2030-02-01T00:00:00.000Z');
+      await createDeferrableFile(fileId);
+
+      expect(await fileMethods.incrementFileDeletionAttempts(fileId)).toBe(1);
+      await fileMethods.deferExpiredFile(fileId, retryAt);
+
+      const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(file.deletionAttempts).toBe(1);
+      expect(file.deletionRetryAt).toEqual(retryAt);
+    });
+
+    it('hands concurrent sweeps distinct attempt numbers', async () => {
+      const fileId = uuidv4();
+      await createDeferrableFile(fileId);
+
+      /* Two nodes recording a failure for the same file in the same pass.
+       * Deriving the attempt from the queried snapshot would give both the
+       * same number and neither would see the cap being reached. */
+      const attempts = await Promise.all([
+        fileMethods.incrementFileDeletionAttempts(fileId),
+        fileMethods.incrementFileDeletionAttempts(fileId),
+        fileMethods.incrementFileDeletionAttempts(fileId),
+      ]);
+
+      expect([...attempts].sort()).toEqual([1, 2, 3]);
+    });
+
+    it('never pulls a deferral earlier than one already committed', async () => {
+      const fileId = uuidv4();
+      const later = new Date('2030-02-01T00:00:00.000Z');
+      const earlier = new Date('2030-01-01T00:00:00.000Z');
+      await createDeferrableFile(fileId);
+
+      await fileMethods.deferExpiredFile(fileId, later);
+      await fileMethods.deferExpiredFile(fileId, earlier);
+
+      const [file] = (await fileMethods.getFiles({ file_id: fileId }))!;
+      expect(file.deletionRetryAt).toEqual(later);
     });
   });
 

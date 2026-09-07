@@ -3,6 +3,7 @@ const express = require('express');
 const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
+  normalizeLimit,
   deleteAgentCheckpoints,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
@@ -18,6 +19,7 @@ const {
   inspectContent,
   createContentFilter,
   isContentFilterError,
+  isConversationImportError,
   contentFilterBlockResponse,
   extractConversationTitleContent,
   extractStoredMessageContent,
@@ -141,7 +143,7 @@ const isValidProjectFilter = (projectId) =>
   !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
 
 router.get('/', async (req, res) => {
-  const limit = parseInt(req.query.limit, 10) || 25;
+  const limit = normalizeLimit(req.query.limit);
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
   const pinned = isEnabled(req.query.pinned);
@@ -740,6 +742,9 @@ router.post(
       if (isContentFilterError(error)) {
         return res.status(error.statusCode).json(error.body);
       }
+      if (isConversationImportError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
       logger.error('Error processing file', error);
       res.status(500).send('Error processing file');
     }
@@ -777,6 +782,9 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (re
     if (isContentFilterError(error)) {
       return res.status(error.statusCode).json(error.body);
     }
+    if (isConversationImportError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error forking conversation:', error);
     res.status(500).send('Error forking conversation');
   }
@@ -804,6 +812,9 @@ router.post(
       res.status(201).json(result);
     } catch (error) {
       if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
+      if (isConversationImportError(error)) {
         return res.status(error.statusCode).json(error.body);
       }
       logger.error('Error duplicating conversation:', error);

@@ -1,6 +1,6 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
+import type { DeleteResult, FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
-import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
 import type { SearchParams } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
@@ -265,13 +265,32 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
   return paths;
 }
 
+/**
+ * A terminal save that must drop a stored `contextMeta` unsets it in the same
+ * update that persists the response, so no failure between two writes can
+ * leave a completed row carrying a disconnect snapshot's state.
+ */
+function buildMessageSaveUpdate(
+  update: Record<string, unknown>,
+  options: { stampModelOutputOnInsert: boolean; unsetContextMeta: boolean },
+): UpdateQuery<IMessage> {
+  if (!options.stampModelOutputOnInsert && !options.unsetContextMeta) {
+    return update;
+  }
+  return {
+    $set: update,
+    ...(options.stampModelOutputOnInsert && { $setOnInsert: { isUserSubmitted: false } }),
+    ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
+  };
+}
+
 async function findOneAndMergeMessageProvenance(
   Message: Model<IMessage>,
   identity: FilterQuery<IMessage>,
   update: Record<string, unknown>,
   userSubmittedPaths: readonly string[],
   userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
-  options: { upsert: boolean; stampModelOutputOnInsert?: boolean },
+  options: { upsert: boolean; stampModelOutputOnInsert?: boolean; unsetContextMeta?: boolean },
 ) {
   const safeUpdate = { ...update };
   delete safeUpdate._id;
@@ -311,7 +330,10 @@ async function findOneAndMergeMessageProvenance(
     try {
       const message = await Message.findOneAndUpdate(
         filter,
-        { $set: { ...safeUpdate, ...provenance } },
+        {
+          $set: { ...safeUpdate, ...provenance },
+          ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
+        },
         { upsert: options.upsert && current == null, new: true },
       );
       if (message != null) {
@@ -533,7 +555,10 @@ export interface MessageMethods {
       expiredAt?: Date;
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
-    params: Partial<IMessage> & { newMessageId?: string },
+    params: Omit<Partial<IMessage>, 'contextMeta'> & {
+      newMessageId?: string;
+      contextMeta?: IMessage['contextMeta'] | null;
+    },
     metadata?: { context?: string },
   ): Promise<IMessage | null | undefined>;
   recordSubagentTaskControlReceipt(input: {
@@ -717,7 +742,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       expiredAt?: Date;
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
-    params: Partial<IMessage> & { newMessageId?: string },
+    params: Omit<Partial<IMessage>, 'contextMeta'> & {
+      newMessageId?: string;
+      /** `null` unsets a previously stored value; omission leaves it in place. */
+      contextMeta?: IMessage['contextMeta'] | null;
+    },
     metadata?: { context?: string },
   ) {
     if (!userId) {
@@ -770,6 +799,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         update.expiredAt = null;
       }
 
+      /** A response that ends with nothing to carry must drop what an earlier
+       * partial save (a disconnect snapshot) stored, or the next turn would seed
+       * from stale state; omission never unsets, and the unset rides the same
+       * update as the response. */
+      const unsetContextMeta = update.contextMeta === null;
+      if (unsetContextMeta) {
+        delete update.contextMeta;
+      }
       if (update.tokenCount != null && isNaN(update.tokenCount as number)) {
         logger.warn(
           `Resetting invalid \`tokenCount\` for message \`${params.messageId}\`: ${update.tokenCount}`,
@@ -797,13 +834,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             update,
             userSubmittedPaths,
             userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert },
+            { upsert: true, stampModelOutputOnInsert, unsetContextMeta },
           )
         : await Message.findOneAndUpdate(
             { messageId: params.messageId, user: userId },
-            stampModelOutputOnInsert
-              ? { $set: update, $setOnInsert: { isUserSubmitted: false } }
-              : update,
+            buildMessageSaveUpdate(update, { stampModelOutputOnInsert, unsetContextMeta }),
             { upsert: true, new: true },
           );
 
@@ -3117,15 +3152,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       sortOrder?: 1 | -1;
       limit?: number;
       cursor?: string | null;
+      /** Projection for the page, e.g. `CLIENT_MESSAGE_SELECT` for client-facing reads. */
+      select?: string;
     } = {},
   ) {
     const Message = mongoose.models.Message as Model<IMessage>;
-    const { sortField = 'createdAt', sortOrder = -1, limit = 25, cursor } = options;
+    const { sortField = 'createdAt', sortOrder = -1, limit = 25, cursor, select } = options;
     const queryFilter = { ...filter };
     if (cursor) {
       queryFilter[sortField] = sortOrder === 1 ? { $gt: cursor } : { $lt: cursor };
     }
-    const messages = await Message.find(queryFilter)
+    const query = Message.find(queryFilter);
+    if (select) {
+      query.select(select);
+    }
+    const messages = await query
       .sort({ [sortField]: sortOrder })
       .limit(limit + 1)
       .lean<IMessage[]>();

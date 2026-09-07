@@ -19,7 +19,7 @@
  * ```
  */
 import { nanoid } from 'nanoid';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
   MessageFilterConfig,
@@ -46,6 +46,7 @@ import type {
 } from '~/protection';
 import type { InitializeAgentParams as CoreInitializeAgentParams } from '../initialize';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { LangfuseTraceContext } from '~/langfuse/identity';
 import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
 import {
@@ -256,6 +257,7 @@ type CreateRunFn = (params: {
   customHandlers: Record<string, EventHandler>;
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
+  traceContext?: LangfuseTraceContext;
   tenantId?: string;
   appConfig?: CreateRunAppConfig;
   tokenCounter?: (message: unknown) => number;
@@ -800,6 +802,7 @@ export async function createAgentChatCompletion(
         customHandlers: eventHandlers,
         requestBody: mcpRequestBody,
         user: safeUser,
+        traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
         appConfig: selectCreateRunAppConfig(deps.appConfig),
       });

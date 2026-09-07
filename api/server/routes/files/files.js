@@ -18,6 +18,7 @@ const {
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Time,
@@ -289,10 +290,10 @@ router.delete('/', async (req, res) => {
     /* Handle assistant unlinking even if no valid files to delete */
     if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
       const assistant = await db.getAssistant({
-        id: req.body.assistant_id,
+        assistantId: req.body.assistant_id,
       });
 
-      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const toolResourceFiles = assistant?.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
       const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
       const result = await processDeleteRequest({ req, files: assistantFiles });
@@ -700,7 +701,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         return res.status(501).send('Not Implemented');
       }
 
-      const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
+      const fileStream = await getDownloadStream(req, resolveDownloadPath(file));
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
@@ -725,7 +726,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+const handleFileUpload = async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
@@ -845,6 +846,9 @@ router.post('/', async (req, res) => {
       sseStream.close();
     }
   }
-});
+};
+
+router.post('/', handleFileUpload);
 
 module.exports = router;
+module.exports.handleFileUpload = handleFileUpload;

@@ -58,6 +58,7 @@ import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
+import { createConversationImportMethods, type ConversationImportMethods } from './import';
 import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
@@ -232,6 +233,7 @@ export type AllMethods = UserMethods &
   CategoriesMethods &
   PresetMethods &
   ConversationTagMethods &
+  ConversationImportMethods &
   MessageMethods &
   ConversationMethods &
   ChatProjectMethods &
@@ -454,6 +456,7 @@ export function createMethods(
     ...createPresetMethods(mongoose),
     /* Tier 2 */
     ...createConversationTagMethods(mongoose),
+    ...createConversationImportMethods(mongoose),
     ...messageMethods,
     ...conversationMethods,
     ...createChatProjectMethods(mongoose),
@@ -508,6 +511,7 @@ export type {
   CategoriesMethods,
   PresetMethods,
   ConversationTagMethods,
+  ConversationImportMethods,
   MessageMethods,
   ParentSubagentTaskRecord,
   ParentSubagentThreadRecord,

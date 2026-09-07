@@ -158,6 +158,77 @@ describe('Message Operations', () => {
       expect(savedMessage?.isUserSubmitted).toBeUndefined();
     });
 
+    it('unsets a previously stored context meta in the same update as the terminal save', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        contextMeta: {
+          calibrationRatio: 1.2,
+          encoding: 'claude',
+          fading: { v: 1, budgetTokens: 50_000, masked: true },
+        },
+      });
+      const partial = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(partial?.contextMeta?.fading?.budgetTokens).toBe(50_000);
+
+      const findOneAndUpdate = jest.spyOn(Message, 'findOneAndUpdate');
+      const updateOne = jest.spyOn(Message, 'updateOne');
+      try {
+        const result = await saveMessage(mockCtx, {
+          ...mockMessageData,
+          text: 'Completed',
+          contextMeta: null,
+        });
+
+        expect(result?.contextMeta).toBeUndefined();
+        expect(result?.text).toBe('Completed');
+        expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
+        expect(findOneAndUpdate).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ $unset: { contextMeta: 1 } }),
+          expect.anything(),
+        );
+        expect(updateOne).not.toHaveBeenCalled();
+      } finally {
+        findOneAndUpdate.mockRestore();
+        updateOne.mockRestore();
+      }
+      const completed = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(completed).not.toHaveProperty('contextMeta');
+      expect(completed?.text).toBe('Completed');
+    });
+
+    it('unsets a stored context meta atomically through the provenance merge as well', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        contextMeta: { calibrationRatio: 1.2, encoding: 'claude' },
+      });
+
+      const findOneAndUpdate = jest.spyOn(Message, 'findOneAndUpdate');
+      try {
+        const result = await saveMessage(mockCtx, {
+          ...mockMessageData,
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+          userSubmittedPaths: ['/content/0/text'],
+          contextMeta: null,
+        });
+
+        expect(result?.contextMeta).toBeUndefined();
+        expect(result?.userSubmittedPaths).toEqual(['/content/0/text']);
+        expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
+        expect(findOneAndUpdate).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ $unset: { contextMeta: 1 } }),
+          expect.anything(),
+        );
+      } finally {
+        findOneAndUpdate.mockRestore();
+      }
+      const completed = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(completed).not.toHaveProperty('contextMeta');
+      expect(completed?.isUserSubmitted).toBe(true);
+    });
+
     it('should persist optional user-submitted provenance independently of message role', async () => {
       const result = await saveMessage(mockCtx, {
         ...mockMessageData,

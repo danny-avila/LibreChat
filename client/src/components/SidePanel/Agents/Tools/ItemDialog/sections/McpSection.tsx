@@ -494,7 +494,7 @@ export default function McpSection({ item }: Props) {
                   size="md"
                   pressed={allDeferred}
                   label={localize(allDeferred ? 'com_ui_mcp_undefer_all' : 'com_ui_mcp_defer_all')}
-                  activeClass="text-amber-600 dark:text-amber-500"
+                  activeBorderClass="border-series-4"
                   onToggle={() => toggleDeferAll(tools)}
                 />
               )}
@@ -504,7 +504,7 @@ export default function McpSection({ item }: Props) {
                   size="md"
                   pressed={allProgrammatic}
                   label={programmaticBulkLabel}
-                  activeClass="text-violet-600 dark:text-violet-500"
+                  activeBorderClass="border-series-6"
                   tooltip={programmaticBulkTooltip}
                   disabled={!programmaticToolsAvailable && !allProgrammatic}
                   onToggle={() => toggleProgrammaticAll(tools)}
@@ -518,7 +518,7 @@ export default function McpSection({ item }: Props) {
                   label={localize(
                     allBackground ? 'com_ui_mcp_unbackground_all' : 'com_ui_mcp_background_all',
                   )}
-                  activeClass="text-sky-600 dark:text-sky-500"
+                  activeBorderClass="border-series-1"
                   onToggle={() => toggleBackgroundAll(tools)}
                 />
               )}
@@ -529,7 +529,7 @@ export default function McpSection({ item }: Props) {
                   pressed={allIntent}
                   disabled={intentEligibleTools.length === 0}
                   label={localize(allIntent ? 'com_ui_mcp_unintent_all' : 'com_ui_mcp_intent_all')}
-                  activeClass="text-teal-600 dark:text-teal-500"
+                  activeBorderClass="border-series-3"
                   onToggle={() => toggleIntentAll(intentEligibleTools)}
                 />
               )}

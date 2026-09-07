@@ -56,15 +56,20 @@ export interface ToolApprovalPolicyLayers {
  *   - `agent` overrides `mode`/`allow`/`deny`/`ask`/`reason`;
  *   - `skills` may only tighten (add `ask`/`deny`), never loosen.
  *
- * The BYOM activation adds only `enabled: true, mode: 'bypass'`; an agent-scoped
- * hook supplies the risky coding decisions. This avoids prompting managed sibling
- * agents in the same graph. An explicit endpoint `enabled: false` remains the
- * administrator emergency override. `agent`/`skills` are accepted but not yet merged.
+ * When no endpoint policy is active, BYOM adds `enabled: true, mode: 'bypass'` and
+ * an agent-scoped hook supplies its coding decisions. An already-enabled endpoint
+ * policy remains the run-wide administrative baseline, including its unmatched-tool
+ * mode. An explicit endpoint `enabled: false` remains the administrator emergency
+ * override. `agent`/`skills` are accepted but not yet merged.
  */
 export function resolveToolApprovalPolicy(
   layers: ToolApprovalPolicyLayers,
 ): TToolApprovalPolicy | undefined {
-  if (layers.attachedCodeEnvironment === true && layers.endpoint?.enabled !== false) {
+  if (
+    layers.attachedCodeEnvironment === true &&
+    layers.endpoint?.enabled !== true &&
+    layers.endpoint?.enabled !== false
+  ) {
     return {
       ...layers.endpoint,
       enabled: true,
