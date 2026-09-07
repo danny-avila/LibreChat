@@ -71,12 +71,19 @@ export class FlowStateManager<T = unknown> {
   private monitorTimeout: number;
   private retainedFailureTypes: Set<string>;
   private intervals: Set<NodeJS.Timeout>;
+  private redisScriptExecutor?: FlowManagerOptions['redisScriptExecutor'];
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
       options = { ttl: 60000 * 3 };
     }
-    const { ci = false, ttl, monitorTimeout = ttl, retainedFailureTypes = [] } = options;
+    const {
+      ci = false,
+      ttl,
+      monitorTimeout = ttl,
+      retainedFailureTypes = [],
+      redisScriptExecutor,
+    } = options;
 
     if (!ci && !(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
@@ -85,6 +92,7 @@ export class FlowStateManager<T = unknown> {
     this.ttl = ttl;
     this.monitorTimeout = monitorTimeout;
     this.retainedFailureTypes = new Set(retainedFailureTypes);
+    this.redisScriptExecutor = redisScriptExecutor;
     this.keyv = store;
     this.intervals = new Set();
 
@@ -124,6 +132,9 @@ export class FlowStateManager<T = unknown> {
   }
 
   private async evalRedisScript(script: string, key: string, args: string[]): Promise<unknown> {
+    if (this.redisScriptExecutor) {
+      return this.redisScriptExecutor(script, { keys: [key], arguments: args });
+    }
     const store = this.keyv.store as KeyvRedisStore;
     if (typeof store.client?.eval !== 'function') {
       throw new Error('KeyvRedis store does not expose an atomic eval capability');

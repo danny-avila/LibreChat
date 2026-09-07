@@ -22,6 +22,7 @@ const mockLoggerError = jest.fn();
 const mockGetTenantId = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: { info: mockLoggerInfo, warn: mockLoggerWarn, error: mockLoggerError },
   getTenantId: (...args) => mockGetTenantId(...args),
   webSearchKeys: [],
@@ -29,6 +30,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => {
   return {
+    ...jest.requireActual('@librechat/api'),
     MCPOAuthHandler: {
       revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
       deleteFlowAndStateMapping: (...args) => mockDeleteFlowAndStateMapping(...args),
@@ -57,8 +59,8 @@ jest.mock('@librechat/api', () => {
 });
 
 jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
   Tools: {},
-  CacheKeys: { FLOWS: 'flows' },
   Constants: { mcp_delimiter: '::', mcp_prefix: 'mcp_' },
   FileSources: {},
   ResourceType: {},
@@ -283,7 +285,9 @@ describe('maybeUninstallOAuthMCP', () => {
       credential_set_id: credentialSetId,
     });
     mockRevokeOAuthToken.mockResolvedValue(undefined);
-    mockDeleteUserTokens.mockResolvedValue(undefined);
+    mockDeleteUserTokens.mockImplementation(async ({ deleteToken }) => {
+      await deleteToken({ userId, type: 'oauth', identifier: `mcp:${serverName}` });
+    });
     mockDeleteFlow.mockResolvedValue(undefined);
 
     await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
@@ -296,6 +300,9 @@ describe('maybeUninstallOAuthMCP', () => {
 
     expect(mockDeleteUserTokens).toHaveBeenCalledTimes(1);
     expect(mockDeleteUserTokens.mock.calls[0][0]).toMatchObject({ userId, serverName });
+    expect(mockDeleteTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ metadataCredentialSetId: credentialSetId }),
+    );
 
     expect(mockDeleteFlow).toHaveBeenCalledTimes(1);
     expect(mockDeleteFlow.mock.calls[0][1]).toBe('mcp_get_tokens');

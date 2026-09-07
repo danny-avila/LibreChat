@@ -68,6 +68,9 @@ jest.mock('@librechat/api', () => {
       getTokens: jest.fn(),
       deleteUserTokens: jest.fn(),
     },
+    getMCPServerGeneration: jest.fn((config) =>
+      config.dbId ? `db:${config.dbId}` : `config:${JSON.stringify(config)}`,
+    ),
     MCPConnection: {
       clearCooldown: jest.fn(),
     },
@@ -1204,6 +1207,36 @@ describe('MCP Routes', () => {
           `${basePath}/oauth/error?error=csrf_validation_failed`,
         );
       });
+    });
+
+    it('rejects a callback when a deleted server name belongs to a replacement generation', async () => {
+      const flowId = 'test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
+      };
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        serverUrl: 'https://old.example.com/mcp',
+        serverGeneration: 'db:old-id',
+      });
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        dbId: 'replacement-id',
+        url: 'https://old.example.com/mcp',
+      });
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${generateTestCsrfToken(flowId)}`])
+        .query({ code: 'test-auth-code', state: flowId });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toContain('/oauth/error');
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
     });
 
     it('should handle OAuth callback successfully', async () => {

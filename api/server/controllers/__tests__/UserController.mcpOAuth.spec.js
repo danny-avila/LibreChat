@@ -9,19 +9,21 @@ const mockGetFlowStateManager = jest.fn();
 const mockGetMCPServersRegistry = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() },
   getTenantId: jest.fn(),
   webSearchKeys: [],
 }));
 
 jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
   Tools: {},
-  CacheKeys: { FLOWS: 'flows' },
   Constants: { mcp_delimiter: '_mcp_', mcp_prefix: 'mcp_' },
   FileSources: {},
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   MCPOAuthHandler: {
     generateFlowId: jest.fn((userId, serverName, tenantId) => {
       const flowId = `${userId}:${serverName}`;

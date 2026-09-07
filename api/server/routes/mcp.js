@@ -13,6 +13,7 @@ const {
   createAuthIdentityContext,
   MCPOAuthHandler,
   MCPTokenStorage,
+  getMCPServerGeneration,
   setOAuthSession,
   PENDING_STALE_MS,
   getUserMCPAuthMap,
@@ -215,7 +216,13 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
     if (typeof oldState === 'string') {
       await MCPOAuthHandler.deleteStateMapping(oldState, flowManager);
     }
-    const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: getTenantId() };
+    const effectiveConfig = (await resolveAllMcpConfigs(userId))?.[serverName];
+    const metadataWithUrl = {
+      ...flowMetadata,
+      authorizationUrl,
+      tenantId: getTenantId(),
+      ...(effectiveConfig && { serverGeneration: getMCPServerGeneration(effectiveConfig) }),
+    };
     await flowManager.initFlow(oauthFlowId, 'mcp_oauth', metadataWithUrl);
     await MCPOAuthHandler.storeStateMapping(flowMetadata.state, oauthFlowId, flowManager);
     setOAuthCsrfCookie(res, oauthFlowId, OAUTH_CSRF_COOKIE_PATH);
@@ -410,16 +417,17 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       const oauthHeaders =
         flowState.oauthHeaders ?? (await getOAuthHeaders(serverName, flowState.userId));
       const resolveActiveServer = async () => {
-        if (flowState.userId === 'system') {
-          return true;
-        }
         const configs = await resolveAllMcpConfigs(flowState.userId);
-        if (configs?.[serverName] != null) {
-          return true;
+        const activeConfig =
+          configs?.[serverName] ??
+          (await getMCPServersRegistry().getServerConfig(serverName, flowState.userId));
+        if (!activeConfig) {
+          return false;
         }
-        return (
-          (await getMCPServersRegistry().getServerConfig(serverName, flowState.userId)) != null
-        );
+        if (flowState.serverGeneration) {
+          return getMCPServerGeneration(activeConfig) === flowState.serverGeneration;
+        }
+        return activeConfig.url === flowState.serverUrl;
       };
       if (!(await resolveActiveServer())) {
         throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
