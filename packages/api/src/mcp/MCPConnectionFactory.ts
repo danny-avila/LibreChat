@@ -131,7 +131,7 @@ export class MCPConnectionFactory {
       const factory = new this(await this.prepareBasicConnectionOptions(candidate, oauth), oauth);
       return factory.createConnection();
     };
-    if (!usesDirectOpenIDBearerRecovery(basic.serverConfig)) {
+    if (!isDirectOpenIDBearerRecoveryEnabled(basic.serverConfig)) {
       return create(basic);
     }
 
@@ -142,7 +142,7 @@ export class MCPConnectionFactory {
         throw error;
       }
       const refreshedConfig = await resolveDirectOpenIDBearerConfig({
-        config: basic.serverConfig,
+        config: basic.directBearerSourceConfig ?? basic.serverConfig,
         upstreamTokenProvider: oauth?.upstreamTokenProvider,
         forceRefresh: true,
       });

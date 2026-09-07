@@ -703,6 +703,20 @@ describe('requiresOAuthMachinery', () => {
       }),
     ).toBe(false);
   });
+
+  it('keeps OBO wiring when both OBO and the direct bearer flag are present', () => {
+    expect(
+      requiresOAuthMachinery({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        requiresOAuth: true,
+        openidBearerRecovery: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        obo: { scopes: 'api://mcp/.default' },
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('requiresUserScopedConnection', () => {

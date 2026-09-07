@@ -323,6 +323,9 @@ export abstract class UserConnectionManager {
       ? opts.requestScopedConnections
       : undefined;
     if (requestScopedConnections) {
+      if (requestScopedConnections.cleanupStarted) {
+        throw new Error(`[MCP][User: ${userId}] Request-scoped connection context is closed`);
+      }
       this.bindRequestScopedConnectionStore(requestScopedConnections);
       const requestConnectionKey = `${userId}:${serverName}`;
       const existing = requestScopedConnections.connections.get(requestConnectionKey) as
@@ -379,7 +382,14 @@ export abstract class UserConnectionManager {
         },
         userId,
         forceNew === true,
-      ).then((connection) => {
+      ).then(async (connection) => {
+        if (requestScopedConnections.cleanupStarted) {
+          await this.disposeEvictedConnection(
+            connection,
+            `[MCP][Request-scoped: ${requestConnectionKey}] Closed during connection creation`,
+          );
+          throw new Error(`[MCP][User: ${userId}] Request-scoped connection context is closed`);
+        }
         requestScopedConnections.connections.set(requestConnectionKey, connection);
         return connection;
       });
@@ -664,6 +674,7 @@ export abstract class UserConnectionManager {
         /** Runtime OAuth detection enriches the connection config. Keep the durable definition
          * separate so callback liveness compares against the config that actually owns it. */
         serverDefinition: config,
+        ...(usesDirectOpenIDBearerRecovery(config) && { directBearerSourceConfig: config }),
         serverName: serverName,
         dbSourced: isUserSourced(runtimeConfig),
         useSSRFProtection,

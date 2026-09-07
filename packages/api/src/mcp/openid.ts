@@ -29,7 +29,8 @@ function getAuthorizationHeader(
 
 /** Whether a config retains the trusted direct-bearer mode after placeholder resolution. */
 export function isDirectOpenIDBearerRecoveryEnabled(config: DirectBearerConfig): boolean {
-  if (config.openidBearerRecovery !== true || config.dbId != null) {
+  /** OBO is the stronger audience-bound mode and takes precedence when both legacy fields exist. */
+  if (config.obo != null || config.openidBearerRecovery !== true || config.dbId != null) {
     return false;
   }
   if (config.source !== 'yaml' && config.source !== 'config') {

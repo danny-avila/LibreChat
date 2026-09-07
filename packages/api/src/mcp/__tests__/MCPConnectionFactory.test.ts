@@ -3969,27 +3969,37 @@ describe('MCPConnectionFactory', () => {
         .mockImplementationOnce(() => rejectedConnection)
         .mockImplementationOnce(() => refreshedConnection);
       mockProcessMCPEnv.mockImplementation(({ options }) => options);
-      const upstreamTokenProvider = jest
-        .fn()
-        .mockResolvedValueOnce({ access_token: 'stale-token' })
-        .mockResolvedValueOnce({ access_token: 'fresh-token' });
-      const serverConfig = {
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+      const directBearerSourceConfig = {
         type: 'streamable-http' as const,
         url: 'https://mcp.example.com',
         source: 'yaml' as const,
         openidBearerRecovery: true,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
       } as t.MCPOptions;
+      const serverConfig = {
+        ...directBearerSourceConfig,
+        headers: { Authorization: 'Bearer stale-token' },
+      } as t.MCPOptions;
 
       const connection = await MCPConnectionFactory.create(
-        { serverName: 'direct-bearer', serverConfig },
+        { serverName: 'direct-bearer', serverConfig, directBearerSourceConfig },
         { user: mockUser, upstreamTokenProvider },
       );
 
       expect(connection).toBe(refreshedConnection);
       expect(rejectedConnection.connect).toHaveBeenCalledTimes(1);
       expect(rejectedConnection.dispose).toHaveBeenCalledTimes(1);
-      expect(upstreamTokenProvider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+      expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).toHaveBeenCalledWith({ forceRefresh: true });
+      expect(mockMCPConnection).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          serverConfig: expect.objectContaining({
+            headers: { Authorization: 'Bearer fresh-token' },
+          }),
+        }),
+      );
     });
 
     it('replaces one direct OpenID bearer connection and rediscovers after tools/list rejects it', async () => {

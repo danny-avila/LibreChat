@@ -52,6 +52,15 @@ describe('direct OpenID bearer recovery', () => {
     expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
   });
 
+  it('lets audience-bound OBO take precedence when both modes are configured', () => {
+    const config = {
+      ...directBearerConfig('yaml'),
+      obo: { scopes: 'api://mcp/.default' },
+    };
+
+    expect(usesDirectOpenIDBearerRecovery(config)).toBe(false);
+  });
+
   it('preserves the verified request bearer fallback when no session is available', async () => {
     const config = directBearerConfig('yaml');
 
