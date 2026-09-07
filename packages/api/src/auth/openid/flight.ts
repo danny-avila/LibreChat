@@ -635,7 +635,7 @@ export function createOpenIDRefreshFlightService({
       const awaitingPublication = requirePublication && completed?.__deferredPublication;
       if (completed && !awaitingPublication) return completed;
       if (flight?.status === 'completed' && !awaitingPublication) return null;
-      if (!flight) return null;
+      if (!flight && !requirePublication) return null;
       if (followRenewals) {
         deadline = getRenewedWaitDeadline(deadline, flight);
       }

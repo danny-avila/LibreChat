@@ -30,6 +30,9 @@ import {
   toOpenIDLogArgument,
 } from './errors';
 
+const PUBLICATION_WAIT_TIMEOUT_MS = 10_000;
+const PUBLICATION_WAIT_INTERVAL_MS = 250;
+
 interface OpenIDSessionRefreshDeps {
   jwt: {
     decode: (token: string) => (Partial<OpenIDClaims> & { exp?: number }) | string | null;
@@ -102,6 +105,9 @@ interface OpenIDSessionRefreshDeps {
     tokens?: TokenResult | null;
   }) => Promise<RefreshFlightRecord | null>;
   createOpenIDRefreshFlightKey: (input: RefreshKeyInput) => string | null;
+  createRefreshTokenBridgeFlightKey?: (
+    input: RefreshTokenBridgeIdentity & { oldRefreshToken: string },
+  ) => string | null;
   failOpenIDRefreshFlight: (args: {
     key?: string | null;
     ownerId?: string;
@@ -110,6 +116,8 @@ interface OpenIDSessionRefreshDeps {
   waitForOpenIDRefreshFlight: (args: {
     key?: string | null;
     requirePublication?: boolean;
+    timeoutMs?: number;
+    intervalMs?: number;
   }) => Promise<TokenResult | null>;
   assertOpenIDRefreshFlightAvailable: (args: {
     key?: string | null;
@@ -210,6 +218,7 @@ export function createOpenIDSessionRefreshService(
     isOpenIDSessionIdentityMatch,
     createOpenIDRefreshIdentityTuple,
     createRefreshTokenBridgeIdentity,
+    createRefreshTokenBridgeFlightKey,
     serializeAuthIdentityTuple,
     buildOpenIDRefreshParams,
     setRefreshTokenCookie,
@@ -1424,14 +1433,35 @@ export function createOpenIDSessionRefreshService(
     tokenPreference: TokenPreference;
   }): Promise<MarkedOIDCTokens> {
     if (resolvedTokens.__deferredPublication) {
-      const published = await waitForOpenIDRefreshFlight({ key, requirePublication: true });
-      if (!published || published.__deferredPublication) {
+      const predecessor =
+        getPredecessorRefreshTokenMarker(resolvedTokens) ?? predecessorRefreshToken;
+      const identity = createRefreshTokenBridgeIdentity({
+        user,
+        requestUser: req.user,
+        userId: identityContext?.appUserId,
+        tenantId: identityContext?.tenantId,
+        openidIssuer: identityContext?.openidIssuer,
+      });
+      const publicationKey =
+        predecessor && identity
+          ? createRefreshTokenBridgeFlightKey?.({ ...identity, oldRefreshToken: predecessor })
+          : null;
+      const published = publicationKey
+        ? await waitForOpenIDRefreshFlight({
+            key: publicationKey,
+            requirePublication: true,
+            timeoutMs: PUBLICATION_WAIT_TIMEOUT_MS,
+            intervalMs: PUBLICATION_WAIT_INTERVAL_MS,
+          })
+        : null;
+      if (!publicationKey || !published || published.__deferredPublication) {
         throw Object.assign(new Error('OpenID refresh publication is temporarily unavailable'), {
           status: 503,
           retryable: true,
         });
       }
       resolvedTokens = cloneResolvedTokens(published);
+      key = publicationKey;
       if (published.tokenset) {
         Object.assign(resolvedTokens, published.tokenset);
       }

@@ -566,6 +566,8 @@ describe('OpenIDRefreshFlight', () => {
 
   it('waits for validated publication instead of returning deferred credentials', async () => {
     db.findOpenIDRefreshFlight
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ status: 'pending' })
       .mockResolvedValueOnce({
         status: 'completed',
         ownerId: 'owner-1',
@@ -584,7 +586,7 @@ describe('OpenIDRefreshFlight', () => {
         intervalMs: 1,
       }),
     ).resolves.toEqual({ access_token: 'published' });
-    expect(db.findOpenIDRefreshFlight).toHaveBeenCalledTimes(2);
+    expect(db.findOpenIDRefreshFlight).toHaveBeenCalledTimes(4);
   });
 
   it('bounds the publication wait without returning an unvalidated result', async () => {

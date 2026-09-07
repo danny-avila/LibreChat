@@ -123,6 +123,9 @@ jest.mock('./RefreshTokenBridge', () => ({
   OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
   storeRefreshTokenBridge: jest.fn(),
   deleteRefreshTokenBridges: jest.fn(),
+  createRefreshTokenBridgeFlightKey: jest.fn(
+    ({ userId, oldRefreshToken }) => `publication:${userId}:${oldRefreshToken}`,
+  ),
 }));
 jest.mock('./OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
@@ -2264,8 +2267,10 @@ describe('OpenIDSessionRefresh', () => {
         await new Promise((resolve) => setImmediate(resolve));
       }
       expect(waitForOpenIDRefreshFlight).toHaveBeenCalledWith({
-        key: 'flight:session-A:rt-deferred-forced',
+        key: 'publication:local-id-1:rt-deferred-forced',
         requirePublication: true,
+        timeoutMs: 10000,
+        intervalMs: 250,
       });
       expect(mcpReq.session.save).not.toHaveBeenCalled();
       publish({ tokenset: refreshed, __flightOwnerId: 'owner-1' });
@@ -2275,6 +2280,10 @@ describe('OpenIDSessionRefresh', () => {
       });
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(mcpReq.session.openidTokens.refreshToken).toBe('rt-published');
+      expect(assertOpenIDRefreshFlightAvailable).toHaveBeenCalledWith({
+        key: 'publication:local-id-1:rt-deferred-forced',
+        ownerId: 'owner-1',
+      });
     });
 
     it('waits for a token-reuse flight before starting a rejection-driven forced refresh', async () => {
