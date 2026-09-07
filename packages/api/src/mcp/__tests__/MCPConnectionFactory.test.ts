@@ -106,6 +106,7 @@ describe('MCPConnectionFactory', () => {
     // Cached runtime handlers now delegate before attempting their own refresh,
     // so queued one-shot refresh results must not leak into the next test.
     mockMCPTokenStorage.forceRefreshTokens.mockReset();
+    mockMCPTokenStorage.isRefreshTeardownActive.mockReset().mockReturnValue(false);
     // Clear process-local silent-refresh in-flight map so a leftover entry
     // from a prior test (e.g. one that errored before its `finally` ran)
     // cannot cause a later test to join a stale promise.
@@ -1521,7 +1522,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
 
-    it('should fall back to interactive OAuth when silent refresh returns null', async () => {
+    it('suppresses interactive OAuth during teardown, then falls back after release', async () => {
       const sseConfig = {
         ...mockServerConfig,
         url: 'https://api.example.com',
@@ -1594,6 +1595,12 @@ describe('MCPConnectionFactory', () => {
         // Expected to fail
       }
 
+      mockMCPTokenStorage.isRefreshTeardownActive.mockReturnValue(true);
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+
+      mockMCPTokenStorage.isRefreshTeardownActive.mockReturnValue(false);
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
       // Silent refresh was attempted, but yielded no tokens.

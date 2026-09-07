@@ -1258,6 +1258,16 @@ export class MCPConnectionFactory {
         recoveryPhase = 'terminal';
       }
 
+      /** Teardown holds this gate until its credential and flow cleanup finishes. A refresh
+       * suppressed by that gate must not fall through and create a replacement OAuth flow. */
+      if (
+        this.userId &&
+        MCPTokenStorage.isRefreshTeardownActive(this.userId, this.serverName, this.tenantId)
+      ) {
+        connection.emit('oauthFailed', new Error('OAuth teardown in progress'));
+        return;
+      }
+
       // Silent refresh failed and we're about to fall through to interactive
       // OAuth. Invalidate any COMPLETED `mcp_oauth` flow first so
       // `handleOAuthRequired`'s recent-completion fast path can't re-serve the

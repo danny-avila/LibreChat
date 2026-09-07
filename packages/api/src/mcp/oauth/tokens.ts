@@ -169,8 +169,20 @@ export class MCPTokenStorage {
       : `[MCP][User: ${userId}][${serverName}]`;
   }
 
-  private static getRefreshOwnerKey(userId: string, serverName: string): string {
-    return JSON.stringify([getTenantId() ?? '', userId, serverName]);
+  private static getRefreshOwnerKey(
+    userId: string,
+    serverName: string,
+    tenantId = getTenantId(),
+  ): string {
+    return JSON.stringify([tenantId ?? '', userId, serverName]);
+  }
+
+  static isRefreshTeardownActive(
+    userId: string,
+    serverName: string,
+    tenantId = getTenantId(),
+  ): boolean {
+    return this.refreshTeardownCounts.has(this.getRefreshOwnerKey(userId, serverName, tenantId));
   }
 
   /** Holds a per-user/server gate, then aborts and joins every process-local refresh that entered
