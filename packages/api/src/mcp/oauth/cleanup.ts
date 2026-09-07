@@ -166,7 +166,7 @@ export interface MCPOAuthCleanupDependencies {
     typeof MCPTokenStorage,
     'deleteUserTokens' | 'getClientInfoAndMetadata' | 'getTokens' | 'assertCredentialSetBinding'
   > &
-    Partial<Pick<typeof MCPTokenStorage, 'fenceRefreshes'>>;
+    Partial<Pick<typeof MCPTokenStorage, 'beginRefreshTeardown'>>;
   findToken: TokenMethods['findToken'];
   deleteTokens: TokenMethods['deleteTokens'];
   getServerConfig: (serverName: string, userId: string) => Promise<MCPOptions | undefined>;
@@ -269,19 +269,29 @@ interface UninstallParams {
   dependencies: MCPOAuthCleanupDependencies;
 }
 
-export async function cleanupMCPServerOAuth({
+export async function cleanupMCPServerOAuth(params: UninstallParams): Promise<void> {
+  const { userId, pluginKey, dependencies } = params;
+  if (!pluginKey.startsWith(Constants.mcp_prefix)) {
+    return;
+  }
+  const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+  const releaseRefreshTeardown =
+    (await dependencies.tokenStorage.beginRefreshTeardown?.(userId, serverName)) ?? (() => {});
+  try {
+    await cleanupMCPServerOAuthWithFenceHeld(params);
+  } finally {
+    releaseRefreshTeardown();
+  }
+}
+
+async function cleanupMCPServerOAuthWithFenceHeld({
   userId,
   pluginKey,
   appConfig,
   serverConfigOverride,
   dependencies,
 }: UninstallParams): Promise<void> {
-  if (!pluginKey.startsWith(Constants.mcp_prefix)) {
-    return;
-  }
-
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-  await dependencies.tokenStorage.fenceRefreshes?.(userId, serverName);
   /** Snapshot exact encrypted values before cancelling the flow. Later cleanup can then remove
    * this authorization without matching credentials written by a replacement attempt. */
   const tokenKeys = oauthTokenKeys(serverName);

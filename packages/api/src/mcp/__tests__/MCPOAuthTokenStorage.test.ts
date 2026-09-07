@@ -2065,9 +2065,13 @@ describe('MCPTokenStorage', () => {
         refreshParams(refreshTokens, 'teardown-srv'),
       );
       await waitFor(() => refreshTokens.mock.calls.length > 0);
-      await MCPTokenStorage.fenceRefreshes('u1', 'teardown-srv');
+      const release = await MCPTokenStorage.beginRefreshTeardown('u1', 'teardown-srv');
 
       await expect(refresh).resolves.toBeNull();
+      await expect(
+        MCPTokenStorage.forceRefreshTokens(refreshParams(refreshTokens, 'teardown-srv')),
+      ).resolves.toBeNull();
+      release();
       expect(
         await store.findToken({
           userId: 'u1',
@@ -2075,6 +2079,30 @@ describe('MCPTokenStorage', () => {
           identifier: 'mcp:teardown-srv:refresh',
         }),
       ).toMatchObject({ token: 'enc:rt-1' });
+    });
+
+    it('does not fence a colon-prefixed sibling server', async () => {
+      await seedRefreshableTokens('foo:bar');
+      let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
+      let refreshSignal: AbortSignal | undefined;
+      const refreshTokens = jest.fn(
+        (_token, _metadata, signal) =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            refreshSignal = signal;
+            resolveRefresh = resolve;
+          }),
+      );
+
+      const siblingRefresh = MCPTokenStorage.forceRefreshTokens(
+        refreshParams(refreshTokens, 'foo:bar'),
+      );
+      await waitFor(() => refreshTokens.mock.calls.length > 0);
+      const release = await MCPTokenStorage.beginRefreshTeardown('u1', 'foo');
+
+      expect(refreshSignal?.aborted).toBe(false);
+      resolveRefresh(rotatedTokens(2));
+      await expect(siblingRefresh).resolves.toMatchObject({ access_token: 'at-2' });
+      release();
     });
 
     it('getTokens joins an in-flight refresh instead of replaying the consumed refresh token', async () => {

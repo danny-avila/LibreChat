@@ -151,6 +151,8 @@ export class MCPTokenStorage {
    */
   private static inflightRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
   private static inflightRefreshControllers = new Map<string, AbortController>();
+  private static inflightRefreshOwners = new Map<string, string>();
+  private static refreshTeardownCounts = new Map<string, number>();
 
   /**
    * How long an in-flight redemption may run before it is aborted. Generous
@@ -167,20 +169,37 @@ export class MCPTokenStorage {
       : `[MCP][User: ${userId}][${serverName}]`;
   }
 
-  /** Aborts and joins every process-local refresh for a user/server before teardown snapshots
-   * credentials. The database CAS in storeTokens then prevents an aborted late response from
-   * recreating records after the snapshot is deleted. */
-  static async fenceRefreshes(userId: string, serverName: string): Promise<void> {
-    const prefix = `${getTenantId() ?? ''}:${userId}:${serverName}:`;
+  private static getRefreshOwnerKey(userId: string, serverName: string): string {
+    return JSON.stringify([getTenantId() ?? '', userId, serverName]);
+  }
+
+  /** Holds a per-user/server gate, then aborts and joins every process-local refresh that entered
+   * before it. The returned release keeps successor refreshes out until teardown finishes. */
+  static async beginRefreshTeardown(userId: string, serverName: string): Promise<() => void> {
+    const ownerKey = this.getRefreshOwnerKey(userId, serverName);
+    this.refreshTeardownCounts.set(ownerKey, (this.refreshTeardownCounts.get(ownerKey) ?? 0) + 1);
     const refreshes: Promise<MCPOAuthTokens | null>[] = [];
     for (const [key, refresh] of this.inflightRefreshes) {
-      if (!key.startsWith(prefix)) {
+      if (this.inflightRefreshOwners.get(key) !== ownerKey) {
         continue;
       }
       this.inflightRefreshControllers.get(key)?.abort();
       refreshes.push(refresh);
     }
     await Promise.allSettled(refreshes);
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      const remaining = (this.refreshTeardownCounts.get(ownerKey) ?? 1) - 1;
+      if (remaining > 0) {
+        this.refreshTeardownCounts.set(ownerKey, remaining);
+      } else {
+        this.refreshTeardownCounts.delete(ownerKey);
+      }
+    };
   }
 
   /** Returns whether storage contains a currently usable, generation-bound authorization. */
@@ -773,7 +792,17 @@ export class MCPTokenStorage {
     const { userId, serverName, refreshTokens, createToken, signal, singleFlightScope } = params;
     const logPrefix = this.getLogPrefix(userId, serverName);
 
-    const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}:${singleFlightScope ?? ''}`;
+    const ownerKey = this.getRefreshOwnerKey(userId, serverName);
+    if (this.refreshTeardownCounts.has(ownerKey)) {
+      logger.debug(`${logPrefix} Skipping token refresh during OAuth teardown`);
+      return null;
+    }
+    const refreshKey = JSON.stringify([
+      getTenantId() ?? '',
+      userId,
+      serverName,
+      singleFlightScope ?? '',
+    ]);
     const inflight = this.inflightRefreshes.get(refreshKey);
     if (inflight) {
       logger.debug(`${logPrefix} Joining in-flight token refresh`);
@@ -808,6 +837,7 @@ export class MCPTokenStorage {
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
         this.inflightRefreshes.delete(refreshKey);
         this.inflightRefreshControllers.delete(refreshKey);
+        this.inflightRefreshOwners.delete(refreshKey);
       }
     });
     /**
@@ -840,6 +870,7 @@ export class MCPTokenStorage {
     staleTimer.unref?.();
     this.inflightRefreshes.set(refreshKey, refreshPromise);
     this.inflightRefreshControllers.set(refreshKey, executionController);
+    this.inflightRefreshOwners.set(refreshKey, ownerKey);
     return this.raceWithAbort(refreshPromise, signal);
   }
 
