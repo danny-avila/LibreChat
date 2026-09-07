@@ -148,6 +148,7 @@ const {
   resolveRunFadingTiers,
   createContextMetaPublisher,
   selectRunContextMetaToPublish,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   Run,
@@ -2870,6 +2871,14 @@ class AgentClient extends BaseClient {
      *  tool registered unconditionally; without this passthrough the
      *  memory path would silently lose code-execution tooling). */
     const memoryCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
+    /** Same pairing as the chat initializers: the capability is the deployment
+     *  switch, the grant is the role's. Request-memoized, so on the usual path
+     *  this joins the lookup the tool loader already made. */
+    const memoryToolGrants = await resolveToolRoleGrants({
+      req: this.options.req,
+      getRoleByName: db.getRoleByName,
+      context: 'memoryAgent',
+    });
     const agent = await initializeAgent(
       {
         req: this.options.req,
@@ -2881,7 +2890,8 @@ class AgentClient extends BaseClient {
             ? EModelEndpoint.agents
             : memoryConfig.agent?.provider,
         },
-        codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
+        codeEnvAvailable:
+          memoryCapabilities.has(AgentCapabilities.execute_code) && memoryToolGrants.runCode,
         statefulSessionsAvailable: memoryCapabilities.has(AgentCapabilities.stateful_code_sessions),
       },
       {

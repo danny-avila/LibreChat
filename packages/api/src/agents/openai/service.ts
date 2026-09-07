@@ -72,6 +72,7 @@ import {
 } from '~/middleware/modelBoundContent';
 import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import { contentFilterUninspectableResponse } from '~/protection/files';
+import { resolveToolRoleGrants } from '../../tools/rolePermissions';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { getUserFacingProviderError } from '../errors';
 import { collectReachableAgents } from '../traversal';
@@ -119,6 +120,12 @@ export interface ChatCompletionDependencies {
    * keep tenant tracing and code execution working.
    */
   appConfig?: AppConfig;
+  /**
+   * Supply to have `codeEnvAvailable` respect the caller's `RUN_CODE` grant as
+   * well as the deployment capability. Optional so existing embedders keep
+   * their current behavior; without it this route is gated by capability alone.
+   */
+  getRoleByName?: Parameters<typeof resolveToolRoleGrants>[0]['getRoleByName'];
   /** Tool execute options for event-driven tool execution */
   toolExecuteOptions?: ToolExecuteOptions;
 }
@@ -668,7 +675,15 @@ export async function createAgentChatCompletion(
       agentsConfig != null && typeof agentsConfig === 'object'
         ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(capability)
         : undefined;
-    const codeEnvAvailable = capabilityEnabled(AgentCapabilities.execute_code);
+    const capabilityAllowsCodeEnv = capabilityEnabled(AgentCapabilities.execute_code);
+    /** Paired with the role grant when the embedder wires `getRoleByName`;
+     *  `initializeAgent` rebuilds `bash_tool`, `read_file` and the workspace
+     *  file tools from this flag, so a denied role would otherwise keep the
+     *  code environment's file handlers. */
+    const codeEnvAvailable =
+      capabilityAllowsCodeEnv === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).runCode
+        : capabilityAllowsCodeEnv;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */

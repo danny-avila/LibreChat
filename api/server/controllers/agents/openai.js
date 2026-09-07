@@ -65,6 +65,7 @@ const {
   stripActivityLabelParts,
   executeAgentRun,
   waitForAgentExecutionWrites,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -489,12 +490,20 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       };
 
       const enabledCapabilities = new Set(agentsEConfig?.capabilities);
+      /** Started before the memory read rather than awaited on its own line, so
+       *  the role lookup overlaps that query instead of preceding it. */
+      const toolRoleGrants = resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName });
       const memoryAvailable = await resolveMemoryAvailability({
         enabledCapabilities,
         memoryConfig: appConfig?.memory,
         user: req.user,
         getRoleByName: db.getRoleByName,
       });
+      /** The deployment switch AND the role grant: `initializeAgent` rebuilds
+       *  `bash_tool`, `read_file` and the workspace file tools from this flag,
+       *  and forwards the code-environment context to their handlers. */
+      const codeEnvAvailable =
+        enabledCapabilities.has(AgentCapabilities.execute_code) && (await toolRoleGrants).runCode;
       const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
       const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
       const accessibleSkillIds = skillsCapabilityEnabled
@@ -559,7 +568,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
           }),
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          codeEnvAvailable,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -638,7 +647,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             }),
           skillStates,
           defaultActiveOnShare,
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          codeEnvAvailable,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(

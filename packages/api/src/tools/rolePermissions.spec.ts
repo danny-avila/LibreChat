@@ -7,6 +7,7 @@ import {
   resolveToolRolePermissions,
   toolResourceRolePermissions,
   assistantToolRolePermissions,
+  resolveToolRoleGrants,
   resolveAssistantToolPermissions,
   checkToolResourceUploadPermission,
 } from './rolePermissions';
@@ -259,5 +260,53 @@ describe('resolveAssistantToolPermissions', () => {
     expect(permitted({ type: 'function' })).toBe(true);
     expect(permitted('calculator')).toBe(true);
     expect(permitted(undefined)).toBe(true);
+  });
+});
+
+describe('resolveToolRoleGrants', () => {
+  it('reports both grants from one role read', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
+      runCode: true,
+      fileSearch: true,
+    });
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports each grant independently', async () => {
+    const getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.RUN_CODE]: { [Permissions.USE]: false } }));
+
+    await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
+      runCode: false,
+      fileSearch: true,
+    });
+  });
+
+  /** The whole point of centralizing: several gates on one request must not
+   *  each pay their own role lookup. */
+  it('memoizes on the request across repeat callers', async () => {
+    const getRoleByName = jest.fn().mockResolvedValue(buildRole());
+    const req = buildReq();
+
+    const [first, second] = await Promise.all([
+      resolveToolRoleGrants({ req, getRoleByName }),
+      resolveToolRoleGrants({ req, getRoleByName }),
+    ]);
+    await resolveToolRoleGrants({ req, getRoleByName });
+
+    expect(first).toBe(second);
+    expect(getRoleByName).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails both grants closed when the role lookup throws', async () => {
+    const getRoleByName = jest.fn().mockRejectedValue(new Error('unreachable'));
+
+    await expect(resolveToolRoleGrants({ req: buildReq(), getRoleByName })).resolves.toEqual({
+      runCode: false,
+      fileSearch: false,
+    });
   });
 });

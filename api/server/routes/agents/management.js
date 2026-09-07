@@ -19,6 +19,7 @@ const {
   ioredisClient,
   mapAgentManagementError,
   restoreTenantContextFromReq,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const { checkBan, configMiddleware, createFileLimiters } = require('~/server/middleware');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
@@ -96,10 +97,12 @@ const fileHandlers = createAgentManagementFileHandlers({
       return await checkCapability(req, AgentCapabilities.context);
     }
     if (purpose === EToolResources.execute_code) {
-      return await checkCapability(req, AgentCapabilities.execute_code);
+      const grants = await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName });
+      return (await checkCapability(req, AgentCapabilities.execute_code)) && grants.runCode;
     }
     if (purpose === EToolResources.file_search) {
-      return await checkCapability(req, AgentCapabilities.file_search);
+      const grants = await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName });
+      return (await checkCapability(req, AgentCapabilities.file_search)) && grants.fileSearch;
     }
     return true;
   },

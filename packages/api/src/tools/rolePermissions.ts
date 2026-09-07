@@ -224,3 +224,71 @@ export async function resolveAssistantToolPermissions({
     return type == null || !denied.has(type);
   };
 }
+
+/** Memoizes the resolved grants for the lifetime of one request. */
+const toolRoleGrantsKey = Symbol.for('librechat.toolRoleGrants');
+
+export interface ToolRoleGrants {
+  /** `RUN_CODE.USE` — the sandbox, its file tools, and PTC. */
+  runCode: boolean;
+  /** `FILE_SEARCH.USE` — the search tool and its uploads. */
+  fileSearch: boolean;
+}
+
+export interface ResolveToolRoleGrantsParams {
+  req?: ServerRequest;
+  getRoleByName: CheckAccessParams['getRoleByName'];
+  context?: string;
+}
+
+/**
+ * Resolves both tool grants for a request, once.
+ *
+ * Every gate on `AgentCapabilities.execute_code` / `file_search` reads its role
+ * half from here, so a boundary is authorized by pairing the capability with a
+ * field of this object rather than by repeating a permission check. The two
+ * lookups run together and the result is memoized on the request, so a startup
+ * that consults several gates — the tool loader, the agent initializer, an
+ * upload handler — pays one role read between them.
+ *
+ * Callers that want the read off their critical path can start it early without
+ * awaiting; the memoized promise is what later callers join.
+ *
+ * Fails closed: a missing user or a check that throws denies both.
+ */
+export function resolveToolRoleGrants({
+  req,
+  getRoleByName,
+  context = 'toolRoleGrants',
+}: ResolveToolRoleGrantsParams): Promise<ToolRoleGrants> {
+  const cache = req as
+    | (ServerRequest & { [toolRoleGrantsKey]?: Promise<ToolRoleGrants> })
+    | undefined;
+  const memoized = cache?.[toolRoleGrantsKey];
+  if (memoized) {
+    return memoized;
+  }
+
+  const pending = Promise.all([
+    checkToolRolePermission({
+      req,
+      user: req?.user as CheckAccessParams['user'],
+      permissionType: PermissionTypes.RUN_CODE,
+      getRoleByName,
+      context,
+    }),
+    checkToolRolePermission({
+      req,
+      user: req?.user as CheckAccessParams['user'],
+      permissionType: PermissionTypes.FILE_SEARCH,
+      getRoleByName,
+      context,
+    }),
+  ]).then(([runCode, fileSearch]) => ({ runCode, fileSearch }));
+
+  if (cache) {
+    Object.defineProperty(cache, toolRoleGrantsKey, { value: pending, enumerable: false });
+  }
+
+  return pending;
+}

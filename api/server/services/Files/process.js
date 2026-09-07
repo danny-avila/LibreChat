@@ -36,6 +36,8 @@ const {
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
+  resolveAssistantToolPermissions,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -606,6 +608,22 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   });
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
+    /** A v1 Knowledge upload posts `assistant_id` with no `tool_resource`, so
+     *  there is no resource name to authorize against. The assistant's own
+     *  native tools are what the file will feed, so read those and require the
+     *  grant for each: otherwise a denied role attaches new inputs to an
+     *  assistant that still carries `retrieval` or `code_interpreter`, without
+     *  passing either writer's filter. */
+    const assistant = await openai.beta.assistants.retrieve(metadata.assistant_id);
+    const isNativeToolPermitted = await resolveAssistantToolPermissions({
+      req,
+      tools: assistant?.tools,
+      getRoleByName: db.getRoleByName,
+    });
+    const deniedTool = (assistant?.tools ?? []).find((tool) => !isNativeToolPermitted(tool));
+    if (deniedTool) {
+      throw new Error(`Forbidden: Insufficient permissions for ${deniedTool.type}`);
+    }
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });
@@ -702,7 +720,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const entity_id = messageAttachment === true ? undefined : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
-    const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
+    const isCodeEnabled =
+      (await checkCapability(req, AgentCapabilities.execute_code)) &&
+      (await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName, context: 'fileUpload' }))
+        .runCode;
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
@@ -746,7 +767,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       executionProfile: 'default',
     });
   } else if (tool_resource === EToolResources.file_search) {
-    const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
+    const isFileSearchEnabled =
+      (await checkCapability(req, AgentCapabilities.file_search)) &&
+      (await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName, context: 'fileUpload' }))
+        .fileSearch;
     if (!isFileSearchEnabled) {
       throw new Error('File search is not enabled for Agents');
     }
