@@ -1,10 +1,12 @@
-import type { SerializableJobData } from './interfaces/IJobStore';
+import type { GenerationJob } from '../types/stream';
 
 /** A settled status can precede final persistence and terminal host actions. */
 export async function waitForGenerationPersistence(
   streamId: string,
   createdAt: number,
-  readJob: (id: string) => Promise<Pick<SerializableJobData, 'createdAt' | 'metadata'> | null>,
+  readJob: (
+    id: string,
+  ) => Promise<Pick<GenerationJob, 'createdAt' | 'metadata'> | null | undefined>,
   { timeoutMs = 45_000, pollMs = 100 }: { timeoutMs?: number; pollMs?: number } = {},
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;

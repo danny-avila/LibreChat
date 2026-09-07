@@ -115,6 +115,53 @@ test('old raw readers cannot see isolated owner payloads', async () => {
   expect(await mongoose.connection.db!.collection('agent_checkpoints').countDocuments()).toBe(0);
 });
 
+test('raw thread cleanup cannot remove isolated actor checkpoints or pending writes', async () => {
+  const id = await write('event-actor/head', 'owner');
+  await write('event-actor/head');
+  const saver = (await getAgentCheckpointer(cfg))!;
+  await MongoDBSaver.prototype.deleteThread.call(saver, 'actor-thread');
+  const tuple = await saver.getTuple(config('event-actor/head', 'owner'));
+  expect(tuple?.checkpoint.id).toBe(id);
+  expect(tuple?.pendingWrites).toHaveLength(1);
+  await createOwnedActorCheckpoints('owner').removeOwned(reference('event-actor/head', id), cfg);
+  expect(await mongoose.connection.db!.collection('agent_checkpoints').countDocuments()).toBe(0);
+  expect(await mongoose.connection.db!.collection('agent_checkpoint_writes').countDocuments()).toBe(
+    0,
+  );
+});
+
+test.each([undefined, 'owner'])(
+  'follows exact legacy parents from a %s child',
+  async (childOwner) => {
+    const saver = (await getAgentCheckpointer(cfg))!;
+    const namespace = 'event-actor/history';
+    const parent = emptyCheckpoint();
+    await saver.put(config(namespace), parent, { source: 'loop', step: 0, parents: {} });
+    const child = emptyCheckpoint();
+    await saver.put(config(namespace, childOwner, parent.id), child, {
+      source: 'loop',
+      step: 1,
+      parents: {},
+    });
+    const input = config(namespace, 'owner', child.id);
+    input.configurable![LIBRECHAT_LEGACY_CHECKPOINT_KEY] = child.id;
+    const tuple = await saver.getTuple(input);
+    expect(tuple?.parentConfig?.configurable).toMatchObject({
+      thread_id: 'actor-thread',
+      checkpoint_id: parent.id,
+      [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: parent.id,
+    });
+    expect((await saver.getTuple(tuple!.parentConfig!))?.checkpoint.id).toBe(parent.id);
+    await mongoose.connection
+      .db!.collection('agent_checkpoints')
+      .updateOne(
+        { thread_id: 'actor-thread', checkpoint_id: parent.id },
+        { $set: { lc_owner: checkpointOwnerNamespacePrefix('foreign') } },
+      );
+    expect(await saver.getTuple(tuple!.parentConfig!)).toBeUndefined();
+  },
+);
+
 test('capture and history never select another owner or fall back to latest legacy data', async () => {
   const owner = createOwnedActorCheckpoints('owner');
   const id = await write('event-actor/head', 'owner');

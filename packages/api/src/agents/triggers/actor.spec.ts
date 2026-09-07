@@ -15,6 +15,7 @@ import { cancelAgentEventActor, executeAgentEventActor, resumeAgentEventActor } 
 import { createAgentEventActionRecorder, findAgentEventAppliedAction } from './outcome';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { createAgentContextFingerprint } from '../compatibility';
+import { drainActorPruning } from '../checkpoints/pruning';
 
 jest.mock('../checkpoints/pruning', () => ({
   drainActorPruning: jest.fn(async () => undefined),
@@ -138,6 +139,47 @@ describe('event actor host adapter', () => {
     releaseAction: jest.fn(async () => true),
     hasActionAdmission: jest.fn(async () => false),
   });
+
+  it.each([false, true])(
+    'starts the snapshot during pruning and gates execution (failure=%s)',
+    async (fail) => {
+      let finish!: () => void;
+      const pruning = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      jest.mocked(drainActorPruning).mockImplementationOnce(async () => {
+        await pruning;
+        if (fail) throw new Error('pruning failed');
+      });
+      const dependencies = deps();
+      const invoke = jest.fn(async () => 'response');
+      const execution = executeAgentEventActor(
+        {
+          user: 'user-1',
+          conversationId,
+          invocationId: 'event-prune',
+          event: { id: 'event-prune', type: 'turn' },
+          signal: new AbortController().signal,
+          invoke,
+          readAppliedAction: () => ({ toolName: 'submit_move' }),
+        },
+        dependencies,
+      );
+      const observed = execution.then(
+        (value) => value,
+        (error: Error) => error,
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(dependencies.getSnapshot).toHaveBeenCalledTimes(1);
+      expect(invoke).not.toHaveBeenCalled();
+      finish();
+      const result = await observed;
+      if (fail) {
+        expect(invoke).not.toHaveBeenCalled();
+        expect(result).toBeDefined();
+      } else expect(invoke).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('publishes a signed durable suspension instead of discarding a paused fork', async () => {
     const dependencies = {

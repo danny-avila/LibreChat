@@ -1461,55 +1461,60 @@ describe('Convos Routes', () => {
       expect(deleteMessages).not.toHaveBeenCalled();
     });
 
-    it('drains terminal persistence only for leases removed by this deletion', async () => {
-      const createdAt = Date.now();
-      deleteConvos.mockResolvedValue({
-        deletedCount: 2,
-        conversationIds: ['parent-conversation', 'child-conversation'],
-      });
-      subagentThreadStore.planCancellationForConversations.mockResolvedValueOnce({
-        userId: 'test-user-123',
-        conversationIds: ['parent-conversation'],
-        scopes: [],
-        leases: [
-          {
-            taskId: 'related-generation',
-            parentConversationId: 'parent-conversation',
-            conversationId: 'child-conversation',
-          },
-          {
-            taskId: 'unrelated-generation',
-            parentConversationId: 'other-parent',
-            conversationId: 'other-child',
-          },
-        ],
-      });
-      let relatedReads = 0;
-      generationJobManager.getJob.mockImplementation(async (conversationId) => {
-        if (conversationId !== 'related-generation') return null;
-        relatedReads += 1;
-        return {
-          status: 'complete',
-          createdAt,
-          metadata: {
-            userId: 'test-user-123',
-            terminalPersistencePending: relatedReads === 1,
-          },
-        };
-      });
+    it.each(['terminalPersistencePending', 'terminalHostActionPending'])(
+      'drains %s only for leases removed by this deletion',
+      async (marker) => {
+        const createdAt = Date.now();
+        deleteConvos.mockResolvedValue({
+          deletedCount: 2,
+          conversationIds: ['parent-conversation', 'child-conversation'],
+        });
+        subagentThreadStore.planCancellationForConversations.mockResolvedValueOnce({
+          userId: 'test-user-123',
+          conversationIds: ['parent-conversation'],
+          scopes: [],
+          leases: [
+            {
+              taskId: 'related-generation',
+              parentConversationId: 'parent-conversation',
+              conversationId: 'child-conversation',
+            },
+            {
+              taskId: 'unrelated-generation',
+              parentConversationId: 'other-parent',
+              conversationId: 'other-child',
+            },
+          ],
+        });
+        let relatedReads = 0;
+        generationJobManager.getJob.mockImplementation(async (conversationId) => {
+          if (conversationId !== 'related-generation') return null;
+          relatedReads += 1;
+          return {
+            status: 'complete',
+            createdAt,
+            metadata: {
+              userId: 'test-user-123',
+              providerDrained: true,
+              [marker]: relatedReads <= 2,
+            },
+          };
+        });
 
-      const response = await request(app)
-        .delete('/api/convos')
-        .send({ arg: { conversationId: 'parent-conversation' } });
+        const response = await request(app)
+          .delete('/api/convos')
+          .send({ arg: { conversationId: 'parent-conversation' } });
 
-      expect(response.status).toBe(201);
-      expect(generationJobManager.abortJob).toHaveBeenCalledWith('related-generation', {
-        expectedCreatedAt: createdAt,
-        awaitProviderDrain: true,
-      });
-      expect(generationJobManager.getJob).not.toHaveBeenCalledWith('unrelated-generation');
-      expect(deleteConvos).toHaveBeenCalledTimes(2);
-    });
+        expect(response.status).toBe(201);
+        expect(generationJobManager.abortJob).toHaveBeenCalledWith('related-generation', {
+          expectedCreatedAt: createdAt,
+          awaitProviderDrain: true,
+        });
+        expect(relatedReads).toBeGreaterThanOrEqual(3);
+        expect(generationJobManager.getJob).not.toHaveBeenCalledWith('unrelated-generation');
+        expect(deleteConvos).toHaveBeenCalledTimes(2);
+      },
+    );
 
     it('should delete a single conversation, tool calls, and associated shared links', async () => {
       const mockConversationId = 'conv-123';

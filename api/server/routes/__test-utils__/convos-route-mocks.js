@@ -141,6 +141,9 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ threads: [] }),
     ),
     GenerationJobManager: generationJobManager,
+    waitForGenerationPersistence: jest.requireActual(
+      '../../../../packages/api/src/stream/persistence.ts',
+    ).waitForGenerationPersistence,
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',
     ),

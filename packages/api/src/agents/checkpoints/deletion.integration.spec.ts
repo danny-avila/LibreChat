@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { openCheckpointDeletion, createCheckpointDeletionReclaimer } from './deletion';
 import { createCheckpointNamespace } from '../../stream/checkpoints';
 import { deleteOwnedAgentCheckpoints } from '../checkpointer';
-import { openCheckpointDeletion } from './deletion';
 
 let server: MongoMemoryServer;
 const cfg = {
@@ -148,9 +148,9 @@ test('snapshots legacy references without per-reference ownership lookups', asyn
   expect(
     exactCommands.every(([filter]) => (filter?.$and?.[1]?.$or?.length ?? Infinity) <= 256),
   ).toBe(true);
-  expect(await mongoose.connection.db!.collection('cleanup_cp_deletions').countDocuments()).toBe(
-    257 * 5,
-  );
+  expect(
+    await mongoose.connection.db!.collection('agent_checkpoint_deletions').countDocuments(),
+  ).toBe(257 * 5);
 });
 
 test('memory checkpointer conversations can still record and acknowledge deletion intent', async () => {
@@ -159,7 +159,107 @@ test('memory checkpointer conversations can still record and acknowledge deletio
   await deletion.remember(['thread']);
   await deletion.cleanup();
   await deletion.acknowledge();
-  expect(await mongoose.connection.db!.collection('cleanup_cp_deletions').countDocuments()).toBe(0);
+  expect(
+    await mongoose.connection.db!.collection('agent_checkpoint_deletions').countDocuments(),
+  ).toBe(0);
+});
+
+test('reclaims unused evidence without a client retry and keeps effective stores separate', async () => {
+  const other = {
+    ...cfg,
+    checkpointCollectionName: 'custom_cp',
+    checkpointWritesCollectionName: 'custom_writes',
+  };
+  for (const storage of [cfg, other]) {
+    const deletion = await openCheckpointDeletion('owner', 'tenant', 'root', storage);
+    await deletion.remember(['child']);
+  }
+  const db = mongoose.connection.db!;
+  await db
+    .collection('custom_writes')
+    .insertOne({ thread_id: 'child', checkpoint_ns: createCheckpointNamespace('owner', 'tenant') });
+  const getJobs = jest.fn().mockResolvedValue([]);
+  const reclaim = createCheckpointDeletionReclaimer(getJobs);
+  expect(await reclaim(25)).toBe(1);
+  expect(getJobs).toHaveBeenCalledTimes(1);
+  expect((await openCheckpointDeletion('owner', 'tenant', 'root', cfg)).conversationIds()).toEqual(
+    [],
+  );
+  expect(
+    (await openCheckpointDeletion('owner', 'tenant', 'root', other)).conversationIds(),
+  ).toEqual(['child']);
+  await db.collection('custom_writes').deleteMany({});
+  expect(await reclaim(25)).toBe(1);
+});
+
+test.each(['conversations', 'messages', 'toolcalls', 'sharedlinks'])(
+  'retains cascade identity while %s work survives',
+  async (name) => {
+    const db = mongoose.connection.db!;
+    const userId = new mongoose.Types.ObjectId().toString();
+    const deletion = await openCheckpointDeletion(userId, undefined, 'root', cfg);
+    await deletion.remember(['child']);
+    await db.collection(name).insertOne({
+      user: name === 'toolcalls' ? new mongoose.Types.ObjectId(userId) : userId,
+      conversationId: 'child',
+    });
+    const reclaim = createCheckpointDeletionReclaimer(async () => []);
+    expect(await reclaim(25)).toBe(0);
+    await db.collection(name).deleteMany({});
+    expect(await reclaim(25)).toBe(1);
+  },
+);
+
+test('keeps exact legacy proof without TTL indexes and rotates past retained work', async () => {
+  const db = mongoose.connection.db!;
+  const checkpoint = {
+    threadId: 'child',
+    checkpointNs: 'event-actor/legacy',
+    checkpointId: 'exact',
+  };
+  await db.collection('conversations').insertOne({
+    user: 'owner',
+    conversationId: 'child',
+    subagentThread: {},
+    agentEventActorCleanup: [checkpoint],
+  });
+  const deletion = await openCheckpointDeletion('owner', undefined, 'root', cfg);
+  await deletion.remember(['child', 'empty']);
+  await db.collection('conversations').deleteMany({});
+  await db.collection('cleanup_writes').insertOne({
+    thread_id: 'child',
+    checkpoint_ns: checkpoint.checkpointNs,
+    checkpoint_id: checkpoint.checkpointId,
+  });
+  const reclaim = createCheckpointDeletionReclaimer(async () => []);
+  for (let pass = 0; pass < 6; pass++) await reclaim(1);
+  const retained = await db.collection('agent_checkpoint_deletions').find().toArray();
+  expect(retained).toHaveLength(1);
+  expect(retained[0].checkpoint).toEqual(checkpoint);
+  await db.collection('cleanup_writes').deleteMany({});
+  for (let pass = 0; pass < 3; pass++) await reclaim(1);
+  expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
+});
+
+test('retains writer obligations, renewed revisions, and lookup failures', async () => {
+  const deletion = await openCheckpointDeletion('owner', undefined, 'root', cfg);
+  await deletion.remember(['child']);
+  const getJobs = jest.fn().mockResolvedValue(['pending-host']);
+  const reclaim = createCheckpointDeletionReclaimer(getJobs);
+  expect(await reclaim(25)).toBe(0);
+  getJobs.mockRejectedValueOnce(new Error('job store unavailable'));
+  await expect(reclaim(25)).rejects.toThrow('reclamation failed');
+  getJobs.mockImplementationOnce(async () => {
+    const renewed = await openCheckpointDeletion('owner', undefined, 'root', cfg);
+    await renewed.remember(['child']);
+    return [];
+  });
+  expect(await reclaim(25)).toBe(0);
+  expect((await openCheckpointDeletion('owner', undefined, 'root', cfg)).conversationIds()).toEqual(
+    ['child'],
+  );
+  getJobs.mockResolvedValue([]);
+  expect(await reclaim(25)).toBe(1);
 });
 
 test('current-tenant deletion recovers tenantless ownership and exact references without erasing another tenant', async () => {
@@ -202,5 +302,5 @@ test('current-tenant deletion recovers tenantless ownership and exact references
     expect(rows.map((row) => row.checkpoint_ns)).toEqual([foreign, 'event-actor/legacy']);
     expect(rows.find((row) => row.checkpoint_id)?.checkpoint_id).toBe('unproved');
   }
-  expect(await db.collection('cleanup_cp_deletions').countDocuments()).toBe(0);
+  expect(await db.collection('agent_checkpoint_deletions').countDocuments()).toBe(0);
 });

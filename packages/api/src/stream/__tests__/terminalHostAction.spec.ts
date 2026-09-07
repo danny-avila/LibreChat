@@ -28,7 +28,7 @@ describe('GenerationJobManager terminal host actions', () => {
   });
 
   it.each(['ordinary', 'detached'])(
-    'account cleanup discovers %s terminal host actions outside owner membership',
+    'all deletion callers discover %s terminal host actions outside owner membership',
     async (lane) => {
       const job = await manager.createJob('pending-host', 'user-1', 'conversation');
       await store.transitionStatus('pending-host', {
@@ -55,6 +55,19 @@ describe('GenerationJobManager terminal host actions', () => {
       expect(await manager.getAccountCleanupJobIdsForUser('user-1', 'tenant-a')).toEqual([
         'pending-host',
       ]);
+      expect(await manager.getCleanupBlockingJobIdsForUser('user-1', 'tenant-a')).toEqual([
+        'pending-host',
+      ]);
+      expect(
+        await manager.getCleanupBlockingJobIdsForConversations(
+          'user-1',
+          ['conversation'],
+          'tenant-a',
+        ),
+      ).toEqual(['pending-host']);
+      expect(
+        await manager.getCleanupBlockingJobIdsForConversations('user-1', ['unrelated'], 'tenant-a'),
+      ).toEqual([]);
       expect((await manager.getJob('pending-host'))?.metadata?.terminalHostActionPending).toBe(
         true,
       );

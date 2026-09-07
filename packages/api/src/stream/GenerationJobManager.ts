@@ -9287,25 +9287,9 @@ class GenerationJobManagerClass {
   /** Returns every generation whose provider can still mutate user-owned data,
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
-    const current = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
-    if (tenantId == null) {
-      return current;
-    }
-    const legacy = await this.jobStore.getCleanupBlockingJobIdsByUser(userId);
-    const streamIds = [...new Set([...current, ...legacy])];
-    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
-    return streamIds.filter((_, index) => {
-      const job = jobs[index];
-      return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
-    });
-  }
-
-  /** Includes stale paused jobs whose durable checkpoints still belong to an
-   * account even though they no longer block ordinary runtime cleanup. */
-  async getAccountCleanupJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
-    const [retained, hostActions, detachedActions] = await Promise.all([
-      this.jobStore.getRetainedJobIdsByUser?.(userId, tenantId) ??
-        this.getCleanupBlockingJobIdsForUser(userId, tenantId),
+    const [current, legacy, hostActions, detachedActions] = await Promise.all([
+      this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId),
+      tenantId == null ? [] : this.jobStore.getCleanupBlockingJobIdsByUser(userId),
       this.jobStore.getTerminalHostActionJobs?.() ?? [],
       this.jobStore.getDetachedAgentEventTerminalHostActionJobs?.() ?? [],
     ]);
@@ -9315,7 +9299,21 @@ class GenerationJobManagerClass {
         (!job.tenantId || job.tenantId === tenantId) &&
         job.terminalHostActionPending === true,
     );
-    return [...new Set([...retained, ...pending.map((job) => job.streamId)])];
+    const streamIds = [...new Set([...current, ...legacy, ...pending.map((job) => job.streamId)])];
+    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job?.userId === userId && (!job.tenantId || job.tenantId === tenantId);
+    });
+  }
+
+  /** Also includes retained paused jobs whose checkpoints belong to this account. */
+  async getAccountCleanupJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    const [retained, blocking] = await Promise.all([
+      this.jobStore.getRetainedJobIdsByUser?.(userId, tenantId) ?? [],
+      this.getCleanupBlockingJobIdsForUser(userId, tenantId),
+    ]);
+    return [...new Set([...retained, ...blocking])];
   }
 
   /** Resolves every cleanup-blocking run attached to any target conversation.

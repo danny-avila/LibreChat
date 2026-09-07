@@ -251,12 +251,14 @@ export async function executeAgentEventActor<T>(
       if (context.signal.aborted) {
         throw context.signal.reason;
       }
-      await checkpoints.drain(input.conversationId, input.checkpointer);
-      const snapshot = await deps.getSnapshot({
-        user: input.user,
-        conversationId: input.conversationId,
-        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-      });
+      const [snapshot] = await Promise.all([
+        deps.getSnapshot({
+          user: input.user,
+          conversationId: input.conversationId,
+          ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+        }),
+        checkpoints.drain(input.conversationId, input.checkpointer),
+      ]);
       if (snapshot === undefined) {
         throw new Error('Event actor binding is no longer active');
       }
@@ -942,8 +944,10 @@ export async function resumeAgentEventActor<T>(
       if (deps.claimSuspension == null) {
         throw new Error('Event actor suspension claim storage is unavailable');
       }
-      await checkpoints.drain(input.conversationId, input.checkpointer);
-      const snapshot = await deps.getSnapshot(owner);
+      const [snapshot] = await Promise.all([
+        deps.getSnapshot(owner),
+        checkpoints.drain(input.conversationId, input.checkpointer),
+      ]);
       const hostSuspension = snapshot?.suspension;
       if (
         snapshot == null ||

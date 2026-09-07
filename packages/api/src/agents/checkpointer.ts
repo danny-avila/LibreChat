@@ -99,6 +99,7 @@ function fromStorageCheckpointConfig(
       }),
       ...(requestedConfig.configurable?.[LIBRECHAT_LEGACY_CHECKPOINT_KEY] && {
         [LIBRECHAT_LEGACY_CHECKPOINT_KEY]:
+          storedConfig.configurable?.[LIBRECHAT_LEGACY_CHECKPOINT_KEY] ??
           requestedConfig.configurable[LIBRECHAT_LEGACY_CHECKPOINT_KEY],
       }),
       thread_id: requestedConfig.configurable?.thread_id ?? storedConfig.configurable?.thread_id,
@@ -987,6 +988,10 @@ async function buildMongoSaver(
   }
 }
 
+function legacyCheckpointStorageFilter() {
+  return { checkpoint_ns: { $not: /^lcg:v2:/ }, lc_owner: { $exists: false } };
+}
+
 /**
  * Snapshot the durable checkpoint ids that belong to the generation about to
  * resume. Capture this before atomically claiming the paused job; a replacement
@@ -1027,9 +1032,9 @@ export async function captureAgentCheckpointGeneration(
       .find(
         {
           thread_id: threadId,
-          ...(namespaceScoped && {
-            checkpoint_ns: generationNamespaceFilter(requestedNamespace),
-          }),
+          ...(namespaceScoped
+            ? { checkpoint_ns: generationNamespaceFilter(requestedNamespace) }
+            : legacyCheckpointStorageFilter()),
         },
         { projection: { _id: 0, checkpoint_id: 1 } },
       )
@@ -1061,7 +1066,7 @@ export async function captureAgentCheckpointGeneration(
  * @param threadId - the LangGraph `thread_id` (LibreChat's conversationId).
  * @param generation - when present, delete only the checkpoint ids captured for
  * this resumed generation; omitted by legacy callers that intentionally prune
- * the entire thread.
+ * the untagged legacy rows on the thread.
  */
 export async function deleteAgentCheckpoint(
   threadId: string | undefined,
@@ -1096,9 +1101,9 @@ export async function deleteAgentCheckpoint(
       const resolved = resolveCheckpointerConfig(cfg);
       const filter = {
         thread_id: threadId,
-        ...(Object.prototype.hasOwnProperty.call(generation, 'checkpointNamespace') && {
-          checkpoint_ns: generationNamespaceFilter(generation.checkpointNamespace ?? ''),
-        }),
+        ...(Object.prototype.hasOwnProperty.call(generation, 'checkpointNamespace')
+          ? { checkpoint_ns: generationNamespaceFilter(generation.checkpointNamespace ?? '') }
+          : legacyCheckpointStorageFilter()),
         checkpoint_id: { $in: generation.checkpointIds },
       };
       await Promise.all([
@@ -1135,7 +1140,14 @@ export async function deleteAgentCheckpoint(
       ]);
       return;
     }
-    await saver.deleteThread(threadId);
+    const db = mongoose.connection.db;
+    if (!db) return;
+    const resolved = resolveCheckpointerConfig(cfg);
+    const filter = { thread_id: threadId, ...legacyCheckpointStorageFilter() };
+    await Promise.all([
+      db.collection(resolved.checkpointCollectionName).deleteMany(filter),
+      db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
+    ]);
   } catch (err) {
     logger.warn(`[checkpointer] Failed to delete checkpoints for thread ${threadId}:`, err);
     if (options?.throwOnError) {
@@ -1157,7 +1169,7 @@ export async function deleteOwnedActorCheckpointScope(
   if (!db || mongoose.connection.readyState !== 1)
     throw new Error('Checkpoint database is unavailable');
   const filter = {
-    thread_id: threadId,
+    thread_id: `${owner}${threadId}`,
     checkpoint_ns: generationNamespaceFilter(`${owner}${checkpointNs}`),
     lc_owner: owner,
   };
@@ -1188,11 +1200,15 @@ export async function deleteOwnedAgentCheckpoints(
   const owner = checkpointOwnerNamespacePrefix(userId, tenantId);
   const ownership = { $or: [{ checkpoint_ns: { $regex: `^${owner}` } }, { lc_owner: owner }] };
   const ids = conversationIds == null ? undefined : [...new Set(conversationIds)];
-  const batchSize = 256;
+  const batchSize = 128;
   for (let offset = 0; offset < (ids?.length ?? 1); offset += batchSize) {
     const filter = {
       ...ownership,
-      ...(ids && { thread_id: { $in: ids.slice(offset, offset + batchSize) } }),
+      ...(ids && {
+        thread_id: {
+          $in: ids.slice(offset, offset + batchSize).flatMap((id) => [id, `${owner}${id}`]),
+        },
+      }),
     };
     await Promise.all([
       db.collection(resolved.checkpointCollectionName).deleteMany(filter),

@@ -511,6 +511,41 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     ).toBe(0);
   });
 
+  it('legacy capture and cleanup preserve ordinary owned payload even with matching checkpoint IDs', async () => {
+    const saver = (await getAgentCheckpointer(MONGO_CFG))!;
+    const threadId = 'legacy-owner-collision';
+    const legacy = await seedInterruptCheckpoint(saver, threadId);
+    const ownedNamespace = createCheckpointNamespace('other-owner', 'tenant');
+    const db = mongoose.connection.db!;
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      const row = await db.collection(name).findOne({ thread_id: threadId });
+      const { _id, ...payload } = row!;
+      await db.collection(name).insertOne({ ...payload, checkpoint_ns: ownedNamespace });
+      await db
+        .collection(name)
+        .insertOne({ ...payload, checkpoint_id: 'only-owned', checkpoint_ns: ownedNamespace });
+    }
+    const captured = await captureAgentCheckpointGeneration(threadId, MONGO_CFG);
+    expect(captured.checkpointIds).toEqual([legacy.id]);
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, captured, { throwOnError: true });
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, { throwOnError: true });
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      const rows = await db.collection(name).find({ thread_id: threadId }).toArray();
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.checkpoint_ns === ownedNamespace)).toBe(true);
+    }
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, {
+      checkpointNamespace: ownedNamespace,
+      throwOnError: true,
+    });
+    expect(await db.collection('agent_checkpoints').countDocuments({ thread_id: threadId })).toBe(
+      0,
+    );
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
+    ).toBe(0);
+  });
+
   it('isolates a fresh generation from a predecessor checkpoint written after replacement', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;

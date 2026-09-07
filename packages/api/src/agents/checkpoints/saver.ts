@@ -69,18 +69,25 @@ export class OwnedMongoSaver extends MongoDBSaver {
       ? doc.checkpoint_ns.slice(owner.length)
       : doc.checkpoint_ns;
     const key = {
-      thread_id: doc.thread_id,
+      thread_id: doc.thread_id.startsWith(owner)
+        ? doc.thread_id.slice(owner.length)
+        : doc.thread_id,
       checkpoint_ns: namespace,
       checkpoint_id: doc.checkpoint_id,
     };
     const rows = await this.db
       .collection<WriteRow>(this.checkpointWritesCollectionName)
       .find({
-        thread_id: key.thread_id,
         checkpoint_id: key.checkpoint_id,
         $or: [
-          { checkpoint_ns: `${owner}${namespace}`, lc_owner: owner },
-          ...(legacy ? [{ checkpoint_ns: namespace, lc_owner: { $exists: false } }] : []),
+          {
+            thread_id: `${owner}${key.thread_id}`,
+            checkpoint_ns: `${owner}${namespace}`,
+            lc_owner: owner,
+          },
+          ...(legacy
+            ? [{ thread_id: key.thread_id, checkpoint_ns: namespace, lc_owner: { $exists: false } }]
+            : []),
         ],
       })
       .toArray();
@@ -118,6 +125,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
                 ...key,
                 checkpoint_id: doc.parent_checkpoint_id,
                 [LIBRECHAT_CHECKPOINT_OWNER_KEY]: owner,
+                [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: doc.parent_checkpoint_id,
               },
             },
           }),
@@ -130,7 +138,12 @@ export class OwnedMongoSaver extends MongoDBSaver {
     const key = identity(config);
     const checkpoints = this.db.collection<CheckpointRow>(this.checkpointCollectionName);
     let doc = await checkpoints
-      .find({ ...key, checkpoint_ns: `${owner}${key.checkpoint_ns}`, lc_owner: owner })
+      .find({
+        ...key,
+        thread_id: `${owner}${key.thread_id}`,
+        checkpoint_ns: `${owner}${key.checkpoint_ns}`,
+        lc_owner: owner,
+      })
       .sort({ checkpoint_id: -1 })
       .limit(1)
       .next();
@@ -162,7 +175,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
     }
     const key = identity(config);
     const query: Filter<CheckpointRow> = {
-      thread_id: key.thread_id,
+      thread_id: `${owner}${key.thread_id}`,
       checkpoint_ns: `${owner}${key.checkpoint_ns}`,
       lc_owner: owner,
     };
@@ -203,7 +216,12 @@ export class OwnedMongoSaver extends MongoDBSaver {
       checkpoint_id: checkpoint.id,
     };
     await this.db.collection(this.checkpointCollectionName).updateOne(
-      { ...stored, checkpoint_ns: `${owner}${key.checkpoint_ns}`, lc_owner: owner },
+      {
+        ...stored,
+        thread_id: `${owner}${key.thread_id}`,
+        checkpoint_ns: `${owner}${key.checkpoint_ns}`,
+        lc_owner: owner,
+      },
       {
         $set: {
           parent_checkpoint_id: key.checkpoint_id,
@@ -250,6 +268,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
           updateOne: {
             filter: {
               ...key,
+              thread_id: `${owner}${key.thread_id}`,
               checkpoint_ns: `${owner}${key.checkpoint_ns}`,
               task_id: taskId,
               idx: WRITES_IDX_MAP[channel] ?? idx,

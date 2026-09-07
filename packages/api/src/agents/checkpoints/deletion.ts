@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { createHash, randomUUID } from 'crypto';
+import { logger } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointReference } from '../checkpointer';
+import type { ResolvedCheckpointerConfig } from './config';
 import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReferences } from '../checkpointer';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { historicalActorReferences } from './pruning';
@@ -12,7 +14,12 @@ interface DeletionTarget {
   version: string;
   threadId: string;
   checkpoint?: AgentEventCheckpointReference;
+  userId: string;
+  tenantId?: string;
+  storage: ResolvedCheckpointerConfig;
 }
+
+const DELETION_COLLECTION = 'agent_checkpoint_deletions';
 
 export interface CheckpointDeletion {
   conversationIds(): string[];
@@ -41,14 +48,19 @@ export async function openCheckpointDeletion(
     throw new Error('Checkpoint database is unavailable');
   }
   const resolved = resolveCheckpointerConfig(cfg);
-  const collection = db.collection<DeletionTarget>(
-    `${resolved.checkpointCollectionName}_deletions`,
+  const collection = db.collection<DeletionTarget>(DELETION_COLLECTION);
+  const storageKey = hash(
+    JSON.stringify([
+      resolved.type,
+      resolved.checkpointCollectionName,
+      resolved.checkpointWritesCollectionName,
+    ]),
   );
   const ownerPrefix = checkpointOwnerNamespacePrefix(userId, tenantId);
-  const rootPrefix = `${ownerPrefix}${hash(rootConversationId ?? null)}:`;
+  const rootPrefix = `${ownerPrefix}${storageKey}:${hash(rootConversationId ?? null)}:`;
   const tenants = tenantId ? [tenantId, undefined] : [undefined];
   const prefixes = tenants.map((tenant) => {
-    const prefix = checkpointOwnerNamespacePrefix(userId, tenant);
+    const prefix = `${checkpointOwnerNamespacePrefix(userId, tenant)}${storageKey}:`;
     return rootConversationId == null ? prefix : `${prefix}${hash(rootConversationId)}:`;
   });
   const retained = await collection
@@ -67,6 +79,9 @@ export async function openCheckpointDeletion(
             $set: {
               version,
               threadId: target.threadId,
+              userId,
+              tenantId,
+              storage: resolved,
               ...(target.checkpoint && { checkpoint: target.checkpoint }),
             },
           },
@@ -89,6 +104,9 @@ export async function openCheckpointDeletion(
           _id: `${rootPrefix}${hash(threadId)}`,
           version,
           threadId,
+          userId,
+          tenantId,
+          storage: resolved,
         }));
         await persist(batch);
         batch = [];
@@ -97,6 +115,9 @@ export async function openCheckpointDeletion(
             _id: `${rootPrefix}${hash(checkpoint.threadId)}:${hash(JSON.stringify([checkpoint.checkpointNs, checkpoint.checkpointId]))}`,
             version,
             threadId: checkpoint.threadId,
+            userId,
+            tenantId,
+            storage: resolved,
             checkpoint,
           });
           if (batch.length === batchSize) {
@@ -135,5 +156,96 @@ export async function openCheckpointDeletion(
         });
       }
     },
+  };
+}
+
+/** Retire unused deletion evidence; never erase payload or assume TTL succeeded. */
+export function createCheckpointDeletionReclaimer(
+  getOwnerJobs: (userId: string, tenantId?: string) => Promise<string[]>,
+): (limit: number) => Promise<number> {
+  let after: string | undefined;
+  return async (limit) => {
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error('Invalid reclamation limit');
+    const db = mongoose.connection.db;
+    if (!db || mongoose.connection.readyState !== 1)
+      throw new Error('Checkpoint database is unavailable');
+    const collection = db.collection<DeletionTarget>(DELETION_COLLECTION);
+    const targets = await collection
+      .find(after == null ? {} : { _id: { $gt: after } })
+      .sort({ _id: 1 })
+      .limit(limit)
+      .toArray();
+    after = targets.length === limit ? targets[targets.length - 1]._id : undefined;
+    const jobsByOwner = new Map<string, Promise<string[]>>();
+
+    const hasPersistence = async (target: DeletionTarget): Promise<boolean> => {
+      const { userId, tenantId, threadId, checkpoint, storage } = target;
+      const owners = (tenantId ? [tenantId, undefined] : [undefined]).map((tenant) =>
+        checkpointOwnerNamespacePrefix(userId, tenant),
+      );
+      const user = mongoose.isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      const siblingCollections = [
+        [mongoose.models.Conversation?.collection.name ?? 'conversations', userId],
+        [mongoose.models.Message?.collection.name ?? 'messages', userId],
+        [mongoose.models.ToolCall?.collection.name ?? 'toolcalls', user],
+        [mongoose.models.SharedLink?.collection.name ?? 'sharedlinks', userId],
+      ] as const;
+      const siblings = siblingCollections.map(([name, owner]) =>
+        db
+          .collection(name)
+          .findOne({ user: owner, conversationId: threadId }, { projection: { _id: 1 } }),
+      );
+      const payload =
+        storage.type === 'memory'
+          ? []
+          : [storage.checkpointCollectionName, storage.checkpointWritesCollectionName].map((name) =>
+              db.collection(name).findOne(
+                {
+                  $or: [
+                    ...owners.map((owner) => ({
+                      thread_id: { $in: [threadId, `${owner}${threadId}`] },
+                      $or: [{ checkpoint_ns: { $regex: `^${owner}` } }, { lc_owner: owner }],
+                    })),
+                    ...(checkpoint == null
+                      ? []
+                      : [
+                          {
+                            thread_id: checkpoint.threadId,
+                            checkpoint_ns: checkpoint.checkpointNs,
+                            checkpoint_id: checkpoint.checkpointId,
+                            $or: [{ lc_owner: { $in: owners } }, { lc_owner: { $exists: false } }],
+                          },
+                        ]),
+                  ],
+                },
+                { projection: { _id: 1 } },
+              ),
+            );
+      return (await Promise.all([...siblings, ...payload])).some((row) => row != null);
+    };
+
+    const results = await Promise.allSettled(
+      targets.map(async (target) => {
+        const owner = checkpointOwnerNamespacePrefix(target.userId, target.tenantId);
+        let jobs = jobsByOwner.get(owner);
+        if (jobs == null) {
+          jobs = getOwnerJobs(target.userId, target.tenantId);
+          jobsByOwner.set(owner, jobs);
+        }
+        if ((await jobs).length > 0 || (await hasPersistence(target))) return 0;
+        return (await collection.deleteOne({ _id: target._id, version: target.version }))
+          .deletedCount;
+      }),
+    );
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length > 0) {
+      for (const failure of failures)
+        logger.error('[checkpoints] Deletion evidence reclamation failed:', failure.reason);
+      throw new Error('Checkpoint evidence reclamation failed');
+    }
+    return results.reduce(
+      (count, result) => count + (result.status === 'fulfilled' ? result.value : 0),
+      0,
+    );
   };
 }

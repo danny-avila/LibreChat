@@ -5,6 +5,7 @@ const {
   isEnabled,
   normalizeLimit,
   openCheckpointDeletion,
+  waitForGenerationPersistence,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
   createSubagentControlHandler,
@@ -240,8 +241,6 @@ router.get('/gen_title/:conversationId', async (req, res) => {
 
 const POST_DELETE_CANCEL_ATTEMPTS = 3;
 const POST_DELETE_CANCEL_BACKOFF_MS = 250;
-const GENERATION_PERSISTENCE_DRAIN_TIMEOUT_MS = 45_000;
-const GENERATION_PERSISTENCE_DRAIN_POLL_MS = 100;
 const GENERATION_LOOKUP_ATTEMPTS = 3;
 
 async function readGenerationForDeletion(conversationId) {
@@ -320,7 +319,8 @@ async function confirmAgentGenerationsDrained(
         job.status === 'running' ||
         job.status === 'requires_action' ||
         job.metadata?.providerDrained === false ||
-        job.metadata?.terminalPersistencePending === true;
+        job.metadata?.terminalPersistencePending === true ||
+        job.metadata?.terminalHostActionPending === true;
       if (!needsDrain) return;
       try {
         const abortResult = await GenerationJobManager.abortJob(conversationId, {
@@ -332,21 +332,9 @@ async function confirmAgentGenerationsDrained(
             `Could not confirm generation stop for ${conversationId}: ${abortResult?.failureReason ?? 'unknown'}`,
           );
         }
-        const deadline = Date.now() + GENERATION_PERSISTENCE_DRAIN_TIMEOUT_MS;
-        while (true) {
-          const current = await GenerationJobManager.getJob(conversationId);
-          if (
-            current == null ||
-            current.createdAt !== job.createdAt ||
-            current.metadata?.terminalPersistencePending !== true
-          ) {
-            break;
-          }
-          if (Date.now() >= deadline) {
-            throw new Error(`Timed out waiting for generation persistence: ${conversationId}`);
-          }
-          await new Promise((resolve) => setTimeout(resolve, GENERATION_PERSISTENCE_DRAIN_POLL_MS));
-        }
+        await waitForGenerationPersistence(conversationId, job.createdAt, (id) =>
+          GenerationJobManager.getJob(id),
+        );
       } catch (error) {
         logger.warn('Deleted child generation drain failed', error);
         drainErrors.push(error);
