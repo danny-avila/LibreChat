@@ -1,6 +1,10 @@
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 import type { NextFunction, Request, Response } from 'express';
-import { codeEnvironmentPairingLimiter, codeEnvironmentStatusLimiter } from './code';
+import {
+  codeEnvironmentPairingLimiter,
+  codeEnvironmentStatusIpLimiter,
+  codeEnvironmentStatusLimiter,
+} from './code';
 import { limiterCache } from '~/cache/cacheFactory';
 
 jest.mock('express-rate-limit', () => ({
@@ -35,15 +39,27 @@ describe('code environment limiters', () => {
     expect(mockLimiterCache).toHaveBeenCalledWith('code_environment_pairing_user_limiter');
   });
 
-  test('keys status limits by user and normalized IP', () => {
+  test('keys status user limits by immutable user ID', () => {
     const req = { user: { id: 'user-1' }, ip: '2001:db8::1' } as Request;
 
     codeEnvironmentStatusLimiter(req, {} as Response, jest.fn());
 
     const options = mockRateLimit.mock.calls.at(-1)?.[0] as LimiterOptions;
     expect(options).toEqual(expect.objectContaining({ max: 120, windowMs: 60_000 }));
-    expect(options.keyGenerator(req)).toBe('user-1:2001:db8::1');
-    expect(mockIpKeyGenerator).toHaveBeenCalledWith('2001:db8::1');
+    expect(options.keyGenerator(req)).toBe('user-1');
+    expect(mockIpKeyGenerator).not.toHaveBeenCalled();
     expect(mockLimiterCache).toHaveBeenCalledWith('code_environment_status_user_limiter');
+  });
+
+  test('applies an independent normalized IP status limit', () => {
+    const req = { user: { id: 'user-1' }, ip: '2001:db8::1' } as Request;
+
+    codeEnvironmentStatusIpLimiter(req, {} as Response, jest.fn());
+
+    const options = mockRateLimit.mock.calls.at(-1)?.[0] as LimiterOptions;
+    expect(options).toEqual(expect.objectContaining({ max: 300, windowMs: 60_000 }));
+    expect(options.keyGenerator(req)).toBe('2001:db8::1');
+    expect(mockIpKeyGenerator).toHaveBeenCalledWith('2001:db8::1');
+    expect(mockLimiterCache).toHaveBeenCalledWith('code_environment_status_ip_limiter');
   });
 });

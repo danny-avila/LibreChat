@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
 const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 64 * 1024;
 
@@ -82,7 +84,9 @@ export function createCodeBridgeStatusPoller({
   >();
   let active = 0;
   return (params) => {
-    const key = `${params.baseURL}\u0000${params.workerId}`;
+    const credentialId = createHash('sha256').update(params.token).digest('base64url');
+    const normalizedBaseURL = params.baseURL.trim().replace(/\/+$/, '');
+    const key = `${normalizedBaseURL}\u0000${params.workerId}\u0000${credentialId}`;
     const now = Date.now();
     const cached = requests.get(key);
     if (cached != null && cached.expiresAt > now) return cached.request;
@@ -97,10 +101,19 @@ export function createCodeBridgeStatusPoller({
       }
     }
     active += 1;
+    const startedAt = Date.now();
     const request = getCodeBridgeWorkerStatus({ ...params, fetchImpl })
       .then((status) => {
+        const completedAt = Date.now();
+        const ttl =
+          status.leaseExpiresInMs == null
+            ? cacheTtlMs
+            : Math.max(
+                0,
+                Math.min(cacheTtlMs, status.leaseExpiresInMs - (completedAt - startedAt)),
+              );
         requests.set(key, {
-          expiresAt: Date.now() + cacheTtlMs,
+          expiresAt: completedAt + ttl,
           request: Promise.resolve(status),
         });
         return status;
@@ -172,6 +185,7 @@ export async function getCodeBridgeWorkerStatus({
       },
     );
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       throw new CodeBridgeStatusError('rejected', response.status);
     }
     const payload = await readBoundedStatusJson(response);

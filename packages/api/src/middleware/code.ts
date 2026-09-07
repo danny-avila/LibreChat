@@ -5,6 +5,7 @@ import { limiterCache } from '~/cache/cacheFactory';
 type AuthenticatedRequest = Request & { user?: { id?: string } };
 
 let configuredPairingLimiter: RequestHandler | undefined;
+let configuredStatusIpLimiter: RequestHandler | undefined;
 let configuredStatusLimiter: RequestHandler | undefined;
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -55,12 +56,31 @@ export const codeEnvironmentStatusLimiter: RequestHandler = (req, res, next) => 
             type: 'rate_limit_error',
           },
         }),
-      keyGenerator: (limitedReq) => {
-        const userId = String((limitedReq as AuthenticatedRequest).user?.id ?? '');
-        return `${userId}:${ipKeyGenerator(limitedReq.ip)}`;
-      },
+      keyGenerator: (limitedReq) => String((limitedReq as AuthenticatedRequest).user?.id ?? ''),
       store: limiterCache('code_environment_status_user_limiter'),
     });
   }
   return configuredStatusLimiter(req, res, next);
+};
+
+export const codeEnvironmentStatusIpLimiter: RequestHandler = (req, res, next) => {
+  if (configuredStatusIpLimiter == null) {
+    const max = positiveInteger(process.env.CODE_ENVIRONMENT_STATUS_IP_MAX, 300);
+    const windowInMinutes = positiveInteger(process.env.CODE_ENVIRONMENT_STATUS_IP_WINDOW, 1);
+    configuredStatusIpLimiter = rateLimit({
+      windowMs: windowInMinutes * 60 * 1000,
+      max,
+      handler: (_limitedReq, limitedRes) =>
+        limitedRes.status(429).json({
+          error: {
+            code: 'code_environment_status_rate_limited',
+            message: 'Code environment status rate limit exceeded.',
+            type: 'rate_limit_error',
+          },
+        }),
+      keyGenerator: (limitedReq) => ipKeyGenerator(limitedReq.ip),
+      store: limiterCache('code_environment_status_ip_limiter'),
+    });
+  }
+  return configuredStatusIpLimiter(req, res, next);
 };

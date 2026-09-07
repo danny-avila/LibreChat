@@ -2,6 +2,7 @@ const express = require('express');
 const {
   createCodeEnvironmentHttpHandlers,
   codeEnvironmentPairingLimiter,
+  codeEnvironmentStatusIpLimiter,
   codeEnvironmentStatusLimiter,
 } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
@@ -32,8 +33,11 @@ router.post('/pairings', codeEnvironmentPairingLimiter, (req, res, next) =>
 router.post('/', requireCodeEnvironmentManage, (req, res, next) =>
   getHandlers().register(req, res, next),
 );
-router.get('/:environmentId/status', codeEnvironmentStatusLimiter, (req, res, next) =>
-  getHandlers().status(req, res, next),
+router.get(
+  '/:environmentId/status',
+  codeEnvironmentStatusIpLimiter,
+  codeEnvironmentStatusLimiter,
+  (req, res, next) => getHandlers().status(req, res, next),
 );
 router.patch('/:environmentId/settings', (req, res, next) =>
   getHandlers().updateSettings(req, res, next),
