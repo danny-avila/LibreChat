@@ -3,6 +3,7 @@ import { Button, TextareaAutosize } from '@librechat/client';
 import { Check, X, Pencil, MessageSquare, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
+import { boundApprovalLabel } from '~/components/Chat/approval/preview';
 import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
 import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
@@ -115,6 +116,8 @@ export default function ToolApproval({
 
   const status = getStatus(actionId);
   const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
+  const safeDescription =
+    description == null ? undefined : boundApprovalLabel(description, 1024).label;
 
   /** Recompute and store this card's decision whenever inputs change. A null
    *  resolution (e.g. invalid edit JSON) clears it so submit stays disabled. */
@@ -200,8 +203,8 @@ export default function ToolApproval({
       data-testid="tool-approval"
       data-tool-call-id={toolCallId}
     >
-      {description != null && description.length > 0 && (
-        <p className="text-sm text-text-secondary">{description}</p>
+      {safeDescription != null && safeDescription.length > 0 && (
+        <p className="text-sm text-text-secondary">{safeDescription}</p>
       )}
       <div className="flex flex-wrap gap-2">
         {allowedDecisions.map((decision) => {

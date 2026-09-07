@@ -4,10 +4,13 @@ const MAX_PREVIEW_CHARS = 16 * 1024;
 const MAX_PREVIEW_LINES = 200;
 const MAX_BATCH_PREVIEW_CHARS = 64 * 1024;
 const MAX_TARGET_CHARS = 1024;
+const MAX_DESCRIPTION_CHARS = 1024;
+const MAX_TOOL_NAME_CHARS = 256;
 
 export interface ApprovalPreview {
   kind: 'command' | 'create' | 'edit' | 'generic';
   toolName: string;
+  description?: string;
   target?: string;
   body: string;
   truncated: boolean;
@@ -29,13 +32,16 @@ function revealControlCharacters(value: string): string {
 const TARGET_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
 /* eslint-enable no-control-regex */
 
-function boundTarget(value: string, maxChars: number): { target: string; truncated: boolean } {
+export function boundApprovalLabel(
+  value: string,
+  maxChars: number,
+): { label: string; truncated: boolean } {
   const revealed = value.replace(TARGET_CONTROL_CHARACTERS, (character) => {
     const codePoint = character.codePointAt(0)?.toString(16).padStart(4, '0') ?? '????';
     return `\\u${codePoint}`;
   });
   return {
-    target: revealed.slice(0, maxChars),
+    label: revealed.slice(0, maxChars),
     truncated: revealed.length > maxChars,
   };
 }
@@ -123,16 +129,33 @@ export function buildApprovalPreview(
   }
 
   const totalBudget = Math.max(0, maxChars);
+  const boundedToolName = boundApprovalLabel(
+    request.name,
+    Math.min(MAX_TOOL_NAME_CHARS, totalBudget),
+  );
+  let remainingBudget = Math.max(0, totalBudget - boundedToolName.label.length);
+  const boundedDescription =
+    request.description == null
+      ? undefined
+      : boundApprovalLabel(request.description, Math.min(MAX_DESCRIPTION_CHARS, remainingBudget));
+  remainingBudget = Math.max(0, remainingBudget - (boundedDescription?.label.length ?? 0));
   const boundedTarget =
-    target == null ? undefined : boundTarget(target, Math.min(MAX_TARGET_CHARS, totalBudget));
-  const targetLength = boundedTarget?.target.length ?? 0;
-  const boundedBody = boundPreview(rawBody, Math.max(0, totalBudget - targetLength));
+    target == null
+      ? undefined
+      : boundApprovalLabel(target, Math.min(MAX_TARGET_CHARS, remainingBudget));
+  remainingBudget = Math.max(0, remainingBudget - (boundedTarget?.label.length ?? 0));
+  const boundedBody = boundPreview(rawBody, remainingBudget);
   return {
     kind,
-    toolName: request.name,
-    target: boundedTarget?.target,
+    toolName: boundedToolName.label,
+    description: boundedDescription?.label,
+    target: boundedTarget?.label,
     body: boundedBody.body,
-    truncated: boundedBody.truncated || boundedTarget?.truncated === true,
+    truncated:
+      boundedBody.truncated ||
+      boundedTarget?.truncated === true ||
+      boundedDescription?.truncated === true ||
+      boundedToolName.truncated,
   };
 }
 
@@ -143,7 +166,11 @@ export function buildApprovalPreviews(requests: Agents.ToolApprovalRequest[]): A
     const preview = buildApprovalPreview(request, Math.min(MAX_PREVIEW_CHARS, remainingChars));
     remainingChars = Math.max(
       0,
-      remainingChars - preview.body.length - (preview.target?.length ?? 0),
+      remainingChars -
+        preview.body.length -
+        preview.toolName.length -
+        (preview.description?.length ?? 0) -
+        (preview.target?.length ?? 0),
     );
     return preview;
   });

@@ -87,7 +87,12 @@ describe('buildApprovalPreview', () => {
 
     expect(
       previews.reduce(
-        (total, preview) => total + preview.body.length + (preview.target?.length ?? 0),
+        (total, preview) =>
+          total +
+          preview.toolName.length +
+          (preview.description?.length ?? 0) +
+          preview.body.length +
+          (preview.target?.length ?? 0),
         0,
       ),
     ).toBeLessThanOrEqual(64 * 1024);
@@ -121,6 +126,22 @@ describe('buildApprovalPreview', () => {
     expect(preview.target).toContain('\\u000a');
     expect(preview.target?.length).toBeLessThanOrEqual(1024);
     expect((preview.target?.length ?? 0) + preview.body.length).toBeLessThanOrEqual(16 * 1024);
+    expect(preview.truncated).toBe(true);
+  });
+
+  test('reveals and bounds generic tool labels and descriptions', () => {
+    const preview = buildApprovalPreview({
+      name: `run\nspoof\u202e${'x'.repeat(500)}`,
+      description: `explain\r${'y'.repeat(2000)}`,
+      tool_call_id: 'call-1',
+      arguments: { value: 'safe' },
+    });
+
+    expect(preview.toolName).toContain('\\u000a');
+    expect(preview.toolName).not.toContain('\n');
+    expect(preview.toolName.length).toBeLessThanOrEqual(256);
+    expect(preview.description).toContain('\\u000d');
+    expect(preview.description?.length).toBeLessThanOrEqual(1024);
     expect(preview.truncated).toBe(true);
   });
 });
