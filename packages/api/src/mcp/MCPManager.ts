@@ -205,6 +205,15 @@ export class MCPManager extends UserConnectionManager {
     return this.oauthRecoveries.get(connection)?.promise;
   }
 
+  protected override propagateDirectBearerRecoveryState(
+    connection: MCPConnection,
+    state?: t.DirectBearerRecoveryState,
+  ): void {
+    if (state && this.oauthRecoveries.get(connection)?.directBearerRecoveryConsumed) {
+      state.attempted = true;
+    }
+  }
+
   protected override waitForConnectionRecovery(
     recovery: Promise<void>,
     signal?: AbortSignal,

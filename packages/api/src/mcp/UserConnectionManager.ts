@@ -345,17 +345,20 @@ export abstract class UserConnectionManager {
           await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}]`);
         } else {
           const activeRecovery = this.getActiveConnectionRecovery(existing);
+          this.propagateDirectBearerRecoveryState(existing, opts.directBearerRecoveryState);
           let awaitedRecovery = activeRecovery;
           if (activeRecovery) {
             await this.waitForConnectionRecovery(activeRecovery, opts.signal);
           }
           let connected = await existing.isConnected();
           let recovery = this.getActiveConnectionRecovery(existing);
+          this.propagateDirectBearerRecoveryState(existing, opts.directBearerRecoveryState);
           while (recovery && recovery !== awaitedRecovery) {
             awaitedRecovery = recovery;
             await this.waitForConnectionRecovery(recovery, opts.signal);
             connected = await existing.isConnected();
             recovery = this.getActiveConnectionRecovery(existing);
+            this.propagateDirectBearerRecoveryState(existing, opts.directBearerRecoveryState);
           }
           if (connected) {
             logger.debug(`[MCP][User: ${userId}] Reusing request-scoped connection`);
@@ -623,17 +626,20 @@ export abstract class UserConnectionManager {
         connection = undefined;
       } else {
         const activeRecovery = this.getActiveConnectionRecovery(connection);
+        this.propagateDirectBearerRecoveryState(connection, directBearerRecoveryState);
         let awaitedRecovery = activeRecovery;
         if (activeRecovery) {
           await this.waitForConnectionRecovery(activeRecovery, signal);
         }
         let connected = await connection.isConnected();
         let recovery = this.getActiveConnectionRecovery(connection);
+        this.propagateDirectBearerRecoveryState(connection, directBearerRecoveryState);
         while (recovery && recovery !== awaitedRecovery) {
           awaitedRecovery = recovery;
           await this.waitForConnectionRecovery(recovery, signal);
           connected = await connection.isConnected();
           recovery = this.getActiveConnectionRecovery(connection);
+          this.propagateDirectBearerRecoveryState(connection, directBearerRecoveryState);
         }
         if (connected) {
           logger.debug(`[MCP][User: ${userId}] Reusing active connection`);
@@ -778,7 +784,7 @@ export abstract class UserConnectionManager {
       if (!ephemeralConnection || directBearerRecovery) {
         const toolListSnapshot = await connection.refreshToolList();
         const toolListAuthenticationError = toolListSnapshot?.authenticationError;
-        if (toolListAuthenticationError && directBearerRecovery && user && upstreamTokenProvider) {
+        if (toolListAuthenticationError && directBearerRecovery && user) {
           if (directBearerRecoveryState.attempted) {
             throw new MCPAuthenticationRejectedError(
               serverName,
@@ -1090,6 +1096,11 @@ export abstract class UserConnectionManager {
   protected getActiveConnectionRecovery(_connection: MCPConnection): Promise<void> | undefined {
     return undefined;
   }
+
+  protected propagateDirectBearerRecoveryState(
+    _connection: MCPConnection,
+    _state?: t.DirectBearerRecoveryState,
+  ): void {}
 
   protected waitForConnectionRecovery(
     recovery: Promise<void>,

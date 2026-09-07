@@ -11,6 +11,7 @@ import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { isMCPDomainAllowed } from '~/auth/domain';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 import * as toolsChanged from '~/mcp/toolsChanged';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
@@ -3214,6 +3215,62 @@ describe('MCPManager', () => {
       expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
     });
 
+    it('propagates direct recovery registered during the base cached checkout', async () => {
+      let finishConnectionCheck: ((connected: boolean) => void) | undefined;
+      const connectionCheck = new Promise<boolean>((resolve) => {
+        finishConnectionCheck = resolve;
+      });
+      const connection = {
+        isConnected: jest.fn().mockReturnValueOnce(connectionCheck).mockResolvedValue(true),
+        isStale: jest.fn().mockReturnValue(false),
+      } as unknown as MCPConnection;
+      let finishRecovery: (() => void) | undefined;
+      const recovery = new Promise<void>((resolve) => {
+        finishRecovery = resolve;
+      });
+
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const internals = manager as unknown as {
+        userConnections: Map<string, Map<string, MCPConnection>>;
+        oauthRecoveries: WeakMap<
+          MCPConnection,
+          {
+            promise: Promise<void>;
+            allowsTakeover: boolean;
+            directBearerRecoveryConsumed: boolean;
+          }
+        >;
+      };
+      internals.userConnections.set(user.id, new Map([[serverName, connection]]));
+      const directBearerRecoveryState = { attempted: false };
+
+      const checkout = manager.getUserConnection({
+        serverName,
+        serverConfig,
+        user,
+        directBearerRecoveryState,
+      });
+      while ((connection.isConnected as jest.Mock).mock.calls.length === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      internals.oauthRecoveries.set(connection, {
+        promise: recovery,
+        allowsTakeover: false,
+        directBearerRecoveryConsumed: true,
+      });
+      finishConnectionCheck?.(true);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(directBearerRecoveryState.attempted).toBe(true);
+      internals.oauthRecoveries.delete(connection);
+      finishRecovery?.();
+
+      await expect(checkout).resolves.toBe(connection);
+      expect(connection.isConnected).toHaveBeenCalledTimes(2);
+    });
+
     it.each([false, true])(
       'propagates a connection leader recovery budget to a pending checkout joiner (request-scoped=%s)',
       async (requestScoped) => {
@@ -4111,6 +4168,36 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
       expect(upstreamTokenProvider).toHaveBeenCalledTimes(1);
       expect(upstreamTokenProvider).not.toHaveBeenCalledWith({ forceRefresh: true });
+    });
+
+    it('fails closed when initial tools/list rejects without a live provider', async () => {
+      const authenticationError = Object.assign(new Error('unauthorized'), { status: 401 });
+      const connection = newUserConnection();
+      (connection.refreshToolList as jest.Mock).mockResolvedValue({
+        tools: [],
+        complete: false,
+        authenticationError,
+      });
+      const directBearerConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      };
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(directBearerConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+        }),
+      ).rejects.toBeInstanceOf(OpenIDReauthRequiredError);
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(connection.dispose).toHaveBeenCalledTimes(1);
     });
 
     it.each([false, true])(
