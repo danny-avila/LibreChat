@@ -76,6 +76,21 @@ describe('waitForMeiliTask', () => {
     );
   });
 
+  test('allows callers to accept a provider-confirmed idempotent terminal result', async () => {
+    const client = {
+      waitForTask: jest.fn().mockResolvedValue({
+        status: 'failed',
+        error: { code: 'index_already_exists' },
+      }),
+    };
+
+    await expect(
+      waitForMeiliTask(client, 29, 'messages creation', () => false, {
+        isTaskSuccessful: (task) => task.error?.code === 'index_already_exists',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   test('propagates non-timeout client errors', async () => {
     const client = {
       waitForTask: jest.fn().mockRejectedValue(new Error('Meilisearch unavailable')),
