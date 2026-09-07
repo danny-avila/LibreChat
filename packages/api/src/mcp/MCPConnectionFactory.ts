@@ -56,6 +56,8 @@ type OAuthRecoveryPhase = 'silent-refresh' | 'interactive' | 'terminal';
 export class MCPConnectionFactory {
   protected readonly serverName: string;
   protected readonly serverConfig: t.MCPOptions;
+  /** Unresolved definition used for lifecycle fencing across request-specific substitutions. */
+  protected readonly serverDefinition: t.MCPOptions;
   protected readonly logPrefix: string;
   protected readonly useOAuth: boolean;
   protected readonly useSSRFProtection: boolean;
@@ -414,6 +416,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
+    this.serverDefinition = basic.serverConfig;
     this.serverConfig = basic.skipEnvProcessing
       ? basic.serverConfig
       : processMCPEnv({
@@ -1334,7 +1337,7 @@ export class MCPConnectionFactory {
             ...flowMetadata,
             authorizationUrl,
             tenantId: this.tenantId,
-            serverGeneration: getMCPServerGeneration(this.serverConfig as t.ParsedServerConfig),
+            serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
           };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
           await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
@@ -1742,7 +1745,7 @@ export class MCPConnectionFactory {
         ...flowMetadata,
         authorizationUrl,
         tenantId: this.tenantId,
-        serverGeneration: getMCPServerGeneration(this.serverConfig as t.ParsedServerConfig),
+        serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
       };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
       await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);

@@ -240,6 +240,41 @@ describe('maybeUninstallOAuthMCP', () => {
     expect(mockDeleteFlowAndStateMapping).toHaveBeenCalledTimes(1);
   });
 
+  test('scopes metadata-missing cleanup to token records snapshotted before flow cancellation', async () => {
+    setupOAuthServerFound();
+    mockGetClientInfoAndMetadata.mockResolvedValue(null);
+    mockFindToken.mockImplementation(async ({ type }) =>
+      type === 'mcp_oauth' ? { token: 'encrypted-old-access' } : null,
+    );
+    mockDeleteUserTokens.mockImplementation(
+      async ({ userId: ownerId, serverName: name, deleteToken }) => {
+        const identifier = `mcp:${name}`;
+        await deleteToken({
+          userId: ownerId,
+          type: 'mcp_oauth_client',
+          identifier: `${identifier}:client`,
+        });
+        await deleteToken({ userId: ownerId, type: 'mcp_oauth', identifier });
+        await deleteToken({
+          userId: ownerId,
+          type: 'mcp_oauth_refresh',
+          identifier: `${identifier}:refresh`,
+        });
+      },
+    );
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockDeleteTokens).toHaveBeenCalledTimes(1);
+    expect(mockDeleteTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'mcp_oauth',
+        identifier: 'mcp:acme',
+        token: 'encrypted-old-access',
+      }),
+    );
+  });
+
   test('clears stored state when client info cannot be loaded', async () => {
     setupOAuthServerFound();
     mockGetClientInfoAndMetadata.mockRejectedValue(new Error('bad client data'));

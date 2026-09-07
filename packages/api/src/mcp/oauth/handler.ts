@@ -1160,6 +1160,7 @@ export class MCPOAuthHandler {
     oauthHeaders: Record<string, string>,
     persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
     rollbackPersistedTokens?: (tokens: MCPOAuthTokens) => Promise<void>,
+    expectedAttempt?: { createdAt: number; state: string },
   ): Promise<MCPOAuthTokens> {
     let observedFlowState: FlowState<MCPOAuthTokens> | null = null;
     try {
@@ -1167,6 +1168,15 @@ export class MCPOAuthHandler {
       const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
       if (!flowState) {
         throw new Error('OAuth flow not found');
+      }
+      const currentState =
+        typeof flowState.metadata?.state === 'string' ? flowState.metadata.state : '';
+      if (
+        expectedAttempt &&
+        (flowState.createdAt !== expectedAttempt.createdAt ||
+          currentState !== expectedAttempt.state)
+      ) {
+        throw new Error('OAuth flow attempt was replaced before token exchange');
       }
       observedFlowState = flowState;
 

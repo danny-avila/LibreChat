@@ -611,13 +611,16 @@ describe('MCP Routes', () => {
       it('should fail the flow when OAuth error is received with valid CSRF cookie', async () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
-          failFlow: jest.fn().mockResolvedValue(true),
+          getFlowState: jest.fn().mockResolvedValue({
+            createdAt: 123,
+            metadata: { state: flowId },
+          }),
+          failFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
         };
 
         getLogStores.mockReturnValueOnce({});
         require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
         MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
-        MCPOAuthHandler.getFlowState.mockResolvedValueOnce({ state: flowId });
 
         const csrfToken = generateTestCsrfToken(flowId);
         const response = await request(app)
@@ -631,9 +634,11 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
-        expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        expect(mockFlowManager.failFlowIfCurrent).toHaveBeenCalledWith(
           flowId,
           'mcp_oauth',
+          123,
+          flowId,
           'invalid_client',
         );
       });
@@ -641,13 +646,16 @@ describe('MCP Routes', () => {
       it('should fail the flow when OAuth error is received with valid session cookie', async () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
-          failFlow: jest.fn().mockResolvedValue(true),
+          getFlowState: jest.fn().mockResolvedValue({
+            createdAt: 123,
+            metadata: { state: flowId },
+          }),
+          failFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
         };
 
         getLogStores.mockReturnValueOnce({});
         require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
         MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
-        MCPOAuthHandler.getFlowState.mockResolvedValueOnce({ state: flowId });
 
         const sessionToken = generateTestCsrfToken('test-user-id');
         const response = await request(app)
@@ -661,9 +669,11 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_client`);
-        expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        expect(mockFlowManager.failFlowIfCurrent).toHaveBeenCalledWith(
           flowId,
           'mcp_oauth',
+          123,
+          flowId,
           'invalid_client',
         );
       });
@@ -671,14 +681,17 @@ describe('MCP Routes', () => {
       it('should NOT fail the flow when the error callback carries a superseded state', async () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
-          failFlow: jest.fn(),
+          getFlowState: jest.fn().mockResolvedValue({
+            createdAt: 123,
+            metadata: { state: 'current-attempt-state' },
+          }),
+          failFlowIfCurrent: jest.fn(),
         };
 
         getLogStores.mockReturnValueOnce({});
         require('~/config').getFlowStateManager.mockReturnValueOnce(mockFlowManager);
         /** Orphaned mapping resolves the superseded state to the current flow */
         MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
-        MCPOAuthHandler.getFlowState.mockResolvedValueOnce({ state: 'current-attempt-state' });
 
         const csrfToken = generateTestCsrfToken(flowId);
         const response = await request(app)
@@ -692,7 +705,7 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(response.headers.location).toBe(`${basePath}/oauth/error?error=access_denied`);
-        expect(mockFlowManager.failFlow).not.toHaveBeenCalled();
+        expect(mockFlowManager.failFlowIfCurrent).not.toHaveBeenCalled();
       });
 
       it('should NOT fail the flow when OAuth error is received without cookies (DoS prevention)', async () => {
@@ -1327,6 +1340,7 @@ describe('MCP Routes', () => {
         {},
         expect.any(Function),
         expect.any(Function),
+        expect.objectContaining({ state: flowId }),
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1546,6 +1560,7 @@ describe('MCP Routes', () => {
         { 'X-Custom-Auth': 'header-value' },
         expect.any(Function),
         expect.any(Function),
+        expect.objectContaining({ state: flowId }),
       );
       expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
     });
@@ -1603,6 +1618,7 @@ describe('MCP Routes', () => {
         { 'X-Registry-Header': 'from-registry' },
         expect.any(Function),
         expect.any(Function),
+        expect.objectContaining({ state: flowId }),
       );
       expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(
         'test-server',

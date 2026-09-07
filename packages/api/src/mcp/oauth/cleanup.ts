@@ -50,7 +50,17 @@ interface ClearStateParams {
   >;
   skipOAuthFlows?: boolean;
   credentialSetId?: string | null;
+  tokenSnapshot?: Map<string, string>;
 }
+
+const oauthTokenKeys = (serverName: string) => {
+  const identifier = `mcp:${serverName}`;
+  return [
+    { type: 'mcp_oauth_client', identifier: `${identifier}:client` },
+    { type: 'mcp_oauth', identifier },
+    { type: 'mcp_oauth_refresh', identifier: `${identifier}:refresh` },
+  ];
+};
 
 export async function clearStoredMCPOAuthState({
   userId,
@@ -58,14 +68,20 @@ export async function clearStoredMCPOAuthState({
   dependencies,
   skipOAuthFlows = false,
   credentialSetId,
+  tokenSnapshot,
 }: ClearStateParams): Promise<void> {
   try {
     await dependencies.tokenStorage.deleteUserTokens({
       userId,
       serverName,
       deleteToken: async (filter) => {
+        const snapshotToken = tokenSnapshot?.get(`${filter.type}:${filter.identifier}`);
+        if (tokenSnapshot && !snapshotToken) {
+          return;
+        }
         await dependencies.deleteTokens({
           ...filter,
+          ...(snapshotToken && { token: snapshotToken }),
           ...(credentialSetId !== undefined && { metadataCredentialSetId: credentialSetId }),
         });
       },
@@ -132,6 +148,25 @@ export async function cleanupMCPServerOAuth({
   }
 
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+  /** Snapshot exact encrypted values before cancelling the flow. Later cleanup can then remove
+   * this authorization without matching credentials written by a replacement attempt. */
+  const tokenSnapshot = new Map<string, string>();
+  const snapshotResults = await Promise.allSettled(
+    oauthTokenKeys(serverName).map(async ({ type, identifier }) => {
+      const record = await dependencies.findToken({ userId, type, identifier });
+      if (record?.token) {
+        tokenSnapshot.set(`${type}:${identifier}`, record.token);
+      }
+    }),
+  );
+  for (const result of snapshotResults) {
+    if (result.status === 'rejected') {
+      logger.warn(
+        `[maybeUninstallOAuthMCP] Failed to snapshot OAuth token state for ${serverName}:`,
+        result.reason,
+      );
+    }
+  }
   const flowIds = [
     dependencies.oauthHandler.generateFlowId(userId, serverName, getTenantId()),
     dependencies.oauthHandler.generateFlowId(userId, serverName),
@@ -158,7 +193,13 @@ export async function cleanupMCPServerOAuth({
     ? isOAuthServer(serverConfigOverride)
     : await dependencies.isRegisteredOAuthServer(serverName, userId);
   if (!oauthServer || !serverConfig) {
-    await clearStoredMCPOAuthState({ userId, serverName, dependencies, skipOAuthFlows: true });
+    await clearStoredMCPOAuthState({
+      userId,
+      serverName,
+      dependencies,
+      skipOAuthFlows: true,
+      tokenSnapshot,
+    });
     return;
   }
 
@@ -174,11 +215,23 @@ export async function cleanupMCPServerOAuth({
       `[maybeUninstallOAuthMCP] Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
       error,
     );
-    await clearStoredMCPOAuthState({ userId, serverName, dependencies, skipOAuthFlows: true });
+    await clearStoredMCPOAuthState({
+      userId,
+      serverName,
+      dependencies,
+      skipOAuthFlows: true,
+      tokenSnapshot,
+    });
     return;
   }
   if (!clientTokenData) {
-    await clearStoredMCPOAuthState({ userId, serverName, dependencies, skipOAuthFlows: true });
+    await clearStoredMCPOAuthState({
+      userId,
+      serverName,
+      dependencies,
+      skipOAuthFlows: true,
+      tokenSnapshot,
+    });
     return;
   }
 
@@ -202,6 +255,7 @@ export async function cleanupMCPServerOAuth({
       dependencies,
       skipOAuthFlows: true,
       credentialSetId: typeof credentialSetId === 'string' ? credentialSetId : null,
+      tokenSnapshot,
     });
     return;
   }
@@ -272,5 +326,6 @@ export async function cleanupMCPServerOAuth({
     dependencies,
     skipOAuthFlows: true,
     credentialSetId,
+    tokenSnapshot,
   });
 }

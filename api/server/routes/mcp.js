@@ -271,9 +271,16 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                 /** A stale mapping can resolve a superseded attempt's state to the
                  *  current flow (deterministic flow ids); only fail the flow this
                  *  error callback actually belongs to */
-                const flowMeta = await MCPOAuthHandler.getFlowState(flowId, flowManager);
-                if (flowMeta?.state === state) {
-                  await flowManager.failFlow(flowId, 'mcp_oauth', String(oauthError));
+                const currentFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+                const flowMeta = currentFlow?.metadata;
+                if (currentFlow && flowMeta?.state === state) {
+                  await flowManager.failFlowIfCurrent(
+                    flowId,
+                    'mcp_oauth',
+                    currentFlow.createdAt,
+                    state,
+                    String(oauthError),
+                  );
                   logger.debug('[MCP OAuth] Marked flow as FAILED with OAuth error', {
                     flowId,
                     error: oauthError,
@@ -379,7 +386,11 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
     /** Check if this flow has already been completed (idempotency protection) */
     const currentFlowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
-    if (currentFlowState?.status === 'COMPLETED') {
+    if (!currentFlowState) {
+      logger.warn('[MCP OAuth] Flow disappeared before token exchange', { flowId, serverName });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+    if (currentFlowState.status === 'COMPLETED') {
       logger.warn('[MCP OAuth] Flow already completed, preventing duplicate token exchange', {
         flowId,
         serverName,
@@ -555,6 +566,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           return storedTokens;
         },
         rollbackStoredTokens,
+        { createdAt: currentFlowState.createdAt, state },
       );
       logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 

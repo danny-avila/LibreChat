@@ -1851,6 +1851,38 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
+    it('rejects a replaced callback attempt before exchanging its authorization code', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: 456,
+          metadata: {
+            state: 'replacement-state',
+            serverName: 'test-server',
+            codeVerifier: 'replacement-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        failFlowIfCurrent: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+
+      await expect(
+        MCPOAuthHandler.completeOAuthFlow(
+          'test-flow-id',
+          'stale-auth-code',
+          mockFlowManager,
+          {},
+          undefined,
+          undefined,
+          { createdAt: 123, state: 'original-state' },
+        ),
+      ).rejects.toThrow('OAuth flow attempt was replaced before token exchange');
+
+      expect(mockExchangeAuthorization).not.toHaveBeenCalled();
+      expect(mockFlowManager.failFlowIfCurrent).not.toHaveBeenCalled();
+    });
+
     it('passes headers to token refresh', async () => {
       mockDiscoverAuthorizationServerMetadata.mockImplementation(async (_, options) => {
         await options?.fetchFn?.('http://example.com/.well-known/oauth-authorization-server', {});
