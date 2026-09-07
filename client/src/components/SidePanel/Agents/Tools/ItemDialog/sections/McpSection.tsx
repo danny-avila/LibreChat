@@ -23,6 +23,7 @@ import {
 } from '~/hooks';
 import { matchesMcpServer, mcpAllToken, mcpServerToken } from '../../items/selectors';
 import { getStatusColor, getStatusTextKey } from '~/components/MCP/mcpServerUtils';
+import { withDefaultDeferredTools } from '~/hooks/Agents/useMCPToolOptions';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
@@ -83,10 +84,11 @@ export default function McpSection({ item }: Props) {
   const {
     codeEnabled,
     deferredToolsEnabled,
+    defaultDeferLoadingEnabled,
     programmaticToolsEnabled,
     backgroundToolsEnabled,
     toolIntentsEnabled,
-  } = useAgentCapabilities(agentsConfig?.capabilities);
+  } = useAgentCapabilities(agentsConfig?.capabilities, agentsConfig?.defaultDeferLoading);
   const codeInterpreterSelected = useWatch({ control, name: AgentCapabilities.execute_code });
   const programmaticToolsAvailable =
     codeEnabled && programmaticToolsEnabled && codeInterpreterSelected === true;
@@ -391,7 +393,15 @@ export default function McpSection({ item }: Props) {
       return;
     }
     setAutoSelectPending(false);
-    updateFormTools(tools.map((t) => t.tool_id));
+    const toolIds = tools.map((t) => t.tool_id);
+    updateFormTools(toolIds);
+    /** Auto-selected MCP tools inherit the admin Defer Loading default; tools
+     * with an existing `tool_options` entry keep their prior choice. */
+    if (defaultDeferLoadingEnabled) {
+      setValue('tool_options', withDefaultDeferredTools(getValues('tool_options') ?? {}, toolIds), {
+        shouldDirty: true,
+      });
+    }
   }, [
     autoSelectPending,
     initConnectionDeferred,
@@ -401,6 +411,9 @@ export default function McpSection({ item }: Props) {
     updateFormTools,
     toggleRuntimeTools,
     isWildcardAttached,
+    defaultDeferLoadingEnabled,
+    getValues,
+    setValue,
   ]);
 
   /** Connect inline from this first dialog. Servers with custom user variables are

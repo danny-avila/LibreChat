@@ -1186,6 +1186,10 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      /** Opt-in: MCP tools newly added to an agent default to Defer Loading ON.
+       *  Users can still opt out per tool; only applies when the `deferred_tools`
+       *  capability is enabled. */
+      defaultDeferLoading: z.boolean().optional().default(false),
       /** Controls which workspace-sharing scopes users may select for stateful code sessions.
        *  Omit this block to preserve the legacy behavior of allowing every scope. */
       statefulCodeSessions: z
@@ -1353,6 +1357,7 @@ export const agentsEndpointSchema = baseEndpointSchema
   .default({
     disableBuilder: false,
     capabilities: defaultAgentCapabilities,
+    defaultDeferLoading: false,
     maxCitations: 30,
     maxCitationsPerFile: 7,
     minRelevanceScore: 0.45,

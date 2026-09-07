@@ -13,6 +13,7 @@ interface AgentCapabilitiesResult {
   skillsEnabled: boolean;
   memoryEnabled: boolean;
   deferredToolsEnabled: boolean;
+  defaultDeferLoadingEnabled: boolean;
   programmaticToolsEnabled: boolean;
   backgroundToolsEnabled: boolean;
   toolIntentsEnabled: boolean;
@@ -20,6 +21,7 @@ interface AgentCapabilitiesResult {
 
 export default function useAgentCapabilities(
   capabilities: AgentCapabilities[] | undefined,
+  defaultDeferLoading?: boolean,
 ): AgentCapabilitiesResult {
   const toolsEnabled = useMemo(
     () => capabilities?.includes(AgentCapabilities.tools) ?? false,
@@ -76,6 +78,12 @@ export default function useAgentCapabilities(
     [capabilities],
   );
 
+  /** The admin default only applies when the per-tool toggle exists at all. */
+  const defaultDeferLoadingEnabled = useMemo(
+    () => deferredToolsEnabled && (defaultDeferLoading ?? false),
+    [deferredToolsEnabled, defaultDeferLoading],
+  );
+
   const programmaticToolsEnabled = useMemo(
     () => capabilities?.includes(AgentCapabilities.programmatic_tools) ?? false,
     [capabilities],
@@ -103,6 +111,7 @@ export default function useAgentCapabilities(
     webSearchEnabled,
     fileSearchEnabled,
     deferredToolsEnabled,
+    defaultDeferLoadingEnabled,
     programmaticToolsEnabled,
     backgroundToolsEnabled,
     toolIntentsEnabled,
