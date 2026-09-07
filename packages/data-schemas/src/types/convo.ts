@@ -264,6 +264,7 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  codeApprovalMode?: 'ask' | 'acceptEdits';
   /** Immutable primary persisted-agent attribution for Insights. */
   initial_agent_id?: string | null;
   subagentThread?: TSubagentThreadLineage;

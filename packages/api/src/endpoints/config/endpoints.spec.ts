@@ -186,6 +186,7 @@ describe('createEndpointsConfigService', () => {
           appConfig({
             endpoints: {
               [EModelEndpoint.agents]: {
+                toolApproval: { enabled: false },
                 statefulCodeSessions: {
                   allowedEnvironments: ['user', 'agent-user'],
                   environments: [
@@ -219,6 +220,7 @@ describe('createEndpointsConfigService', () => {
 
       expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
         allowedEnvironments: ['user', 'agent-user'],
+        approvalsEnabled: false,
         environments: [
           {
             id: 'attached-vm',
@@ -270,6 +272,7 @@ describe('createEndpointsConfigService', () => {
 
       expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
         allowedEnvironments: ['user'],
+        approvalsEnabled: true,
         environments: [],
       });
     });

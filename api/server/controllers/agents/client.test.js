@@ -34,6 +34,34 @@ const BaseClient = require('~/app/clients/BaseClient');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
+describe('AgentClient code approval persistence', () => {
+  it('persists a validated mode in agent conversation options', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: {
+        id: 'attached-agent',
+        codeExecutionContext: {
+          environmentType: 'attached',
+          codeEnvironmentConfigSchema: {
+            permissions: {
+              fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
+              commandExecution: { allowed: ['ask'], default: 'ask' },
+            },
+          },
+        },
+      },
+      req: {
+        body: { codeApprovalMode: 'acceptEdits' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    expect(client.getSaveOptions()).toMatchObject({ codeApprovalMode: 'acceptEdits' });
+  });
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise((resolvePromise) => {

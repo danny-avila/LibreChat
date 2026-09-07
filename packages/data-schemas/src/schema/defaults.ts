@@ -116,6 +116,10 @@ export const conversationPreset: {
   agent_id: {
     type: StringConstructor;
   };
+  codeApprovalMode: {
+    type: StringConstructor;
+    enum: string[];
+  };
   /* assistants */
   assistant_id: {
     type: StringConstructor;
@@ -298,6 +302,10 @@ export const conversationPreset: {
   /* agents */
   agent_id: {
     type: String,
+  },
+  codeApprovalMode: {
+    type: String,
+    enum: ['ask', 'acceptEdits'],
   },
   /* assistants */
   assistant_id: {

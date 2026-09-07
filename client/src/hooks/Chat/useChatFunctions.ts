@@ -718,6 +718,7 @@ export default function useChatFunctions({
       editPrefixLength,
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
+      codeApprovalMode: conversation?.codeApprovalMode ?? 'ask',
       clientRequestId,
       recoverySteerId: overrideRecoverySteerId,
       expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,

@@ -609,6 +609,7 @@ export type TConfig = {
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
     environments?: TPublicCodeEnvironment[];
+    approvalsEnabled?: boolean;
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;

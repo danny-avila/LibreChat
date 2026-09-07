@@ -276,6 +276,7 @@ describe('useChatFunctions regenerate', () => {
     });
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.codeApprovalMode).toBe('ask');
     expect(submission.userMessage.overrideParentMessageId).toBe('user-1');
     expect(submission.userMessage.responseMessageId).toBe('assistant-1_');
     expect(submission.initialResponse?.messageId).toBe('assistant-1_');

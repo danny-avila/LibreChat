@@ -62,6 +62,7 @@ import {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
+  resolveAttachedCodeApprovalMode,
 } from '~/agents/hitl/byom';
 import {
   CHECK_BACKGROUND_TASK_NAME,
@@ -1975,6 +1976,11 @@ export async function createRun({
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
   const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
   const attachedCodeEnvironmentSettings = collectAttachedCodeEnvironmentPolicySettings(agents);
+  const codeApprovalMode = resolveAttachedCodeApprovalMode(
+    requestBody?.codeApprovalMode,
+    attachedCodeEnvironmentSettings,
+    agentsEndpointConfig?.toolApproval?.enabled !== false,
+  );
   assertAttachedCodeEnvironmentApprovalSupported({
     hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
     hitlCapable,
@@ -2133,6 +2139,7 @@ export async function createRun({
                   hook: createAttachedCodeEnvironmentPolicyHook(
                     attachedCodeEnvironmentAgentIds,
                     attachedCodeEnvironmentSettings,
+                    codeApprovalMode,
                   ),
                 },
               ]
@@ -2148,6 +2155,11 @@ export async function createRun({
         settings: resolvedAgent.codeExecutionContext.codeEnvironmentSettings,
         skillAuthoringAvailable: resolvedAgent.skillAuthoringAvailable === true,
       });
+      resolveAttachedCodeApprovalMode(
+        codeApprovalMode,
+        attachedCodeEnvironmentSettings,
+        agentsEndpointConfig?.toolApproval?.enabled !== false,
+      );
     }
     const discoveredAliases = collectRunMCPToolAliases([resolvedAgent]).filter(
       ({ name, aliasName }) => {

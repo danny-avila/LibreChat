@@ -45,6 +45,7 @@ import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
 import useSteering from '~/hooks/Chat/useSteering';
+import CodeApprovalMenu from './CodeApprovalMenu';
 import FileFormChat from './Files/FileFormChat';
 import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
@@ -779,6 +780,11 @@ const ChatForm = memo(function ChatForm({
                     Array.isArray(conversation?.messages) && conversation.messages.length >= 1
                   }
                 />
+                <CodeApprovalMenu
+                  conversation={conversation}
+                  newConversation={newConversation}
+                  disabled={disableInputs || isSubmitting}
+                />
                 <div className="mx-auto flex" />
                 <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
                 {SpeechToText && (
@@ -875,6 +881,7 @@ function ChatFormWrapper({
       conversation?.useResponsesApi,
       conversation?.model,
       conversation?.maxContextTokens,
+      conversation?.codeApprovalMode,
       hasMessages,
     ],
   );

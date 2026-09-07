@@ -10,6 +10,7 @@ interface AgentToolPermissionsResult {
   codeAllowedByAgent: boolean;
   tools: string[] | undefined;
   provider?: string;
+  codeEnvironmentId?: string | null;
 }
 
 /**
@@ -42,6 +43,11 @@ export default function useAgentToolPermissions(
     [agentData?.provider, selectedAgent?.provider],
   );
 
+  const codeEnvironmentId = useMemo(
+    () => agentData?.code_environment_id ?? selectedAgent?.code_environment_id,
+    [agentData?.code_environment_id, selectedAgent?.code_environment_id],
+  );
+
   const fileSearchAllowedByAgent = useMemo(() => {
     // Check ephemeral agent settings
     if (isEphemeralAgent(agentId)) {
@@ -67,6 +73,7 @@ export default function useAgentToolPermissions(
   return {
     fileSearchAllowedByAgent,
     codeAllowedByAgent,
+    codeEnvironmentId,
     provider,
     tools,
   };
