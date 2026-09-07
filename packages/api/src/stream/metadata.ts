@@ -98,6 +98,13 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.generationProtocolVersion === 1 || metadata.generationProtocolVersion === 2) {
     patch.generationProtocolVersion = metadata.generationProtocolVersion;
   }
+  if (
+    typeof metadata.checkpointTtlSeconds === 'number' &&
+    Number.isFinite(metadata.checkpointTtlSeconds) &&
+    metadata.checkpointTtlSeconds > 0
+  ) {
+    patch.checkpointTtlSeconds = Math.ceil(metadata.checkpointTtlSeconds);
+  }
   if (metadata.discoveredTools) {
     patch.discoveredTools = metadata.discoveredTools;
   }

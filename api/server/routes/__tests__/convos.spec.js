@@ -19,6 +19,9 @@ const priorLimitMessageUser = process.env.LIMIT_MESSAGE_USER;
 process.env.LIMIT_MESSAGE_IP = 'true';
 process.env.LIMIT_MESSAGE_USER = 'true';
 
+const checkpointNamespace = (id) =>
+  `lcg:v1:00000000-0000-4000-8000-${String(id).padStart(12, '0')}`;
+
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () =>
   require(MOCKS).api({
@@ -478,7 +481,7 @@ describe('Convos Routes', () => {
         metadata: {
           userId: 'test-user-123',
           conversationId,
-          checkpointNamespace: `generation:${conversationId}`,
+          checkpointNamespace: checkpointNamespace(conversationId === 'conv-a' ? 1 : 2),
           generationProtocolVersion: 2,
         },
         status: 'complete',
@@ -490,8 +493,8 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpointScopes).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpointScopes.mock.calls[0][0]).toEqual([
-        { threadId: 'conv-a', checkpointNamespace: 'generation:conv-a' },
-        { threadId: 'conv-b', checkpointNamespace: 'generation:conv-b' },
+        { threadId: 'conv-a', checkpointNamespace: checkpointNamespace(1) },
+        { threadId: 'conv-b', checkpointNamespace: checkpointNamespace(2) },
       ]);
       /** The deletion runs inside the owner admission fence, not around it. */
       expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
@@ -577,7 +580,7 @@ describe('Convos Routes', () => {
               metadata: {
                 userId: 'test-user-123',
                 conversationId: 'gap-conversation',
-                checkpointNamespace: 'generation:gap',
+                checkpointNamespace: checkpointNamespace(3),
                 generationProtocolVersion: 2,
               },
               status: 'running',
@@ -612,7 +615,7 @@ describe('Convos Routes', () => {
       expect(deleteConvos).toHaveBeenCalledTimes(2);
       expect(deleteMessages).toHaveBeenCalledWith({ user: 'test-user-123' });
       expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith(
-        [{ threadId: 'gap-conversation', checkpointNamespace: 'generation:gap' }],
+        [{ threadId: 'gap-conversation', checkpointNamespace: checkpointNamespace(3) }],
         undefined,
       );
     });
@@ -1038,7 +1041,7 @@ describe('Convos Routes', () => {
           metadata: {
             userId: 'test-user-123',
             conversationId: 'conversation-1',
-            checkpointNamespace: 'owned.root+generation',
+            checkpointNamespace: checkpointNamespace(4),
             generationProtocolVersion: 2,
           },
         },
@@ -1046,7 +1049,7 @@ describe('Convos Routes', () => {
           metadata: {
             userId: 'test-user-123',
             conversationId: 'child-conversation',
-            checkpointNamespace: 'owned.child(generation)',
+            checkpointNamespace: checkpointNamespace(5),
             generationProtocolVersion: 2,
           },
         },
@@ -1077,9 +1080,12 @@ describe('Convos Routes', () => {
         },
       };
       resetCheckpointRows([
-        { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation' },
-        { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation|subgraph' },
-        { threadId: 'child-conversation', checkpointNamespace: 'owned.child(generation)' },
+        { threadId: 'conversation-1', checkpointNamespace: checkpointNamespace(4) },
+        {
+          threadId: 'conversation-1',
+          checkpointNamespace: `${checkpointNamespace(4)}|subgraph`,
+        },
+        { threadId: 'child-conversation', checkpointNamespace: checkpointNamespace(5) },
         { threadId: 'conversation-1', checkpointNamespace: 'foreign-user-generation' },
         { threadId: 'conversation-1', checkpointNamespace: 'foreign-tenant-generation' },
         { threadId: 'conversation-1', checkpointNamespace: '' },
@@ -1112,15 +1118,15 @@ describe('Convos Routes', () => {
           JSON.parse(scope),
         ),
       ).toEqual([
-        { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation' },
-        { threadId: 'child-conversation', checkpointNamespace: 'owned.child(generation)' },
+        { threadId: 'conversation-1', checkpointNamespace: checkpointNamespace(4) },
+        { threadId: 'child-conversation', checkpointNamespace: checkpointNamespace(5) },
       ]);
     });
 
     it('deletes a retained checkpoint after its terminal job hash expires, then acknowledges it', async () => {
       const scope = {
         threadId: 'conversation-1',
-        checkpointNamespace: 'expired-job-generation',
+        checkpointNamespace: checkpointNamespace(8),
       };
       generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([scope]);
       resetCheckpointRows([scope]);
@@ -1148,7 +1154,7 @@ describe('Convos Routes', () => {
     it('keeps a retained checkpoint receipt when saver deletion fails', async () => {
       const scope = {
         threadId: 'conversation-1',
-        checkpointNamespace: 'retryable-generation',
+        checkpointNamespace: checkpointNamespace(9),
       };
       generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([scope]);
       deleteAgentCheckpointScopes.mockRejectedValueOnce(new Error('checkpoint store unavailable'));
@@ -1168,7 +1174,7 @@ describe('Convos Routes', () => {
     it('fails cleanup when retained checkpoint acknowledgement is unavailable', async () => {
       const scope = {
         threadId: 'conversation-1',
-        checkpointNamespace: 'unacknowledged-generation',
+        checkpointNamespace: checkpointNamespace(10),
       };
       generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([scope]);
       generationJobManager.acknowledgeCheckpointScopesForUser.mockRejectedValueOnce(
@@ -1194,7 +1200,7 @@ describe('Convos Routes', () => {
           metadata: {
             userId: 'test-user-123',
             conversationId: 'parent-conversation',
-            checkpointNamespace: 'parent-generation',
+            checkpointNamespace: checkpointNamespace(11),
             generationProtocolVersion: 2,
           },
         },
@@ -1202,7 +1208,7 @@ describe('Convos Routes', () => {
           metadata: {
             userId: 'test-user-123',
             conversationId: 'child-conversation',
-            checkpointNamespace: 'child-generation',
+            checkpointNamespace: checkpointNamespace(12),
             generationProtocolVersion: 2,
           },
         },
@@ -1235,8 +1241,8 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith(
         [
-          { threadId: 'parent-conversation', checkpointNamespace: 'parent-generation' },
-          { threadId: 'child-conversation', checkpointNamespace: 'child-generation' },
+          { threadId: 'parent-conversation', checkpointNamespace: checkpointNamespace(11) },
+          { threadId: 'child-conversation', checkpointNamespace: checkpointNamespace(12) },
         ],
         undefined,
       );

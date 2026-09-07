@@ -118,6 +118,9 @@ export interface SerializableJobData {
    * `checkpoint_ns`, which the saver adapter maps to this storage scope.
    * Legacy paused jobs omit it and use the historical unscoped storage. */
   checkpointNamespace?: string;
+  /** Checkpointer TTL captured when this generation starts. Receipt retention
+   * uses it to outlive the last saver write after the job itself disappears. */
+  checkpointTtlSeconds?: number;
   completedAt?: number;
   conversationId?: string;
   error?: string;
@@ -485,6 +488,7 @@ export type JobMetadataPatch = Partial<
     | 'providerExecutionId'
     | 'providerDrained'
     | 'generationProtocolVersion'
+    | 'checkpointTtlSeconds'
     | 'resolvedAskUserQuestions'
   >
 >;
@@ -1069,6 +1073,17 @@ export interface IJobStoreV2 extends IJobStore {
 
   /** Get a job by streamId (streamId === conversationId) */
   getJob(streamId: string): Promise<SerializableJobData | null>;
+
+  getRetainedCheckpointScopesByUser(
+    userId: string,
+    tenantId?: string,
+  ): Promise<RetainedCheckpointScope[]>;
+
+  acknowledgeCheckpointScopes(
+    userId: string,
+    tenantId: string | undefined,
+    scopes: readonly RetainedCheckpointScope[],
+  ): Promise<void>;
 
   /**
    * Update job data. When `expectedCreatedAt` is supplied, apply the write only

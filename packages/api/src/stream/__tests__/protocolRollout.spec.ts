@@ -54,8 +54,12 @@ describe('generation protocol rollout storage', () => {
 
       expect(second.createdAt).toBeGreaterThan(first.createdAt);
       expect(first.checkpointNamespace).not.toBe(second.checkpointNamespace);
-      expect(first.checkpointNamespace).toMatch(/^[0-9a-f-]{36}$/);
-      expect(second.checkpointNamespace).toMatch(/^[0-9a-f-]{36}$/);
+      expect(first.checkpointNamespace).toMatch(
+        /^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(second.checkpointNamespace).toMatch(
+        /^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
     } finally {
       now.mockRestore();
     }
@@ -78,6 +82,89 @@ describe('generation protocol rollout storage', () => {
     await expect(store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1')).resolves.toEqual([
       retained[1],
     ]);
+  });
+
+  test('refreshes a live receipt and reclaims it after the stopped job horizon', async () => {
+    let now = 1_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const store = new InMemoryJobStore({ staleJobTimeout: 2_000 });
+      const job = await store.createJob('scope-heartbeat', 'user-1', 'conversation-1', 'tenant-1', {
+        checkpointTtlSeconds: 1,
+      });
+
+      now = 200_000;
+      store.recordActivity(job.streamId, job.createdAt);
+      await store.deleteJob(job.streamId, job.createdAt);
+      now = 400_000;
+      await expect(store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1')).resolves.toEqual([
+        { threadId: 'conversation-1', checkpointNamespace: job.checkpointNamespace },
+      ]);
+      now = 504_000;
+      await expect(store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1')).resolves.toEqual(
+        [],
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('keeps terminal receipts through the final persistence lease', async () => {
+    let now = 1_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const store = new InMemoryJobStore({ staleJobTimeout: 1_000 });
+      const job = await store.createJob(
+        'scope-terminal-persistence',
+        'user-1',
+        'conversation-1',
+        'tenant-1',
+        { checkpointTtlSeconds: 1 },
+      );
+      await store.transitionStatus(job.streamId, {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: job.createdAt,
+        patch: { terminalPersistencePending: true },
+      });
+      await store.deleteJob(job.streamId, job.createdAt);
+
+      now = 400_000;
+      await expect(store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1')).resolves.toEqual([
+        { threadId: 'conversation-1', checkpointNamespace: job.checkpointNamespace },
+      ]);
+      now = 603_000;
+      await expect(store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1')).resolves.toEqual(
+        [],
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test('keeps a generation checkpoint TTL immutable across metadata writes', async () => {
+    const store = new InMemoryJobStore();
+    const job = await store.createJob(
+      'scope-immutable-ttl',
+      'user-1',
+      'conversation-1',
+      'tenant-1',
+      {
+        checkpointTtlSeconds: 600,
+      },
+    );
+
+    await store.updateJob(job.streamId, { checkpointTtlSeconds: 1 }, job.createdAt);
+    await store.transitionStatus(job.streamId, {
+      from: 'running',
+      to: 'requires_action',
+      expectCreatedAt: job.createdAt,
+      patch: { checkpointTtlSeconds: 2 },
+    });
+
+    await expect(store.getJob(job.streamId)).resolves.toMatchObject({
+      checkpointTtlSeconds: 600,
+    });
   });
 
   test('v1 steering stays receiptless and uses the legacy destructive drain', async () => {

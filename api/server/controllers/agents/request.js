@@ -41,6 +41,7 @@ const {
   agentRequestsAskUserQuestion,
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
+  resolveCheckpointerConfig,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -1459,6 +1460,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       initialMetadata: {
         conversationId,
         generationProtocolVersion,
+        ...(generationProtocolVersion === 2 && {
+          checkpointTtlSeconds: resolveCheckpointerConfig(
+            req.config?.endpoints?.agents?.checkpointer,
+          ).ttlSeconds,
+        }),
         endpoint: endpointOption.endpoint,
         iconURL: endpointIconURL,
         model: responseModel,

@@ -131,7 +131,9 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(job.metadata).toMatchObject({
       userId: 'user-1',
       conversationId: 'conversation-1',
-      checkpointNamespace: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      checkpointNamespace: expect.stringMatching(
+        /^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
       userMessage: {
         messageId: 'message-1',
         parentMessageId: 'parent-1',

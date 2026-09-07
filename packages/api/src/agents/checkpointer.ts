@@ -14,6 +14,12 @@ import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IndexBuildOptions } from '@librechat/data-schemas';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { GenerationJob } from '../types/stream';
+import {
+  DEFAULT_CHECKPOINT_TTL_SECONDS,
+  isCleanupSafeCheckpointNamespace,
+} from '../stream/checkpoints';
+
+export { DEFAULT_CHECKPOINT_TTL_SECONDS } from '../stream/checkpoints';
 
 /**
  * LangGraph reserves `checkpoint_ns` for nested graph namespaces and forcibly
@@ -543,9 +549,6 @@ function sweepStale<T>(map: Map<string, T>, timeOf: (value: T) => number): void 
   }
 }
 
-/** Default approval window and checkpoint TTL: 24h. */
-export const DEFAULT_CHECKPOINT_TTL_SECONDS = 86400;
-
 const DEFAULT_CHECKPOINT_COLLECTION = 'agent_checkpoints';
 const DEFAULT_CHECKPOINT_WRITES_COLLECTION = 'agent_checkpoint_writes';
 
@@ -591,8 +594,7 @@ export function getOwnedAgentCheckpointScope(
     metadata.generationProtocolVersion !== 2 ||
     typeof metadata.conversationId !== 'string' ||
     metadata.conversationId.length === 0 ||
-    typeof metadata.checkpointNamespace !== 'string' ||
-    metadata.checkpointNamespace.length === 0
+    !isCleanupSafeCheckpointNamespace(metadata.checkpointNamespace)
   ) {
     return undefined;
   }
@@ -1085,23 +1087,29 @@ export async function deleteAgentCheckpointScopes(
 ): Promise<void> {
   const exactScopes = new Map<string, AgentCheckpointScope>();
   for (const scope of scopes) {
-    if (scope.threadId.length === 0 || scope.checkpointNamespace.length === 0) {
-      continue;
+    if (
+      scope.threadId.length === 0 ||
+      !isCleanupSafeCheckpointNamespace(scope.checkpointNamespace)
+    ) {
+      throw new Error('Invalid cleanup-safe checkpoint scope');
     }
     exactScopes.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
   }
   if (exactScopes.size === 0) {
     return;
   }
-  const saver = await getAgentCheckpointer(cfg);
-  if (!saver) {
+  const resolved = resolveCheckpointerConfig(cfg);
+  if (resolved.type === 'memory') {
     return;
   }
-  const resolved = resolveCheckpointerConfig(cfg);
+  const saver = await getAgentCheckpointer(cfg);
+  if (!saver) {
+    throw new Error('Checkpoint saver is unavailable');
+  }
   try {
     const db = mongoose.connection.db;
     if (!db) {
-      return;
+      throw new Error('Checkpoint database is unavailable');
     }
     const filter = {
       $or: [...exactScopes.values()].map(({ threadId, checkpointNamespace }) => ({
@@ -1118,6 +1126,7 @@ export async function deleteAgentCheckpointScopes(
       `[checkpointer] Failed to delete ${exactScopes.size} checkpoint generation scope(s):`,
       err,
     );
+    throw err;
   }
 }
 

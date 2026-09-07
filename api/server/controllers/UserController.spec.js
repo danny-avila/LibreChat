@@ -4,6 +4,8 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mockGetActiveJobIdsForUser = jest.fn().mockResolvedValue([]);
 const mockGetAgentJob = jest.fn().mockResolvedValue(null);
 const mockAbortJob = jest.fn().mockResolvedValue({ success: true });
+const mockGetRetainedCheckpointScopesForUser = jest.fn().mockResolvedValue([]);
+const mockAcknowledgeCheckpointScopesForUser = jest.fn().mockResolvedValue(undefined);
 const mockDeleteAgentCheckpointScopes = jest.fn().mockResolvedValue(undefined);
 const mockDeleteAgentCheckpoints = jest.fn(async (threadIds = []) => {
   const filter = { thread_id: { $in: threadIds } };
@@ -105,6 +107,10 @@ jest.mock('@librechat/api', () => ({
     getAccountCleanupJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
     getJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
+    getRetainedCheckpointScopesForUser: (...args) =>
+      mockGetRetainedCheckpointScopesForUser(...args),
+    acknowledgeCheckpointScopesForUser: (...args) =>
+      mockAcknowledgeCheckpointScopesForUser(...args),
   },
   deleteAgentCheckpoints: (...args) => mockDeleteAgentCheckpoints(...args),
   deleteAgentCheckpointScopes: (...args) => mockDeleteAgentCheckpointScopes(...args),
@@ -559,12 +565,16 @@ describe('deleteUserController', () => {
   it('prunes only account checkpoint receipts bound to the deleted user and tenant', async () => {
     const userId = new mongoose.Types.ObjectId();
     const userIdString = userId.toString();
+    const ownedNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000001';
+    const foreignUserNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000002';
+    const foreignTenantNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000003';
+    const missingTenantNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000004';
     const checkpointDocuments = [
-      'owned-generation',
-      'owned-generation|subgraph',
-      'foreign-user-generation',
-      'foreign-tenant-generation',
-      'legacy-tenant-generation',
+      ownedNamespace,
+      `${ownedNamespace}|subgraph`,
+      foreignUserNamespace,
+      foreignTenantNamespace,
+      missingTenantNamespace,
       '',
     ].map((checkpointNamespace) => ({
       thread_id: 'collision-id',
@@ -591,21 +601,21 @@ describe('deleteUserController', () => {
           userId: userIdString,
           tenantId: 'tenant-1',
           conversationId: 'collision-id',
-          checkpointNamespace: 'owned-generation',
+          checkpointNamespace: ownedNamespace,
           generationProtocolVersion: 2,
         },
         'foreign-user-run': {
           userId: 'foreign-user',
           tenantId: 'tenant-1',
           conversationId: 'collision-id',
-          checkpointNamespace: 'foreign-user-generation',
+          checkpointNamespace: foreignUserNamespace,
           generationProtocolVersion: 2,
         },
         'foreign-tenant-run': {
           userId: userIdString,
           tenantId: 'foreign-tenant',
           conversationId: 'collision-id',
-          checkpointNamespace: 'foreign-tenant-generation',
+          checkpointNamespace: foreignTenantNamespace,
           generationProtocolVersion: 2,
         },
         'legacy-run': {
@@ -618,7 +628,7 @@ describe('deleteUserController', () => {
         'legacy-tenant-run': {
           userId: userIdString,
           conversationId: 'collision-id',
-          checkpointNamespace: 'legacy-tenant-generation',
+          checkpointNamespace: missingTenantNamespace,
           generationProtocolVersion: 2,
         },
       }[streamId];
@@ -646,9 +656,9 @@ describe('deleteUserController', () => {
         .toArray(),
     ).toEqual([
       { checkpoint_ns: '' },
-      { checkpoint_ns: 'foreign-tenant-generation' },
-      { checkpoint_ns: 'foreign-user-generation' },
-      { checkpoint_ns: 'legacy-tenant-generation' },
+      { checkpoint_ns: foreignUserNamespace },
+      { checkpoint_ns: foreignTenantNamespace },
+      { checkpoint_ns: missingTenantNamespace },
     ]);
     expect(mockAbortJob.mock.calls.map(([streamId]) => streamId)).toEqual([
       'owned-run',
@@ -656,7 +666,7 @@ describe('deleteUserController', () => {
       'legacy-run',
     ]);
     expect(mockDeleteAgentCheckpointScopes).toHaveBeenCalledWith(
-      [{ threadId: 'collision-id', checkpointNamespace: 'owned-generation' }],
+      [{ threadId: 'collision-id', checkpointNamespace: ownedNamespace }],
       undefined,
     );
   });

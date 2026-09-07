@@ -135,7 +135,9 @@ module.exports = {
         typeof metadata.conversationId !== 'string' ||
         metadata.conversationId.length === 0 ||
         typeof metadata.checkpointNamespace !== 'string' ||
-        metadata.checkpointNamespace.length === 0
+        !/^lcg:v1:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          metadata.checkpointNamespace,
+        )
       ) {
         return undefined;
       }

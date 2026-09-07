@@ -1694,6 +1694,34 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('refreshes a live checkpoint receipt from cleanup without making it permanent', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const suffix = `${process.pid}-${Date.now()}`;
+      const streamId = `checkpoint-refresh-${suffix}`;
+      const userId = `checkpoint-refresh-user-${suffix}`;
+      const tenantId = 'tenant-a';
+      const job = await store.createJob(streamId, userId, streamId, tenantId, {
+        checkpointTtlSeconds: 1,
+      });
+      const ownerKey = `stream:user:{${tenantId}:${userId}}:checkpoint-scopes`;
+      const member = JSON.stringify([streamId, job.checkpointNamespace]);
+      await ioredisClient.zadd(ownerKey, Date.now() + 1_000, member);
+
+      await store.cleanup();
+
+      const refreshed = Number(await ioredisClient.zscore(ownerKey, member));
+      expect(refreshed).toBeGreaterThan(Date.now() + 60_000);
+      expect(refreshed).toBeLessThan(Date.now() + 12 * 60_000);
+      await store.destroy();
+    });
+
     test('does not shorten a shared owner index for a longer paused job', async () => {
       if (!ioredisClient) {
         return;
@@ -1722,7 +1750,9 @@ describe('RedisJobStore Integration Tests', () => {
         patch: { pendingAction },
       });
       const ownerKey = `stream:user:{${tenantId}:${userId}}:jobs`;
+      const checkpointOwnerKey = `stream:user:{${tenantId}:${userId}}:checkpoint-scopes`;
       const longTtl = await ioredisClient.ttl(ownerKey);
+      const longCheckpointTtl = await ioredisClient.ttl(checkpointOwnerKey);
 
       await store.createJob(
         `mixed-ttl-ordinary-${suffix}`,
@@ -1733,6 +1763,8 @@ describe('RedisJobStore Integration Tests', () => {
 
       expect(longTtl).toBeGreaterThan(86400);
       expect(await ioredisClient.ttl(ownerKey)).toBeGreaterThan(86400);
+      expect(longCheckpointTtl).toBeGreaterThan(86400);
+      expect(await ioredisClient.ttl(checkpointOwnerKey)).toBeGreaterThan(86400);
       await store.destroy();
     });
 

@@ -621,7 +621,7 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
   it('bulk-deletes only an owned generation scope when thread IDs collide', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadId = `collision-${new mongoose.Types.ObjectId().toString()}`;
-    const ownedNamespace = 'owned.generation+(1)';
+    const ownedNamespace = 'lcg:v1:00000000-0000-4000-8000-000000000001';
     await seedInterruptCheckpoint(saver!, threadId, ownedNamespace);
     await seedInterruptCheckpoint(saver!, threadId, `${ownedNamespace}|subgraph`);
     await seedInterruptCheckpoint(saver!, threadId, 'foreign-generation');
@@ -651,6 +651,23 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     expect(
       await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
     ).toBe(2);
+  });
+
+  it('propagates a bulk checkpoint deletion failure so its receipt is retained', async () => {
+    const namespace = 'lcg:v1:00000000-0000-4000-8000-000000000002';
+    const deletion = jest
+      .spyOn(mongoose.mongo.Collection.prototype, 'deleteMany')
+      .mockRejectedValueOnce(new Error('checkpoint deletion unavailable'));
+    try {
+      await expect(
+        deleteAgentCheckpointScopes(
+          [{ threadId: 'conversation-1', checkpointNamespace: namespace }],
+          MONGO_CFG,
+        ),
+      ).rejects.toThrow('checkpoint deletion unavailable');
+    } finally {
+      deletion.mockRestore();
+    }
   });
 });
 
