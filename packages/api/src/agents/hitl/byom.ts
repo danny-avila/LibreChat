@@ -6,6 +6,7 @@ import {
   resolveCodePermissionDecision,
 } from 'librechat-data-provider';
 import type {
+  Agents,
   CodeApprovalMode,
   CodeEnvironmentPermissionDecision,
   CodeEnvironmentUserConfigSchema,
@@ -13,7 +14,12 @@ import type {
 } from 'librechat-data-provider';
 import type { HookCallback } from '@librechat/agents';
 import type { ResolvedToolApprovalHook } from './hooks';
-import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
+import {
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+  FILE_AUTHORING_TOOL_NAMES,
+  isCodeSessionToolName,
+} from '~/agents/tools';
 import { isSkillFilePath } from '~/agents/skills';
 
 const BYOM_FILE_WRITE_TOOLS = new Set<string>([
@@ -31,6 +37,16 @@ const BYOM_COMMAND_EXECUTION_TOOLS = new Set<string>([
   Constants.COMPILE_CHECK,
 ]);
 
+/** Exact built-in tool names whose execution can touch a stateful code target. */
+export function isStatefulCodeEnvironmentToolName(name: string): boolean {
+  return (
+    name === Constants.READ_FILE ||
+    BYOM_FILE_WRITE_TOOLS.has(name) ||
+    BYOM_COMMAND_EXECUTION_TOOLS.has(name) ||
+    isCodeSessionToolName(name, FILE_AUTHORING_TOOL_NAMES)
+  );
+}
+
 export type AttachedCodeEnvironmentPolicySettings = {
   configSchema?: CodeEnvironmentUserConfigSchema;
   settings?: CodeEnvironmentUserSettings;
@@ -42,6 +58,8 @@ type PermissionCategory = 'fileWrite' | 'commandExecution';
 type CodeEnvironmentPolicyAgent = {
   id?: string;
   skillAuthoringAvailable?: boolean;
+  toolDefinitions?: readonly { name?: string; toolType?: string }[];
+  toolRegistry?: ReadonlyMap<string, { name?: string; toolType?: string }>;
   codeExecutionContext?: {
     environmentType?: string;
     codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
@@ -76,6 +94,47 @@ function collectCodeEnvironmentPolicyAgents(
     }
   }
   return agents;
+}
+
+/**
+ * Mark code-specific approval previews only when the initialized server tool
+ * graph proves the effective name belongs exclusively to LibreChat's native
+ * code tools. A same-name user/MCP/action definition makes the name ambiguous
+ * and deliberately falls back to the generic argument preview.
+ */
+export function markNativeCodeToolApprovalRequests(
+  payload: Agents.ToolApprovalInterruptPayload,
+  roots: readonly (CodeEnvironmentPolicyAgent | null | undefined)[],
+): Agents.ToolApprovalInterruptPayload {
+  const provenance = new Map<string, { native: boolean; conflicting: boolean }>();
+  for (const agent of collectCodeEnvironmentPolicyAgents(roots)) {
+    const definitions = [...(agent.toolDefinitions ?? []), ...(agent.toolRegistry?.values() ?? [])];
+    for (const definition of definitions) {
+      const name = definition.name;
+      if (typeof name !== 'string' || !isStatefulCodeEnvironmentToolName(name)) {
+        continue;
+      }
+      const current = provenance.get(name) ?? { native: false, conflicting: false };
+      if (definition.toolType === 'builtin') {
+        current.native = true;
+      } else {
+        current.conflicting = true;
+      }
+      provenance.set(name, current);
+    }
+  }
+  return {
+    ...payload,
+    action_requests: payload.action_requests.map((request) => {
+      const source = provenance.get(request.name);
+      if (source?.native !== true || source.conflicting) {
+        const genericRequest = { ...request };
+        delete genericRequest.source;
+        return genericRequest;
+      }
+      return { ...request, source: 'librechat_code' };
+    }),
+  };
 }
 
 export class AttachedCodeEnvironmentApprovalError extends Error {

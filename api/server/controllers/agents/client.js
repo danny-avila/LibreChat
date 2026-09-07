@@ -42,6 +42,7 @@ const {
   resolveRecursionLimit,
   buildPendingAction,
   toClientPendingAction,
+  captureCodeExecutionApprovalBinding,
   computeAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
@@ -56,6 +57,7 @@ const {
   collectAttachedCodeEnvironmentPolicySettings,
   buildAttachedCodeEnvironmentAdmissionHooks,
   resolveAttachedCodeApprovalMode,
+  markNativeCodeToolApprovalRequests,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
@@ -143,6 +145,7 @@ const {
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
+  isStatefulCodeEnvironmentToolName,
   stampMcpServerIdentities,
   getDynamicToolContexts,
   getSafeErrorMetadata,
@@ -4252,7 +4255,23 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...stamped);
       }
     }
-    const pendingAction = buildPendingAction(interrupt.payload, {
+    const reachableAgents = collectReachableAgents([
+      this.options.agent,
+      ...(this.agentConfigs?.values() ?? []),
+    ]);
+    const interruptPayload =
+      interrupt.payload?.type === 'tool_approval'
+        ? markNativeCodeToolApprovalRequests(interrupt.payload, reachableAgents)
+        : interrupt.payload;
+    const codeExecutionBinding =
+      interrupt.payload?.type === 'tool_approval' &&
+      interrupt.payload.action_requests.some(
+        (action) =>
+          typeof action?.name === 'string' && isStatefulCodeEnvironmentToolName(action.name),
+      )
+        ? captureCodeExecutionApprovalBinding(reachableAgents)
+        : undefined;
+    const pendingAction = buildPendingAction(interruptPayload, {
       streamId,
       conversationId: this.conversationId,
       // runId mirrors the LangGraph checkpoint namespace when the SDK provides it
@@ -4273,6 +4292,7 @@ class AgentClient extends BaseClient {
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
       resumeContext,
+      codeExecutionBinding,
     });
 
     // Job-replacement guard: streamId == conversationId is reused per conversation, so a

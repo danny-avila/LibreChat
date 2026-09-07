@@ -2,6 +2,8 @@ import winston from 'winston';
 import { Writable } from 'node:stream';
 import { logger } from '@librechat/data-schemas';
 import {
+  assertCodeExecutionApprovalBinding,
+  captureCodeExecutionApprovalBinding,
   codeExecutionAuthHeaders,
   codeExecutionHeaders,
   resolveCodeExecutionContext,
@@ -318,6 +320,119 @@ describe('resolveCodeExecutionContext', () => {
         userId: 'user-1',
       }),
     ).toThrow('Stateful code environment "missing-vm" is not configured');
+  });
+});
+
+describe('stateful code approval target binding', () => {
+  const context = (overrides: Record<string, unknown> = {}) => ({
+    baseUrl: 'https://bridge.example/v1',
+    codeSessionKey: 'execute_code:stateful:route-a:session-a',
+    executionProfile: 'stateful' as const,
+    executionRouteKey: 'stateful:route-a',
+    runtimeSessionHint: 'v3:environment-a:agent-user:session-a',
+    statefulSessions: true,
+    environmentId: 'environment-a',
+    environmentType: 'attached' as const,
+    bridgeWorkerId: 'worker-a',
+    ...overrides,
+  });
+
+  it('captures only opaque, canonical identities for stateful targets', () => {
+    const binding = captureCodeExecutionApprovalBinding([
+      {
+        id: 'agent-z',
+        codeExecutionContext: context({ bridgeWorkerId: 'worker-z' }),
+      },
+      {
+        id: 'agent-a',
+        codeExecutionContext: context(),
+      },
+      {
+        id: 'stateless',
+        codeExecutionContext: {
+          baseUrl: 'https://default.example/v1',
+          codeSessionKey: 'execute_code',
+          executionProfile: 'default',
+          statefulSessions: false,
+        },
+      },
+    ]);
+
+    expect(binding).toEqual({
+      version: 1,
+      targets: [
+        { agentId: 'agent-a', targetHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+        { agentId: 'agent-z', targetHash: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      ],
+    });
+    const serialized = JSON.stringify(binding);
+    expect(serialized).not.toContain('bridge.example');
+    expect(serialized).not.toContain('worker-a');
+    expect(serialized).not.toContain('session-a');
+  });
+
+  it('accepts the same targets regardless of traversal order', () => {
+    const first = { id: 'agent-a', codeExecutionContext: context() };
+    const second = {
+      id: 'agent-b',
+      codeExecutionContext: context({ bridgeWorkerId: 'worker-b' }),
+    };
+    const binding = captureCodeExecutionApprovalBinding([first, second]);
+
+    expect(() => assertCodeExecutionApprovalBinding(binding, [second, first])).not.toThrow();
+  });
+
+  it('deduplicates snapshots and orders targets independently of replica locale', () => {
+    const laterByCodeUnit = {
+      id: 'agent-ä',
+      codeExecutionContext: context({ bridgeWorkerId: 'worker-umlaut' }),
+    };
+    const earlierByCodeUnit = {
+      id: 'agent-z',
+      codeExecutionContext: context({ bridgeWorkerId: 'worker-z' }),
+    };
+
+    const binding = captureCodeExecutionApprovalBinding([
+      laterByCodeUnit,
+      earlierByCodeUnit,
+      earlierByCodeUnit,
+    ]);
+
+    expect(binding?.targets.map((target) => target.agentId)).toEqual(['agent-z', 'agent-ä']);
+  });
+
+  it.each([
+    ['route', { executionRouteKey: 'stateful:route-b' }],
+    ['worker', { bridgeWorkerId: 'worker-b' }],
+    ['workspace session', { runtimeSessionHint: 'v3:environment-a:agent-user:session-b' }],
+    ['base URL', { baseUrl: 'https://replacement.example/v1' }],
+  ])('rejects a changed %s before execution', (_label, overrides) => {
+    const binding = captureCodeExecutionApprovalBinding([
+      { id: 'agent-a', codeExecutionContext: context() },
+    ]);
+
+    expect(() =>
+      assertCodeExecutionApprovalBinding(binding, [
+        { id: 'agent-a', codeExecutionContext: context(overrides) },
+      ]),
+    ).toThrow('Retry the request and review the action again');
+  });
+
+  it('fails closed for a malformed persisted binding', () => {
+    expect(() =>
+      assertCodeExecutionApprovalBinding(
+        { version: 1, targets: [{ agentId: 'agent-a', targetHash: 'not-a-hash' }] },
+        [{ id: 'agent-a', codeExecutionContext: context() }],
+      ),
+    ).toThrow('attached code environment changed');
+  });
+
+  it('keeps pre-binding pauses backward compatible', () => {
+    expect(() =>
+      assertCodeExecutionApprovalBinding(undefined, [
+        { id: 'agent-a', codeExecutionContext: context() },
+      ]),
+    ).not.toThrow();
   });
 });
 
