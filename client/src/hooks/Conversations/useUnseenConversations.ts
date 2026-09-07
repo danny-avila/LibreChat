@@ -5,7 +5,13 @@ import type { Query, QueryClient, InfiniteData } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { ConversationCursorData, PinnedConversationsData } from '~/utils/convos';
 import type { ConvoCandidate } from '~/utils';
-import { freshestCandidate, isConversationUnseen } from '~/utils';
+import {
+  convoQueryAuthority,
+  freshestCandidate,
+  isConversationUnseen,
+  trackConvoQueryAuthority,
+  isAggregateQueryAuthoritative,
+} from '~/utils';
 
 export type UnseenConversation = {
   conversationId: string;
@@ -23,40 +29,18 @@ export type ReplyReadState = {
    * baseline on it: a seen conversation marked unread from another device re-enters `unseen`
    * carrying the stamp it always had, which only this record can tell from a new reply. */
   stamps: Array<[conversationId: string, lastResponseAt: string]>;
+  /** Reply stamps observed after the aggregate first became aware of its list query. */
+  arrivalStamps: Array<[conversationId: string, lastResponseAt: string]>;
 };
-
-/**
- * How long an unmounted list variant keeps counting toward the aggregate.
- *
- * A variant nobody is looking at can list a conversation that has since been deleted or
- * archived on another device: refetching the mounted list removes the row there and nowhere
- * else, and absence never supersedes presence in the scan below, so the leftover would hold a
- * phantom dot in the badge and the alerts for the rest of the cache's lifetime. A recently
- * refreshed variant still counts, which is what keeps a conversation visible across a filter
- * switch; past this age an unmounted snapshot is no longer treated as authoritative.
- *
- * Measured from the variant's last answer from the server, not from its `dataUpdatedAt`: every
- * local cache write touches all of them, so an unrelated rename or reply stamp would otherwise
- * keep renewing a leftover indefinitely.
- */
-const LEFTOVER_CACHE_AGE_MS = 5 * 60_000;
 
 /** How often the aggregate re-checks that deadline on its own; see the effect below. */
 const LEFTOVER_SWEEP_MS = 60_000;
-
-const isLeftover = (query: Query, serverFetchedAt: Map<string, number>): boolean => {
-  if (query.getObserversCount() > 0) {
-    return false;
-  }
-  const lastAnswer = serverFetchedAt.get(query.queryHash) ?? query.state.dataUpdatedAt;
-  return Date.now() - lastAnswer > LEFTOVER_CACHE_AGE_MS;
-};
 
 /** Null until a conversation list has actually resolved, which is not the same as an empty
  *  one: treating "not loaded yet" as "nothing unseen" makes the backlog look like arrivals. */
 const readReplyState = (
   queryClient: QueryClient,
-  serverFetchedAt: Map<string, number>,
+  arrivalStamps: ReplyReadState['arrivalStamps'],
 ): ReplyReadState | null => {
   /* Keyed rather than first-wins: the same row is cached once per list variant and only the
      mounted ones refetch, so an older copy would otherwise shadow a newer reply and drop it
@@ -64,14 +48,20 @@ const readReplyState = (
   const byId = new Map<string, ConvoCandidate>();
   let hasList = false;
 
-  const collect = (convo: TConversation, heardAt: number) => {
+  const collect = (
+    convo: TConversation,
+    authority: Pick<ConvoCandidate, 'heardAt' | 'fromServer'>,
+  ) => {
     const { conversationId } = convo;
     if (!conversationId) {
       return;
     }
     byId.set(
       conversationId,
-      freshestCandidate(byId.get(conversationId), { convo, heardAt }) ?? { convo, heardAt },
+      freshestCandidate(byId.get(conversationId), { convo, ...authority }) ?? {
+        convo,
+        ...authority,
+      },
     );
   };
 
@@ -81,14 +71,14 @@ const readReplyState = (
 
   for (const query of listQueries) {
     const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
-    const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
-    if (!data || isLeftover(query, serverFetchedAt)) {
+    const authority = convoQueryAuthority(queryClient, query);
+    if (!data || !isAggregateQueryAuthoritative(queryClient, query)) {
       continue;
     }
     hasList = true;
     for (const page of data.pages) {
       for (const convo of page.conversations) {
-        collect(convo, heardAt);
+        collect(convo, authority);
       }
     }
   }
@@ -103,12 +93,12 @@ const readReplyState = (
 
   for (const query of pinnedQueries) {
     const data = queryClient.getQueryData<PinnedConversationsData>(query.queryKey);
-    const heardAt = queryClient.getQueryState(query.queryKey)?.dataUpdatedAt ?? 0;
-    if (!data || isLeftover(query, serverFetchedAt)) {
+    const authority = convoQueryAuthority(queryClient, query);
+    if (!data || !isAggregateQueryAuthoritative(queryClient, query)) {
       continue;
     }
     for (const convo of data.conversations) {
-      collect(convo, heardAt);
+      collect(convo, authority);
     }
   }
 
@@ -141,8 +131,67 @@ const readReplyState = (
   }
   /* Ordered by id so the identity below does not depend on cache scan order. */
   stamps.sort(([a], [b]) => a.localeCompare(b));
-  return { unseen, stamps };
+  return { unseen, stamps, arrivalStamps };
 };
+
+type ArrivalSnapshot = Map<string, string>;
+type ArrivalSnapshots = Map<string, ArrivalSnapshot | null>;
+type ArrivalEvidence = Map<string, string>;
+
+const snapshotForQuery = (query: Query): ArrivalSnapshot | null => {
+  const data = query.state.data as
+    | InfiniteData<ConversationCursorData>
+    | PinnedConversationsData
+    | undefined;
+  if (!data) {
+    return null;
+  }
+  const snapshot: ArrivalSnapshot = new Map();
+  const pages = 'pages' in data ? data.pages : [data];
+  for (const page of pages) {
+    for (const convo of page.conversations) {
+      if (convo.conversationId && convo.lastResponseAt) {
+        snapshot.set(convo.conversationId, convo.lastResponseAt);
+      }
+    }
+  }
+  return snapshot;
+};
+
+const observeArrivalQuery = (
+  query: Query,
+  snapshots: ArrivalSnapshots,
+  evidence: ArrivalEvidence,
+  allowArrivals: boolean,
+): void => {
+  const current = snapshotForQuery(query);
+  const previous = snapshots.get(query.queryHash);
+  if (previous == null || current === null) {
+    snapshots.set(query.queryHash, current);
+    return;
+  }
+  if (allowArrivals) {
+    const data = query.state.data as InfiniteData<ConversationCursorData> | PinnedConversationsData;
+    const firstPage = 'pages' in data ? data.pages[0] : data;
+    for (const convo of firstPage?.conversations ?? []) {
+      const { conversationId, lastResponseAt } = convo;
+      if (!conversationId || !lastResponseAt || convo.lastResponseIsManual === true) {
+        continue;
+      }
+      if (previous.get(conversationId) === lastResponseAt) {
+        continue;
+      }
+      const recorded = evidence.get(conversationId);
+      if (recorded === undefined || lastResponseAt > recorded) {
+        evidence.set(conversationId, lastResponseAt);
+      }
+    }
+  }
+  snapshots.set(query.queryHash, current);
+};
+
+const readArrivalStamps = (evidence: ArrivalEvidence): ReplyReadState['arrivalStamps'] =>
+  [...evidence.entries()].sort(([a], [b]) => a.localeCompare(b));
 
 /* Title and reply stamp are part of the identity, not just the id: a conversation is auto-titled
    moments after the reply that made it unseen, and a second reply to an already-unseen chat has
@@ -156,6 +205,7 @@ const identityOf = (state: ReplyReadState | null): string =>
           .map((c): [string, string, string] => [c.conversationId, c.title, c.lastResponseAt])
           .sort(([a], [b]) => a.localeCompare(b)),
         state.stamps,
+        state.arrivalStamps,
       ]);
 
 /**
@@ -177,59 +227,60 @@ const identityOf = (state: ReplyReadState | null): string =>
  */
 export default function useUnseenConversations(): ReplyReadState | null {
   const queryClient = useQueryClient();
-  /** When each cached list variant last heard from the server, keyed by query hash. Seeded
-   *  from `dataUpdatedAt` the first time a variant is seen and advanced only by a fetch:
-   *  `setQueryData` refreshes `dataUpdatedAt` on every variant, including the ones nothing is
-   *  looking at, and that must not renew a leftover. */
-  const serverFetchedAt = useRef<Map<string, number>>(new Map());
-  const [state, setState] = useState<ReplyReadState | null>(() =>
-    readReplyState(queryClient, serverFetchedAt.current),
-  );
+  const arrivalSnapshots = useRef<ArrivalSnapshots>(new Map());
+  const arrivalEvidence = useRef<ArrivalEvidence>(new Map());
+  const [state, setState] = useState<ReplyReadState | null>(() => readReplyState(queryClient, []));
 
   const refresh = useCallback(() => {
-    const next = readReplyState(queryClient, serverFetchedAt.current);
+    const next = readReplyState(queryClient, readArrivalStamps(arrivalEvidence.current));
     setState((current) => (identityOf(current) === identityOf(next) ? current : next));
   }, [queryClient]);
 
   useEffect(() => {
     const cache = queryClient.getQueryCache();
-    const record = (query: Query, fromServer: boolean) => {
-      if (fromServer) {
-        serverFetchedAt.current.set(query.queryHash, Date.now());
-        return;
-      }
-      if (!serverFetchedAt.current.has(query.queryHash)) {
-        /* First sight of a variant this hook did not watch arrive. Its `dataUpdatedAt` is the
-           closest thing to an answer time; a variant that has none yet counts as current until
-           its first fetch says otherwise, rather than being written off unseen. */
-        serverFetchedAt.current.set(query.queryHash, query.state.dataUpdatedAt || Date.now());
-      }
-    };
+    trackConvoQueryAuthority(queryClient);
 
     for (const query of cache.getAll()) {
       const root = query.queryKey?.[0];
-      if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
-        record(query, false);
+      if (
+        root === QueryKeys.allConversations ||
+        root === QueryKeys.pinnedConversations ||
+        root === QueryKeys.conversation
+      ) {
+        convoQueryAuthority(queryClient, query);
+        if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
+          observeArrivalQuery(query, arrivalSnapshots.current, arrivalEvidence.current, false);
+        }
       }
     }
 
     const unsubscribe = cache.subscribe((event) => {
       const { query } = event;
       const root = query.queryKey?.[0];
-      if (root !== QueryKeys.allConversations && root !== QueryKeys.pinnedConversations) {
+      if (
+        root !== QueryKeys.allConversations &&
+        root !== QueryKeys.pinnedConversations &&
+        root !== QueryKeys.conversation
+      ) {
         return;
       }
-      /* `manual` is what `setQueryData` sets; only a fetch that actually answered counts as
-         the variant hearing from the server. */
-      const fromServer =
-        event.type === 'updated' && event.action.type === 'success' && event.action.manual !== true;
-      record(query, fromServer);
+      convoQueryAuthority(queryClient, query);
+      if (event.type === 'removed') {
+        arrivalSnapshots.current.delete(query.queryHash);
+      } else if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
+        observeArrivalQuery(
+          query,
+          arrivalSnapshots.current,
+          arrivalEvidence.current,
+          event.type === 'updated' && event.action.type === 'success',
+        );
+      }
       refresh();
     });
     refresh();
     /* Crossing the leftover deadline is not a cache event, so an otherwise idle tab would keep
-       counting a phantom row until something else happened to touch the caches. Recomputing on
-       a slow tick costs a scan of what is already in memory and no request. */
+     * counting a phantom row until something else happened to touch the caches. Recomputing on
+     * a slow tick costs a scan of what is already in memory and no request. */
     const tick = window.setInterval(refresh, LEFTOVER_SWEEP_MS);
     return () => {
       window.clearInterval(tick);

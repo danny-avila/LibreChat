@@ -2816,11 +2816,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const databasePromise = response.databasePromise;
         delete response.databasePromise;
 
-        const { conversation: convoData = {} } = await databasePromise;
-        const conversation = { ...convoData };
+        const databaseResult = await databasePromise;
+        const { conversation: convoData = {}, persistenceSkipped = false } = databaseResult;
+        const responsePersistenceWasSkipped = persistenceSkipped === true;
+        let conversation = { ...convoData };
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
-
         if (!terminalClaim) {
           /** Stop/replacement won before the response persistence hook. The
            * BaseClient contract skipped its completed response write; cancel
@@ -2967,15 +2968,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         await eventActorTurn?.historyPersisted();
         eventActorPersistenceComplete = true;
 
-        /* Only the turns BaseClient did not write a completed response for. An ordinary
-           completion was already stamped inside `saveMessageToDatabase`, and that stamp is
-           what the conversation snapshot in the final event carries; stamping again here
-           would leave the client acknowledging a value the server had already moved past,
-           so a reply read at the bottom would keep its dot. Best-effort either way: a missed
-           stamp must not fail the final publication. */
-        if (responseIsUnfinished && reqCtx.isTemporary !== true) {
+        /** A persisted BaseClient response already advanced lastResponseAt. Re-stamp only
+         * when its terminal persistence was explicitly skipped, then refresh the payload's
+         * conversation snapshot so it acknowledges the durable timestamp. */
+        if (responseIsUnfinished && responsePersistenceWasSkipped && reqCtx.isTemporary !== true) {
           try {
             await stampConvoLastResponse(reqCtx.userId, response.conversationId);
+            const stampedConversation = await getConvo(reqCtx.userId, response.conversationId);
+            if (stampedConversation) {
+              conversation = { ...conversation, ...stampedConversation };
+            }
           } catch (error) {
             logger.warn('[AgentController] Failed to stamp lastResponseAt', error);
           }

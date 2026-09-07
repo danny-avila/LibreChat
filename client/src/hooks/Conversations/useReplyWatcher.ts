@@ -68,6 +68,7 @@ const mergeTimestamps = async (
    *  with a cleared catch-up is how a remote mark-as-unread reaches this tab, and that path's
    *  own stale reads are fenced by its arrival focus check. */
   stampDelivery = false,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> => {
   const { conversationId, lastResponseAt, lastResponseIsManual, lastSeenAt, updatedAt } = convo;
   if (!conversationId || !lastResponseAt) {
@@ -89,6 +90,9 @@ const mergeTimestamps = async (
   if (!isConvoInAggregateCaches(queryClient, conversationId)) {
     if (aggregateRevealed.get(conversationId) !== lastResponseAt) {
       await queryClient.invalidateQueries([QueryKeys.allConversations]);
+      if (!isCurrent()) {
+        return;
+      }
       if (!didListRefreshFail(queryClient)) {
         aggregateRevealed.set(conversationId, lastResponseAt);
       }
@@ -129,6 +133,9 @@ const mergeTimestamps = async (
      resolves immediately. */
   const messagesKey = [QueryKeys.messages, conversationId];
   await queryClient.invalidateQueries(messagesKey);
+  if (!isCurrent()) {
+    return;
+  }
   /* Invalidation settles rather than throwing when the refetch fails, so the failure has to be
      read off the query itself. Exposing the stamp anyway would let the seen trigger credit a
      reply the tab never managed to load; the next poll retries.
@@ -278,10 +285,15 @@ export default function useReplyWatcher() {
       return;
     }
 
+    let active = true;
+    let generation = 0;
+
     const poll = async () => {
       if (document.hasFocus()) {
         return;
       }
+      const requestGeneration = ++generation;
+      const isCurrent = () => active && generation === requestGeneration && !document.hasFocus();
       try {
         /* The default page is the newest conversations, which is where an unseen reply always
            lands: the list sorts by `updatedAt` descending. */
@@ -296,7 +308,7 @@ export default function useReplyWatcher() {
            guard suppressing the re-send. The poll serves the away features only; once the
            tab is focused the ordinary focus refetches own the cache, and the next unfocused
            tick re-reads anything a discarded snapshot carried. */
-        if (document.hasFocus()) {
+        if (!isCurrent()) {
           return;
         }
         const unknownStamps = new Map<string, string>();
@@ -304,12 +316,21 @@ export default function useReplyWatcher() {
         let hasNewlyUnknownConversation = false;
 
         for (const convo of conversations) {
+          if (!isCurrent()) {
+            return;
+          }
           const { conversationId, lastResponseAt } = convo;
           if (!conversationId) {
             continue;
           }
           if (findConvoInAllQueries(queryClient, conversationId)) {
-            await mergeTimestamps(queryClient, convo, aggregateRevealedRef.current);
+            await mergeTimestamps(
+              queryClient,
+              convo,
+              aggregateRevealedRef.current,
+              false,
+              isCurrent,
+            );
             continue;
           }
           /* A conversation started on another device has no row here to merge into, and hand-
@@ -333,7 +354,7 @@ export default function useReplyWatcher() {
           }
         }
 
-        if (!hasNewlyUnknownConversation) {
+        if (!isCurrent() || !hasNewlyUnknownConversation) {
           return;
         }
         /* Attempts are recorded only once the refetch meant to reveal them has succeeded.
@@ -341,16 +362,25 @@ export default function useReplyWatcher() {
            good: every later poll would read them as already attempted and never invalidate
            again, even after the network recovered. */
         await queryClient.invalidateQueries([QueryKeys.allConversations]);
-        if (didListRefreshFail(queryClient)) {
+        if (!isCurrent() || didListRefreshFail(queryClient)) {
           return;
         }
 
         for (const convo of unknownConvos) {
+          if (!isCurrent()) {
+            return;
+          }
           const conversationId = convo.conversationId as string;
           if (findConvoInAllQueries(queryClient, conversationId)) {
             /* Revealed: merge it now rather than waiting a tick, and forget the attempt. */
             unknownIdsRef.current.delete(conversationId);
-            await mergeTimestamps(queryClient, convo, aggregateRevealedRef.current);
+            await mergeTimestamps(
+              queryClient,
+              convo,
+              aggregateRevealedRef.current,
+              false,
+              isCurrent,
+            );
             continue;
           }
           /* Still in no cache: a sidebar filter hides it, or it sits past the page the sidebar
@@ -381,6 +411,7 @@ export default function useReplyWatcher() {
     const timer = window.setInterval(poll, AWAY_POLL_MS);
     const focusedTimer = window.setInterval(focusedRefresh, FOCUSED_REFRESH_MS);
     return () => {
+      active = false;
       window.clearInterval(timer);
       window.clearInterval(focusedTimer);
     };

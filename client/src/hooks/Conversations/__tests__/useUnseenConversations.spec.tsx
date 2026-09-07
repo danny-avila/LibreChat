@@ -90,6 +90,7 @@ describe('useUnseenConversations', () => {
     expect(result.current).toEqual({
       unseen: [{ conversationId: 'dup', title: 'D', lastResponseAt: RESPONDED_AT, flagged: false }],
       stamps: [['dup', RESPONDED_AT]],
+      arrivalStamps: [],
     });
   });
 
@@ -104,7 +105,7 @@ describe('useUnseenConversations', () => {
       );
     });
 
-    expect(result.current).toEqual({ unseen: [], stamps: [] });
+    expect(result.current).toEqual({ unseen: [], stamps: [], arrivalStamps: [] });
   });
 
   it('counts a pin that lives only in the pinned cache', () => {
@@ -125,6 +126,22 @@ describe('useUnseenConversations', () => {
     expect(result.current?.unseen).toEqual([
       { conversationId: 'old-pin', title: 'Pinned', lastResponseAt: RESPONDED_AT, flagged: false },
     ]);
+  });
+
+  it('records the first real reply to a conversation held only in the pinned cache', () => {
+    const { result, queryClient } = setup();
+    act(() => {
+      queryClient.setQueryData(listKeyActive, page([]));
+      queryClient.setQueryData(pinnedKey, {
+        conversations: [{ conversationId: 'pin', title: 'Pinned' }],
+      });
+    });
+    act(() => {
+      queryClient.setQueryData(pinnedKey, {
+        conversations: [{ conversationId: 'pin', title: 'Pinned', lastResponseAt: RESPONDED_AT }],
+      });
+    });
+    expect(result.current?.arrivalStamps).toEqual([['pin', RESPONDED_AT]]);
   });
 
   it('tags the explicit manual marker of a never-replied conversation', () => {
@@ -303,7 +320,39 @@ describe('useUnseenConversations', () => {
       queryClient.setQueryData(listKeyActive, page([]));
     });
 
-    expect(result.current).toEqual({ unseen: [], stamps: [] });
+    expect(result.current).toEqual({ unseen: [], stamps: [], arrivalStamps: [] });
+  });
+  it('keeps server mark-unread authority after a local chat update', async () => {
+    const { result, queryClient } = setup();
+    const seen = {
+      conversationId: 'remote',
+      title: 'Remote',
+      lastResponseAt: RESPONDED_AT,
+      lastSeenAt: SEEN_AFTER,
+    };
+    const unread = { conversationId: 'remote', title: 'Remote', lastResponseAt: RESPONDED_AT };
+
+    await act(async () => {
+      await queryClient.fetchQuery({
+        queryKey: listKeyActive,
+        queryFn: async () => page([unread]),
+        staleTime: Infinity,
+      });
+      queryClient.setQueryData(listKeyArchived, page([seen]));
+    });
+
+    act(() => {
+      updateConvoInAllQueries(queryClient, 'remote', (convo) => ({ ...convo, title: 'Renamed' }));
+    });
+
+    expect(result.current?.unseen).toEqual([
+      {
+        conversationId: 'remote',
+        title: 'Renamed',
+        lastResponseAt: RESPONDED_AT,
+        flagged: false,
+      },
+    ]);
   });
 
   it('reports a fresh reply to an already-unseen conversation', () => {
@@ -333,6 +382,59 @@ describe('useUnseenConversations', () => {
         flagged: false,
       },
     ]);
+  });
+  it('records a first-page reply arrival even when its server clock is behind another row', () => {
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          { conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT },
+          { conversationId: 'new', title: 'New' },
+        ]),
+      );
+    });
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          { conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT },
+          { conversationId: 'new', title: 'New', lastResponseAt: RESPONDED_AT },
+        ]),
+      );
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([['new', RESPONDED_AT]]);
+  });
+
+  it('does not treat pagination or a newly mounted variant as a reply arrival', () => {
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(listKeyActive, page([{ conversationId: 'known', title: 'Known' }]));
+    });
+    act(() => {
+      queryClient.setQueryData(listKeyActive, {
+        pages: [
+          { conversations: [{ conversationId: 'known', title: 'Known' }], nextCursor: 'next' },
+          {
+            conversations: [
+              { conversationId: 'backlog', title: 'Backlog', lastResponseAt: RESPONDED_AT },
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null, 'next'],
+      });
+      queryClient.setQueryData(
+        listKeyArchived,
+        page([{ conversationId: 'variant', title: 'Variant', lastResponseAt: RESPONDED_AT }]),
+      );
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([]);
   });
 
   it('reports a fresh reply that was caught up the moment it landed', () => {

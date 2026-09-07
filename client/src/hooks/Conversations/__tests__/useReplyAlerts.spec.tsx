@@ -74,11 +74,13 @@ const row = (
 const stateOf = (
   unseen: UnseenConversation[] | null,
   seenStamps: Array<[string, string]> = [],
+  arrivalStamps = unseen?.map((c): [string, string] => [c.conversationId, c.lastResponseAt]) ?? [],
 ): ReplyReadState | null =>
   unseen === null
     ? null
     : {
         unseen,
+        arrivalStamps,
         stamps: [
           ...seenStamps,
           ...unseen.map((c): [string, string] => [c.conversationId, c.lastResponseAt]),
@@ -429,9 +431,7 @@ describe('useReplyAlerts', () => {
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
   });
 
-  it('stays quiet for older unseen rows a later page brought into the cache', async () => {
-    /* Paginating while backgrounded surfaces backlog the tab had never cached: it is a
-       discovery, not an arrival, and announcing it would chime for replies from last week. */
+  it('stays quiet for paginated backlog even when its server clock is ahead', async () => {
     const { rerender } = setup(
       { notifications: true },
       stateOf([row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z')]),
@@ -439,19 +439,21 @@ describe('useReplyAlerts', () => {
 
     act(() => {
       rerender(
-        stateOf([
-          row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z'),
-          row('convo-old', 'Backlog', '2026-08-01T09:00:00.000Z'),
-        ]),
+        stateOf(
+          [
+            row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z'),
+            row('convo-old', 'Backlog', '2026-09-01T09:00:00.000Z'),
+          ],
+          [],
+          [],
+        ),
       );
     });
 
     expect(createdNotifications).toHaveLength(0);
   });
 
-  it('announces a conversation it has never cached when its reply is newer than anything known', () => {
-    /* Started on another device: no prior stamp either, but its reply is newer than everything
-       this tab had heard about, which backlog never is. */
+  it('announces a newly discovered reply even when its server clock is behind', () => {
     const { rerender } = setup(
       { notifications: true },
       stateOf([row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z')]),
@@ -461,7 +463,7 @@ describe('useReplyAlerts', () => {
       rerender(
         stateOf([
           row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z'),
-          row('convo-new', 'Remote', '2026-08-16T11:00:00.000Z'),
+          row('convo-new', 'Remote', '2026-08-16T09:00:00.000Z'),
         ]),
       );
     });
