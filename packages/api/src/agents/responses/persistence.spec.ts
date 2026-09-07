@@ -264,15 +264,29 @@ describe('Responses persistence', () => {
     ).toEqual([committedInput, committedOutput, legacy]);
   });
 
-  it('round-trips the exact stored output, usage, and predecessor snapshot', () => {
+  it('round-trips the complete response envelope', () => {
     const storedResponse = response();
     const storedMessage = message({ metadata: buildStoredResponseMetadata(storedResponse) });
 
     expect(getStoredResponseSnapshot(storedMessage)).toEqual({
+      response: storedResponse,
       output: storedResponse.output,
       usage: storedResponse.usage,
       previousResponseId: storedResponse.previous_response_id,
     });
+  });
+
+  it('reads earlier snapshots without a complete envelope', () => {
+    const stored = response();
+    const snapshot = {
+      output: stored.output,
+      usage: stored.usage,
+      previousResponseId: stored.previous_response_id,
+    };
+    const storedMessage = message({
+      metadata: { responsesResponse: { version: 1, commitState: 'committed', ...snapshot } },
+    });
+    expect(getStoredResponseSnapshot(storedMessage)).toEqual(snapshot);
   });
 
   it('stages a turn and publishes all message ids through one manifest commit', async () => {
@@ -451,6 +465,10 @@ describe('Responses persistence', () => {
 function response(overrides: Partial<Response> = {}): Response {
   return {
     id: 'resp_target',
+    object: 'response',
+    instructions: 'Use the supplied context.',
+    created_at: 1700000000,
+    completed_at: 1700000060,
     status: 'completed',
     previous_response_id: 'resp_previous',
     output: [

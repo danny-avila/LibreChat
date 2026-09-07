@@ -99,6 +99,26 @@ describe('response usage aggregation', () => {
     expect(JSON.parse(completed?.slice(6) ?? '{}').response.usage).toEqual(usage);
   });
 
+  it('emits the persisted envelope unchanged after storage delays', () => {
+    const writes: string[] = [];
+    const res = { write: (chunk: string) => writes.push(chunk) } as unknown as ServerResponse;
+    const tracker = createResponseTracker();
+    const handlers = createResponsesEventHandlers({ res, context, tracker });
+    const now = jest.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1700000000000);
+      handlers.completeOutput();
+      const response = buildResponse(context, tracker, 'completed');
+      now.mockReturnValue(1700000060000);
+      handlers.finalizeStream(undefined, response);
+      const completed = writes.find((chunk) => chunk.startsWith('data: {'));
+      expect(JSON.parse(completed?.slice(6) ?? '{}').response).toEqual(response);
+      expect(writes[writes.length - 1]).toBe('data: [DONE]\n\n');
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('reports the validated storage choice in JSON and streaming responses', () => {
     const storedContext = createResponseContext(
       { model: 'agent_test', input: 'Hello', store: true },

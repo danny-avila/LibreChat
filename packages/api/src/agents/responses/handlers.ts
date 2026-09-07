@@ -310,10 +310,14 @@ export function emitResponseInProgress(config: StreamHandlerConfig): void {
 /**
  * Emit response.completed event
  */
-export function emitResponseCompleted(config: StreamHandlerConfig, usage?: Usage): void {
+export function emitResponseCompleted(
+  config: StreamHandlerConfig,
+  usage?: Usage,
+  completedResponse?: Response,
+): void {
   const { res, context, tracker } = config;
   tracker.status = 'completed';
-  const response = buildResponse(context, tracker, 'completed', usage);
+  const response = completedResponse ?? buildResponse(context, tracker, 'completed', usage);
   writeEvent(res, {
     type: 'response.completed',
     sequence_number: tracker.nextSequence(),

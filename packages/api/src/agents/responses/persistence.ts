@@ -30,6 +30,7 @@ export type StoredResponseResolution =
   | { status: 'read_only' };
 
 export interface StoredResponseSnapshot {
+  response?: Response;
   output: OutputItem[];
   usage?: Usage | null;
   previousResponseId: string | null;
@@ -156,12 +157,25 @@ function getStoredResponseRecord(message: IMessage): StoredResponseRecord | null
     return null;
   }
   const stored = snapshot as Record<string, unknown>;
-  const previousResponseId = stored.previousResponseId;
+  const response = stored.response as Response | undefined;
+  if (
+    response != null &&
+    (response.id !== message.messageId ||
+      response.object !== 'response' ||
+      response.status !== 'completed' ||
+      !Array.isArray(response.output))
+  ) {
+    return null;
+  }
+  const output = response?.output ?? stored.output;
+  const usage = response == null ? stored.usage : response.usage;
+  const previousResponseId =
+    response == null ? stored.previousResponseId : response.previous_response_id;
   if (
     stored.version !== RESPONSE_SNAPSHOT_VERSION ||
     (stored.commitState !== 'pending' && stored.commitState !== 'committed') ||
-    !Array.isArray(stored.output) ||
-    (stored.usage != null && typeof stored.usage !== 'object') ||
+    !Array.isArray(output) ||
+    (usage != null && typeof usage !== 'object') ||
     (previousResponseId != null && typeof previousResponseId !== 'string')
   ) {
     return null;
@@ -169,8 +183,9 @@ function getStoredResponseRecord(message: IMessage): StoredResponseRecord | null
   return {
     version: RESPONSE_SNAPSHOT_VERSION,
     commitState: stored.commitState,
-    output: stored.output as OutputItem[],
-    usage: (stored.usage ?? null) as Usage | null,
+    ...(response != null && { response }),
+    output: output as OutputItem[],
+    usage: (usage ?? null) as Usage | null,
     previousResponseId: previousResponseId ?? null,
   };
 }
@@ -229,9 +244,7 @@ export function buildStoredResponseMetadata(
     responsesResponse: {
       version: RESPONSE_SNAPSHOT_VERSION,
       commitState,
-      output: response.output,
-      usage: response.usage,
-      previousResponseId: response.previous_response_id,
+      response,
     },
   };
 }
@@ -241,6 +254,7 @@ export function getStoredResponseSnapshot(message: IMessage): StoredResponseSnap
   const record = getStoredResponseRecord(message);
   if (record != null) {
     return {
+      ...(record.response != null && { response: record.response }),
       output: record.output,
       usage: record.usage,
       previousResponseId: record.previousResponseId,

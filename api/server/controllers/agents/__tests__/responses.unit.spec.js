@@ -218,6 +218,7 @@ const mockPersistStoredResponse = jest.fn(async (params) => {
       metadata: {
         responsesResponse: {
           version: 1,
+          response,
           output: response.output,
           usage: response.usage,
           previousResponseId: response.previous_response_id ?? null,
@@ -467,6 +468,7 @@ jest.mock('@librechat/api', () => ({
     const snapshot = message.metadata?.responsesResponse;
     if (snapshot?.version === 1) {
       return {
+        ...(snapshot.response != null && { response: snapshot.response }),
         output: snapshot.output,
         usage: snapshot.usage,
         previousResponseId: snapshot.previousResponseId ?? null,
@@ -1061,6 +1063,7 @@ describe('createResponse controller', () => {
         metadata: {
           responsesResponse: {
             version: 1,
+            response: expect.any(Object),
             output: structuredOutput,
             usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
             previousResponseId: previousMessage.messageId,
@@ -3048,7 +3051,7 @@ describe('createResponse controller', () => {
 
       const finalizeStream =
         api.createResponsesEventHandlers.mock.results.at(-1).value.finalizeStream;
-      expect(finalizeStream).toHaveBeenCalledWith(mockResponsesUsage);
+      expect(finalizeStream).toHaveBeenCalledWith(mockResponsesUsage, expect.any(Object));
     });
   });
 
@@ -3277,6 +3280,10 @@ describe('Responses persistence with MongoDB', () => {
         ]);
       api.buildAggregatedResponse.mockReturnValueOnce({
         id: 'resp_mock-123',
+        object: 'response',
+        instructions: 'Use the supplied context.',
+        created_at: 1700000000,
+        completed_at: 1700000060,
         status: 'completed',
         output: firstOutput,
         usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
@@ -3324,15 +3331,17 @@ describe('Responses persistence with MongoDB', () => {
       await dataSchemas.tenantStorage.run(
         { tenantId: 'tenant-a', userId: 'user-123' },
         async () => {
+          const createdResult = makeResponse();
           await controller.createResponse(
             makeRequest({ model: 'agent-123', input: 'First', stream: false, store: true }),
-            makeResponse(),
+            createdResult,
           );
 
           const getRequest = makeRequest({});
           getRequest.params = { id: 'resp_mock-123' };
           const getResult = makeResponse();
           await controller.getResponse(getRequest, getResult);
+          expect(getResult.json).toHaveBeenCalledWith(createdResult.json.mock.calls[0][0]);
           expect(getResult.json).toHaveBeenCalledWith(
             expect.objectContaining({
               id: 'resp_mock-123',

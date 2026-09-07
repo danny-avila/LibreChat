@@ -1312,9 +1312,10 @@ const executeResponse = async (envelope, { req, res }) => {
         );
 
         const usage = buildResponsesUsage(collectedUsage);
+        completeOutput();
+        const completedResponse = buildResponse(context, tracker, 'completed', usage);
 
         if (request.store === true) {
-          completeOutput();
           try {
             await persistResponse({
               req,
@@ -1325,7 +1326,7 @@ const executeResponse = async (envelope, { req, res }) => {
               inputMessages,
               parentMessageId,
               responseId,
-              response: buildResponse(context, tracker, 'completed', usage),
+              response: completedResponse,
               visibleOutputTokens: tracker.usage.outputTokens,
             });
           } catch (error) {
@@ -1344,7 +1345,7 @@ const executeResponse = async (envelope, { req, res }) => {
           }
         }
 
-        finalizeStream(usage);
+        finalizeStream(usage, completedResponse);
         res.end();
 
         const duration = Date.now() - requestStartTime;
@@ -1714,12 +1715,13 @@ const getResponse = async (req, res) => {
       );
     }
 
-    // Convert messages to Open Responses output format
-    const output = convertMessagesToOutputItems(messages);
-
     const lastAssistantMessage = responseMessage ?? messages.filter(isStoredResponseOutput).pop();
     const storedSnapshot =
       lastAssistantMessage == null ? null : getStoredResponseSnapshot(lastAssistantMessage);
+    if (responseMessage != null && storedSnapshot?.response != null) {
+      return res.json(storedSnapshot.response);
+    }
+    const output = convertMessagesToOutputItems(messages);
     let storedUsage = null;
     if (storedSnapshot != null && Object.prototype.hasOwnProperty.call(storedSnapshot, 'usage')) {
       storedUsage = storedSnapshot.usage;

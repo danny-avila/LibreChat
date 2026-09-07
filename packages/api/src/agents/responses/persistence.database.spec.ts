@@ -267,6 +267,7 @@ describe('resolveStoredResponse with Mongo tenant scope', () => {
 
       expect(filterCommittedResponseMessages(messages)).toHaveLength(2);
       expect(getStoredResponseSnapshot(result.outputMessage)).toEqual({
+        response,
         output: response.output,
         usage: response.usage,
         previousResponseId: response.previous_response_id,
@@ -381,6 +382,10 @@ describe('resolveStoredResponse with Mongo tenant scope', () => {
 function storedResponse(overrides: Partial<Response> = {}): Response {
   return {
     id: 'resp_stored',
+    object: 'response',
+    instructions: 'Use the supplied context.',
+    created_at: 1700000000,
+    completed_at: 1700000060,
     status: 'completed',
     previous_response_id: null,
     output: [

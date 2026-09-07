@@ -366,7 +366,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
   completeOutput: () => void;
-  finalizeStream: (usage?: Usage) => void;
+  finalizeStream: (usage?: Usage, completedResponse?: Response) => void;
 } {
   const state: StreamState = {
     messageStarted: false,
@@ -592,9 +592,9 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   /**
    * Finalize the stream - close open items and emit completed
    */
-  const finalizeStream = (usage?: Usage): void => {
+  const finalizeStream = (usage?: Usage, completedResponse?: Response): void => {
     closeOpenStreams();
-    emitResponseCompleted(config, usage);
+    emitResponseCompleted(config, usage, completedResponse);
     writeDone(config.res);
   };
 
