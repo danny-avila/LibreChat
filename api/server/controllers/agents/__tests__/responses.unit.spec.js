@@ -370,6 +370,7 @@ jest.mock('@librechat/api', () => ({
       on_run_step_delta: { handle: jest.fn() },
       on_chat_model_end: { handle: jest.fn() },
     },
+    completeOutput: jest.fn(),
     finalizeStream: jest.fn(),
   }),
   createAggregatorEventHandlers: jest.fn().mockReturnValue({
@@ -891,6 +892,12 @@ describe('createResponse controller', () => {
     expect(mockEnrollAgentExecution).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: previousMessage.conversationId }),
     );
+    expect(db.saveConvo).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ userId: 'user-123' }),
+      expect.objectContaining({ conversationId: previousMessage.conversationId }),
+      expect.objectContaining({ appendMessageIds: [], noUpsert: true }),
+    );
     expect(db.saveMessage).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ userId: 'user-123' }),
@@ -1095,6 +1102,55 @@ describe('createResponse controller', () => {
       {},
       expect.any(Set),
     );
+  });
+
+  it('durably stores a streaming response before emitting its terminal event', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: { ...req.body, stream: true, store: true },
+    });
+    api.convertInputToMessages.mockReturnValueOnce([
+      { role: 'user', content: 'Stream this', messageId: 'input-stream' },
+    ]);
+    db.saveMessage.mockImplementation(async (_context, params) => ({
+      ...params,
+      _id: `mongo-${params.messageId}`,
+    }));
+
+    await createResponse(req, res);
+
+    const streamHandlers = api.createResponsesEventHandlers.mock.results.at(-1).value;
+    const { completeOutput, finalizeStream } = streamHandlers;
+    expect(db.saveConvo).toHaveBeenCalledTimes(2);
+    expect(completeOutput.mock.invocationCallOrder[0]).toBeLessThan(
+      db.saveConvo.mock.invocationCallOrder[0],
+    );
+    expect(db.saveConvo.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      finalizeStream.mock.invocationCallOrder[0],
+    );
+    expect(finalizeStream.mock.invocationCallOrder[0]).toBeLessThan(
+      res.end.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not emit a completed streaming response when durable storage fails', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: { ...req.body, stream: true, store: true },
+    });
+    res.headersSent = true;
+    db.saveConvo.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await createResponse(req, res);
+
+    const { completeOutput, finalizeStream } =
+      api.createResponsesEventHandlers.mock.results.at(-1).value;
+    expect(completeOutput).toHaveBeenCalledTimes(1);
+    expect(finalizeStream).not.toHaveBeenCalled();
+    expect(api.writeDone).toHaveBeenCalledWith(res);
+    expect(res.end).toHaveBeenCalledTimes(1);
   });
 
   it('retrieves only the assistant message identified by a canonical response ID', async () => {

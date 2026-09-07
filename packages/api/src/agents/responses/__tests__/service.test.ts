@@ -108,6 +108,30 @@ describe('response usage aggregation', () => {
     expect(buildAggregatedResponse(storedContext, createResponseAggregator()).store).toBe(true);
     expect(buildResponse(storedContext, createResponseTracker(), 'completed').store).toBe(true);
   });
+
+  it('completes streamed output for persistence without emitting the terminal response', () => {
+    const writes: string[] = [];
+    const res = {
+      write: (chunk: string) => {
+        writes.push(chunk);
+      },
+    } as unknown as ServerResponse;
+    const tracker = createResponseTracker();
+    const { handlers, completeOutput } = createResponsesEventHandlers({ res, context, tracker });
+
+    handlers.on_message_delta.handle('on_message_delta', {
+      delta: { content: [{ type: 'text', text: 'Persisted first' }] },
+    });
+    completeOutput();
+
+    expect(buildResponse(context, tracker, 'completed').output).toEqual([
+      expect.objectContaining({
+        status: 'completed',
+        content: [expect.objectContaining({ text: 'Persisted first' })],
+      }),
+    ]);
+    expect(writes.some((chunk) => chunk.includes('"type":"response.completed"'))).toBe(false);
+  });
 });
 
 describe('convertInputToMessages', () => {

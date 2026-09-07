@@ -365,6 +365,7 @@ interface StreamState {
 export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
+  completeOutput: () => void;
   finalizeStream: (usage?: Usage) => void;
 } {
   const state: StreamState = {
@@ -597,7 +598,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     writeDone(config.res);
   };
 
-  return { handlers, state, finalizeStream };
+  return { handlers, state, completeOutput: closeOpenStreams, finalizeStream };
 }
 
 /* =============================================================================

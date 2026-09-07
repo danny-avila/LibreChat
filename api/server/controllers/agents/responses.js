@@ -528,6 +528,65 @@ async function saveConversation(
   );
 }
 
+async function persistResponse({
+  req,
+  conversationId,
+  agentId,
+  agent,
+  previousResponse,
+  inputMessages,
+  parentMessageId,
+  responseId,
+  response,
+  visibleOutputTokens,
+}) {
+  const storedConversation = await saveConversation(
+    req,
+    conversationId,
+    agentId,
+    agent,
+    [],
+    previousResponse != null,
+  );
+  if (storedConversation?.conversationId !== conversationId) {
+    throw new Error('Conversation was deleted before the response could be stored');
+  }
+
+  const inputPersistence = await saveInputMessages(
+    req,
+    conversationId,
+    inputMessages,
+    agentId,
+    parentMessageId,
+  );
+  const outputMessage = await saveResponseOutput(
+    req,
+    conversationId,
+    responseId,
+    response,
+    agentId,
+    visibleOutputTokens,
+    inputPersistence.parentMessageId,
+  );
+  const messageIds = [...inputPersistence.messageIds];
+  if (outputMessage?._id != null) {
+    messageIds.push(outputMessage._id);
+  }
+  const refreshedConversation = await saveConversation(
+    req,
+    conversationId,
+    agentId,
+    agent,
+    messageIds,
+    true,
+  );
+  if (refreshedConversation?.conversationId !== conversationId) {
+    throw new Error('Conversation was deleted before message references were stored');
+  }
+
+  logger.debug(`[Responses API] Stored response ${responseId} in conversation ${conversationId}`);
+}
+
 /**
  * Convert stored messages to Open Responses output format
  * @param {Array} messages - Stored messages
@@ -1215,8 +1274,11 @@ const executeResponse = async (envelope, { req, res }) => {
         emitResponseInProgress(handlerConfig);
 
         // Create event handlers
-        const { handlers: responsesHandlers, finalizeStream } =
-          createResponsesEventHandlers(handlerConfig);
+        const {
+          handlers: responsesHandlers,
+          completeOutput,
+          finalizeStream,
+        } = createResponsesEventHandlers(handlerConfig);
 
         // Collect usage for balance tracking
         const collectedUsage = [];
@@ -1383,7 +1445,22 @@ const executeResponse = async (envelope, { req, res }) => {
 
         const usage = buildResponsesUsage(collectedUsage);
 
-        // Finalize the stream
+        if (request.store === true) {
+          completeOutput();
+          await persistResponse({
+            req,
+            conversationId,
+            agentId,
+            agent,
+            previousResponse,
+            inputMessages,
+            parentMessageId,
+            responseId,
+            response: buildResponse(context, tracker, 'completed', usage),
+            visibleOutputTokens: tracker.usage.outputTokens,
+          });
+        }
+
         finalizeStream(usage);
         res.end();
 
@@ -1391,67 +1468,6 @@ const executeResponse = async (envelope, { req, res }) => {
         logger.debug(
           `[Responses API] Request ${responseId} completed in ${duration}ms (streaming)`,
         );
-
-        // Save to database if store: true
-        if (request.store === true) {
-          try {
-            // Save conversation
-            const storedConversation = await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              undefined,
-              previousResponse != null,
-            );
-            if (storedConversation?.conversationId !== conversationId) {
-              throw new Error('Conversation was deleted before the response could be stored');
-            }
-
-            // Save input messages
-            const inputPersistence = await saveInputMessages(
-              req,
-              conversationId,
-              inputMessages,
-              agentId,
-              parentMessageId,
-            );
-
-            // Build response for saving (use tracker with buildResponse for streaming)
-            const finalResponse = buildResponse(context, tracker, 'completed');
-            const outputMessage = await saveResponseOutput(
-              req,
-              conversationId,
-              responseId,
-              finalResponse,
-              agentId,
-              tracker.usage.outputTokens,
-              inputPersistence.parentMessageId,
-            );
-            const messageIds = [...inputPersistence.messageIds];
-            if (outputMessage?._id != null) {
-              messageIds.push(outputMessage._id);
-            }
-            const refreshedConversation = await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              messageIds,
-              true,
-            );
-            if (refreshedConversation?.conversationId !== conversationId) {
-              throw new Error('Conversation was deleted before message references were stored');
-            }
-
-            logger.debug(
-              `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
-            );
-          } catch (saveError) {
-            logger.error('[Responses API] Error saving response:', getSafeErrorMetadata(saveError));
-            // Don't fail the request if saving fails
-          }
-        }
 
         // The HTTP response is complete, while destructive cleanup still waits for artifacts.
         if (artifactPromises.length > 0) {
@@ -1644,59 +1660,18 @@ const executeResponse = async (envelope, { req, res }) => {
         );
 
         if (request.store === true) {
-          try {
-            const storedConversation = await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              undefined,
-              previousResponse != null,
-            );
-            if (storedConversation?.conversationId !== conversationId) {
-              throw new Error('Conversation was deleted before the response could be stored');
-            }
-
-            const inputPersistence = await saveInputMessages(
-              req,
-              conversationId,
-              inputMessages,
-              agentId,
-              parentMessageId,
-            );
-
-            const outputMessage = await saveResponseOutput(
-              req,
-              conversationId,
-              responseId,
-              response,
-              agentId,
-              aggregator.usage.outputTokens,
-              inputPersistence.parentMessageId,
-            );
-            const messageIds = [...inputPersistence.messageIds];
-            if (outputMessage?._id != null) {
-              messageIds.push(outputMessage._id);
-            }
-            const refreshedConversation = await saveConversation(
-              req,
-              conversationId,
-              agentId,
-              agent,
-              messageIds,
-              true,
-            );
-            if (refreshedConversation?.conversationId !== conversationId) {
-              throw new Error('Conversation was deleted before message references were stored');
-            }
-
-            logger.debug(
-              `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
-            );
-          } catch (saveError) {
-            logger.error('[Responses API] Error saving response:', getSafeErrorMetadata(saveError));
-            // Don't fail the request if saving fails
-          }
+          await persistResponse({
+            req,
+            conversationId,
+            agentId,
+            agent,
+            previousResponse,
+            inputMessages,
+            parentMessageId,
+            responseId,
+            response,
+            visibleOutputTokens: aggregator.usage.outputTokens,
+          });
         }
 
         res.json(response);
