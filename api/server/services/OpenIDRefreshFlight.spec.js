@@ -589,6 +589,41 @@ describe('OpenIDRefreshFlight', () => {
     expect(db.findOpenIDRefreshFlight).toHaveBeenCalledTimes(4);
   });
 
+  it.each(['before-read', 'during-read', 'during-delay'])(
+    'cancels publication polling %s without another database read',
+    async (phase) => {
+      const controller = new AbortController();
+      const reason = new Error('request stopped');
+      let finishRead;
+      db.findOpenIDRefreshFlight.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve;
+          }),
+      );
+      if (phase === 'before-read') controller.abort(reason);
+      const waiting = waitForOpenIDRefreshFlight({
+        key: 'publication-key',
+        requirePublication: true,
+        timeoutMs: 10000,
+        intervalMs: 5000,
+        signal: controller.signal,
+      });
+      const outcome = waiting.then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      if (phase !== 'before-read') {
+        if (phase === 'during-read') controller.abort(reason);
+        finishRead(null);
+        await new Promise((resolve) => setImmediate(resolve));
+        if (phase === 'during-delay') controller.abort(reason);
+      }
+      await expect(outcome).resolves.toEqual({ error: reason });
+      expect(db.findOpenIDRefreshFlight).toHaveBeenCalledTimes(phase === 'before-read' ? 0 : 1);
+    },
+  );
+
   it('bounds the publication wait without returning an unvalidated result', async () => {
     db.findOpenIDRefreshFlight.mockResolvedValue({
       status: 'completed',

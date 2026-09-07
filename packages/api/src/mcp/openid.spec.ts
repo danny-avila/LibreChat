@@ -16,6 +16,27 @@ const directBearerConfig = (
 });
 
 describe('direct OpenID bearer recovery', () => {
+  it('forwards cancellation to live refresh and preserves the caller abort reason', async () => {
+    const controller = new AbortController();
+    const reason = new Error('request stopped');
+    const upstreamTokenProvider = jest.fn(async () => {
+      controller.abort(reason);
+      throw reason;
+    });
+    await expect(
+      resolveDirectOpenIDBearerConfig({
+        config: directBearerConfig('yaml'),
+        upstreamTokenProvider,
+        forceRefresh: true,
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
+    expect(upstreamTokenProvider).toHaveBeenCalledWith({
+      forceRefresh: true,
+      signal: controller.signal,
+    });
+  });
+
   it.each(['basic', 'bearer', 'custom'] as const)(
     'gives an admin %s Authorization key precedence',
     async (authorization_type) => {

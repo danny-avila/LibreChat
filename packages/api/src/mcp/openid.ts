@@ -133,12 +133,15 @@ export async function resolveDirectOpenIDBearerConfig({
   upstreamTokenProvider,
   forceRefresh = false,
   resolvedConfig,
+  signal,
 }: {
   config: DirectBearerConfig;
   upstreamTokenProvider?: UpstreamTokenProvider;
   forceRefresh?: boolean;
   resolvedConfig?: MCPOptions;
+  signal?: AbortSignal;
 }): Promise<DirectBearerConfig> {
+  signal?.throwIfAborted();
   if (
     config.obo != null ||
     apiKeyOwnsAuthorization(config) ||
@@ -176,8 +179,10 @@ export async function resolveDirectOpenIDBearerConfig({
 
   let tokens;
   try {
-    tokens = await upstreamTokenProvider({ forceRefresh });
+    tokens = await upstreamTokenProvider({ forceRefresh, ...(signal ? { signal } : {}) });
+    signal?.throwIfAborted();
   } catch (error) {
+    signal?.throwIfAborted();
     if (isAbortError(error)) {
       throw error;
     }

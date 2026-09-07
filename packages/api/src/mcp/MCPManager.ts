@@ -816,6 +816,7 @@ Please follow these instructions when using tools from the respective MCP server
           config: serverConfig,
           upstreamTokenProvider,
           forceRefresh: true,
+          signal: recoverySignal,
         });
         directBearerRecoveryState.resolvedConfig = refreshedConfig;
         recoverySignal.throwIfAborted();
@@ -1178,6 +1179,7 @@ Please follow these instructions when using tools from the respective MCP server
           config: graphProcessedConfig,
           upstreamTokenProvider,
           resolvedConfig: directBearerRecoveryState.resolvedConfig,
+          signal: options?.signal,
         });
         const currentOptions = processMCPEnv({
           user,

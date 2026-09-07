@@ -167,6 +167,7 @@ export class MCPConnectionFactory {
         config: directBearerSourceConfig,
         upstreamTokenProvider: oauth?.upstreamTokenProvider,
         forceRefresh: true,
+        signal: oauth?.signal,
       });
       directBearerRecoveryState.resolvedConfig = refreshedConfig;
       try {
@@ -237,6 +238,7 @@ export class MCPConnectionFactory {
       config: directBearerSourceConfig,
       upstreamTokenProvider: options?.upstreamTokenProvider,
       forceRefresh: true,
+      signal: options?.signal,
     });
     const refreshed = await discover({ ...basic, serverConfig: refreshedConfig });
     if (this.hasDiscoveryAuthenticationRejection(refreshed)) {
@@ -275,6 +277,7 @@ export class MCPConnectionFactory {
     const bearerConfig = await resolveDirectOpenIDBearerConfig({
       config: basic.serverConfig,
       upstreamTokenProvider: options?.upstreamTokenProvider,
+      signal: options?.signal,
     });
     if (basic.directBearerRecoveryState && usesDirectOpenIDBearerRecovery(basic.serverConfig)) {
       basic.directBearerRecoveryState.resolvedConfig = bearerConfig;

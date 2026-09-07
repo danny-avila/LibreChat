@@ -129,6 +129,7 @@ export interface OpenIDRefreshFlightService {
     timeoutMs?: number;
     intervalMs?: number;
     requirePublication?: boolean;
+    signal?: AbortSignal;
   }) => Promise<TokenResult | null>;
   withOpenIDRefreshFlightLease: <T>(args: {
     key?: string | null;
@@ -620,18 +621,24 @@ export function createOpenIDRefreshFlightService({
     timeoutMs,
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
     requirePublication = false,
+    signal,
   }: {
     key?: string | null;
     timeoutMs?: number;
     intervalMs?: number;
     requirePublication?: boolean;
+    signal?: AbortSignal;
   }): Promise<TokenResult | null> {
+    signal?.throwIfAborted();
     if (!key) return null;
     const followRenewals = timeoutMs == null && !requirePublication;
     let deadline = Date.now() + (timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);
     while (Date.now() <= deadline) {
+      signal?.throwIfAborted();
       const flight = await db.findOpenIDRefreshFlight({ key });
+      signal?.throwIfAborted();
       const completed = await readCompletedFlight(flight);
+      signal?.throwIfAborted();
       const awaitingPublication = requirePublication && completed?.__deferredPublication;
       if (completed && !awaitingPublication) return completed;
       if (flight?.status === 'completed' && !awaitingPublication) return null;
@@ -639,7 +646,12 @@ export function createOpenIDRefreshFlightService({
       if (followRenewals) {
         deadline = getRenewedWaitDeadline(deadline, flight);
       }
-      await delay(intervalMs);
+      try {
+        await delay(intervalMs, undefined, { signal });
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw error;
+      }
     }
     logger.warn('[OpenIDRefreshFlight] Timed out waiting for refresh flight', { key });
     return null;

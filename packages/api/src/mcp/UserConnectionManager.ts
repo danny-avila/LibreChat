@@ -751,6 +751,7 @@ export abstract class UserConnectionManager {
         (await resolveDirectOpenIDBearerConfig({
           config,
           upstreamTokenProvider,
+          signal,
         }));
       signal?.throwIfAborted();
       if (usesDirectOpenIDBearerRecovery(config)) {
@@ -878,6 +879,7 @@ export abstract class UserConnectionManager {
             config,
             upstreamTokenProvider,
             forceRefresh: true,
+            signal,
           });
           signal?.throwIfAborted();
           connection.removeAllListeners('toolsChanged');

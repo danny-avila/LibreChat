@@ -40,6 +40,7 @@ export type OboTokenResolver = (
  */
 export type UpstreamTokenProvider = (options?: {
   forceRefresh?: boolean;
+  signal?: AbortSignal;
 }) => Promise<OIDCTokens | null>;
 
 export type OboTokenResolutionReason =

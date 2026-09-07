@@ -3162,7 +3162,10 @@ describe('MCPManager', () => {
       } satisfies Partial<MCPAuthenticationRejectedError>);
 
       expect(connection.client.request).toHaveBeenCalledTimes(1);
-      expect(upstreamTokenProvider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+      expect(upstreamTokenProvider).toHaveBeenNthCalledWith(2, {
+        forceRefresh: true,
+        signal: expect.any(AbortSignal),
+      });
       expect(connection.stopReconnecting).toHaveBeenCalled();
       expect(getUserConnection).toHaveBeenLastCalledWith(
         expect.objectContaining({
