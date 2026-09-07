@@ -112,3 +112,46 @@ test('thousands of conversation targets use bounded cleanup commands', async () 
     (await openCheckpointDeletion('owner', undefined, undefined, cfg)).conversationIds(),
   ).toEqual([]);
 });
+
+test('snapshots actor ownership once per bounded thread batch, not once per reference', async () => {
+  const ids = Array.from({ length: 257 }, (_, i) => `thread-${i}`);
+  await mongoose.connection.db!.collection('conversations').insertMany(
+    ids.map((conversationId) => ({
+      user: 'owner',
+      conversationId,
+      subagentThread: {},
+      agentEventActorCleanup: Array.from({ length: 4 }, (_, i) => ({
+        threadId: conversationId,
+        checkpointNs: `event-actor/${i}`,
+        checkpointId: `checkpoint-${i}`,
+      })),
+    })),
+  );
+  const deletion = await openCheckpointDeletion('owner', undefined, 'root', cfg);
+  const find = jest.spyOn(mongoose.mongo.Collection.prototype, 'find');
+  const findOne = jest.spyOn(mongoose.mongo.Collection.prototype, 'findOne');
+  await deletion.remember(ids);
+  const scopeReads = find.mock.calls.filter(
+    (_, index) => find.mock.contexts[index].collectionName === 'cleanup_cp_actor_owners',
+  );
+  expect(scopeReads).toHaveLength(2);
+  expect(scopeReads.map(([filter]) => filter?.threadId.$in.length)).toEqual([256, 1]);
+  expect(
+    findOne.mock.calls.filter(
+      (_, index) => findOne.mock.contexts[index].collectionName === 'cleanup_cp_actor_owners',
+    ),
+  ).toHaveLength(0);
+  expect(deletion.conversationIds()).toHaveLength(257);
+  expect(await mongoose.connection.db!.collection('cleanup_cp_deletions').countDocuments()).toBe(
+    257 * 5,
+  );
+});
+
+test('memory checkpointer conversations can still record and acknowledge deletion intent', async () => {
+  const memory = { ...cfg, type: 'memory' as const };
+  const deletion = await openCheckpointDeletion('owner', undefined, 'thread', memory);
+  await deletion.remember(['thread']);
+  await deletion.cleanup();
+  await deletion.acknowledge();
+  expect(await mongoose.connection.db!.collection('cleanup_cp_deletions').countDocuments()).toBe(0);
+});

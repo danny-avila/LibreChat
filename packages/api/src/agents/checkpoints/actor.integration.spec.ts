@@ -219,6 +219,8 @@ test('owner records survive missing conversations and partial payload deletion f
 test('owner scope cleanup uses bounded batches', async () => {
   const scopes = Array.from({ length: 300 }, (_, i) => ({
     _id: String(i),
+    user: 'owner',
+    revision: String(i),
     owner: checkpointOwnerNamespacePrefix('owner'),
     threadId: 'actor-thread',
     checkpointNs: `event-actor/${i}`,

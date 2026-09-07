@@ -1,5 +1,6 @@
 const {
   createAgentTriggerService,
+  createActorCheckpointMaintenance,
   createAgentContinuationResolver,
   createAgentEventContinueResolver,
   createSubagentCompletionWakeupResolver,
@@ -11,6 +12,18 @@ const {
   GenerationJobManager,
 } = require('@librechat/api');
 const methods = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
+
+const sweepActorCheckpointScopes = createActorCheckpointMaintenance({
+  hasActiveGeneration: async (user, threadId, tenantId) =>
+    (
+      await GenerationJobManager.getCleanupBlockingJobIdsForConversations(
+        user,
+        [threadId],
+        tenantId,
+      )
+    ).length > 0,
+});
 
 const getGenerationAdmissionEvidence = (userId, clientRequestId, streamId, conversationId) =>
   GenerationJobManager.getGenerationAdmissionEvidence(
@@ -44,6 +57,10 @@ const queuedTurnLifecycle = createAgentQueuedTurnLifecycle({
 
 service = createAgentTriggerService({
   methods,
+  sweepActorCheckpointScopes: async () => {
+    const config = await getAppConfig({ baseOnly: true });
+    return sweepActorCheckpointScopes(config?.endpoints?.agents?.checkpointer);
+  },
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
   settleSourceBeforeDeadLetter: queuedTurnLifecycle.settleBeforeDeadLetter,

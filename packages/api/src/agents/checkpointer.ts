@@ -893,13 +893,19 @@ async function buildMongoSaver(
       ),
     );
     try {
-      await buildIndexWithRetry(
-        () =>
-          mongoose.connection
-            .db!.collection(`${resolved.checkpointCollectionName}_actor_owners`)
-            .createIndex({ owner: 1, threadId: 1 }),
-        'actor_checkpoint_owners.owner',
+      const owners = mongoose.connection.db!.collection(
+        `${resolved.checkpointCollectionName}_actor_owners`,
       );
+      await Promise.all([
+        buildIndexWithRetry(
+          () => owners.createIndex({ owner: 1, threadId: 1 }),
+          'actor_checkpoint_owners.owner',
+        ),
+        buildIndexWithRetry(
+          () => owners.createIndex({ threadId: 1 }),
+          'actor_checkpoint_owners.thread',
+        ),
+      ]);
     } catch (error) {
       logger.warn('[checkpointer] Actor ownership index unavailable:', error);
     }

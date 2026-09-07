@@ -6,6 +6,7 @@ export * from './client';
 export * from './config';
 export * from './checkpointer';
 export * from './checkpoints/deletion';
+export * from './checkpoints/maintenance';
 export * from './compatibility';
 export * from './compaction';
 export * from './contact';

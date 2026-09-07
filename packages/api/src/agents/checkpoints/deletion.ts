@@ -3,9 +3,9 @@ import { createHash, randomUUID } from 'crypto';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointReference } from '../checkpointer';
 import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReference } from '../checkpointer';
+import { getActorCheckpointScopes, actorCheckpointScopeId } from './ownership';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { historicalActorReferences } from './pruning';
-import { getActorCheckpointScope } from './ownership';
 import { resolveCheckpointerConfig } from './config';
 
 interface DeletionTarget {
@@ -87,11 +87,10 @@ export async function openCheckpointDeletion(
         }));
         await persist(batch);
         batch = [];
+        const scopes = await getActorCheckpointScopes(threads, cfg);
         for await (const checkpoint of historicalActorReferences(userId, tenantId, threads)) {
-          const scope = await getActorCheckpointScope(
-            checkpoint.threadId,
-            checkpoint.checkpointNs,
-            cfg,
+          const scope = scopes.get(
+            actorCheckpointScopeId(checkpoint.threadId, checkpoint.checkpointNs),
           );
           if (scope != null && scope.owner !== ownerPrefix) {
             continue;
@@ -117,15 +116,19 @@ export async function openCheckpointDeletion(
         rootConversationId == null ? undefined : conversationIds(),
         cfg,
       );
-      for (const target of targets.values()) {
-        if (target.checkpoint != null) {
-          const scope = await getActorCheckpointScope(
-            target.threadId,
-            target.checkpoint.checkpointNs,
-            cfg,
+      const references = [...targets.values()].flatMap((target) => target.checkpoint ?? []);
+      for (let offset = 0; offset < references.length; offset += batchSize) {
+        const batch = references.slice(offset, offset + batchSize);
+        const scopes = await getActorCheckpointScopes(
+          batch.map((reference) => reference.threadId),
+          cfg,
+        );
+        for (const reference of batch) {
+          const scope = scopes.get(
+            actorCheckpointScopeId(reference.threadId, reference.checkpointNs),
           );
           if (scope == null || scope.owner === ownerPrefix) {
-            await deleteAgentEventCheckpointReference(target.checkpoint, cfg);
+            await deleteAgentEventCheckpointReference(reference, cfg);
           }
         }
       }
