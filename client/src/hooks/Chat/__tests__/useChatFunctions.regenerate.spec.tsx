@@ -463,3 +463,50 @@ describe('useChatFunctions ask compaction', () => {
     expect(submission.initialResponse?.parentMessageId).toBe('u2');
   });
 });
+
+describe('useChatFunctions ask compaction and the composer', () => {
+  it('leaves files staged in the composer untouched', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'staged-file',
+        {
+          file_id: 'staged-file',
+          filepath: '/uploads/staged-file',
+          filename: 'next-message.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1')];
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: messages[1],
+        conversation: conversation('conversation-1'),
+        getMessages: () => messages,
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'a1', parentMessageId: 'a1' },
+        { compact: true },
+      );
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.compact).toBe(true);
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.userMessage.parentMessageId).toBe('a1');
+    expect(setFiles).not.toHaveBeenCalled();
+    expect(isPasteSubmitted('staged-file')).toBe(false);
+  });
+});

@@ -3133,7 +3133,64 @@ describe('BaseClient compaction turns', () => {
         preallocatedUserMessageId: 'missing',
         isCompaction: true,
       }),
-    ).rejects.toThrow('Compaction requires an existing branch to summarize');
+    ).rejects.toMatchObject({ statusCode: 404, code: 'COMPACTION_ANCHOR_NOT_FOUND' });
+  });
+
+  test('refuses to compact a branch whose leaf is already a finished compaction', async () => {
+    const compacted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [
+          {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+          },
+        ],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compacted);
+
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 's1',
+        preallocatedUserMessageId: 's1',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'NOTHING_TO_COMPACT',
+      message: JSON.stringify({ type: 'compaction_skipped', reason: 'nothing_to_summarize' }),
+    });
+  });
+
+  test('lets an interrupted compaction be retried', async () => {
+    const interrupted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [{ type: ContentTypes.SUMMARY, content: [], summarizing: true }],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, interrupted);
+
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 's1',
+      preallocatedUserMessageId: 's1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage.messageId).toBe('s1');
   });
 
   test('parents the response onto the leaf and persists only the response', async () => {

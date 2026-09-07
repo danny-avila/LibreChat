@@ -1,6 +1,6 @@
-import { ContentTypes } from 'librechat-data-provider';
 import { renderHook, act } from '@testing-library/react';
-import type { TMessage, TSubmission } from 'librechat-data-provider';
+import { ContentTypes } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import useCompactConversation from '../useCompactConversation';
 
 const mockAsk = jest.fn();
@@ -10,7 +10,6 @@ let mockContext: {
   conversation: { conversationId: string; endpoint: string } | null;
 };
 let mockLatestMessage: TMessage | null;
-let mockSubmission: TSubmission | null;
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({ ...mockContext, ask: mockAsk }),
@@ -18,13 +17,15 @@ jest.mock('~/Providers', () => ({
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
   useLatestMessage: () => mockLatestMessage,
 }));
-jest.mock('recoil', () => ({
-  useRecoilValue: () => mockSubmission,
-}));
-jest.mock('~/store', () => ({
-  __esModule: true,
-  default: { submissionByIndex: () => 'submission' },
-}));
+
+type ContentPart = NonNullable<TMessage['content']>[number];
+
+const summaryPart = (overrides: Record<string, unknown> = {}): ContentPart =>
+  ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+    ...overrides,
+  }) as ContentPart;
 
 const leaf = (overrides: Partial<TMessage> = {}): TMessage =>
   ({
@@ -45,17 +46,18 @@ describe('useCompactConversation', () => {
       conversation: { conversationId: 'convo-1', endpoint: 'openAI' },
     };
     mockLatestMessage = leaf();
-    mockSubmission = null;
   });
 
-  it('submits a compaction hung off the branch leaf', () => {
+  it('submits a compaction anchored on the leaf itself', () => {
     const { result } = renderHook(() => useCompactConversation());
 
     expect(result.current.canCompact).toBe(true);
     act(() => result.current.compact());
 
+    /** The server compacts up to `parentMessageId`, so it must be the leaf,
+     *  not the leaf's own parent, or the latest reply is left out. */
     expect(mockAsk).toHaveBeenCalledWith(
-      { text: '', conversationId: 'convo-1', messageId: 'a1', parentMessageId: 'u1' },
+      { text: '', conversationId: 'convo-1', messageId: 'a1', parentMessageId: 'a1' },
       { compact: true },
     );
   });
@@ -68,14 +70,8 @@ describe('useCompactConversation', () => {
     ['a submission in flight', () => (mockContext.isSubmitting = true)],
     ['no leaf', () => (mockLatestMessage = null)],
     [
-      'a leaf that is already a bare summary',
-      () =>
-        (mockLatestMessage = leaf({
-          text: '',
-          content: [
-            { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: 's' }] },
-          ],
-        })),
+      'a leaf that is already a finished compaction',
+      () => (mockLatestMessage = leaf({ text: '', content: [summaryPart()] })),
     ],
   ])('cannot compact with %s', (_label, arrange) => {
     arrange();
@@ -86,12 +82,34 @@ describe('useCompactConversation', () => {
     expect(mockAsk).not.toHaveBeenCalled();
   });
 
-  it('reports compacting only for its own submission', () => {
-    mockContext.isSubmitting = true;
-    mockSubmission = { compact: true } as TSubmission;
-    expect(renderHook(() => useCompactConversation()).result.current.isCompacting).toBe(true);
+  it.each([
+    ['still streaming', summaryPart({ summarizing: true })],
+    ['failed', summaryPart({ failed: true })],
+  ])('lets an interrupted compaction (summary %s) be retried', (_label, part) => {
+    mockLatestMessage = leaf({ text: '', content: [part] });
+    const { result } = renderHook(() => useCompactConversation());
 
-    mockSubmission = { compact: undefined } as TSubmission;
-    expect(renderHook(() => useCompactConversation()).result.current.isCompacting).toBe(false);
+    expect(result.current.canCompact).toBe(true);
+  });
+
+  it('reports compacting only for the conversation it submitted, until the turn settles', () => {
+    const hook = renderHook(() => useCompactConversation());
+    act(() => hook.result.current.compact());
+
+    mockContext.isSubmitting = true;
+    hook.rerender();
+    expect(hook.result.current.isCompacting).toBe(true);
+
+    mockContext.conversation = { conversationId: 'convo-2', endpoint: 'openAI' };
+    hook.rerender();
+    expect(hook.result.current.isCompacting).toBe(false);
+
+    mockContext.conversation = { conversationId: 'convo-1', endpoint: 'openAI' };
+    mockContext.isSubmitting = false;
+    hook.rerender();
+    expect(hook.result.current.isCompacting).toBe(false);
+    mockContext.isSubmitting = true;
+    hook.rerender();
+    expect(hook.result.current.isCompacting).toBe(false);
   });
 });

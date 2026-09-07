@@ -278,9 +278,10 @@ const TokenUsage = memo(function TokenUsage(props: TokenUsageProps) {
       currency={startupConfig.interface?.currency}
       langfuseConnectionAccess={startupConfig.langfuseConnectionAccess === true}
       /** Same `summarization.enabled` switch that governs the automatic detour,
-       *  so an operator who turned summarization off gets no control that
-       *  only ever fails. */
-      compactionEnabled={startupConfig.compactionEnabled !== false}
+       *  advertised positively: a server that does not know the capability
+       *  (a cached config from an older release) must not receive the request,
+       *  which it would run as an empty, billed ordinary turn. */
+      compactionEnabled={startupConfig.compactionEnabled === true}
     />
   );
 });

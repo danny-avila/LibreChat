@@ -582,7 +582,9 @@ export default function useChatFunctions({
         setFiles(new Map());
         setFilesToDelete({});
       }
-    } else if (setFiles && files && files.size > 0 && overrideFiles == null) {
+    } else if (!compact && setFiles && files && files.size > 0 && overrideFiles == null) {
+      /** A compaction attaches nothing and must not consume files the user
+       *  staged in the composer for their next message. */
       // `overrideFiles` (even empty) is authoritative for the submission:
       // auto-drained queued messages must never vacuum up attachments the
       // user has staged in the composer for their NEXT message.

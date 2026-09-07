@@ -2,7 +2,6 @@ const { logger, tenantStorage } = require('@librechat/data-schemas');
 const { v5: uuidv5 } = require('uuid');
 const {
   Constants,
-  ContentTypes,
   EModelEndpoint,
   ErrorTypes,
   ViolationTypes,
@@ -54,7 +53,6 @@ const {
   saveMessage,
   saveConvo,
   getMessages,
-  getMessage,
   getConvo,
   getAgentEventActorSnapshot,
   commitAgentEventActorState,
@@ -194,29 +192,14 @@ function getCompactionRejection(req, { conversationId, parentMessageId }) {
   return null;
 }
 
-/** The leaf's content is a bare summary: the branch is already compacted up to here. */
-function isCompactionSummary(message) {
-  const content = message?.content;
-  return (
-    Array.isArray(content) &&
-    content.length > 0 &&
-    content.every((part) => part?.type === ContentTypes.SUMMARY)
-  );
-}
-
 /**
  * The leaf a compaction hangs off, in the user-message slot the job metadata
- * and the abort path read. Identity only: the row itself stays in history
- * untouched, and the job must not carry the leaf's full content.
+ * and the abort path read before the branch is loaded. Identity only: the
+ * client validates the leaf against the history it loads anyway, and the job
+ * must not carry the leaf's content.
  */
-function projectCompactionAnchor(message) {
-  return {
-    messageId: message.messageId,
-    parentMessageId: message.parentMessageId,
-    conversationId: message.conversationId,
-    isCreatedByUser: message.isCreatedByUser === true,
-    text: '',
-  };
+function projectCompactionAnchor({ messageId, conversationId }) {
+  return { messageId, conversationId, text: '' };
 }
 
 /**
@@ -384,7 +367,16 @@ async function saveErrorTurn(
     let userMessage = null;
     let errorMessageId = null;
     let errorParentMessageId = null;
-    if (isRegenerate) {
+    if (req.body?.compact === true) {
+      /** The anchor is the persisted leaf, never rewritten. Without the
+       *  loaded anchor (the branch failed to load) there is nothing safe
+       *  to parent an error row onto, so nothing is written. */
+      if (liveUserMessage?.messageId == null) {
+        return;
+      }
+      errorMessageId = getPreliminaryResponseMessageId({ messageId: liveUserMessage.messageId });
+      errorParentMessageId = liveUserMessage.messageId;
+    } else if (isRegenerate) {
       errorMessageId =
         typeof responseMessageId === 'string' && responseMessageId.length > 0
           ? responseMessageId
@@ -719,35 +711,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         res,
         rejection.status,
         { code: rejection.code, error: rejection.error },
-        generationProtocolVersion,
-      );
-    }
-  }
-  const compactionAnchor = isCompaction
-    ? await getMessage({ user: userId, messageId: parentMessageId })
-    : null;
-  if (isCompaction) {
-    if (compactionAnchor == null || compactionAnchor.conversationId !== reqConversationId) {
-      startupTelemetry?.end('rejected');
-      return sendGenerationJson(
-        res,
-        404,
-        {
-          code: 'COMPACTION_ANCHOR_NOT_FOUND',
-          error: 'The message to compact up to was not found.',
-        },
-        generationProtocolVersion,
-      );
-    }
-    if (isCompactionSummary(compactionAnchor)) {
-      startupTelemetry?.end('rejected');
-      return sendGenerationJson(
-        res,
-        409,
-        {
-          code: 'NOTHING_TO_COMPACT',
-          error: 'The conversation is already compacted up to this point.',
-        },
         generationProtocolVersion,
       );
     }
@@ -1582,7 +1545,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const endpointIconURL = getEndpointIconURL(req, endpointOption);
     const responseModel = getAgentResponseModel(req, endpointOption);
     const preliminaryUserMessage = isCompaction
-      ? projectCompactionAnchor(compactionAnchor)
+      ? projectCompactionAnchor({ messageId: parentMessageId, conversationId })
       : getPreliminaryUserMessage(
           { ...req.body, messageId: preallocatedUserMessageId },
           conversationId,
@@ -1635,7 +1598,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }),
           }),
         }),
-        ...(isRegenerate && { isRegenerate: true }),
+        /** A compaction is regenerate-shaped for every consumer of the job:
+         *  no user message of its own, the response parented onto an
+         *  existing message. A reconnecting client rebuilds it that way. */
+        ...((isRegenerate || isCompaction) && { isRegenerate: true }),
         ...(scheduleId
           ? {
               scheduleId,

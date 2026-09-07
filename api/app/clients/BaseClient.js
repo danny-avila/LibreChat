@@ -24,7 +24,9 @@ const {
   Constants,
   FileSources,
   Tools,
+  ErrorTypes,
   ContentTypes,
+  isCompactedLeaf,
   excludedKeys,
   EModelEndpoint,
   mergeFileConfig,
@@ -513,7 +515,22 @@ class BaseClient {
   getCompactionAnchor(parentMessageId) {
     const leaf = this.currentMessages[this.currentMessages.length - 1];
     if (leaf == null || leaf.messageId !== parentMessageId) {
-      throw new Error('Compaction requires an existing branch to summarize');
+      throw Object.assign(new Error('The message to compact up to was not found.'), {
+        statusCode: 404,
+        code: 'COMPACTION_ANCHOR_NOT_FOUND',
+      });
+    }
+    if (isCompactedLeaf(leaf)) {
+      /** Typed so a stream that already started renders localized copy. */
+      throw Object.assign(
+        new Error(
+          JSON.stringify({
+            type: ErrorTypes.COMPACTION_SKIPPED,
+            reason: 'nothing_to_summarize',
+          }),
+        ),
+        { statusCode: 409, code: 'NOTHING_TO_COMPACT' },
+      );
     }
     return {
       messageId: leaf.messageId,
