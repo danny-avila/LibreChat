@@ -1,6 +1,7 @@
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { ValidationError, MongoServerError, CustomError } from '~/types';
+import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { ErrorController, createCustomError } from './error';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
@@ -249,6 +250,23 @@ describe('ErrorController', () => {
 
       expect(mockRes.status).not.toHaveBeenCalledWith(500);
       expect(mockRes.send).not.toHaveBeenCalledWith('An unknown error occurred.');
+    });
+  });
+
+  describe('MCPAuthenticationRejectedError handling', () => {
+    it('projects the transport-neutral outcome into an actionable HTTP response', () => {
+      const error = new MCPAuthenticationRejectedError('private-mcp', true);
+
+      ErrorController(error, mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(mockRes.send).toHaveBeenCalledWith({
+        error: 'invalid_token',
+        code: 'MCP_AUTHENTICATION_REJECTED',
+        message: error.message,
+        retryable: true,
+        connectionRefreshed: true,
+      });
     });
   });
 

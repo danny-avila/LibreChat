@@ -24,8 +24,9 @@ import {
   resolveOboToken,
 } from '~/mcp/oauth';
 import { createDeadlineAbortSignal, isClientRejectionMessage, isOAuthServer } from './utils';
+import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
+import { isOAuthAuthenticationError, MCPAuthenticationRejectedError } from './errors';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
-import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -152,13 +153,46 @@ export class MCPConnectionFactory {
       logger.debug('[MCP] [Discovery] Cancelled or out of budget before discovery began');
       return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
     }
-    const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
-    if (options != null && 'useOAuth' in options) {
-      const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
+    const discover = async (candidate: t.BasicConnectionOptions): Promise<ToolDiscoveryResult> => {
+      const prepared = await this.prepareBasicConnectionOptions(candidate, options);
+      if (options != null && 'useOAuth' in options) {
+        const factory = new this(prepared, { ...options, returnOnOAuth: true });
+        return factory.discoverToolsInternal();
+      }
+      const factory = new this(prepared, options);
       return factory.discoverToolsInternal();
+    };
+
+    const directBearerRecovery = usesDirectOpenIDBearerRecovery(basic.serverConfig);
+    const initial = await discover(basic);
+    if (!directBearerRecovery || !this.hasDiscoveryAuthenticationRejection(initial)) {
+      return initial;
     }
-    const factory = new this(preparedBasic, options);
-    return factory.discoverToolsInternal();
+
+    if (initial.connection) {
+      await initial.connection.dispose().catch(() => undefined);
+    }
+    const refreshedConfig = await resolveDirectOpenIDBearerConfig({
+      config: basic.serverConfig,
+      upstreamTokenProvider: options?.upstreamTokenProvider,
+      forceRefresh: true,
+    });
+    const refreshed = await discover({ ...basic, serverConfig: refreshedConfig });
+    if (this.hasDiscoveryAuthenticationRejection(refreshed)) {
+      if (refreshed.connection) {
+        await refreshed.connection.dispose().catch(() => undefined);
+      }
+      throw new MCPAuthenticationRejectedError(
+        basic.serverName,
+        false,
+        refreshed.connection?.getLastToolListAuthenticationError(),
+      );
+    }
+    return refreshed;
+  }
+
+  private static hasDiscoveryAuthenticationRejection(result: ToolDiscoveryResult): boolean {
+    return result.oauthRequired || result.connection?.getLastToolListAuthenticationError() != null;
   }
 
   /**
@@ -170,19 +204,36 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<t.BasicConnectionOptions> {
+    const bearerConfig = await resolveDirectOpenIDBearerConfig({
+      config: basic.serverConfig,
+      upstreamTokenProvider: options?.upstreamTokenProvider,
+    });
+    const preparedBasic =
+      bearerConfig === basic.serverConfig
+        ? basic
+        : {
+            ...basic,
+            serverConfig: bearerConfig,
+            serverDefinition: basic.serverDefinition ?? basic.serverConfig,
+          };
+
     if (basic.dbSourced || !options?.graphTokenResolver) {
-      return basic;
+      return preparedBasic;
     }
 
-    const serverConfig = await preProcessGraphTokens(basic.serverConfig, {
+    const serverConfig = await preProcessGraphTokens(preparedBasic.serverConfig, {
       user: options.user,
       graphTokenResolver: options.graphTokenResolver,
       scopes: process.env.GRAPH_API_SCOPES,
     });
 
-    return serverConfig === basic.serverConfig
-      ? basic
-      : { ...basic, serverConfig, serverDefinition: basic.serverDefinition ?? basic.serverConfig };
+    return serverConfig === preparedBasic.serverConfig
+      ? preparedBasic
+      : {
+          ...preparedBasic,
+          serverConfig,
+          serverDefinition: preparedBasic.serverDefinition ?? basic.serverConfig,
+        };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -441,6 +492,7 @@ export class MCPConnectionFactory {
     this.logPrefix = options?.user ? `[MCP][User: ${options.user.id}]` : '[MCP]';
 
     this.user = options?.user;
+    this.upstreamTokenProvider = options?.upstreamTokenProvider;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
@@ -452,7 +504,6 @@ export class MCPConnectionFactory {
       this.returnOnOAuth = options.returnOnOAuth;
       this.oboTokenResolver = options.oboTokenResolver;
       this.oboTrustChecker = options.oboTrustChecker;
-      this.upstreamTokenProvider = options.upstreamTokenProvider;
       this.oboIdentityContext = options.oboIdentityContext;
     } else {
       this.useOAuth = false;

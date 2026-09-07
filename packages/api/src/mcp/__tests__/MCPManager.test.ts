@@ -9,6 +9,7 @@ import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import * as toolsChanged from '~/mcp/toolsChanged';
 import { MCPConnection } from '~/mcp/connection';
@@ -3054,6 +3055,70 @@ describe('MCPManager', () => {
 
       expect(mockResolveOboToken).toHaveBeenCalledTimes(1);
       expect((failingConnection.client.request as jest.Mock).mock.calls).toHaveLength(1);
+    });
+  });
+
+  describe('direct OpenID bearer recovery', () => {
+    const serverName = 'direct-bearer-server';
+    const serverConfig = {
+      type: 'streamable-http' as const,
+      url: 'https://api.example.com/mcp',
+      source: 'yaml' as const,
+      openidBearerRecovery: true,
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+    };
+    const user = {
+      id: 'direct-user',
+      provider: 'openid',
+      openidId: 'direct-subject',
+    } as IUser;
+
+    it('refreshes and replaces the connection without replaying a rejected tool call', async () => {
+      const rejection = new Error('HTTP 401 Unauthorized');
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        stopReconnecting: jest.fn(),
+        isOAuthAuthenticationError: jest.fn().mockReturnValue(true),
+        timeout: 30000,
+        client: { request: jest.fn().mockRejectedValue(rejection) },
+      } as unknown as MCPConnection;
+      const replacement = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const upstreamTokenProvider = jest
+        .fn()
+        .mockResolvedValueOnce({ access_token: 'current-token' })
+        .mockResolvedValueOnce({ access_token: 'refreshed-token' });
+
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(async (config) => config);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnection = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValueOnce(connection)
+        .mockResolvedValueOnce(replacement);
+
+      await expect(
+        manager.callTool({
+          user,
+          serverName,
+          toolName: 'mutating_tool',
+          provider: 'openai',
+          flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+          upstreamTokenProvider,
+        }),
+      ).rejects.toMatchObject({
+        code: 'MCP_AUTHENTICATION_REJECTED',
+        connectionRefreshed: true,
+      } satisfies Partial<MCPAuthenticationRejectedError>);
+
+      expect(connection.client.request).toHaveBeenCalledTimes(1);
+      expect(upstreamTokenProvider).toHaveBeenNthCalledWith(2, { forceRefresh: true });
+      expect(connection.stopReconnecting).toHaveBeenCalled();
+      expect(getUserConnection).toHaveBeenLastCalledWith(
+        expect.objectContaining({ forceNew: true, serverConfig }),
+      );
     });
   });
 

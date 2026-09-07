@@ -16,9 +16,11 @@ import {
   notifyMCPToolsChanged,
   renewMCPToolsChangedGeneration,
 } from '~/mcp/toolsChanged';
+import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from '~/mcp/openid';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from '~/mcp/oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
@@ -482,6 +484,7 @@ export abstract class UserConnectionManager {
       graphTokenResolver,
       ephemeralConnection = false,
       serverConfig: providedConfig,
+      directBearerRecoveryAttempted = false,
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
@@ -632,8 +635,12 @@ export abstract class UserConnectionManager {
     logger.info(`[MCP][User: ${userId}] Establishing new connection`);
 
     try {
-      const runtimeConfig = await this.applyRuntimeOAuthDetection({
+      const bearerConfig = await resolveDirectOpenIDBearerConfig({
         config,
+        upstreamTokenProvider,
+      });
+      const runtimeConfig = await this.applyRuntimeOAuthDetection({
+        config: bearerConfig,
         user,
         customUserVars,
         requestBody,
@@ -699,6 +706,7 @@ export abstract class UserConnectionManager {
           customUserVars,
           requestBody,
           graphTokenResolver,
+          upstreamTokenProvider,
           connectionTimeout,
         };
       }
@@ -731,6 +739,55 @@ export abstract class UserConnectionManager {
 
       if (!ephemeralConnection) {
         await connection.refreshToolList();
+        const toolListAuthenticationError = connection.getLastToolListAuthenticationError?.();
+        if (
+          toolListAuthenticationError &&
+          usesDirectOpenIDBearerRecovery(config) &&
+          user &&
+          upstreamTokenProvider
+        ) {
+          if (directBearerRecoveryAttempted) {
+            throw new MCPAuthenticationRejectedError(
+              serverName,
+              false,
+              toolListAuthenticationError,
+            );
+          }
+          await resolveDirectOpenIDBearerConfig({
+            config,
+            upstreamTokenProvider,
+            forceRefresh: true,
+          });
+          connection.removeAllListeners('toolsChanged');
+          await connection.dispose();
+          return this.createUserConnectionInternal(
+            {
+              serverName,
+              forceNew: true,
+              user,
+              flowManager,
+              customUserVars,
+              requestBody,
+              tokenMethods,
+              oauthStart,
+              oauthEnd,
+              oboTokenResolver,
+              oboTrustChecker,
+              upstreamTokenProvider,
+              oboIdentityContext,
+              signal,
+              returnOnOAuth,
+              connectionTimeout,
+              graphTokenResolver,
+              ephemeralConnection,
+              serverConfig: config,
+              directBearerRecoveryAttempted: true,
+            },
+            userId,
+            clearCooldown,
+            creationGuard,
+          );
+        }
         this.assertCreationNotCancelled(creationGuard, userId, serverName);
         if (!this.userConnections.has(userId)) {
           this.userConnections.set(userId, new Map());

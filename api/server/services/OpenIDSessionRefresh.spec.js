@@ -2183,6 +2183,33 @@ describe('OpenIDSessionRefresh', () => {
 
       await expect(provider()).rejects.toThrow('invalid_grant');
     });
+
+    it('forces a refresh when the caller reports that a live access token was rejected', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const sessionTokens = {
+        accessToken: makeJwt(farFutureExp),
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-force',
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'forced-access-token',
+        expires_in: 3600,
+      });
+      const provider = createOpenIDSessionTokenProvider({
+        req: buildReq(sessionTokens),
+        user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
+      });
+
+      const result = await provider({ forceRefresh: true });
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+        expect.anything(),
+        'rt-force',
+        expect.anything(),
+      );
+      expect(result.access_token).toBe('forced-access-token');
+    });
   });
 
   /**

@@ -7,6 +7,7 @@ export const MCPErrorCodes = {
   DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
   INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
   OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+  AUTHENTICATION_REJECTED: 'MCP_AUTHENTICATION_REJECTED',
 } as const;
 
 export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
@@ -278,6 +279,33 @@ export class MCPOAuthSecretReentryRequiredError extends Error {
     this.name = 'MCPOAuthSecretReentryRequiredError';
     this.changedFields = changedFields;
     Object.setPrototypeOf(this, MCPOAuthSecretReentryRequiredError.prototype);
+  }
+}
+
+/**
+ * A tool invocation was rejected before LibreChat could know whether the MCP
+ * server executed it. Recovery may prepare a later deliberate retry, but this
+ * outcome never authorizes an automatic replay of the original call.
+ */
+export class MCPAuthenticationRejectedError extends Error {
+  public readonly code: 'MCP_AUTHENTICATION_REJECTED' = MCPErrorCodes.AUTHENTICATION_REJECTED;
+  public readonly statusCode = 401;
+  public readonly retryable: boolean;
+
+  constructor(
+    public readonly serverName: string,
+    public readonly connectionRefreshed: boolean,
+    cause?: unknown,
+  ) {
+    super(
+      connectionRefreshed
+        ? `MCP server "${serverName}" rejected the bearer credential. The connection was refreshed; retry the tool deliberately.`
+        : `MCP server "${serverName}" rejected the bearer credential. Please sign in again.`,
+    );
+    this.name = 'MCPAuthenticationRejectedError';
+    this.retryable = connectionRefreshed;
+    this.cause = cause;
+    Object.setPrototypeOf(this, MCPAuthenticationRejectedError.prototype);
   }
 }
 

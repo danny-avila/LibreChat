@@ -162,7 +162,7 @@ interface CreateOpenIDSessionTokenProviderInput {
 export interface OpenIDSessionRefreshService {
   createOpenIDSessionTokenProvider: (
     input: CreateOpenIDSessionTokenProviderInput,
-  ) => () => Promise<OIDCTokens | null>;
+  ) => (options?: { forceRefresh?: boolean }) => Promise<OIDCTokens | null>;
   refreshOpenIDSession: (
     req: OpenIDRequest,
     res: OpenIDResponse | undefined,
@@ -1986,7 +1986,7 @@ export function createOpenIDSessionRefreshService(
    * @param {import('@librechat/data-schemas').IUser} [args.user]
    * @param {import('@librechat/api').AuthIdentityContext} [args.identityContext]
    * @param {'access_token' | 'id_token'} args.tokenPreference
-   * @returns {() => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
+   * @returns {(options?: { forceRefresh?: boolean }) => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
    */
   function createOpenIDSessionTokenProvider({
     req,
@@ -1994,13 +1994,15 @@ export function createOpenIDSessionRefreshService(
     user,
     tokenPreference,
     identityContext,
-  }: CreateOpenIDSessionTokenProviderInput): () => Promise<OIDCTokens | null> {
+  }: CreateOpenIDSessionTokenProviderInput): (options?: {
+    forceRefresh?: boolean;
+  }) => Promise<OIDCTokens | null> {
     if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
       throw new Error(
         `[OpenIDSessionRefresh] createOpenIDSessionTokenProvider requires tokenPreference 'access_token' or 'id_token', got: ${tokenPreference}`,
       );
     }
-    return async function upstreamTokenProvider() {
+    return async function upstreamTokenProvider(options = {}) {
       if (!isOIDCRefreshApplicable(user)) {
         return null;
       }
@@ -2024,7 +2026,9 @@ export function createOpenIDSessionRefreshService(
           user,
           requestUser: req?.user,
         });
-      return refreshOpenIDSession(req, res, user, tokenPreference, resolvedIdentityContext);
+      return refreshOpenIDSession(req, res, user, tokenPreference, resolvedIdentityContext, {
+        forceRefresh: options.forceRefresh,
+      });
     };
   }
 

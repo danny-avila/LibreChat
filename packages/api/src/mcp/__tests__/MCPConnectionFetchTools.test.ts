@@ -465,6 +465,28 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(listTools).toHaveBeenCalledTimes(1);
     expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Failed to fetch tools'));
   });
+
+  it('preserves an authentication rejection without scheduling a health retry', async () => {
+    const authError = Object.assign(new Error('unauthorized'), { status: 401 });
+    const listTools = jest.fn().mockRejectedValue(authError);
+    const conn = createConnectionWithListTools(listTools);
+    Reflect.set(conn, 'connectionState', 'connected');
+    jest.spyOn(conn.client, 'getServerCapabilities').mockReturnValue({ tools: {} });
+
+    await conn.refreshToolList();
+
+    expect(conn.getLastToolListAuthenticationError()).toBe(authError);
+    expect(Reflect.get(conn, 'toolListRefreshFailures')).toBe(0);
+    expect(Reflect.get(conn, 'toolListRefreshRetryTimer')).toBeNull();
+  });
+
+  it('does not classify an ordinary tools/list failure as authentication rejection', async () => {
+    const conn = createConnectionWithListTools(jest.fn().mockRejectedValue(new Error('boom')));
+
+    await conn.fetchToolsSnapshot();
+
+    expect(conn.getLastToolListAuthenticationError()).toBeUndefined();
+  });
 });
 
 describe('MCPConnection.usesOAuth', () => {

@@ -474,6 +474,12 @@ actions:
 #     url: http://localhost:3001/sse
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   private-openid:
+#     type: streamable-http
+#     url: https://mcp.example.com/mcp
+#     headers:
+#       Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
+#     openidBearerRecovery: true  # opt in to live session refresh and one connection replacement after 401/403
 #   puppeteer:
 #     type: stdio
 #     command: npx

@@ -38,7 +38,9 @@ export type OboTokenResolver = (
  *   - throws: refresh was attempted and the IdP rejected it. Caller wraps as
  *     `session_refresh_failed`.
  */
-export type UpstreamTokenProvider = () => Promise<OIDCTokens | null>;
+export type UpstreamTokenProvider = (options?: {
+  forceRefresh?: boolean;
+}) => Promise<OIDCTokens | null>;
 
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'

@@ -1019,6 +1019,8 @@ export class MCPConnection extends EventEmitter {
   private isReconnecting = false;
   private isInitializing = false;
   private reconnectAttempts = 0;
+  /** Preserves a tools/list bearer rejection without treating it as server-health failure. */
+  private lastToolListAuthenticationError?: unknown;
   /** Set once per transport, so only the first of a conflict's repeat reports escalates. */
   private reportedStandaloneSseConflict = false;
   private agents: Dispatcher[] = [];
@@ -1887,6 +1889,9 @@ export class MCPConnection extends EventEmitter {
       }
       /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
       if (!snapshot.complete || snapshot.orderingUnavailable) {
+        if (this.lastToolListAuthenticationError) {
+          return;
+        }
         this.toolListRefreshFailures++;
         this.scheduleToolListRefreshRetry();
         return;
@@ -2419,6 +2424,7 @@ export class MCPConnection extends EventEmitter {
     deadlineMs?: number,
     signal?: AbortSignal,
   ): Promise<MCPToolsSnapshot> {
+    this.lastToolListAuthenticationError = undefined;
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
@@ -2659,9 +2665,16 @@ export class MCPConnection extends EventEmitter {
         signal,
       });
     } catch (error) {
+      if (isOAuthAuthenticationError(error)) {
+        this.lastToolListAuthenticationError = error;
+      }
       this.emitError(error, 'Failed to fetch tools');
       return null;
     }
+  }
+
+  public getLastToolListAuthenticationError(): unknown {
+    return this.lastToolListAuthenticationError;
   }
 
   async fetchPrompts(): Promise<t.MCPPrompt[]> {

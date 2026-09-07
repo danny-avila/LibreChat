@@ -42,6 +42,7 @@ const {
   isOAuthServer,
   isAbortError,
   OpenIDReauthRequiredError,
+  MCPAuthenticationRejectedError,
 } = require('@librechat/api');
 const {
   Time,
@@ -1326,7 +1327,10 @@ function createToolInstance({
       }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
-      if (error instanceof OpenIDReauthRequiredError) {
+      if (
+        error instanceof OpenIDReauthRequiredError ||
+        error instanceof MCPAuthenticationRejectedError
+      ) {
         throw error;
       }
 
