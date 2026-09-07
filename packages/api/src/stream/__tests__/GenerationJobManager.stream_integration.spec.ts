@@ -1920,6 +1920,124 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('does not overwrite recovery settlement when the overflow owner finishes flushing', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      manager.initialize();
+      const streamId = `overflow-finalize-settlement-race-${Date.now()}`;
+      const job = await manager.createJob(streamId, 'user-1');
+      const originalFinalize = jobStore.finalizeEarlyBufferOverflow.bind(jobStore);
+      jest
+        .spyOn(jobStore, 'finalizeEarlyBufferOverflow')
+        .mockImplementationOnce(async (id, createdAt, overflowId, finalizedOverflow) => {
+          await jobStore.settleEarlyBufferRecovery(id, createdAt, overflowId, {
+            recoveryMethod: 'snapshot',
+            recoveryOutcome: 'failed',
+            recoveryCompletedAt: Date.now(),
+            recoveryFailureReason: 'overflow_marker_persistence_failed',
+          });
+          return originalFinalize(id, createdAt, overflowId, finalizedOverflow);
+        });
+
+      await expect(forceEarlyBufferOverflow(manager, streamId)).rejects.toThrow(
+        GENERATION_RECOVERY_FAILED_ERROR,
+      );
+      expect((await jobStore.getJob(streamId))?.earlyBufferOverflow).toMatchObject({
+        recoveryOutcome: 'failed',
+        recoveryFailureReason: 'overflow_marker_persistence_failed',
+      });
+      expect((await jobStore.getJob(streamId))?.createdAt).toBe(job.createdAt);
+
+      await manager.destroy();
+    });
+
+    test('coalesces pending overflow waiters and backs off their store read', async () => {
+      jest.useFakeTimers();
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({ jobStore, eventTransport: new InMemoryEventTransport(), isRedis: false });
+      manager.initialize();
+      const streamId = `overflow-shared-waiter-${Date.now()}`;
+      const job = await manager.createJob(streamId, 'user-1');
+      const pendingOverflow = {
+        id: 'pending-overflow',
+        occurredAt: Date.now(),
+        durableEvents: 1,
+        droppedEvents: 1,
+        droppedBytes: 1,
+        persistencePending: true,
+      };
+      await jobStore.updateJob(streamId, { earlyBufferOverflow: pendingOverflow }, job.createdAt);
+      const pendingJob = (await jobStore.getJob(streamId))!;
+      const getJob = jest.spyOn(jobStore, 'getJob');
+      const waitForFinalized = (
+        manager as unknown as {
+          waitForFinalizedEarlyBufferOverflow: (
+            id: string,
+            data: typeof pendingJob,
+          ) => Promise<typeof pendingJob | null>;
+        }
+      ).waitForFinalizedEarlyBufferOverflow.bind(manager);
+
+      const first = waitForFinalized(streamId, pendingJob);
+      const second = waitForFinalized(streamId, pendingJob);
+      await jest.advanceTimersByTimeAsync(99);
+      expect(getJob).not.toHaveBeenCalled();
+      await jobStore.updateJob(
+        streamId,
+        { earlyBufferOverflow: { ...pendingOverflow, persistencePending: false } },
+        job.createdAt,
+      );
+      await jest.advanceTimersByTimeAsync(1);
+
+      await expect(Promise.all([first, second])).resolves.toEqual([
+        expect.objectContaining({
+          earlyBufferOverflow: expect.objectContaining({ persistencePending: false }),
+        }),
+        expect.objectContaining({
+          earlyBufferOverflow: expect.objectContaining({ persistencePending: false }),
+        }),
+      ]);
+      expect(getJob).toHaveBeenCalledTimes(1);
+
+      await manager.destroy();
+      jest.useRealTimers();
+    });
+
+    test('persists detached Redis-mode chunks before publishing them', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const eventTransport = new InMemoryEventTransport();
+      let releaseAppend!: (appended: boolean) => void;
+      const pendingAppend = new Promise<boolean>((resolve) => {
+        releaseAppend = resolve;
+      });
+      jest.spyOn(jobStore, 'appendChunk').mockReturnValueOnce(pendingAppend);
+      const publish = jest.spyOn(eventTransport, 'emitChunk');
+      const manager = new GenerationJobManagerClass();
+      manager.configure({ jobStore, eventTransport, isRedis: true });
+      manager.initialize();
+      const streamId = `detached-append-before-publish-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const emission = manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: { content: { type: 'text', text: 'durable first' } } },
+      });
+      await Promise.resolve();
+      expect(publish).not.toHaveBeenCalled();
+      releaseAppend(true);
+      await emission;
+      expect(publish).toHaveBeenCalledTimes(1);
+
+      await manager.destroy();
+    });
+
     test('validates an in-memory HITL snapshot with the event frontier', async () => {
       const manager = createInMemoryManager();
       const streamId = `overflow-hitl-memory-${Date.now()}`;

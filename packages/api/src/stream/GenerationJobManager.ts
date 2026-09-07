@@ -777,6 +777,9 @@ class GenerationJobManagerClass {
   /** Serializes whole-array run-step snapshots so an older save cannot overwrite completion. */
   private runStepWriteQueues = new Map<string, Promise<void>>();
 
+  /** Coalesces reconnects waiting on the same owner-side overflow flush. */
+  private earlyBufferOverflowWaiters = new Map<string, Promise<SerializableJobData | null>>();
+
   /** Partial-response and disconnect-state writes still draining during shutdown. */
   private subscriberCleanupPromises = new Set<Promise<void>>();
 
@@ -929,6 +932,7 @@ class GenerationJobManagerClass {
       this.replayEventWriteQueues.clear();
       this.tokenUsageWriteQueues.clear();
       this.runStepWriteQueues.clear();
+      this.earlyBufferOverflowWaiters.clear();
     }
 
     this.ownedJobs.clear();
@@ -5529,9 +5533,10 @@ class GenerationJobManagerClass {
     );
     try {
       /** Publish an admission fence before releasing the local recovery copy.
-       * A replica that observes this marker waits for the finalized frontier;
-       * an attachment that races before it remains covered by normal live
-       * publication because this overflowing event has not been published yet. */
+       * Detached Redis events are durably appended before publication below,
+       * so a replica that races before this write includes every earlier
+       * publication in its snapshot. A replica that observes this marker waits
+       * for the finalized frontier before it can activate. */
       await this.jobStore.updateJob(streamId, { earlyBufferOverflow: overflow }, runtime.createdAt);
       await this.jobStore.flushPendingAppends?.(streamId);
       const frontierJob = await this.jobStore.getJob(streamId);
@@ -5545,23 +5550,41 @@ class GenerationJobManagerClass {
           : runtime.emissionSequence,
         persistencePending: false,
       };
-      await this.jobStore.updateJob(
+      const finalized = await this.jobStore.finalizeEarlyBufferOverflow(
         streamId,
-        { earlyBufferOverflow: finalizedOverflow },
         runtime.createdAt,
+        overflow.id,
+        finalizedOverflow,
       );
       const persistedJob = await this.jobStore.getJob(streamId);
       if (
+        !finalized ||
         persistedJob?.createdAt !== runtime.createdAt ||
         persistedJob.earlyBufferOverflow?.id !== overflow.id ||
         persistedJob.earlyBufferOverflow.persistencePending === true
       ) {
+        if (
+          persistedJob?.createdAt === runtime.createdAt &&
+          persistedJob.earlyBufferOverflow?.id === overflow.id &&
+          persistedJob.earlyBufferOverflow.recoveryOutcome != null
+        ) {
+          runtime.earlyBufferOverflow = persistedJob.earlyBufferOverflow;
+          this.resetEarlyEventBuffer(runtime);
+          throw new Error(GENERATION_RECOVERY_FAILED_ERROR);
+        }
         throw new Error('Early buffer overflow marker was not durably persisted');
       }
       runtime.earlyBufferOverflow = finalizedOverflow;
       this.resetEarlyEventBuffer(runtime);
     } catch (err) {
       this.resetEarlyEventBuffer(runtime);
+      if (
+        err instanceof Error &&
+        err.message === GENERATION_RECOVERY_FAILED_ERROR &&
+        runtime.earlyBufferOverflow?.recoveryOutcome != null
+      ) {
+        throw err;
+      }
       logger.error('[GenerationJobManager] Failed to persist early buffer overflow identity', {
         recoveryId: overflow.id,
         store: this.storeLabel,
@@ -5688,18 +5711,37 @@ class GenerationJobManagerClass {
       return jobData;
     }
 
-    const deadline = Date.now() + EARLY_BUFFER_OVERFLOW_PERSISTENCE_TIMEOUT_MS;
-    let current: SerializableJobData | null = jobData;
-    while (
-      current?.createdAt === jobData.createdAt &&
-      current.earlyBufferOverflow?.id === overflow.id &&
-      current.earlyBufferOverflow.persistencePending === true &&
-      Date.now() < deadline
-    ) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 25));
-      current = await this.jobStore.getJob(streamId);
+    const waiterKey = `${streamId}:${jobData.createdAt}:${overflow.id}`;
+    const existing = this.earlyBufferOverflowWaiters.get(waiterKey);
+    if (existing) {
+      return existing;
     }
-    return current;
+
+    const waiter = (async (): Promise<SerializableJobData | null> => {
+      const deadline = Date.now() + EARLY_BUFFER_OVERFLOW_PERSISTENCE_TIMEOUT_MS;
+      let delayMs = 100;
+      let current: SerializableJobData | null = jobData;
+      while (
+        current?.createdAt === jobData.createdAt &&
+        current.earlyBufferOverflow?.id === overflow.id &&
+        current.earlyBufferOverflow.persistencePending === true &&
+        Date.now() < deadline
+      ) {
+        const remainingMs = deadline - Date.now();
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(delayMs, remainingMs)));
+        current = await this.jobStore.getJob(streamId);
+        delayMs = Math.min(delayMs * 2, 1000);
+      }
+      return current;
+    })();
+    this.earlyBufferOverflowWaiters.set(waiterKey, waiter);
+    try {
+      return await waiter;
+    } finally {
+      if (this.earlyBufferOverflowWaiters.get(waiterKey) === waiter) {
+        this.earlyBufferOverflowWaiters.delete(waiterKey);
+      }
+    }
   }
 
   private async settleEarlyBufferRecovery(
@@ -6678,6 +6720,8 @@ class GenerationJobManagerClass {
       options?.deliveredSteer == null &&
       isCoalescableDeltaEvent(eventType);
 
+    const detached = !runtime.hasSubscriber;
+
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
@@ -6693,18 +6737,22 @@ class GenerationJobManagerClass {
           coalescableDelta ? { coalesce: true } : undefined,
         );
 
-        if (options?.durable === true) {
+        /** A detached publication is the cross-replica admission boundary: its
+         * durable record must exist before another replica can observe it and
+         * take a snapshot. This also makes every pre-overflow publication
+         * recoverable before the pending overflow marker is installed. */
+        if (options?.durable === true || detached) {
           let appended: boolean;
           try {
             appended = await appendPromise;
           } catch (error) {
-            if (options.deliveredSteer == null) {
+            if (options?.deliveredSteer == null) {
               this.retireRuntimeAfterDurableFence(streamId, runtime);
             }
             throw error;
           }
           if (appended === false) {
-            if (options.deliveredSteer == null) {
+            if (options?.deliveredSteer == null) {
               this.retireRuntimeAfterDurableFence(streamId, runtime);
             }
             throw new Error(`Durable chunk append was fenced out for ${streamId}`);
@@ -6749,7 +6797,6 @@ class GenerationJobManagerClass {
       }
     }
 
-    const detached = !runtime.hasSubscriber;
     const buffered = detached && (await this.bufferEarlyEvent(streamId, runtime, event));
     if (detached && !this._isRedis) {
       if (runtime.startupTelemetry) {
@@ -9357,6 +9404,7 @@ class GenerationJobManagerClass {
     this.replayEventWriteQueues.clear();
     this.tokenUsageWriteQueues.clear();
     this.runStepWriteQueues.clear();
+    this.earlyBufferOverflowWaiters.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
   }

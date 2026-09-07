@@ -1305,6 +1305,16 @@ export interface IJobStoreV2 extends IJobStore {
     >,
   ): Promise<boolean>;
 
+  /** Atomically replaces an unresolved pending overflow marker with its
+   * finalized durable frontier. A concurrent recovery settlement wins over
+   * this owner-side finalization. */
+  finalizeEarlyBufferOverflow(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    overflow: EarlyBufferOverflowState,
+  ): Promise<boolean>;
+
   /** Atomically claims the first subscriber for one generation epoch. */
   claimFirstSubscriber(
     streamId: string,

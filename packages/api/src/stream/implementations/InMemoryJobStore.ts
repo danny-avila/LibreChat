@@ -1551,6 +1551,26 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return true;
   }
 
+  async finalizeEarlyBufferOverflow(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    finalizedOverflow: EarlyBufferOverflowState,
+  ): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    const overflow = job?.earlyBufferOverflow;
+    if (
+      job?.createdAt !== expectedCreatedAt ||
+      overflow?.id !== overflowId ||
+      overflow.persistencePending !== true ||
+      overflow.recoveryOutcome != null
+    ) {
+      return false;
+    }
+    job.earlyBufferOverflow = finalizedOverflow;
+    return true;
+  }
+
   async claimFirstSubscriber(
     streamId: string,
     expectedCreatedAt: number,

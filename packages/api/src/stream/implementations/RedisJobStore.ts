@@ -630,6 +630,15 @@ const SETTLE_EARLY_BUFFER_RECOVERY_LUA =
   'for key, value in pairs(settlement) do overflow[key] = value end ' +
   'redis.call("HSET", KEYS[1], "earlyBufferOverflow", cjson.encode(overflow)) return 1';
 
+/** Finalizes only the unresolved pending marker installed by this owner. */
+const FINALIZE_EARLY_BUFFER_OVERFLOW_LUA =
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local raw = redis.call("HGET", KEYS[1], "earlyBufferOverflow") ' +
+  'if not raw then return 0 end local ok, overflow = pcall(cjson.decode, raw) ' +
+  'if not ok or type(overflow) ~= "table" or overflow.id ~= ARGV[2] ' +
+  'or overflow.persistencePending ~= true or overflow.recoveryOutcome ~= nil then return 0 end ' +
+  'redis.call("HSET", KEYS[1], "earlyBufferOverflow", ARGV[3]) return 1';
+
 /** Generation-scoped single-winner first-subscriber claim. */
 const CLAIM_FIRST_SUBSCRIBER_LUA =
   'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
@@ -2357,6 +2366,23 @@ export class RedisJobStore implements IJobStoreV2 {
       JSON.stringify(settlement),
     );
     return settled === 1;
+  }
+
+  async finalizeEarlyBufferOverflow(
+    streamId: string,
+    expectedCreatedAt: number,
+    overflowId: string,
+    finalizedOverflow: EarlyBufferOverflowState,
+  ): Promise<boolean> {
+    const finalized = await this.redis.eval(
+      FINALIZE_EARLY_BUFFER_OVERFLOW_LUA,
+      1,
+      KEYS.job(streamId),
+      String(expectedCreatedAt),
+      overflowId,
+      JSON.stringify(finalizedOverflow),
+    );
+    return finalized === 1;
   }
 
   async claimFirstSubscriber(

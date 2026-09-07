@@ -31,6 +31,7 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
   'consumeParkedSteer',
   'discardSteerLeftover',
   'settleEarlyBufferRecovery',
+  'finalizeEarlyBufferOverflow',
   'claimFirstSubscriber',
   'detachSubscriber',
   'hasActiveSubscriber',
