@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import { filterFilesByEndpointConfig } from './filter';
@@ -847,6 +847,31 @@ describe('filterFilesByEndpointConfig', () => {
       expect(result).toEqual([pdfFile, pngFile]);
     });
 
+    it('can preserve extracted-text sources that bypass provider MIME encoding', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [Providers.OPENAI]: { supportedMimeTypes: ['^application/pdf$'] },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+      const extractedText = {
+        ...createMockFile('notes.txt'),
+        source: FileSources.text,
+        type: 'text/plain',
+      } as IMongoFile;
+
+      expect(
+        filterFilesByEndpointConfig(req, {
+          files: [extractedText],
+          endpoint: Providers.OPENAI,
+          preserveTextSources: true,
+        }),
+      ).toEqual([extractedText]);
+    });
+
     it('should keep all files when supportedMimeTypes is not set', () => {
       const req = {
         config: {
@@ -973,6 +998,30 @@ describe('filterFilesByEndpointConfig', () => {
   });
 
   describe('total size limit filtering', () => {
+    it('can preserve aggregate survivors for explicit admission checks', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [Providers.OPENAI]: { totalSizeLimit: 1 },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+      const files = [
+        { ...createMockFile('first.pdf'), bytes: 600_000 } as IMongoFile,
+        { ...createMockFile('second.pdf'), bytes: 600_000 } as IMongoFile,
+      ];
+
+      expect(
+        filterFilesByEndpointConfig(req, {
+          files,
+          endpoint: Providers.OPENAI,
+          skipTotalSizeLimit: true,
+        }),
+      ).toEqual(files);
+    });
+
     it('should filter files when total size exceeds totalSizeLimit', () => {
       const req = {
         config: {

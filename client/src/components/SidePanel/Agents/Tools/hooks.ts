@@ -257,17 +257,23 @@ export function useAgentItems({
  * lookups are briefly hidden. Must be rendered inside the agent form's
  * `FormProvider`.
  */
-export function useResolvedSkills(pageSkills?: TSkillSummary[]): TSkillSummary[] | undefined {
+export function useResolvedSkills(
+  pageSkills?: TSkillSummary[],
+  /** Off and All never render allowlist rows, so resolving ids the first
+   *  catalog page missed would be one `getSkill` request per retained id for
+   *  a list nobody sees. Callers pass `false` outside Selected. */
+  resolveAllowlist = true,
+): TSkillSummary[] | undefined {
   const localize = useLocalize();
   const { control } = useFormContext<AgentForm>();
   const skillsWatch = useWatch({ control, name: 'skills' });
   const unresolvedIds = useMemo(() => {
-    if (pageSkills === undefined) {
+    if (pageSkills === undefined || !resolveAllowlist) {
       return [];
     }
     const known = new Set(pageSkills.map((skill) => skill._id));
     return ((skillsWatch ?? []) as string[]).filter((id) => !known.has(id));
-  }, [pageSkills, skillsWatch]);
+  }, [pageSkills, skillsWatch, resolveAllowlist]);
 
   const lookups = useQueries({
     queries: unresolvedIds.map((skillId) => ({

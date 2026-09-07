@@ -280,39 +280,45 @@ describe('code environment registry', () => {
     singleSpy.mockRestore();
   });
 
-  test('atomically limits concurrent environment registrations for one owner', async () => {
-    await mongoose.models.CodeEnvironment.createCollection();
-    await expect(mongoose.models.CodeEnvironment.collection.indexes()).resolves.toEqual([
-      expect.objectContaining({ name: '_id_' }),
-    ]);
-    const registry = createCodeEnvironmentRegistry(mongoose);
-    const ownerId = new Types.ObjectId();
+  test.each([2, 12])(
+    'atomically limits concurrent registrations to %i across replicas',
+    async (maxOwned) => {
+      await mongoose.models.CodeEnvironment.createCollection();
+      await expect(mongoose.models.CodeEnvironment.collection.indexes()).resolves.toEqual([
+        expect.objectContaining({ name: '_id_' }),
+      ]);
+      const registries = [
+        createCodeEnvironmentRegistry(mongoose),
+        createCodeEnvironmentRegistry(mongoose),
+      ];
+      const ownerId = new Types.ObjectId();
 
-    const results = await Promise.allSettled(
-      ['quota-one', 'quota-two', 'quota-three'].map((id) =>
-        registry.register({
-          actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
-          environment: {
-            id,
-            name: id,
-            type: 'attached',
-            baseURL: 'https://code.example.com',
-            controlPlaneId: 'shared-code-api',
-          },
-          maxOwned: 2,
-        } as never),
-      ),
-    );
+      const results = await Promise.allSettled(
+        Array.from({ length: maxOwned + 4 }, (_, index) =>
+          registries[index % registries.length].register({
+            actor: { userId: ownerId, role: 'USER', idOnTheSource: null },
+            environment: {
+              id: `quota-${index}`,
+              name: `quota-${index}`,
+              type: 'attached',
+              baseURL: 'https://code.example.com',
+              controlPlaneId: 'shared-code-api',
+            },
+            maxOwned,
+          } as never),
+        ),
+      );
 
-    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(2);
-    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
-    expect(results.find(({ status }) => status === 'rejected')).toMatchObject({
-      reason: { name: 'CodeEnvironmentLimitError' },
-    });
-    await expect(
-      mongoose.models.CodeEnvironment.countDocuments({ createdBy: ownerId }),
-    ).resolves.toBe(2);
-  });
+      expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(maxOwned);
+      expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(4);
+      expect(results.find(({ status }) => status === 'rejected')).toMatchObject({
+        reason: { name: 'CodeEnvironmentLimitError' },
+      });
+      await expect(
+        mongoose.models.CodeEnvironment.countDocuments({ createdBy: ownerId }),
+      ).resolves.toBe(maxOwned);
+    },
+  );
 
   test('keeps a user-bound worker private even if its ACL is granted to a role', async () => {
     const registry = createCodeEnvironmentRegistry(mongoose);

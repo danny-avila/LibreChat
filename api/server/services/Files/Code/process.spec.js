@@ -66,6 +66,7 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     /* Behaviourally identical to the real predicate in
      * `packages/api/src/files/code/errors.ts`, which owns the contract and
@@ -77,6 +78,16 @@ jest.mock('@librechat/api', () => {
     sanitizeArtifactPath: jest.fn((name) => name),
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
+    normalizeArtifactDeliveryFailure: (value) =>
+      value?.code === 'artifact_delivery_failed'
+        ? {
+            code: value.code,
+            status: value.status,
+            attempted: value.attempted,
+            delivered: value.delivered,
+            failed: value.failed,
+          }
+        : undefined,
     executeWorkspaceTool: (...args) => mockExecuteWorkspaceTool(...args),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
     /* Windowing, sizing and rate-limit policy are real code in
@@ -2457,6 +2468,38 @@ describe('Code Process', () => {
         session_id: 'sess-new',
         files: [{ id: 'file-new', name: 'new.txt' }],
       });
+    });
+
+    it('forwards only a valid bounded artifact delivery failure', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          stdout: 'WROTE 1 bytes to /mnt/data/new.txt\n',
+          session_id: 'sess-new',
+          files: [],
+          artifact_delivery: {
+            code: 'artifact_delivery_failed',
+            status: 'failed',
+            attempted: 1,
+            delivered: 0,
+            failed: 1,
+            detail: 'private object storage failure',
+          },
+        },
+      });
+
+      const result = await writeSandboxFile({
+        file_path: '/mnt/data/new.txt',
+        content: 'x',
+      });
+
+      expect(result.artifact_delivery).toEqual({
+        code: 'artifact_delivery_failed',
+        status: 'failed',
+        attempted: 1,
+        delivered: 0,
+        failed: 1,
+      });
+      expect(JSON.stringify(result)).not.toContain('private object storage failure');
     });
 
     it('encodes path and content in a base64 JSON payload instead of shell-interpolating them', async () => {

@@ -1150,6 +1150,10 @@ export const codeEnvironmentUserSettingsSchema = z
 
 export type CodeEnvironmentUserSettings = z.infer<typeof codeEnvironmentUserSettingsSchema>;
 
+export type CodeWorkerEnrollmentPolicy = NonNullable<
+  NonNullable<z.infer<typeof agentsEndpointSchema>['statefulCodeSessions']>['principalWorkers']
+>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -1190,6 +1194,15 @@ export const agentsEndpointSchema = baseEndpointSchema
       statefulCodeSessions: z
         .object({
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+          /** Server-only personal worker enrollment policy. Effective principal
+           * policy may tighten, but never raise, the deployment ceiling. */
+          principalWorkers: z
+            .object({
+              enabled: z.boolean().optional(),
+              /** Defaults to five. Zero disables enrollment; existing machines remain usable. */
+              maxPerUser: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+            })
+            .optional(),
           /** Operator-managed execution environments. Attached entries route to a
            * Code API deployment backed by an outbound librechat-code worker. */
           environments: z
@@ -2493,6 +2506,69 @@ export const messageFilterSchema = z.object({
 
 export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
 
+/** User fields a deployment may select as the Langfuse trace `userId`. */
+export const LANGFUSE_TRACE_USER_ID_FIELDS = [
+  'id',
+  'email',
+  'username',
+  'name',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'googleId',
+  'githubId',
+  'discordId',
+  'appleId',
+  'facebookId',
+] as const;
+export type LangfuseTraceUserIdField = (typeof LANGFUSE_TRACE_USER_ID_FIELDS)[number];
+
+/** User fields a deployment may copy into Langfuse trace metadata. */
+export const LANGFUSE_TRACE_USER_METADATA_FIELDS = [
+  ...LANGFUSE_TRACE_USER_ID_FIELDS,
+  'role',
+  'provider',
+] as const;
+export type LangfuseTraceUserMetadataField = (typeof LANGFUSE_TRACE_USER_METADATA_FIELDS)[number];
+
+/** Request fields a deployment may copy into Langfuse trace metadata. */
+export const LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS = [
+  'conversationId',
+  'endpoint',
+  'endpointType',
+  'provider',
+  'model',
+  'modelLabel',
+  'spec',
+] as const;
+export type LangfuseTraceConversationMetadataField =
+  (typeof LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS)[number];
+
+/**
+ * What a deployment attaches to every Langfuse trace beyond the defaults.
+ * Nothing here is exported unless explicitly listed, so the default trace
+ * carries only the internal user id and no user or request metadata.
+ */
+export const langfuseTraceConfigSchema = z.object({
+  /**
+   * Which user field becomes the trace `userId`. Defaults to the internal user
+   * id; a user with no value for the chosen field keeps the internal id.
+   */
+  userIdField: z.enum(LANGFUSE_TRACE_USER_ID_FIELDS).optional(),
+  /** User fields exported as `librechat.user.<field>` trace metadata. */
+  userMetadataFields: z.array(z.enum(LANGFUSE_TRACE_USER_METADATA_FIELDS)).optional(),
+  /**
+   * Request fields exported as trace metadata: `librechat.conversation.id`,
+   * `librechat.endpoint`, `librechat.endpoint.type`, `librechat.provider`,
+   * `librechat.model`, `librechat.model.label`, and `librechat.spec`.
+   */
+  conversationMetadataFields: z
+    .array(z.enum(LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS))
+    .optional(),
+});
+
+export type LangfuseTraceConfig = z.infer<typeof langfuseTraceConfigSchema>;
+
 export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
@@ -2525,6 +2601,8 @@ export const langfuseConfigSchema = z.object({
    * `Authorization` upstream regardless.
    */
   headers: z.record(z.string()).optional(),
+  /** Trace user identity and allowlisted user/request metadata. */
+  trace: langfuseTraceConfigSchema.optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
@@ -2660,6 +2738,7 @@ export enum KnownEndpoints {
   groq = 'groq',
   helicone = 'helicone',
   huggingface = 'huggingface',
+  lemonade = 'lemonade',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
@@ -2699,6 +2778,7 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
+  [KnownEndpoints.lemonade]: 'AMD Lemonade',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.moonshot]: 'Moonshot',
@@ -3311,6 +3391,14 @@ export enum ErrorTypes {
    * Provider throttled or refused the request for exceeding a rate/spend allowance
    */
   MODEL_RATE_LIMIT = 'model_rate_limit',
+  /**
+   * Context pruning removed every message; nothing fits the configured context window
+   */
+  EMPTY_MESSAGES = 'empty_messages',
+  /**
+   * Formatted provider payload exceeded the context budget before invocation
+   */
+  FINAL_CONTEXT_OVERFLOW = 'final_context_overflow',
 }
 
 /**

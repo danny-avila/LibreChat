@@ -5,6 +5,7 @@ import {
 } from 'librechat-data-provider';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
+export const AGENT_ATTACHMENT_LIMIT_EXCEEDED = 'AGENT_ATTACHMENT_LIMIT_EXCEEDED';
 
 export function createStatefulCodeEnvironmentPolicyError(environment: string): Error {
   return Object.assign(
@@ -45,6 +46,7 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
+    code === AGENT_ATTACHMENT_LIMIT_EXCEEDED ||
     code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
     code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)

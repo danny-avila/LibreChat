@@ -1,5 +1,6 @@
+import { Tools, EToolResources } from 'librechat-data-provider';
 import type { IConversation } from '@librechat/data-schemas';
-import { readResolvedConversationFiles } from './initialize';
+import { readResolvedConversationFiles, resolveResendToolResources } from './initialize';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 
 describe('readResolvedConversationFiles', () => {
@@ -54,5 +55,54 @@ describe('readResolvedConversationFiles', () => {
         conversationId,
       ),
     ).toBeUndefined();
+  });
+});
+
+describe('resolveResendToolResources', () => {
+  const resolve = (tools: string[], flags: { code: boolean; fileSearch?: boolean }) =>
+    resolveResendToolResources({
+      tools,
+      codeEnvAvailable: flags.code,
+      fileSearchAvailable: flags.fileSearch,
+    });
+
+  it('primes both gated tools when both flags allow them', () => {
+    expect([
+      ...resolve([Tools.execute_code, Tools.file_search], { code: true, fileSearch: true }),
+    ]).toEqual([EToolResources.execute_code, EToolResources.file_search]);
+  });
+
+  it('drops only the tool whose flag is false', () => {
+    expect([
+      ...resolve([Tools.execute_code, Tools.file_search], { code: false, fileSearch: true }),
+    ]).toEqual([EToolResources.file_search]);
+    expect([
+      ...resolve([Tools.execute_code, Tools.file_search], { code: true, fileSearch: false }),
+    ]).toEqual([EToolResources.execute_code]);
+  });
+
+  it('primes neither when the role carries neither grant', () => {
+    expect([
+      ...resolve([Tools.execute_code, Tools.file_search], { code: false, fileSearch: false }),
+    ]).toEqual([]);
+  });
+
+  /** Callers that never resolved the grant must keep priming as they did, or
+   *  adding the parameter would silently drop search files for every embedder
+   *  that does not pass it. */
+  it('primes file search when the caller resolved no grant at all', () => {
+    expect([...resolve([Tools.file_search], { code: false })]).toEqual([
+      EToolResources.file_search,
+    ]);
+  });
+
+  it('leaves ungated tool resources alone and ignores tools that map to none', () => {
+    expect([...resolve([EToolResources.ocr, Tools.web_search], { code: false })]).toEqual([
+      EToolResources.ocr,
+    ]);
+  });
+
+  it('reports nothing for an agent with no tools', () => {
+    expect([...resolveResendToolResources({ codeEnvAvailable: true })]).toEqual([]);
   });
 });

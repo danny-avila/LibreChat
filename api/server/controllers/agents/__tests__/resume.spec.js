@@ -127,6 +127,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   GenerationJobManager: mockGenerationJobManager,
+  GENERATION_RECOVERY_FAILED_ERROR: 'generation_recovery_failed',
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
@@ -1069,6 +1070,39 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           checkpointNamespace: '1000',
         },
       });
+
+    it('settles and prunes a scheduled occurrence terminalized by recovery validation', async () => {
+      const scheduledJob = makeScheduledJob();
+      mockGenerationJobManager.getJob.mockResolvedValueOnce(scheduledJob).mockResolvedValueOnce({
+        ...scheduledJob,
+        status: 'error',
+        error: 'generation_recovery_failed',
+      });
+      mockGenerationJobManager.getResumeState.mockRejectedValueOnce(
+        new Error('terminal cleanup read failed'),
+      );
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(500);
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'error',
+        conversationId: CONVO_ID,
+        error: 'generation_recovery_failed',
+      });
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        undefined,
+        { checkpointNamespace: '1000' },
+      );
+      expect(mockClaimScheduleResume).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    });
 
     it('stops and settles an occurrence that became inactive while awaiting approval', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
@@ -2014,6 +2048,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.getResumeState).toHaveBeenCalledWith(
+        CONVO_ID,
+        job.createdAt,
+        { validateEarlyBufferRecovery: true },
+      );
     });
 
     it('blocks a user-authored respond decision before consuming the action', async () => {

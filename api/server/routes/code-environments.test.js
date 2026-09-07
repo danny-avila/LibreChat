@@ -15,6 +15,14 @@ const mockCodeEnvironmentPairingLimiter = jest.fn((_req, _res, next) => {
   middlewareCalls.push('pairing-limit');
   next();
 });
+const mockCodeEnvironmentStatusLimiter = jest.fn((_req, _res, next) => {
+  middlewareCalls.push('status-limit');
+  next();
+});
+const mockCodeEnvironmentStatusIpLimiter = jest.fn((_req, _res, next) => {
+  middlewareCalls.push('status-ip-limit');
+  next();
+});
 const mockRegistry = {};
 const mockGetCodeEnvironmentRegistry = jest.fn(() => mockRegistry);
 const mockHandlers = {
@@ -35,15 +43,14 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   createCodeEnvironmentRegistry: jest.fn(() => mockRegistry),
   createCodeEnvironmentHttpHandlers: jest.fn(() => mockHandlers),
+  codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
+  codeEnvironmentStatusIpLimiter: mockCodeEnvironmentStatusIpLimiter,
+  codeEnvironmentStatusLimiter: mockCodeEnvironmentStatusLimiter,
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: mockRequireCapability,
 }));
-jest.mock('~/server/middleware/limiters/code', () => ({
-  codeEnvironmentPairingLimiter: mockCodeEnvironmentPairingLimiter,
-}));
-
 jest.mock('~/server/middleware', () => ({ requireJwtAuth: mockRequireJwtAuth }));
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
@@ -112,7 +119,7 @@ describe('code environment routes', () => {
       status: 'ready',
     });
 
-    expect(middlewareCalls).toEqual(['jwt']);
+    expect(middlewareCalls).toEqual(['jwt', 'status-ip-limit', 'status-limit']);
     expect(mockHandlers.status).toHaveBeenCalledTimes(1);
   });
 

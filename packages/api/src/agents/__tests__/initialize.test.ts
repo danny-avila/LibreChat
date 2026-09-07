@@ -1335,6 +1335,126 @@ describe('initializeAgent — attachment scoping', () => {
     expect(result.agentContextAttachments).toEqual([agentContextFile]);
   });
 
+  it('applies aggregate limits only to endpoint-compatible file survivors', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const incompatibleFiles = Array.from({ length: 11 }, (_, index) => ({
+      file_id: `incompatible-${index}`,
+      filename: `incompatible-${index}.bin`,
+      type: 'application/x-incompatible',
+      bytes: 1024,
+    })) as IMongoFile[];
+    const { agent, req, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getFiles as jest.Mock).mockResolvedValueOnce(incompatibleFiles);
+    filterFilesByEndpointRuntimeConfig.mockReturnValueOnce([]);
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: incompatibleFiles,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+    expect(filterFilesByEndpointRuntimeConfig).toHaveBeenCalledWith(
+      req.config,
+      expect.objectContaining({ files: incompatibleFiles }),
+    );
+  });
+
+  it('does not apply model attachment limits to tool-only workspace files', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const toolFiles = Array.from({ length: 11 }, (_, index) => ({
+      file_id: `tool-${index}`,
+      filename: `tool-${index}.txt`,
+      type: 'text/plain',
+      bytes: 1024,
+    })) as IMongoFile[];
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [EToolResources.file_search];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce(toolFiles.map((file) => file.file_id));
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce(toolFiles);
+    (db.getFiles as jest.Mock).mockResolvedValueOnce(toolFiles);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          conversationId: 'conversation-1',
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('does not apply model attachment limits to a tool-only current request file', async () => {
+    const { filterFilesByEndpointRuntimeConfig } = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    const toolOnlyRequestFile = {
+      file_id: 'request-tool-only',
+      filename: 'workspace.bin',
+      type: 'application/octet-stream',
+      bytes: 200 * 1024 * 1024,
+      embedded: true,
+    } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getFiles as jest.Mock).mockResolvedValueOnce([toolOnlyRequestFile]);
+    filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      (_config: ServerRequest['config'], { files }: { files: IMongoFile[] }) => files,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          requestFiles: [toolOnlyRequestFile],
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toBeDefined();
+  });
+
   it('owner-scopes request file usage updates while preserving trusted tool files', async () => {
     const { primeResources } = jest.requireMock('../resources') as {
       primeResources: jest.Mock;

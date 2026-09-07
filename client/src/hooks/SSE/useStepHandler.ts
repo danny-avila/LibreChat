@@ -1439,37 +1439,52 @@ export default function useStepHandler({
           return;
         }
 
-        if (completeData.error) {
-          const filtered = targetMessage.content.filter(
-            (part) =>
-              part?.type !== ContentTypes.SUMMARY || !(part as SummaryContentPart).summarizing,
-          );
-          if (filtered.length !== targetMessage.content.length) {
-            announcePolite({ message: 'summarize_failed', isStatus: true });
-            const cleaned = { ...targetMessage, content: filtered };
-            const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-            messageMap.current.set(completeMessageId, cleaned);
-            setMessages(mergeResponseMessage(currentMessages, cleaned, completeMessageId));
-          }
-        } else {
-          let didFinalize = false;
-          const updatedContent = targetMessage.content.map((part) => {
-            if (part?.type === ContentTypes.SUMMARY && (part as SummaryContentPart).summarizing) {
-              didFinalize = true;
-              if (!completeData.summary) {
-                return { ...part, summarizing: false } as SummaryContentPart;
-              }
-              return { ...completeData.summary, summarizing: false } as SummaryContentPart;
-            }
+        /**
+         * Scoped to the owning step's slot when the step is known: a global
+         * scan finalizes a NEWER round's in-flight part when summarize
+         * cycles run back-to-back (tiny context windows re-trigger
+         * summarization every graph step). Unknown step falls back to
+         * finalizing every in-flight part.
+         */
+        const completeIndex =
+          completeRunStep != null ? completeRunStep.index + editPrefixOffset : -1;
+        let didFinalize = false;
+        const updatedContent = targetMessage.content.map((part, index) => {
+          if (part?.type !== ContentTypes.SUMMARY || !(part as SummaryContentPart).summarizing) {
             return part;
-          });
-          if (didFinalize) {
-            announcePolite({ message: 'summarize_completed', isStatus: true });
-            const finalized = { ...targetMessage, content: updatedContent };
-            const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-            messageMap.current.set(completeMessageId, finalized);
-            setMessages(mergeResponseMessage(currentMessages, finalized, completeMessageId));
           }
+          if (completeIndex >= 0 && index !== completeIndex) {
+            return part;
+          }
+          didFinalize = true;
+          if (!completeData.error && completeData.summary) {
+            return { ...completeData.summary, summarizing: false } as SummaryContentPart;
+          }
+          /**
+           * Failed rounds keep their slot. Splicing the part out shifts every
+           * later part under the index-keyed renderer (remounting rows and
+           * collapsing whatever the user expanded mid-stream) and breaks the
+           * content-position == step-index invariant that `updateContent`
+           * writes rely on. Flipping the flag alone hides an empty row
+           * (`Summary` renders null without text) and matches the persisted
+           * message, which retains the part server-side. An errored round
+           * carries `failed` so partial deltas that already streamed in are
+           * not presented as a completed summary.
+           */
+          if (completeData.error) {
+            return { ...part, summarizing: false, failed: true } as SummaryContentPart;
+          }
+          return { ...part, summarizing: false } as SummaryContentPart;
+        });
+        if (didFinalize) {
+          announcePolite({
+            message: completeData.error ? 'summarize_failed' : 'summarize_completed',
+            isStatus: true,
+          });
+          const finalized = { ...targetMessage, content: updatedContent };
+          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+          messageMap.current.set(completeMessageId, finalized);
+          setMessages(mergeResponseMessage(currentMessages, finalized, completeMessageId));
         }
       } else {
         const _exhaustive: never = stepEvent;

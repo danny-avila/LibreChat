@@ -1,6 +1,6 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
-import { GraphEvents, Constants } from '@librechat/agents';
+import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import { hasActivePiiFields, hasActivePiiPatterns } from 'librechat-data-provider';
 import type {
@@ -14,6 +14,8 @@ import type {
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
   CallerCapabilityProjectionSnapshot,
+  StreamEventData,
+  ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
@@ -32,6 +34,7 @@ import type {
   BackgroundToolWakeupRegistration,
 } from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
@@ -105,6 +108,7 @@ import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './sk
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
+import { resolveDownloadPath } from '~/storage/path';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
@@ -184,6 +188,35 @@ export type ToolEndCallback = (
   data: ToolEndCallbackData,
   metadata: ToolEndCallbackMetadata,
 ) => Promise<void>;
+
+/**
+ * Preserve the SDK's event-handler contract while attaching the graph-owned
+ * step identity to legacy artifact callbacks. `toolCallStepIds` is populated
+ * by ToolNode for the actual provider tool call; this wrapper never invents a
+ * fallback identity.
+ */
+export function createOwnedToolEndHandler(
+  callback: SdkToolEndCallback,
+  loggerArg: typeof logger = logger,
+): EventHandler {
+  const toolEndHandler = new ToolEndHandler(callback, loggerArg);
+  return {
+    handle: async (event, data: StreamEventData, metadata, graph) => {
+      const output = data?.output;
+      const toolCallId =
+        typeof output === 'object' && output != null
+          ? (output as { tool_call_id?: unknown }).tool_call_id
+          : undefined;
+      const stepId =
+        typeof toolCallId === 'string' ? graph?.toolCallStepIds?.get(toolCallId) : undefined;
+      const ownedMetadata =
+        typeof stepId === 'string' && stepId.length > 0
+          ? { ...(metadata ?? {}), stepId }
+          : metadata;
+      return toolEndHandler.handle(event, data, ownedMetadata, graph);
+    },
+  };
+}
 
 export interface ToolExecuteOptions {
   /** Loads tools by name, using agentId to look up agent-specific context */
@@ -603,6 +636,7 @@ export interface ToolExecuteOptions {
     stderr?: string;
     session_id?: string;
     files?: SandboxFileRef[];
+    artifact_delivery?: ArtifactDeliveryFailure;
   } | null>;
 }
 
@@ -2806,6 +2840,13 @@ async function writeSandboxTextForAuthoring({
   if (!writeResult) {
     return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
   }
+  if (writeResult.artifact_delivery) {
+    const { attempted, failed } = writeResult.artifact_delivery;
+    return errorResult(
+      tc,
+      `Wrote "${filePath}" in the sandbox, but ${failed} of ${attempted} generated files could not be persisted. The file is not guaranteed to be available to later calls or downloadable. The execution may have had side effects; do not retry automatically.`,
+    );
+  }
 
   const action = created ? 'Created' : 'Updated';
   const summary = `${action} ${filePath} (${content.length} chars).`;
@@ -3229,7 +3270,7 @@ async function loadSkillFileTextForAuthoring({
     return { status: 'error', message: 'Download is not supported for this storage backend.' };
   }
 
-  const stream = await strategy.getDownloadStream(req, file.filepath);
+  const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
   const chunks: Uint8Array[] = [];
   let streamedBytes = 0;
   for await (const chunk of stream as AsyncIterable<Uint8Array>) {
@@ -4633,7 +4674,7 @@ async function handleReadFileCall(
       };
     }
 
-    const stream = await strategy.getDownloadStream(req, file.filepath);
+    const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
     const chunks: Uint8Array[] = [];
     // Use the larger binary limit as streaming cap; cheaper type-specific
     // checks happen after binary detection on the assembled buffer.
@@ -6091,6 +6132,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           {
                             ...(metadata ?? {}),
                             executingAgentId: agentId,
+                            stepId: tc.stepId,
                           } as ToolEndCallbackMetadata,
                         );
                       } catch (callbackError) {
@@ -6413,6 +6455,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               | undefined,
                             ...metadata,
                             executingAgentId: agentId,
+                            stepId: tc.stepId,
                             codeExecutionContext,
                           },
                         );
@@ -6697,6 +6740,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             | undefined,
                           ...metadata,
                           executingAgentId: agentId,
+                          stepId: tc.stepId,
                           codeExecutionContext,
                         },
                       );

@@ -1,4 +1,5 @@
 export * from './classify';
+export * from './artifactDelivery';
 export * from './destinations';
 export * from './errors';
 export * from './extract';

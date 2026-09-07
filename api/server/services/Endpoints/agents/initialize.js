@@ -25,6 +25,7 @@ const {
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
   createLazyAgentHistoryResolver,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -226,7 +227,17 @@ const initializeClient = async ({
    *      allowlist with the toggle on = full accessible catalog. */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
-  const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+  const codeCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.execute_code);
+  const fileSearchCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.file_search);
+  /** Started here but joined into the startup `Promise.all` below rather than
+   *  awaited inline: neither flag is read until agent construction, so the role
+   *  lookup overlaps the memory, skill and conversation queries instead of
+   *  delaying them. Skipped entirely when the deployment has both capabilities
+   *  off, since both flags are false either way. One lookup answers both. */
+  const toolRoleGrantsPromise =
+    codeCapabilityEnabled || fileSearchCapabilityEnabled
+      ? resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName, context: 'initializeClient' })
+      : null;
   const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
   const toolIntentsAvailable = enabledCapabilities.has(AgentCapabilities.tool_intents);
   const deferredToolsAvailable = enabledCapabilities.has(AgentCapabilities.deferred_tools);
@@ -509,6 +520,7 @@ const initializeClient = async ({
     { skillStates, defaultActiveOnShare },
     { primaryAgent, modelsConfig },
     requestConversation,
+    toolRoleGrants,
   ] = await Promise.all([
     memoryAvailablePromise,
     accessibleSkillIdsPromise,
@@ -517,8 +529,21 @@ const initializeClient = async ({
     skillStatesPromise,
     validatedPrimaryAgentPromise,
     requestConversationPromise,
+    toolRoleGrantsPromise,
   ]);
   delete endpointOption.agent;
+
+  /** The deployment switch AND the role grant. `initializeAgent` rebuilds
+   *  `bash_tool`, `read_file` and the workspace file tools from this flag after
+   *  the tool loader has already dropped `execute_code` for a denied role, and
+   *  forwards the code-environment context to their handlers — so the grant has
+   *  to travel with the flag, not just with the tool list. */
+  const codeEnvAvailable = codeCapabilityEnabled && toolRoleGrants?.runCode === true;
+  /** The same pairing for the other gated tool. Read only by the resend-file
+   *  priming inside `initializeAgent`: `false` skips re-hydrating prior-turn
+   *  `file_search` files, whose usage counters would otherwise be bumped and
+   *  whose resources primed for a tool the loader is about to drop. */
+  const fileSearchAvailable = fileSearchCapabilityEnabled && toolRoleGrants?.fileSearch === true;
 
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
@@ -603,6 +628,7 @@ const initializeClient = async ({
       accessibleSkillIds: primaryScopedSkillIds,
       skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
+      fileSearchAvailable,
       backgroundToolsAvailable,
       toolIntentsAvailable,
       statefulSessionsAvailable,
@@ -685,6 +711,7 @@ const initializeClient = async ({
       skillStates,
       defaultActiveOnShare,
       codeEnvAvailable,
+      fileSearchAvailable,
       backgroundToolsAvailable,
       toolIntentsAvailable,
       statefulSessionsAvailable,
@@ -763,6 +790,7 @@ const initializeClient = async ({
     skillStates,
     defaultActiveOnShare,
     codeEnvAvailable,
+    fileSearchAvailable,
     backgroundToolsAvailable,
     toolIntentsAvailable,
     statefulSessionsAvailable,
@@ -1131,6 +1159,7 @@ const initializeClient = async ({
             ephemeralSkillsToggle,
           }),
           codeEnvAvailable,
+          fileSearchAvailable,
           backgroundToolsAvailable,
           toolIntentsAvailable,
           statefulSessionsAvailable,
@@ -1601,6 +1630,7 @@ const initializeClient = async ({
     invokedSkillIdentities,
     agent: primaryConfig,
     spec: endpointOption.spec,
+    traceContext: { modelLabel: endpointOption.model_parameters?.modelLabel },
     iconURL: endpointOption.iconURL,
     chatProjectId: endpointOption.chatProjectId,
     attachments: primaryConfig.requestAttachments ?? primaryConfig.attachments,

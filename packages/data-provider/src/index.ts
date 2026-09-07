@@ -72,3 +72,4 @@ export * from './agentToolOptions';
 /* code-execution sandbox */
 export * from './codeEnvRef';
 export * from './code/worker';
+export * from './code/approval';

@@ -856,6 +856,29 @@ describe('refreshController – OpenID path', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('requires sign-in without publishing tokens when the persisted session disappeared', async () => {
+    req.session.reload = jest.fn((callback) => callback(new Error('failed to load session')));
+
+    await refreshController(req, res);
+
+    expect(clearOpenIDAuthTokens).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.send).toHaveBeenCalledWith({ code: 'OPENID_SESSION_MISSING' });
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(storeOpenIDSession).not.toHaveBeenCalled();
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+  });
+
+  it('does not classify a session store outage as a missing session', async () => {
+    req.session.reload = jest.fn((callback) => callback(new Error('connection unavailable')));
+
+    await refreshController(req, res);
+
+    expect(clearOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+  });
+
   it('uses a reloaded advanced session instead of publishing a stale flight result', async () => {
     req.session.reload = jest.fn((callback) => {
       req.session.openidTokens = {

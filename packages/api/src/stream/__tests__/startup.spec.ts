@@ -675,6 +675,12 @@ describe('GenerationJobManager startup telemetry', () => {
     const predecessor = await manager.createJob(streamId, 'user-1', streamId);
     const onDone = jest.fn();
     const subscription = await manager.subscribe(streamId, () => undefined, onDone);
+    const predecessorRuntime = (
+      manager as unknown as {
+        runtimeState: Map<string, { subscriberLeaseTimer?: ReturnType<typeof setInterval> }>;
+      }
+    ).runtimeState.get(streamId)!;
+    expect(predecessorRuntime.subscriberLeaseTimer).toBeDefined();
 
     const replacement = await manager.createJob(streamId, 'user-1', streamId);
 
@@ -687,6 +693,7 @@ describe('GenerationJobManager startup telemetry', () => {
       conversation: { conversationId: streamId },
     });
     expect(predecessor.abortController.signal.aborted).toBe(true);
+    expect(predecessorRuntime.subscriberLeaseTimer).toBeUndefined();
     expect(replacement.abortController.signal.aborted).toBe(false);
     expect(eventTransport.getSubscriberCount(streamId)).toBe(0);
     subscription?.unsubscribe();
@@ -1404,7 +1411,7 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(getJob).toHaveBeenCalledTimes(1);
       expect(onError).not.toHaveBeenCalled();
       expect(onAllSubscribersLeft).not.toHaveBeenCalled();
-      expect(jest.getTimerCount()).toBe(timerCountBeforeFence);
+      expect(jest.getTimerCount()).toBe(timerCountBeforeFence - 1);
 
       releaseLookup?.();
       await jest.advanceTimersByTimeAsync(0);

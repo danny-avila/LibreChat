@@ -18,6 +18,7 @@ const {
   assertModelBoundProviderContent,
   collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
+  isModelBoundAttachmentFile,
 } = require('@librechat/api');
 const {
   Constants,
@@ -1173,46 +1174,48 @@ class BaseClient {
       parentMessageId,
       mapMethod,
     });
+    if (this.shouldSummarize) {
+      for (let i = _messages.length - 1; i >= 0; i--) {
+        const msg = _messages[i];
+        if (!msg) {
+          continue;
+        }
 
-    _messages = await this.addPreviousAttachments(_messages);
+        const summaryBlock = BaseClient.findSummaryContentBlock(msg);
+        if (summaryBlock) {
+          this.previous_summary = {
+            ...msg,
+            summary: BaseClient.getSummaryText(summaryBlock),
+            summaryTokenCount: summaryBlock.tokenCount,
+          };
+          break;
+        }
 
-    if (!this.shouldSummarize) {
-      return _messages;
-    }
-
-    for (let i = _messages.length - 1; i >= 0; i--) {
-      const msg = _messages[i];
-      if (!msg) {
-        continue;
+        if (msg.summary) {
+          this.previous_summary = msg;
+          break;
+        }
       }
 
-      const summaryBlock = BaseClient.findSummaryContentBlock(msg);
-      if (summaryBlock) {
-        this.previous_summary = {
-          ...msg,
-          summary: BaseClient.getSummaryText(summaryBlock),
-          summaryTokenCount: summaryBlock.tokenCount,
-        };
-        break;
-      }
-
-      if (msg.summary) {
-        this.previous_summary = msg;
-        break;
-      }
-    }
-
-    if (this.previous_summary) {
-      const { messageId, summary, tokenCount, summaryTokenCount } = this.previous_summary;
-      logger.debug('[BaseClient] Previous summary:', {
-        messageId,
-        summary,
-        tokenCount,
-        summaryTokenCount,
+      _messages = this.constructor.getMessagesForConversation({
+        messages,
+        parentMessageId,
+        mapMethod,
+        summary: true,
       });
+
+      if (this.previous_summary) {
+        const { messageId, summary, tokenCount, summaryTokenCount } = this.previous_summary;
+        logger.debug('[BaseClient] Previous summary:', {
+          messageId,
+          summary,
+          tokenCount,
+          summaryTokenCount,
+        });
+      }
     }
 
-    return _messages;
+    return this.addPreviousAttachments(_messages);
   }
 
   /**
@@ -1831,14 +1834,66 @@ class BaseClient {
       historicalFileState.fileIds,
       this.options.req?.user,
     );
+    const nonSteerReplayFileIds = collectModelBoundHistoricalFileIdState(
+      _messages.map((message) => ({
+        files: message.files,
+        content: Array.isArray(message.content)
+          ? message.content.filter((part) => part?.type !== ContentTypes.STEER)
+          : message.content,
+      })),
+    ).fileIds.filter((fileId) => !contextSeen.has(fileId));
+    const steerReplayFileIds = [];
+    for (const message of _messages) {
+      if (!Array.isArray(message?.content)) {
+        continue;
+      }
+      for (const part of message.content) {
+        if (part?.type !== ContentTypes.STEER || !Array.isArray(part.files)) {
+          continue;
+        }
+        for (const file of part.files) {
+          if (typeof file?.file_id === 'string' && file.file_id.length > 0) {
+            steerReplayFileIds.push(file.file_id);
+          }
+        }
+      }
+    }
     for (const file of files) {
       if (file?.file_id) {
         authorizedFilesById.set(file.file_id, file);
       }
     }
+    let admittedHistoricalFileIds;
+    if (typeof this.assertHistoricalAttachmentLimits === 'function') {
+      const admittedHistoricalFiles = await this.assertHistoricalAttachmentLimits(
+        [...nonSteerReplayFileIds, ...steerReplayFileIds]
+          .map((fileId) => authorizedFilesById.get(fileId))
+          .filter((file) => file != null && isModelBoundAttachmentFile(file)),
+      );
+      admittedHistoricalFileIds = new Set(
+        (admittedHistoricalFiles ?? []).map((file) => file?.file_id).filter(Boolean),
+      );
+    }
+    this.modelBoundHistoricalSteerFiles = steerReplayFileIds
+      .map((fileId) => authorizedFilesById.get(fileId))
+      .filter(
+        (file) =>
+          file != null &&
+          isModelBoundAttachmentFile(file) &&
+          (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id)),
+      );
     /** Owner-scoped docs for THIS turn, including steer-part refs — the steer
      *  replay stamp consumes this instead of issuing a second query. */
     this.authorizedHistoricalFiles = authorizedFilesById;
+    this.authorizedHistoricalReplayFiles = new Map(
+      files
+        .filter(
+          (file) =>
+            file?.file_id &&
+            (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id)),
+        )
+        .map((file) => [file.file_id, file]),
+    );
 
     /**
      *
@@ -1859,7 +1914,10 @@ class BaseClient {
             continue;
           }
           const authorizedFile = authorizedFilesById.get(file.file_id);
-          if (authorizedFile) {
+          if (
+            authorizedFile &&
+            (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id))
+          ) {
             contextFiles.push(authorizedFile);
             contextSeen.add(file.file_id);
           }
@@ -1890,12 +1948,17 @@ class BaseClient {
         return message;
       }
 
-      await Promise.all([
+      const [, processedFiles] = await Promise.all([
         this.addFileContextToMessage(message, contextFiles),
         this.processAttachments(message, contextFiles),
       ]);
 
-      this.message_file_map[message.messageId] = contextFiles;
+      const processedFileIds = new Set(
+        (processedFiles ?? []).map((file) => file?.file_id).filter(Boolean),
+      );
+      this.message_file_map[message.messageId] = contextFiles.filter(
+        (file) => processedFileIds.has(file?.file_id) && isModelBoundAttachmentFile(file),
+      );
       return message;
     };
 

@@ -5,11 +5,50 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { scheduleMessageContentLayoutReconcile } from '~/hooks';
 import ToolCallGroup from '../ToolCallGroup';
+import { ToolAuthWarning } from '../auth';
+
+const mockMCPServerNames: string[] = [];
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
-    if (key === 'com_ui_used_n_tools') {
-      return `Used ${values?.[0]} tools`;
+    if (key === 'com_ui_ran_n_actions') {
+      return `Ran ${values?.[0]} actions`;
+    }
+    if (key === 'com_ui_running_n_actions') {
+      return `Running ${values?.[0]} actions`;
+    }
+    if (key === 'com_ui_n_searches') {
+      return `${values?.[0]} searches`;
+    }
+    if (key === 'com_ui_n_actions_failed') {
+      return `${values?.[0]} failed`;
+    }
+    if (key === 'com_ui_one_action_failed') {
+      return '1 failed';
+    }
+    if (key === 'com_ui_n_actions_cancelled') {
+      return `${values?.[0]} cancelled`;
+    }
+    if (key === 'com_ui_one_action_cancelled') {
+      return '1 cancelled';
+    }
+    if (key === 'com_ui_web_searched') {
+      return 'Searched the web';
+    }
+    if (key === 'com_ui_web_searching') {
+      return 'Searching the web';
+    }
+    if (key === 'com_ui_retrieved_files') {
+      return 'Searched your files';
+    }
+    if (key === 'com_ui_searching_files') {
+      return 'Searching your files';
+    }
+    if (key === 'com_ui_searched_web_and_files') {
+      return 'Searched web and files';
+    }
+    if (key === 'com_ui_searching_web_and_files') {
+      return 'Searching web and files';
     }
     if (key === 'com_ui_asked_n_questions') {
       return `Asked ${values?.[0]} questions`;
@@ -17,8 +56,23 @@ jest.mock('~/hooks', () => ({
     if (key === 'com_ui_asking_n_questions') {
       return `Asking ${values?.[0]} questions`;
     }
+    if (key === 'com_ui_asked_one_question') {
+      return 'Asked 1 question';
+    }
+    if (key === 'com_ui_asking_one_question') {
+      return 'Asking 1 question';
+    }
+    if (key === 'com_ui_subagent_complete') {
+      return 'Ran agent';
+    }
+    if (key === 'com_ui_subagent_running') {
+      return 'Running agent';
+    }
     if (key === 'com_ui_via_server') {
       return `via ${values?.[0]}`;
+    }
+    if (key === 'com_assistants_allow_sites_you_trust') {
+      return 'Only allow sites you trust';
     }
     return key;
   },
@@ -33,10 +87,9 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/hooks/MCP', () => {
-  const mcpServerNames: string[] = [];
   return {
     useMCPIconMap: () => new Map(),
-    useMCPServerNames: () => mcpServerNames,
+    useMCPServerNames: () => mockMCPServerNames,
   };
 });
 
@@ -45,12 +98,18 @@ jest.mock('../ToolOutput', () => ({
     <span data-testid="stacked-icons" data-tool-names={toolNames.join(',')} />
   ),
   getMCPServerName: () => '',
+  isError: (output: string) => output.startsWith('Error processing tool'),
 }));
 
 jest.mock('lucide-react', () => ({
-  ChevronDown: () => <span>{'chevron'}</span>,
+  ChevronDown: ({ className }: { className?: string }) => (
+    <span data-testid="group-chevron" className={className}>
+      {'chevron'}
+    </span>
+  ),
   Users: () => <span>{'users'}</span>,
   MessageCircleQuestion: () => <span data-testid="question-icon">{'question'}</span>,
+  TriangleAlert: () => <span>{'warning'}</span>,
 }));
 
 jest.mock('~/utils/approval', () => ({
@@ -59,10 +118,29 @@ jest.mock('~/utils/approval', () => ({
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
-  getToolDisplayLabel: (name: string) =>
-    ['execute_code', 'bash_tool', 'run_tools_with_code', 'run_tools_with_bash'].includes(name)
-      ? 'Code'
-      : name,
+  getToolDisplayLabel: (name: string, _localize: unknown, knownServerNames?: readonly string[]) => {
+    const configuredServer = knownServerNames?.find((server) => name.endsWith(`_mcp_${server}`));
+    if (configuredServer) {
+      return configuredServer;
+    }
+    if (name.includes('_mcp_')) {
+      return name.slice(name.lastIndexOf('_mcp_') + '_mcp_'.length);
+    }
+    if (
+      ['execute_code', 'bash_tool', 'run_tools_with_code', 'run_tools_with_bash'].includes(name)
+    ) {
+      return 'Code';
+    }
+    const friendlyNames: Record<string, string> = {
+      web_search: 'Web Search',
+      file_search: 'File Search',
+      retrieval: 'File Search',
+      create_file: 'Create File',
+      edit_file: 'Edit File',
+      ask_user_question: 'Question',
+    };
+    return friendlyNames[name] ?? name;
+  },
   /** Real implementations: the group header resolves its text through these,
    *  so stubbing them out would hide the header logic under test. */
   getBatchActivityLabelPart: jest.requireActual('~/utils/activityLabels').getBatchActivityLabelPart,
@@ -73,6 +151,9 @@ jest.mock('~/utils', () => ({
 jest.mock('../Parts', () => ({
   AttachmentGroup: ({ attachments }: { attachments?: TAttachment[] }) => (
     <div data-testid="attachment-group" data-count={attachments?.length ?? 0} />
+  ),
+  ReasoningCompact: ({ isAfterTool }: { isAfterTool?: boolean }) => (
+    <div data-testid="compact-reasoning" data-after-tool={String(isAfterTool)} />
   ),
 }));
 
@@ -122,6 +203,24 @@ const makeSubagentPart = (
     },
   }) as unknown as TMessageContentParts;
 
+const makeAuthPart = (
+  id: string,
+  name: string,
+  progress = 0.1,
+  output = '',
+): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
+      name,
+      args: '{}',
+      output,
+      progress,
+      auth: `https://${name}.example.com/oauth`,
+    },
+  }) as unknown as TMessageContentParts;
+
 const imageAttachment: TAttachment = {
   filename: 'foo.png',
   filepath: '/files/foo.png',
@@ -160,6 +259,7 @@ describe('ToolCallGroup image hoisting', () => {
     parts,
     isSubmitting: false,
     isLast: false,
+    showThinking: false,
     lastContentIdx: 1,
     renderPart: (_p: TMessageContentParts, idx: number) => (
       <div data-testid={`inner-${idx}`} key={idx}>
@@ -170,6 +270,7 @@ describe('ToolCallGroup image hoisting', () => {
 
   beforeEach(() => {
     mockScheduleMessageContentLayoutReconcile.mockClear();
+    mockMCPServerNames.length = 0;
   });
 
   it('renders an AttachmentGroup outside the collapsible container with all attachments', () => {
@@ -197,6 +298,51 @@ describe('ToolCallGroup image hoisting', () => {
   it('does not render an AttachmentGroup when there are no group attachments', () => {
     renderGroup(baseProps);
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('renders one shared trust warning for multiple pending authentication calls', () => {
+    const authParts = ['zapier', 'test', 'vercel', 'spotify'].map((name, idx) => ({
+      part: makeAuthPart(`auth-${idx}`, name),
+      idx,
+    }));
+
+    renderGroup({
+      ...baseProps,
+      parts: authParts,
+      isSubmitting: true,
+      lastContentIdx: authParts.length - 1,
+      renderPart: (_part, idx) => <ToolAuthWarning key={idx} />,
+    });
+
+    expect(screen.getAllByText('Only allow sites you trust')).toHaveLength(1);
+  });
+
+  it('keeps the trust warning for a persisted incomplete authentication call', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makeAuthPart('auth-persisted', 'zapier'), idx: 0 }],
+      lastContentIdx: 0,
+      renderPart: () => <ToolAuthWarning key="auth-persisted" />,
+    });
+
+    expect(screen.getByText('Only allow sites you trust')).toBeInTheDocument();
+  });
+
+  it('does not render a shared trust warning for completed authentication calls', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makeAuthPart('auth-complete', 'zapier', 1, 'done'), idx: 0 }],
+      lastContentIdx: 0,
+      renderPart: () => null,
+    });
+
+    expect(screen.queryByText('Only allow sites you trust')).not.toBeInTheDocument();
+  });
+
+  it('keeps the group disclosure chevron visible', () => {
+    renderGroup(baseProps);
+
+    expect(screen.getByTestId('group-chevron')).not.toHaveClass('opacity-0');
   });
 
   it('does not reconcile layout for an initially collapsed completed group', () => {
@@ -295,10 +441,7 @@ describe('ToolCallGroup image hoisting', () => {
       withinActivityPhase: true,
     });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
     expect(screen.getByTestId('inner-1')).toBeInTheDocument();
   });
@@ -306,7 +449,7 @@ describe('ToolCallGroup image hoisting', () => {
   it('still expands on user toggle inside a completed phase', () => {
     renderGroup({ ...baseProps, withinActivityPhase: true });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+    fireEvent.click(screen.getByRole('button'));
 
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
     expect(screen.getByTestId('inner-1')).toBeInTheDocument();
@@ -330,7 +473,7 @@ describe('ToolCallGroup image hoisting', () => {
       renderPart,
     });
 
-    expect(screen.getByRole('button', { name: 'Used 59 tools' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ran 59 actions/ })).toBeInTheDocument();
     expect(renderPart).not.toHaveBeenCalled();
     expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
   });
@@ -338,16 +481,59 @@ describe('ToolCallGroup image hoisting', () => {
   it('mounts tool bodies when a collapsed group is expanded', () => {
     renderGroup(baseProps);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Ran 2 actions/ }));
 
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
     expect(screen.getByTestId('inner-1')).toBeInTheDocument();
   });
 
+  it('removes the extra Thoughts top margin after a tool row', () => {
+    const reasoningPart = {
+      type: ContentTypes.THINK,
+      [ContentTypes.THINK]: 'A useful thought',
+    } as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('t1'), idx: 0 },
+        { part: reasoningPart, idx: 1 },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Fetch_image/ }));
+
+    expect(screen.getByTestId('compact-reasoning')).toHaveAttribute('data-after-tool', 'true');
+  });
+
+  it('delegates an unavailable-reasoning part to the standalone renderer', () => {
+    /** A detached-subagent projection has no text to compact, so `Part`'s
+     *  `ReasoningMarker` is the only thing that stands for it. Rendering it
+     *  as a compact row drops the marker the moment the call joins a group. */
+    const unavailablePart = {
+      type: ContentTypes.THINK,
+      [ContentTypes.THINK]: '',
+      reasoning_unavailable: true,
+    } as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('t1'), idx: 0 },
+        { part: unavailablePart, idx: 1 },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Fetch_image/ }));
+
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('compact-reasoning')).not.toBeInTheDocument();
+  });
+
   it('unmounts tool bodies after a collapsed group finishes transitioning', () => {
     renderGroup(baseProps);
 
-    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const button = screen.getByRole('button', { name: /^Ran 2 actions/ });
     const collapsible = button.nextElementSibling as HTMLElement;
     fireEvent.click(button);
     fireEvent.click(button);
@@ -373,7 +559,7 @@ describe('ToolCallGroup image hoisting', () => {
       ),
     });
 
-    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const button = screen.getByRole('button', { name: /^Ran 2 actions/ });
     const collapsible = button.nextElementSibling as HTMLElement;
     expect(screen.getByTestId('approval-0')).toBeInTheDocument();
 
@@ -405,7 +591,7 @@ describe('ToolCallGroup image hoisting', () => {
       ),
     });
 
-    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const button = screen.getByRole('button', { name: /^Ran 2 actions/ });
     const collapsible = button.nextElementSibling as HTMLElement;
     fireEvent.click(button);
     fireEvent.transitionEnd(collapsible);
@@ -435,7 +621,7 @@ describe('ToolCallGroup image hoisting', () => {
       ),
     });
 
-    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const button = screen.getByRole('button', { name: /^Ran 2 actions/ });
     const collapsible = button.nextElementSibling as HTMLElement;
     fireEvent.click(button);
     fireEvent.transitionEnd(collapsible);
@@ -463,7 +649,7 @@ describe('ToolCallGroup image hoisting', () => {
     });
     const { rerender } = renderGroup(propsFor());
 
-    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const button = screen.getByRole('button', { name: /^Ran 2 actions/ });
     const collapsible = button.nextElementSibling as HTMLElement;
     fireEvent.click(button);
     fireEvent.transitionEnd(collapsible);
@@ -504,7 +690,7 @@ describe('ToolCallGroup image hoisting', () => {
     });
     const { rerender } = renderGroup(propsFor());
 
-    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const button = screen.getByRole('button', { name: /^Ran 2 actions/ });
     const collapsible = button.nextElementSibling as HTMLElement;
     fireEvent.click(button);
 
@@ -524,10 +710,10 @@ describe('ToolCallGroup image hoisting', () => {
   it('reconciles layout after the group collapses from an expanded state', async () => {
     renderGroup(baseProps);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Ran 2 actions/ }));
     expect(mockScheduleMessageContentLayoutReconcile).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Ran 2 actions/ }));
 
     await waitFor(() => {
       expect(mockScheduleMessageContentLayoutReconcile).toHaveBeenCalledTimes(1);
@@ -567,12 +753,207 @@ describe('ToolCallGroup image hoisting', () => {
       ],
     });
 
-    expect(screen.getByText('· Code')).toBeInTheDocument();
+    expect(screen.getByText('· Code ×2')).toBeInTheDocument();
     expect(screen.queryByText(/Code, bash_tool/)).not.toBeInTheDocument();
     expect(screen.getByTestId('stacked-icons')).toHaveAttribute(
       'data-tool-names',
       'bash_tool,bash_tool',
     );
+  });
+
+  it('preserves a configured MCP server boundary in a single-tool label', () => {
+    mockMCPServerNames.push('Google_mcp_Workspace');
+    renderGroup({
+      ...baseProps,
+      parts: [
+        {
+          part: makePart('mcp-1', 'result', 'search_documents_mcp_Google_mcp_Workspace'),
+          idx: 0,
+        },
+      ],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: /^Google_mcp_Workspace$/ })).toBeInTheDocument();
+  });
+
+  it('summarizes repeated completed web searches as an outcome and count', () => {
+    const searchParts = Array.from({ length: 9 }, (_, idx) => ({
+      part: makePart(`w${idx}`, 'result', 'web_search'),
+      idx,
+    }));
+
+    renderGroup({
+      ...baseProps,
+      parts: searchParts,
+      lastContentIdx: searchParts.length - 1,
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'Searched the web, 9 searches' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Searched the web')).toBeInTheDocument();
+    expect(screen.getByText('· 9 searches')).toBeInTheDocument();
+  });
+
+  it('uses the active tense while a web-search group is running', () => {
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [
+        { part: makePart('w1', 'result', 'web_search'), idx: 0 },
+        { part: makePart('w2', '', 'web_search'), idx: 1 },
+      ],
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'Searching the web, 2 searches' }),
+    ).toBeInTheDocument();
+  });
+
+  it('summarizes mixed web and file searches without exposing tool ids', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('w1', 'result', 'web_search'), idx: 0 },
+        { part: makePart('f1', 'result', 'file_search'), idx: 1 },
+        { part: makePart('f2', 'result', 'retrieval'), idx: 2 },
+      ],
+      lastContentIdx: 2,
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'Searched web and files, 3 searches' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/web_search|file_search|retrieval/)).not.toBeInTheDocument();
+  });
+
+  it('keeps repeated action counts and failed-call status in the compact summary', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        {
+          part: makePart('c2', 'Error processing tool: disk full', 'create_file'),
+          idx: 1,
+        },
+        { part: makePart('e1', 'edited', 'edit_file'), idx: 2 },
+      ],
+      lastContentIdx: 2,
+    });
+
+    expect(
+      screen.getByRole('button', {
+        name: 'Ran 3 actions, Create File ×2, Edit File · 1 failed',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('counts background failures per step when provider call IDs repeat', () => {
+    const executions = [
+      { stepId: 'step-success', status: 'completed' },
+      { stepId: 'step-failure', status: 'error' },
+    ];
+    const groupAttachments = executions.map(({ stepId, status }) => ({
+      type: 'background_task_status',
+      messageId: 'message-1',
+      toolCallId: 'call_0',
+      agentId: 'agent-a',
+      stepId,
+      status,
+    })) as unknown as TAttachment[];
+    const props = {
+      ...baseProps,
+      groupAttachments,
+      parts: executions.map(({ stepId }, idx) => ({
+        idx,
+        part: {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: {
+            id: 'call_0',
+            name: 'execute_code',
+            args: '{}',
+            agentId: 'agent-a',
+            stepId,
+            runStepStatus: 'completed',
+            output: JSON.stringify({
+              background_task_id: stepId,
+              tool: 'execute_code',
+              status: 'running',
+              message: 'Use check_background_task to poll.',
+            }),
+          },
+        } as unknown as TMessageContentParts,
+      })),
+    };
+    const { rerender } = renderGroup(props);
+    expect(screen.getByRole('button', { name: /· 1 failed$/ })).toBeInTheDocument();
+
+    rerender(
+      <RecoilRoot>
+        <ToolCallGroup {...props} groupAttachments={[...groupAttachments].reverse()} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByRole('button', { name: /· 1 failed$/ })).toBeInTheDocument();
+  });
+
+  it('honors a terminal failed run step whose output reads as benign', () => {
+    const closedFailure = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'c2',
+        name: 'create_file',
+        args: '{}',
+        output: '',
+        runStepStatus: 'failed',
+      },
+    } as unknown as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        { part: closedFailure, idx: 1 },
+      ],
+      lastContentIdx: 1,
+    });
+
+    /** The run closed this step as failed, so the group must read it as
+     *  settled (past tense while still submitting) and count it as a
+     *  failure even though the empty output never parses as an error. */
+    expect(
+      screen.getByRole('button', { name: 'Ran 2 actions, Create File ×2 · 1 failed' }),
+    ).toBeInTheDocument();
+  });
+
+  it('names a cancelled action in the header before collapsing', () => {
+    const cancelled = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'c2',
+        name: 'create_file',
+        args: '{}',
+        output: '',
+        runStepStatus: 'cancelled',
+      },
+    } as unknown as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('c1', 'created', 'create_file'), idx: 0 },
+        { part: cancelled, idx: 1 },
+      ],
+      lastContentIdx: 1,
+    });
+
+    /** A stopped action is settled but not successful, and the group collapses
+     *  over the only other notice, so the header must carry it and must not
+     *  count it as a failure. */
+    expect(
+      screen.getByRole('button', { name: 'Ran 2 actions, Create File ×2 · 1 cancelled' }),
+    ).toBeInTheDocument();
   });
 
   it('labels a homogeneous ask_user_question group as its own category', () => {
@@ -587,7 +968,7 @@ describe('ToolCallGroup image hoisting', () => {
     // Own verb, not "Used N tools"; question glyph instead of stacked wrenches;
     // raw-name summary suppressed (like subagent groups).
     expect(screen.getByRole('button', { name: 'Asked 2 questions' })).toBeInTheDocument();
-    expect(screen.queryByText('Used 2 tools')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ran 2 actions')).not.toBeInTheDocument();
     expect(screen.getByTestId('question-icon')).toBeInTheDocument();
     expect(screen.queryByTestId('stacked-icons')).not.toBeInTheDocument();
     expect(screen.queryByText(/· ask_user_question/)).not.toBeInTheDocument();
@@ -607,7 +988,49 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
   });
 
-  it('keeps the generic "Used N tools" label for a mixed group containing a question', () => {
+  it('uses a singular completed label for one question grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makePart('q1', 'blue', 'ask_user_question'), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+  });
+
+  it('uses a singular active label for one question grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [{ part: makePart('q1', '', 'ask_user_question'), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Asking 1 question' })).toBeInTheDocument();
+  });
+
+  it('uses a singular completed label for one subagent grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makePart('a1', 'done', Constants.SUBAGENT), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Ran agent' })).toBeInTheDocument();
+  });
+
+  it('uses a singular active label for one subagent grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [{ part: makePart('a1', '', Constants.SUBAGENT), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Running agent' })).toBeInTheDocument();
+  });
+
+  it('uses an action summary for a mixed group containing a question', () => {
     renderGroup({
       ...baseProps,
       parts: [
@@ -616,7 +1039,9 @@ describe('ToolCallGroup image hoisting', () => {
       ],
     });
 
-    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Ran 2 actions, Web Search, Question' }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('stacked-icons')).toBeInTheDocument();
   });
 });

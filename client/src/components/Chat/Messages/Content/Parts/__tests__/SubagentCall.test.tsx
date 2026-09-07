@@ -25,6 +25,8 @@ import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
 import { MessageContext } from '~/Providers/MessageContext';
 import { ChatSurfaceHarness } from 'test/harness';
 
+const mockMCPServerNames: string[] = [];
+
 jest.mock('~/hooks', () => ({
   useLocalize:
     () =>
@@ -61,14 +63,17 @@ jest.mock('lucide-react', () => ({
 
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
 jest.mock('~/components/Share/MessageIcon', () => ({ __esModule: true, default: () => null }));
-jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => [] }));
+jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => mockMCPServerNames }));
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/toolLabels'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
   logger: { log: jest.fn() },
 }));
 
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  jest.useRealTimers();
+  mockMCPServerNames.length = 0;
+});
 
 function foldEvents(events: SubagentUpdateEvent[]): {
   contentParts: SubagentContentPart[];
@@ -229,6 +234,42 @@ describe('SubagentCall', () => {
       }),
     );
     expect(rendered.getSelection()?.durable).toBeUndefined();
+  });
+
+  it('preserves a configured MCP server boundary in the live ticker', () => {
+    mockMCPServerNames.push('Google_mcp_Workspace');
+    renderWithState({
+      toolCallId: 'call_mcp_ticker',
+      initialProgress: 0.3,
+      isSubmitting: true,
+      progress: progressFromEvents({
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            phase: 'run_step',
+            data: {
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [
+                  {
+                    id: 'c1',
+                    name: 'search_documents_mcp_Google_mcp_Workspace',
+                  },
+                ],
+              },
+            },
+            timestamp: '',
+          } as SubagentUpdateEvent,
+        ],
+      }),
+    });
+
+    expect(screen.getByText('Google_mcp_Workspace')).toBeInTheDocument();
   });
 
   it('refreshes a long ticker preview only after the throttle window', () => {

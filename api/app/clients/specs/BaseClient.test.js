@@ -278,6 +278,36 @@ describe('BaseClient', () => {
       expect(getMessages).toHaveBeenCalledTimes(1);
       expect(result.map((m) => m.messageId)).toEqual(['root', 'reply']);
     });
+
+    test('prunes pre-summary history before hydrating attachments', async () => {
+      const addPreviousAttachments = jest.fn(async (messages) => messages);
+      receiver.shouldSummarize = true;
+      receiver.addPreviousAttachments = addPreviousAttachments;
+      getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'pre-summary',
+          parentMessageId: Constants.NO_PARENT,
+          files: [{ file_id: 'old-file' }],
+        },
+        {
+          messageId: 'summary',
+          parentMessageId: 'pre-summary',
+          summary: 'Earlier context',
+          summaryTokenCount: 10,
+        },
+        { messageId: 'latest', parentMessageId: 'summary', text: 'Continue' },
+      ]);
+
+      const result = await loadHistory('latest');
+
+      expect(result.map((message) => message.messageId)).toEqual(['summary', 'latest']);
+      expect(addPreviousAttachments).toHaveBeenCalledWith(
+        expect.not.arrayContaining([expect.objectContaining({ messageId: 'pre-summary' })]),
+      );
+      receiver.shouldSummarize = false;
+      receiver.addPreviousAttachments = async (messages) => messages;
+      receiver.previous_summary = undefined;
+    });
   });
 
   describe('getMessagesForConversation', () => {
@@ -2443,6 +2473,7 @@ describe('BaseClient', () => {
         }
       });
       TestClient.processAttachments = jest.fn(async (_message, files) => files);
+      TestClient.assertHistoricalAttachmentLimits = undefined;
       TestClient.checkVisionRequest = jest.fn();
     });
 
@@ -2717,7 +2748,7 @@ describe('BaseClient', () => {
       const [message] = await messagesPromise;
 
       expect(message.fileContext).toBe('authorized owner text');
-      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([ownerFile]);
+      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([]);
     });
 
     test('preserves download-only historical attachments without trusting file fields', async () => {
@@ -2756,6 +2787,92 @@ describe('BaseClient', () => {
       expect(JSON.stringify(message)).not.toContain('untrusted text');
       expect(JSON.stringify(message)).not.toContain('forged-source');
       expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('processes only historical files admitted by the runtime endpoint policy', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async () => []);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          text: 'Use the attachment',
+          files: [{ file_id: modelFile.file_id }],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([modelFile]);
+      expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(TestClient.processAttachments).not.toHaveBeenCalled();
+      expect(message.files).toEqual([expect.objectContaining({ file_id: modelFile.file_id })]);
+    });
+
+    test('includes nested steer file references in historical admission', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-steer',
+          content: [
+            {
+              type: 'steer',
+              steer: 'Use the attachment',
+              files: [{ file_id: modelFile.file_id }],
+            },
+          ],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([modelFile]);
+      expect(TestClient.authorizedHistoricalReplayFiles.get(modelFile.file_id)).toEqual(modelFile);
+    });
+
+    test('preserves repeated steer file injections in historical admission', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-steer-repeat',
+          content: [
+            {
+              type: 'steer',
+              steer: 'Use the attachment once.',
+              files: [{ file_id: modelFile.file_id }],
+            },
+            {
+              type: 'steer',
+              steer: 'Use the attachment again.',
+              files: [{ file_id: modelFile.file_id }],
+            },
+          ],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([
+        modelFile,
+        modelFile,
+      ]);
+      expect(TestClient.modelBoundHistoricalSteerFiles).toEqual([modelFile, modelFile]);
+    });
+
+    test('keeps canonical byte metadata for processed historical survivors', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined, bytes: 120 * 1024 * 1024 };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.processAttachments.mockResolvedValue([{ file_id: modelFile.file_id }]);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-canonical-bytes',
+          files: [{ file_id: modelFile.file_id }],
+        },
+      ]);
+
+      expect(TestClient.message_file_map['msg-canonical-bytes']).toEqual([modelFile]);
     });
 
     test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
