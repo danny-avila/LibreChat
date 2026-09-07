@@ -172,7 +172,7 @@ export class MCPTokenStorage {
   private static getRefreshOwnerKey(
     userId: string,
     serverName: string,
-    tenantId = getTenantId(),
+    tenantId: string | undefined = getTenantId(),
   ): string {
     return JSON.stringify([tenantId ?? '', userId, serverName]);
   }
@@ -180,7 +180,7 @@ export class MCPTokenStorage {
   static isRefreshTeardownActive(
     userId: string,
     serverName: string,
-    tenantId = getTenantId(),
+    tenantId: string | undefined = getTenantId(),
   ): boolean {
     return this.refreshTeardownCounts.has(this.getRefreshOwnerKey(userId, serverName, tenantId));
   }
