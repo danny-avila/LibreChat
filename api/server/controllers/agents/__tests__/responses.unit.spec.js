@@ -1189,6 +1189,58 @@ describe('createResponse controller', () => {
     );
   });
 
+  it('excludes stored caller context from legacy UUID response output', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    const conversationId = '11111111-1111-4111-8111-111111111111';
+    api.resolveStoredResponse.mockResolvedValueOnce({
+      status: 'found',
+      reference: {
+        conversation: { conversationId, user: 'user-123', agent_id: 'agent-123' },
+        conversationId,
+        responseMessage: null,
+      },
+    });
+    db.getMessages.mockResolvedValueOnce([
+      {
+        messageId: 'input-system',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: 'Be concise',
+        metadata: { responsesInput: { role: 'system' } },
+      },
+      {
+        messageId: 'input-assistant',
+        isCreatedByUser: false,
+        text: 'Caller-provided context',
+        metadata: { responsesInput: { role: 'assistant' } },
+      },
+      {
+        messageId: 'legacy-imported-assistant',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: 'Imported caller content without Responses metadata',
+      },
+      {
+        messageId: 'generated-output',
+        isCreatedByUser: false,
+        text: 'Generated answer',
+        model: 'agent-123',
+      },
+    ]);
+    req.params = { id: conversationId };
+
+    await getResponse(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: conversationId,
+        model: 'agent-123',
+        output: [expect.objectContaining({ id: 'generated-output' })],
+      }),
+    );
+  });
+
   describe('execution envelope', () => {
     it('creates the portable run input before agent initialization', async () => {
       req.user = {

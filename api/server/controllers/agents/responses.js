@@ -588,6 +588,16 @@ async function persistResponse({
 }
 
 /**
+ * @param {object} msg - Stored message
+ * @returns {boolean} Whether the message contains model-generated response output
+ */
+function isStoredResponseOutput(msg) {
+  return (
+    !msg.isCreatedByUser && msg.isUserSubmitted !== true && msg.metadata?.responsesInput == null
+  );
+}
+
+/**
  * Convert stored messages to Open Responses output format
  * @param {Array} messages - Stored messages
  * @returns {Array} Output items
@@ -596,7 +606,7 @@ function convertMessagesToOutputItems(messages) {
   const output = [];
 
   for (const msg of messages) {
-    if (!msg.isCreatedByUser) {
+    if (isStoredResponseOutput(msg)) {
       output.push({
         type: 'message',
         id: msg.messageId,
@@ -1832,8 +1842,7 @@ const getResponse = async (req, res) => {
     // Convert messages to Open Responses output format
     const output = convertMessagesToOutputItems(messages);
 
-    const lastAssistantMessage =
-      responseMessage ?? messages.filter((m) => !m.isCreatedByUser).pop();
+    const lastAssistantMessage = responseMessage ?? messages.filter(isStoredResponseOutput).pop();
     const createdAt = responseMessage?.createdAt ?? conversation.createdAt ?? Date.now();
     const completedAt = responseMessage?.updatedAt ?? conversation.updatedAt ?? Date.now();
 
