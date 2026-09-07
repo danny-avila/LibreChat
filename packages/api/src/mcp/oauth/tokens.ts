@@ -39,6 +39,8 @@ interface StoreTokensParams {
   metadata?: Partial<OAuthStoredClientMetadata>;
   /** Existing generation that must still own every stored record before a refresh is persisted. */
   expectedCredentialSetId?: string;
+  /** Internal refresh-teardown fence; interactive authorization writes omit it. */
+  signal?: AbortSignal;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -148,6 +150,7 @@ export class MCPTokenStorage {
    * after settlement triggers a fresh redemption.
    */
   private static inflightRefreshes = new Map<string, Promise<MCPOAuthTokens | null>>();
+  private static inflightRefreshControllers = new Map<string, AbortController>();
 
   /**
    * How long an in-flight redemption may run before it is aborted. Generous
@@ -162,6 +165,22 @@ export class MCPTokenStorage {
     return isSystemUserId(userId)
       ? `[MCP][${serverName}]`
       : `[MCP][User: ${userId}][${serverName}]`;
+  }
+
+  /** Aborts and joins every process-local refresh for a user/server before teardown snapshots
+   * credentials. The database CAS in storeTokens then prevents an aborted late response from
+   * recreating records after the snapshot is deleted. */
+  static async fenceRefreshes(userId: string, serverName: string): Promise<void> {
+    const prefix = `${getTenantId() ?? ''}:${userId}:${serverName}:`;
+    const refreshes: Promise<MCPOAuthTokens | null>[] = [];
+    for (const [key, refresh] of this.inflightRefreshes) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      this.inflightRefreshControllers.get(key)?.abort();
+      refreshes.push(refresh);
+    }
+    await Promise.allSettled(refreshes);
   }
 
   /** Returns whether storage contains a currently usable, generation-bound authorization. */
@@ -313,6 +332,7 @@ export class MCPTokenStorage {
     existingTokens,
     metadata,
     expectedCredentialSetId,
+    signal,
   }: StoreTokensParams): Promise<MCPOAuthTokens> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const rollbackWrites: Array<() => Promise<void>> = [];
@@ -651,6 +671,9 @@ export class MCPTokenStorage {
           : plannedWrites;
 
       for (const write of orderedWrites) {
+        if (signal?.aborted) {
+          throw new Error('Token storage aborted by OAuth teardown');
+        }
         if (findToken && updateToken && write.existingToken) {
           await updateIfCurrent(
             write.existingToken,
@@ -784,6 +807,7 @@ export class MCPTokenStorage {
       clearTimeout(staleTimer);
       if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
         this.inflightRefreshes.delete(refreshKey);
+        this.inflightRefreshControllers.delete(refreshKey);
       }
     });
     /**
@@ -815,6 +839,7 @@ export class MCPTokenStorage {
     }, MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS);
     staleTimer.unref?.();
     this.inflightRefreshes.set(refreshKey, refreshPromise);
+    this.inflightRefreshControllers.set(refreshKey, executionController);
     return this.raceWithAbort(refreshPromise, signal);
   }
 
@@ -981,6 +1006,10 @@ export class MCPTokenStorage {
         expires_at: newTokens.expires_at,
       });
 
+      if (signal.aborted) {
+        throw new Error('Token refresh aborted before storing refreshed credentials');
+      }
+
       // Store the refreshed tokens (handles both create and update)
       // Pass existing token state to avoid duplicate DB calls
       const storedTokens = await this.storeTokens({
@@ -999,6 +1028,7 @@ export class MCPTokenStorage {
         },
         metadata: storedClientMetadata,
         expectedCredentialSetId: refreshCredentialSetId,
+        signal,
       });
 
       if (onRefreshSuccess) {

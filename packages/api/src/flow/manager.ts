@@ -191,10 +191,15 @@ export class FlowStateManager<T = unknown> {
     if (typeof raw !== 'string') {
       return null;
     }
+    const envelope = JSON.parse(raw) as { value: FlowState<T>; expires?: number };
+    if (envelope.expires != null && envelope.expires <= Date.now()) {
+      this.keyv.store.delete(key);
+      return null;
+    }
     return {
       store: this.keyv.store as Map<string, string>,
       key,
-      envelope: JSON.parse(raw) as { value: FlowState<T>; expires?: number },
+      envelope,
     };
   }
 

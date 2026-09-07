@@ -75,6 +75,33 @@ describe('FlowStateManager', () => {
       });
     });
 
+    it('treats an expired in-memory envelope as missing during a guarded mutation', async () => {
+      const keyv = new Keyv({
+        namespace: 'flow-expiry-test',
+        serialize: JSON.stringify,
+        deserialize: JSON.parse,
+      });
+      const manager = new FlowStateManager<string>(keyv, { ttl: 30000, ci: true });
+      await manager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await manager.getFlowState('oauth-flow', 'mcp_oauth');
+      const memoryStore = keyv.store as Map<string, string>;
+      const [storedKey, raw] = [...memoryStore.entries()][0];
+      const envelope = JSON.parse(raw);
+      envelope.expires = Date.now() - 1;
+      memoryStore.set(storedKey, JSON.stringify(envelope));
+
+      await expect(
+        manager.completeFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'late-result',
+        ),
+      ).resolves.toBe('missing');
+      expect(memoryStore.has(storedKey)).toBe(false);
+    });
+
     it('does not delete a replacement OAuth attempt', async () => {
       await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'new-state' });
 
