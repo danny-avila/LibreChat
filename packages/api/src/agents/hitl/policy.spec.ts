@@ -650,6 +650,9 @@ describe('computeAgentRequestFingerprint', () => {
     expect(computeAgentRequestFingerprint(base)).not.toBe(
       computeAgentRequestFingerprint({ ...base, codeApprovalMode: 'acceptEdits' }),
     );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeApprovalMode: null }),
+    );
   });
 
   it('differs when promptPrefix changes (ephemeral instructions)', () => {

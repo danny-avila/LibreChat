@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Tools, EToolResources } from 'librechat-data-provider';
-import type { TEphemeralAgent } from 'librechat-data-provider';
+import type { Agent, TEphemeralAgent } from 'librechat-data-provider';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import { useAgentsMapContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
@@ -12,6 +12,7 @@ interface AgentToolPermissionsResult {
   tools: string[] | undefined;
   provider?: string;
   codeEnvironmentId?: string | null;
+  agent?: Agent;
 }
 
 /**
@@ -81,6 +82,7 @@ export default function useAgentToolPermissions(
     codeAllowedByAgent,
     statefulCodeSessionsAllowedByAgent,
     codeEnvironmentId,
+    agent: agentData ?? selectedAgent,
     provider,
     tools,
   };

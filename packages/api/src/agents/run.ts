@@ -1552,6 +1552,7 @@ export async function createRun({
   messages,
   discoveredToolNames,
   requestBody,
+  codeApprovalMode: requestedCodeApprovalMode,
   user,
   tenantId,
   centralTraceExportEnabled,
@@ -1590,6 +1591,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
+  codeApprovalMode?: t.CodeApprovalMode;
   user?: IUser;
   tenantId?: string;
   /**
@@ -1977,7 +1979,7 @@ export async function createRun({
   const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
   const attachedCodeEnvironmentSettings = collectAttachedCodeEnvironmentPolicySettings(agents);
   const codeApprovalMode = resolveAttachedCodeApprovalMode(
-    requestBody?.codeApprovalMode,
+    requestedCodeApprovalMode,
     attachedCodeEnvironmentSettings,
     agentsEndpointConfig?.toolApproval?.enabled !== false,
   );
@@ -2149,17 +2151,15 @@ export async function createRun({
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {
     if (resolvedAgent.codeExecutionContext?.environmentType === 'attached') {
+      // The admission hook closes over these collections. A lazily resolved agent
+      // therefore receives its own current machine policy before its first tool call;
+      // a mode that machine does not permit safely falls back to ask/deny there.
       attachedCodeEnvironmentAgentIds.add(resolvedAgent.id);
       attachedCodeEnvironmentSettings.set(resolvedAgent.id, {
         configSchema: resolvedAgent.codeExecutionContext.codeEnvironmentConfigSchema,
         settings: resolvedAgent.codeExecutionContext.codeEnvironmentSettings,
         skillAuthoringAvailable: resolvedAgent.skillAuthoringAvailable === true,
       });
-      resolveAttachedCodeApprovalMode(
-        codeApprovalMode,
-        attachedCodeEnvironmentSettings,
-        agentsEndpointConfig?.toolApproval?.enabled !== false,
-      );
     }
     const discoveredAliases = collectRunMCPToolAliases([resolvedAgent]).filter(
       ({ name, aliasName }) => {

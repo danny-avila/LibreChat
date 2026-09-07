@@ -4782,6 +4782,7 @@ class AgentClient extends BaseClient {
            *  parent slot before the text step reaches the normal handlers. */
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
+          codeApprovalMode,
           user: createSafeUser(this.options.req?.user),
           traceContext: buildTraceContext(this.options),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
@@ -5525,6 +5526,7 @@ class AgentClient extends BaseClient {
         // steer parts spliced in while the resumed segment streams.
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
+        codeApprovalMode: this.options.req.body.codeApprovalMode,
         user: createSafeUser(this.options.req?.user),
         traceContext: buildTraceContext(this.options),
         tenantId: resolveRequestTenantId(this.options.req ?? {}),

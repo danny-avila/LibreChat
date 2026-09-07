@@ -4,6 +4,7 @@ import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
@@ -71,6 +72,7 @@ interface ChatFormProps {
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   conversation: TConversation | null;
+  setConversation: SetterOrUpdater<TConversation | null>;
   isSubmitting: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
@@ -102,6 +104,7 @@ const ChatForm = memo(function ChatForm({
   files,
   setFiles,
   conversation,
+  setConversation,
   isSubmitting,
   setFilesLoading,
   newConversation,
@@ -782,7 +785,7 @@ const ChatForm = memo(function ChatForm({
                 />
                 <CodeApprovalMenu
                   conversation={conversation}
-                  newConversation={newConversation}
+                  setConversation={setConversation}
                   disabled={disableInputs || isSubmitting}
                 />
                 <div className="mx-auto flex" />
@@ -856,6 +859,7 @@ function ChatFormWrapper({
     files,
     setFiles,
     conversation,
+    setConversation,
     isSubmitting,
     setFilesLoading,
     newConversation,
@@ -916,6 +920,7 @@ function ChatFormWrapper({
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
+      setConversation={setConversation}
       isSubmitting={isSubmitting}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}

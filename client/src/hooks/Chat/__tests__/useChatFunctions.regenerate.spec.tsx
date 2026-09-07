@@ -40,6 +40,7 @@ jest.mock('recoil', () => ({
 }));
 
 jest.mock('~/hooks/Files/useSetFilesToDelete', () => () => mockSetFilesToDelete);
+jest.mock('~/hooks/Agents/useCodeApprovalMode', () => () => ({ selected: 'ask' }));
 jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
 jest.mock('~/hooks', () => ({

@@ -1,6 +1,7 @@
 import { Constants } from '@librechat/agents';
 import {
   CODE_APPROVAL_MODES,
+  getAllowedCodeApprovalModes,
   resolveCodeApprovalMode,
   resolveCodePermissionDecision,
 } from 'librechat-data-provider';
@@ -141,7 +142,15 @@ function permissionDecision(
     configuredDecision != null && field?.allowed.includes(configuredDecision) === true
       ? configuredDecision
       : (field?.default ?? 'ask');
-  return resolveCodePermissionDecision({ mode, category, decision });
+  const effectiveMode = getAllowedCodeApprovalModes({
+    environment: 'attached',
+    allowedModes: CODE_APPROVAL_MODES,
+    configSchema: policy?.configSchema,
+    settings: policy?.settings,
+  }).includes(mode ?? 'ask')
+    ? mode
+    : undefined;
+  return resolveCodePermissionDecision({ mode: effectiveMode, category, decision });
 }
 
 export function resolveAttachedCodeApprovalMode(
@@ -160,14 +169,20 @@ export function resolveAttachedCodeApprovalMode(
     });
   }
   let resolved: CodeApprovalMode | undefined;
+  let rejection: Error | undefined;
   for (const policy of settingsByAgentId.values()) {
-    resolved = resolveCodeApprovalMode(requested, {
-      environment: 'attached',
-      allowedModes: CODE_APPROVAL_MODES,
-      configSchema: policy.configSchema,
-      settings: policy.settings,
-    });
+    try {
+      resolved = resolveCodeApprovalMode(requested, {
+        environment: 'attached',
+        allowedModes: CODE_APPROVAL_MODES,
+        configSchema: policy.configSchema,
+        settings: policy.settings,
+      });
+    } catch (error) {
+      rejection = error as Error;
+    }
   }
+  if (resolved == null && rejection != null) throw rejection;
   return (
     resolved ??
     resolveCodeApprovalMode(requested, {

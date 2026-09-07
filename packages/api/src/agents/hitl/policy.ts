@@ -731,7 +731,9 @@ export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFi
     spec: fields.spec ?? null,
     promptPrefix: fields.promptPrefix ?? null,
     ephemeralAgent: normalizeEphemeralAgent(fields.ephemeralAgent),
-    codeApprovalMode: fields.codeApprovalMode ?? null,
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
+      ? { codeApprovalMode: fields.codeApprovalMode ?? null }
+      : {}),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }

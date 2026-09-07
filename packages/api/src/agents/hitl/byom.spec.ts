@@ -115,7 +115,7 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
     ).resolves.toMatchObject({ decision: 'ask' });
   });
 
-  test('rejects accept edits when any attached machine excludes file-write allow', () => {
+  test('rejects accept edits when the attached machine excludes file-write allow', () => {
     expect(() =>
       resolveAttachedCodeApprovalMode(
         'acceptEdits',
@@ -131,6 +131,67 @@ describe('createAttachedCodeEnvironmentPolicyHook', () => {
         ]),
       ),
     ).toThrow('not permitted');
+  });
+
+  test('keeps a restrictive sibling asking without disabling accept edits elsewhere', async () => {
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'permissive-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['allow', 'ask'], default: 'ask' } },
+          },
+        },
+      ],
+      [
+        'restrictive-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } },
+          },
+        },
+      ],
+    ]);
+    const mode = resolveAttachedCodeApprovalMode('acceptEdits', settings);
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      new Set(['permissive-agent', 'restrictive-agent']),
+      settings,
+      mode,
+    );
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'permissive-agent' } as never, signal),
+    ).resolves.toEqual({ decision: 'allow' });
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'restrictive-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'ask' });
+  });
+
+  test('applies a restrictive policy discovered after lazy agent resolution', async () => {
+    const attachedIds = new Set<string>(['eager-agent']);
+    const settings = new Map<string, AttachedCodeEnvironmentPolicySettings>([
+      [
+        'eager-agent',
+        {
+          configSchema: {
+            permissions: { fileWrite: { allowed: ['allow', 'ask'], default: 'ask' } },
+          },
+        },
+      ],
+    ]);
+    const mode = resolveAttachedCodeApprovalMode('acceptEdits', settings);
+    const hook = createAttachedCodeEnvironmentPolicyHook(attachedIds, settings, mode);
+
+    attachedIds.add('lazy-agent');
+    settings.set('lazy-agent', {
+      configSchema: {
+        permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } },
+      },
+    });
+
+    await expect(
+      hook({ toolName: 'write_file', executingAgentId: 'lazy-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'ask' });
   });
 
   test('rejects an explicit mode when approvals are disabled by the administrator', () => {
