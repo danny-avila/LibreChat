@@ -5,7 +5,7 @@ const {
   isEnabled,
   normalizeLimit,
   deleteAgentCheckpointScopes,
-  getOwnedAgentCheckpointScopes,
+  getOwnedAgentCheckpointScope,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
   createSubagentControlHandler,
@@ -293,8 +293,17 @@ async function confirmAgentGenerationsDrained(
 ) {
   const drainErrors = [];
   const checkpointScopes = new Map();
+  const deletionTargets = new Set(conversationIds);
   let conversationRunIds;
   try {
+    const retainedScopes = await GenerationJobManager.getRetainedCheckpointScopesForUser(
+      userId,
+      tenantId,
+    );
+    addCheckpointScopes(
+      checkpointScopes,
+      retainedScopes.filter((scope) => ownerWide || deletionTargets.has(scope.threadId)),
+    );
     conversationRunIds = ownerWide
       ? await GenerationJobManager.getCleanupBlockingJobIdsForUser(userId, tenantId)
       : await GenerationJobManager.getCleanupBlockingJobIdsForConversations(
@@ -306,7 +315,6 @@ async function confirmAgentGenerationsDrained(
     logger.warn('Conversation generation index lookup failed', error);
     throw new Error('Conversation generations could not be confirmed drained.');
   }
-  const deletionTargets = new Set(conversationIds);
   const generationIds = [...new Set([...conversationIds, ...leaseTaskIds, ...conversationRunIds])];
   await Promise.all(
     generationIds.map(async (conversationId) => {
@@ -325,10 +333,8 @@ async function confirmAgentGenerationsDrained(
       if (jobTenantId != null && jobTenantId !== tenantId) {
         return;
       }
-      for (const checkpointScope of getOwnedAgentCheckpointScopes(job, userId, tenantId)) {
-        if (!ownerWide && !deletionTargets.has(checkpointScope.threadId)) {
-          continue;
-        }
+      const checkpointScope = getOwnedAgentCheckpointScope(job, userId, tenantId);
+      if (checkpointScope != null && (ownerWide || deletionTargets.has(checkpointScope.threadId))) {
         checkpointScopes.set(
           `${checkpointScope.threadId}\u0000${checkpointScope.checkpointNamespace}`,
           checkpointScope,
@@ -375,6 +381,14 @@ async function confirmAgentGenerationsDrained(
     throw new Error('One or more deleted child generations could not be confirmed drained.');
   }
   return [...checkpointScopes.values()];
+}
+
+async function deleteAndAcknowledgeCheckpointScopes(userId, tenantId, scopes, checkpointer) {
+  if (scopes.length === 0) {
+    return;
+  }
+  await deleteAgentCheckpointScopes(scopes, checkpointer);
+  await GenerationJobManager.acknowledgeCheckpointScopesForUser(userId, tenantId, scopes);
 }
 
 /** Repeats generation discovery after the conversation wave is gone, then always
@@ -427,7 +441,12 @@ async function withAgentOwnerDeletionFence(
     },
   );
   if (checkpointScopes.size > 0) {
-    await deleteAgentCheckpointScopes([...checkpointScopes.values()], checkpointer);
+    await deleteAndAcknowledgeCheckpointScopes(
+      userId,
+      tenantId,
+      [...checkpointScopes.values()],
+      checkpointer,
+    );
   }
   return { result, recoveryConversationIds };
 }
@@ -446,7 +465,12 @@ async function deleteOwnerConversationPersistence(userId, filter, tenantId, chec
   /** Consume the deletion receipt before the fallible message sweep. A retry after
    * conversations are gone cannot reconstruct these checkpoint identities. */
   if (checkpointScopes.size > 0) {
-    await deleteAgentCheckpointScopes([...checkpointScopes.values()], checkpointer);
+    await deleteAndAcknowledgeCheckpointScopes(
+      userId,
+      tenantId,
+      [...checkpointScopes.values()],
+      checkpointer,
+    );
   }
   /** Always runs, including an empty conversation retry, so an interrupted writer
    * that persisted messages first cannot make its cleanup permanently unreachable. */
@@ -566,7 +590,12 @@ router.delete('/', configMiddleware, async (req, res) => {
     }
     /** Legacy generations have no owner-bound namespace and remain for TTL cleanup. */
     if (checkpointScopes.size > 0) {
-      await deleteAgentCheckpointScopes([...checkpointScopes.values()], checkpointer);
+      await deleteAndAcknowledgeCheckpointScopes(
+        req.user.id,
+        tenantId,
+        [...checkpointScopes.values()],
+        checkpointer,
+      );
     }
     if (filter.conversationId) {
       await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));

@@ -117,6 +117,8 @@ describe('Convos Routes', () => {
     generationJobManager.abortJob.mockResolvedValue({ success: true });
     generationJobManager.getCleanupBlockingJobIdsForUser.mockResolvedValue([]);
     generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([]);
+    generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([]);
+    generationJobManager.acknowledgeCheckpointScopesForUser.mockResolvedValue();
     resetCheckpointRows();
   });
 
@@ -1115,6 +1117,77 @@ describe('Convos Routes', () => {
       ]);
     });
 
+    it('deletes a retained checkpoint after its terminal job hash expires, then acknowledges it', async () => {
+      const scope = {
+        threadId: 'conversation-1',
+        checkpointNamespace: 'expired-job-generation',
+      };
+      generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([scope]);
+      resetCheckpointRows([scope]);
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(checkpointRows).toEqual([]);
+      expect(generationJobManager.acknowledgeCheckpointScopesForUser).toHaveBeenCalledWith(
+        'test-user-123',
+        undefined,
+        [scope],
+      );
+      expect(deleteAgentCheckpointScopes.mock.invocationCallOrder[0]).toBeLessThan(
+        generationJobManager.acknowledgeCheckpointScopesForUser.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('keeps a retained checkpoint receipt when saver deletion fails', async () => {
+      const scope = {
+        threadId: 'conversation-1',
+        checkpointNamespace: 'retryable-generation',
+      };
+      generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([scope]);
+      deleteAgentCheckpointScopes.mockRejectedValueOnce(new Error('checkpoint store unavailable'));
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(500);
+      expect(generationJobManager.acknowledgeCheckpointScopesForUser).not.toHaveBeenCalled();
+    });
+
+    it('fails cleanup when retained checkpoint acknowledgement is unavailable', async () => {
+      const scope = {
+        threadId: 'conversation-1',
+        checkpointNamespace: 'unacknowledged-generation',
+      };
+      generationJobManager.getRetainedCheckpointScopesForUser.mockResolvedValue([scope]);
+      generationJobManager.acknowledgeCheckpointScopesForUser.mockRejectedValueOnce(
+        new Error('receipt index unavailable'),
+      );
+      deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        return { deletedCount: 1, conversationIds: ['conversation-1'] };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(500);
+      expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith([scope], undefined);
+      expect(generationJobManager.acknowledgeCheckpointScopesForUser).toHaveBeenCalledTimes(1);
+    });
+
     it('accumulates owned checkpoint scopes from every cascade wave', async () => {
       const jobs = {
         'run-parent': {
@@ -1124,13 +1197,6 @@ describe('Convos Routes', () => {
             checkpointNamespace: 'parent-generation',
             generationProtocolVersion: 2,
           },
-          replacedCheckpointScopes: [
-            {
-              userId: 'test-user-123',
-              conversationId: 'parent-conversation',
-              checkpointNamespace: 'parent-predecessor-generation',
-            },
-          ],
         },
         'run-child': {
           metadata: {
@@ -1170,54 +1236,7 @@ describe('Convos Routes', () => {
       expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith(
         [
           { threadId: 'parent-conversation', checkpointNamespace: 'parent-generation' },
-          {
-            threadId: 'parent-conversation',
-            checkpointNamespace: 'parent-predecessor-generation',
-          },
           { threadId: 'child-conversation', checkpointNamespace: 'child-generation' },
-        ],
-        undefined,
-      );
-    });
-
-    it('prunes a settled replacement and its acknowledged predecessor scope', async () => {
-      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
-        'replacement-run',
-      ]);
-      generationJobManager.getJob.mockResolvedValue({
-        metadata: {
-          userId: 'test-user-123',
-          conversationId: 'conversation-1',
-          checkpointNamespace: 'replacement-generation',
-          generationProtocolVersion: 2,
-        },
-        replacedCheckpointScopes: [
-          {
-            userId: 'test-user-123',
-            conversationId: 'conversation-1',
-            checkpointNamespace: 'predecessor-generation',
-          },
-        ],
-        status: 'complete',
-        createdAt: Date.now(),
-      });
-      deleteConvos
-        .mockImplementationOnce(async (_userId, _filter, options) => {
-          await options.beforeDelete(['conversation-1']);
-          return { deletedCount: 1, conversationIds: ['conversation-1'] };
-        })
-        .mockResolvedValueOnce({ deletedCount: 0, conversationIds: [] });
-
-      const response = await request(app)
-        .delete('/api/convos')
-        .send({ arg: { conversationId: 'conversation-1' } });
-
-      expect(response.status).toBe(201);
-      expect(generationJobManager.abortJob).not.toHaveBeenCalled();
-      expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith(
-        [
-          { threadId: 'conversation-1', checkpointNamespace: 'replacement-generation' },
-          { threadId: 'conversation-1', checkpointNamespace: 'predecessor-generation' },
         ],
         undefined,
       );

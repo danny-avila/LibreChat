@@ -180,13 +180,6 @@ describe('RedisJobStore Integration Tests', () => {
       expect(predecessor.checkpointNamespace).toEqual(expect.any(String));
       expect(replacement.checkpointNamespace).toEqual(expect.any(String));
       expect(replacement.checkpointNamespace).not.toBe(predecessor.checkpointNamespace);
-      expect(replacement.replacedCheckpointScopes).toEqual([
-        {
-          userId: 'user-1',
-          conversationId: streamId,
-          checkpointNamespace: predecessor.checkpointNamespace,
-        },
-      ]);
       expect(replacement.replacedJob).toEqual({
         createdAt: predecessor.createdAt,
         status: 'requires_action',
@@ -210,7 +203,6 @@ describe('RedisJobStore Integration Tests', () => {
         enumerable: false,
       });
       expect(Object.keys(durableReplacement!)).not.toContain('replacedJob');
-      expect(Object.keys(durableReplacement!)).not.toContain('replacedCheckpointScopes');
       await store.destroy();
     });
 
@@ -1666,6 +1658,84 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('retains terminal checkpoint receipts until cleanup acknowledges them', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 1, requiresActionTtl: 60 });
+      await store.initialize();
+
+      const suffix = `${process.pid}-${Date.now()}`;
+      const streamId = `checkpoint-terminal-${suffix}`;
+      const userId = `checkpoint-user-${suffix}`;
+      const tenantId = 'tenant-a';
+      const predecessor = await store.createJob(streamId, userId, streamId, tenantId);
+      const job = await store.createJob(streamId, userId, streamId, tenantId);
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: job.createdAt,
+      });
+      await ioredisClient.del(`stream:{${streamId}}:job`);
+
+      const scopes = [
+        { threadId: streamId, checkpointNamespace: predecessor.checkpointNamespace! },
+        { threadId: streamId, checkpointNamespace: job.checkpointNamespace! },
+      ];
+      const retained = await store.getRetainedCheckpointScopesByUser(userId, tenantId);
+      expect(retained).toHaveLength(2);
+      expect(retained).toEqual(expect.arrayContaining(scopes));
+      await store.acknowledgeCheckpointScopes(userId, tenantId, scopes);
+      await store.acknowledgeCheckpointScopes(userId, tenantId, scopes);
+      await expect(store.getRetainedCheckpointScopesByUser(userId, tenantId)).resolves.toEqual([]);
+
+      await store.destroy();
+    });
+
+    test('does not shorten a shared owner index for a longer paused job', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, {
+        userJobsSetTtl: 60,
+        requiresActionTtl: 120,
+      });
+      await store.initialize();
+
+      const suffix = `${process.pid}-${Date.now()}`;
+      const userId = `mixed-ttl-user-${suffix}`;
+      const tenantId = 'tenant-a';
+      const pausedStreamId = `mixed-ttl-paused-${suffix}`;
+      const paused = await store.createJob(pausedStreamId, userId, pausedStreamId, tenantId);
+      const pendingAction = {
+        ...buildPendingAction(pausedStreamId),
+        expiresAt: Date.now() + 2 * 86400 * 1000,
+      };
+      await store.transitionStatus(pausedStreamId, {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: paused.createdAt,
+        patch: { pendingAction },
+      });
+      const ownerKey = `stream:user:{${tenantId}:${userId}}:jobs`;
+      const longTtl = await ioredisClient.ttl(ownerKey);
+
+      await store.createJob(
+        `mixed-ttl-ordinary-${suffix}`,
+        userId,
+        'ordinary-conversation',
+        tenantId,
+      );
+
+      expect(longTtl).toBeGreaterThan(86400);
+      expect(await ioredisClient.ttl(ownerKey)).toBeGreaterThan(86400);
+      await store.destroy();
+    });
+
     test('should prune expired requires_action IDs during cleanup', async () => {
       if (!ioredisClient) {
         return;
@@ -2582,41 +2652,6 @@ describe('RedisJobStore Integration Tests', () => {
       const ttl = await ioredisClient.ttl(userKey);
       expect(ttl).toBeGreaterThan(0);
       expect(ttl).toBeLessThanOrEqual(3600);
-
-      await store.destroy();
-    });
-
-    test('retains owner membership through an extended paused approval window', async () => {
-      if (!ioredisClient) {
-        return;
-      }
-
-      const { RedisJobStore } = await import('../implementations/RedisJobStore');
-      const store = new RedisJobStore(ioredisClient, {
-        userJobsSetTtl: 60,
-        requiresActionTtl: 60,
-      });
-      await store.initialize();
-
-      const userId = `paused-owner-ttl-user-${Date.now()}`;
-      const streamId = `paused-owner-ttl-stream-${Date.now()}`;
-      const job = await store.createJob(streamId, userId, streamId);
-      await expect(
-        store.transitionStatus(streamId, {
-          from: 'running',
-          to: 'requires_action',
-          expectCreatedAt: job.createdAt,
-          patch: {
-            pendingAction: {
-              ...buildPendingAction(streamId),
-              expiresAt: Date.now() + 2 * 86400 * 1000,
-            },
-          },
-        }),
-      ).resolves.toBe(true);
-
-      const ownerTtl = await ioredisClient.ttl(`stream:user:{${userId}}:jobs`);
-      expect(ownerTtl).toBeGreaterThan(2 * 86400);
 
       await store.destroy();
     });

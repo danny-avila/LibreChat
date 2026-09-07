@@ -4,57 +4,12 @@ import {
   getAgentCheckpointer,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
-  getOwnedAgentCheckpointScopes,
   DEFAULT_CHECKPOINT_TTL_SECONDS,
   __resetCheckpointerForTests,
 } from './checkpointer';
 
 beforeEach(() => {
   __resetCheckpointerForTests();
-});
-
-describe('getOwnedAgentCheckpointScopes', () => {
-  test('collects exact current and predecessor scopes while rejecting ambiguous ownership', () => {
-    const job = {
-      metadata: {
-        userId: 'user-1',
-        tenantId: 'tenant-a',
-        conversationId: 'conversation-current',
-        checkpointNamespace: 'generation-current',
-        generationProtocolVersion: 2 as const,
-      },
-      replacedCheckpointScopes: [
-        {
-          userId: 'user-1',
-          tenantId: 'tenant-a',
-          conversationId: 'conversation-prior',
-          checkpointNamespace: 'generation-prior',
-        },
-        {
-          userId: 'user-1',
-          conversationId: 'conversation-legacy-tenant',
-          checkpointNamespace: 'generation-legacy-tenant',
-        },
-        {
-          userId: 'user-1',
-          tenantId: 'tenant-b',
-          conversationId: 'conversation-foreign',
-          checkpointNamespace: 'generation-foreign',
-        },
-      ],
-    };
-
-    expect(getOwnedAgentCheckpointScopes(job, 'user-1', 'tenant-a')).toEqual([
-      {
-        threadId: 'conversation-current',
-        checkpointNamespace: 'generation-current',
-      },
-      {
-        threadId: 'conversation-prior',
-        checkpointNamespace: 'generation-prior',
-      },
-    ]);
-  });
 });
 
 describe('resolveCheckpointerConfig', () => {

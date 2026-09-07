@@ -20,6 +20,7 @@ import type {
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
+  RetainedCheckpointScope,
   CreatedJobData,
   IEventTransport,
   UsageMetadata,
@@ -2873,7 +2874,7 @@ class GenerationJobManagerClass {
       },
     };
 
-    const facade: t.GenerationJob = {
+    return {
       streamId,
       emitter: emitterProxy as unknown as t.GenerationJob['emitter'],
       status: jobData.status as t.GenerationJobStatus,
@@ -2949,13 +2950,6 @@ class GenerationJobManagerClass {
       finalEvent: runtime.finalEvent,
       syncSent: runtime.syncSent,
     };
-    if (jobData.replacedCheckpointScopes != null) {
-      Object.defineProperty(facade, 'replacedCheckpointScopes', {
-        value: jobData.replacedCheckpointScopes,
-        enumerable: false,
-      });
-    }
-    return facade;
   }
 
   /**
@@ -9315,6 +9309,32 @@ class GenerationJobManagerClass {
     return this.jobStore.getRetainedJobIdsByUser(userId, tenantId);
   }
 
+  async getRetainedCheckpointScopesForUser(
+    userId: string,
+    tenantId?: string,
+  ): Promise<RetainedCheckpointScope[]> {
+    if (this.jobStore.getRetainedCheckpointScopesByUser == null) {
+      return [];
+    }
+    const scopes = await this.jobStore.getRetainedCheckpointScopesByUser(userId, tenantId);
+    const unique = new Map<string, RetainedCheckpointScope>();
+    for (const scope of scopes) {
+      if (!scope.threadId || !scope.checkpointNamespace) {
+        throw new Error('Invalid retained checkpoint scope');
+      }
+      unique.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
+    }
+    return [...unique.values()];
+  }
+
+  async acknowledgeCheckpointScopesForUser(
+    userId: string,
+    tenantId: string | undefined,
+    scopes: readonly RetainedCheckpointScope[],
+  ): Promise<void> {
+    await this.jobStore.acknowledgeCheckpointScopes?.(userId, tenantId, scopes);
+  }
+
   /** Resolves every cleanup-blocking run attached to any target conversation.
    * Remote API runs use response IDs as stream identities, so conversation
    * deletion cannot assume one stream per conversation. */
@@ -9327,21 +9347,11 @@ class GenerationJobManagerClass {
       return [];
     }
     const targets = new Set(conversationIds);
-    const streamIds = await this.getAccountCleanupJobIdsForUser(userId, tenantId);
+    const streamIds = await this.getCleanupBlockingJobIdsForUser(userId, tenantId);
     const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
     return streamIds.filter((_, index) => {
       const job = jobs[index];
-      return (
-        job != null &&
-        job.userId === userId &&
-        (targets.has(job.conversationId ?? '') ||
-          (job.replacedCheckpointScopes ?? []).some(
-            (scope) =>
-              scope.userId === userId &&
-              (scope.tenantId ?? undefined) === (tenantId ?? undefined) &&
-              targets.has(scope.conversationId),
-          ))
-      );
+      return job != null && job.userId === userId && targets.has(job.conversationId ?? '');
     });
   }
 

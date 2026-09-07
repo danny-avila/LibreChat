@@ -118,10 +118,6 @@ export interface SerializableJobData {
    * `checkpoint_ns`, which the saver adapter maps to this storage scope.
    * Legacy paused jobs omit it and use the historical unscoped storage. */
   checkpointNamespace?: string;
-  /** Exact predecessor checkpoint identities retained independently from
-   * replacement-handoff receipts. Built-in stores expose this as
-   * non-enumerable metadata so ordinary job serialization cannot leak it. */
-  replacedCheckpointScopes?: readonly CheckpointScopeReceipt[];
   completedAt?: number;
   conversationId?: string;
   error?: string;
@@ -378,10 +374,8 @@ export interface SerializableJobData {
   steersClosed?: boolean;
 }
 
-export interface CheckpointScopeReceipt {
-  userId: string;
-  tenantId?: string;
-  conversationId: string;
+export interface RetainedCheckpointScope {
+  threadId: string;
   checkpointNamespace: string;
 }
 
@@ -969,6 +963,18 @@ export interface IJobStore {
    * stale paused generation that account deletion must erase before its worker
    * finalizes it. Optional custom stores fall back to cleanup-blocking jobs. */
   getRetainedJobIdsByUser?(userId: string, tenantId?: string): Promise<string[]>;
+  /** Enumerates exact-owner v2 checkpoint identities independently of the
+   * shorter-lived generation job hash. */
+  getRetainedCheckpointScopesByUser?(
+    userId: string,
+    tenantId?: string,
+  ): Promise<RetainedCheckpointScope[]>;
+  /** Removes only receipts whose saver deletion completed successfully. */
+  acknowledgeCheckpointScopes?(
+    userId: string,
+    tenantId: string | undefined,
+    scopes: readonly RetainedCheckpointScope[],
+  ): Promise<void>;
   setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void;
   setContentParts(
     streamId: string,

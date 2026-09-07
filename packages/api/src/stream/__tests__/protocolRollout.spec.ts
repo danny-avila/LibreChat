@@ -61,49 +61,23 @@ describe('generation protocol rollout storage', () => {
     }
   });
 
-  test('replacement acknowledgement preserves predecessor checkpoint cleanup evidence', async () => {
+  test('retains replacement checkpoint scopes until cleanup acknowledges them', async () => {
     const store = new InMemoryJobStore();
-    const predecessor = await store.createJob(
-      'replacement-scope',
-      'owner-a',
-      'conversation-a',
-      'tenant-a',
-      { generationProtocolVersion: 2 },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'attempt-a',
-    );
-    const replacement = await store.createJob(
-      'replacement-scope',
-      'owner-a',
-      'conversation-a',
-      'tenant-a',
-      { generationProtocolVersion: 2 },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'attempt-b',
-    );
+    const first = await store.createJob('scope-stream', 'user-1', 'conversation-1', 'tenant-1');
+    const second = await store.createJob('scope-stream', 'user-1', 'conversation-1', 'tenant-1');
+    await store.deleteJob(second.streamId, second.createdAt);
 
-    expect(replacement.replacedCheckpointScopes).toEqual([
-      {
-        userId: 'owner-a',
-        tenantId: 'tenant-a',
-        conversationId: 'conversation-a',
-        checkpointNamespace: predecessor.checkpointNamespace,
-      },
+    const retained = await store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1');
+    expect(retained).toEqual([
+      { threadId: 'conversation-1', checkpointNamespace: first.checkpointNamespace },
+      { threadId: 'conversation-1', checkpointNamespace: second.checkpointNamespace },
     ]);
-    await expect(
-      store.acknowledgeReplacedJobs('replacement-scope', 'attempt-b', [predecessor.createdAt]),
-    ).resolves.toBe(true);
-    const durable = await store.getJob('replacement-scope');
-    expect(durable?.replacedCheckpointScopes).toEqual(replacement.replacedCheckpointScopes);
-    expect(Object.keys(durable ?? {})).not.toContain('replacedCheckpointScopes');
+
+    await store.acknowledgeCheckpointScopes('user-1', 'tenant-1', [retained[0]]);
+    await store.acknowledgeCheckpointScopes('user-1', 'tenant-1', [retained[0]]);
+    await expect(store.getRetainedCheckpointScopesByUser('user-1', 'tenant-1')).resolves.toEqual([
+      retained[1],
+    ]);
   });
 
   test('v1 steering stays receiptless and uses the legacy destructive drain', async () => {
