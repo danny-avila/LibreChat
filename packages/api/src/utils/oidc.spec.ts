@@ -6,6 +6,7 @@ import {
   processOpenIDPlaceholders,
   isAccessTokenJwt,
   extractSubFromAccessToken,
+  decodeJwtSegment,
 } from './oidc';
 
 describe('OpenID Token Utilities', () => {
@@ -944,6 +945,30 @@ describe('OpenID Token Utilities', () => {
 
       expect(result.sub).toBe('user-sub-xyz');
       expect(result.error).toBeUndefined();
+    });
+  });
+
+  describe('decodeJwtSegment', () => {
+    it('returns undefined for undefined, null, or empty string', () => {
+      expect(decodeJwtSegment(undefined)).toBeUndefined();
+      expect(decodeJwtSegment('')).toBeUndefined();
+    });
+
+    it('decodes standard base64 JSON', () => {
+      const data = { hello: 'world', num: 42 };
+      const segment = Buffer.from(JSON.stringify(data)).toString('base64');
+      expect(decodeJwtSegment(segment)).toEqual(data);
+    });
+
+    it('decodes base64url JSON without padding', () => {
+      const data = { sub: 'user-xyz', typ: 'JWT' };
+      const segment = Buffer.from(JSON.stringify(data)).toString('base64url');
+      expect(decodeJwtSegment(segment)).toEqual(data);
+    });
+
+    it('returns undefined for non-JSON string', () => {
+      const segment = Buffer.from('plain non-json text').toString('base64');
+      expect(decodeJwtSegment(segment)).toBeUndefined();
     });
   });
 });
