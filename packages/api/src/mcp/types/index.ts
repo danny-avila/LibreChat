@@ -297,6 +297,8 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
   /** Internal one-shot fence shared across connection initialization and initial tools/list. */
   directBearerRecoveryState?: DirectBearerRecoveryState;
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
+  /** Request-local resolved credentials; serverConfig remains the authoritative definition. */
+  directBearerResolvedConfig?: MCPOptions;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
   oauthStart?: OAuthStartHandler;

@@ -753,13 +753,16 @@ Please follow these instructions when using tools from the respective MCP server
     const recovery = Promise.resolve().then(async () => {
       let replacementPromise: Promise<MCPConnection>;
       try {
-        await resolveDirectOpenIDBearerConfig({
+        signal?.throwIfAborted();
+        const refreshedConfig = await resolveDirectOpenIDBearerConfig({
           config: serverConfig,
           upstreamTokenProvider,
           forceRefresh: true,
         });
+        signal?.throwIfAborted();
         connection.stopReconnecting();
         await this.waitForConnectionBorrowersToDrain(connection);
+        signal?.throwIfAborted();
         const requestConnectionKey = `${user.id}:${serverName}`;
         if (requestScopedConnections?.connections.get(requestConnectionKey) === connection) {
           requestScopedConnections.connections.delete(requestConnectionKey);
@@ -769,6 +772,7 @@ Please follow these instructions when using tools from the respective MCP server
           );
         }
         mutationFence.assertCurrent();
+        signal?.throwIfAborted();
         /** Invocation is synchronous through the replacement's own guard registration, closing
          * the mutation window before this outer reservation is released. */
         replacementPromise = this.getUserConnection({
@@ -787,6 +791,8 @@ Please follow these instructions when using tools from the respective MCP server
           upstreamTokenProvider,
           oboIdentityContext,
           directBearerRecoveryState: { attempted: true },
+          directBearerResolvedConfig: refreshedConfig,
+          signal,
         });
       } finally {
         mutationFence.release();

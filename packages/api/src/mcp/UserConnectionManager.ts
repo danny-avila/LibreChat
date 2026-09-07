@@ -555,11 +555,13 @@ export abstract class UserConnectionManager {
       ephemeralConnection = false,
       serverConfig: providedConfig,
       directBearerRecoveryState = { attempted: false },
+      directBearerResolvedConfig,
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
     creationGuard?: ConnectionCreationGuard,
   ): Promise<MCPConnection> {
+    signal?.throwIfAborted();
     this.assertCreationNotCancelled(creationGuard, userId, serverName);
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
@@ -708,10 +710,14 @@ export abstract class UserConnectionManager {
     logger.info(`[MCP][User: ${userId}] Establishing new connection`);
 
     try {
-      const bearerConfig = await resolveDirectOpenIDBearerConfig({
-        config,
-        upstreamTokenProvider,
-      });
+      signal?.throwIfAborted();
+      const bearerConfig =
+        directBearerResolvedConfig ??
+        (await resolveDirectOpenIDBearerConfig({
+          config,
+          upstreamTokenProvider,
+        }));
+      signal?.throwIfAborted();
       const runtimeConfig = await this.applyRuntimeOAuthDetection({
         config: bearerConfig,
         user,
@@ -785,6 +791,7 @@ export abstract class UserConnectionManager {
           graphTokenResolver,
           upstreamTokenProvider,
           connectionTimeout,
+          signal,
         };
       }
 
@@ -827,11 +834,13 @@ export abstract class UserConnectionManager {
             );
           }
           directBearerRecoveryState.attempted = true;
-          await resolveDirectOpenIDBearerConfig({
+          signal?.throwIfAborted();
+          const refreshedConfig = await resolveDirectOpenIDBearerConfig({
             config,
             upstreamTokenProvider,
             forceRefresh: true,
           });
+          signal?.throwIfAborted();
           connection.removeAllListeners('toolsChanged');
           await connection.dispose();
           return this.createUserConnectionInternal(
@@ -856,6 +865,7 @@ export abstract class UserConnectionManager {
               ephemeralConnection,
               serverConfig: config,
               directBearerRecoveryState,
+              directBearerResolvedConfig: refreshedConfig,
             },
             userId,
             clearCooldown,

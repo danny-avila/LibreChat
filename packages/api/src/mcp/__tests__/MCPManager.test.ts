@@ -3168,6 +3168,9 @@ describe('MCPManager', () => {
           forceNew: true,
           serverConfig,
           directBearerRecoveryState: { attempted: true },
+          directBearerResolvedConfig: expect.objectContaining({
+            headers: { Authorization: 'Bearer refreshed-token' },
+          }),
         }),
       );
     });
@@ -3493,6 +3496,61 @@ describe('MCPManager', () => {
       );
       expect(connection.client.request).toHaveBeenCalledTimes(1);
     });
+
+    it.each(['before', 'refresh', 'drain'] as const)(
+      'stops direct-bearer recovery when cancelled during %s',
+      async (abortAt) => {
+        const controller = new AbortController();
+        const cancelled = new Error('request stopped');
+        const connection = { stopReconnecting: jest.fn() } as unknown as MCPConnection;
+        const upstreamTokenProvider = jest.fn(async () => {
+          if (abortAt === 'refresh') {
+            controller.abort(cancelled);
+          }
+          return { access_token: 'fresh-token' };
+        });
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const getUserConnection = jest.spyOn(manager, 'getUserConnection');
+        const internals = manager as unknown as {
+          waitForConnectionBorrowersToDrain: (connection: MCPConnection) => Promise<void>;
+          recoverDirectOpenIDBearerConnection: (args: {
+            connection: MCPConnection;
+            serverName: string;
+            serverConfig: t.ParsedServerConfig;
+            user: IUser;
+            flowManager: Parameters<typeof manager.callTool>[0]['flowManager'];
+            upstreamTokenProvider: NonNullable<
+              Parameters<typeof manager.callTool>[0]['upstreamTokenProvider']
+            >;
+            signal: AbortSignal;
+          }) => Promise<void>;
+        };
+        jest.spyOn(internals, 'waitForConnectionBorrowersToDrain').mockImplementation(async () => {
+          if (abortAt === 'drain') {
+            controller.abort(cancelled);
+          }
+        });
+        if (abortAt === 'before') {
+          controller.abort(cancelled);
+        }
+
+        await expect(
+          internals.recoverDirectOpenIDBearerConnection({
+            connection,
+            serverName,
+            serverConfig,
+            user,
+            flowManager: {} as Parameters<typeof manager.callTool>[0]['flowManager'],
+            upstreamTokenProvider,
+            signal: controller.signal,
+          }),
+        ).rejects.toBe(cancelled);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(upstreamTokenProvider).toHaveBeenCalledTimes(abortAt === 'before' ? 0 : 1);
+        expect(getUserConnection).not.toHaveBeenCalled();
+      },
+    );
 
     it('fences a delayed direct-bearer replacement when the server config mutates', async () => {
       const connection = {
@@ -4170,8 +4228,17 @@ describe('MCPManager', () => {
       expect(upstreamTokenProvider.mock.calls).toEqual([
         [{ forceRefresh: false }],
         [{ forceRefresh: true }],
-        [{ forceRefresh: false }],
       ]);
+      expect(MCPConnectionFactory.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          serverDefinition: directBearerConfig,
+          directBearerSourceConfig: directBearerConfig,
+          serverConfig: expect.objectContaining({
+            headers: expect.objectContaining({ Authorization: 'Bearer fresh-token' }),
+          }),
+        }),
+        expect.any(Object),
+      );
     });
 
     it('honors a direct bearer recovery budget consumed during factory initialization', async () => {
