@@ -14,9 +14,8 @@ import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IndexBuildOptions } from '@librechat/data-schemas';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { ResolvedCheckpointerConfig } from './checkpoints/config';
-import { deleteOwnedActorCheckpointScopes, getActorCheckpointScope } from './checkpoints/ownership';
+import { deleteOwnedActorCheckpointScopes } from './checkpoints/ownership';
 import { checkpointOwnerNamespacePrefix } from '../stream/checkpoints';
-import { historicalActorReferences } from './checkpoints/pruning';
 import { resolveCheckpointerConfig } from './checkpoints/config';
 
 export { resolveCheckpointerConfig } from './checkpoints/config';
@@ -763,7 +762,7 @@ export async function forkAgentEventCheckpoint(
   return { ...target, checkpointId };
 }
 
-/** Retain exact reference evidence until every dependent row has been removed. */
+/** Historical evidence authorizes only this exact ID, never the whole legacy namespace. */
 export async function deleteAgentEventCheckpointReference(
   reference: AgentEventCheckpointReference,
   cfg?: TCheckpointerConfig,
@@ -776,25 +775,13 @@ export async function deleteAgentEventCheckpointReference(
   if (!db || mongoose.connection.readyState !== 1) {
     throw new Error('Mongo checkpoint storage is unavailable');
   }
-  const checkpoints = db.collection(resolved.checkpointCollectionName);
-  const anchor = {
+  const exact = {
     thread_id: reference.threadId,
     checkpoint_ns: reference.checkpointNs,
     checkpoint_id: reference.checkpointId,
   };
-  if (!(await checkpoints.findOne(anchor, { projection: { _id: 1 } }))) {
-    return false;
-  }
-  const scope = {
-    thread_id: reference.threadId,
-    checkpoint_ns: generationNamespaceFilter(reference.checkpointNs),
-  };
-  await db.collection(resolved.checkpointWritesCollectionName).deleteMany(scope);
-  await checkpoints.deleteMany({
-    ...scope,
-    $nor: [{ checkpoint_ns: reference.checkpointNs, checkpoint_id: reference.checkpointId }],
-  });
-  await checkpoints.deleteOne(anchor);
+  await db.collection(resolved.checkpointWritesCollectionName).deleteMany(exact);
+  await db.collection(resolved.checkpointCollectionName).deleteOne(exact);
   return true;
 }
 
@@ -1104,13 +1091,6 @@ export async function deleteOwnedAgentCheckpoints(
   const db = mongoose.connection.db;
   if (!db || mongoose.connection.readyState !== 1) {
     throw new Error('Checkpoint database is unavailable');
-  }
-  for await (const reference of historicalActorReferences(userId, tenantId, conversationIds)) {
-    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
-    if (scope != null && scope.owner !== checkpointOwnerNamespacePrefix(userId, tenantId)) {
-      continue;
-    }
-    await deleteAgentEventCheckpointReference(reference, cfg);
   }
   await deleteOwnedActorCheckpointScopes(
     userId,

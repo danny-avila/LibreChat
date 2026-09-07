@@ -10,7 +10,6 @@ const {
   normalizeHttpError,
   getWebSearchInstallEntries,
   getWebSearchUninstallFields,
-  deleteOwnedAgentCheckpoints,
   openCheckpointDeletion,
   isStopConfirmed,
   deleteAllSharedLinksWithCleanup,
@@ -459,7 +458,15 @@ const deleteUserController = async (req, res) => {
       undefined,
       checkpointer,
     );
-    await deleteOwnedAgentCheckpoints(user.id, user.tenantId, undefined, checkpointer);
+    await db.deleteConvos(
+      user.id,
+      {},
+      {
+        allowEmpty: true,
+        beforeDelete: (ids) => checkpointDeletion.remember(ids),
+      },
+    );
+    await checkpointDeletion.cleanup();
     await checkpointDeletion.acknowledge();
 
     await db.deleteMessages({ user: user.id });
@@ -468,7 +475,6 @@ const deleteUserController = async (req, res) => {
     await db.deleteUserKey({ userId: user.id, all: true });
     await db.deleteBalances({ user: user._id });
     await db.deletePresets(user.id);
-    await db.deleteConvos(user.id, {}, { allowEmpty: true });
     await deleteUserPluginAuth(user.id, null, true);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);

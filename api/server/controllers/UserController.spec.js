@@ -108,6 +108,12 @@ jest.mock('@librechat/api', () => ({
   },
   deleteAgentCheckpoints: (...args) => mockDeleteAgentCheckpoints(...args),
   deleteOwnedAgentCheckpoints: (...args) => mockDeleteOwnedAgentCheckpoints(...args),
+  openCheckpointDeletion: jest.fn(async (userId, tenantId, _root, cfg) => ({
+    remember: jest.fn(async () => undefined),
+    cleanup: async () => mockDeleteOwnedAgentCheckpoints(userId, tenantId, undefined, cfg),
+    acknowledge: jest.fn(async () => undefined),
+    conversationIds: () => [],
+  })),
 }));
 
 jest.mock('~/server/services/Agents/triggers', () => ({
@@ -521,6 +527,21 @@ describe('deleteUserController', () => {
     expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
     // A successful deletion hard-deletes the schedules; it must never restore them.
     expect(mockRestoreUserSchedules).not.toHaveBeenCalled();
+  });
+
+  it('does not erase checkpoint payload when conversation deletion fails', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
+      await options.beforeDelete(['conversation-1']);
+      throw new Error('conversation deletion failed');
+    });
+    await deleteUserController(
+      { user: { id: userId.toString(), _id: userId, email: 'delete-failed@test.com' } },
+      mockRes,
+    );
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(mockDeleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
+    expect(deleteMessages).not.toHaveBeenCalled();
   });
 
   it('aborts generations admitted before the deletion fence before erasing messages', async () => {

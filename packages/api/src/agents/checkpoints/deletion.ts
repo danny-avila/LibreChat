@@ -1,18 +1,24 @@
 import mongoose from 'mongoose';
 import { createHash, randomUUID } from 'crypto';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AgentEventCheckpointReference } from '../checkpointer';
+import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReference } from '../checkpointer';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
-import { resolveCheckpointerConfig } from '../checkpointer';
+import { historicalActorReferences } from './pruning';
+import { getActorCheckpointScope } from './ownership';
+import { resolveCheckpointerConfig } from './config';
 
 interface DeletionTarget {
   _id: string;
   version: string;
   threadId: string;
+  checkpoint?: AgentEventCheckpointReference;
 }
 
 export interface CheckpointDeletion {
   conversationIds(): string[];
   remember(conversationIds: readonly string[]): Promise<void>;
+  cleanup(): Promise<void>;
   acknowledge(): Promise<void>;
 }
 
@@ -47,25 +53,81 @@ export async function openCheckpointDeletion(
   const version = randomUUID();
   const batchSize = 256;
 
+  async function persist(batch: DeletionTarget[]) {
+    await collection.bulkWrite(
+      batch.map((target) => ({
+        updateOne: {
+          filter: { _id: target._id },
+          update: {
+            $set: {
+              version,
+              threadId: target.threadId,
+              ...(target.checkpoint && { checkpoint: target.checkpoint }),
+            },
+          },
+          upsert: true,
+        },
+      })),
+    );
+    for (const target of batch) targets.set(target._id, target);
+  }
+
+  const conversationIds = () => [
+    ...new Set([...targets.values()].map((target) => target.threadId)),
+  ];
   return {
-    conversationIds: () => [...new Set([...targets.values()].map((target) => target.threadId))],
-    async remember(conversationIds: readonly string[]) {
-      for (let offset = 0; offset < conversationIds.length; offset += batchSize) {
-        const batch = conversationIds.slice(offset, offset + batchSize).map((threadId) => ({
+    conversationIds,
+    async remember(ids: readonly string[]) {
+      for (let offset = 0; offset < ids.length; offset += batchSize) {
+        const threads = ids.slice(offset, offset + batchSize);
+        let batch: DeletionTarget[] = threads.map((threadId) => ({
           _id: `${rootPrefix}${hash(threadId)}`,
           version,
           threadId,
         }));
-        await collection.bulkWrite(
-          batch.map((target) => ({
-            updateOne: {
-              filter: { _id: target._id },
-              update: { $set: { version, threadId: target.threadId } },
-              upsert: true,
-            },
-          })),
-        );
-        for (const target of batch) targets.set(target._id, target);
+        await persist(batch);
+        batch = [];
+        for await (const checkpoint of historicalActorReferences(userId, tenantId, threads)) {
+          const scope = await getActorCheckpointScope(
+            checkpoint.threadId,
+            checkpoint.checkpointNs,
+            cfg,
+          );
+          if (scope != null && scope.owner !== ownerPrefix) {
+            continue;
+          }
+          batch.push({
+            _id: `${rootPrefix}${hash(checkpoint.threadId)}:${hash(JSON.stringify([checkpoint.checkpointNs, checkpoint.checkpointId]))}`,
+            version,
+            threadId: checkpoint.threadId,
+            checkpoint,
+          });
+          if (batch.length === batchSize) {
+            await persist(batch);
+            batch = [];
+          }
+        }
+        if (batch.length > 0) await persist(batch);
+      }
+    },
+    async cleanup() {
+      await deleteOwnedAgentCheckpoints(
+        userId,
+        tenantId,
+        rootConversationId == null ? undefined : conversationIds(),
+        cfg,
+      );
+      for (const target of targets.values()) {
+        if (target.checkpoint != null) {
+          const scope = await getActorCheckpointScope(
+            target.threadId,
+            target.checkpoint.checkpointNs,
+            cfg,
+          );
+          if (scope == null || scope.owner === ownerPrefix) {
+            await deleteAgentEventCheckpointReference(target.checkpoint, cfg);
+          }
+        }
       }
     },
     async acknowledge() {

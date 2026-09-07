@@ -295,13 +295,10 @@ describe('event actor host adapter', () => {
         invocationId: 'event-cancelled',
       }),
     );
-    expect(mockedDeleteReference).toHaveBeenCalledWith(
-      {
-        ...paused.execution.suspension.checkpoint,
-        checkpointNs: paused.execution.suspension.checkpoint.checkpointNs,
-      },
-      undefined,
-    );
+    expect(mockedDelete).toHaveBeenCalledWith(conversationId, undefined, undefined, {
+      throwOnError: true,
+      checkpointNamespace: paused.execution.suspension.checkpoint.checkpointNs,
+    });
   });
 
   it('resumes signed evidence on a new executor and consumes its claim with the head CAS', async () => {
@@ -527,13 +524,10 @@ describe('event actor host adapter', () => {
         resumeAttemptId: 'resume-second',
       }),
     );
-    expect(mockedDeleteReference).toHaveBeenCalledWith(
-      {
-        ...repaused.execution.suspension.checkpoint,
-        checkpointNs: repaused.execution.suspension.checkpoint.checkpointNs,
-      },
-      undefined,
-    );
+    expect(mockedDelete).toHaveBeenCalledWith(conversationId, undefined, undefined, {
+      throwOnError: true,
+      checkpointNamespace: repaused.execution.suspension.checkpoint.checkpointNs,
+    });
     expect(dependencies.commitState).not.toHaveBeenCalled();
   });
 

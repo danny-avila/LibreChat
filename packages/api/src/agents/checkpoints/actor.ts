@@ -124,25 +124,21 @@ export function createOwnedActorCheckpoints(user: string, tenantId?: string) {
   }
 
   async function remove(reference: HistoricalReference, cfg?: TCheckpointerConfig): Promise<void> {
-    const checkpointNs = await resolveNamespace(reference, cfg);
-    if (checkpointNs == null) {
+    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
+    if (scope != null) {
+      if (scope.owner !== prefix) {
+        throw new Error('Actor checkpoint scope belongs to another owner');
+      }
+      await removeOwned(reference, cfg);
       return;
     }
     if (!reference.checkpointId) {
       throw new Error('Historical actor checkpoint reference is missing its checkpoint id');
     }
-    const deleted = await deleteAgentEventCheckpointReference(
-      { ...reference, checkpointId: reference.checkpointId, checkpointNs },
+    await deleteAgentEventCheckpointReference(
+      { ...reference, checkpointId: reference.checkpointId },
       cfg,
     );
-    const scope = await getActorCheckpointScope(reference.threadId, reference.checkpointNs, cfg);
-    if (scope?.owner === prefix) {
-      if (deleted) {
-        await acknowledgeActorCheckpointScope(scope, cfg);
-      } else {
-        await removeOwned(reference, cfg);
-      }
-    }
   }
 
   return {

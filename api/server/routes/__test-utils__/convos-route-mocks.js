@@ -38,13 +38,15 @@ const deleteOwnedAgentCheckpoints = jest.fn(async (userId, tenantId, threadIds) 
   }
 });
 const deletionTargets = new Map();
-const openCheckpointDeletion = jest.fn(async (userId, tenantId, root) => {
+const openCheckpointDeletion = jest.fn(async (userId, tenantId, root, cfg) => {
   const key = JSON.stringify([userId, tenantId, root]);
   const ids = deletionTargets.get(key) ?? new Set();
   deletionTargets.set(key, ids);
   return {
     conversationIds: () => [...ids],
     remember: async (targets) => targets.forEach((id) => ids.add(id)),
+    cleanup: async () =>
+      deleteOwnedAgentCheckpoints(userId, tenantId, root == null ? undefined : [...ids], cfg),
     acknowledge: async () => deletionTargets.delete(key),
   };
 });

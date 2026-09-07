@@ -1151,6 +1151,21 @@ describe('Convos Routes', () => {
       );
     });
 
+    it('retains checkpoint payload when conversation deletion fails after its snapshot', async () => {
+      const scope = { threadId: 'conversation-1', checkpointNamespace: checkpointNamespace(8) };
+      resetCheckpointRows([scope]);
+      deleteConvos.mockImplementationOnce(async (_owner, _filter, options) => {
+        await options.beforeDelete(['conversation-1']);
+        throw new Error('conversation deletion failed');
+      });
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conversation-1' } });
+      expect(response.status).toBe(500);
+      expect(deleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
+      expect(checkpointRows).toEqual([scope]);
+    });
+
     it('fails closed when saver deletion fails', async () => {
       deleteOwnedAgentCheckpoints.mockRejectedValueOnce(new Error('checkpoint store unavailable'));
       deleteConvos.mockImplementationOnce(async (_userId, _filter, options) => {
@@ -1166,10 +1181,7 @@ describe('Convos Routes', () => {
     });
 
     it('retries checkpoint cleanup for descendants after all conversation records are gone', async () => {
-      const cleanup = deleteOwnedAgentCheckpoints.getMockImplementation();
-      deleteOwnedAgentCheckpoints
-        .mockImplementationOnce(cleanup)
-        .mockRejectedValueOnce(new Error('post-delete cleanup failed'));
+      deleteOwnedAgentCheckpoints.mockRejectedValueOnce(new Error('post-delete cleanup failed'));
       deleteConvos
         .mockImplementationOnce(async (_owner, _filter, options) => {
           await options.beforeDelete(['conversation-1', 'child-conversation']);
@@ -1397,7 +1409,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.text).toBe('Error clearing conversations');
-      expect(deleteOwnedAgentCheckpoints).toHaveBeenCalledTimes(1);
+      expect(deleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
     });
 
     it('fails closed when remnant message cleanup is unavailable', async () => {
@@ -1415,7 +1427,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.text).toBe('Error clearing conversations');
-      expect(deleteOwnedAgentCheckpoints).toHaveBeenCalledTimes(1);
+      expect(deleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
     });
 
     it('does not prune generation persistence when provider stop is unconfirmed', async () => {

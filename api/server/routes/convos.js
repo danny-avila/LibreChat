@@ -4,7 +4,6 @@ const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
   normalizeLimit,
-  deleteOwnedAgentCheckpoints,
   openCheckpointDeletion,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
@@ -369,7 +368,6 @@ async function drainDeletedAgentGenerations(
   leaseTaskIds = [],
   tenantId,
   deletion,
-  checkpointer,
 ) {
   await confirmAgentGenerationsDrained(userId, conversationIds, leaseTaskIds, tenantId);
   await db.deleteConvos(
@@ -380,7 +378,7 @@ async function drainDeletedAgentGenerations(
       beforeDelete: async (ids) => {
         await deletion?.remember(ids);
         await confirmAgentGenerationsDrained(userId, ids, [], tenantId);
-        await deleteOwnedAgentCheckpoints(userId, tenantId, ids, checkpointer);
+        await deletion?.remember(ids);
       },
     },
   );
@@ -418,14 +416,14 @@ async function deleteOwnerConversationPersistence(userId, filter, tenantId, chec
     beforeDelete: async (conversationIds) => {
       await deletion.remember(conversationIds);
       await confirmAgentGenerationsDrained(userId, conversationIds, [], tenantId);
-      await deleteOwnedAgentCheckpoints(userId, tenantId, conversationIds, checkpointer);
+      await deletion.remember(conversationIds);
     },
   });
   const targets = [...new Set([...deletion.conversationIds(), ...(result.conversationIds ?? [])])];
   if (targets.length > 0) {
-    await drainDeletedAgentGenerations(userId, targets, [], tenantId, deletion, checkpointer);
+    await drainDeletedAgentGenerations(userId, targets, [], tenantId, deletion);
   }
-  await deleteOwnedAgentCheckpoints(userId, tenantId, undefined, checkpointer);
+  await deletion.cleanup();
   await db.deleteMessages({ user: userId });
   await deletion.acknowledge();
   return { ...result, conversationIds: targets };
@@ -475,7 +473,6 @@ router.delete('/', configMiddleware, async (req, res) => {
     let cancellationPlan;
     let checkpointDeletion;
     let dbResponse;
-    let recoveryConversationIds = [];
     if (filter.conversationId) {
       checkpointDeletion = await openCheckpointDeletion(
         req.user.id,
@@ -495,7 +492,7 @@ router.delete('/', configMiddleware, async (req, res) => {
         beforeDelete: async (conversationIds) => {
           await checkpointDeletion.remember(conversationIds);
           await confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId);
-          await deleteOwnedAgentCheckpoints(req.user.id, tenantId, conversationIds, checkpointer);
+          await checkpointDeletion.remember(conversationIds);
         },
       });
     } else {
@@ -507,13 +504,11 @@ router.delete('/', configMiddleware, async (req, res) => {
         () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId, checkpointer),
         () => deleteOwnerConversationPersistence(req.user.id, filter, tenantId, checkpointer),
       );
-      dbResponse = fencedDeletion.result;
-      recoveryConversationIds = fencedDeletion.recoveryConversationIds;
+      return res.status(201).json(fencedDeletion.result);
     }
     let deletedConversationIds = [
       ...new Set([
         ...(dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : [])),
-        ...recoveryConversationIds,
         ...(checkpointDeletion?.conversationIds() ?? []),
       ]),
     ];
@@ -521,9 +516,8 @@ router.delete('/', configMiddleware, async (req, res) => {
      * admitted after the first pass but before that fence, extended with the cascade
      * this deletion reported. */
     if (cancellationPlan != null && deletedConversationIds.length > 0) {
-      /** The conversations are gone, so this pass is the only thing that can still
-       * stop a child admitted after the first one. It cannot fail the request — the
-       * deletion already committed — so it retries briefly before giving up. */
+      /** Confirm late children stopped before payload cleanup. A failed retry leaves
+       * durable deletion intent available even though conversation deletion committed. */
       await retryPostDeleteCancellation(cancellationPlan, deletedConversationIds);
       await drainDeletedAgentGenerations(
         req.user.id,
@@ -537,7 +531,6 @@ router.delete('/', configMiddleware, async (req, res) => {
           .map((lease) => lease.taskId),
         tenantId,
         checkpointDeletion,
-        checkpointer,
       );
     } else if (deletedConversationIds.length > 0) {
       /** Owner-wide deletion drains lease-backed tasks before the cascade, but a
@@ -550,13 +543,14 @@ router.delete('/', configMiddleware, async (req, res) => {
         [],
         tenantId,
         checkpointDeletion,
-        checkpointer,
       );
     }
     deletedConversationIds = [
       ...new Set([...deletedConversationIds, ...(checkpointDeletion?.conversationIds() ?? [])]),
     ];
-    await deleteOwnedAgentCheckpoints(req.user.id, tenantId, deletedConversationIds, checkpointer);
+    if (checkpointDeletion != null) {
+      await checkpointDeletion.cleanup();
+    }
     if (filter.conversationId) {
       await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));
       await Promise.all(
