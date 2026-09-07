@@ -404,21 +404,48 @@ function findPipelineUpdates(sourceFile: ts.SourceFile): string[] {
  * ignoring prose — the rewrites explain themselves by naming the construct —
  * and type members, which never reach the engine (Mongoose documents declare
  * a `$where` field). */
+/** The operator's value is code; the document bag's value is field predicates. */
+function isJavaScriptSource(expression: ts.Expression): boolean {
+  const unwrapped = unwrapExpression(expression);
+  return (
+    ts.isStringLiteralLike(unwrapped) ||
+    ts.isTemplateExpression(unwrapped) ||
+    ts.isArrowFunction(unwrapped) ||
+    ts.isFunctionExpression(unwrapped)
+  );
+}
+
 /**
  * Mongoose's `Document.prototype.$where` is a per-document save-condition bag, not
  * MongoDB's `$where` JavaScript-evaluation operator: `mongoose/lib/model.js` copies
  * its keys into the save filter as ordinary field predicates, so nothing named
- * `$where` reaches the server. Only a dotted read or write of that property is
- * exempt -- a literal `'$where'`, an object-literal `{ $where: ... }` and a computed
- * `obj['$where']` still fail, since those are how a real query is built.
+ * `$where` reaches the server. The bag is only ever READ or ASSIGNED AN OBJECT, so
+ * a dotted `$where` is exempt in exactly those two positions. Every way of
+ * building the operator still fails: a literal `'$where'`, an object-literal
+ * `{ $where: ... }`, a computed `obj['$where']`, a dotted access that is CALLED
+ * (Mongoose's `Query.prototype.$where(js)` sends the operator), and a dotted
+ * access ASSIGNED CODE (`filter.$where = 'this.a == 1'`).
  */
 function isMongooseDocumentWhere(node: ts.Node): boolean {
-  return (
-    ts.isIdentifier(node) &&
-    node.text === '$where' &&
-    ts.isPropertyAccessExpression(node.parent) &&
-    node.parent.name === node
-  );
+  if (!ts.isIdentifier(node) || node.text !== '$where') {
+    return false;
+  }
+  const access = node.parent;
+  if (!ts.isPropertyAccessExpression(access) || access.name !== node) {
+    return false;
+  }
+  const use = access.parent;
+  if (ts.isCallExpression(use) && use.expression === access) {
+    return false;
+  }
+  if (
+    ts.isBinaryExpression(use) &&
+    use.left === access &&
+    use.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  ) {
+    return !isJavaScriptSource(use.right);
+  }
+  return true;
 }
 
 function findForbiddenTokens(sourceFile: ts.SourceFile): string[] {
@@ -755,6 +782,11 @@ describe('Amazon DocumentDB compatibility', () => {
       expect(
         findForbiddenTokens(parse('fixture.ts', `document.$where = { tenantId: predicate };`)),
       ).toEqual([]);
+      expect(
+        findForbiddenTokens(
+          parse('fixture.ts', `document.$where = Object.keys(rest).length > 0 ? rest : undefined;`),
+        ),
+      ).toEqual([]);
       /** ...but every shape that builds a real query still fails. */
       expect(
         findForbiddenTokens(parse('fixture.ts', `const filter = { $where: 'this.a == 1' };`)),
@@ -762,6 +794,22 @@ describe('Amazon DocumentDB compatibility', () => {
       expect(findForbiddenTokens(parse('fixture.ts', `const op = '$where';`))).not.toEqual([]);
       expect(
         findForbiddenTokens(parse('fixture.ts', `filter['$where'] = 'this.a == 1';`)),
+      ).not.toEqual([]);
+      /** A dotted `$where` that is called or assigned code IS the operator. */
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where = 'this.a == 1';`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', 'filter.$where = `this.a == ${value}`;')),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `Model.find().$where('this.a == 1');`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `query.$where(function () { return true; });`)),
+      ).not.toEqual([]);
+      expect(
+        findForbiddenTokens(parse('fixture.ts', `filter.$where = () => this.a == 1;`)),
       ).not.toEqual([]);
     });
 
