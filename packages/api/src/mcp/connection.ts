@@ -1046,6 +1046,7 @@ export class MCPConnection extends EventEmitter {
   private toolListRefreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private toolListRefreshEpoch = 0;
   private toolListRefreshSuspended = false;
+  private suspendedToolListSnapshot?: MCPToolsSnapshot;
   private publishedToolListSnapshot: {
     epoch: number;
     generation: number;
@@ -1676,6 +1677,7 @@ export class MCPConnection extends EventEmitter {
     this.isInitializing = true;
     this.on('connectionChange', (state: t.ConnectionState) => {
       this.connectionState = state;
+      this.suspendedToolListSnapshot = undefined;
       if (state === 'connected') {
         this.lastConnectionCheckError = undefined;
         const isReconnect = this.hasConnected;
@@ -1825,7 +1827,7 @@ export class MCPConnection extends EventEmitter {
     this.toolListChangeGeneration++;
     this.clearToolListRefreshRetry();
     this.startToolListRefresh();
-    return (await this.toolListRefreshPromise) ?? undefined;
+    return (await this.toolListRefreshPromise) ?? this.suspendedToolListSnapshot;
   }
 
   private clearToolListRefreshRetry(): void {
@@ -1897,6 +1899,8 @@ export class MCPConnection extends EventEmitter {
       /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
       if (!snapshot.complete || snapshot.orderingUnavailable) {
         if (snapshot.authenticationError && this.suspendToolRefreshOnAuthenticationError) {
+          /** Keep the stopped queue's outcome available to an owner arriving after settlement. */
+          this.suspendedToolListSnapshot = snapshot;
           this.toolListRefreshSuspended = true;
           return snapshot;
         }
@@ -2363,6 +2367,7 @@ export class MCPConnection extends EventEmitter {
 
   public async disconnect(resetCycleTracking = true, forceAgentClose = false): Promise<void> {
     this.toolListRefreshEpoch++;
+    this.suspendedToolListSnapshot = undefined;
     this.toolListRefreshSuspended = true;
     this.clearToolListRefreshRetry();
     try {

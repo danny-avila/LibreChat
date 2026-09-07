@@ -485,6 +485,18 @@ describe('MCPConnection.fetchTools pagination', () => {
     expect(Reflect.get(conn, 'toolListRefreshSuspended')).toBe(true);
     await Promise.resolve();
     expect(listTools).toHaveBeenCalledTimes(1);
+
+    const ownerSnapshot = await conn.refreshToolList();
+    expect(ownerSnapshot?.authenticationError).toBe(authError);
+    expect(listTools).toHaveBeenCalledTimes(1);
+
+    conn.emit('connectionChange', 'disconnected');
+    expect(await conn.refreshToolList()).toBeUndefined();
+    listTools.mockResolvedValue({ tools: [makeTool('recovered')] });
+    conn.emit('connectionChange', 'connected');
+    const recoveredSnapshot = await conn.refreshToolList();
+    expect(recoveredSnapshot?.complete).toBe(true);
+    expect(recoveredSnapshot?.authenticationError).toBeUndefined();
   });
 
   it('keeps ordinary authentication modes eligible for tool-list retry', async () => {
