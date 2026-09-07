@@ -15,6 +15,7 @@ import {
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
   findConvoInAllQueries,
+  isConvoInAggregateCaches,
   isConversationUnseen,
   applyServerReplyStamp,
   removeConvoFromAllQueries,
@@ -1352,49 +1353,61 @@ describe('Conversation Utilities', () => {
         expect(isConversationUnseen(found)).toBe(true);
       });
 
-      it('findConvoInAllQueries prefers the variant that last heard from the server', () => {
-        /* The catch-up cannot break the tie: "mark as unread" clears it, so a fresh undefined
-           is newer than a stale stamp. Query recency is what separates them. */
-        queryClient.setQueryData(
-          ['allConversations'],
-          {
-            pages: [
-              {
-                conversations: [
-                  {
-                    ...convoA,
-                    lastResponseAt: '2026-08-16T10:00:00.000Z',
-                    lastSeenAt: '2026-08-16T10:01:00.000Z',
-                  },
-                ],
-                nextCursor: null,
-              },
-            ],
+      it('findConvoInAllQueries preserves server read state after local chat updates', async () => {
+        const lastResponseAt = '2026-08-16T10:00:00.000Z';
+        await queryClient.fetchQuery({
+          queryKey: ['allConversations'],
+          queryFn: async () => ({
+            pages: [{ conversations: [{ ...convoA, lastResponseAt, lastSeenAt: lastResponseAt }] }],
             pageParams: [],
-          },
-          { updatedAt: 1000 },
-        );
-        queryClient.setQueryData(
-          ['allConversations', { tag: 'work' }],
-          {
-            pages: [
-              {
-                conversations: [{ ...convoA, lastResponseAt: '2026-08-16T10:00:00.000Z' }],
-                nextCursor: null,
-              },
-            ],
+          }),
+        });
+        expect(isConversationUnseen(findConvoInAllQueries(queryClient, 'a'))).toBe(false);
+        await queryClient.fetchQuery({
+          queryKey: ['allConversations', { tag: 'work' }],
+          queryFn: async () => ({
+            pages: [{ conversations: [{ ...convoA, lastResponseAt }] }],
             pageParams: [],
-          },
-          { updatedAt: 2000 },
-        );
+          }),
+        });
+        updateConvoInAllQueries(queryClient, 'a', (convo) => ({ ...convo, title: 'Renamed' }));
 
-        /* The newer variant learned the conversation was marked unread elsewhere. */
         const found = findConvoInAllQueries(queryClient, 'a');
         expect(found?.lastSeenAt).toBeUndefined();
         expect(isConversationUnseen(found)).toBe(true);
       });
+      it('isConvoInAggregateCaches ignores expired unobserved list and pinned variants', () => {
+        const now = Date.now();
+        queryClient.removeQueries(['allConversations']);
+        queryClient.setQueryData(
+          ['allConversations', { isArchived: true }],
+          {
+            pages: [{ conversations: [{ ...convoA, lastResponseAt: '2026-08-16T10:00:00.000Z' }] }],
+            pageParams: [],
+          },
+          { updatedAt: now - 6 * 60_000 },
+        );
+        queryClient.setQueryData(
+          ['pinnedConversations', { tag: 'old' }],
+          {
+            conversations: [
+              { ...convoA, pinned: true, lastResponseAt: '2026-08-16T10:00:00.000Z' },
+            ],
+            nextCursor: null,
+          },
+          { updatedAt: now - 6 * 60_000 },
+        );
+
+        const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+        try {
+          expect(isConvoInAggregateCaches(queryClient, 'a')).toBe(false);
+        } finally {
+          clock.mockRestore();
+        }
+      });
 
       it('findConvoInAllQueries keeps a catch-up the freshest variant still carries', () => {
+        const now = Date.now();
         queryClient.setQueryData(
           ['allConversations'],
           {
@@ -1406,7 +1419,7 @@ describe('Conversation Utilities', () => {
             ],
             pageParams: [],
           },
-          { updatedAt: 1000 },
+          { updatedAt: now - 2000 },
         );
         queryClient.setQueryData(
           ['allConversations', { tag: 'work' }],
@@ -1425,9 +1438,12 @@ describe('Conversation Utilities', () => {
             ],
             pageParams: [],
           },
-          { updatedAt: 2000 },
+          { updatedAt: now - 1000 },
         );
 
+        expect(findConvoInAllQueries(queryClient, 'a')?.lastSeenAt).toBe(
+          '2026-08-16T10:01:00.000Z',
+        );
         expect(isConversationUnseen(findConvoInAllQueries(queryClient, 'a'))).toBe(false);
       });
 

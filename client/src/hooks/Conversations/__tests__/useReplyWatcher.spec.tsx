@@ -268,6 +268,84 @@ describe('useReplyWatcher', () => {
     expect(cachedConvo()?.lastResponseAt).toBe(newer);
   });
 
+  it.each([true, false])(
+    'keeps the newest equal-stamp poll read state (seen: %s)',
+    async (seen) => {
+      const { queryClient, cachedConvo } = setup({ notifications: true });
+      updateCachedTimestamps(queryClient);
+      const older = Promise.withResolvers<{
+        conversations: Array<{
+          conversationId: string;
+          lastResponseAt: string;
+          lastSeenAt?: string;
+        }>;
+      }>();
+      mockListConversations.mockReturnValueOnce(older.promise).mockResolvedValueOnce({
+        conversations: [
+          {
+            conversationId: CONVO_ID,
+            lastResponseAt: RESPONDED_AT,
+            lastSeenAt: seen ? RESPONDED_AT : undefined,
+          },
+        ],
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      expect(isConversationUnseen(cachedConvo())).toBe(!seen);
+
+      await act(async () => {
+        older.resolve({
+          conversations: [
+            {
+              conversationId: CONVO_ID,
+              lastResponseAt: RESPONDED_AT,
+              lastSeenAt: seen ? undefined : RESPONDED_AT,
+            },
+          ],
+        });
+      });
+
+      expect(isConversationUnseen(cachedConvo())).toBe(!seen);
+    },
+  );
+
+  it('rejects an equal-stamp poll superseded during message invalidation', async () => {
+    const { queryClient, cachedConvo } = setup({ notifications: true });
+    updateCachedTimestamps(queryClient);
+    const messages = Promise.withResolvers<void>();
+    const invalidate = queryClient.invalidateQueries.bind(queryClient);
+    jest
+      .spyOn(queryClient, 'invalidateQueries')
+      .mockImplementationOnce(() => messages.promise)
+      .mockImplementation(invalidate);
+    mockListConversations
+      .mockResolvedValueOnce({
+        conversations: [
+          { conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT, lastSeenAt: RESPONDED_AT },
+        ],
+      })
+      .mockResolvedValueOnce({
+        conversations: [{ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT }],
+      });
+
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      messages.resolve();
+    });
+
+    expect(isConversationUnseen(cachedConvo())).toBe(true);
+  });
+
   it('drops a completion snapshot outrun while its messages refetched', async () => {
     /* The freshness guard runs before a real network wait; the SSE final handler can stamp a
        newer reply during it, and writing the older snapshot back would walk the read state

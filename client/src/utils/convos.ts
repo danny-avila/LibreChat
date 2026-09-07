@@ -12,7 +12,7 @@ import {
 } from 'date-fns';
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
 import type { InvalidateQueryFilters } from '@tanstack/react-query';
-import type { InfiniteData, QueryKey } from '@tanstack/react-query';
+import type { InfiniteData, Query, QueryKey } from '@tanstack/react-query';
 import { isTemporaryConversation } from './conversation';
 
 /**
@@ -778,8 +778,85 @@ export type PinnedConversationsData = {
 };
 
 /** A cached copy of a conversation together with when its query last heard from the server. */
-export type ConvoCandidate = { convo: TConversation; heardAt: number };
+export type ConvoCandidate = {
+  convo: TConversation;
+  heardAt: number;
+  fromServer: boolean;
+};
 
+export type ConvoQueryAuthority = { heardAt: number; fromServer: boolean };
+
+const convoQueryServerFetchedAt = new WeakMap<QueryClient, WeakMap<Query, ConvoQueryAuthority>>();
+
+export const trackConvoQueryAuthority = (
+  queryClient: QueryClient,
+): WeakMap<Query, ConvoQueryAuthority> => {
+  const existing = convoQueryServerFetchedAt.get(queryClient);
+  if (existing) {
+    return existing;
+  }
+  const fetchedAt = new WeakMap<Query, ConvoQueryAuthority>();
+  convoQueryServerFetchedAt.set(queryClient, fetchedAt);
+  const cache = queryClient.getQueryCache();
+  for (const query of cache.getAll()) {
+    fetchedAt.set(query, {
+      heardAt: query.state.dataUpdatedAt || Date.now(),
+      fromServer: false,
+    });
+  }
+  cache.subscribe((event) => {
+    const { query } = event;
+    const root = query.queryKey[0];
+    if (
+      root !== QueryKeys.allConversations &&
+      root !== QueryKeys.pinnedConversations &&
+      root !== QueryKeys.conversation
+    ) {
+      return;
+    }
+    const fromServer =
+      event.type === 'updated' && event.action.type === 'success' && event.action.manual !== true;
+    if (fromServer || !fetchedAt.has(query)) {
+      fetchedAt.set(query, {
+        heardAt: query.state.dataUpdatedAt || Date.now(),
+        fromServer,
+      });
+    }
+  });
+  return fetchedAt;
+};
+
+/**
+ * Returns the authority timestamp for a cached conversation query.
+ *
+ * The cache subscription is shared by all selectors and lives with the QueryClient, not a
+ * mounted component. Local cache writes never advance authority; weak query keys prevent a
+ * removed variant from lending its authority to a later query with the same hash.
+ */
+export const convoQueryAuthority = (
+  queryClient: QueryClient,
+  query: Query,
+): ConvoQueryAuthority => {
+  const fetchedAt = trackConvoQueryAuthority(queryClient);
+  if (!fetchedAt.has(query)) {
+    fetchedAt.set(query, {
+      heardAt: query.state.dataUpdatedAt || Date.now(),
+      fromServer: false,
+    });
+  }
+  return fetchedAt.get(query)!;
+};
+
+const AGGREGATE_CACHE_AUTHORITY_AGE_MS = 5 * 60_000;
+
+export const isAggregateQueryAuthoritative = (queryClient: QueryClient, query: Query): boolean => {
+  if (query.getObserversCount() > 0) {
+    return true;
+  }
+  return (
+    Date.now() - convoQueryAuthority(queryClient, query).heardAt <= AGGREGATE_CACHE_AUTHORITY_AGE_MS
+  );
+};
 /**
  * Picks whichever cached copy of a conversation carries the newest read state.
  *
@@ -790,8 +867,8 @@ export type ConvoCandidate = { convo: TConversation; heardAt: number };
  *
  * The reply stamp decides, since that one only moves forward. The catch-up cannot break the tie:
  * "mark as unread" clears it outright, so a fresh `undefined` is newer than a stale stamp and
- * comparing the values would pick the stale copy. What separates them is which query last heard
- * from the server, which React Query already tracks.
+ * comparing the values would pick the stale copy. What separates them is which query has the
+ * latest server-fetch provenance; local cache writes never advance that authority.
  */
 export const freshestCandidate = (
   a: ConvoCandidate | undefined,
@@ -807,16 +884,18 @@ export const freshestCandidate = (
   if (responseDelta !== 0) {
     return responseDelta > 0 ? b : a;
   }
+  if (b.fromServer !== a.fromServer) {
+    return b.fromServer ? b : a;
+  }
   return b.heardAt > a.heardAt ? b : a;
 };
 
 const candidateFrom = (
   queryClient: QueryClient,
-  queryKey: QueryKey,
+  query: Query,
   convo: TConversation | undefined,
 ): ConvoCandidate | undefined =>
-  convo ? { convo, heardAt: queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0 } : undefined;
-
+  convo ? { convo, ...convoQueryAuthority(queryClient, query) } : undefined;
 /** Reads a pin out of whichever cached bookmark variant holds it. Single-conversation
  * responses omit server-derived fields like `isShared`, so callers that insert one
  * elsewhere need the cached row to carry them over. */
@@ -836,16 +915,17 @@ function findPinnedCandidate(
   const queries = queryClient
     .getQueryCache()
     .findAll([QueryKeys.pinnedConversations], { exact: false });
-
   let freshest: ConvoCandidate | undefined;
   for (const query of queries) {
+    if (!isAggregateQueryAuthoritative(queryClient, query)) {
+      continue;
+    }
     const data = queryClient.getQueryData<PinnedConversationsData>(query.queryKey);
     const found = data?.conversations.find((c) => c.conversationId === conversationId);
-    freshest = freshestCandidate(freshest, candidateFrom(queryClient, query.queryKey, found));
+    freshest = freshestCandidate(freshest, candidateFrom(queryClient, query, found));
   }
   return freshest;
 }
-
 /**
  * Applies the stamps a completed run reported to the sidebar caches.
  *
@@ -1031,6 +1111,9 @@ export function isConvoInAggregateCaches(
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
+    if (!isAggregateQueryAuthoritative(queryClient, query)) {
+      continue;
+    }
     const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
     if (findConversationInInfinite(data, conversationId)) {
       return true;
@@ -1059,10 +1142,13 @@ export function findConvoInAllQueries(
 
   let freshest: ConvoCandidate | undefined;
   for (const query of queries) {
+    if (!isAggregateQueryAuthoritative(queryClient, query)) {
+      continue;
+    }
     const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
     freshest = freshestCandidate(
       freshest,
-      candidateFrom(queryClient, query.queryKey, findConversationInInfinite(data, conversationId)),
+      candidateFrom(queryClient, query, findConversationInInfinite(data, conversationId)),
     );
   }
   freshest = freshestCandidate(freshest, findPinnedCandidate(queryClient, conversationId));
@@ -1071,9 +1157,12 @@ export function findConvoInAllQueries(
      appear in any loaded list page at all. Without this it would read as absent, absent reads
      as caught up, and the reply the user is looking at would never be acknowledged. */
   const pointKey = [QueryKeys.conversation, conversationId];
+  const pointQuery = queryClient.getQueryCache().find(pointKey);
   return freshestCandidate(
     freshest,
-    candidateFrom(queryClient, pointKey, queryClient.getQueryData<TConversation>(pointKey)),
+    pointQuery
+      ? candidateFrom(queryClient, pointQuery, queryClient.getQueryData<TConversation>(pointKey))
+      : undefined,
   )?.convo;
 }
 
@@ -1083,10 +1172,6 @@ export function updateConvoInAllQueries(
   updater: (c: TConversation) => TConversation,
   moveToTop = false,
 ) {
-  /* Reads resolve the point query, so writes have to reach it too, or a conversation that lives
-     only there would keep whatever it was loaded with. The updater is applied to that copy
-     rather than a list row being written over it: the point cache carries fields the list rows
-     do not, `messages` among them. */
   queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (current) =>
     current ? updater(current) : current,
   );

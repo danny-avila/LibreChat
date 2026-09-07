@@ -221,18 +221,10 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
     if (state === null) {
       return;
     }
-    const { unseen, stamps } = state;
+    const { unseen, stamps, arrivalStamps } = state;
 
     const known = knownRef.current;
     const priorStamps = new Map(known ?? []);
-    /* The high-water mark of everything this tab had already heard about, taken before the
-       baseline absorbs this pass. */
-    let newestKnownStamp = '';
-    for (const stamp of priorStamps.values()) {
-      if (stamp > newestKnownStamp) {
-        newestKnownStamp = stamp;
-      }
-    }
     /* The baseline records the seen conversations too, and stamps are retained rather than
        replaced when a row leaves the cache. A conversation that has been read, whether during
        this session or before it started, keeps the reply stamp it always had, and if another
@@ -256,20 +248,17 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
-    /* Flagged rows carry the manual-unread marker of a never-replied conversation: the dot
-       and the badge count them, but announcing one as "Reply ready" would name a reply that
-       does not exist.
-       A conversation with no prior stamp is either a reply this tab has never heard of or an
-       older one a later page just brought into the cache, and only the first is an arrival.
-       The newest stamp the tab had already seen separates them: backlog is older than it by
-       definition, and both values are the server's own, so no clock is compared. */
+    /* Newly cached conversations need evidence from a live first-page update, not a timestamp
+       comparison with another conversation: server clocks can differ across app hosts.
+       Pagination and newly mounted filter variants expose backlog rather than arrivals. */
+    const discovered = new Map(arrivalStamps);
     const arrivals = unseen.filter(
       (conversation) =>
         conversation.conversationId &&
         !conversation.flagged &&
         (priorStamps.has(conversation.conversationId)
           ? priorStamps.get(conversation.conversationId) !== conversation.lastResponseAt
-          : conversation.lastResponseAt > newestKnownStamp),
+          : discovered.get(conversation.conversationId) === conversation.lastResponseAt),
     );
     /* "Away" means away from LibreChat, not away from this tab: a second tab holding focus is
        the user reading the app, and the sidebar dot already covers them there. */
