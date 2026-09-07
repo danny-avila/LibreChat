@@ -1,0 +1,24 @@
+import type { SerializableJobData } from './interfaces/IJobStore';
+
+/** A settled status can precede the terminal owner's final persistence writes. */
+export async function waitForGenerationPersistence(
+  streamId: string,
+  createdAt: number,
+  readJob: (id: string) => Promise<Pick<SerializableJobData, 'createdAt' | 'metadata'> | null>,
+  { timeoutMs = 45_000, pollMs = 100 }: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const current = await readJob(streamId);
+    if (
+      current == null ||
+      current.createdAt !== createdAt ||
+      current.metadata?.terminalPersistencePending !== true
+    )
+      return;
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for generation persistence: ${streamId}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}

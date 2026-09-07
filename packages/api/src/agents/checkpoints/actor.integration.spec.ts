@@ -87,7 +87,7 @@ test('late legacy writes and another tagged owner survive owned scope deletion',
   ).toEqual([lateLegacyId]);
 });
 
-test('new payloads retain the original SDK physical format and are readable by an old saver', async () => {
+test('old raw readers cannot see isolated owner payloads', async () => {
   const id = await write('event-actor/head', 'owner');
   const tuple = await MongoDBSaver.prototype.getTuple.call((await getAgentCheckpointer(cfg))!, {
     configurable: {
@@ -96,8 +96,14 @@ test('new payloads retain the original SDK physical format and are readable by a
       checkpoint_id: id,
     },
   });
-  expect(tuple?.checkpoint.id).toBe(id);
-  expect(tuple?.pendingWrites).toHaveLength(1);
+  expect(tuple).toBeUndefined();
+  const saver = (await getAgentCheckpointer(cfg))!;
+  expect(
+    await MongoDBSaver.prototype.getTuple.call(saver, {
+      configurable: { thread_id: 'actor-thread', checkpoint_ns: 'event-actor/head' },
+    }),
+  ).toBeUndefined();
+  expect((await saver.getTuple(config('event-actor/head', 'owner')))?.checkpoint.id).toBe(id);
   for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
     const rows = await mongoose.connection.db!.collection(name).find().toArray();
     expect(rows.every((row) => row.lc_owner === checkpointOwnerNamespacePrefix('owner'))).toBe(
@@ -172,7 +178,8 @@ test('legacy pending writes preserve overwrite and insert-or-ignore behavior on 
   );
   expect(tuple?.pendingWrites).toHaveLength(2);
   const old = await saver.getTuple(legacy);
-  expect(old?.pendingWrites).toEqual(tuple?.pendingWrites);
+  expect(old?.pendingWrites).not.toEqual(tuple?.pendingWrites);
+  expect(old?.pendingWrites).toContainEqual(['regular', 'messages', 'original']);
 });
 
 test('deletion intent survives topology loss and deletes only exact legacy IDs', async () => {
@@ -280,56 +287,42 @@ test('deletion intent retains both pre-drain and final historical references', a
   ).toEqual([unrelated]);
 });
 
-test.each(['tagged', 'legacy'])(
-  '%s pause survives a mixed-replica re-pause and resume',
-  async (initial) => {
-    const state = Annotation.Root({
-      answers: Annotation<string[]>({ reducer: (_left, right) => right, default: () => [] }),
-    });
-    const saver = (await getAgentCheckpointer(cfg))!;
-    const graph = new StateGraph(state)
-      .addNode('ask', () => ({ answers: [interrupt('first'), interrupt('second')] }))
-      .addEdge(START, 'ask')
-      .addEdge('ask', END)
-      .compile({ checkpointer: saver });
-    const owned = config('event-actor/rolling', 'owner');
-    const oldReplica = config('event-actor/rolling');
-    const firstConfig = initial === 'tagged' ? owned : oldReplica;
-    await graph.invoke({ answers: [] }, { ...firstConfig, durability: 'exit' });
-    const first = (await saver.getTuple(firstConfig))!;
-    expect(first.pendingWrites).not.toHaveLength(0);
-    const secondConfig =
-      initial === 'tagged'
-        ? oldReplica
-        : config('event-actor/rolling', 'owner', first.checkpoint.id);
-    if (initial === 'legacy')
-      secondConfig.configurable![LIBRECHAT_LEGACY_CHECKPOINT_KEY] = first.checkpoint.id;
-    await graph.invoke(new Command({ resume: 'one' }), { ...secondConfig, durability: 'exit' });
-    if (initial === 'legacy') {
-      const captured = await createOwnedActorCheckpoints('owner').capture(
-        'actor-thread',
-        'event-actor/rolling',
-        'invocation',
-        cfg,
-        'event-actor/rolling',
-        first.checkpoint.id,
-      );
-      expect(captured?.checkpointId).toBe(first.checkpoint.id);
-    }
-    const paused = await saver.getTuple(oldReplica);
-    expect(paused?.checkpoint.id).toBeDefined();
-    const resumed = config('event-actor/rolling', 'owner', paused!.checkpoint.id);
-    resumed.configurable![LIBRECHAT_LEGACY_CHECKPOINT_KEY] = paused!.checkpoint.id;
-    const result = await graph.invoke(new Command({ resume: 'two' }), {
-      ...resumed,
-      durability: 'exit',
-    });
-    expect(result.answers).toEqual(['one', 'two']);
-    const head = await saver.getTuple(owned);
-    expect(head?.checkpoint.channel_values.answers).toEqual(['one', 'two']);
-    expect((await saver.getTuple(head!.config))?.checkpoint.id).toBe(head?.checkpoint.id);
-  },
-);
+test('a legacy pause can re-pause and resume on upgraded replicas', async () => {
+  const state = Annotation.Root({
+    answers: Annotation<string[]>({ reducer: (_left, right) => right, default: () => [] }),
+  });
+  const saver = (await getAgentCheckpointer(cfg))!;
+  const graph = new StateGraph(state)
+    .addNode('ask', () => ({ answers: [interrupt('first'), interrupt('second')] }))
+    .addEdge(START, 'ask')
+    .addEdge('ask', END)
+    .compile({ checkpointer: saver });
+  const namespace = 'event-actor/upgrade';
+  const oldReplica = config(namespace);
+  await graph.invoke({ answers: [] }, { ...oldReplica, durability: 'exit' });
+  const first = (await saver.getTuple(oldReplica))!;
+  const resumed = config(namespace, 'owner', first.checkpoint.id);
+  resumed.configurable![LIBRECHAT_LEGACY_CHECKPOINT_KEY] = first.checkpoint.id;
+  await graph.invoke(new Command({ resume: 'one' }), { ...resumed, durability: 'exit' });
+  const captured = await createOwnedActorCheckpoints('owner').capture(
+    'actor-thread',
+    namespace,
+    'invocation',
+    cfg,
+    namespace,
+    first.checkpoint.id,
+  );
+  expect(captured?.checkpointId).toBe(first.checkpoint.id);
+  const result = await graph.invoke(new Command({ resume: 'two' }), {
+    ...resumed,
+    durability: 'exit',
+  });
+  expect(result.answers).toEqual(['one', 'two']);
+  const head = await saver.getTuple(config(namespace, 'owner'));
+  expect(head?.checkpoint.channel_values.answers).toEqual(['one', 'two']);
+  expect((await saver.getTuple(head!.config))?.checkpoint.id).toBe(head?.checkpoint.id);
+  expect((await saver.getTuple(oldReplica))?.checkpoint.id).toBe(first.checkpoint.id);
+});
 
 test('custom checkpoint collections carry owner authority without separate maintenance storage', async () => {
   const custom = {

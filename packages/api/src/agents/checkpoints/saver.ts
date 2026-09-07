@@ -62,25 +62,35 @@ function identity(config: RunnableConfig): {
   return { thread_id, checkpoint_ns, ...(checkpoint_id == null ? {} : { checkpoint_id }) };
 }
 
-/** Keep the SDK BSON/wire contract; ownership is part of every actor payload upsert. */
+/** Isolate physical storage by owner while preserving logical SDK references. */
 export class OwnedMongoSaver extends MongoDBSaver {
   private async tuple(doc: CheckpointRow, owner: string, legacy = false): Promise<CheckpointTuple> {
+    const namespace = doc.checkpoint_ns.startsWith(owner)
+      ? doc.checkpoint_ns.slice(owner.length)
+      : doc.checkpoint_ns;
     const key = {
       thread_id: doc.thread_id,
-      checkpoint_ns: doc.checkpoint_ns,
+      checkpoint_ns: namespace,
       checkpoint_id: doc.checkpoint_id,
     };
     const rows = await this.db
       .collection<WriteRow>(this.checkpointWritesCollectionName)
       .find({
-        ...key,
-        ...(legacy
-          ? { $or: [{ lc_owner: owner }, { lc_owner: { $exists: false } }] }
-          : { lc_owner: owner }),
+        thread_id: key.thread_id,
+        checkpoint_id: key.checkpoint_id,
+        $or: [
+          { checkpoint_ns: `${owner}${namespace}`, lc_owner: owner },
+          ...(legacy ? [{ checkpoint_ns: namespace, lc_owner: { $exists: false } }] : []),
+        ],
       })
       .toArray();
+    const slots = new Map<string, WriteRow>();
+    for (const row of rows) {
+      const slot = JSON.stringify([row.task_id, row.idx]);
+      if (!slots.has(slot) || row.checkpoint_ns === `${owner}${namespace}`) slots.set(slot, row);
+    }
     const pendingWrites: CheckpointPendingWrite[] = await Promise.all(
-      rows.map(
+      [...slots.values()].map(
         async (row) =>
           [
             row.task_id,
@@ -120,7 +130,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
     const key = identity(config);
     const checkpoints = this.db.collection<CheckpointRow>(this.checkpointCollectionName);
     let doc = await checkpoints
-      .find({ ...key, lc_owner: owner })
+      .find({ ...key, checkpoint_ns: `${owner}${key.checkpoint_ns}`, lc_owner: owner })
       .sort({ checkpoint_id: -1 })
       .limit(1)
       .next();
@@ -153,7 +163,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
     const key = identity(config);
     const query: Filter<CheckpointRow> = {
       thread_id: key.thread_id,
-      checkpoint_ns: key.checkpoint_ns,
+      checkpoint_ns: `${owner}${key.checkpoint_ns}`,
       lc_owner: owner,
     };
     for (const [name, value] of Object.entries(options?.filter ?? {})) {
@@ -193,7 +203,7 @@ export class OwnedMongoSaver extends MongoDBSaver {
       checkpoint_id: checkpoint.id,
     };
     await this.db.collection(this.checkpointCollectionName).updateOne(
-      { ...stored, lc_owner: owner },
+      { ...stored, checkpoint_ns: `${owner}${key.checkpoint_ns}`, lc_owner: owner },
       {
         $set: {
           parent_checkpoint_id: key.checkpoint_id,
@@ -218,21 +228,32 @@ export class OwnedMongoSaver extends MongoDBSaver {
     if (owner == null) return super.putWrites(config, writes, taskId);
     const key = identity(config);
     if (key.checkpoint_id == null) throw new Error('Owned writes require a checkpoint id');
-    const legacy = key.checkpoint_id === config.configurable?.[LIBRECHAT_LEGACY_CHECKPOINT_KEY];
     const allSpecial = writes.every(([channel]) => channel in WRITES_IDX_MAP);
+    const legacy = key.checkpoint_id === config.configurable?.[LIBRECHAT_LEGACY_CHECKPOINT_KEY];
+    const existing =
+      !allSpecial && legacy
+        ? await this.db
+            .collection<WriteRow>(this.checkpointWritesCollectionName)
+            .find(
+              { ...key, task_id: taskId, lc_owner: { $exists: false } },
+              { projection: { idx: 1 } },
+            )
+            .toArray()
+        : [];
+    const legacySlots = new Set(existing.map((row) => row.idx));
     const operations = await Promise.all(
       writes.map(async ([channel, value], idx) => {
+        if (legacySlots.has(WRITES_IDX_MAP[channel] ?? idx)) return null;
         const [type, serializedValue] = await this.serde.dumpsTyped(value);
         const fields = { channel, type, value: serializedValue, lc_owner: owner };
         return {
           updateOne: {
             filter: {
               ...key,
+              checkpoint_ns: `${owner}${key.checkpoint_ns}`,
               task_id: taskId,
               idx: WRITES_IDX_MAP[channel] ?? idx,
-              ...(legacy
-                ? { $or: [{ lc_owner: owner }, { lc_owner: { $exists: false } }] }
-                : { lc_owner: owner }),
+              lc_owner: owner,
             },
             update: allSpecial
               ? {
@@ -252,7 +273,8 @@ export class OwnedMongoSaver extends MongoDBSaver {
         };
       }),
     );
-    if (operations.length > 0)
-      await this.db.collection(this.checkpointWritesCollectionName).bulkWrite(operations);
+    const pending = operations.filter((operation) => operation != null);
+    if (pending.length > 0)
+      await this.db.collection(this.checkpointWritesCollectionName).bulkWrite(pending);
   }
 }

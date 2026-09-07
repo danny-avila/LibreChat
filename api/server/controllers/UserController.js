@@ -12,6 +12,7 @@ const {
   getWebSearchUninstallFields,
   openCheckpointDeletion,
   isStopConfirmed,
+  waitForGenerationPersistence,
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
 } = require('@librechat/api');
@@ -371,6 +372,7 @@ const updateUserPluginsController = async (req, res) => {
 
 const deleteUserController = async (req, res) => {
   const { user } = req;
+  const tenantId = user.tenantId || undefined;
   let triggerDeletionFence;
   let scheduleSuspensionToken;
   let userDeleted = false;
@@ -404,11 +406,11 @@ const deleteUserController = async (req, res) => {
       triggerDeletionFence = undefined;
     }
     if (triggerDeletionFence != null) {
-      await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
+      await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, tenantId);
     }
     const deletionAppConfig = await getAppConfig({ baseOnly: true });
     await drainAgentTriggerDeliveriesForUser(user.id);
-    await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
+    await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, tenantId);
     // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
     // A later cascade step (or this drain) can still fail and cancel the deletion, and the
     // catch below restores exactly this attempt's rows — so a failed deletion never leaves
@@ -419,7 +421,7 @@ const deleteUserController = async (req, res) => {
     }
     const activeAgentRuns = await GenerationJobManager.getAccountCleanupJobIdsForUser(
       user.id,
-      user.tenantId,
+      tenantId,
     );
     const activeAgentJobs = await Promise.all(
       activeAgentRuns.map(async (streamId) => ({
@@ -430,7 +432,7 @@ const deleteUserController = async (req, res) => {
     const ownedAgentJobs = activeAgentJobs.filter(
       ({ job }) =>
         job?.metadata?.userId === user.id &&
-        (job.metadata.tenantId == null || job.metadata.tenantId === user.tenantId),
+        (!job.metadata.tenantId || job.metadata.tenantId === tenantId),
     );
     const stopResults = await Promise.all(
       ownedAgentJobs.map(({ streamId, job }) =>
@@ -443,18 +445,25 @@ const deleteUserController = async (req, res) => {
     if (stopResults.some((result) => !isStopConfirmed(result))) {
       throw new Error('Agent generations could not be confirmed stopped');
     }
+    await Promise.all(
+      ownedAgentJobs.map(({ streamId, job }) =>
+        waitForGenerationPersistence(streamId, job.createdAt, (id) =>
+          GenerationJobManager.getJob(id),
+        ),
+      ),
+    );
 
     const appConfig =
       req.config ??
       (await getAppConfig({
         role: user.role,
         userId: user.id,
-        tenantId: user.tenantId,
+        tenantId,
       }));
     const checkpointer = appConfig?.endpoints?.agents?.checkpointer;
     const checkpointDeletion = await openCheckpointDeletion(
       user.id,
-      user.tenantId,
+      tenantId,
       undefined,
       checkpointer,
     );
@@ -516,7 +525,7 @@ const deleteUserController = async (req, res) => {
         logger.error('[deleteUserController] Failed to delete code environments', error);
       }
     }
-    await invalidateCodeEnvironmentConfigCache(user.tenantId).catch((error) => {
+    await invalidateCodeEnvironmentConfigCache(tenantId).catch((error) => {
       logger.error('[deleteUserController] code environment cache invalidation failed:', error);
     });
     await purgeAgentTriggerDeliveriesForUser(user.id);

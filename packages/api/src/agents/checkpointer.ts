@@ -815,6 +815,35 @@ export async function deleteAgentEventCheckpointReference(
   return true;
 }
 
+/** Consume exact historical proofs in bounded batches, retaining intent on any failure. */
+export async function deleteAgentEventCheckpointReferences(
+  references: readonly AgentEventCheckpointReference[],
+  owner: string,
+  cfg?: TCheckpointerConfig,
+): Promise<void> {
+  const resolved = resolveCheckpointerConfig(cfg);
+  if (resolved.type === 'memory' || references.length === 0) return;
+  const db = mongoose.connection.db;
+  if (!db || mongoose.connection.readyState !== 1)
+    throw new Error('Checkpoint database is unavailable');
+  for (let offset = 0; offset < references.length; offset += 256) {
+    const exact = {
+      $and: [
+        { $or: [{ lc_owner: owner }, { lc_owner: { $exists: false } }] },
+        {
+          $or: references.slice(offset, offset + 256).map((reference) => ({
+            thread_id: reference.threadId,
+            checkpoint_ns: reference.checkpointNs,
+            checkpoint_id: reference.checkpointId,
+          })),
+        },
+      ],
+    };
+    await db.collection(resolved.checkpointWritesCollectionName).deleteMany(exact);
+    await db.collection(resolved.checkpointCollectionName).deleteMany(exact);
+  }
+}
+
 /** Reads the terminal checkpoint produced inside one invocation namespace. */
 export async function captureAgentEventCheckpoint(
   threadId: string,
@@ -1129,7 +1158,7 @@ export async function deleteOwnedActorCheckpointScope(
     throw new Error('Checkpoint database is unavailable');
   const filter = {
     thread_id: threadId,
-    checkpoint_ns: generationNamespaceFilter(checkpointNs),
+    checkpoint_ns: generationNamespaceFilter(`${owner}${checkpointNs}`),
     lc_owner: owner,
   };
   await Promise.all([

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { createHash, randomUUID } from 'crypto';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { AgentEventCheckpointReference } from '../checkpointer';
-import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReference } from '../checkpointer';
+import { deleteOwnedAgentCheckpoints, deleteAgentEventCheckpointReferences } from '../checkpointer';
 import { checkpointOwnerNamespacePrefix } from '../../stream/checkpoints';
 import { historicalActorReferences } from './pruning';
 import { resolveCheckpointerConfig } from './config';
@@ -108,11 +108,11 @@ export async function openCheckpointDeletion(
         rootConversationId == null ? undefined : conversationIds(),
         cfg,
       );
-      for (const target of targets.values()) {
-        if (target.checkpoint != null) {
-          await deleteAgentEventCheckpointReference(target.checkpoint, cfg, ownerPrefix);
-        }
-      }
+      await deleteAgentEventCheckpointReferences(
+        [...targets.values()].flatMap((target) => target.checkpoint ?? []),
+        ownerPrefix,
+        cfg,
+      );
     },
     async acknowledge() {
       const receipts = [...targets.values()];

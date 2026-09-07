@@ -577,6 +577,76 @@ describe('deleteUserController', () => {
     );
   });
 
+  it('waits for terminal persistence after an already-settled abort', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const job = {
+      createdAt: 123,
+      status: 'complete',
+      metadata: { userId: userId.toString(), terminalPersistencePending: true },
+    };
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['terminal']);
+    mockGetAgentJob
+      .mockResolvedValueOnce(job)
+      .mockImplementationOnce(async () => {
+        expect(deleteMessages).not.toHaveBeenCalled();
+        expect(mockDeleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
+        return job;
+      })
+      .mockImplementationOnce(async () => {
+        expect(deleteMessages).not.toHaveBeenCalled();
+        return { ...job, metadata: { ...job.metadata, terminalPersistencePending: false } };
+      });
+    mockAbortJob.mockResolvedValueOnce({ success: false, failureReason: 'already_settled' });
+    await deleteUserController({ user: { id: userId.toString(), _id: userId } }, mockRes);
+    expect(mockGetAgentJob).toHaveBeenCalledTimes(3);
+    expect(deleteMessages).toHaveBeenCalled();
+  });
+
+  it('retains account data when terminal persistence cannot be confirmed', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['terminal']);
+    mockGetAgentJob
+      .mockResolvedValueOnce({
+        createdAt: 123,
+        metadata: { userId: userId.toString(), terminalPersistencePending: true },
+      })
+      .mockRejectedValueOnce(new Error('terminal owner unavailable'));
+    await deleteUserController({ user: { id: userId.toString(), _id: userId } }, mockRes);
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(deleteMessages).not.toHaveBeenCalled();
+    expect(mockDeleteOwnedAgentCheckpoints).not.toHaveBeenCalled();
+  });
+
+  it('normalizes an empty account tenant before checkpoint erasure', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const actual = jest.requireActual('@librechat/api');
+    const owner = actual.checkpointOwnerNamespacePrefix(userId.toString());
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      await mongoose.connection.db.collection(name).insertMany([
+        { thread_id: 'thread', checkpoint_ns: owner + 'event-actor/new', lc_owner: owner },
+        { thread_id: 'thread', checkpoint_ns: 'foreign', lc_owner: 'foreign' },
+      ]);
+    }
+    mockDeleteOwnedAgentCheckpoints.mockImplementationOnce((...args) =>
+      actual.deleteOwnedAgentCheckpoints(...args),
+    );
+    await deleteUserController(
+      { user: { id: userId.toString(), _id: userId, tenantId: '' } },
+      mockRes,
+    );
+    expect(mockDeleteOwnedAgentCheckpoints).toHaveBeenCalledWith(
+      userId.toString(),
+      undefined,
+      undefined,
+      undefined,
+    );
+    for (const name of ['agent_checkpoints', 'agent_checkpoint_writes']) {
+      expect(
+        (await mongoose.connection.db.collection(name).find().toArray()).map((row) => row.lc_owner),
+      ).toEqual(['foreign']);
+    }
+  });
+
   it('prunes only account checkpoint receipts bound to the deleted user and tenant', async () => {
     const userId = new mongoose.Types.ObjectId();
     const userIdString = userId.toString();

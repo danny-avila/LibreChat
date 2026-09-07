@@ -11,7 +11,7 @@ const CHECKPOINT_NAMESPACE_PATTERN = new RegExp(
 
 function checkpointOwnerHash(userId: string, tenantId?: string): string {
   return createHash('sha256')
-    .update(JSON.stringify([tenantId ?? null, userId]))
+    .update(JSON.stringify([tenantId || null, userId]))
     .digest('hex');
 }
 

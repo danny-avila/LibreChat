@@ -141,6 +141,13 @@ test('snapshots legacy references without per-reference ownership lookups', asyn
     ),
   ).toHaveLength(0);
   expect(deletion.conversationIds()).toHaveLength(257);
+  const deletionCommands = jest.spyOn(mongoose.mongo.Collection.prototype, 'deleteMany');
+  await deletion.cleanup();
+  const exactCommands = deletionCommands.mock.calls.filter(([filter]) => filter?.$and != null);
+  expect(exactCommands).toHaveLength(10);
+  expect(
+    exactCommands.every(([filter]) => (filter?.$and?.[1]?.$or?.length ?? Infinity) <= 256),
+  ).toBe(true);
   expect(await mongoose.connection.db!.collection('cleanup_cp_deletions').countDocuments()).toBe(
     257 * 5,
   );
