@@ -3398,6 +3398,14 @@ export enum ErrorTypes {
    * Formatted provider payload exceeded the context budget before invocation
    */
   FINAL_CONTEXT_OVERFLOW = 'final_context_overflow',
+  /**
+   * A manual compaction the graph could not attempt; `reason` says why
+   */
+  COMPACTION_SKIPPED = 'compaction_skipped',
+  /**
+   * A manual compaction whose summarizer produced nothing; history is untouched
+   */
+  COMPACTION_FAILED = 'compaction_failed',
 }
 
 /**
