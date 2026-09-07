@@ -32,6 +32,7 @@ const mockResolveConversationTitle = jest.fn(({ filters, candidate, fallback = '
     (fallback === candidate ? null : resolveAllowedTitle(fallback))
   );
 });
+
 const mockHasActivePiiPatterns = (config) =>
   config != null &&
   (config.starterPatterns == null ||
@@ -150,6 +151,7 @@ const mockResponsesUsage = {
 const mockBuildResponsesUsage = jest.fn().mockReturnValue(mockResponsesUsage);
 const mockEnrollAgentExecution = jest.fn();
 let mockExecution;
+const mockStoredResponseReferences = new Map();
 
 function resetMockExecution() {
   const controller = new AbortController();
@@ -179,6 +181,7 @@ jest.mock('uuid', () => ({
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
+  buildRetentionVisibilityFilter: jest.fn().mockReturnValue({}),
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
@@ -376,6 +379,25 @@ jest.mock('@librechat/api', () => ({
     on_run_step_delta: { handle: jest.fn() },
     on_chat_model_end: { handle: jest.fn() },
   }),
+  resolveStoredResponse: jest.fn(async (deps, userId, responseId) => {
+    if (mockStoredResponseReferences.has(responseId)) {
+      return mockStoredResponseReferences.get(responseId);
+    }
+    const conversation = await deps.getConvo(userId, responseId);
+    if (conversation == null) return { status: 'not_found' };
+    if (conversation.subagentThread != null) return { status: 'read_only' };
+    const resolution = {
+      status: 'found',
+      reference: {
+        conversation,
+        conversationId: conversation.conversationId,
+        responseMessage: null,
+      },
+    };
+    mockStoredResponseReferences.set(responseId, resolution);
+    return resolution;
+  }),
+  selectStoredResponseHistory: jest.fn((messages) => messages),
   executeAgentRun: async ({
     envelope,
     runId,
@@ -508,6 +530,7 @@ jest.mock('~/models', () => ({
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
+  getMessage: jest.fn().mockResolvedValue(null),
   saveMessage: jest.fn().mockResolvedValue({}),
   updateFilesUsage: jest.fn(),
   getUserKeyValues: jest.fn(),
@@ -522,7 +545,7 @@ jest.mock('~/models', () => ({
   getCacheMultiplier: mockGetCacheMultiplier,
   getConvoFiles: jest.fn().mockResolvedValue([]),
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
-  saveConvo: jest.fn().mockResolvedValue({}),
+  saveConvo: jest.fn().mockImplementation(async (_context, conversation) => conversation),
   getConvo: jest.fn().mockResolvedValue(null),
   isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
@@ -530,17 +553,19 @@ jest.mock('~/models', () => ({
 let mockGlobalDiscoveredAgentConfigs = null;
 
 describe('createResponse controller', () => {
-  let createResponse;
+  let createResponse, getResponse;
   let req, res;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockStoredResponseReferences.clear();
     resetMockExecution();
     mockGlobalDiscoveredAgentConfigs = null;
     require('@librechat/api').inspectContent.mockReset().mockReturnValue(null);
 
     const controller = require('../responses');
     createResponse = controller.createResponse;
+    getResponse = controller.getResponse;
 
     req = {
       body: {
@@ -807,7 +832,11 @@ describe('createResponse controller', () => {
 
     expect(api.getLangfuseTraceMessageFields).toHaveBeenCalledWith(req.config, 'resp_mock-123');
     expect(saveMessage).toHaveBeenCalledWith(
-      req,
+      {
+        userId: 'user-123',
+        isTemporary: undefined,
+        interfaceConfig: undefined,
+      },
       expect.objectContaining({
         messageId: 'resp_mock-123',
         isCreatedByUser: false,
@@ -816,6 +845,115 @@ describe('createResponse controller', () => {
         tokenCount: 50,
       }),
       { context: 'Responses API - save assistant response' },
+    );
+  });
+
+  it('persists a continued response under its UUID conversation with linked message refs', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    const previousMessage = {
+      messageId: 'resp_previous',
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      isCreatedByUser: false,
+      parentMessageId: 'input-previous',
+      text: 'Previous output',
+    };
+    const resolution = {
+      status: 'found',
+      reference: {
+        conversation: {
+          conversationId: previousMessage.conversationId,
+          user: 'user-123',
+        },
+        conversationId: previousMessage.conversationId,
+        responseMessage: previousMessage,
+      },
+    };
+    api.resolveStoredResponse.mockResolvedValueOnce(resolution).mockResolvedValueOnce(resolution);
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: {
+        ...req.body,
+        store: true,
+        previous_response_id: previousMessage.messageId,
+      },
+    });
+    api.convertInputToMessages.mockReturnValueOnce([
+      { role: 'user', content: 'Continue', messageId: 'input-new' },
+    ]);
+    db.getMessages.mockResolvedValueOnce([previousMessage]);
+    db.saveMessage.mockImplementation(async (_context, params) => ({
+      ...params,
+      _id: `mongo-${params.messageId}`,
+    }));
+
+    await createResponse(req, res);
+
+    expect(mockEnrollAgentExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: previousMessage.conversationId }),
+    );
+    expect(db.saveMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ userId: 'user-123' }),
+      expect.objectContaining({
+        conversationId: previousMessage.conversationId,
+        messageId: 'input-new',
+        parentMessageId: previousMessage.messageId,
+      }),
+      { context: 'Responses API - save user input' },
+    );
+    expect(db.saveMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ userId: 'user-123' }),
+      expect.objectContaining({
+        conversationId: previousMessage.conversationId,
+        messageId: 'resp_mock-123',
+        parentMessageId: 'input-new',
+      }),
+      { context: 'Responses API - save assistant response' },
+    );
+    expect(db.saveConvo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: 'user-123' }),
+      expect.objectContaining({ conversationId: previousMessage.conversationId }),
+      expect.objectContaining({
+        appendMessageIds: ['mongo-input-new', 'mongo-resp_mock-123'],
+        noUpsert: true,
+      }),
+    );
+  });
+
+  it('retrieves only the assistant message identified by a canonical response ID', async () => {
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    const target = {
+      messageId: 'resp_target',
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      isCreatedByUser: false,
+      text: 'Target output',
+      model: 'agent-123',
+      tokenCount: 7,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:01.000Z'),
+    };
+    api.resolveStoredResponse.mockResolvedValueOnce({
+      status: 'found',
+      reference: {
+        conversation: { conversationId: target.conversationId, user: 'user-123' },
+        conversationId: target.conversationId,
+        responseMessage: target,
+      },
+    });
+    req.params = { id: target.messageId };
+
+    await getResponse(req, res);
+
+    expect(db.getMessages).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: target.messageId,
+        model: 'agent-123',
+        output: [expect.objectContaining({ id: target.messageId })],
+        usage: { input_tokens: 0, output_tokens: 7, total_tokens: 7 },
+      }),
     );
   });
 
@@ -1805,6 +1943,34 @@ describe('createResponse controller', () => {
       expect(saveMessage).not.toHaveBeenCalled();
     });
 
+    it('does not recreate a continued conversation deleted before persistence', async () => {
+      const { validateResponseRequest } = require('@librechat/api');
+      const { getConvo, saveConvo, saveMessage } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Continue.',
+          stream: false,
+          store: true,
+          previous_response_id: '11111111-1111-4111-8111-111111111111',
+        },
+      });
+      getConvo.mockResolvedValueOnce({
+        conversationId: '11111111-1111-4111-8111-111111111111',
+        user: 'user-123',
+      });
+      saveConvo.mockResolvedValueOnce(null);
+
+      await createResponse(req, res);
+
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        expect.objectContaining({ conversationId: '11111111-1111-4111-8111-111111111111' }),
+        expect.objectContaining({ noUpsert: true }),
+      );
+      expect(saveMessage).not.toHaveBeenCalled();
+    });
+
     it('should return 500 when getConvo throws a DB error', async () => {
       const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
       const { getConvo } = require('~/models');
@@ -2261,5 +2427,131 @@ describe('createResponse controller', () => {
         expect.anything(),
       );
     });
+  });
+});
+
+describe('Responses persistence with MongoDB', () => {
+  it('stores, retrieves, and continues one non-streaming and one streaming response', async () => {
+    const mongoose = require('mongoose');
+    const { MongoMemoryServer } = require('mongodb-memory-server');
+    const dataSchemas = jest.requireActual('@librechat/data-schemas');
+    const api = require('@librechat/api');
+    const db = require('~/models');
+    const { v4 } = require('uuid');
+    const mongod = await MongoMemoryServer.create();
+    const conversationId = '11111111-1111-4111-8111-111111111111';
+
+    try {
+      await mongoose.connect(mongod.getUri());
+      dataSchemas.createModels(mongoose);
+      const methods = dataSchemas.createMethods(mongoose);
+      jest.clearAllMocks();
+      resetMockExecution();
+      mockStoredResponseReferences.clear();
+      api.resolveStoredResponse.mockImplementation(async (deps, userId, responseId) => {
+        const responseMessage = await deps.getMessage({ user: userId, messageId: responseId });
+        if (responseMessage == null) return { status: 'not_found' };
+        const conversation = await deps.getConvo(userId, responseMessage.conversationId);
+        if (conversation == null) return { status: 'not_found' };
+        return {
+          status: 'found',
+          reference: {
+            conversation,
+            conversationId: conversation.conversationId,
+            responseMessage,
+          },
+        };
+      });
+      api.selectStoredResponseHistory.mockImplementation((messages) => messages);
+      api.convertInputToMessages
+        .mockReturnValueOnce([{ role: 'user', content: 'First', messageId: 'input-one' }])
+        .mockReturnValueOnce([{ role: 'user', content: 'Second', messageId: 'input-two' }]);
+      api.validateResponseRequest
+        .mockReturnValueOnce({
+          request: { model: 'agent-123', input: 'First', stream: false, store: true },
+        })
+        .mockReturnValueOnce({
+          request: {
+            model: 'agent-123',
+            input: 'Second',
+            stream: true,
+            store: true,
+            previous_response_id: 'resp_mock-123',
+          },
+        });
+      api.generateResponseId.mockReturnValueOnce('resp_mock-123').mockReturnValueOnce('resp_next');
+      v4.mockReturnValueOnce(conversationId);
+      db.saveConvo.mockImplementation(methods.saveConvo);
+      db.saveMessage.mockImplementation(methods.saveMessage);
+      db.getConvo.mockImplementation(methods.getConvo);
+      db.getMessage.mockImplementation(methods.getMessage);
+      db.getMessages.mockImplementation(methods.getMessages);
+
+      const makeRequest = (body) => ({
+        body,
+        user: { id: 'user-123' },
+        config: { endpoints: { agents: { allowedProviders: ['anthropic'] } } },
+        once: jest.fn(),
+        off: jest.fn(),
+      });
+      const makeResponse = () => ({
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+        setHeader: jest.fn(),
+        flushHeaders: jest.fn(),
+        end: jest.fn(),
+        write: jest.fn(),
+        once: jest.fn(),
+        off: jest.fn(),
+      });
+      const controller = require('../responses');
+
+      await dataSchemas.tenantStorage.run(
+        { tenantId: 'tenant-a', userId: 'user-123' },
+        async () => {
+          await controller.createResponse(
+            makeRequest({ model: 'agent-123', input: 'First', stream: false, store: true }),
+            makeResponse(),
+          );
+
+          const getRequest = makeRequest({});
+          getRequest.params = { id: 'resp_mock-123' };
+          const getResult = makeResponse();
+          await controller.getResponse(getRequest, getResult);
+          expect(getResult.json).toHaveBeenCalledWith(
+            expect.objectContaining({
+              id: 'resp_mock-123',
+              output: [expect.objectContaining({ id: 'resp_mock-123' })],
+            }),
+          );
+
+          await controller.createResponse(
+            makeRequest({
+              model: 'agent-123',
+              input: 'Second',
+              stream: true,
+              store: true,
+              previous_response_id: 'resp_mock-123',
+            }),
+            makeResponse(),
+          );
+
+          const storedConversation = await methods.getConvo('user-123', conversationId);
+          const messages = await methods.getMessages({ user: 'user-123', conversationId });
+          expect(storedConversation?.messages).toHaveLength(4);
+          expect(
+            messages.map(({ messageId, parentMessageId }) => ({ messageId, parentMessageId })),
+          ).toEqual([
+            { messageId: 'input-one', parentMessageId: null },
+            { messageId: 'resp_mock-123', parentMessageId: 'input-one' },
+            { messageId: 'input-two', parentMessageId: 'resp_mock-123' },
+            { messageId: 'resp_next', parentMessageId: 'input-two' },
+          ]);
+        },
+      );
+    } finally {
+      await mongoose.disconnect();
+      await mongod.stop();
+    }
   });
 });

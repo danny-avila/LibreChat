@@ -182,3 +182,11 @@ export {
   createAggregatorEventHandlers,
   type ResponseAggregator,
 } from './service';
+
+export {
+  resolveStoredResponse,
+  selectStoredResponseHistory,
+  type StoredResponseLookup,
+  type StoredResponseReference,
+  type StoredResponseResolution,
+} from './persistence';

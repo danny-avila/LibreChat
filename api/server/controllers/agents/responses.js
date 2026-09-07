@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, buildRetentionVisibilityFilter } = require('@librechat/data-schemas');
 const { Callback, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
@@ -81,6 +81,8 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  resolveStoredResponse,
+  selectStoredResponseHistory,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -315,15 +317,19 @@ function extractResponseRequestContent(request, messageFragments) {
  * @param {string} userId - The user ID
  * @returns {Promise<Array>} Messages from the conversation
  */
-async function loadPreviousMessages(conversationId, userId) {
+async function loadPreviousMessages(conversationId, userId, responseMessageId) {
   try {
-    const messages = await db.getMessages({ conversationId, user: userId });
+    const messages = await db.getMessages({
+      conversationId,
+      user: userId,
+      ...buildRetentionVisibilityFilter(),
+    });
     if (!messages || messages.length === 0) {
       return [];
     }
 
     // Convert stored messages to internal format
-    return messages.map((msg) => {
+    return selectStoredResponseHistory(messages, responseMessageId).map((msg) => {
       let text;
       if (typeof msg.text === 'string') {
         text = msg.text;
@@ -361,17 +367,25 @@ async function loadPreviousMessages(conversationId, userId) {
  * @param {string} conversationId
  * @param {Array} inputMessages - Internal format messages
  * @param {string} agentId
- * @returns {Promise<void>}
+ * @param {string | null} parentMessageId
+ * @returns {Promise<{ parentMessageId: string | null, messageIds: import('mongoose').Types.ObjectId[] }>}
  */
-async function saveInputMessages(req, conversationId, inputMessages, agentId) {
+async function saveInputMessages(req, conversationId, inputMessages, agentId, parentMessageId) {
+  const messageIds = [];
+  let currentParentMessageId = parentMessageId;
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
-      await db.saveMessage(
-        req,
+      const messageId = msg.messageId || nanoid();
+      const message = await db.saveMessage(
         {
-          messageId: msg.messageId || nanoid(),
+          userId: req?.user?.id,
+          isTemporary: req?.body?.isTemporary,
+          interfaceConfig: req?.config?.interfaceConfig,
+        },
+        {
+          messageId,
           conversationId,
-          parentMessageId: null,
+          parentMessageId: currentParentMessageId,
           isCreatedByUser: true,
           text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
           sender: 'User',
@@ -380,8 +394,13 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
         },
         { context: 'Responses API - save user input' },
       );
+      if (message?._id != null) {
+        messageIds.push(message._id);
+      }
+      currentParentMessageId = messageId;
     }
   }
+  return { parentMessageId: currentParentMessageId, messageIds };
 }
 
 /**
@@ -392,7 +411,8 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @param {import('@librechat/api').Response} response
  * @param {string} agentId
  * @param {number | undefined} visibleOutputTokens
- * @returns {Promise<void>}
+ * @param {string | null} parentMessageId
+ * @returns {Promise<import('@librechat/data-schemas').IMessage | null | undefined>}
  */
 async function saveResponseOutput(
   req,
@@ -401,6 +421,7 @@ async function saveResponseOutput(
   response,
   agentId,
   visibleOutputTokens,
+  parentMessageId,
 ) {
   // Extract text content from output items
   let responseText = '';
@@ -417,12 +438,16 @@ async function saveResponseOutput(
   const langfuseTraceFields = await getLangfuseTraceMessageFields(req.config, responseId);
 
   // Save the assistant message
-  await db.saveMessage(
-    req,
+  return db.saveMessage(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       messageId: responseId,
       conversationId,
-      parentMessageId: null,
+      parentMessageId,
       isCreatedByUser: false,
       ...langfuseTraceFields,
       text: responseText,
@@ -442,11 +467,20 @@ async function saveResponseOutput(
  * @param {string} conversationId
  * @param {string} agentId
  * @param {object} agent
- * @returns {Promise<void>}
+ * @param {import('mongoose').Types.ObjectId[] | undefined} appendMessageIds
+ * @param {boolean} noUpsert
+ * @returns {Promise<object | null>}
  */
-async function saveConversation(req, conversationId, agentId, agent) {
+async function saveConversation(
+  req,
+  conversationId,
+  agentId,
+  agent,
+  appendMessageIds,
+  noUpsert = false,
+) {
   const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
-  await db.saveConvo(
+  return db.saveConvo(
     {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,
@@ -462,6 +496,8 @@ async function saveConversation(req, conversationId, agentId, agent) {
     {
       context: 'Responses API - save conversation',
       initialAgentId: agent?.id === agentId ? agentId : null,
+      ...(appendMessageIds != null && { appendMessageIds }),
+      ...(noUpsert && { noUpsert: true }),
     },
   );
 }
@@ -613,6 +649,41 @@ const executeResponse = async (envelope, { req, res }) => {
     );
   }
 
+  let previousResponse = null;
+  if (request.previous_response_id != null) {
+    if (typeof request.previous_response_id !== 'string') {
+      return sendResponsesErrorResponse(
+        res,
+        400,
+        'previous_response_id must be a string',
+        'invalid_request',
+      );
+    }
+    let resolution;
+    try {
+      resolution = await resolveStoredResponse(
+        { getConvo: db.getConvo, getMessage: db.getMessage },
+        principal.userId,
+        request.previous_response_id,
+      );
+    } catch (error) {
+      return handleExecutionError({ error, res, appConfig });
+    }
+    if (resolution.status === 'read_only') {
+      return sendResponsesErrorResponse(
+        res,
+        409,
+        CHILD_THREAD_READ_ONLY_ERROR,
+        'invalid_request',
+        'conversation_read_only',
+      );
+    }
+    if (resolution.status === 'not_found') {
+      return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+    }
+    previousResponse = resolution.reference;
+  }
+
   // Generate IDs
   const responseId = generateResponseId();
   const context = createResponseContext(request, responseId);
@@ -621,7 +692,7 @@ const executeResponse = async (envelope, { req, res }) => {
     `[Responses API] Request ${responseId} started for agent ${agentId}, stream: ${isStreaming}`,
   );
 
-  const conversationId = request.previous_response_id ?? uuidv4();
+  const conversationId = previousResponse?.conversationId ?? uuidv4();
   /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
   const artifactPromises = [];
   let artifactWritesCovered = false;
@@ -662,23 +733,13 @@ const executeResponse = async (envelope, { req, res }) => {
     },
     handleExecutionError: (error) => handleExecutionError({ error, res, appConfig }),
     execute: async (execution) => {
-      if (request.previous_response_id != null) {
-        if (typeof request.previous_response_id !== 'string') {
-          return sendResponsesErrorResponse(
-            res,
-            400,
-            'previous_response_id must be a string',
-            'invalid_request',
-          );
-        }
-        const previousConversation = await db.getConvo(
+      if (previousResponse != null) {
+        const revalidated = await resolveStoredResponse(
+          { getConvo: db.getConvo, getMessage: db.getMessage },
           principal.userId,
           request.previous_response_id,
         );
-        if (!previousConversation) {
-          return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
-        }
-        if (previousConversation.subagentThread != null) {
+        if (revalidated.status === 'read_only') {
           return sendResponsesErrorResponse(
             res,
             409,
@@ -687,24 +748,36 @@ const executeResponse = async (envelope, { req, res }) => {
             'conversation_read_only',
           );
         }
+        if (revalidated.status === 'not_found') {
+          return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+        }
+        previousResponse = revalidated.reference;
       }
 
-      const parentMessageId = null;
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
       });
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
-      const previousMessages = request.previous_response_id
-        ? await loadPreviousMessages(request.previous_response_id, principal.userId)
+      const previousMessages = previousResponse
+        ? await loadPreviousMessages(
+            conversationId,
+            principal.userId,
+            previousResponse.responseMessage?.messageId,
+          )
         : [];
-      if (request.previous_response_id) {
+      if (previousResponse?.responseMessage != null && previousMessages.length === 0) {
+        return sendResponsesErrorResponse(res, 404, 'Conversation history not found', 'not_found');
+      }
+      if (previousResponse) {
         assertModelBoundContent({
           filters: appConfig?.filters,
           legacyPii: appConfig?.messageFilter?.pii,
           storedMessages: previousMessages,
         });
       }
+      const parentMessageId =
+        previousResponse?.responseMessage?.messageId ?? previousMessages.at(-1)?.messageId ?? null;
 
       // Build allowed providers set
       const allowedProviders = new Set(agentsEConfig?.allowedProviders);
@@ -1297,21 +1370,53 @@ const executeResponse = async (envelope, { req, res }) => {
         if (request.store === true) {
           try {
             // Save conversation
-            await saveConversation(req, conversationId, agentId, agent);
+            const storedConversation = await saveConversation(
+              req,
+              conversationId,
+              agentId,
+              agent,
+              undefined,
+              previousResponse != null,
+            );
+            if (storedConversation?.conversationId !== conversationId) {
+              throw new Error('Conversation was deleted before the response could be stored');
+            }
 
             // Save input messages
-            await saveInputMessages(req, conversationId, inputMessages, agentId);
+            const inputPersistence = await saveInputMessages(
+              req,
+              conversationId,
+              inputMessages,
+              agentId,
+              parentMessageId,
+            );
 
             // Build response for saving (use tracker with buildResponse for streaming)
             const finalResponse = buildResponse(context, tracker, 'completed');
-            await saveResponseOutput(
+            const outputMessage = await saveResponseOutput(
               req,
               conversationId,
               responseId,
               finalResponse,
               agentId,
               tracker.usage.outputTokens,
+              inputPersistence.parentMessageId,
             );
+            const messageIds = [...inputPersistence.messageIds];
+            if (outputMessage?._id != null) {
+              messageIds.push(outputMessage._id);
+            }
+            const refreshedConversation = await saveConversation(
+              req,
+              conversationId,
+              agentId,
+              agent,
+              messageIds,
+              true,
+            );
+            if (refreshedConversation?.conversationId !== conversationId) {
+              throw new Error('Conversation was deleted before message references were stored');
+            }
 
             logger.debug(
               `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1514,18 +1619,50 @@ const executeResponse = async (envelope, { req, res }) => {
 
         if (request.store === true) {
           try {
-            await saveConversation(req, conversationId, agentId, agent);
+            const storedConversation = await saveConversation(
+              req,
+              conversationId,
+              agentId,
+              agent,
+              undefined,
+              previousResponse != null,
+            );
+            if (storedConversation?.conversationId !== conversationId) {
+              throw new Error('Conversation was deleted before the response could be stored');
+            }
 
-            await saveInputMessages(req, conversationId, inputMessages, agentId);
+            const inputPersistence = await saveInputMessages(
+              req,
+              conversationId,
+              inputMessages,
+              agentId,
+              parentMessageId,
+            );
 
-            await saveResponseOutput(
+            const outputMessage = await saveResponseOutput(
               req,
               conversationId,
               responseId,
               response,
               agentId,
               aggregator.usage.outputTokens,
+              inputPersistence.parentMessageId,
             );
+            const messageIds = [...inputPersistence.messageIds];
+            if (outputMessage?._id != null) {
+              messageIds.push(outputMessage._id);
+            }
+            const refreshedConversation = await saveConversation(
+              req,
+              conversationId,
+              agentId,
+              agent,
+              messageIds,
+              true,
+            );
+            if (refreshedConversation?.conversationId !== conversationId) {
+              throw new Error('Conversation was deleted before message references were stored');
+            }
 
             logger.debug(
               `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1644,7 +1781,6 @@ const listModels = async (req, res) => {
  * Get Response - GET /v1/responses/:id
  *
  * Retrieves a stored response by its ID.
- * The response ID maps to a conversationId in LibreChat's storage.
  *
  * @param {import('express').Request} req
  * @param {import('express').Response} res
@@ -1658,11 +1794,12 @@ const getResponse = async (req, res) => {
       return sendResponsesErrorResponse(res, 400, 'Response ID is required');
     }
 
-    // The responseId could be either the response ID or the conversation ID
-    // Try to find a conversation with this ID
-    const conversation = await db.getConvo(userId, responseId);
-
-    if (!conversation) {
+    const resolution = await resolveStoredResponse(
+      { getConvo: db.getConvo, getMessage: db.getMessage },
+      userId,
+      responseId,
+    );
+    if (resolution.status !== 'found') {
       return sendResponsesErrorResponse(
         res,
         404,
@@ -1671,9 +1808,15 @@ const getResponse = async (req, res) => {
         'response_not_found',
       );
     }
+    const { conversation, conversationId, responseMessage } = resolution.reference;
 
-    // Load messages for this conversation
-    const messages = await db.getMessages({ conversationId: responseId, user: userId });
+    const messages = responseMessage
+      ? [responseMessage]
+      : await db.getMessages({
+          conversationId,
+          user: userId,
+          ...buildRetentionVisibilityFilter(),
+        });
 
     if (!messages || messages.length === 0) {
       return sendResponsesErrorResponse(
@@ -1688,18 +1831,25 @@ const getResponse = async (req, res) => {
     // Convert messages to Open Responses output format
     const output = convertMessagesToOutputItems(messages);
 
-    // Find the last assistant message for usage info
-    const lastAssistantMessage = messages.filter((m) => !m.isCreatedByUser).pop();
+    const lastAssistantMessage =
+      responseMessage ?? messages.filter((m) => !m.isCreatedByUser).pop();
+    const createdAt = responseMessage?.createdAt ?? conversation.createdAt ?? Date.now();
+    const completedAt = responseMessage?.updatedAt ?? conversation.updatedAt ?? Date.now();
 
     // Build the response object
     const response = {
       id: responseId,
       object: 'response',
-      created_at: Math.floor(new Date(conversation.createdAt || Date.now()).getTime() / 1000),
-      completed_at: Math.floor(new Date(conversation.updatedAt || Date.now()).getTime() / 1000),
+      created_at: Math.floor(new Date(createdAt).getTime() / 1000),
+      completed_at: Math.floor(new Date(completedAt).getTime() / 1000),
       status: 'completed',
       incomplete_details: null,
-      model: conversation.agentId || conversation.model || 'unknown',
+      model:
+        lastAssistantMessage?.model ||
+        conversation.agent_id ||
+        conversation.agentId ||
+        conversation.model ||
+        'unknown',
       previous_response_id: null,
       instructions: null,
       output,

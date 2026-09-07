@@ -28,5 +28,18 @@ export const buildRetentionVisibilityFilter = <
     ],
   }) as FilterQuery<T>;
 
+export const isRetentionVisible = (
+  document: RetentionFilterDocument,
+  now: Date = new Date(),
+): boolean => {
+  if (document.isTemporary === true) {
+    return false;
+  }
+  if (document.isTemporary == null) {
+    return document.expiredAt == null;
+  }
+  return document.expiredAt == null || document.expiredAt > now;
+};
+
 export const createFallbackRetentionDate = (now: number = Date.now()): Date =>
   new Date(now + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000);
