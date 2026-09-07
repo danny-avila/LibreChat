@@ -15,11 +15,11 @@ const MODE_PERMISSIONS: Record<CodeApprovalMode, CodePermissions> = {
 };
 
 export type CodeApprovalConstraints = {
+  environment: 'attached' | 'managed';
   enabled?: boolean;
   allowedModes?: readonly CodeApprovalMode[];
   configSchema?: CodeEnvironmentUserConfigSchema;
   settings?: CodeEnvironmentUserSettings;
-  attached?: boolean;
 };
 
 /** Omitted deployment configuration never grants unattended execution. */
@@ -28,13 +28,13 @@ export function getAllowedCodeApprovalModes({
   allowedModes,
   configSchema,
   settings,
-  attached,
+  environment,
 }: CodeApprovalConstraints): CodeApprovalMode[] {
   if (enabled === false) return [];
   const permitted = new Set(allowedModes ?? ['ask']);
   return CODE_APPROVAL_MODES.filter((mode) => {
     if (!permitted.has(mode)) return false;
-    if (attached !== true) return true;
+    if (environment === 'managed') return true;
     for (const category of ['fileWrite', 'commandExecution'] as const) {
       if (MODE_PERMISSIONS[mode][category] !== 'allow') continue;
       const field = configSchema?.permissions?.[category];
@@ -81,5 +81,6 @@ export function resolveCodePermissionDecision({
   decision: CodeEnvironmentPermissionDecision;
 }): CodeEnvironmentPermissionDecision {
   if (mode == null || decision === 'deny') return decision;
+  if (MODE_PERMISSIONS[mode] == null) throw new CodeApprovalModeError();
   return MODE_PERMISSIONS[mode][category];
 }

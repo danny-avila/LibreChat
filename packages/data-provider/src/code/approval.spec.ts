@@ -8,7 +8,7 @@ import {
 } from './approval';
 
 const constraints: CodeApprovalConstraints = {
-  attached: true,
+  environment: 'attached',
   allowedModes: CODE_APPROVAL_MODES,
   configSchema: {
     permissions: {
@@ -20,9 +20,28 @@ const constraints: CodeApprovalConstraints = {
 
 describe('conversation code approval constraints', () => {
   test('defaults to asking without enabling unattended execution', () => {
-    expect(getAllowedCodeApprovalModes({})).toEqual(['ask']);
-    expect(getAllowedCodeApprovalModes({ attached: true })).toEqual(['ask']);
+    expect(getAllowedCodeApprovalModes({ environment: 'managed' })).toEqual(['ask']);
+    expect(getAllowedCodeApprovalModes({ environment: 'attached' })).toEqual(['ask']);
     expect(resolveCodeApprovalMode(undefined, constraints)).toBeUndefined();
+  });
+
+  test('requires callers to identify attached environments before applying machine policy', () => {
+    expect(
+      getAllowedCodeApprovalModes({
+        environment: 'managed',
+        allowedModes: CODE_APPROVAL_MODES,
+      }),
+    ).toEqual(CODE_APPROVAL_MODES);
+    expect(
+      getAllowedCodeApprovalModes({
+        ...constraints,
+        configSchema: {
+          permissions: {
+            fileWrite: { allowed: ['ask'], default: 'ask' },
+          },
+        },
+      }),
+    ).toEqual(['ask']);
   });
 
   test('honors endpoint disablement and an explicit empty allowlist', () => {
@@ -84,6 +103,16 @@ describe('conversation code approval constraints', () => {
       expect(() => resolveCodeApprovalMode(value, constraints)).toThrow(CodeApprovalModeError);
     },
   );
+
+  test('rejects an unvalidated runtime mode before permission lookup', () => {
+    expect(() =>
+      resolveCodePermissionDecision({
+        mode: 'fullAccess' as never,
+        category: 'fileWrite',
+        decision: 'ask',
+      }),
+    ).toThrow(CodeApprovalModeError);
+  });
 
   test('revalidates a once-permitted selection after a policy restriction', () => {
     expect(resolveCodeApprovalMode('acceptEdits', constraints)).toBe('acceptEdits');
