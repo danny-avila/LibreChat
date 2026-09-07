@@ -225,7 +225,11 @@ export default function useChatFunctions({
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
-  const { selected: codeApprovalMode } = useCodeApprovalMode(immutableConversation);
+  const addedConversation = useRecoilValue(store.conversationByKeySelector(1));
+  const { selected: codeApprovalMode } = useCodeApprovalMode(
+    immutableConversation,
+    addedConversation,
+  );
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked

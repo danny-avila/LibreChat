@@ -35,6 +35,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  CodeApprovalMode,
   TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
@@ -1591,7 +1592,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
-  codeApprovalMode?: t.CodeApprovalMode;
+  codeApprovalMode?: CodeApprovalMode;
   user?: IUser;
   tenantId?: string;
   /**

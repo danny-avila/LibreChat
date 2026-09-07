@@ -11,7 +11,10 @@ import useAgentToolPermissions from './useAgentToolPermissions';
 import useGetAgentsConfig from './useGetAgentsConfig';
 import { useAgentsMapContext } from '~/Providers';
 
-export default function useCodeApprovalMode(conversation: TConversation | null): {
+export default function useCodeApprovalMode(
+  conversation: TConversation | null,
+  addedConversation?: TConversation | null,
+): {
   available: boolean;
   modes: CodeApprovalMode[];
   selected?: CodeApprovalMode;
@@ -19,13 +22,14 @@ export default function useCodeApprovalMode(conversation: TConversation | null):
   const { agentsConfig } = useGetAgentsConfig();
   const agentsMap = useAgentsMapContext();
   const { agent: primaryAgent } = useAgentToolPermissions(conversation?.agent_id);
+  const { agent: addedAgent } = useAgentToolPermissions(addedConversation?.agent_id);
   const statefulCodeSessions = agentsConfig?.statefulCodeSessions as
     | TConfig['statefulCodeSessions']
     | undefined;
   const environments = statefulCodeSessions?.environments;
   const attachedEnvironments = useMemo(
     () =>
-      collectReachableAgents(primaryAgent, agentsMap)
+      collectReachableAgents([primaryAgent, addedAgent], agentsMap)
         .filter(
           (agent) =>
             agent.stateful_code_sessions === true && agent.tools?.includes(Tools.execute_code),
@@ -34,12 +38,12 @@ export default function useCodeApprovalMode(conversation: TConversation | null):
         .filter(
           (environment): environment is TPublicCodeEnvironment => environment?.type === 'attached',
         ),
-    [agentsMap, environments, primaryAgent],
+    [addedAgent, agentsMap, environments, primaryAgent],
   );
-  const available =
+  const supported =
     (conversation?.endpointType ?? conversation?.endpoint) === EModelEndpoint.agents &&
-    statefulCodeSessions?.approvalsEnabled !== false &&
-    attachedEnvironments.length > 0;
+    statefulCodeSessions?.approvalsEnabled === true;
+  const available = supported && attachedEnvironments.length > 0;
   const modes = useMemo(() => {
     if (!available) return [];
     const allowed = new Set<CodeApprovalMode>(['ask']);
@@ -55,9 +59,15 @@ export default function useCodeApprovalMode(conversation: TConversation | null):
     return CODE_APPROVAL_MODES.filter((mode) => allowed.has(mode));
   }, [attachedEnvironments, available]);
   const requested = conversation?.codeApprovalMode ?? 'ask';
+  /**
+   * Fail closed while agent/environment metadata is incomplete. An affirmative
+   * server capability means `ask` is safe to submit even before an attached
+   * environment is discoverable; the server ignores it when no BYOM tool is
+   * active. Never preserve `acceptEdits` until current policy authorizes it.
+   */
   let selected: CodeApprovalMode | undefined;
-  if (available) {
-    selected = modes.includes(requested) ? requested : 'ask';
+  if (supported) {
+    selected = available && modes.includes(requested) ? requested : 'ask';
   }
 
   return { available, modes, selected };
@@ -72,9 +82,8 @@ function findExecutionEnvironment(
     : environments?.find((candidate) => candidate.default === true);
 }
 
-function collectReachableAgents(primary: Agent | undefined, agentsMap?: TAgentsMap): Agent[] {
-  if (primary == null) return [];
-  const pending = [primary];
+function collectReachableAgents(roots: Array<Agent | undefined>, agentsMap?: TAgentsMap): Agent[] {
+  const pending = roots.filter((agent): agent is Agent => agent != null);
   const visited = new Set<string>();
   const agents: Agent[] = [];
   while (pending.length > 0) {
@@ -82,8 +91,9 @@ function collectReachableAgents(primary: Agent | undefined, agentsMap?: TAgentsM
     if (agent == null || visited.has(agent.id)) continue;
     visited.add(agent.id);
     agents.push(agent);
+    if (agent.subagents?.enabled !== true) continue;
     const edgeIds = agent.edges?.flatMap((edge) => (Array.isArray(edge.to) ? edge.to : [edge.to]));
-    const graphIds = agent.subagents?.graphs?.flatMap((graph) => graph.agent_ids);
+    const graphIds = agent.subagents.graphs?.flatMap((graph) => graph.agent_ids);
     const ids = [
       ...(agent.agent_ids ?? []),
       ...(agent.subagents?.agent_ids ?? []),

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import CodeApprovalMenu from '../CodeApprovalMenu';
 
@@ -27,7 +28,7 @@ describe('CodeApprovalMenu', () => {
     });
   });
 
-  test('defaults to ask and stores accept-edits on the conversation', () => {
+  test('defaults to ask and stores accept-edits on the conversation', async () => {
     render(
       <CodeApprovalMenu
         conversation={conversation}
@@ -36,8 +37,8 @@ describe('CodeApprovalMenu', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('code-approval-mode'));
-    fireEvent.click(screen.getByText('com_ui_code_approval_accept_edits'));
+    await userEvent.click(screen.getByTestId('code-approval-mode'));
+    await userEvent.click(await screen.findByText('com_ui_code_approval_accept_edits'));
 
     const update = mockSetConversation.mock.calls[0][0];
     expect(update(conversation)).toEqual({ ...conversation, codeApprovalMode: 'acceptEdits' });

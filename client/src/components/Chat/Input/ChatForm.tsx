@@ -785,6 +785,7 @@ const ChatForm = memo(function ChatForm({
                 />
                 <CodeApprovalMenu
                   conversation={conversation}
+                  addedConversation={addedConvo}
                   setConversation={setConversation}
                   disabled={disableInputs || isSubmitting}
                 />

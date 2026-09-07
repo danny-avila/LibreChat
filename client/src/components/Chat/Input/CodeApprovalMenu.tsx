@@ -14,15 +14,17 @@ import { useCodeApprovalMode, useLocalize } from '~/hooks';
 
 export default function CodeApprovalMenu({
   conversation,
+  addedConversation,
   setConversation,
   disabled,
 }: {
   conversation: TConversation | null;
+  addedConversation?: TConversation | null;
   setConversation: SetterOrUpdater<TConversation | null>;
   disabled: boolean;
 }) {
   const localize = useLocalize();
-  const { available, modes, selected } = useCodeApprovalMode(conversation);
+  const { available, modes, selected } = useCodeApprovalMode(conversation, addedConversation);
 
   if (!available || selected == null) {
     return null;

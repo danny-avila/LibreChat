@@ -7,7 +7,10 @@ const mockUseAgentToolPermissions = jest.fn();
 const mockUseAgentsMapContext = jest.fn();
 
 jest.mock('../useGetAgentsConfig', () => () => mockUseGetAgentsConfig());
-jest.mock('../useAgentToolPermissions', () => () => mockUseAgentToolPermissions());
+jest.mock(
+  '../useAgentToolPermissions',
+  () => (agentId?: string) => mockUseAgentToolPermissions(agentId),
+);
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => mockUseAgentsMapContext() }));
 
 const conversation = {
@@ -35,6 +38,7 @@ describe('useCodeApprovalMode', () => {
     mockUseGetAgentsConfig.mockReturnValue({
       agentsConfig: {
         statefulCodeSessions: {
+          approvalsEnabled: true,
           environments: [
             {
               id: 'mac',
@@ -67,6 +71,7 @@ describe('useCodeApprovalMode', () => {
     mockUseGetAgentsConfig.mockReturnValue({
       agentsConfig: {
         statefulCodeSessions: {
+          approvalsEnabled: true,
           environments: [
             {
               id: 'mac',
@@ -102,6 +107,28 @@ describe('useCodeApprovalMode', () => {
     expect(result.current).toEqual({ available: false, modes: [], selected: undefined });
   });
 
+  test('requires an affirmative server approval capability', () => {
+    mockUseGetAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        statefulCodeSessions: {
+          environments: [{ id: 'mac', name: 'Mac', type: 'attached' }],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useCodeApprovalMode(conversation));
+
+    expect(result.current).toEqual({ available: false, modes: [], selected: undefined });
+  });
+
+  test('keeps ask fail-closed while agent metadata is unavailable', () => {
+    mockUseAgentToolPermissions.mockReturnValue({ agent: undefined });
+
+    const { result } = renderHook(() => useCodeApprovalMode(conversation));
+
+    expect(result.current).toEqual({ available: false, modes: [], selected: 'ask' });
+  });
+
   test('includes attached subagents while preserving their mandatory asks', () => {
     const primary = {
       id: 'agent-1',
@@ -127,6 +154,7 @@ describe('useCodeApprovalMode', () => {
     mockUseGetAgentsConfig.mockReturnValue({
       agentsConfig: {
         statefulCodeSessions: {
+          approvalsEnabled: true,
           environments: [
             {
               id: 'mac',
@@ -153,5 +181,78 @@ describe('useCodeApprovalMode', () => {
 
     expect(result.current.available).toBe(true);
     expect(result.current.modes).toEqual(['ask', 'acceptEdits']);
+  });
+
+  test('includes the active parallel conversation agent', () => {
+    const primary = {
+      id: 'agent-1',
+      tools: [],
+      stateful_code_sessions: false,
+    };
+    const addedAgent = {
+      id: 'agent-2',
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+      code_environment_id: 'mac',
+    };
+    mockUseAgentToolPermissions.mockImplementation((agentId?: string) => ({
+      agent: agentId === 'agent-2' ? addedAgent : primary,
+    }));
+    const addedConversation = { endpoint: 'agents', agent_id: 'agent-2' } as TConversation;
+
+    const { result } = renderHook(() => useCodeApprovalMode(conversation, addedConversation));
+
+    expect(result.current.available).toBe(true);
+    expect(result.current.modes).toEqual(['ask', 'acceptEdits']);
+  });
+
+  test('does not traverse disabled subagent configurations', () => {
+    mockUseAgentToolPermissions.mockReturnValue({
+      agent: {
+        id: 'agent-1',
+        tools: ['execute_code'],
+        stateful_code_sessions: true,
+        code_environment_id: 'restricted',
+        subagents: { enabled: false, agent_ids: ['child-1'] },
+      },
+    });
+    mockUseAgentsMapContext.mockReturnValue({
+      'child-1': {
+        id: 'child-1',
+        tools: ['execute_code'],
+        stateful_code_sessions: true,
+        code_environment_id: 'mac',
+      },
+    });
+    mockUseGetAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        statefulCodeSessions: {
+          approvalsEnabled: true,
+          environments: [
+            {
+              id: 'mac',
+              name: 'Mac',
+              type: 'attached',
+              configSchema: {
+                permissions: { fileWrite: { allowed: ['ask', 'allow'], default: 'ask' } },
+              },
+            },
+            {
+              id: 'restricted',
+              name: 'Restricted',
+              type: 'attached',
+              configSchema: {
+                permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useCodeApprovalMode(conversation));
+
+    expect(result.current.modes).toEqual(['ask']);
+    expect(result.current.selected).toBe('ask');
   });
 });
