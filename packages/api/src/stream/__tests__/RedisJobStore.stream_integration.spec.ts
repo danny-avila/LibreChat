@@ -177,8 +177,8 @@ describe('RedisJobStore Integration Tests', () => {
 
       const replacement = await store.createJob(streamId, 'user-1', streamId);
 
-      expect(predecessor.checkpointNamespace).toBe(String(predecessor.createdAt));
-      expect(replacement.checkpointNamespace).toBe(String(replacement.createdAt));
+      expect(predecessor.checkpointNamespace).toEqual(expect.any(String));
+      expect(replacement.checkpointNamespace).toEqual(expect.any(String));
       expect(replacement.checkpointNamespace).not.toBe(predecessor.checkpointNamespace);
       expect(replacement.replacedJob).toEqual({
         createdAt: predecessor.createdAt,
@@ -1618,6 +1618,42 @@ describe('RedisJobStore Integration Tests', () => {
       expect(runningMembers).not.toContain(streamId);
       expect(pausedMembers).toContain(streamId);
       expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
+
+      await store.destroy();
+    });
+
+    test('enumerates stale paused jobs from exact and legacy owner indexes', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const suffix = `${process.pid}-${Date.now()}`;
+      const userId = `account-cleanup-user-${suffix}`;
+      const legacyStreamId = `account-cleanup-legacy-${suffix}`;
+      const tenantStreamId = `account-cleanup-tenant-${suffix}`;
+      const foreignStreamId = `account-cleanup-foreign-${suffix}`;
+      const legacy = await store.createJob(legacyStreamId, userId, legacyStreamId);
+      const tenant = await store.createJob(tenantStreamId, userId, tenantStreamId, 'tenant-a');
+      await store.createJob(foreignStreamId, userId, foreignStreamId, 'tenant-b');
+      await store.transitionStatus(legacyStreamId, {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: legacy.createdAt,
+      });
+      await store.transitionStatus(tenantStreamId, {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: tenant.createdAt,
+      });
+
+      expect(await store.getCleanupBlockingJobIdsByUser(userId, 'tenant-a')).toEqual([]);
+      const retained = await store.getRetainedJobIdsByUser(userId, 'tenant-a');
+      expect(retained).toEqual(expect.arrayContaining([legacyStreamId, tenantStreamId]));
+      expect(retained).not.toContain(foreignStreamId);
 
       await store.destroy();
     });

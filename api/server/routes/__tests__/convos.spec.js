@@ -78,6 +78,10 @@ describe('Convos Routes', () => {
     /** Mock authenticated user */
     app.use((req, res, next) => {
       req.user = { id: 'test-user-123', role: 'USER' };
+      const tenantId = req.get('x-test-tenant');
+      if (tenantId) {
+        req.user.tenantId = tenantId;
+      }
       req.config = {
         messageFilter: {
           pii: {
@@ -1109,6 +1113,99 @@ describe('Convos Routes', () => {
         { threadId: 'conversation-1', checkpointNamespace: 'owned.root+generation' },
         { threadId: 'child-conversation', checkpointNamespace: 'owned.child(generation)' },
       ]);
+    });
+
+    it('accumulates owned checkpoint scopes from every cascade wave', async () => {
+      const jobs = {
+        'run-parent': {
+          metadata: {
+            userId: 'test-user-123',
+            conversationId: 'parent-conversation',
+            checkpointNamespace: 'parent-generation',
+            generationProtocolVersion: 2,
+          },
+        },
+        'run-child': {
+          metadata: {
+            userId: 'test-user-123',
+            conversationId: 'child-conversation',
+            checkpointNamespace: 'child-generation',
+            generationProtocolVersion: 2,
+          },
+        },
+      };
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockImplementation(
+        async (_userId, conversationIds) =>
+          conversationIds.map((conversationId) =>
+            conversationId === 'parent-conversation' ? 'run-parent' : 'run-child',
+          ),
+      );
+      generationJobManager.getJob.mockImplementation(async (streamId) => {
+        const job = jobs[streamId];
+        return job == null ? null : { ...job, status: 'complete', createdAt: Date.now() };
+      });
+      deleteConvos
+        .mockImplementationOnce(async (_userId, _filter, options) => {
+          await options.beforeDelete(['parent-conversation']);
+          await options.beforeDelete(['child-conversation']);
+          return {
+            deletedCount: 2,
+            conversationIds: ['parent-conversation', 'child-conversation'],
+          };
+        })
+        .mockResolvedValueOnce({ deletedCount: 0, conversationIds: [] });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'parent-conversation' } });
+
+      expect(response.status).toBe(201);
+      expect(deleteAgentCheckpointScopes).toHaveBeenCalledWith(
+        [
+          { threadId: 'parent-conversation', checkpointNamespace: 'parent-generation' },
+          { threadId: 'child-conversation', checkpointNamespace: 'child-generation' },
+        ],
+        undefined,
+      );
+    });
+
+    it('drains a tenant user legacy generation without pruning its ambiguous namespace', async () => {
+      const createdAt = Date.now();
+      generationJobManager.getCleanupBlockingJobIdsForConversations.mockResolvedValue([
+        'legacy-run',
+      ]);
+      generationJobManager.getJob.mockImplementation(async (streamId) =>
+        streamId === 'legacy-run'
+          ? {
+              metadata: {
+                userId: 'test-user-123',
+                conversationId: 'conversation-1',
+                checkpointNamespace: 'legacy-tenant-generation',
+                generationProtocolVersion: 2,
+              },
+              status: 'running',
+              createdAt,
+            }
+          : null,
+      );
+      deleteConvos
+        .mockImplementationOnce(async (_userId, _filter, options) => {
+          await options.beforeDelete(['conversation-1']);
+          return { deletedCount: 1, conversationIds: ['conversation-1'] };
+        })
+        .mockResolvedValueOnce({ deletedCount: 0, conversationIds: [] });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .set('x-test-tenant', 'tenant-1')
+        .send({ arg: { conversationId: 'conversation-1' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('legacy-run', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(deleteAgentCheckpointScopes).not.toHaveBeenCalled();
     });
 
     it('waits for terminal response-id runs whose provider writes are undrained', async () => {

@@ -277,6 +277,12 @@ async function retryPostDeleteCancellation(cancellationPlan, deletedConversation
   }
 }
 
+function addCheckpointScopes(target, scopes) {
+  for (const scope of scopes) {
+    target.set(`${scope.threadId}\u0000${scope.checkpointNamespace}`, scope);
+  }
+}
+
 /** Confirms every exact generation is stopped before its conversation wave is removed. */
 async function confirmAgentGenerationsDrained(
   userId,
@@ -311,11 +317,11 @@ async function confirmAgentGenerationsDrained(
         drainErrors.push(error);
         return;
       }
-      if (
-        job == null ||
-        job.metadata?.userId !== userId ||
-        (job.metadata?.tenantId ?? undefined) !== (tenantId ?? undefined)
-      ) {
+      if (job == null || job.metadata?.userId !== userId) {
+        return;
+      }
+      const jobTenantId = job.metadata?.tenantId;
+      if (jobTenantId != null && jobTenantId !== tenantId) {
         return;
       }
       const checkpointScope = getOwnedAgentCheckpointScope(job, userId, tenantId);
@@ -397,10 +403,11 @@ async function withAgentOwnerDeletionFence(
   recoverPersistence,
   checkpointer,
 ) {
-  const checkpointScopes = [];
+  const checkpointScopes = new Map();
   const drainRemoteRuns = async () => {
-    checkpointScopes.push(
-      ...(await confirmAgentGenerationsDrained(userId, [], [], tenantId, true)),
+    addCheckpointScopes(
+      checkpointScopes,
+      await confirmAgentGenerationsDrained(userId, [], [], tenantId, true),
     );
   };
   let recoveryConversationIds = [];
@@ -419,29 +426,27 @@ async function withAgentOwnerDeletionFence(
       recoveryConversationIds = recovery.conversationIds ?? [];
     },
   );
-  if (checkpointScopes.length > 0) {
-    await deleteAgentCheckpointScopes(checkpointScopes, checkpointer);
+  if (checkpointScopes.size > 0) {
+    await deleteAgentCheckpointScopes([...checkpointScopes.values()], checkpointer);
   }
   return { result, recoveryConversationIds };
 }
 
 async function deleteOwnerConversationPersistence(userId, filter, tenantId, checkpointer) {
-  let checkpointScopes = [];
+  const checkpointScopes = new Map();
   const result = await db.deleteConvos(userId, filter, {
     allowEmpty: true,
     beforeDelete: async (conversationIds) => {
-      checkpointScopes = await confirmAgentGenerationsDrained(
-        userId,
-        conversationIds,
-        [],
-        tenantId,
+      addCheckpointScopes(
+        checkpointScopes,
+        await confirmAgentGenerationsDrained(userId, conversationIds, [], tenantId),
       );
     },
   });
   /** Consume the deletion receipt before the fallible message sweep. A retry after
    * conversations are gone cannot reconstruct these checkpoint identities. */
-  if (checkpointScopes.length > 0) {
-    await deleteAgentCheckpointScopes(checkpointScopes, checkpointer);
+  if (checkpointScopes.size > 0) {
+    await deleteAgentCheckpointScopes([...checkpointScopes.values()], checkpointer);
   }
   /** Always runs, including an empty conversation retry, so an interrupted writer
    * that persisted messages first cannot make its cleanup permanently unreachable. */
@@ -489,7 +494,7 @@ router.delete('/', configMiddleware, async (req, res) => {
     let cancellationPlan;
     let dbResponse;
     let recoveryConversationIds = [];
-    let checkpointScopes = [];
+    const checkpointScopes = new Map();
     if (filter.conversationId) {
       /** Resolve the targets while the conversations still exist: the second pass
        * runs after their rows are gone and can only reach registered owners. */
@@ -501,11 +506,9 @@ router.delete('/', configMiddleware, async (req, res) => {
       await subagentThreadTaskStore.cancelPlan(cancellationPlan);
       dbResponse = await db.deleteConvos(req.user.id, filter, {
         beforeDelete: async (conversationIds) => {
-          checkpointScopes = await confirmAgentGenerationsDrained(
-            req.user.id,
-            conversationIds,
-            [],
-            tenantId,
+          addCheckpointScopes(
+            checkpointScopes,
+            await confirmAgentGenerationsDrained(req.user.id, conversationIds, [], tenantId),
           );
         },
       });
@@ -536,8 +539,9 @@ router.delete('/', configMiddleware, async (req, res) => {
        * stop a child admitted after the first one. It cannot fail the request — the
        * deletion already committed — so it retries briefly before giving up. */
       await retryPostDeleteCancellation(cancellationPlan, deletedConversationIds);
-      checkpointScopes.push(
-        ...(await drainDeletedAgentGenerations(
+      addCheckpointScopes(
+        checkpointScopes,
+        await drainDeletedAgentGenerations(
           req.user.id,
           deletedConversationIds,
           cancellationPlan.leases
@@ -548,20 +552,21 @@ router.delete('/', configMiddleware, async (req, res) => {
             )
             .map((lease) => lease.taskId),
           tenantId,
-        )),
+        ),
       );
     } else if (deletedConversationIds.length > 0) {
       /** Owner-wide deletion drains lease-backed tasks before the cascade, but a
        * requires_action event actor has intentionally released its lease. Its durable
        * generation is still addressable by the deleted conversation id and must be
        * terminalized before its checkpoint is pruned. */
-      checkpointScopes.push(
-        ...(await drainDeletedAgentGenerations(req.user.id, deletedConversationIds, [], tenantId)),
+      addCheckpointScopes(
+        checkpointScopes,
+        await drainDeletedAgentGenerations(req.user.id, deletedConversationIds, [], tenantId),
       );
     }
     /** Legacy generations have no owner-bound namespace and remain for TTL cleanup. */
-    if (checkpointScopes.length > 0) {
-      await deleteAgentCheckpointScopes(checkpointScopes, checkpointer);
+    if (checkpointScopes.size > 0) {
+      await deleteAgentCheckpointScopes([...checkpointScopes.values()], checkpointer);
     }
     if (filter.conversationId) {
       await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));

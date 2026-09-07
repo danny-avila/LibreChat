@@ -102,7 +102,7 @@ jest.mock('@librechat/api', () => ({
   getWebSearchInstallEntries: (...args) => mockGetWebSearchInstallEntries(...args),
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
   GenerationJobManager: {
-    getCleanupBlockingJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
+    getAccountCleanupJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
     getJob: (...args) => mockGetAgentJob(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
@@ -564,6 +564,7 @@ describe('deleteUserController', () => {
       'owned-generation|subgraph',
       'foreign-user-generation',
       'foreign-tenant-generation',
+      'legacy-tenant-generation',
       '',
     ].map((checkpointNamespace) => ({
       thread_id: 'collision-id',
@@ -581,6 +582,7 @@ describe('deleteUserController', () => {
       'owned-run',
       'foreign-user-run',
       'foreign-tenant-run',
+      'legacy-tenant-run',
       'legacy-run',
     ]);
     mockGetAgentJob.mockImplementation(async (streamId) => {
@@ -613,6 +615,12 @@ describe('deleteUserController', () => {
           checkpointNamespace: '',
           generationProtocolVersion: 1,
         },
+        'legacy-tenant-run': {
+          userId: userIdString,
+          conversationId: 'collision-id',
+          checkpointNamespace: 'legacy-tenant-generation',
+          generationProtocolVersion: 2,
+        },
       }[streamId];
       return { metadata, streamId, createdAt: 123 };
     });
@@ -640,9 +648,11 @@ describe('deleteUserController', () => {
       { checkpoint_ns: '' },
       { checkpoint_ns: 'foreign-tenant-generation' },
       { checkpoint_ns: 'foreign-user-generation' },
+      { checkpoint_ns: 'legacy-tenant-generation' },
     ]);
     expect(mockAbortJob.mock.calls.map(([streamId]) => streamId)).toEqual([
       'owned-run',
+      'legacy-tenant-run',
       'legacy-run',
     ]);
     expect(mockDeleteAgentCheckpointScopes).toHaveBeenCalledWith(

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
 import { ContentTypes, getRunStepDurationMs } from 'librechat-data-provider';
@@ -572,8 +573,7 @@ const JOB_CREATE_LUA =
   'redis.call("HSET", KEYS[1], "__replacedCreatedAt", replacedCreatedAt, "__replacedStatus", replacedStatus) ' +
   'if replacedConversationId then redis.call("HSET", KEYS[1], "__replacedConversationId", replacedConversationId) end end ' +
   'if #replacementChain > 0 then redis.call("HSET", KEYS[1], "__replacedGenerations", cjson.encode(replacementChain)) end ' +
-  'if ARGV[10] == "2" then redis.call("HSET", KEYS[1], "checkpointNamespace", tostring(createdAt)) ' +
-  'else redis.call("HDEL", KEYS[1], "checkpointNamespace") end ' +
+  'if ARGV[10] ~= "2" then redis.call("HDEL", KEYS[1], "checkpointNamespace") end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'redis.call("SET", KEYS[7], tostring(createdAt), "EX", ttl + generationEpochGraceTtl) ' +
   'if ARGV[8] ~= "" then local claimRaw = redis.call("GET", KEYS[10]) ' +
@@ -2022,6 +2022,9 @@ export class RedisJobStore implements IJobStoreV2 {
       status: 'running',
       createdAt: Date.now(),
       generationProtocolVersion,
+      ...(generationProtocolVersion === 2 && {
+        checkpointNamespace: randomUUID(),
+      }),
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && {
         idempotencyClientRequestId,
@@ -2136,11 +2139,6 @@ export class RedisJobStore implements IJobStoreV2 {
         ? Number(previousOwner[2])
         : job.createdAt;
     job.createdAt = Number.isFinite(createdAt) ? createdAt : job.createdAt;
-    if (job.generationProtocolVersion === 2) {
-      job.checkpointNamespace = String(job.createdAt);
-    } else {
-      delete job.checkpointNamespace;
-    }
     const replacedCreatedAt =
       Array.isArray(previousOwner) &&
       (typeof previousOwner[4] === 'string' || typeof previousOwner[4] === 'number') &&
@@ -3550,6 +3548,19 @@ export class RedisJobStore implements IJobStoreV2 {
 
   async getCleanupBlockingJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
     return this.getJobIdsByUser(userId, tenantId, true);
+  }
+
+  async getRetainedJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    const ownerKeys = tenantId
+      ? [KEYS.userJobs(userId, tenantId), KEYS.userJobs(userId)]
+      : [KEYS.userJobs(userId)];
+    const tracked = await Promise.all(ownerKeys.map((key) => this.redis.smembers(key)));
+    const streamIds = [...new Set(tracked.flat())];
+    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
+    });
   }
 
   private async getJobIdsByUser(

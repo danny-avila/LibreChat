@@ -9286,7 +9286,26 @@ class GenerationJobManagerClass {
   /** Returns every generation whose provider can still mutate user-owned data,
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
-    return this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const current = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    if (tenantId == null) {
+      return current;
+    }
+    const legacy = await this.jobStore.getCleanupBlockingJobIdsByUser(userId);
+    const streamIds = [...new Set([...current, ...legacy])];
+    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
+    });
+  }
+
+  /** Includes stale paused jobs whose durable checkpoints still belong to an
+   * account even though they no longer block ordinary runtime cleanup. */
+  async getAccountCleanupJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    if (this.jobStore.getRetainedJobIdsByUser == null) {
+      return this.getCleanupBlockingJobIdsForUser(userId, tenantId);
+    }
+    return this.jobStore.getRetainedJobIdsByUser(userId, tenantId);
   }
 
   /** Resolves every cleanup-blocking run attached to any target conversation.
@@ -9301,7 +9320,7 @@ class GenerationJobManagerClass {
       return [];
     }
     const targets = new Set(conversationIds);
-    const streamIds = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const streamIds = await this.getCleanupBlockingJobIdsForUser(userId, tenantId);
     const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
     return streamIds.filter((_, index) => {
       const job = jobs[index];

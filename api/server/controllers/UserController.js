@@ -418,7 +418,7 @@ const deleteUserController = async (req, res) => {
     if (!(await quiesceUserSchedules(user.id, scheduleSuspensionToken))) {
       throw new Error('Scheduled executions could not be confirmed stopped');
     }
-    const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
+    const activeAgentRuns = await GenerationJobManager.getAccountCleanupJobIdsForUser(
       user.id,
       user.tenantId,
     );
@@ -431,7 +431,7 @@ const deleteUserController = async (req, res) => {
     const ownedAgentJobs = activeAgentJobs.filter(
       ({ job }) =>
         job?.metadata?.userId === user.id &&
-        (job.metadata.tenantId ?? undefined) === (user.tenantId ?? undefined),
+        (job.metadata.tenantId == null || job.metadata.tenantId === user.tenantId),
     );
     const checkpointScopes = ownedAgentJobs
       .map(({ job }) => getOwnedAgentCheckpointScope(job, user.id, user.tenantId))

@@ -40,9 +40,6 @@ function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
       String(fields[index * 2 + 1]),
     ]),
   );
-  if (hash.generationProtocolVersion === '2') {
-    hash.checkpointNamespace = hash.createdAt;
-  }
   return hash;
 }
 
@@ -397,7 +394,8 @@ describe('RedisJobStore', () => {
     expect(job.preemptCapable).toBe(true);
     expect(job.steerQuotesExecutionId).toBe('exec-1');
     expect(job.generationProtocolVersion).toBe(2);
-    expect(job.checkpointNamespace).toBe(String(job.createdAt));
+    expect(job.checkpointNamespace).toEqual(expect.any(String));
+    expect(job.checkpointNamespace).not.toBe(String(job.createdAt));
     expect(job.resolvedAskUserQuestions).toEqual([
       {
         request: { question: 'Deploy where?' },
@@ -611,7 +609,7 @@ describe('RedisJobStore', () => {
     expect(script).toContain(
       'if previousCreatedAt and previousCreatedAt >= createdAt then createdAt = previousCreatedAt + 1 end',
     );
-    expect(script).toContain('"checkpointNamespace", tostring(createdAt)');
+    expect(script).not.toContain('"checkpointNamespace", tostring(createdAt)');
     expect(script).toContain('redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5])');
     expect(script).toContain(
       'redis.call("SET", KEYS[7], tostring(createdAt), "EX", ttl + generationEpochGraceTtl)',

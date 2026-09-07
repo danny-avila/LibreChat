@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
@@ -535,7 +536,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       createdAt,
       generationProtocolVersion: initialMetadata.generationProtocolVersion === 1 ? 1 : 2,
       ...(initialMetadata.generationProtocolVersion !== 1 && {
-        checkpointNamespace: String(createdAt),
+        checkpointNamespace: randomUUID(),
       }),
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && {
@@ -1365,6 +1366,15 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
   async getCleanupBlockingJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
     return this.getJobIdsByUser(userId, tenantId, true);
+  }
+
+  async getRetainedJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    const ownerKeys = tenantId ? [`${tenantId}:${userId}`, userId] : [userId];
+    const streamIds = new Set(ownerKeys.flatMap((key) => [...(this.userJobMap.get(key) ?? [])]));
+    return [...streamIds].filter((streamId) => {
+      const job = this.jobs.get(streamId);
+      return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
+    });
   }
 
   private getJobIdsByUser(
