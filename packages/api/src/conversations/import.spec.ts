@@ -1,8 +1,10 @@
 import {
   MAX_CONVERSATION_IMPORT_BSON_BYTES,
+  MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES,
   ConversationImportError,
   assertConversationImportWriteSize,
   executeConversationImportWrites,
+  isConversationImportError,
 } from './import';
 
 describe('conversation import writes', () => {
@@ -28,8 +30,14 @@ describe('conversation import writes', () => {
     expect(thrown).toBeInstanceOf(ConversationImportError);
     expect(thrown).toMatchObject({
       code: 'invalid_request',
-      message: 'An imported record exceeds the storage size limit',
+      statusCode: 413,
+      message: `Each imported conversation or message must be at most ${MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES} bytes`,
+      body: {
+        error: 'invalid_request',
+        message: `Each imported conversation or message must be at most ${MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES} bytes`,
+      },
     });
+    expect(isConversationImportError(thrown)).toBe(true);
 
     expect(() =>
       assertConversationImportWriteSize({

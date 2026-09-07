@@ -25,10 +25,15 @@ describe('conversation import cleanup methods', () => {
 
   it('removes only the generated IDs for the authenticated owner and tenant', async () => {
     const methods = createMethods(mongoose);
+    const project = await tenantStorage.run({ tenantId: 'tenant-a', userId: 'owner-a' }, async () =>
+      methods.createChatProject('owner-a', { name: 'Imported chats' }),
+    );
+    const chatProjectId = project._id!.toString();
     const target = {
       user: 'owner-a',
       conversationId: 'generated-target',
       tenantId: 'tenant-a',
+      chatProjectId,
     };
     const records = [
       target,
@@ -43,6 +48,16 @@ describe('conversation import cleanup methods', () => {
           ...record,
           endpoint: 'openAI',
           title: record.conversationId,
+          createdAt: new Date(
+            record.conversationId === target.conversationId
+              ? '2026-02-01T00:00:00.000Z'
+              : '2026-01-01T00:00:00.000Z',
+          ),
+          updatedAt: new Date(
+            record.conversationId === target.conversationId
+              ? '2026-02-01T00:00:00.000Z'
+              : '2026-01-01T00:00:00.000Z',
+          ),
         })),
       );
       await mongoose.models.Message.insertMany(
@@ -52,6 +67,16 @@ describe('conversation import cleanup methods', () => {
           parentMessageId: '00000000-0000-0000-0000-000000000000',
           text: record.conversationId,
         })),
+      );
+      await mongoose.models.ChatProject.updateOne(
+        { _id: project._id },
+        {
+          $set: {
+            conversationCount: 2,
+            lastConversationAt: new Date('2026-02-01T00:00:00.000Z'),
+            lastConversationId: target.conversationId,
+          },
+        },
       );
     });
 
@@ -68,7 +93,8 @@ describe('conversation import cleanup methods', () => {
     const remaining = await runAsSystem(async () => {
       const conversations = await mongoose.models.Conversation.find({}).lean();
       const messages = await mongoose.models.Message.find({}).lean();
-      return { conversations, messages };
+      const refreshedProject = await mongoose.models.ChatProject.findById(project._id).lean();
+      return { conversations, messages, refreshedProject };
     });
     expect(remaining.conversations).toHaveLength(3);
     expect(remaining.messages).toHaveLength(3);
@@ -88,6 +114,10 @@ describe('conversation import cleanup methods', () => {
           record.conversationId === target.conversationId,
       ),
     ).toBe(false);
+    expect(remaining.refreshedProject).toMatchObject({
+      conversationCount: 1,
+      lastConversationId: 'untouched-id',
+    });
   });
 
   it('requires an absent tenant field for tenantless cleanup', async () => {

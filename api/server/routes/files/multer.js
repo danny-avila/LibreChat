@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const { sanitizeFilename, createCustomError } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   mergeFileConfig,
   inferMimeType,
@@ -20,8 +21,13 @@ const createStorage = ({ uniqueTempPath = false } = {}) =>
         if (!fs.existsSync(outputPath)) {
           fs.mkdirSync(outputPath, { recursive: true });
         }
-      } catch {
-        return cb(createCustomError(500, 'Failed to prepare upload directory'));
+      } catch (error) {
+        logger.error(
+          `Failed to prepare upload directory: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        const uploadError = createCustomError(500, 'Failed to prepare upload directory');
+        uploadError.cause = error;
+        return cb(uploadError);
       }
       cb(null, outputPath);
     },

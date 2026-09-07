@@ -222,9 +222,10 @@ class ImportBatchBuilder {
         updateTagCounts: () => bulkIncrementTagCounts(this.requestUserId, tags),
         deleteMessages: () => deleteImportedMessages(cleanupScope),
         deleteConversations: () => deleteImportedConversations(cleanupScope),
-        onTagCountError: (error) => logger.error('Error updating imported tag counts', error),
+        onTagCountError: (error) =>
+          logger.error(`Error updating imported tag counts: ${error.message}`),
         onCleanupError: (error, resource) =>
-          logger.error(`Error cleaning imported ${resource}`, error),
+          logger.error(`Error cleaning imported ${resource}: ${error.message}`),
       });
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,

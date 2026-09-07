@@ -19,6 +19,7 @@ const {
   inspectContent,
   createContentFilter,
   isContentFilterError,
+  isConversationImportError,
   contentFilterBlockResponse,
   extractConversationTitleContent,
   extractStoredMessageContent,
@@ -739,6 +740,9 @@ router.post(
       res.status(201).json({ message: 'Conversation(s) imported successfully' });
     } catch (error) {
       if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
+      if (isConversationImportError(error)) {
         return res.status(error.statusCode).json(error.body);
       }
       logger.error('Error processing file', error);

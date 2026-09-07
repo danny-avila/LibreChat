@@ -8,6 +8,7 @@ const multer = require('multer');
 const express = require('express');
 const request = require('supertest');
 const { ErrorController } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const {
   createMulterInstance,
   createStorage,
@@ -591,17 +592,24 @@ describe('Multer Configuration', () => {
     });
 
     it('should report file system errors through the storage callback', (done) => {
+      const loggerError = jest.spyOn(logger, 'error').mockImplementation();
+      const filesystemError = new Error('permission denied');
       const mkdir = jest.spyOn(fs, 'mkdirSync').mockImplementationOnce(() => {
-        throw new Error('permission denied');
+        throw filesystemError;
       });
 
       storage.getDestination(mockReq, mockFile, (err, destination) => {
         expect(err).toMatchObject({
           statusCode: 500,
           body: { message: 'Failed to prepare upload directory' },
+          cause: filesystemError,
         });
         expect(destination).toBeUndefined();
+        expect(loggerError).toHaveBeenCalledWith(
+          'Failed to prepare upload directory: permission denied',
+        );
         mkdir.mockRestore();
+        loggerError.mockRestore();
         done();
       });
     });

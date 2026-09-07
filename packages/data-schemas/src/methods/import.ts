@@ -1,6 +1,7 @@
 import type { FilterQuery, Model } from 'mongoose';
 import type { IConversation, IMessage } from '~/types';
-import { runAsSystem } from '~/config/tenantContext';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
+import { refreshChatProjectStatsForUser } from './chatProject';
 
 export interface ConversationImportCleanupScope {
   user: string;
@@ -39,9 +40,23 @@ export function createConversationImportMethods(
       return;
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    await runAsSystem(async () => {
-      await Conversation.deleteMany(createImportCleanupFilter<IConversation>(scope));
+    const projectIds = await runAsSystem(async () => {
+      const filter = createImportCleanupFilter<IConversation>(scope);
+      const affectedProjects = await Conversation.distinct('chatProjectId', filter);
+      await Conversation.deleteMany(filter);
+      return affectedProjects.filter((projectId): projectId is string => Boolean(projectId));
     });
+    const context = tenantStorage.getStore();
+    await tenantStorage.run(
+      { ...context, tenantId: scope.tenantId, userId: scope.user },
+      async () => {
+        await Promise.all(
+          projectIds.map((projectId) =>
+            refreshChatProjectStatsForUser(mongoose, scope.user, projectId),
+          ),
+        );
+      },
+    );
   }
 
   return { deleteImportedMessages, deleteImportedConversations };

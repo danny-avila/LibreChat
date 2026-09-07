@@ -4,6 +4,8 @@ import type { Document } from 'mongodb';
 
 export const MAX_CONVERSATION_IMPORT_BSON_BYTES: number = 16 * 1024 * 1024;
 export const CONVERSATION_IMPORT_BSON_HEADROOM_BYTES: number = 64 * 1024;
+export const MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES: number =
+  MAX_CONVERSATION_IMPORT_BSON_BYTES - CONVERSATION_IMPORT_BSON_HEADROOM_BYTES;
 
 export interface ConversationImportWriteBatch {
   conversations: readonly Document[];
@@ -23,20 +25,34 @@ export interface ConversationImportWriteOperations {
 
 export class ConversationImportError extends Error {
   readonly code = 'invalid_request';
+  readonly statusCode: number;
+  readonly body: { error: 'invalid_request'; message: string };
 
-  constructor(message: string, options?: ErrorOptions) {
+  constructor(message: string, statusCode: number, options?: ErrorOptions) {
     super(message, options);
     this.name = 'ConversationImportError';
+    this.statusCode = statusCode;
+    this.body = { error: 'invalid_request', message };
   }
 }
 
-function importWriteError(message: string, cause?: unknown): ConversationImportError {
-  return new ConversationImportError(message, cause === undefined ? undefined : { cause });
+function importWriteError(
+  message: string,
+  statusCode: number,
+  cause?: unknown,
+): ConversationImportError {
+  return new ConversationImportError(
+    message,
+    statusCode,
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+export function isConversationImportError(error: unknown): error is ConversationImportError {
+  return error instanceof ConversationImportError;
 }
 
 export function assertConversationImportWriteSize(batch: ConversationImportWriteBatch): void {
-  const maxDocumentBytes =
-    MAX_CONVERSATION_IMPORT_BSON_BYTES - CONVERSATION_IMPORT_BSON_HEADROOM_BYTES;
   const assertDocumentSize = (document: Document): void => {
     let size: number;
     try {
@@ -47,10 +63,13 @@ export function assertConversationImportWriteSize(batch: ConversationImportWrite
         ...(batch.tenantId == null ? {} : { tenantId: batch.tenantId }),
       });
     } catch (error) {
-      throw importWriteError('An imported record cannot be stored', error);
+      throw importWriteError('An imported conversation or message cannot be stored', 400, error);
     }
-    if (size > maxDocumentBytes) {
-      throw importWriteError('An imported record exceeds the storage size limit');
+    if (size > MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES) {
+      throw importWriteError(
+        `Each imported conversation or message must be at most ${MAX_CONVERSATION_IMPORT_DOCUMENT_BYTES} bytes`,
+        413,
+      );
     }
   };
   for (const conversation of batch.conversations) {
