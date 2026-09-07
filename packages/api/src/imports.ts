@@ -35,6 +35,7 @@ import {
 import { createConfiguredContentInspector, inspectContent } from './protection/runtime';
 import { extractConversationImportContent } from './protection/adapters/submissions';
 import { ContentFilterError } from './middleware/contentFilter';
+import { aggregateAuditFindings } from './protection/audit';
 
 export interface ConversationImportMessage extends StoredMessageContentInput {
   readonly isCreatedByUser?: boolean;
@@ -64,11 +65,21 @@ const hitlMessageFilterFieldSet = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
  * Applies the active policy to the complete normalized import snapshot before
  * the legacy importer starts any writes. Canonical resolution operates on an
  * inspection copy, so a rejected preflight never mutates the pending batch.
+ * Audit findings are aggregated across the snapshot so a large conversation
+ * reports each finding once instead of once per matching fragment.
  */
 export async function assertConversationImportContentAllowed(
   filters: FiltersConfig | null | undefined,
   snapshot: ConversationImportSnapshot,
   context: ConversationImportProtectionContext = {},
+): Promise<void> {
+  return aggregateAuditFindings(() => inspectConversationImportContent(filters, snapshot, context));
+}
+
+async function inspectConversationImportContent(
+  filters: FiltersConfig | null | undefined,
+  snapshot: ConversationImportSnapshot,
+  context: ConversationImportProtectionContext,
 ): Promise<void> {
   const activeFilters = filters ?? undefined;
   const legacyPii = context.legacyPii ?? undefined;

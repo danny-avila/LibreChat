@@ -1,6 +1,11 @@
-import type { AgentTriggerDeliveryRecord, AgentTriggerDeliveryStore } from './engine';
+import type {
+  AgentTriggerDeliveryFailure,
+  AgentTriggerDeliveryRecord,
+  AgentTriggerDeliveryStore,
+} from './engine';
 import type { AgentTriggerExecutionResult } from './host';
 import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
+import { createAgentTriggerEnvelope } from './envelope';
 import { AgentTriggerDispatchError } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
 
@@ -44,6 +49,7 @@ function storeWith(overrides: Partial<AgentTriggerDeliveryStore> = {}): AgentTri
   return {
     claimNext: jest.fn(async () => delivery()),
     findEarlierUnsettled: jest.fn(async () => null),
+    getBatch: jest.fn(async () => []),
     release: jest.fn(async () => true),
     beginAttempt: jest.fn(async () => 1),
     defer: jest.fn(async () => true),
@@ -65,7 +71,10 @@ describe('createAgentTriggerDeliveryEngine', () => {
 
     await expect(engine.runTick()).resolves.toBe(1);
 
-    expect(dispatch).toHaveBeenCalledWith({ version: 1 }, { signal: expect.any(AbortSignal) });
+    expect(dispatch).toHaveBeenCalledWith(
+      { version: 1 },
+      { signal: expect.any(AbortSignal), attempt: 1, maxAttempts: 8 },
+    );
     expect(store.beginAttempt).toHaveBeenCalledWith({
       id: 'delivery-row-1',
       workerId: 'worker-1',
@@ -79,6 +88,129 @@ describe('createAgentTriggerDeliveryEngine', () => {
       attempt: 1,
       result: successResult(),
       settledAt: START,
+    });
+  });
+
+  it('persists generation identity when a bound continuation starts', async () => {
+    const envelope = createAgentTriggerEnvelope({
+      mode: 'continue',
+      requestId: 'request-1',
+      deliveryId: 'delivery-1',
+      receivedAt: 10,
+      principal: { id: 'user-1' },
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+      event: {
+        id: 'event-1',
+        type: 'turn.ready',
+        occurredAt: 9,
+        source: { id: 'source-key', type: 'remote_api_key' },
+      },
+      input: 'Take the turn.',
+    });
+    const store = storeWith({
+      claimNext: jest.fn(async () => delivery({ envelope, awaitTerminalHandling: true })),
+    });
+    const result: AgentTriggerExecutionResult = {
+      mode: 'continue',
+      status: 'started',
+      conversationId: 'conversation-1',
+      streamId: 'conversation-1',
+      generationCreatedAt: 1_787_000_000_000,
+    };
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch: jest.fn(async () => result), now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        awaitTerminalHandling: true,
+        handling: {
+          status: 'started',
+          conversationId: 'conversation-1',
+          streamId: 'conversation-1',
+          generationCreatedAt: 1_787_000_000_000,
+          startedAt: START,
+        },
+      }),
+    );
+  });
+
+  it('dispatches one structured invocation for every member of a claimed batch', async () => {
+    const envelope = createAgentTriggerEnvelope({
+      mode: 'continue',
+      requestId: 'request-1',
+      deliveryId: 'delivery-1',
+      receivedAt: 10,
+      principal: { id: 'user-1' },
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'thread-1',
+        parentMessageId: 'placeholder',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+      event: {
+        id: 'event-1',
+        type: 'notification.ready',
+        occurredAt: 10,
+        source: { id: 'source-key', type: 'remote_api_key' },
+      },
+      input: 'Handle event 1.',
+    });
+    const root = delivery({ envelope, batchMemberIds: ['row-2'] });
+    const member = delivery({
+      id: 'row-2',
+      deliveryKey: 'trigger_2',
+      claimToken: undefined,
+      leaseBy: undefined,
+      leaseUntil: undefined,
+      status: 'batched',
+      envelope: createAgentTriggerEnvelope({
+        mode: 'continue',
+        requestId: 'request-2',
+        deliveryId: 'delivery-2',
+        receivedAt: 11,
+        principal: { id: 'user-1' },
+        target: {
+          agentId: 'agent-1',
+          conversationId: 'thread-1',
+          parentMessageId: 'placeholder',
+          bindingId: `evtbind_${'a'.repeat(48)}`,
+          sourceKeyId: 'source-key',
+        },
+        event: { ...envelope.event, id: 'event-2', occurredAt: 11 },
+        input: 'Handle event 2.',
+      }),
+    });
+    const store = storeWith({
+      claimNext: jest.fn(async () => root),
+      getBatch: jest.fn(async () => [member]),
+    });
+    const dispatch = jest.fn<
+      Promise<AgentTriggerExecutionResult>,
+      [unknown, { signal?: AbortSignal }?]
+    >(async () => successResult());
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const dispatched = dispatch.mock.calls[0]?.[0] as { input: string };
+    expect(JSON.parse(dispatched.input)).toMatchObject({
+      kind: 'librechat.agent_event_batch',
+      count: 2,
     });
   });
 
@@ -338,11 +470,21 @@ describe('createAgentTriggerDeliveryEngine', () => {
   });
 
   it('dead-letters invalid envelopes without retrying', async () => {
-    const store = storeWith();
+    const transitions: string[] = [];
+    const store = storeWith({
+      dead: jest.fn(async () => {
+        transitions.push('delivery-dead');
+        return true;
+      }),
+    });
+    const settleSourceBeforeDeadLetter = jest.fn(async () => {
+      transitions.push('source-dead');
+    });
     const engine = createAgentTriggerDeliveryEngine(
       {
         store,
         dispatch: async () => Promise.reject(new AgentTriggerDispatchError('invalid envelope')),
+        settleSourceBeforeDeadLetter,
         now: () => START,
       },
       { concurrency: 1 },
@@ -360,7 +502,74 @@ describe('createAgentTriggerDeliveryEngine', () => {
         }),
       }),
     );
+    expect(settleSourceBeforeDeadLetter).toHaveBeenCalledWith(
+      { version: 1 },
+      expect.objectContaining({ code: 'INVALID_ENVELOPE' }),
+    );
+    expect(transitions).toEqual(['source-dead', 'delivery-dead']);
     expect(store.retry).not.toHaveBeenCalled();
+  });
+
+  it('bounds one terminal failure before source and delivery settlement', async () => {
+    const oversized = 'x'.repeat(3_000);
+    const store = storeWith();
+    const settleSourceBeforeDeadLetter = jest.fn(
+      async (_envelope: unknown, _failure: AgentTriggerDeliveryFailure) => undefined,
+    );
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () =>
+          Promise.reject(
+            new AgentTriggerExecutionError(oversized, {
+              mode: 'fire',
+              certainty: 'definite',
+              retryable: false,
+              code: oversized,
+            }),
+          ),
+        settleSourceBeforeDeadLetter,
+        now: () => START,
+      },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    const sourceFailure = settleSourceBeforeDeadLetter.mock.calls[0]?.[1];
+    const deliveryFailure = (store.dead as jest.Mock).mock.calls[0]?.[0]?.error;
+    expect(sourceFailure).toMatchObject({
+      code: 'x'.repeat(128),
+      message: 'x'.repeat(2_048),
+    });
+    expect(deliveryFailure).toEqual(sourceFailure);
+  });
+
+  it('releases the delivery when source terminalization fails before dead-lettering', async () => {
+    const store = storeWith();
+    const settleSourceBeforeDeadLetter = jest.fn(async () => {
+      throw new Error('source write unavailable');
+    });
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () => Promise.reject(new AgentTriggerDispatchError('invalid envelope')),
+        settleSourceBeforeDeadLetter,
+        now: () => START,
+        workerId: 'worker-1',
+      },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.dead).not.toHaveBeenCalled();
+    expect(store.release).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      availableAt: START,
+    });
   });
 
   it('dead-letters an exhausted row without dispatching again', async () => {
@@ -378,6 +587,77 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(store.beginAttempt).not.toHaveBeenCalled();
     expect(store.dead).toHaveBeenCalledWith(expect.objectContaining({ claimToken: 'claim-1' }));
+  });
+
+  it('bounds a persisted last failure before exhausting its source', async () => {
+    const oversized = 'x'.repeat(3_000);
+    const store = storeWith({
+      claimNext: jest.fn(async () =>
+        delivery({
+          attempts: 8,
+          lastError: {
+            code: oversized,
+            message: oversized,
+            certainty: 'ambiguous',
+            retryable: true,
+            attemptedAt: START,
+          },
+        }),
+      ),
+    });
+    const settleSourceBeforeDeadLetter = jest.fn(async () => undefined);
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch: jest.fn(), settleSourceBeforeDeadLetter, now: () => START },
+      { concurrency: 1, maxAttempts: 8 },
+    );
+
+    await engine.runTick();
+
+    expect(settleSourceBeforeDeadLetter).toHaveBeenCalledWith(
+      { version: 1 },
+      expect.objectContaining({ code: 'x'.repeat(128), message: 'x'.repeat(2_048) }),
+    );
+    expect(store.dead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'x'.repeat(128),
+          message: 'x'.repeat(2_048),
+        }),
+      }),
+    );
+  });
+
+  it('does not dead-letter an exhausted row until its source is terminal', async () => {
+    const store = storeWith({
+      claimNext: jest.fn(async () => delivery({ attempts: 8 })),
+    });
+    const settleSourceBeforeDeadLetter = jest.fn(async () => {
+      throw new Error('source write unavailable');
+    });
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: jest.fn(async () => successResult()),
+        settleSourceBeforeDeadLetter,
+        now: () => START,
+        workerId: 'worker-1',
+      },
+      { concurrency: 1, maxAttempts: 8 },
+    );
+
+    await engine.runTick();
+
+    expect(settleSourceBeforeDeadLetter).toHaveBeenCalledWith(
+      { version: 1 },
+      expect.objectContaining({ retryable: true }),
+    );
+    expect(store.dead).not.toHaveBeenCalled();
+    expect(store.release).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      availableAt: START,
+    });
   });
 
   it('rechecks a leased predecessor promptly instead of waiting for its full lease', async () => {
@@ -421,6 +701,28 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(store.release).toHaveBeenCalledWith(
       expect.objectContaining({ availableAt: new Date(START.getTime() + 4_000) }),
     );
+  });
+
+  it('rechecks an active actor turn without a tight delivery-lease polling loop', async () => {
+    const store = storeWith({
+      findEarlierUnsettled: jest.fn(async () => ({
+        availableAt: START,
+        reason: 'active_handling' as const,
+      })),
+    });
+    const dispatch = jest.fn(async () => successResult());
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.release).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(START.getTime() + 5_000) }),
+    );
+    expect(store.beginAttempt).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('starts independent deliveries up to the configured concurrency', async () => {

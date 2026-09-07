@@ -8,8 +8,14 @@ export interface IThemeRGB {
   'rgb-text-secondary'?: string;
   'rgb-text-secondary-alt'?: string;
   'rgb-text-tertiary'?: string;
+  'rgb-text-muted'?: string;
   'rgb-text-warning'?: string;
   'rgb-text-destructive'?: string;
+  /** Bright and dipped stops of the in-flight label sweep (`.shimmer`). Their
+   *  opacities stay in CSS as `--shimmer-*-alpha`, the way the border roles
+   *  keep `--border-*-alpha`. */
+  'rgb-shimmer-base'?: string;
+  'rgb-shimmer-dip'?: string;
 
   // Link and accent colors
   'rgb-link'?: string;
@@ -33,6 +39,8 @@ export interface IThemeRGB {
   'rgb-surface-hover-alt'?: string;
   'rgb-surface-composer-hover'?: string;
   'rgb-surface-primary'?: string;
+  'rgb-chart-widget-surface'?: string;
+  'rgb-chart-widget-stroke'?: string;
   'rgb-surface-primary-alt'?: string;
   'rgb-surface-primary-contrast'?: string;
   'rgb-surface-secondary'?: string;
@@ -111,8 +119,11 @@ export interface IThemeVariables {
   '--text-secondary': string;
   '--text-secondary-alt': string;
   '--text-tertiary': string;
+  '--text-muted': string;
   '--text-warning': string;
   '--text-destructive': string;
+  '--shimmer-base': string;
+  '--shimmer-dip': string;
   '--link': string;
   '--link-hover': string;
   '--link-visited': string;
@@ -128,6 +139,8 @@ export interface IThemeVariables {
   '--surface-hover-alt': string;
   '--surface-composer-hover': string;
   '--surface-primary': string;
+  '--chart-widget-surface': string;
+  '--chart-widget-stroke': string;
   '--surface-primary-alt': string;
   '--surface-primary-contrast': string;
   '--surface-secondary': string;
@@ -198,6 +211,7 @@ export interface IThemeColors {
   'text-secondary'?: string;
   'text-secondary-alt'?: string;
   'text-tertiary'?: string;
+  'text-muted'?: string;
   'text-warning'?: string;
   'text-destructive'?: string;
   link?: string;
@@ -215,6 +229,8 @@ export interface IThemeColors {
   'surface-hover-alt'?: string;
   'surface-composer-hover'?: string;
   'surface-primary'?: string;
+  'chart-widget-surface'?: string;
+  'chart-widget-stroke'?: string;
   'surface-primary-alt'?: string;
   'surface-primary-contrast'?: string;
   'surface-secondary'?: string;

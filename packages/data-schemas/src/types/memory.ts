@@ -76,4 +76,5 @@ export interface FormattedMemoriesResult {
   withKeys: string;
   withoutKeys: string;
   totalTokens?: number;
+  tokenCountsByKey?: Map<string, number>;
 }

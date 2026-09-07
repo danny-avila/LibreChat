@@ -50,31 +50,47 @@ const TERMINAL_CARD_STATUSES: ScheduleRunStatus[] = [
   'skipped_balance',
 ];
 
-type DuplicateKeyError = { code?: number; keyPattern?: Record<string, unknown> };
+type DuplicateKeyError = {
+  code?: number;
+  keyPattern?: Record<string, number>;
+  errmsg?: string;
+  message?: string;
+};
+
+/** DocumentDB can omit keyPattern; retain the deployed default index names as a fallback. */
+function matchesRunDuplicate(
+  error: unknown,
+  fields: readonly string[],
+  indexName: string,
+): boolean {
+  const err = error as DuplicateKeyError;
+  if (err?.code !== DUPLICATE_KEY) {
+    return false;
+  }
+  const keyPattern = err.keyPattern;
+  if (keyPattern != null) {
+    return (
+      Object.keys(keyPattern).length === fields.length &&
+      fields.every((field) => Object.prototype.hasOwnProperty.call(keyPattern, field))
+    );
+  }
+  const message = err.errmsg || err.message;
+  return typeof message === 'string' && /\bindex:\s+(\S+)/.exec(message)?.[1] === indexName;
+}
 
 /** A duplicate-key error whose conflict is the {scheduleId, scheduledFor} occurrence index. */
 function isOccurrenceDuplicate(error: unknown): boolean {
-  const err = error as DuplicateKeyError;
-  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'scheduledFor' in err.keyPattern;
+  return matchesRunDuplicate(error, ['scheduleId', 'scheduledFor'], 'scheduleId_1_scheduledFor_1');
 }
 
-/** A duplicate-key error whose conflict is the single-active-run partial index
- *  ({scheduleId} where status:'started'). Matched EXACTLY on scheduleId so the
- *  global {capacitySlot} index below is never misread as a per-schedule overlap. */
+/** A duplicate-key error whose conflict is the single-active-run partial index. */
 function isActiveRunConflict(error: unknown): boolean {
-  const err = error as DuplicateKeyError;
-  return (
-    err?.code === DUPLICATE_KEY &&
-    err.keyPattern != null &&
-    'scheduleId' in err.keyPattern &&
-    !('scheduledFor' in err.keyPattern)
-  );
+  return matchesRunDuplicate(error, ['scheduleId'], 'scheduleId_1');
 }
 
 /** A duplicate-key error whose conflict is the GLOBAL {capacitySlot} cap index. */
 function isCapacitySlotConflict(error: unknown): boolean {
-  const err = error as DuplicateKeyError;
-  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'capacitySlot' in err.keyPattern;
+  return matchesRunDuplicate(error, ['capacitySlot'], 'capacitySlot_1');
 }
 
 /** A duplicate-key error whose conflict is the per-user {user, slot} cap index. */

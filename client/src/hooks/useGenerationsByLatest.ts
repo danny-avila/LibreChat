@@ -1,4 +1,4 @@
-import { EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 
 type TUseGenerations = {
   error?: boolean;
@@ -35,10 +35,14 @@ export default function useGenerationsByLatest({
     ].find((e) => e === endpoint),
   );
 
+  /** The tool-call-limit notice already offers Keep going / Answer now. The hover
+   *  Continue would re-submit the parent user turn with `isContinued`, a different
+   *  and weaker path sitting next to the intended one. */
   const continueSupported =
     latestMessageId === messageId &&
-    finish_reason &&
+    Boolean(finish_reason) &&
     finish_reason !== 'stop' &&
+    finish_reason !== Constants.TOOL_CALL_LIMIT_FINISH_REASON &&
     !isEditing &&
     !isSubmitting &&
     !searchResult &&

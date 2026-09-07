@@ -29,6 +29,8 @@ const ENVIRONMENT_LABELS = {
   conversation: 'com_ui_stateful_code_environment_conversation',
 } as const;
 
+const DEPLOYMENT_DEFAULT_ENVIRONMENT = '__deployment_default__';
+
 export default function StatefulSessions() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -39,7 +41,9 @@ export default function StatefulSessions() {
   const enabled = watch(AgentCapabilities.stateful_code_sessions) ?? false;
   const codeEnabled = watch(AgentCapabilities.execute_code);
   const environment = watch('stateful_code_environment') ?? 'user';
+  const codeEnvironmentId = watch('code_environment_id');
   const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
+  const executionEnvironments = agentsConfig?.statefulCodeSessions?.environments ?? [];
   const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(configuredEnvironments);
 
   const handleChange = (value: boolean) => {
@@ -91,6 +95,46 @@ export default function StatefulSessions() {
       </HoverCard>
       {enabled && codeEnabled === true && (
         <div className="space-y-2 pl-1">
+          {executionEnvironments.length > 0 && (
+            <>
+              <label
+                className="text-xs font-medium text-text-secondary"
+                htmlFor="code-environment-id"
+              >
+                {localize('com_ui_code_environment')}
+              </label>
+              <Select
+                value={codeEnvironmentId ?? DEPLOYMENT_DEFAULT_ENVIRONMENT}
+                onValueChange={(value) => {
+                  setValue(
+                    'code_environment_id',
+                    value === DEPLOYMENT_DEFAULT_ENVIRONMENT ? null : value,
+                    { shouldDirty: true },
+                  );
+                }}
+              >
+                <SelectTrigger id="code-environment-id" data-testid="code-environment-id">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEPLOYMENT_DEFAULT_ENVIRONMENT}>
+                    {localize('com_ui_code_environment_deployment_default')}
+                  </SelectItem>
+                  {executionEnvironments.map((candidate) => (
+                    <SelectItem key={candidate.id} value={candidate.id}>
+                      {candidate.name}
+                      {candidate.type === 'attached'
+                        ? ` (${localize('com_ui_code_environment_attached')})`
+                        : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-text-tertiary">
+                {localize('com_nav_info_code_environment')}
+              </p>
+            </>
+          )}
           <label
             className="text-xs font-medium text-text-secondary"
             htmlFor="stateful-code-environment"

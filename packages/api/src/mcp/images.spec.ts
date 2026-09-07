@@ -103,6 +103,84 @@ describe('resolveUploadedImageArguments', () => {
     expect(dependencies.encodeImages).toHaveBeenCalledTimes(1);
   });
 
+  it('resolves exact nested attachment references from one unambiguous current-request filename', async () => {
+    const attachmentFirst = { ...first, filename: 'first.png' };
+    const attachmentRequest = {
+      body: {
+        files: [
+          {
+            file_id: attachmentFirst.file_id,
+            filename: attachmentFirst.filename,
+            type: 'image/png',
+          },
+        ],
+      },
+    };
+    const dependencies = createDependencies({
+      findFiles: jest.fn().mockResolvedValue([attachmentFirst]),
+      encodeImages: jest.fn().mockResolvedValue({
+        image_urls: [{ file_id: attachmentFirst.file_id, image_url: { url: imageUrls.first } }],
+      }),
+    });
+
+    await expect(
+      resolveUploadedImageArguments({
+        forwardUploadedImages: true,
+        toolArguments: { nested: [{ image: 'attachment:/first.png' }] },
+        request: attachmentRequest,
+        user: { id: 'user-1' },
+        dependencies,
+      }),
+    ).resolves.toEqual({ nested: [{ image: imageUrls.first }] });
+
+    expect(dependencies.findFiles).toHaveBeenCalledWith({
+      file_id: { $in: [attachmentFirst.file_id] },
+      user: 'user-1',
+    });
+  });
+
+  it('fails closed without reading files for duplicate current-request attachment filenames', async () => {
+    const dependencies = createDependencies();
+    const duplicateRequest = {
+      body: {
+        files: [
+          { file_id: 'first-id', filename: 'duplicate.png', type: 'image/png' },
+          { file_id: 'second-id', filename: 'duplicate.png', type: 'image/png' },
+        ],
+      },
+    };
+
+    await expect(
+      resolveUploadedImageArguments({
+        forwardUploadedImages: true,
+        toolArguments: { image: 'attachment:/duplicate.png' },
+        request: duplicateRequest,
+        user: { id: 'user-1' },
+        dependencies,
+      }),
+    ).rejects.toThrow('Unable to resolve referenced uploaded image.');
+
+    expect(dependencies.findFiles).not.toHaveBeenCalled();
+    expect(dependencies.encodeImages).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for malformed attachment references without reading files', async () => {
+    const dependencies = createDependencies();
+
+    await expect(
+      resolveUploadedImageArguments({
+        forwardUploadedImages: true,
+        toolArguments: { image: 'attachment:/../../private.png' },
+        request,
+        user: { id: 'user-1' },
+        dependencies,
+      }),
+    ).rejects.toThrow('Unable to resolve referenced uploaded image.');
+
+    expect(dependencies.findFiles).not.toHaveBeenCalled();
+    expect(dependencies.encodeImages).not.toHaveBeenCalled();
+  });
+
   it.each([[['/mnt/data/0.jpg', '/mnt/data/0.png']], [['/mnt/data/0.png', '/mnt/data/0.jpg']]])(
     'fails closed for conflicting extensions at the same request index: %p',
     async (values) => {
@@ -190,7 +268,7 @@ describe('resolveUploadedImageArguments', () => {
     expect(dependencies.encodeImages).not.toHaveBeenCalled();
   });
 
-  it('fails closed for an unresolved data URL and surfaces encoder failures without logging payloads', async () => {
+  it('fails closed for an unresolved data URL and a failed encoder', async () => {
     const nonDataDependencies = createDependencies({
       encodeImages: jest.fn().mockResolvedValue({
         image_urls: [
@@ -221,7 +299,25 @@ describe('resolveUploadedImageArguments', () => {
         user: { id: 'user-1' },
         dependencies: failingDependencies,
       }),
-    ).rejects.toThrow('encoder unavailable');
+    ).rejects.toThrow('Unable to resolve referenced uploaded image.');
+  });
+
+  it('replaces encoder failures with a bounded error that excludes a data URL payload', async () => {
+    const payload = 'data:image/png;base64,cHJpdmF0ZS1pbWFnZS1ieXRlcw==';
+    const dependencies = createDependencies({
+      encodeImages: jest.fn().mockRejectedValue(new Error(`encoder unavailable: ${payload}`)),
+    });
+
+    const resolution = resolveUploadedImageArguments({
+      forwardUploadedImages: true,
+      toolArguments: { source: '/mnt/data/0.png' },
+      request,
+      user: { id: 'user-1' },
+      dependencies,
+    });
+
+    await expect(resolution).rejects.toThrow('Unable to resolve referenced uploaded image.');
+    await resolution.catch((error) => expect(error.message).not.toContain(payload));
   });
 
   it.each([

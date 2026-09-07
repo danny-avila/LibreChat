@@ -5,6 +5,7 @@ import {
   LocalStorageKeys,
   QueryKeys,
   StepEvents,
+  StepTypes,
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
@@ -3260,6 +3261,97 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('hydrates a projected pending OAuth prompt once against the resumed response', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      index: 0,
+      type: StepTypes.TOOL_CALLS,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+        },
+      },
+    };
+
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+            responseMessageId: 'resumed-response',
+            userMessage: {
+              messageId: 'resumed-user',
+              conversationId: CONV_ID,
+              text: 'Use Google Workspace',
+            },
+            pendingOAuthPrompts: [
+              {
+                stepId: 'step-oauth',
+                runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+                index: 0,
+                toolCallId: 'call-oauth',
+                toolName: 'oauth_mcp_Google-Workspace',
+                authURL: 'https://auth.example.com/oauth',
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(2);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      {
+        event: StepEvents.ON_RUN_STEP,
+        data: expect.objectContaining({
+          id: 'step-oauth',
+          runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+          index: 0,
+        }),
+      },
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({ messageId: 'resumed-response' }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      {
+        event: StepEvents.ON_RUN_STEP_DELTA,
+        data: expect.objectContaining({
+          id: 'step-oauth',
+          delta: expect.objectContaining({ auth: 'https://auth.example.com/oauth' }),
+        }),
+      },
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({ messageId: 'resumed-response' }),
+      }),
+    );
+
+    unmount();
+  });
+
   it('merges resumed user and response messages into loaded conversation history', async () => {
     const originalUser = {
       messageId: 'original-user',
@@ -3951,7 +4043,29 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('leaves a still-open stream alone when the page returns to the foreground', async () => {
+  it('reconciles durable messages when an apparently open stream is terminal on foreground', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-epoch',
+      status: 'started',
+      generationCreatedAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: 'complete',
+      createdAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    const persisted = [
+      {
+        messageId: 'resp-1',
+        parentMessageId: 'msg-1',
+        conversationId: CONV_ID,
+        text: 'Completed while backgrounded',
+        isCreatedByUser: false,
+      },
+    ] as TMessage[];
+    mockFetchQuery.mockResolvedValue(persisted);
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
 
@@ -3964,9 +4078,84 @@ describe('useResumableSSE', () => {
 
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
     });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    expect(initialSSE.close).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchQuery).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.messages, CONV_ID],
+    });
+    expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
+    unmount();
+  });
+
+  it('leaves a still-open active stream alone when the page returns to the foreground', async () => {
+    mockFetchStreamStatus.mockResolvedValue({
+      active: true,
+      streamId: 'stream-123',
+      status: 'running',
+      createdAt: 1000,
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    initialSSE.readyState = MOCK_SSE_OPEN;
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
+    expect(mockSSEInstances).toHaveLength(sseCount);
+    expect(initialSSE.close).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps an apparently open stream when foreground status belongs to another epoch', async () => {
+    mockFetchStreamStatus.mockResolvedValue({
+      active: false,
+      status: 'complete',
+      createdAt: 2000,
+      generationProtocolVersion: 2,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
 
     expect(mockSSEInstances).toHaveLength(sseCount);
+    expect(initialSSE.close).not.toHaveBeenCalled();
     unmount();
   });
 

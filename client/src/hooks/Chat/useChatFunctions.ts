@@ -29,6 +29,7 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
   requestChatFocus,
+  markPasteSubmitted,
   hasStreamStartFailed,
   isSubmittableMessage,
   createDualMessageContent,
@@ -548,9 +549,15 @@ export default function useChatFunctions({
 
     if (setFiles && reuseFiles === true) {
       currentMsg.files = [...submissionFiles];
+      /** Queued override files were consumed just like composer files, so mark their identities
+       * as submitted before later draft cleanup can classify the restored paste as unsent. */
+      submissionFiles.forEach((file) => {
+        markPasteSubmitted(file.file_id);
+        markPasteSubmitted(file.temp_file_id);
+      });
       // Caller-supplied overrideFiles were consumed elsewhere (queued
-      // during-run messages take theirs out of the composer at queue time) —
-      // clearing here would eat attachments staged for the user's NEXT send.
+      // during-run messages take theirs out of the composer at queue time,
+      // so clearing here would eat attachments staged for the user's NEXT send.
       if (isRegenerate) {
         setFiles(new Map());
         setFilesToDelete({});
@@ -567,6 +574,13 @@ export default function useChatFunctions({
         height: file.height,
         width: file.width,
       }));
+      /** The draft keeps a paste's provenance after the map is emptied, so discarding later has
+       * to be able to tell what this message already took with it. */
+      files.forEach((file, key) => {
+        markPasteSubmitted(key);
+        markPasteSubmitted(file.file_id);
+        markPasteSubmitted(file.temp_file_id);
+      });
       setFiles(new Map());
       setFilesToDelete({});
     }

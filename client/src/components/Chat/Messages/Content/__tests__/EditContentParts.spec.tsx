@@ -71,6 +71,7 @@ describe('EditContentParts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockMutateAsync.mockReset();
+    mockAsk.mockReset();
     mockMutateAsync.mockResolvedValue({});
     mockChatDirection = 'LTR';
     message.content = undefined;
@@ -220,6 +221,96 @@ describe('EditContentParts', () => {
     expect(screen.getByRole('textbox')).toHaveValue('Refused rerun');
     expect(setSiblingIdx).not.toHaveBeenCalled();
     expect(enterEdit).not.toHaveBeenCalled();
+  });
+
+  /** The rerun that matters most needs no edit at all: a cancelled response, or a
+   *  backend restarted on different parameters, has to be reissued untouched. */
+  it('reruns an unchanged assistant response as a regeneration', () => {
+    const enterEdit = jest.fn();
+    const setSiblingIdx = jest.fn();
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={setSiblingIdx}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const rerun = screen.getByRole('button', { name: 'com_ui_rerun' });
+    expect(rerun).toBeEnabled();
+    fireEvent.click(rerun);
+
+    expect(mockAsk).toHaveBeenCalledWith(
+      parentMessage,
+      expect.objectContaining({
+        isRegenerate: true,
+        targetResponseMessageId: message.messageId,
+      }),
+    );
+    /** Replaying the untouched part as an edit would retain this answer and append a
+     *  second one to it rather than produce a new one. */
+    expect(mockAsk.mock.calls[0][1]).not.toHaveProperty('editedContent');
+    /** The regenerated answer is a sibling of this response, not of the user turn the
+     *  sibling index walks. */
+    expect(setSiblingIdx).not.toHaveBeenCalled();
+    expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  it('reruns an unchanged user request with its original text', () => {
+    const enterEdit = jest.fn();
+    const setSiblingIdx = jest.fn();
+    const userContent = [
+      { type: ContentTypes.TEXT, text: parentMessage.text },
+    ] as TMessageContentParts[];
+
+    render(
+      <EditContentParts
+        content={userContent}
+        messageId={parentMessage.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={setSiblingIdx}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_rerun' }));
+
+    expect(mockAsk).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Check the service',
+        conversationId: parentMessage.conversationId,
+      }),
+      expect.objectContaining({ overrideFiles: parentMessage.files }),
+    );
+    expect(setSiblingIdx).toHaveBeenCalledWith(-1);
+    expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  it('names the rerun after the edit only once a part differs', () => {
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'com_ui_rerun' })).toBeEnabled();
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Changed response' } });
+
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_update_rerun' })).toBeEnabled();
   });
 
   it('requires multi-part assistant edits to be saved before rerunning', () => {

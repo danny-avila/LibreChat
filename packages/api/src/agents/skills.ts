@@ -1,11 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import { isEphemeralAgentId } from 'librechat-data-provider';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import { SkillsScope, isEphemeralAgentId, resolveAgentSkillsScope } from 'librechat-data-provider';
 import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
+import { createSkillContentDigest } from './compatibility';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -30,6 +31,8 @@ export type TGetSkillByName = (
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill document version used by checkpoint context compatibility. */
+  version?: number;
   author: Types.ObjectId;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
@@ -92,10 +95,12 @@ const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
 /**
- * Per-entry description cap applied by `formatSkillCatalog` before the
- * catalog is injected into agent context. `@librechat/agents` truncates
- * silently, so this mirrors the default so we can warn when authors' skill
- * descriptions will not reach the model verbatim.
+ * Per-entry description cap requested of `formatSkillCatalog`, mirroring the
+ * SDK default. It is a ceiling, not a guarantee: `@librechat/agents` applies
+ * it first, then truncates further — proportionally against its own context
+ * budget, and finally to names-only — so a description well under this cap
+ * can still be cut. Delivered length is measured from the emitted catalog
+ * rather than assumed from this value.
  */
 const SKILL_CATALOG_MAX_ENTRY_CHARS = 250;
 /** Hard ceiling on skill names a model spec can request by config. */
@@ -146,6 +151,11 @@ export const MAX_SKILL_NAME_LENGTH = 200;
  * Keep the trailing slash — call sites concatenate `${SKILL_FILE_PREFIX}${skillName}/...`.
  */
 export const SKILL_FILE_PREFIX = 'skills/';
+
+/** Whether a model-facing file path is routed to persistent LibreChat skill storage. */
+export function isSkillFilePath(filePath: string): boolean {
+  return filePath.startsWith(SKILL_FILE_PREFIX);
+}
 
 /**
  * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
@@ -308,8 +318,8 @@ export async function resolveModelSpecSkillIds({
 }
 
 export interface ResolveAgentScopedSkillIdsParams {
-  /** Agent being initialized. Reads `id`, `skills`, and `skills_enabled`. */
-  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled'>;
+  /** Agent being initialized. Reads its persisted skill capability and catalog scope. */
+  agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled' | 'skills_scope'>;
   /** Full set of skill IDs the user can VIEW (pre-scoped by ACL). */
   accessibleSkillIds: Types.ObjectId[];
   /** Admin capability: `AgentCapabilities.skills` on the agents endpoint. */
@@ -325,9 +335,9 @@ export interface ResolveAgentScopedSkillIdsParams {
  *    `true` = full accessible catalog, string list = scoped allowlist,
  *    empty list / `false` = no skills. Otherwise the skills badge toggle
  *    controls the full accessible catalog.
- *  - Persisted agent  → the builder's `skills_enabled` master switch.
- *    Enabled + empty allowlist = full catalog; enabled + non-empty
- *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
+ *  - Persisted agent  → the builder's `skills_enabled` master switch and
+ *    optional explicit `skills_scope`. Legacy agents without a scope retain
+ *    enabled + empty = full catalog behavior.
  *
  * When not activated, returns `[]` so `injectSkillCatalog`,
  * `resolveManualSkills`, and `resolveAlwaysApplySkills` all no-op.
@@ -360,8 +370,15 @@ export function resolveAgentScopedSkillIds(
   if (agent.skills_enabled !== true) {
     return [];
   }
-  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+  const scope = resolveAgentSkillsScope(agent.skills, agent.skills_enabled, agent.skills_scope);
+  if (scope === SkillsScope.none) {
+    return [];
+  }
+  if (scope === SkillsScope.all) {
     return scopeSkillIds(accessibleSkillIds, undefined);
+  }
+  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
+    return [];
   }
   return scopeSkillIds(accessibleSkillIds, agent.skills);
 }
@@ -413,6 +430,8 @@ export interface InjectSkillCatalogParams {
   codeEnvAvailable?: boolean;
   /** When true, bash_tool registers with the hedged stateful-session description. */
   statefulSessions?: boolean;
+  /** When true, read_file exposes the attached worker's workspace namespace. */
+  workspaceTools?: boolean;
   /** Current user ID — used to determine skill ownership for active-state resolution. */
   userId?: string;
   /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
@@ -568,6 +587,54 @@ export async function resolveSkillCatalog(
   };
 }
 
+/** Filler used to build the measurement probe; never reaches the model. */
+const CATALOG_PROBE_CHAR = 'x';
+
+/**
+ * How much of each skill's description reaches the model, aligned to `skills`.
+ *
+ * Measured on a probe rather than on the real catalog. Every decision in
+ * `formatSkillCatalog`'s truncation ladder reads description `.length` and
+ * never description content, so formatting same-length filler reproduces the
+ * real cuts exactly — while guaranteeing the output can be parsed, since
+ * filler carries no newline and no entry marker and skill names are validated
+ * to `^[a-z0-9][a-z0-9-]*$`.
+ *
+ * The real catalog cannot be measured: a description may contain newlines, so
+ * an entry is not one line; duplicate names share a rendering; and truncation
+ * can splice one entry's tail onto the next, so even a whole-entry match can
+ * be satisfied by text the model never received as that entry.
+ */
+function measureCatalogDescriptions(
+  skills: Array<{ name: string; description: string }>,
+  options: Parameters<typeof formatSkillCatalog>[1],
+): number[] {
+  const probe = formatSkillCatalog(
+    skills.map((s) => ({
+      name: s.name,
+      description: CATALOG_PROBE_CHAR.repeat(s.description.length),
+    })),
+    options,
+  );
+  const delivered = new Array<number>(skills.length).fill(0);
+  let index = 0;
+  for (const line of probe.split('\n')) {
+    if (index >= skills.length) {
+      break;
+    }
+    const prefix = `- ${skills[index].name}`;
+    if (line === prefix) {
+      index++;
+      continue;
+    }
+    if (line.startsWith(`${prefix}: `)) {
+      delivered[index] = line.length - prefix.length - 2;
+      index++;
+    }
+  }
+  return delivered;
+}
+
 /**
  * Queries accessible skills, formats a budget-aware catalog, appends it to the
  * agent's additional_instructions, and registers the SkillTool definition.
@@ -591,6 +658,7 @@ export async function injectSkillCatalog(
     listSkillsByAccess,
     codeEnvAvailable,
     statefulSessions,
+    workspaceTools,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -680,21 +748,28 @@ export async function injectSkillCatalog(
    * and those reads would otherwise be impossible.
    */
   if (catalogVisibleSkills.length > 0) {
-    for (const s of catalogVisibleSkills) {
-      if (s.description.length > SKILL_CATALOG_MAX_ENTRY_CHARS) {
-        logger.warn(
-          `[injectSkillCatalog] skill "${s.name}" description truncated to ${SKILL_CATALOG_MAX_ENTRY_CHARS} chars for the model catalog (was ${s.description.length})`,
-        );
-      }
-    }
+    const catalogOptions = {
+      contextWindowTokens: contextWindowTokens || 200_000,
+      maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
+    };
     const catalog = formatSkillCatalog(
       catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
-      {
-        contextWindowTokens: contextWindowTokens || 200_000,
-        maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
-      },
+      catalogOptions,
     );
     if (catalog) {
+      const delivered = measureCatalogDescriptions(catalogVisibleSkills, catalogOptions);
+      for (let i = 0; i < catalogVisibleSkills.length; i++) {
+        const s = catalogVisibleSkills[i];
+        const reached = delivered[i];
+        if (reached >= s.description.length) {
+          continue;
+        }
+        logger.warn(
+          reached === 0
+            ? `[injectSkillCatalog] skill "${s.name}" description was dropped from the model catalog (was ${s.description.length} chars) — the catalog exceeded its context budget`
+            : `[injectSkillCatalog] skill "${s.name}" description reached the model truncated to ${reached} of ${s.description.length} chars`,
+        );
+      }
       agent.additional_instructions = agent.additional_instructions
         ? `${agent.additional_instructions}\n\n${catalog}`
         : catalog;
@@ -741,6 +816,7 @@ export async function injectSkillCatalog(
     includeBash: codeEnvAvailable === true,
     enableToolOutputReferences: codeEnvAvailable === true,
     statefulSessions: statefulSessions === true,
+    workspaceTools: workspaceTools === true,
   });
   workingDefs = codeExecResult.toolDefinitions;
 
@@ -780,6 +856,27 @@ export function buildSkillPrimeMessage(skill: { name: string; body: string }): I
   };
 }
 
+/** Builds the exact live Skill overlay placed at the tail of an event actor checkpoint fork. */
+export function buildAgentEventActorSkillMessages(
+  skills: ReadonlyMap<string, string>,
+): HumanMessage[] {
+  return [...skills.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([name, body]) =>
+        new HumanMessage({
+          id: `event-actor-skill:${createSkillContentDigest(`${name}\0${body}`)}`,
+          content: body,
+          additional_kwargs: {
+            isMeta: true,
+            source: SKILL_MESSAGE_SOURCE,
+            trigger: SKILL_TRIGGER_MODEL,
+            skillName: name,
+          },
+        }),
+    );
+}
+
 export interface ResolveManualSkillsParams {
   /** Skill names the user invoked (via `$` popover or `always-apply`). */
   names: string[];
@@ -798,6 +895,7 @@ export interface ResolveManualSkillsParams {
     _id: Types.ObjectId;
     name: string;
     body: string;
+    version?: number;
     author: Types.ObjectId | string;
     deployment?: boolean;
     /** Structured SKILL.md metadata retained for model-bound policy checks. */
@@ -846,6 +944,8 @@ export interface ResolvedSkillPrime {
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Monotonic Skill revision used by checkpoint compatibility. */
+  version?: number;
   /** Structured SKILL.md metadata retained for model-bound policy checks. */
   frontmatter?: Record<string, unknown>;
   /**
@@ -980,6 +1080,7 @@ export async function resolveManualSkills(
           _id: skill._id,
           name: skill.name,
           body: skill.body,
+          version: skill.version,
           frontmatter: skill.frontmatter,
         };
         if (skill.allowedTools !== undefined) {
@@ -1016,6 +1117,7 @@ export interface ResolveAlwaysApplySkillsParams {
       author: Types.ObjectId | string;
       frontmatter?: Record<string, unknown>;
       allowedTools?: string[];
+      version?: number;
       deployment?: boolean;
     }>;
     has_more?: boolean;
@@ -1140,6 +1242,7 @@ export async function resolveAlwaysApplySkills(
         _id: skill._id,
         name: skill.name,
         body: skill.body,
+        version: skill.version,
         frontmatter: skill.frontmatter,
       };
       if (skill.allowedTools !== undefined) {

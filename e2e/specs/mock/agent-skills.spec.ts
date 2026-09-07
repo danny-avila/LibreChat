@@ -138,6 +138,11 @@ async function settleCleanup(tasks: Promise<unknown>[]): Promise<void> {
 }
 
 async function openSkillsDialog(page: Page, form: Locator): Promise<Locator> {
+  const enableSkillsSwitch = form.getByRole('switch', { name: 'Enable skills' });
+  if ((await enableSkillsSwitch.getAttribute('aria-checked')) !== 'true') {
+    await enableSkillsSwitch.click();
+    await expect(enableSkillsSwitch).toHaveAttribute('aria-checked', 'true');
+  }
   await form.getByRole('button', { name: 'Add Skills', exact: true }).click();
   const dialog = page
     .getByRole('dialog')
@@ -503,8 +508,14 @@ test.describe('Agent Builder skills', () => {
       await selectMockModel(page, true);
       form = page.getByRole('form', { name: 'Agent configuration form' });
 
+      const enableSkillsSwitch = form.getByRole('switch', { name: 'Enable skills' });
       const useAllSwitch = form.getByRole('switch', { name: 'Use all skills' });
+      await expect(enableSkillsSwitch).toHaveAttribute('aria-checked', 'false');
       await expect(useAllSwitch).toHaveAttribute('aria-checked', 'false');
+      await expect(useAllSwitch).toBeDisabled();
+      await enableSkillsSwitch.click();
+      await expect(enableSkillsSwitch).toHaveAttribute('aria-checked', 'true');
+      await expect(useAllSwitch).toBeEnabled();
       await useAllSwitch.click();
       await expect(useAllSwitch).toHaveAttribute('aria-checked', 'true');
       await expect(form.getByRole('button', { name: 'Add Skills', exact: true })).toHaveCount(0);

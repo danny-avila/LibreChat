@@ -13,12 +13,16 @@ import {
   getNewConversationDraftId,
   getPendingDraftId,
   isAskAnswerDraftId,
+  isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
+  mayWriteComposerText,
   migrateFilesDraft,
   migrateTextDraft,
+  publishTabAttachmentIds,
   setDraft,
   setFilesDraft,
 } from '~/utils';
+import { isPastedTextFileMarked, markPastedTextFile } from '~/utils/files';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
@@ -61,6 +65,26 @@ export const useAutoSave = ({
   const filesRef = useRef(files);
   filesRef.current = files;
 
+  /** Publishes what this composer holds so cleanup running in another tab can see it. Not gated
+   * on `saveDrafts`: with draft saving off nothing is persisted at all, which is exactly when a
+   * reattached file would otherwise look like nobody's and be deleted by a retry elsewhere. */
+  useEffect(() => {
+    /** Every identity, not just the map key: a restored upload is keyed by its temporary id while
+     * the value carries the server one, and a retained deletion in another tab names whichever of
+     * those it recorded. Publishing one alias would leave the chip unprotected under the other. */
+    const identities = new Set<string>();
+    files.forEach((file, key) => {
+      identities.add(key);
+      if (file.file_id != null && file.file_id !== '') {
+        identities.add(file.file_id);
+      }
+      if (file.temp_file_id != null && file.temp_file_id !== '') {
+        identities.add(file.temp_file_id);
+      }
+    });
+    publishTabAttachmentIds(index, Array.from(identities));
+  }, [index, files]);
+
   const restoreFiles = useCallback(
     (id: string): PendingTextAttachmentDraft[] => {
       const filesDraft = getFilesDraft(id);
@@ -70,13 +94,18 @@ export const useAutoSave = ({
        * the file-cache path runs on every `QueryKeys.files` write (an upload
        * landing, an SSE attachment during a run), where an empty draft means the
        * write has not caught up yet, not that the user has no attachments. */
-      if (filesDraft.fileIds.length === 0 || fileList == null) {
+      if (
+        !isFilesDraftOwnedByThisTab(filesDraft) ||
+        filesDraft.fileIds.length === 0 ||
+        fileList == null
+      ) {
         return [];
       }
 
       const activeFileIds = new Set(filesRef.current.keys());
       const fileIdsToKeep: string[] = [];
       const pendingPastes = { ...filesDraft.pendingPastes };
+      const pastedTextIds = [...(filesDraft.pastedTextIds ?? [])];
       const pastesToRecover: PendingTextAttachmentDraft[] = [];
 
       // Retrieve files stored in localStorage from files in fileList and set them to `setFiles`
@@ -93,6 +122,14 @@ export const useAutoSave = ({
 
         if (fileToRecover) {
           fileIdsToKeep.push(fileId);
+          if (pendingPastes[fileId] != null && !pastedTextIds.includes(fileId)) {
+            /** Consuming the paste record here, so its id moves to the persistent provenance
+             * list: the text is no longer kept, but the chip must stay recognizable as a paste. */
+            pastedTextIds.push(fileId);
+          }
+          if (pastedTextIds.includes(fileId)) {
+            markPastedTextFile(fileToRecover.file_id);
+          }
           delete pendingPastes[fileId];
           setFiles((currentFiles) => {
             const updatedFiles = new Map(currentFiles);
@@ -127,7 +164,12 @@ export const useAutoSave = ({
         fileIdsToKeep.push(fileId);
       });
 
-      setFilesDraft(id, { fileIds: fileIdsToKeep, pendingPastes });
+      const keptIdentities = new Set([...fileIdsToKeep, ...Object.keys(pendingPastes)]);
+      setFilesDraft(id, {
+        fileIds: fileIdsToKeep,
+        pastedTextIds: pastedTextIds.filter((pastedId) => keptIdentities.has(pastedId)),
+        pendingPastes,
+      });
       return pastesToRecover;
     },
     [fileList, setFiles],
@@ -159,26 +201,33 @@ export const useAutoSave = ({
     },
     [textAreaRef],
   );
-
+  /** The key this composer reads and writes right now. It is the conversation, except while the
+   * switch effect has parked storage on the pending key because the destination is not writable.
+   * `currentConversationId` alone will not do: it lags `conversationId` by a render on every
+   * transition, so keying off it restored the previous conversation's draft into the composer,
+   * which after a send put the just-sent attachment straight back as a chip. */
+  const activeStorageId =
+    currentConversationId === pendingDraftId ? pendingDraftId : conversationId;
   useEffect(() => {
     // This useEffect is responsible for setting up and cleaning up the auto-save functionality
     // for the text area input. It saves the text to localStorage with a debounce to prevent
     // excessive writes.
-    if (!saveDrafts || conversationId == null || conversationId === '') {
+    const draftStorageId = activeStorageId;
+    if (!saveDrafts || draftStorageId == null || draftStorageId === '') {
       return;
     }
 
     /** Saves the composer's value AT FLUSH TIME rather than the value captured
-     *  when the event fired. A during-run steer/queue consumes the text and
-     *  clears the composer programmatically, so a write still in flight would
-     *  otherwise land after the submit and restore the just-sent text. */
+     * when the event fired. A during-run steer/queue consumes the text and
+     * clears the composer programmatically, so a write still in flight would
+     * otherwise land after the submit and restore the just-sent text. */
     const saveLatest = () =>
-      setDraft({ id: conversationId, value: textAreaRef?.current?.value ?? '' });
+      setDraft({ id: draftStorageId, value: textAreaRef?.current?.value ?? '' });
 
     /** Use shorter debounce for saving text (25ms) to capture rapid typing */
     const handleInputFast = debounce(saveLatest, 25);
 
-    /** Use longer debounce for clearing empty values (850ms) to prevent accidental draft loss */
+    /** Use longer debounce for clearing empty values (850ms) to prevent accidental clearing */
     const handleInputSlow = debounce(saveLatest, 850);
 
     const eventListener = (e: Event) => {
@@ -210,9 +259,10 @@ export const useAutoSave = ({
       handleInputFast.cancel();
       handleInputSlow.cancel();
     };
-  }, [conversationId, saveDrafts, textAreaRef]);
+  }, [activeStorageId, saveDrafts, textAreaRef]);
 
   const prevConversationIdRef = useRef<string | null>(null);
+  const pendingDestinationRef = useRef<string | null>(null);
 
   useEffect(() => {
     // This useEffect is responsible for saving the current conversation's draft and
@@ -233,37 +283,105 @@ export const useAutoSave = ({
     /** The key the attachments live under once the pending draft has been moved. A move that
      * storage refuses leaves them behind, and recovery has to read them where they still are. */
     let filesDraftId = conversationId;
+    let textDraftId = conversationId;
+    let nextConversationId = conversationId;
 
     try {
       // Check for transition from PENDING_CONVO to a valid conversationId.
       // An ask-answer key is excluded: it is a temporary overlay, not the
-      // pending draft's destination — migrating would delete the very draft
+      // pending draft's destination. Migrating would delete the very draft
       // the answer-phase swap-back is supposed to restore.
+      /** A reload reports no previous key, so the pending draft has to be able to speak for
+       * itself: this is only the awaited transition when this tab actually owns a pending record
+       * that still holds something. Treating any first mount as the transition put an ordinary
+       * conversation on the pending key, which then restored a just-sent attachment back into the
+       * composer. */
+      const pendingDraftRecord = getFilesDraft(pendingDraftId);
+      const pendingDraftHasContent =
+        isFilesDraftOwnedByThisTab(pendingDraftRecord) &&
+        (pendingDraftRecord.fileIds.length > 0 ||
+          Object.keys(pendingDraftRecord.pendingPastes).length > 0 ||
+          (getDraft(pendingDraftId) ?? '') !== '');
+      const pendingDestination = pendingDestinationRef.current;
+      const pendingStorageActive =
+        (prevConversationIdRef.current === pendingDraftId ||
+          currentConversationId === pendingDraftId ||
+          (currentConversationId == null && pendingDraftHasContent) ||
+          pendingDestination === conversationId) &&
+        (pendingDestination == null || pendingDestination === conversationId);
       if (
-        prevConversationIdRef.current === pendingDraftId &&
+        pendingStorageActive &&
         conversationId !== pendingDraftId &&
         !isAskAnswerDraftId(conversationId) &&
         !isNewConversationDraftId(conversationId) &&
         conversationId.length > 3
       ) {
-        // Move the pending text draft to the new conversationId, falling back to the current
-        // text area value when there was no pending draft to carry over
-        if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
-          setDraft({ id: conversationId, value: textAreaRef.current.value });
+        /** Two tabs running at once share the default pending key, so the record here may be
+         * another tab's: migrating first and checking ownership afterwards moved that tab's text
+         * and attachments under this conversation and left it nothing to carry over when its own
+         * run finished. This composer's text moves to the conversation only when that key is
+         * writable; otherwise the pending key remains the active storage location. */
+        /** The destination has to be writable too: another tab viewing this same conversation can
+         * own its draft with attachments still on screen, and migrating over it would delete that
+         * record and restamp the owner. */
+        const pendingOwned = isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId));
+        const destinationOwned = isFilesDraftOwnedByThisTab(getFilesDraft(conversationId));
+        const destinationWritable = destinationOwned && mayWriteComposerText(conversationId);
+        if (pendingOwned && !destinationWritable) {
+          /** Ours to move but nowhere to move it to. Keep both the draft and the active storage key
+           * on the pending id until the destination can be written without clobbering its owner. */
+          pendingDestinationRef.current = conversationId;
+          filesDraftId = pendingDraftId;
+          textDraftId = pendingDraftId;
+          nextConversationId = pendingDraftId;
+        } else if (pendingOwned) {
+          pendingDestinationRef.current = null;
+          // Move the pending text draft to the new conversationId, falling back to the current
+          // text area value when there was no pending draft to carry over
+          if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
+            setDraft({ id: conversationId, value: textAreaRef.current.value });
+          }
+          filesDraftId = migrateFilesDraft(pendingDraftId, conversationId);
+        } else {
+          if (textAreaRef?.current?.value) {
+            setDraft({ id: conversationId, value: textAreaRef.current.value });
+          }
+          /** Nothing is taken from the record, but this tab's own queued attachments still have
+           * to survive the switch. The map is cleared at the top of this effect, so persist them
+           * under the destination when it is writable and restore the live map otherwise. */
+          const liveFileIds = Array.from(filesRef.current.keys());
+          if (liveFileIds.length > 0 && destinationOwned) {
+            /** Provenance travels with them, or the restored chips stop being recognised as
+             * pastes and lose both editing and New Chat cleanup. It is rebuilt from the session
+             * registry rather than the foreign record, which is not ours to read. The unsent
+             * paste text cannot come along: this tab was refused the pending key all run, so it
+             * was never written anywhere to carry. */
+            setFilesDraft(conversationId, {
+              fileIds: liveFileIds,
+              pendingPastes: {},
+              pastedTextIds: liveFileIds.filter((fileId) => isPastedTextFileMarked(fileId)),
+            });
+          } else if (liveFileIds.length > 0) {
+            /** Neither shared key is writable by this tab. The live map is the only copy of these
+             * queued attachments, so restore it after the unconditional switch clear rather than
+             * dropping it. */
+            setFiles(filesRef.current);
+          }
         }
-        filesDraftId = migrateFilesDraft(pendingDraftId, conversationId);
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }
 
-      const pendingPastes = restoreFiles(filesDraftId);
-      restoreText(conversationId, pendingPastes);
+      if (isFilesDraftOwnedByThisTab(getFilesDraft(filesDraftId))) {
+        const pendingPastes = restoreFiles(filesDraftId);
+        restoreText(textDraftId, pendingPastes);
+      }
     } catch (e) {
       console.error(e);
     }
 
-    prevConversationIdRef.current = conversationId;
-    setCurrentConversationId(conversationId);
+    prevConversationIdRef.current = nextConversationId;
+    setCurrentConversationId(nextConversationId);
   }, [
     currentConversationId,
     conversationId,
@@ -277,46 +395,65 @@ export const useAutoSave = ({
   ]);
 
   useEffect(() => {
-    if (
-      !saveDrafts ||
-      conversationId == null ||
-      conversationId === '' ||
-      currentConversationId !== conversationId ||
-      fileList == null
-    ) {
+    const draftStorageId = activeStorageId;
+    if (!saveDrafts || draftStorageId == null || draftStorageId === '' || fileList == null) {
       return;
     }
 
-    const pendingPastes = restoreFiles(conversationId);
+    const pendingPastes = restoreFiles(draftStorageId);
     if (pendingPastes.length > 0) {
-      restoreText(conversationId, pendingPastes);
+      restoreText(draftStorageId, pendingPastes);
     }
-  }, [conversationId, currentConversationId, fileList, restoreFiles, restoreText, saveDrafts]);
+  }, [activeStorageId, fileList, restoreFiles, restoreText, saveDrafts]);
 
   useEffect(() => {
     // This useEffect is responsible for saving or removing the current conversation's file drafts
     // in localStorage whenever the file attachments change.
     // It ensures that the file drafts are kept up-to-date and can be restored
     // when the conversation is revisited.
+    const draftStorageId = currentConversationId ?? conversationId;
 
-    if (
-      !saveDrafts ||
-      conversationId == null ||
-      conversationId === '' ||
-      currentConversationId !== conversationId
-    ) {
+    if (!saveDrafts || draftStorageId == null || draftStorageId === '') {
       return;
     }
 
-    const existingDraft = getFilesDraft(conversationId);
+    const existingDraft = getFilesDraft(draftStorageId);
+    if (!isFilesDraftOwnedByThisTab(existingDraft)) {
+      return;
+    }
     const pendingFileIds = Object.keys(existingDraft.pendingPastes);
     const draftFileIds = [
       ...fileIds,
       ...pendingFileIds.filter((fileId) => !fileIds.includes(fileId)),
     ];
-    setFilesDraft(conversationId, {
+    const liveIds = new Set(draftFileIds);
+    files.forEach((file, key) => {
+      liveIds.add(key);
+      if (file.file_id != null) {
+        liveIds.add(file.file_id);
+      }
+      if (file.temp_file_id != null && file.temp_file_id !== '') {
+        liveIds.add(file.temp_file_id);
+      }
+    });
+    /** Provenance is rebuilt, not just filtered. A paste queued during a run has its pending
+     * draft taken by `takeComposerDraft`, so choosing Edit message later restores the upload into
+     * an otherwise empty composer with nothing recording that it was ever a generated paste.
+     * Filtering alone left it unmarked, and an unmarked restored chip is treated as a shared
+     * attachment: removing it would not delete it and New Chat would skip it, so the unsent upload
+     * was orphaned. The session registry still knows, so it is asked. */
+    const pastedTextIds = (existingDraft.pastedTextIds ?? []).filter((id) => liveIds.has(id));
+    const claimed = new Set(pastedTextIds);
+    for (const id of liveIds) {
+      if (!claimed.has(id) && isPastedTextFileMarked(id)) {
+        pastedTextIds.push(id);
+        claimed.add(id);
+      }
+    }
+    setFilesDraft(draftStorageId, {
       fileIds: draftFileIds,
+      pastedTextIds,
       pendingPastes: existingDraft.pendingPastes,
     });
-  }, [conversationId, saveDrafts, currentConversationId, fileIds]);
+  }, [conversationId, saveDrafts, currentConversationId, fileIds, files]);
 };

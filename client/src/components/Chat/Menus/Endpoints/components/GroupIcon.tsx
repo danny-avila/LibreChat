@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { ProviderIcon } from '@librechat/client';
 import { resolveProviderId } from 'librechat-data-provider';
 import { EntityEndpointMark, isEntityEndpoint } from '~/components/Endpoints/EntityEndpointMark';
+import CustomIcon from '~/components/ui/CustomIcon';
 import { isImageURL } from '~/utils/icons';
 
 interface GroupIconProps {
@@ -44,10 +45,10 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
 
   return (
     <div
-      className="icon-md shrink-0 overflow-hidden rounded-full"
+      className="icon-md shrink-0 overflow-hidden rounded-full text-text-primary"
       style={{ width: 20, height: 20 }}
     >
-      <img
+      <CustomIcon
         src={iconURL}
         alt={groupName}
         className="h-full w-full object-cover"

@@ -29,6 +29,8 @@ describe('isMythosClassModel (single source of truth for Fable/Mythos)', () => {
       expect(isMythosClassModel(`anthropic.claude-${family}-5`)).toBe(true);
       expect(isMythosClassModel(`us.anthropic.claude-${family}-5`)).toBe(true);
       expect(isMythosClassModel(`claude-${family}-5-20260609`)).toBe(true);
+      expect(isMythosClassModel(`claude-${family}-5-1`)).toBe(true);
+      expect(isMythosClassModel(`global.anthropic.claude-${family}-5-1`)).toBe(true);
     });
   });
 

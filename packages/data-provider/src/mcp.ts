@@ -2,6 +2,13 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
+/**
+ * Upper bound on a stored MCP `iconPath` (URL or data URI). Enforced by
+ * `sanitizeMcpIconPath`, not a schema `.max()`, so re-submitting a server whose
+ * stored icon predates the cap clears the icon instead of rejecting the update.
+ */
+export const MAX_MCP_ICON_PATH_LENGTH = 256 * 1024;
+
 const validateOAuthClientCredentials = (
   oauth: {
     client_id?: string;
@@ -178,11 +185,19 @@ const BaseOptionsSchema = z.object({
   /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
   sseReadTimeout: z.number().int().positive().optional(),
   initTimeout: z.number().int().nonnegative().optional(),
-  /** Controls visibility in chat dropdown menu (MCPSelect) */
+  /**
+   * Whether the server is offered in chat.
+   *
+   * `false` hides it from the chat dropdown (MCPSelect) AND bars it from the
+   * chat selection a request carries, so a stale or hand-written request cannot
+   * reach it either. It does not restrict agents, nor a server a model spec
+   * pins through `mcpServers` — both are the operator's own choice.
+   */
   chatMenu: z.boolean().optional(),
   /**
-   * When true, replace exact current-request `/mnt/data/<index>.<image-extension>`
-   * placeholders in MCP tool arguments with validated data URLs before the call.
+   * When true, replace exact current-request `/mnt/data/<index>.<image-extension>` and
+   * `attachment:/<filename>` image references in MCP tool arguments with validated data URLs
+   * before the call. Filename references must identify exactly one current-request upload.
    * This deliberately sends the referenced uploaded image to the configured MCP
    * server and can substantially increase the downstream JSON request body.
    */

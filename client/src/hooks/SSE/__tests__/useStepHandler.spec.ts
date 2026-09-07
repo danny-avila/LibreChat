@@ -1,3 +1,5 @@
+import React from 'react';
+import { useStore } from 'jotai';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
 import { renderHook, act } from '@testing-library/react';
 import {
@@ -19,10 +21,14 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import type { PtcTrace, PtcTraceEntry } from '~/store/ptc';
+import {
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/components/Chat/Subagents/state';
 import { ptcTraceByToolCallId, ptcTraceKey, PTC_TRACE_MAX_ENTRIES } from '~/store/ptc';
-import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
+import { IsolatedAtomStore } from 'test/harness';
 
 /** `Constants` is a heterogeneous enum (`string | number`); annotate as
  *  `string` so the member is usable where a `string` field is expected. */
@@ -1835,6 +1841,7 @@ describe('useStepHandler', () => {
       expect(toolCallContent?.tool_call?.output).toBe('Tool result output');
       expect(toolCallContent?.tool_call?.progress).toBe(1);
       expect(toolCallContent?.tool_call?.inputValidationError).toBe(true);
+      expect(toolCallContent?.tool_call?.stepId).toBe('step-tool-1');
     });
 
     it('signals skill authoring when a completed create_file call targets a skill path', () => {
@@ -2986,41 +2993,37 @@ describe('useStepHandler', () => {
 
   describe('on_subagent_update event', () => {
     /**
-     * These tests exercise the real Recoil `atomFamily` via a `RecoilRoot`
-     * wrapper and a `useRecoilCallback`-powered reader mounted alongside
-     * the hook under test. No mocks of the store module — only the same
-     * `setMessages`/`getMessages` spies the rest of this file uses.
+     * These tests exercise the real `atomFamily` through an isolated store and
+     * a reader mounted alongside the hook under test. No mocks of the store
+     * module — only the same `setMessages`/`getMessages` spies the rest of
+     * this file uses.
      */
+    const subagentStoreWrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(RecoilRoot, null, React.createElement(IsolatedAtomStore, null, children));
     const renderStepHandlerWithReader = (): {
       result: ReturnType<typeof renderHook>['result'];
       getProgress: (toolCallId: string, parentMessageId?: string, partIndex?: number) => unknown;
     } => {
-      /** Composite hook: the step handler under test + a `useRecoilCallback`
-       *  reader that shares the same `RecoilRoot` store. Reading via a
-       *  top-level `snapshot_UNSTABLE()` returns a different root, so the
-       *  writes done by the step handler wouldn't be visible. */
+      /** Composite hook: the step handler under test + a reader bound to the
+       *  same store it writes through. Reading from the default store instead
+       *  would answer for a different one, so its writes wouldn't be visible. */
       const hookResult = renderHook(
         () => {
           const stepHandler = useStepHandler(createHookParams());
-          const read = useRecoilCallback(
-            ({ snapshot }) =>
-              (
-                toolCallId: string,
-                parentMessageId: string = 'response-msg-1',
-                partIndex: number = 0,
-              ): unknown =>
-                snapshot
-                  .getLoadable(
-                    subagentProgressByToolCallId(
-                      subagentProgressKey(parentMessageId, toolCallId, partIndex),
-                    ),
-                  )
-                  .valueOrThrow(),
-            [],
-          );
+          const jotaiStore = useStore();
+          const read = (
+            toolCallId: string,
+            parentMessageId: string = 'response-msg-1',
+            partIndex: number = 0,
+          ): unknown =>
+            jotaiStore.get(
+              subagentProgressByToolCallId(
+                subagentProgressKey(parentMessageId, toolCallId, partIndex),
+              ),
+            );
           return { ...stepHandler, read };
         },
-        { wrapper: RecoilRoot },
+        { wrapper: subagentStoreWrapper },
       );
 
       const getProgress = (
@@ -3126,6 +3129,32 @@ describe('useStepHandler', () => {
       expect(bucket.status).toBe('stop');
       expect(bucket.latestLabel).toBe('Subagent "self" finished');
       expect(bucket.subagentType).toBe('self');
+    });
+
+    /** An `atomFamily` caches a member per key for the life of the tab, and every
+     *  invocation key is unique. The drain boundary exists to keep that bounded,
+     *  so it has to release the members, not merely blank them. */
+    it('frees the family members it drains at the conversation boundary', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_A']);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({ parentToolCallId: 'call_A', phase: 'start' }),
+          },
+          submission,
+        );
+      });
+      const invocationKey = subagentProgressKey('response-msg-1', 'call_A', 0);
+      const held = subagentProgressByToolCallId(invocationKey);
+      expect(getProgress('call_A')).not.toBeNull();
+
+      act(() => (result.current as any).resetSubagentAtoms());
+
+      expect(getProgress('call_A')).toBeNull();
+      expect(subagentProgressByToolCallId(invocationKey)).not.toBe(held);
     });
 
     it('falls back to oldest-unclaimed tool call when parentToolCallId is absent', () => {

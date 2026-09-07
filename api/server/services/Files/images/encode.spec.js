@@ -154,6 +154,7 @@ describe('encodeAndFormat - request memory guard', () => {
   it.each([
     ['zero metadata', 0],
     ['stale-low metadata', 1],
+    ['missing metadata', undefined],
   ])('rejects an actual over-limit local MCP image with %s', async (_name, metadataBytes) => {
     const { file, imageContent } = createLocalImage({
       bytes: mcpImageSizeLimit + 1,
@@ -193,5 +194,75 @@ describe('encodeAndFormat - request memory guard', () => {
         image_url: { url: `data:image/png;base64,${imageContent}`, detail: 'auto' },
       }),
     ]);
+  });
+
+  it('returns no MCP image URL for a persisted image record without dimensions', async () => {
+    const file = {
+      source: FileSources.local,
+      type: 'image/png',
+      file_id: 'missing-dimensions',
+      filepath: 'local/no-dimensions.png',
+      filename: 'no-dimensions.png',
+      bytes: 10,
+    };
+
+    const result = await encodeAndFormat(makeReq(), [file], { mcpImageSizeLimit }, VisionModes.mcp);
+
+    expect(result.image_urls).toEqual([]);
+    expect(result.files).toEqual([expect.objectContaining({ file_id: file.file_id })]);
+    expect(mockPrepareImagePayload).not.toHaveBeenCalled();
+  });
+});
+
+describe('encodeAndFormat - image detail', () => {
+  const imageFile = () => ({
+    source: FileSources.s3,
+    height: 10,
+    width: 10,
+    type: 'image/png',
+    file_id: 'f-detail',
+    filepath: 'bucket/a.png',
+    filename: 'a.png',
+    bytes: 128,
+  });
+
+  beforeEach(() => {
+    mockGetDownloadStream.mockResolvedValue(Readable.from([Buffer.from('image-bytes')]));
+  });
+
+  it('falls back to auto when no detail is configured anywhere', async () => {
+    const result = await encodeAndFormat(makeReq(), [imageFile()], { endpoint: 'openai' });
+
+    expect(result.image_urls[0].image_url.detail).toBe('auto');
+  });
+
+  it('uses the conversation-level detail from the request body', async () => {
+    const req = makeReq();
+    req.body.imageDetail = 'low';
+
+    const result = await encodeAndFormat(req, [imageFile()], { endpoint: 'openai' });
+
+    expect(result.image_urls[0].image_url.detail).toBe('low');
+  });
+
+  it('uses the detail resolved by the caller on routes with no body setting', async () => {
+    const result = await encodeAndFormat(makeReq(), [imageFile()], {
+      endpoint: 'agents',
+      imageDetail: 'high',
+    });
+
+    expect(result.image_urls[0].image_url.detail).toBe('high');
+  });
+
+  it('prefers the caller-resolved detail over the request body', async () => {
+    const req = makeReq();
+    req.body.imageDetail = 'low';
+
+    const result = await encodeAndFormat(req, [imageFile()], {
+      endpoint: 'agents',
+      imageDetail: 'high',
+    });
+
+    expect(result.image_urls[0].image_url.detail).toBe('high');
   });
 });

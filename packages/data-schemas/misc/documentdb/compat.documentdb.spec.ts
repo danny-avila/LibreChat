@@ -36,9 +36,13 @@ import { createModels } from '~/models';
  * suite only runs when DOCUMENTDB_URI is set and skips otherwise.
  *
  * Run (from packages/data-schemas, against a DEDICATED database):
- *   DOCUMENTDB_URI="mongodb://user:pass@127.0.0.1:27017/librechat_compat?tls=true&retryWrites=false" \
+ *   DOCUMENTDB_URI="mongodb://user:pass@127.0.0.1:27017/librechat_compat\
+ *     ?tls=true&retryWrites=false&authSource=admin&authMechanism=SCRAM-SHA-1&directConnection=true" \
  *   DOCUMENTDB_TLS_CA_FILE="global-bundle.pem" \
  *     npx jest --config misc/documentdb/jest.documentdb.config.mjs
+ *
+ * `authSource`/`authMechanism`/`directConnection` are load-bearing against a
+ * real cluster (see audit.documentdb.spec.ts for why each is required).
  *
  * Through an SSH tunnel, additionally set
  *   DOCUMENTDB_TLS_ALLOW_INVALID_HOSTNAMES=true
@@ -269,6 +273,15 @@ describeLive('Amazon DocumentDB live compatibility', () => {
             permBits: PermissionBits.VIEW,
             grantedBy: userId,
           });
+          /** The proof transaction READS PluginAuth and Token. On a database
+           * where they do not exist yet, DocumentDB rejects the in-transaction
+           * read of a non-existent collection and `asMCPError` reports it as
+           * `proof_unavailable` — which is why this test failed on every live
+           * cluster run while passing against MongoDB. Materialize both
+           * before the transaction. */
+          await models.PluginAuth.createCollection();
+          await models.Token.createCollection();
+          await models.Group.createCollection();
           const server = await models.MCPServer.findById(serverId).lean();
           if (!server) {
             throw new Error('DocumentDB authority probe server was not created');

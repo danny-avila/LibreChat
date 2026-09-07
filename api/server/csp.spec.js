@@ -195,6 +195,14 @@ describe('Content Security Policy', () => {
     expect(response.headers['content-security-policy']).toContain("script-src 'nonce-");
   });
 
+  it('keeps replacement patterns in the language cookie as literal attribute text', async () => {
+    const response = await request(app).get('/').set('Cookie', 'lang=$&');
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('<html lang="$&amp;">');
+    expect(response.text).not.toContain('<html lang="lang="en-US"">');
+  });
+
   it('carries deployment-specific sources and the clickjacking default', async () => {
     const csp = (await request(app).get('/')).headers['content-security-policy'];
 

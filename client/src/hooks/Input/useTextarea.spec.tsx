@@ -20,6 +20,8 @@ const mockShowToast = jest.fn();
 const mockOpenModal = jest.fn();
 const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
+const mockSetPendingComposerText = jest.fn();
+let mockPendingComposerText: string | undefined;
 
 let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
@@ -32,6 +34,7 @@ let mockConversation: { endpoint: string; conversationId?: string } = {
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/drafts'),
+  ...jest.requireActual('~/utils/files'),
   forceResize: mockForceResize,
   insertTextAtCursor: mockInsertTextAtCursor,
   resolvePastedTextFile: mockResolvePastedTextFile,
@@ -42,7 +45,11 @@ jest.mock('~/utils', () => ({
 
 jest.mock('recoil', () => ({
   useRecoilValue: jest.fn(() => true),
-  useRecoilState: jest.fn(() => [undefined, mockSetActivePrompt]),
+  useRecoilState: jest.fn((atom: { key?: string }) =>
+    atom?.key === 'pendingComposerText'
+      ? [mockPendingComposerText, mockSetPendingComposerText]
+      : [undefined, mockSetActivePrompt],
+  ),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -56,6 +63,7 @@ jest.mock('~/store', () => ({
     saveDrafts: { key: 'saveDrafts' },
     pasteLongTextAsFile: { key: 'pasteLongTextAsFile' },
     activePromptByIndex: jest.fn(() => ({ key: 'activePrompt' })),
+    pendingComposerTextByConvoId: jest.fn(() => ({ key: 'pendingComposerText' })),
   },
 }));
 
@@ -162,6 +170,7 @@ describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockPendingComposerText = undefined;
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
@@ -275,7 +284,9 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
-    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
   });
 
   it('skips upload-failure recovery when the conversation changed', async () => {
@@ -354,6 +365,44 @@ describe('useTextarea long-paste fallback', () => {
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockForceResize).not.toHaveBeenCalled();
     expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(pastedText);
+  });
+
+  it('reinserts a failed paste at its anchor when another tab owns the draft', async () => {
+    /** The ownership guard skips the only durable copy of the paste, so this callback is all that
+     * is left holding it: refusing because the composer moved on would lose the text outright. */
+    localStorage.setItem('librechat-live-tab:other-tab', JSON.stringify({ seenAt: Date.now() }));
+    localStorage.setItem(
+      'filesDraft_convo-1',
+      JSON.stringify({ fileIds: ['other-tab-file'], pendingPastes: {}, tabId: 'other-tab' }),
+    );
+    let insertOffset = -1;
+    mockInsertTextAtCursor.mockImplementationOnce((element: HTMLTextAreaElement) => {
+      insertOffset = element.selectionStart;
+    });
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'draft at paste time';
+    textArea.setSelectionRange('draft at paste time'.length, 'draft at paste time'.length);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    expect(getFilesDraft('convo-1').pendingPastes).toEqual({});
+    textArea.value = 'draft at paste time and more';
+
+    act(() => uploadLifecycle?.onError?.('file-1'));
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(insertOffset).toBe('draft at paste time'.length);
   });
 
   it('forwards upload recovery through the assistants route', async () => {
@@ -436,7 +485,9 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
-    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
   });
 
   it('stores a pending paste under the submitting pane draft key', async () => {
@@ -462,7 +513,9 @@ describe('useTextarea long-paste fallback', () => {
         pastedText,
       ),
     );
-    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
     expect(uploadLifecycle).toBeDefined();
   });
 
@@ -489,7 +542,9 @@ describe('useTextarea long-paste fallback', () => {
         getFilesDraft(getNewConversationDraftId(1)).pendingPastes['pane-1-new-file']?.text,
       ).toBe(pastedText),
     );
-    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
     expect(uploadLifecycle).toBeDefined();
   });
 
@@ -677,10 +732,12 @@ describe('useTextarea long-paste fallback', () => {
     );
     act(() => uploadLifecycle?.onSuccess?.('successful-file'));
 
-    expect(getFilesDraft('convo-1')).toEqual({
-      fileIds: ['successful-file'],
-      pendingPastes: {},
-    });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({
+        fileIds: ['successful-file'],
+        pendingPastes: {},
+      }),
+    );
   });
 
   it('does not treat a successful upload as failed when draft storage reads throw', async () => {
@@ -898,5 +955,33 @@ describe('useTextarea long-paste fallback', () => {
     await act(async () => {
       finish(false);
     });
+  });
+});
+
+describe('useTextarea composer handoff', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPendingComposerText = undefined;
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
+  });
+
+  /** A surface the reader is leaving (a continued subagent thread) hands its
+   *  words to the destination conversation. It travels in memory, so it is
+   *  delivered whatever the Save Drafts preference is. */
+  it('drains text handed to this conversation into the composer exactly once', () => {
+    mockPendingComposerText = 'Take this further.';
+    const { textArea } = renderTextareaHook();
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, 'Take this further.');
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+    expect(mockSetPendingComposerText).toHaveBeenCalledWith(undefined);
+    expect(getDraft('convo-1')).toBe('');
+  });
+
+  it('leaves the composer alone when nothing was handed to this conversation', () => {
+    renderTextareaHook();
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockSetPendingComposerText).not.toHaveBeenCalled();
   });
 });

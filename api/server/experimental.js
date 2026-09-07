@@ -1,4 +1,12 @@
 require('../config/credentials');
+/**
+ * The primary kills every worker and then force-exits the whole cluster this long after its own
+ * shutdown signal, regardless of what the workers are still doing.
+ */
+const CLUSTER_FORCE_EXIT_MS = 10_000;
+/** Absolute time the primary will force-exit the cluster, propagated to this worker over IPC. */
+let clusterShutdownDeadlineAt = null;
+
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -7,6 +15,7 @@ const Redis = require('ioredis');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
+const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
@@ -19,6 +28,7 @@ const {
   applyCspNonce,
   createCspPolicy,
   shellCacheHeaders,
+  escapeHtmlAttribute,
   ErrorController,
   QUERY_DEVTOOLS_HEADER,
   createSecurityHeaders,
@@ -31,9 +41,15 @@ const {
   requestContextMiddleware,
   configureServerTimeouts,
   setupGracefulShutdown,
+  registerShutdownTask,
+  getRemainingShutdownMs,
+  getShutdownElapsedMs,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  configureAgentEventRuntime,
   GenerationJobManager,
+  createAgentEventTerminalHandler,
+  startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -43,6 +59,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { resumeAgentEventDetachedAction } = require('./services/Agents/detachedActionResume');
 const {
   recordExpiredScheduleApproval,
   initializeScheduleErasureSweep,
@@ -65,6 +82,7 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const agentEventMethods = require('~/models');
 
 /** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
 configureFileConfigRegexEngine();
@@ -256,6 +274,55 @@ if (cluster.isMaster) {
     cluster.fork();
   });
 
+  /**
+   * Deliver the absolute deadline, then SIGTERM only once the worker has acknowledged it.
+   * IPC is asynchronous and worker.kill() is immediate, so without the acknowledgement a
+   * busy worker can enter its shutdown handler before the deadline arrives and fall back to
+   * a worker-local estimate the primary will not honor. Bounded so a stalled worker cannot
+   * hold the others.
+   */
+  const signalWorkerAfterDeadlineAck = (worker, deadlineAt) => {
+    let signaled = false;
+    const onMessage = (msg) => {
+      if (msg != null && msg.type === 'cluster-shutdown-ack') {
+        signal();
+      }
+    };
+    /** A closed IPC channel is reported asynchronously, not thrown from send(); without a
+     *  listener it reaches the global uncaughtException handler and exits the primary,
+     *  killing every other worker before it can record its drain. */
+    const onError = (err) => {
+      logger.warn('Worker IPC error during the shutdown handoff; treating it as gone:', err);
+      signal();
+    };
+    const signal = () => {
+      if (signaled) {
+        return;
+      }
+      signaled = true;
+      worker.off('message', onMessage);
+      worker.off('error', onError);
+      try {
+        worker.kill();
+      } catch (err) {
+        logger.debug('Worker already gone before SIGTERM:', err);
+      }
+    };
+    worker.on('message', onMessage);
+    worker.on('error', onError);
+    /** Deliberately no separate timeout. SIGTERM is sent only after the worker has recorded
+     *  the deadline; a worker that never acknowledges is ended by the primary's own
+     *  force-exit, the one deadline it can honor. Signaling sooner would let a stalled
+     *  worker's SIGTERM handler run before the queued deadline message and fall back to a
+     *  local budget the primary will not honor, the exact case this handoff exists for.
+     *  Handshakes are per worker, so a stalled one holds no other. */
+    worker.send({ type: 'cluster-shutdown', deadlineAt }, (err) => {
+      if (err) {
+        onError(err);
+      }
+    });
+  };
+
   /** Graceful shutdown on SIGTERM/SIGINT */
   const shutdown = () => {
     if (shuttingDown) {
@@ -269,13 +336,16 @@ if (cluster.isMaster) {
       process.exit(0);
       return;
     }
+    /** Workers derive their settlement budget from THIS deadline — not from their own
+     *  coordinator, and not from whenever their signal handler happened to run. */
+    const deadlineAt = Date.now() + CLUSTER_FORCE_EXIT_MS;
     for (const worker of liveWorkers) {
-      worker.kill();
+      signalWorkerAfterDeadlineAck(worker, deadlineAt);
     }
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
       process.exit(0);
-    }, 10000);
+    }, CLUSTER_FORCE_EXIT_MS);
   };
 
   process.on('SIGTERM', shutdown);
@@ -290,7 +360,49 @@ if (cluster.isMaster) {
   // but an already-fired scheduled generation can still reach HITL here. Settle
   // its durable run when the generic approval runtime expires it.
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.setTerminalHostActionHandler(
+    createAgentEventTerminalHandler(agentEventMethods, {
+      resumeDetachedAction: resumeAgentEventDetachedAction,
+    }),
+  );
   GenerationJobManager.initialize();
+  // Stop active generations and close their SSE streams while the HTTP server drains.
+  registerShutdownTask(
+    'generation job manager prepare',
+    () => GenerationJobManager.prepareForShutdown(),
+    {
+      phase: 'pre-drain',
+      priority: 100,
+    },
+  );
+  /** Spend the shutdown budget that is actually left waiting for open provider executions to
+   *  record their own drains — but the budget this worker actually has is the primary's, not
+   *  its own 60s coordinator: the primary force-exits the whole cluster CLUSTER_FORCE_EXIT_MS
+   *  after signalling. Measure against that, and hold back a reserve for the tasks after this
+   *  one. Abandoning an unrecorded drain fences the next generation permanently. */
+  const CLUSTER_TEARDOWN_RESERVE_MS = 3_000;
+  const destroyGenerationJobManager = () => {
+    const remaining = getRemainingShutdownMs();
+    const elapsed = getShutdownElapsedMs();
+    if (remaining == null || elapsed == null) {
+      return GenerationJobManager.destroy();
+    }
+    /** Prefer the deadline the primary actually set. The elapsed-based estimate starts
+     *  counting only when this worker's signal handler ran, which lags the primary's timer
+     *  by however long the event loop was blocked. */
+    const primaryRemaining =
+      clusterShutdownDeadlineAt != null
+        ? clusterShutdownDeadlineAt - Date.now()
+        : CLUSTER_FORCE_EXIT_MS - elapsed;
+    return GenerationJobManager.destroy({
+      settlementBudgetMs: Math.max(
+        0,
+        Math.min(remaining, primaryRemaining) - CLUSTER_TEARDOWN_RESERVE_MS,
+      ),
+    });
+  };
+  // Tear down stream resources before shared caches and telemetry exporters shut down.
+  registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config
@@ -322,6 +434,20 @@ if (cluster.isMaster) {
 
   /** Handle inter-process messages from master */
   process.on('message', (msg) => {
+    if (msg != null && msg.type === 'cluster-shutdown' && Number.isFinite(msg.deadlineAt)) {
+      clusterShutdownDeadlineAt = msg.deadlineAt;
+      /** The primary holds SIGTERM until this arrives, so the deadline is in place before
+       *  the shutdown handler can run. */
+      if (typeof process.send === 'function') {
+        try {
+          process.send({ type: 'cluster-shutdown-ack' });
+        } catch (err) {
+          logger.debug('Could not acknowledge the shutdown deadline to the primary:', err);
+        }
+      }
+    }
+  });
+  process.on('message', (msg) => {
     if (msg.type === 'file-retention-sweep-worker') {
       shouldStartExpiredFileSweep = true;
       logger.info(wrapLogMessage(`Worker ${process.pid} is assigned file-retention sweep`));
@@ -342,6 +468,7 @@ if (cluster.isMaster) {
     /** Connect to MongoDB */
     await connectDb();
     logger.info(`Worker ${process.pid}: Connected to MongoDB`);
+    startCodeEnvironmentLifecycleReconciler({ mongoose });
 
     /** Background index sync (non-blocking) */
     indexSync().catch((err) => {
@@ -394,6 +521,7 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    configureAgentEventRuntime(baseAppConfig?.endpoints?.agents?.eventDriven);
     const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
@@ -429,8 +557,8 @@ if (cluster.isMaster) {
       res.vary(QUERY_DEVTOOLS_HEADER);
 
       const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-      const saneLang = lang.replace(/"/g, '&quot;');
-      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      const saneLang = escapeHtmlAttribute(lang);
+      let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, () => `lang="${saneLang}"`);
       updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
 
       /* Nonce last: every injected script above must be stamped too. */
@@ -506,9 +634,11 @@ if (cluster.isMaster) {
     /** Routes */
     app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
     app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
-    app.use('/api/admin/insights', routes.insights);
+    app.use('/api/insights', routes.insights);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
+    app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
+    app.use('/api/code-environments', routes.codeEnvironments);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
@@ -527,7 +657,13 @@ if (cluster.isMaster) {
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
-    app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
+    app.use(
+      '/images/',
+      createValidateImageRequest({
+        secureImageLinks: appConfig.secureImageLinks,
+      }),
+      routes.staticRoute,
+    );
     app.use('/api/share', preAuthTenantMiddleware, routes.share);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);

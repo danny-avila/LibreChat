@@ -226,23 +226,36 @@ export default function EditContentParts({
     updateMessageContentMutation,
   ]);
 
+  /** A rerun with no edits is a first-class action, not a mistake: a cancelled or
+   *  failed response, or a backend restarted on different parameters, has to be
+   *  reissued byte-for-byte. Gating the button on a change only taught people to
+   *  type a space and delete it again. */
   const updateAndRerun = useCallback(() => {
-    const firstChange = changedParts[0];
-    if (!firstChange || !editedMessage || rerunRequiresSave || hasBlankEdit || isBusy) {
+    if (!editedMessage || rerunRequiresSave || hasBlankEdit || isBusy) {
       return;
     }
+    const firstChange = changedParts[0];
     const messages = getMessages();
 
     /** `ask` refuses to send while another response is streaming and reports it by
      *  returning false. Closing the editor regardless would throw the drafts away for
      *  a rerun that never started, so a refused send leaves the editor as it was. */
     let refused = false;
+    /** An unedited assistant turn regenerates in place, landing as a sibling of this
+     *  response rather than of the user turn this editor's sibling index walks. */
+    let regenerated = false;
 
     if (editedMessage.isCreatedByUser === true) {
       const userText = editableParts
         .filter((part) => part.type === ContentTypes.TEXT)
         .map((part) => drafts[part.index])
         .join('\n');
+      /** Retained attachments make an otherwise textless request submittable, matching
+       *  the composer and the sibling `EditMessage` form's `required` rule. A turn with
+       *  neither text nor files has nothing to send, edited or not. */
+      if (userText.trim() === '' && (editedMessage.files?.length ?? 0) === 0) {
+        return;
+      }
       refused =
         ask(
           {
@@ -264,38 +277,59 @@ export default function EditContentParts({
       if (!parentMessage) {
         return;
       }
-      const editedContent =
-        firstChange.type === ContentTypes.THINK
-          ? {
-              index: firstChange.index,
-              type: ContentTypes.THINK as const,
-              [ContentTypes.THINK]: drafts[firstChange.index],
-            }
-          : {
-              index: firstChange.index,
-              type: ContentTypes.TEXT as const,
-              [ContentTypes.TEXT]: drafts[firstChange.index],
-            };
-      refused =
-        ask(
-          { ...parentMessage },
-          {
-            editedContent,
-            editedMessageId: messageId,
-            isRegenerate: true,
-            isEdited: true,
-            overrideManualSkills: parentMessage.manualSkills,
-            overrideQuotes: parentMessage.quotes,
-            addedConvo: getAddedConvo() || undefined,
-          },
-        ) === false;
+      if (!firstChange) {
+        /** No edit means no retained prefix to continue from, so rerunning the response
+         *  regenerates it: the same submission the hover action sends. Replaying the
+         *  unchanged part as `editedContent` instead would keep this answer and append
+         *  a second one to it. */
+        regenerated = true;
+        refused =
+          ask(
+            { ...parentMessage },
+            {
+              isRegenerate: true,
+              targetResponseMessageId: messageId,
+              overrideManualSkills: parentMessage.manualSkills,
+              overrideQuotes: parentMessage.quotes,
+              addedConvo: getAddedConvo() || undefined,
+            },
+          ) === false;
+      } else {
+        const editedContent =
+          firstChange.type === ContentTypes.THINK
+            ? {
+                index: firstChange.index,
+                type: ContentTypes.THINK as const,
+                [ContentTypes.THINK]: drafts[firstChange.index],
+              }
+            : {
+                index: firstChange.index,
+                type: ContentTypes.TEXT as const,
+                [ContentTypes.TEXT]: drafts[firstChange.index],
+              };
+        refused =
+          ask(
+            { ...parentMessage },
+            {
+              editedContent,
+              editedMessageId: messageId,
+              isRegenerate: true,
+              isEdited: true,
+              overrideManualSkills: parentMessage.manualSkills,
+              overrideQuotes: parentMessage.quotes,
+              addedConvo: getAddedConvo() || undefined,
+            },
+          ) === false;
+      }
     }
 
     if (refused) {
       return;
     }
 
-    setSiblingIdx((siblingIdx ?? 0) - 1);
+    if (!regenerated) {
+      setSiblingIdx((siblingIdx ?? 0) - 1);
+    }
     enterEdit(true);
   }, [
     ask,
@@ -436,9 +470,9 @@ export default function EditContentParts({
             size="sm"
             variant="submit"
             onClick={updateAndRerun}
-            disabled={changedParts.length === 0 || rerunRequiresSave || hasBlankEdit || isBusy}
+            disabled={rerunRequiresSave || hasBlankEdit || isBusy}
           >
-            {localize('com_ui_update_rerun')}
+            {changedParts.length > 0 ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
           </Button>
         </div>
       </footer>

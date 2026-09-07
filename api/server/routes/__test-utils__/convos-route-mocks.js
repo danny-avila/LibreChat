@@ -2,6 +2,8 @@ const archiveAllHandler = jest.fn();
 const generationJobManager = {
   getJob: jest.fn().mockResolvedValue(null),
   abortJob: jest.fn().mockResolvedValue({ success: true }),
+  getCleanupBlockingJobIdsForUser: jest.fn().mockResolvedValue([]),
+  getCleanupBlockingJobIdsForConversations: jest.fn().mockResolvedValue([]),
 };
 const subagentActivityHandlerInputs = [];
 const moderatedTexts = [];
@@ -33,6 +35,15 @@ module.exports = {
         return value.toLowerCase().trim() === 'true';
       }
       return false;
+    }),
+    /** Mirrors the real helper so the route's page-size clamping is exercised. */
+    normalizeLimit: jest.fn((value, { fallback = 25, max = 100 } = {}) => {
+      const raw = Array.isArray(value) ? value[0] : value;
+      const limit = parseInt(typeof raw === 'string' ? raw : '', 10);
+      if (!Number.isFinite(limit)) {
+        return fallback;
+      }
+      return Math.min(Math.max(limit, 1), max);
     }),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({

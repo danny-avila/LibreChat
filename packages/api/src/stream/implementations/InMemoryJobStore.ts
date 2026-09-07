@@ -9,6 +9,8 @@ import type {
   SteerArmResult,
   SteerEnqueueReceiptResult,
   SteerEnqueueVersionedResult,
+  TerminalSteerAdmissionPolicy,
+  TerminalSteerAdmissionResult,
   SteerQueueItem,
   SteerReceipt,
   SteerReceiptInput,
@@ -23,6 +25,7 @@ import type {
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
+  JobStatusTransitionDeadlineError,
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,
@@ -30,6 +33,7 @@ import {
   STEER_QUEUE_MAX_DEPTH,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
+  PROVIDER_DRAIN_TIMEOUT_MS,
   isPendingActionStale,
   toWireRunSteps,
 } from '~/stream/interfaces/IJobStore';
@@ -139,6 +143,8 @@ interface ContentState {
  * - No chunk persistence needed - same instance handles generation and reconnects
  */
 export class InMemoryJobStore implements IJobStoreV2 {
+  readonly detachedAgentEventActionStoreMode = 'process_local' as const;
+
   private jobs = new Map<string, SerializableJobData>();
   private contentState = new Map<string, ContentState>();
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -351,10 +357,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
       const current = this.jobs.get(streamId);
       const currentCreatedAt = current?.createdAt ?? this.getRetainedGenerationEpoch(streamId);
       if (
-        rejectActivePredecessor === true &&
-        (current?.status === 'running' ||
-          current?.status === 'requires_action' ||
-          current?.terminalPersistencePending === true)
+        current?.terminalHostActionPending === true ||
+        (rejectActivePredecessor === true &&
+          (current?.status === 'running' ||
+            current?.status === 'requires_action' ||
+            current?.terminalPersistencePending === true))
       ) {
         throw new JobPredecessorMismatchError({
           createdAt: current.createdAt,
@@ -734,6 +741,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       return false;
     }
     job.providerDrained = false;
+    job.providerExecutionStartedId = providerExecutionId;
     return true;
   }
 
@@ -767,6 +775,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
       return false;
+    }
+    if (args.notAfterMs != null && Date.now() >= args.notAfterMs) {
+      throw new JobStatusTransitionDeadlineError(args.notAfterMs);
     }
     if (['complete', 'error', 'aborted'].includes(args.to)) {
       if (!this.isParkedRecoveryCompatible(streamId, job)) {
@@ -881,6 +892,30 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     this.idempotencyClaims.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
     return { claimed: true, existing: value };
+  }
+
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return false;
+    }
+    if (existing.expiresAt > Date.now()) {
+      return true;
+    }
+    this.idempotencyClaims.delete(key);
+    return false;
+  }
+
+  async getIdempotencyClaim(key: string): Promise<IdempotencyClaimValue | null> {
+    const existing = this.idempotencyClaims.get(key);
+    if (existing == null) {
+      return null;
+    }
+    if (existing.expiresAt <= Date.now()) {
+      this.idempotencyClaims.delete(key);
+      return null;
+    }
+    return { ...existing.value };
   }
 
   async takeoverIdempotencyKey(
@@ -1045,7 +1080,21 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const pending: SerializableJobData[] = [];
     const now = Date.now();
     for (const job of this.jobs.values()) {
-      if (job.terminalHostActionPending === true) {
+      if (job.terminalHostActionPending !== true) {
+        continue;
+      }
+      if (
+        job.providerDrained === false &&
+        job.completedAt != null &&
+        now - job.completedAt >= PROVIDER_DRAIN_TIMEOUT_MS
+      ) {
+        // No owner can renew this terminal segment. The pre-CAS snapshot is
+        // already retained; force the same bounded recovery used by callers
+        // waiting for a provider drain so one crashed process cannot hold the
+        // conversation lane forever.
+        job.providerDrained = true;
+      }
+      if (job.providerDrained !== false) {
         // Enumerating IS the retry attempt: refresh retention so evidence outlives a host
         // dependency that is unreachable for longer than the retention window.
         job.terminalHostActionRefreshedAt = now;
@@ -1113,6 +1162,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
           patch: {
             completedAt: now,
             error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+            ...(job.agentEventDeliveryKey != null && { terminalHostActionPending: true }),
           },
           clear: [
             'pendingAction',
@@ -1863,6 +1913,39 @@ export class InMemoryJobStore implements IJobStoreV2 {
       this.settleSteerReceipts(streamId, restored, 'queued');
     }
     return true;
+  }
+
+  async admitTerminalSteers(
+    streamId: string,
+    policy: TerminalSteerAdmissionPolicy,
+    expectedCreatedAt?: number,
+  ): Promise<TerminalSteerAdmissionResult> {
+    const job = this.jobs.get(streamId);
+    if (
+      job?.status !== 'running' ||
+      this.closedSteerQueues.has(streamId) ||
+      (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)
+    ) {
+      return { outcome: 'unavailable' };
+    }
+    const queue = this.steerQueues.get(streamId);
+    if (!policy.allowClaim || job.generationProtocolVersion !== 2) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    if (queue == null || queue.length === 0) {
+      if (policy.keepOpenWhenEmpty) {
+        return { outcome: 'open' };
+      }
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    const items = await this.drainSteers(streamId, expectedCreatedAt);
+    if (items.length === 0) {
+      this.closedSteerQueues.add(streamId);
+      return { outcome: 'sealed' };
+    }
+    return { outcome: 'claimed', items };
   }
 
   async closeAndDrainSteers(

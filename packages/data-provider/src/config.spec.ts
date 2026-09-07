@@ -21,12 +21,17 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', '__v'])(
-    'excludes system field "%s"',
-    (field) => {
-      expect(excludedKeys.has(field)).toBe(true);
-    },
-  );
+  it.each([
+    '_id',
+    'user',
+    'conversationId',
+    'agentEventBinding',
+    'agentEventActor',
+    'agentEventActorReconciliations',
+    '__v',
+  ])('excludes system field "%s"', (field) => {
+    expect(excludedKeys.has(field)).toBe(true);
+  });
 
   it('does not exclude tenantId (plugin-level guard owns this)', () => {
     expect(excludedKeys.has('tenantId')).toBe(false);
@@ -61,8 +66,221 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('Agent Management authentication config', () => {
+  const binding = {
+    clientId: 'machine-client',
+    userId: '507f1f77bcf86cd799439011',
+    tenantId: 'tenant-a',
+  };
+
+  it('accepts an enabled OIDC configuration with a client binding', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                audience: 'https://agents.example.com',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.managementApi?.auth?.clients).toEqual([
+      { ...binding, enabled: true },
+    ]);
+  });
+
+  it('accepts a provider-specific token subject in a client binding', () => {
+    const subject = 'opaque-service-principal-subject';
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {},
+              clients: [{ ...binding, subject }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.endpoints?.agents?.managementApi?.auth?.clients[0].subject).toBe(subject);
+  });
+
+  it('normalizes binding User ObjectIds', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {},
+              clients: [{ ...binding, userId: binding.userId.toUpperCase() }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.endpoints?.agents?.managementApi?.auth?.clients[0].userId).toBe(
+      binding.userId,
+    );
+  });
+
+  it('rejects enabled auth without a client binding', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                audience: 'https://agents.example.com',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    ['duplicate client IDs', [binding, { ...binding, tenantId: 'tenant-b' }]],
+    ['an invalid user ID', [{ ...binding, userId: 'not-an-object-id' }]],
+    ['an invalid tenant ID', [{ ...binding, tenantId: '-tenant' }]],
+    ['the system tenant', [{ ...binding, tenantId: '__SYSTEM__' }]],
+    ['an empty token subject', [{ ...binding, subject: '  ' }]],
+  ])('rejects %s', (_label, clients) => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {},
+              clients,
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects remote-execution scopes and unknown management auth fields', () => {
+    const makeConfig = (auth: Record<string, unknown>) => ({
+      version: '1.0',
+      endpoints: { agents: { managementApi: { auth } } },
+    });
+
+    expect(
+      configSchema.safeParse(
+        makeConfig({
+          oidc: { scope: 'remote_agent' },
+          clients: [binding],
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse(
+        makeConfig({
+          oidc: {},
+          clients: [binding],
+          apiKey: { enabled: true },
+        }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+describe('attached code environment user config schema', () => {
+  it('accepts typed permission controls exposed by the administrator', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Personal VM',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                default: true,
+                configSchema: {
+                  permissions: {
+                    fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+                    commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    if (!result.success) {
+      throw new Error(result.error.toString());
+    }
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a permission default the administrator did not expose', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Personal VM',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                default: true,
+                configSchema: {
+                  permissions: {
+                    commandExecution: { allowed: ['ask', 'deny'], default: 'allow' },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('agent event runtime config', () => {
-  it('accepts rollout flags and agent-event admission limits', () => {
+  it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({
       version: '1.0',
       endpoints: {
@@ -70,6 +288,10 @@ describe('agent event runtime config', () => {
           eventDriven: {
             childTurns: true,
             completionWakeups: false,
+            coalescing: true,
+            actorMailbox: true,
+            checkpointForks: true,
+            durableReceipts: true,
             selfUrl: 'https://triggers.internal',
           },
         },
@@ -84,14 +306,59 @@ describe('agent event runtime config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.eventDriven).toEqual({
-      childTurns: true,
-      completionWakeups: false,
       selfUrl: 'https://triggers.internal',
     });
     expect(result.data.rateLimits?.agentEvents).toEqual({
       userMax: 80,
       userWindowInMinutes: 2,
     });
+  });
+
+  it('does not let removed checkpoint fields control memory-checkpointer validation', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: { checkpointForks: true },
+          checkpointer: { type: 'memory' },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({});
+    expect(result.data.endpoints?.agents?.checkpointer).toEqual({ type: 'memory' });
+  });
+});
+
+describe('agent background task config', () => {
+  it('enables completion wakeups by default when the policy block is present', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: {} } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: true });
+  });
+
+  it('accepts an administrator poll-only policy', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { completionWakeups: false } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: false });
   });
 });
 
@@ -697,6 +964,66 @@ describe('webSearchSchema', () => {
     expect(() =>
       webSearchSchema.parse({
         tavilyScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable search options', () => {
+    const result = webSearchSchema.parse({
+      keenableSearchOptions: {
+        maxResults: 7,
+        site: 'example.com',
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.keenableSearchOptions?.maxResults).toBe(7);
+    expect(result.keenableSearchOptions?.site).toBe('example.com');
+    expect(result.keenableSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable as a scraper provider with its options', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'keenable',
+      scraperProvider: 'keenable',
+      rerankerType: 'none',
+      keenableScraperOptions: {
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.scraperProvider).toBe('keenable');
+    expect(result.keenableScraperOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable scraper options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableScraperOptions: {
           timeout: 120001,
         },
       }),
