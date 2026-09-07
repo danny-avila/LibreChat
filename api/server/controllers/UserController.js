@@ -6,6 +6,7 @@ const {
   GenerationJobManager,
   MCPOAuthHandler,
   MCPTokenStorage,
+  isOAuthServer,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
   getWebSearchInstallEntries,
@@ -643,10 +644,10 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig, serverConfig
     serverConfigOverride ??
     (await getMCPServersRegistry().getServerConfig(serverName, userId)) ??
     appConfig?.mcpServers?.[serverName];
-  const isOAuthServer = serverConfigOverride
-    ? serverConfigOverride.requiresOAuth === true
+  const oauthServer = serverConfigOverride
+    ? isOAuthServer(serverConfigOverride)
     : (await getMCPServersRegistry().getOAuthServers(userId)).has(serverName);
-  if (!isOAuthServer || !serverConfig) {
+  if (!oauthServer || !serverConfig) {
     await clearStoredMCPOAuthState(userId, serverName);
     return;
   }

@@ -49,7 +49,6 @@ const {
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { maybeUninstallOAuthMCP } = require('~/server/controllers/UserController');
 const db = require('~/models');
 
 /**
@@ -627,7 +626,7 @@ const updateMCPServerController = async (req, res) => {
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
-const deleteMCPServerController = async (req, res) => {
+const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
   try {
     const userId = req.user?.id;
     const { serverName } = req.params;
@@ -650,10 +649,11 @@ const deleteMCPServerController = async (req, res) => {
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
     try {
-      await maybeUninstallOAuthMCP(
+      const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({ userId });
+      await uninstallOAuthMCP?.(
         userId,
         `${Constants.mcp_prefix}${serverName}`,
-        req.config,
+        { mcpSettings: { allowedDomains, allowedAddresses } },
         existingConfig,
       );
     } catch (error) {

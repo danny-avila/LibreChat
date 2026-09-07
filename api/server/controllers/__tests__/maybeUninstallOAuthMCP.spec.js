@@ -41,6 +41,8 @@ jest.mock('@librechat/api', () => {
         return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
       },
     },
+    isOAuthServer: (config) =>
+      config.requiresOAuth !== false && (config.requiresOAuth || config.oauth != null),
     MCPTokenStorage: {
       getTokens: (...args) => mockGetTokens(...args),
       getClientInfoAndMetadata: (...args) => mockGetClientInfoAndMetadata(...args),
@@ -161,7 +163,7 @@ const serverConfig = {
   oauth_headers: { 'X-Tenant': 'acme' },
 };
 
-const parsedServerConfig = { ...serverConfig, requiresOAuth: true };
+const parsedServerConfig = { ...serverConfig };
 
 const appConfig = {
   mcpServers: { acme: serverConfig },

@@ -49,6 +49,7 @@ const {
 } = require('~/server/services/MCP');
 const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { maybeUninstallOAuthMCP } = require('~/server/controllers/UserController');
 const { invalidateCachedTools } = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
@@ -416,6 +417,14 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         async (exchangedTokens) => {
           if (!flowState?.userId) {
             return exchangedTokens;
+          }
+
+          const activeServer = await getMCPServersRegistry().getServerConfig(
+            serverName,
+            flowState.userId,
+          );
+          if (!activeServer) {
+            throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
           }
 
           let storedTokens;
@@ -1161,7 +1170,7 @@ router.delete(
     requiredPermission: PermissionBits.DELETE,
     resourceIdParam: 'serverName',
   }),
-  deleteMCPServerController,
+  (req, res) => deleteMCPServerController(req, res, maybeUninstallOAuthMCP),
 );
 
 module.exports = router;

@@ -38,6 +38,7 @@ if flow.status == 'COMPLETED' then return -1 end
 flow.status = 'FAILED'
 flow.error = ARGV[3]
 flow.failedAt = tonumber(ARGV[4])
+data.expires = tonumber(ARGV[4]) + tonumber(ARGV[5])
 redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
 return 1
 `;
@@ -139,6 +140,26 @@ export class FlowStateManager<T = unknown> {
     );
   }
 
+  private getInMemoryEntry(flowKey: string): {
+    store: Map<string, string>;
+    key: string;
+    envelope: { value: FlowState<T>; expires?: number };
+  } | null {
+    if (!(this.keyv instanceof Keyv) || !(this.keyv.store instanceof Map)) {
+      return null;
+    }
+    const key = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
+    const raw = this.keyv.store.get(key);
+    if (typeof raw !== 'string') {
+      return null;
+    }
+    return {
+      store: this.keyv.store as Map<string, string>,
+      key,
+      envelope: JSON.parse(raw) as { value: FlowState<T>; expires?: number },
+    };
+  }
+
   /** Deletes a flow only while it still represents the caller's observed attempt. */
   async deleteFlowIfCurrent(
     flowId: string,
@@ -154,6 +175,20 @@ export class FlowStateManager<T = unknown> {
         arguments: [String(expectedCreatedAt), expectedState],
       });
       return FlowStateManager.guardedResult(result);
+    }
+
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      if (
+        !FlowStateManager.isCurrentAttempt(
+          memoryEntry.envelope.value,
+          expectedCreatedAt,
+          expectedState,
+        )
+      ) {
+        return 'stale';
+      }
+      return memoryEntry.store.delete(memoryEntry.key) ? 'updated' : 'missing';
     }
 
     const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
@@ -190,6 +225,26 @@ export class FlowStateManager<T = unknown> {
         ],
       });
       return FlowStateManager.guardedResult(result);
+    }
+
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      const current = memoryEntry.envelope.value;
+      if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+        return 'stale';
+      }
+      if (current.status === 'COMPLETED') {
+        return 'stale';
+      }
+      memoryEntry.envelope.value = {
+        ...current,
+        status: 'FAILED',
+        error: message,
+        failedAt,
+      };
+      memoryEntry.envelope.expires = failedAt + this.ttl;
+      memoryEntry.store.set(memoryEntry.key, JSON.stringify(memoryEntry.envelope));
+      return 'updated';
     }
 
     const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;

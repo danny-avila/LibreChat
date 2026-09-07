@@ -28,6 +28,7 @@ const mockRegistryInstance = {
   commitServerUpdate: jest.fn(),
   updateServer: jest.fn(),
   removeServer: jest.fn(),
+  resolveAllowlists: jest.fn(),
 };
 const mockMcpManager = { disconnectUserConnection: jest.fn() };
 
@@ -52,10 +53,6 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 const mockMaybeUninstallOAuthMCP = jest.fn();
-jest.mock('~/server/controllers/UserController', () => ({
-  maybeUninstallOAuthMCP: (...args) => mockMaybeUninstallOAuthMCP(...args),
-}));
-
 const {
   getMCPServersList,
   getMCPServerById,
@@ -129,6 +126,10 @@ beforeEach(async () => {
   mockRegistryInstance.commitServerUpdate.mockReset();
   mockRegistryInstance.updateServer.mockReset();
   mockRegistryInstance.removeServer.mockReset();
+  mockRegistryInstance.resolveAllowlists.mockReset().mockResolvedValue({
+    allowedDomains: ['https://oauth.example.com'],
+    allowedAddresses: null,
+  });
   mockMcpManager.disconnectUserConnection.mockReset().mockResolvedValue(undefined);
   mockMaybeUninstallOAuthMCP.mockReset().mockResolvedValue(undefined);
   const cacheService = require('~/server/services/Config');
@@ -459,7 +460,11 @@ describe('DB-backed server mutation fencing', () => {
     mockRegistryInstance.removeServer.mockResolvedValue(undefined);
     const res = createRes();
 
-    await deleteMCPServerController({ user, params: { serverName: 'github' } }, res);
+    await deleteMCPServerController(
+      { user, params: { serverName: 'github' } },
+      res,
+      mockMaybeUninstallOAuthMCP,
+    );
 
     const { invalidateCachedTools } = require('~/server/services/Config');
     expect(invalidateCachedTools).toHaveBeenCalledWith({ userId: user.id, serverName: 'github' });
@@ -468,7 +473,12 @@ describe('DB-backed server mutation fencing', () => {
     expect(mockMaybeUninstallOAuthMCP).toHaveBeenCalledWith(
       user.id,
       'mcp_github',
-      undefined,
+      {
+        mcpSettings: {
+          allowedDomains: ['https://oauth.example.com'],
+          allowedAddresses: null,
+        },
+      },
       expect.objectContaining({ source: 'user' }),
     );
     expect(invalidateCachedTools.mock.invocationCallOrder[0]).toBeLessThan(

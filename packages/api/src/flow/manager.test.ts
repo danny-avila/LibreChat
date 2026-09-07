@@ -49,6 +49,32 @@ describe('FlowStateManager', () => {
   });
 
   describe('Concurrency Tests', () => {
+    it('atomically updates the default in-memory Keyv envelope', async () => {
+      const keyv = new Keyv({
+        namespace: 'flow-atomic-test',
+        serialize: JSON.stringify,
+        deserialize: JSON.parse,
+      });
+      const manager = new FlowStateManager<string>(keyv, { ttl: 30000, ci: true });
+      await manager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
+      const flow = await manager.getFlowState('oauth-flow', 'mcp_oauth');
+
+      await expect(
+        manager.failFlowIfCurrent(
+          'oauth-flow',
+          'mcp_oauth',
+          flow!.createdAt,
+          'expected-state',
+          'cancelled',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await manager.getFlowState('oauth-flow', 'mcp_oauth')).toMatchObject({
+        status: 'FAILED',
+        error: 'cancelled',
+      });
+    });
+
     it('does not delete a replacement OAuth attempt', async () => {
       await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'new-state' });
 

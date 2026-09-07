@@ -1458,7 +1458,10 @@ export class MCPOAuthHandler {
     if (state) {
       const mappingDeleted = await this.deleteStateMapping(state, flowManager);
       if (!mappingDeleted) {
-        throw new Error(`Failed to delete OAuth state mapping for ${flowId}`);
+        const mapping = await flowManager.getFlowState(state, this.STATE_MAP_TYPE);
+        if (mapping) {
+          throw new Error(`Failed to delete OAuth state mapping for ${flowId}`);
+        }
       }
     }
   }
