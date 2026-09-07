@@ -277,19 +277,27 @@ export async function cleanupMCPServerOAuth(params: UninstallParams): Promise<vo
   const serverName = pluginKey.replace(Constants.mcp_prefix, '');
   const releaseRefreshTeardown =
     (await dependencies.tokenStorage.beginRefreshTeardown?.(userId, serverName)) ?? (() => {});
-  const teardownLease = await dependencies.flowManager.acquireLease(
-    getMCPOAuthLeaseId(userId, serverName),
-    { advanceGeneration: true },
-  );
-  if (!teardownLease) {
-    releaseRefreshTeardown();
-    throw new Error(`Unable to acquire OAuth teardown lease for ${serverName}`);
-  }
+  let teardownLease: Awaited<ReturnType<typeof dependencies.flowManager.acquireLease>> = null;
+  let leaseError: unknown;
   try {
+    try {
+      teardownLease = await dependencies.flowManager.acquireLease(
+        getMCPOAuthLeaseId(userId, serverName),
+        { advanceGeneration: true, waitMs: 60_000 },
+      );
+      if (!teardownLease) {
+        leaseError = new Error(`Unable to acquire OAuth teardown lease for ${serverName}`);
+      }
+    } catch (error) {
+      leaseError = error;
+    }
     await cleanupMCPServerOAuthWithFenceHeld(params);
+    if (leaseError) {
+      throw leaseError;
+    }
   } finally {
     try {
-      await teardownLease.release();
+      await teardownLease?.release();
     } finally {
       releaseRefreshTeardown();
     }

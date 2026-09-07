@@ -1256,6 +1256,9 @@ describe('FlowStateManager', () => {
   describe('cross-replica leases', () => {
     it('rejects stale work after teardown advances the generation', async () => {
       const generation = await flowManager.getLeaseGeneration('user:server');
+      if (generation === null) {
+        throw new Error('lease unexpectedly active');
+      }
       const teardown = await flowManager.acquireLease('user:server', {
         advanceGeneration: true,
       });
@@ -1270,6 +1273,7 @@ describe('FlowStateManager', () => {
     it('serializes holders and preserves the generation after release', async () => {
       const first = await flowManager.acquireLease('shared-owner');
       expect(first).not.toBeNull();
+      await expect(flowManager.getLeaseGeneration('shared-owner')).resolves.toBeNull();
       await expect(flowManager.acquireLease('shared-owner', { waitMs: 0 })).resolves.toBeNull();
 
       await first?.release();
@@ -1278,6 +1282,20 @@ describe('FlowStateManager', () => {
       });
       expect(second?.generation).toBe(first?.generation);
       await second?.release();
+    });
+
+    it('expires released in-memory generations after the stale-work horizon', async () => {
+      const now = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+      const teardown = await flowManager.acquireLease('expiring-owner', {
+        advanceGeneration: true,
+      });
+      await teardown?.release();
+      expect(await flowManager.getLeaseGeneration('expiring-owner')).toBe(1);
+
+      clock.mockReturnValue(now + 24 * 60 * 60_000 + 1);
+      expect(await flowManager.getLeaseGeneration('expiring-owner')).toBe(0);
+      clock.mockRestore();
     });
   });
 });

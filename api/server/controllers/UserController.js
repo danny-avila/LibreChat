@@ -312,6 +312,7 @@ const updateUserPluginsController = async (req, res) => {
             `[updateUserPluginsController] Error uninstalling OAuth MCP for ${pluginKey}:`,
             error,
           );
+          ({ status, message } = normalizeHttpError(error));
         }
       } else {
         // This handles:

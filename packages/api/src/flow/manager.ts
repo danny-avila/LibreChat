@@ -17,6 +17,7 @@ interface InMemoryLeaseState {
   generation: number;
   owner?: string;
   leaseUntil?: number;
+  expiresAt?: number;
 }
 
 interface KeyvRedisStore {
@@ -77,7 +78,9 @@ return 1
 const READ_LEASE_GENERATION = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
-return cjson.decode(raw).generation or 0
+local data = cjson.decode(raw)
+if data.owner and data.leaseUntil and data.leaseUntil > tonumber(ARGV[1]) then return -1 end
+return data.generation or 0
 `;
 
 const ACQUIRE_LEASE = `
@@ -184,14 +187,25 @@ export class FlowStateManager<T = unknown> {
   }
 
   /** Reads the generation used to reject work that crossed a teardown boundary. */
-  async getLeaseGeneration(leaseId: string): Promise<number> {
+  async getLeaseGeneration(leaseId: string): Promise<number | null> {
     const flowKey = this.getFlowKey(leaseId, 'lease');
     const inMemoryKey = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
     const redisKey = this.getRedisKey(flowKey);
     if (redisKey) {
-      return Number(await this.evalRedisScript(READ_LEASE_GENERATION, redisKey, []));
+      const result = Number(
+        await this.evalRedisScript(READ_LEASE_GENERATION, redisKey, [String(Date.now())]),
+      );
+      return result < 0 ? null : result;
     }
-    return FlowStateManager.inMemoryLeases.get(inMemoryKey)?.generation ?? 0;
+    const current = FlowStateManager.inMemoryLeases.get(inMemoryKey);
+    if (current?.expiresAt != null && current.expiresAt <= Date.now()) {
+      FlowStateManager.inMemoryLeases.delete(inMemoryKey);
+      return 0;
+    }
+    if (current?.owner && (current.leaseUntil ?? 0) > Date.now()) {
+      return null;
+    }
+    return current?.generation ?? 0;
   }
 
   /**
@@ -243,6 +257,7 @@ export class FlowStateManager<T = unknown> {
             generation: result,
             owner,
             leaseUntil: now + leaseMs,
+            expiresAt: now + retentionMs,
           });
         }
       }
@@ -259,6 +274,7 @@ export class FlowStateManager<T = unknown> {
             if (current?.owner === owner) {
               FlowStateManager.inMemoryLeases.set(inMemoryKey, {
                 generation: current.generation,
+                expiresAt: Date.now() + retentionMs,
               });
             }
           },

@@ -850,6 +850,10 @@ export class MCPTokenStorage {
 
     const leaseId = getMCPOAuthLeaseId(userId, serverName);
     const leaseGeneration = flowManager ? await flowManager.getLeaseGeneration(leaseId) : undefined;
+    if (leaseGeneration === null) {
+      logger.debug(`${logPrefix} Skipping token refresh while OAuth teardown owns the lease`);
+      return null;
+    }
 
     /**
      * The shared redemption is owner-neutral: no caller's `AbortSignal` is
@@ -1187,6 +1191,7 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     singleFlightScope,
+    flowManager,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1235,6 +1240,7 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           singleFlightScope,
+          flowManager,
           existingAccessToken: accessTokenData,
         });
       }

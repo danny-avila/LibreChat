@@ -1240,7 +1240,17 @@ export class MCPConnectionFactory {
       }
 
       const oauthLeaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
-      const oauthLeaseGeneration = await this.flowManager!.getLeaseGeneration(oauthLeaseId);
+      let oauthLeaseGeneration: number | null;
+      try {
+        oauthLeaseGeneration = await this.flowManager!.getLeaseGeneration(oauthLeaseId);
+      } catch {
+        connection.emit('oauthFailed', new Error('OAuth teardown fence unavailable'));
+        return;
+      }
+      if (oauthLeaseGeneration === null) {
+        connection.emit('oauthFailed', new Error('OAuth teardown in progress'));
+        return;
+      }
 
       if (isRequestRecovery && recoveryPhase === 'terminal') {
         logger.warn(`${this.logPrefix} OAuth recovery phase budget exhausted`);
@@ -1661,6 +1671,9 @@ export class MCPConnectionFactory {
     const oauthLeaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
     const oauthLeaseGeneration =
       expectedLeaseGeneration ?? (await this.flowManager.getLeaseGeneration(oauthLeaseId));
+    if (oauthLeaseGeneration === null) {
+      throw new Error('OAuth teardown in progress');
+    }
 
     let reusedStoredClient = false;
     let reusedClientCredentialSetId: string | undefined;
