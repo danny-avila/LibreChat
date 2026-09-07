@@ -19,6 +19,7 @@ const {
   hasActiveFilePolicy,
   sanitizeFilename,
   checkAccess,
+  toolResourceRolePermissions,
 } = require('@librechat/api');
 const {
   Time,
@@ -30,7 +31,6 @@ const {
   EToolResources,
   Permissions,
   PermissionBits,
-  PermissionTypes,
   checkOpenAIStorage,
   isAssistantsEndpoint,
   hasActivePiiPatterns,
@@ -729,16 +729,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
-/**
- * Role permission required to upload for a given tool resource. Mirrors
- * `toolAccessPermType` in `~/server/controllers/tools.js`, which gates the
- * matching tool call — the upload is the other half of the same door.
- */
-const toolResourcePermType = {
-  [EToolResources.file_search]: PermissionTypes.FILE_SEARCH,
-  [EToolResources.execute_code]: PermissionTypes.RUN_CODE,
-};
-
 const handleFileUpload = async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
@@ -758,7 +748,7 @@ const handleFileUpload = async (req, res) => {
 
     /** Check the role permission before any content inspection: a forbidden upload
      * must be rejected without reading or embedding the file. */
-    const requiredPermission = toolResourcePermType[metadata.tool_resource];
+    const requiredPermission = toolResourceRolePermissions[metadata.tool_resource];
     if (requiredPermission != null) {
       const hasAccess = await checkAccess({
         user: req.user,

@@ -65,7 +65,6 @@ jest.mock('~/server/services/Config', () => ({
 
 const mockLoadToolDefinitions = jest.fn();
 const mockGetUserMCPAuthMap = jest.fn();
-const mockCheckAccessWithRequestCache = jest.fn();
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
@@ -73,7 +72,6 @@ jest.mock('@librechat/api', () => ({
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
-  checkAccessWithRequestCache: (...args) => mockCheckAccessWithRequestCache(...args),
   createAuthIdentityContext: ({ user, tenantId }) => ({
     appUserId: user?._id?.toString?.() ?? user?.id,
     openidSubject: user?.openidId,
@@ -132,8 +130,10 @@ jest.mock('../ActionService', () => ({
 jest.mock('~/server/services/Threads', () => ({
   recordUsage: jest.fn(),
 }));
+const mockGetRoleByName = jest.fn();
 jest.mock('~/models', () => ({
   findPluginAuthsByKeys: jest.fn(),
+  getRoleByName: (...args) => mockGetRoleByName(...args),
 }));
 jest.mock('~/config', () => ({
   getFlowStateManager: jest.fn(() => mockFlowManager),
@@ -174,9 +174,21 @@ const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { ContentFilterError, PENDING_STALE_MS } = require('@librechat/api');
 
+/** Role document shape `checkAccess` reads; both role-gated tools granted. */
+function buildRole(overrides = {}) {
+  return {
+    name: 'USER',
+    permissions: {
+      [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
+      [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      ...overrides,
+    },
+  };
+}
+
 function createMockReq(capabilities) {
   return {
-    user: { id: 'user_123' },
+    user: { id: 'user_123', role: 'USER' },
     config: {
       endpoints: {
         [EModelEndpoint.agents]: {
@@ -207,7 +219,7 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetMCPServerTools.mockResolvedValue(null);
     mockGetCachedTools.mockResolvedValue(null);
     mockGetUserMCPAuthMap.mockResolvedValue({});
-    mockCheckAccessWithRequestCache.mockResolvedValue(true);
+    mockGetRoleByName.mockResolvedValue(buildRole());
     mockGetServerConfig.mockResolvedValue(undefined);
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
@@ -3709,8 +3721,8 @@ describe('ToolService - Action Capability Gating', () => {
     ];
 
     const denyPermission = (deniedType) =>
-      mockCheckAccessWithRequestCache.mockImplementation(async ({ permissionType }) =>
-        permissionType === deniedType ? false : true,
+      mockGetRoleByName.mockResolvedValue(
+        buildRole({ [deniedType]: { [Permissions.USE]: false } }),
       );
 
     beforeEach(() => {
@@ -3719,10 +3731,9 @@ describe('ToolService - Action Capability Gating', () => {
 
     it('omits file_search from definitions when FILE_SEARCH.USE is denied', async () => {
       denyPermission(PermissionTypes.FILE_SEARCH);
-      const req = createMockReq(capabilities);
 
       await loadAgentTools({
-        req,
+        req: createMockReq(capabilities),
         res: {},
         agent: { id: 'agent_123', tools: [Tools.file_search, Tools.execute_code] },
         tool_resources: { file_search: { file_ids: ['search-file'] } },
@@ -3733,14 +3744,6 @@ describe('ToolService - Action Capability Gating', () => {
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).not.toContain(Tools.file_search);
       expect(callArgs.tools).toContain(Tools.execute_code);
-      expect(mockCheckAccessWithRequestCache).toHaveBeenCalledWith(
-        expect.objectContaining({
-          req,
-          user: req.user,
-          permissionType: PermissionTypes.FILE_SEARCH,
-          permissions: [Permissions.USE],
-        }),
-      );
     });
 
     it('does not prime search files for a denied user', async () => {
@@ -3790,6 +3793,23 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockPrimeCodeFiles).not.toHaveBeenCalled();
     });
 
+    /** Dropping `execute_code` from the tool list is not enough: this flag also
+     *  reaches tool classification and the programmatic bash tool, either of
+     *  which would otherwise run code for a role denied `RUN_CODE`. */
+    it('clears codeExecutionEnabled for the definitions payload when RUN_CODE is denied', async () => {
+      denyPermission(PermissionTypes.RUN_CODE);
+
+      await loadAgentTools({
+        req: createMockReq([...capabilities, AgentCapabilities.programmatic_tools]),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.execute_code, 'calculator'] },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.codeExecutionEnabled).toBe(false);
+    });
+
     it('keeps both tools when the role grants them', async () => {
       await loadAgentTools({
         req: createMockReq(capabilities),
@@ -3802,10 +3822,11 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.tools).toEqual(
         expect.arrayContaining([Tools.file_search, Tools.execute_code]),
       );
+      expect(callArgs.codeExecutionEnabled).toBe(true);
     });
 
-    it('fails closed when the permission check throws', async () => {
-      mockCheckAccessWithRequestCache.mockRejectedValue(new Error('role lookup failed'));
+    it('fails closed when the role lookup throws', async () => {
+      mockGetRoleByName.mockRejectedValue(new Error('role lookup failed'));
 
       await loadAgentTools({
         req: createMockReq(capabilities),
@@ -3829,7 +3850,7 @@ describe('ToolService - Action Capability Gating', () => {
         definitionsOnly: true,
       });
 
-      expect(mockCheckAccessWithRequestCache).not.toHaveBeenCalled();
+      expect(mockGetRoleByName).not.toHaveBeenCalled();
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).toEqual(['calculator']);
     });

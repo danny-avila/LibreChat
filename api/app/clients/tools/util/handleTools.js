@@ -3,6 +3,8 @@ const { Calculator, createSearchTool, createCodeExecutionTool } = require('@libr
 const {
   checkAccess,
   toolkitParent,
+  toolRolePermissions,
+  checkToolRolePermission,
   createSafeUser,
   createAuthIdentityContext,
   mcpToolPattern,
@@ -347,6 +349,26 @@ const loadTools = async ({
   const shadowedServers = findShadowedServerNames(collisionAudit.names);
 
   for (const tool of tools) {
+    /** `loadTools` is the shared boundary for every runtime that equips these
+     *  tools — agents, and the Assistants required-action flow via
+     *  `processRequiredActions`, which never passes through the agent capability
+     *  filter. Gate here so a denied role cannot reach the sandbox or the search
+     *  index down any of them. The check is request-cached, so the agent path
+     *  that already resolved this grant pays nothing for the second look. */
+    const rolePermission = toolRolePermissions[tool];
+    if (rolePermission != null && options.req?.user != null) {
+      const allowed = await checkToolRolePermission({
+        req: options.req,
+        user: options.req.user,
+        permissionType: rolePermission,
+        getRoleByName,
+        context: 'handleTools',
+      });
+      if (!allowed) {
+        continue;
+      }
+    }
+
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
         const statefulSessions =
@@ -391,29 +413,6 @@ const loadTools = async ({
       };
       continue;
     } else if (tool === Tools.file_search) {
-      /** The role permission gates the tool the same way `RUN_CODE` gates
-       * `execute_code` in `~/server/controllers/tools.js`. Checked here rather
-       * than inside the loader so a denied user never gets the tool equipped,
-       * instead of getting one that fails when called. */
-      if (options.req?.user != null) {
-        let hasFileSearchAccess = false;
-        try {
-          hasFileSearchAccess = await checkAccess({
-            user: options.req.user,
-            permissionType: PermissionTypes.FILE_SEARCH,
-            permissions: [Permissions.USE],
-            getRoleByName,
-          });
-        } catch (error) {
-          logger.error('[handleTools] FILE_SEARCH permission check failed:', error);
-        }
-        if (!hasFileSearchAccess) {
-          logger.warn(
-            `[${PermissionTypes.FILE_SEARCH}] Forbidden: Insufficient permissions for User ${options.req.user.id}: ${Permissions.USE}`,
-          );
-          continue;
-        }
-      }
       requestedTools[tool] = async () => {
         const { files, toolContext } = await primeSearchFiles({
           ...options,

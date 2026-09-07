@@ -54,7 +54,8 @@ const {
   LIST_WORKSPACE_FILES_TOOL_NAME,
   SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
-  checkAccessWithRequestCache,
+  checkToolRolePermission,
+  resolveToolRolePermissions,
 } = require('@librechat/api');
 const {
   Time,
@@ -68,7 +69,6 @@ const {
   EModelEndpoint,
   EToolResources,
   isActionTool,
-  Permissions,
   actionDelimiter,
   ImageVisionTool,
   PermissionTypes,
@@ -140,75 +140,31 @@ const getActiveToolResources = (toolResources, tools) => {
   return Object.keys(activeResources).length > 0 ? activeResources : null;
 };
 
-/**
- * Role permission that gates a built-in tool, keyed by tool name. The matching
- * `AgentCapabilities` entry is the instance-wide deployment switch; this is the
- * per-role grant, so a tool has to clear both. Mirrors `toolAccessPermType` in
- * `~/server/controllers/tools.js`, which gates the direct tool-call endpoint —
- * the run path is the other half of the same door.
- */
-const toolRoleGates = {
-  [Tools.file_search]: {
-    capability: AgentCapabilities.file_search,
-    permissionType: PermissionTypes.FILE_SEARCH,
-  },
-  [Tools.execute_code]: {
-    capability: AgentCapabilities.execute_code,
-    permissionType: PermissionTypes.RUN_CODE,
-  },
+/** Deployment switch guarding each role-gated tool. Spelled out rather than
+ *  inferred from the tool name so the two enums can drift apart safely. */
+const toolCapabilityGates = {
+  [Tools.file_search]: AgentCapabilities.file_search,
+  [Tools.execute_code]: AgentCapabilities.execute_code,
 };
 
 /**
- * Resolves role permissions for the gated tools an agent actually requests, so
- * the synchronous capability filter can consult them — the same reason
- * `canUseMCP` is resolved ahead of it. Tools whose capability is already off are
- * skipped, and repeat checks are served by the per-request permission cache, so
- * a run costs at most one role read.
- *
- * Fails closed: a check that throws denies the tool.
+ * Resolves the role grants for an agent's gated tools. A tool already switched
+ * off by its `AgentCapabilities` entry is skipped, so a disabled deployment
+ * costs no role read and logs no denial.
  *
  * @param {ServerRequest} req
  * @param {string[]} [tools] - The agent's configured tool names.
- * @param {Set<string>} enabledCapabilities - Capabilities enabled for this run.
- * @returns {Promise<(tool: string) => boolean>} Predicate that returns `true`
- * for any tool carrying no role permission.
+ * @param {Set<string>} enabledCapabilities
+ * @returns {Promise<(tool: string) => boolean>} Predicate; `true` for any tool
+ * that carries no role permission.
  */
-const resolveToolRolePermissions = async (req, tools, enabledCapabilities) => {
-  const gated = new Set(
-    (tools ?? []).filter((tool) => {
-      const gate = toolRoleGates[tool];
-      return gate != null && enabledCapabilities.has(gate.capability);
-    }),
-  );
-  if (gated.size === 0) {
-    return () => true;
-  }
-
-  const granted = new Map();
-  for (const tool of gated) {
-    const { permissionType } = toolRoleGates[tool];
-    let allowed = false;
-    try {
-      allowed = await checkAccessWithRequestCache({
-        req,
-        user: req?.user,
-        permissionType,
-        permissions: [Permissions.USE],
-        getRoleByName,
-      });
-    } catch {
-      logger.error(`[${permissionType}][User: ${req?.user?.id}] Failed tool permission check`);
-    }
-    if (!allowed) {
-      logger.warn(
-        `[${permissionType}] Forbidden: Insufficient permissions for User ${req?.user?.id}: ${Permissions.USE}`,
-      );
-    }
-    granted.set(tool, allowed);
-  }
-
-  return (tool) => granted.get(tool) ?? true;
-};
+const resolveAgentToolPermissions = (req, tools, enabledCapabilities) =>
+  resolveToolRolePermissions({
+    req,
+    tools,
+    getRoleByName,
+    isEligible: (tool) => enabledCapabilities.has(toolCapabilityGates[tool]),
+  });
 
 const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
   const filters = req.config?.filters;
@@ -854,9 +810,14 @@ async function loadToolDefinitionsWrapper({
   const actionsEnabled = checkCapability(AgentCapabilities.actions);
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
   const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const canUseTool = await resolveAgentToolPermissions(req, agent.tools, enabledCapabilities);
+  /** Gates the sandbox everywhere it is reachable, not just the `execute_code`
+   *  entry in `filteredTools`: this flag also drives tool classification and the
+   *  programmatic bash tool, which would otherwise run code for a denied role. */
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    canUseTool(Tools.execute_code);
   const resolvedCodeExecutionContext =
     codeExecutionContext ??
     resolveCodeExecutionContext({
@@ -874,7 +835,6 @@ async function loadToolDefinitionsWrapper({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
-  const canUseTool = await resolveToolRolePermissions(req, agent.tools, enabledCapabilities);
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
@@ -1649,7 +1609,7 @@ async function loadAgentTools({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
-  const canUseTool = await resolveToolRolePermissions(req, agent.tools, enabledCapabilities);
+  const canUseTool = await resolveAgentToolPermissions(req, agent.tools, enabledCapabilities);
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
@@ -1718,7 +1678,8 @@ async function loadAgentTools({
 
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    canUseTool(Tools.execute_code);
   const statefulCodeSessions =
     codeExecutionEnabled &&
     enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
@@ -2106,9 +2067,18 @@ async function loadToolsForExecution({
   if (actionsEnabled === undefined) {
     actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
   }
+  /** Short-circuits before the role read, so an agent without `execute_code` or a
+   *  deployment with the capability off pays nothing for the check. */
   const codeExecutionEnabled =
     enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
-    agent?.tools?.includes(Tools.execute_code) === true;
+    agent?.tools?.includes(Tools.execute_code) === true &&
+    (await checkToolRolePermission({
+      req,
+      user: req?.user,
+      permissionType: PermissionTypes.RUN_CODE,
+      getRoleByName,
+      context: 'loadToolsForExecution',
+    }));
 
   /** Resolve the trusted endpoint/profile from the actually executing agent.
    * This stays per-agent across handoffs and subagents; no graph-global stateful
