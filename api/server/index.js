@@ -55,6 +55,7 @@ const {
   configureAgentEventRuntime,
   createAgentEventTerminalHandler,
   createScheduleWriteGate,
+  startIndexSyncScheduler,
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
@@ -193,9 +194,14 @@ const startServer = async () => {
 
   logger.info('Connected to MongoDB');
   startCodeEnvironmentLifecycleReconciler({ mongoose });
-  indexSync().catch((err) => {
-    logger.error('[indexSync] Background sync failed:', err);
-  });
+  if (isEnabled(process.env.SEARCH) && !isEnabled(process.env.MEILI_NO_SYNC)) {
+    startIndexSyncScheduler({
+      run: (reason) => indexSync({ quiet: reason === 'periodic' }),
+      onError: (err) => {
+        logger.error('[indexSync] Background sync failed:', err);
+      },
+    });
+  }
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);

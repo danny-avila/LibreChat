@@ -49,6 +49,7 @@ const {
   configureAgentEventRuntime,
   GenerationJobManager,
   createAgentEventTerminalHandler,
+  startIndexSyncScheduler,
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
@@ -471,9 +472,14 @@ if (cluster.isMaster) {
     startCodeEnvironmentLifecycleReconciler({ mongoose });
 
     /** Background index sync (non-blocking) */
-    indexSync().catch((err) => {
-      logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
-    });
+    if (isEnabled(process.env.SEARCH) && !isEnabled(process.env.MEILI_NO_SYNC)) {
+      startIndexSyncScheduler({
+        run: (reason) => indexSync({ quiet: reason === 'periodic' }),
+        onError: (err) => {
+          logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
+        },
+      });
+    }
 
     // This entrypoint deliberately does not arm the schedule engine, but DELETE stays
     // open — so soft-deleted rows still accrue with no reconciler to erase them. Start

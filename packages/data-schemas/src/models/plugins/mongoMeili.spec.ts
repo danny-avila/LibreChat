@@ -1705,6 +1705,77 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(await conversationModel.getSyncProgress()).toMatchObject({ pendingIndexing: 0 });
     });
 
+    test('a detached post-save write acknowledges Mongo only after terminal task success', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      await conversationModel.deleteMany({});
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+
+      const conversation = await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Pending Meili Task',
+        endpoint: EModelEndpoint.openAI,
+      });
+      await waitForMock(mockWaitForTask);
+
+      expect(await conversationModel.collection.findOne({ _id: conversation._id })).toMatchObject({
+        _meiliIndex: false,
+        _meiliIndexAttempted: true,
+      });
+
+      finishTask?.({ status: 'succeeded' });
+      await waitForCondition(async () => {
+        const storedDoc = await conversationModel.collection.findOne({ _id: conversation._id });
+        return storedDoc?._meiliIndex === true;
+      });
+
+      expect(await conversationModel.collection.findOne({ _id: conversation._id })).toMatchObject({
+        _meiliIndex: true,
+        _meiliIndexAttempted: true,
+      });
+    });
+
+    test('a terminal post-save task failure leaves the document retryable', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      const errorSpy = jest.spyOn(meiliLogger, 'error').mockImplementation(() => meiliLogger);
+      await conversationModel.deleteMany({});
+      mockWaitForTask.mockResolvedValue({ status: 'failed' });
+
+      const conversation = await conversationModel.create({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Failed Meili Task',
+        endpoint: EModelEndpoint.openAI,
+      });
+      await waitForMockCalls(mockWaitForTask, 3);
+      await waitForCondition(() => errorSpy.mock.calls.length > 0);
+
+      expect(await conversationModel.collection.findOne({ _id: conversation._id })).toMatchObject({
+        _meiliIndex: false,
+        _meiliIndexAttempted: true,
+      });
+      expect(await conversationModel.getSyncProgress()).toMatchObject({ pendingIndexing: 1 });
+
+      mockWaitForTask.mockResolvedValue({ status: 'succeeded' });
+      await conversationModel.syncWithMeili();
+
+      expect(await conversationModel.collection.findOne({ _id: conversation._id })).toMatchObject({
+        _meiliIndex: true,
+        _meiliIndexAttempted: true,
+      });
+      expect(await conversationModel.getSyncProgress()).toMatchObject({ pendingIndexing: 0 });
+    });
+
     test('a persistently failed document update stays marked for reconciliation', async () => {
       const conversationModel = createConversationModel(
         mongoose,

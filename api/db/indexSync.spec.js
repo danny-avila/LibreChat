@@ -16,6 +16,7 @@ const mockLogger = {
 
 const mockMeiliHealth = jest.fn();
 const mockMeiliIndex = jest.fn();
+const mockCreateIndex = jest.fn();
 const mockWaitForTask = jest.fn();
 const mockBatchResetMeiliFlags = jest.fn();
 const mockIsEnabled = jest.fn();
@@ -45,6 +46,7 @@ jest.mock('meilisearch', () => ({
   MeiliSearch: jest.fn(() => ({
     health: mockMeiliHealth,
     index: mockMeiliIndex,
+    createIndex: mockCreateIndex,
     waitForTask: mockWaitForTask,
   })),
 }));
@@ -105,15 +107,19 @@ describe('performSync() - syncThreshold logic', () => {
     // Mock isEnabled
     mockIsEnabled.mockImplementation((val) => val === 'true' || val === true);
     mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) => handler());
-    mockWaitForMeiliTask.mockImplementation(async (client, taskUid, operation) => {
-      const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
-      if (task.status !== 'succeeded') {
-        throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
-      }
-    });
+    mockWaitForMeiliTask.mockImplementation(
+      async (client, taskUid, operation, _isTimeout, options) => {
+        const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
+        const isTaskSuccessful = options?.isTaskSuccessful?.(task) ?? task.status === 'succeeded';
+        if (!isTaskSuccessful) {
+          throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
+        }
+      },
+    );
 
     // Mock MeiliSearch client responses
     mockMeiliHealth.mockResolvedValue({ status: 'available' });
+    mockCreateIndex.mockResolvedValue({ taskUid: 2 });
     mockWaitForTask.mockResolvedValue({ status: 'succeeded' });
     mockMeiliIndex.mockReturnValue({
       getSettings: jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
@@ -261,23 +267,117 @@ describe('performSync() - syncThreshold logic', () => {
     expect(deleteDocuments).toHaveBeenCalledTimes(1);
   });
 
-  test('creates missing indexes immediately inside the distributed job', async () => {
+  test('rebuilds only messages when the provider confirms the messages index is missing', async () => {
     const missingIndexError = Object.assign(new Error('Index not found'), {
       code: 'index_not_found',
     });
-    const createFlowWithHandler = jest.fn().mockRejectedValue(missingIndexError);
-    const { FlowStateManager } = require('@librechat/api');
-    FlowStateManager.mockImplementationOnce(() => ({ createFlowWithHandler }));
-    mockGetLogStores.mockReturnValueOnce({});
+    mockMeiliIndex.mockImplementation((indexName) => ({
+      getSettings:
+        indexName === 'messages'
+          ? jest.fn().mockRejectedValue(missingIndexError)
+          : jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 3 }),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    }));
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 1,
+      totalDocuments: 1,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 1,
+      totalDocuments: 1,
+      isComplete: true,
+    });
     Message.syncWithMeili.mockResolvedValue(undefined);
+    mockWaitForTask
+      .mockResolvedValueOnce({
+        status: 'failed',
+        error: { code: 'index_already_exists' },
+      })
+      .mockResolvedValue({ status: 'succeeded' });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledTimes(1);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
+    expect(mockCreateIndex).toHaveBeenCalledWith('messages', { primaryKey: 'messageId' });
+    expect(mockCreateIndex).not.toHaveBeenCalledWith('convos', expect.anything());
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+  });
+
+  test('rebuilds only conversations when the provider confirms the convos index is missing', async () => {
+    const missingIndexError = Object.assign(new Error('Index not found'), {
+      code: 'index_not_found',
+    });
+    mockMeiliIndex.mockImplementation((indexName) => ({
+      getSettings:
+        indexName === 'convos'
+          ? jest.fn().mockRejectedValue(missingIndexError)
+          : jest.fn().mockResolvedValue({ filterableAttributes: ['user'] }),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 3 }),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    }));
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 1,
+      totalDocuments: 1,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 1,
+      totalDocuments: 1,
+      isComplete: true,
+    });
     Conversation.syncWithMeili.mockResolvedValue(undefined);
 
     const indexSync = require('./indexSync');
     await indexSync();
 
-    expect(mockRunDistributedJob).toHaveBeenCalledTimes(1);
-    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledTimes(1);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Conversation.collection);
+    expect(mockCreateIndex).toHaveBeenCalledWith('convos', { primaryKey: 'conversationId' });
+    expect(mockCreateIndex).not.toHaveBeenCalledWith('messages', expect.anything());
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
     expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+  });
+
+  test('propagates non-provider index inspection errors without resetting acknowledgements', async () => {
+    const inspectionError = new Error('Meilisearch connection failed');
+    mockMeiliIndex.mockReturnValue({
+      getSettings: jest.fn().mockRejectedValue(inspectionError),
+      updateSettings: jest.fn(),
+      search: jest.fn(),
+    });
+
+    const indexSync = require('./indexSync');
+
+    await expect(indexSync()).rejects.toThrow(inspectionError);
+    expect(mockBatchResetMeiliFlags).not.toHaveBeenCalled();
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+  });
+
+  test('keeps healthy periodic checks quiet without resetting or synchronizing', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      isComplete: true,
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync({ quiet: true });
+
+    expect(mockBatchResetMeiliFlags).not.toHaveBeenCalled();
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+    expect(mockLogger.info).not.toHaveBeenCalled();
   });
 
   test('propagates a missing FlowState without starting index sync', async () => {

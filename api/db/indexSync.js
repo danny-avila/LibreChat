@@ -5,6 +5,7 @@ const { CacheKeys } = require('librechat-data-provider');
 const {
   isEnabled,
   FlowStateManager,
+  MEILI_INDEX_SYNC_INTERVAL_MS,
   runDistributedJob,
   waitForMeiliTask,
 } = require('@librechat/api');
@@ -109,11 +110,19 @@ async function deleteDocumentsWithoutUserField(index, indexName, primaryKey) {
 /**
  * Ensures indexes have proper filterable attributes configured and checks if documents have user field
  * @param {MeiliSearch} client - MeiliSearch client instance
- * @returns {Promise<{settingsUpdated: boolean, orphanedDocsFound: boolean}>} - Status of what was done
+ * @returns {Promise<{
+ *   settingsUpdated: boolean,
+ *   orphanedDocsFound: boolean,
+ *   missingIndexes: {messages: boolean, conversations: boolean}
+ * }>} - Status of what was done
  */
 async function ensureFilterableAttributes(client) {
   let settingsUpdated = false;
   let hasOrphanedDocs = false;
+  const missingIndexes = {
+    messages: false,
+    conversations: false,
+  };
 
   try {
     // Check and update messages index
@@ -146,10 +155,16 @@ async function ensureFilterableAttributes(client) {
           hasOrphanedDocs = true;
         }
       } catch (searchError) {
-        logger.debug('[indexSync] Could not check message documents:', searchError.message);
+        if (searchError.code === 'index_not_found') {
+          missingIndexes.messages = true;
+        } else {
+          throw searchError;
+        }
       }
     } catch (error) {
-      if (error.code !== 'index_not_found') {
+      if (error.code === 'index_not_found') {
+        missingIndexes.messages = true;
+      } else {
         logger.warn('[indexSync] Could not check/update messages index settings:', error.message);
         throw error;
       }
@@ -185,10 +200,16 @@ async function ensureFilterableAttributes(client) {
           hasOrphanedDocs = true;
         }
       } catch (searchError) {
-        logger.debug('[indexSync] Could not check conversation documents:', searchError.message);
+        if (searchError.code === 'index_not_found') {
+          missingIndexes.conversations = true;
+        } else {
+          throw searchError;
+        }
       }
     } catch (error) {
-      if (error.code !== 'index_not_found') {
+      if (error.code === 'index_not_found') {
+        missingIndexes.conversations = true;
+      } else {
         logger.warn('[indexSync] Could not check/update convos index settings:', error.message);
         throw error;
       }
@@ -201,6 +222,7 @@ async function ensureFilterableAttributes(client) {
         await deleteDocumentsWithoutUserField(messagesIndex, 'messages', 'messageId');
       } catch (error) {
         if (error.code === 'index_not_found') {
+          missingIndexes.messages = true;
           logger.debug('[indexSync] Messages index disappeared before cleanup');
         } else {
           throw error;
@@ -212,6 +234,7 @@ async function ensureFilterableAttributes(client) {
         await deleteDocumentsWithoutUserField(convosIndex, 'convos', 'conversationId');
       } catch (error) {
         if (error.code === 'index_not_found') {
+          missingIndexes.conversations = true;
           logger.debug('[indexSync] Conversations index disappeared before cleanup');
         } else {
           throw error;
@@ -229,7 +252,37 @@ async function ensureFilterableAttributes(client) {
     throw error;
   }
 
-  return { settingsUpdated, orphanedDocsFound: hasOrphanedDocs };
+  return {
+    settingsUpdated,
+    orphanedDocsFound: hasOrphanedDocs,
+    missingIndexes,
+  };
+}
+
+async function rebuildMissingIndex(client, indexName, primaryKey) {
+  logger.info(`[indexSync] Recreating missing ${indexName} index...`);
+  const creationTask = await client.createIndex(indexName, { primaryKey });
+  await waitForMeiliTask(
+    client,
+    creationTask.taskUid,
+    `${indexName} creation`,
+    (error) => error instanceof MeiliSearchTimeOutError,
+    {
+      isTaskSuccessful: (task) =>
+        task.status === 'succeeded' || task.error?.code === 'index_already_exists',
+    },
+  );
+
+  const index = client.index(indexName);
+  const settingsTask = await index.updateSettings({
+    filterableAttributes: ['user'],
+  });
+  await waitForMeiliTask(
+    client,
+    settingsTask.taskUid,
+    `${indexName} settings`,
+    (error) => error instanceof MeiliSearchTimeOutError,
+  );
 }
 
 /**
@@ -237,8 +290,10 @@ async function ensureFilterableAttributes(client) {
  * @param {FlowStateManager} flowManager - Flow state manager instance
  * @param {string} flowId - Flow identifier
  * @param {string} flowType - Flow type
+ * @param {{quiet?: boolean}} options - Reconciliation options
  */
-async function performSync(flowManager, flowId, flowType) {
+async function performSync(flowManager, flowId, flowType, options = {}) {
+  const logProgress = options.quiet ? logger.debug.bind(logger) : logger.info.bind(logger);
   try {
     if (indexingDisabled === true) {
       logger.info('[indexSync] Indexing is disabled, skipping...');
@@ -261,11 +316,27 @@ async function performSync(flowManager, flowId, flowType) {
     }
 
     /** Ensures indexes have proper filterable attributes configured */
-    const { settingsUpdated, orphanedDocsFound: _orphanedDocsFound } =
-      await ensureFilterableAttributes(client);
+    const {
+      settingsUpdated,
+      orphanedDocsFound: _orphanedDocsFound,
+      missingIndexes,
+    } = await ensureFilterableAttributes(client);
 
     let messagesSync = false;
     let convosSync = false;
+
+    if (missingIndexes.messages) {
+      logger.warn(
+        '[indexSync] Messages index is missing. Resetting message acknowledgements for recovery.',
+      );
+      await rebuildMissingIndex(client, 'messages', 'messageId');
+    }
+    if (missingIndexes.conversations) {
+      logger.warn(
+        '[indexSync] Conversations index is missing. Resetting conversation acknowledgements for recovery.',
+      );
+      await rebuildMissingIndex(client, 'convos', 'conversationId');
+    }
 
     // Only reset flags if settings were actually updated (not just for orphaned doc cleanup)
     if (settingsUpdated) {
@@ -276,14 +347,22 @@ async function performSync(flowManager, flowId, flowType) {
       // Reset sync flags to force full re-sync
       await batchResetMeiliFlags(Message.collection);
       await batchResetMeiliFlags(Conversation.collection);
+    } else {
+      if (missingIndexes.messages) {
+        await batchResetMeiliFlags(Message.collection);
+      }
+      if (missingIndexes.conversations) {
+        await batchResetMeiliFlags(Conversation.collection);
+      }
     }
 
     let messageSyncError;
     try {
       // Check if we need to sync messages
-      logger.info('[indexSync] Requesting message sync progress...');
+      logProgress('[indexSync] Requesting message sync progress...');
       const messageProgress = await Message.getSyncProgress();
-      if (!messageProgress.isComplete || settingsUpdated) {
+      const forceMessageSync = settingsUpdated || missingIndexes.messages;
+      if (!messageProgress.isComplete || forceMessageSync) {
         logger.info(
           `[indexSync] Messages need syncing: ${messageProgress.totalProcessed}/${messageProgress.totalDocuments} indexed`,
         );
@@ -296,12 +375,12 @@ async function performSync(flowManager, flowId, flowType) {
         const noneIndexed = messagesIndexed === 0 && unindexedMessages > 0;
 
         if (
-          settingsUpdated ||
+          forceMessageSync ||
           noneIndexed ||
           messagesPendingIndexing > 0 ||
           unindexedMessages > syncThreshold
         ) {
-          if (noneIndexed && !settingsUpdated) {
+          if (noneIndexed && !forceMessageSync) {
             logger.info('[indexSync] No messages marked as indexed, forcing full sync');
           }
           logger.info(
@@ -323,7 +402,7 @@ async function performSync(flowManager, flowId, flowType) {
           );
         }
       } else {
-        logger.info(
+        logProgress(
           `[indexSync] Messages are fully synced: ${messageProgress.totalProcessed}/${messageProgress.totalDocuments}`,
         );
       }
@@ -337,7 +416,8 @@ async function performSync(flowManager, flowId, flowType) {
 
     // Check if we need to sync conversations
     const convoProgress = await Conversation.getSyncProgress();
-    if (!convoProgress.isComplete || settingsUpdated) {
+    const forceConvoSync = settingsUpdated || missingIndexes.conversations;
+    if (!convoProgress.isComplete || forceConvoSync) {
       logger.info(
         `[indexSync] Conversations need syncing: ${convoProgress.totalProcessed}/${convoProgress.totalDocuments} indexed`,
       );
@@ -350,12 +430,12 @@ async function performSync(flowManager, flowId, flowType) {
       const noneConvosIndexed = convosIndexed === 0 && unindexedConvos > 0;
 
       if (
-        settingsUpdated ||
+        forceConvoSync ||
         noneConvosIndexed ||
         convosPendingIndexing > 0 ||
         unindexedConvos > syncThreshold
       ) {
-        if (noneConvosIndexed && !settingsUpdated) {
+        if (noneConvosIndexed && !forceConvoSync) {
           logger.info('[indexSync] No conversations marked as indexed, forcing full sync');
         }
         logger.info(
@@ -377,7 +457,7 @@ async function performSync(flowManager, flowId, flowType) {
         );
       }
     } else {
-      logger.info(
+      logProgress(
         `[indexSync] Conversations are fully synced: ${convoProgress.totalProcessed}/${convoProgress.totalDocuments}`,
       );
     }
@@ -404,14 +484,16 @@ async function performSync(flowManager, flowId, flowType) {
 /**
  * Main index sync function that uses FlowStateManager to prevent concurrent execution
  */
-async function runIndexSync() {
-  logger.info('[indexSync] Starting index synchronization check...');
+async function runIndexSync(options = {}) {
+  if (!options.quiet) {
+    logger.info('[indexSync] Starting index synchronization check...');
+  }
 
   // Get or create FlowStateManager instance
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   if (!flowsCache) {
     logger.warn('[indexSync] Flows cache not available, falling back to direct sync');
-    return await performSync(null, null, null);
+    return await performSync(null, null, null, options);
   }
 
   const flowManager = new FlowStateManager(flowsCache, {
@@ -425,7 +507,7 @@ async function runIndexSync() {
   try {
     // This will only execute the handler if no other instance is running the sync
     const result = await flowManager.createFlowWithHandler(flowId, flowType, () =>
-      performSync(flowManager, flowId, flowType),
+      performSync(flowManager, flowId, flowType, options),
     );
 
     if (result.messagesSync || result.convosSync) {
@@ -437,27 +519,12 @@ async function runIndexSync() {
     return result;
   } catch (err) {
     if (err.message.includes('flow already exists')) {
-      logger.info('[indexSync] Sync already running on another instance');
+      const log = options.quiet ? logger.debug.bind(logger) : logger.info.bind(logger);
+      log('[indexSync] Sync already running on another instance');
       return;
     }
 
-    if (err.code === 'index_not_found') {
-      logger.debug('[indexSync] Creating indices...');
-      try {
-        const Message = mongoose.models.Message;
-        const Conversation = mongoose.models.Conversation;
-        if (!Message || !Conversation) {
-          throw new Error(
-            '[indexSync] Models not registered. Ensure createModels() has been called before indexSync.',
-          );
-        }
-        await Message.syncWithMeili();
-        await Conversation.syncWithMeili();
-      } catch (syncError) {
-        logger.error('[indexSync] Trouble creating indices, try restarting the server.', syncError);
-        throw syncError;
-      }
-    } else if (err.message.includes('Meilisearch not configured')) {
+    if (err.message.includes('Meilisearch not configured')) {
       logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
     } else {
       logger.error('[indexSync] error', err);
@@ -466,13 +533,15 @@ async function runIndexSync() {
   }
 }
 
-async function indexSync() {
+async function indexSync(options = {}) {
   if (!searchEnabled) {
     return;
   }
 
   const jobs = mongoose.connection.collection('distributedJobs');
-  return runDistributedJob(jobs, 'meili-index-sync', runIndexSync);
+  return runDistributedJob(jobs, 'meili-index-sync', () => runIndexSync(options), {
+    completionTtlMs: MEILI_INDEX_SYNC_INTERVAL_MS,
+  });
 }
 
 module.exports = indexSync;

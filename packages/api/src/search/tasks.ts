@@ -1,5 +1,8 @@
 interface TaskResult {
   status: string;
+  error?: {
+    code?: string;
+  } | null;
 }
 
 interface TaskClient {
@@ -11,6 +14,7 @@ interface TaskClient {
 
 interface WaitForMeiliTaskOptions {
   timeoutMs?: number;
+  isTaskSuccessful?: (task: TaskResult) => boolean;
 }
 
 const DEFAULT_MEILI_TASK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -45,7 +49,8 @@ export async function waitForMeiliTask(
         timeOutMs: Math.min(MEILI_TASK_POLL_TIMEOUT_MS, remainingMs),
         intervalMs: MEILI_TASK_POLL_INTERVAL_MS,
       });
-      if (task.status !== 'succeeded') {
+      const isTaskSuccessful = options.isTaskSuccessful?.(task) ?? task.status === 'succeeded';
+      if (!isTaskSuccessful) {
         throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
       }
       return;
