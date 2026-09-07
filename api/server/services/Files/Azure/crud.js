@@ -14,7 +14,65 @@ const {
 } = require('@librechat/api');
 
 const defaultBasePath = 'images';
-const { AZURE_STORAGE_PUBLIC_ACCESS = 'true', AZURE_CONTAINER_NAME = 'files' } = process.env;
+
+/**
+ * Whether the container is configured for anonymous (public) blob access.
+ * Read per call so a process can be reconfigured without a restart (and so tests can toggle it).
+ * @returns {boolean}
+ */
+function isAzurePublicAccess() {
+  return (process.env.AZURE_STORAGE_PUBLIC_ACCESS ?? 'true').toLowerCase() === 'true';
+}
+
+/** @returns {string} The configured container name (defaults to `files`). */
+function getAzureContainerName() {
+  return process.env.AZURE_CONTAINER_NAME || 'files';
+}
+
+/**
+ * Resolves the blob path (`{basePath}/{userId}/{fileName}`) from a stored file path.
+ *
+ * Public containers store the absolute blob URL (`https://{account}.blob.core.windows.net/{container}/{path}`);
+ * private containers store a root-relative path (`/{path}`) that the app serves itself, because the
+ * browser cannot fetch a private blob directly. Both shapes resolve to the same blob path.
+ *
+ * @param {string} fileURL - Absolute blob URL or root-relative stored path.
+ * @param {string} [containerName] - The container the blob lives in.
+ * @returns {string} The blob path within the container.
+ */
+function getAzureBlobPath(fileURL, containerName = getAzureContainerName()) {
+  if (typeof fileURL !== 'string' || fileURL.length === 0) {
+    throw new Error('Invalid Azure blob file path');
+  }
+  let pathname = fileURL;
+  if (/^https?:\/\//i.test(fileURL)) {
+    pathname = decodeURIComponent(new URL(fileURL).pathname);
+    const containerPrefix = `/${containerName}/`;
+    if (!pathname.startsWith(containerPrefix)) {
+      throw new Error(`Blob URL is not in container "${containerName}"`);
+    }
+    pathname = pathname.slice(containerPrefix.length);
+  } else {
+    pathname = pathname.split(/[?#]/, 1)[0].replace(/^\/+/, '');
+  }
+  if (pathname.length === 0 || pathname.split('/').some((segment) => segment === '..')) {
+    throw new Error('Invalid Azure blob file path');
+  }
+  return pathname;
+}
+
+/**
+ * The file path stored for (and handed to) clients. Public containers expose the blob URL directly;
+ * private containers expose the root-relative `/{blobPath}` served by the app (`/images/...`), so the
+ * download goes through the app's identity instead of an anonymous request the container would refuse.
+ *
+ * @param {import('@azure/storage-blob').BlockBlobClient} blockBlobClient
+ * @param {string} blobPath
+ * @returns {string}
+ */
+function getAzureStoredPath(blockBlobClient, blobPath) {
+  return isAzurePublicAccess() ? blockBlobClient.url : `/${blobPath}`;
+}
 
 /**
  * Uploads a buffer to Azure Blob Storage.
@@ -38,13 +96,13 @@ async function saveBufferToAzure({
 }) {
   try {
     const containerClient = await getAzureContainerClient(containerName);
-    const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
+    const access = isAzurePublicAccess() ? 'blob' : undefined;
     // Create the container if it doesn't exist. This is done per operation.
     await containerClient.createIfNotExists({ access });
     const blobPath = `${basePath}/${userId}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
     await blockBlobClient.uploadData(buffer);
-    return blockBlobClient.url;
+    return getAzureStoredPath(blockBlobClient, blobPath);
   } catch (error) {
     logger.error('[saveBufferToAzure] Error uploading buffer:', error);
     throw error;
@@ -106,7 +164,7 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
     const containerClient = await getAzureContainerClient(containerName);
     const blobPath = userId ? `${basePath}/${userId}/${fileName}` : `${basePath}/${fileName}`;
     const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-    return blockBlobClient.url;
+    return getAzureStoredPath(blockBlobClient, blobPath);
   } catch (error) {
     logger.error('[getAzureURL] Error retrieving blob URL:', error);
     throw error;
@@ -124,8 +182,9 @@ async function deleteFileFromAzure(req, file) {
   await deleteRagFile({ userId: req.user.id, file });
 
   try {
-    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
-    const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];
+    const containerName = getAzureContainerName();
+    const containerClient = await getAzureContainerClient(containerName);
+    const blobPath = getAzureBlobPath(file.filepath, containerName);
     if (!blobPath.includes(req.user.id)) {
       throw new Error('User ID not found in blob path');
     }
@@ -162,7 +221,7 @@ async function streamFileToAzure({
 }) {
   try {
     const containerClient = await getAzureContainerClient(containerName);
-    const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
+    const access = isAzurePublicAccess() ? 'blob' : undefined;
 
     // Create the container if it doesn't exist
     await containerClient.createIfNotExists({ access });
@@ -193,7 +252,7 @@ async function streamFileToAzure({
       },
     );
 
-    return blockBlobClient.url;
+    return getAzureStoredPath(blockBlobClient, blobPath);
   } catch (error) {
     logger.error('[streamFileToAzure] Error streaming file:', error);
     throw error;
@@ -246,18 +305,35 @@ async function uploadFileToAzure({
 /**
  * Retrieves a readable stream for a blob from Azure Blob Storage.
  *
+ * Public containers are fetched anonymously by URL. Private containers (`AZURE_STORAGE_PUBLIC_ACCESS`
+ * not `true`) are read through the authenticated client (connection string or managed identity),
+ * since an anonymous request to a private container is refused (404).
+ *
  * @param {object} _req - The Express request object.
- * @param {string} fileURL - The URL of the blob.
- * @returns {Promise<ReadableStream>} A readable stream of the blob.
+ * @param {string} fileURL - The stored file path: the blob URL, or the root-relative path of a private blob.
+ * @returns {Promise<NodeJS.ReadableStream>} A readable stream of the blob.
  */
 async function getAzureFileStream(_req, fileURL) {
   try {
-    const response = await axios({
-      method: 'get',
-      url: fileURL,
-      responseType: 'stream',
-    });
-    return response.data;
+    if (isAzurePublicAccess()) {
+      const response = await axios({
+        method: 'get',
+        url: fileURL,
+        responseType: 'stream',
+      });
+      return response.data;
+    }
+    const containerName = getAzureContainerName();
+    const containerClient = await getAzureContainerClient(containerName);
+    if (!containerClient) {
+      throw new Error('Azure Blob Service is not initialized');
+    }
+    const blobClient = containerClient.getBlobClient(getAzureBlobPath(fileURL, containerName));
+    const response = await blobClient.download();
+    if (!response.readableStreamBody) {
+      throw new Error('Azure blob download returned no stream body');
+    }
+    return response.readableStreamBody;
   } catch (error) {
     logger.error('[getAzureFileStream] Error getting blob stream:', error);
     throw error;
@@ -268,7 +344,10 @@ module.exports = {
   saveBufferToAzure,
   saveURLToAzure,
   getAzureURL,
+  getAzureBlobPath,
+  isAzurePublicAccess,
   deleteFileFromAzure,
   uploadFileToAzure,
   getAzureFileStream,
+  getAzureContainerName,
 };
