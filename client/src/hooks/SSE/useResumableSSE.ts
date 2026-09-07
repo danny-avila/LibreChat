@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
+import { useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
@@ -79,6 +80,7 @@ import {
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
@@ -751,6 +753,7 @@ export default function useResumableSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
+  const jotaiStore = useStore();
   const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
@@ -1447,6 +1450,11 @@ export default function useResumableSSE(
         if (!isCurrentSubscription()) {
           return;
         }
+        const pendingConversationId =
+          pendingAction.conversationId ??
+          currentSubmission.conversation?.conversationId ??
+          currentStreamId;
+        jotaiStore.set(pendingApprovalActionFamily(pendingConversationId), pendingAction);
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
             pendingActionRetryRef.current = requestAnimationFrame(() => {
@@ -3767,6 +3775,7 @@ export default function useResumableSSE(
       addActiveJob,
       setSubmission,
       updateActiveGenerationCreatedAt,
+      jotaiStore,
     ],
   );
 

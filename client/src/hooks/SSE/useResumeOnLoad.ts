@@ -35,6 +35,7 @@ import {
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
 
@@ -843,6 +844,14 @@ export default function useResumeOnLoad(
       return;
     }
 
+    const statusPendingAction =
+      streamStatus.pendingAction ?? streamStatus.resumeState?.pendingAction;
+    if (statusPendingAction != null) {
+      jotaiStore.set(pendingApprovalActionFamily(conversationId), statusPendingAction);
+    } else if (!streamStatus.active) {
+      jotaiStore.set(pendingApprovalActionFamily(conversationId), null);
+    }
+
     /** useResumableSSE detected that this conversation-scoped stream now
      * belongs to a newer generation. It cleared the stale submission and
      * cached the replacement snapshot; allow the same conversation to be
@@ -1026,6 +1035,7 @@ export default function useResumeOnLoad(
     settleAppliedSteerParts,
     convertSteersToQueued,
     setActiveGenerationCreatedAt,
+    jotaiStore,
     externalRunArm,
   ]);
 

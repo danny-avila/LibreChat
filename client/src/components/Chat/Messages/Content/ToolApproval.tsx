@@ -62,10 +62,13 @@ export default function ToolApproval({
   approval,
   toolCallId,
   args,
+  showSubmit = true,
 }: {
   approval: NonNullable<Agents.ToolCall['approval']>;
   toolCallId: string;
   args: string | Record<string, unknown> | undefined;
+  /** The composer owns one batch submit; timeline cards keep the historical lead button. */
+  showSubmit?: boolean;
 }) {
   const localize = useLocalize();
   const { actionId, allowed_decisions: allowedDecisions, description } = approval;
@@ -264,7 +267,7 @@ export default function ToolApproval({
         />
       )}
 
-      {isLead && (
+      {showSubmit && isLead && (
         <div className="mt-1 flex items-center gap-3">
           <Button
             size="sm"
