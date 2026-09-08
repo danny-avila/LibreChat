@@ -35,6 +35,7 @@ import type {
 } from '@librechat/agents';
 import type {
   Agent,
+  CodeApprovalMode,
   TAgentsEndpoint,
   AgentModelParameters,
   AgentSubagentsConfig,
@@ -62,6 +63,7 @@ import {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   createAttachedCodeEnvironmentPolicyHook,
+  resolveAttachedCodeApprovalMode,
 } from '~/agents/hitl/byom';
 import {
   CHECK_BACKGROUND_TASK_NAME,
@@ -1551,6 +1553,7 @@ export async function createRun({
   messages,
   discoveredToolNames,
   requestBody,
+  codeApprovalMode: requestedCodeApprovalMode,
   user,
   tenantId,
   centralTraceExportEnabled,
@@ -1560,6 +1563,7 @@ export async function createRun({
   indexTokenCountMap,
   initialSessions,
   summarizationConfig,
+  summarizeOnly = false,
   compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
@@ -1589,6 +1593,7 @@ export async function createRun({
   streaming?: boolean;
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
+  codeApprovalMode?: CodeApprovalMode;
   user?: IUser;
   tenantId?: string;
   /**
@@ -1615,6 +1620,12 @@ export async function createRun({
    */
   discoveredToolNames?: string[];
   summarizationConfig?: SummarizationConfig;
+  /**
+   * Manual compaction: the primary agent summarizes the history outright and
+   * the run ends after the summary without a model call. Applies to the
+   * primary agent only; a chained or delegated agent never runs.
+   */
+  summarizeOnly?: boolean;
   /** Bounded, source-addressed navigation guidance derived with provider messages. */
   compactionSemanticIndex?: CompactionSemanticIndex;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
@@ -1975,6 +1986,11 @@ export async function createRun({
   const agentsEndpointConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
   const attachedCodeEnvironmentAgentIds = collectAttachedCodeEnvironmentAgentIds(agents);
   const attachedCodeEnvironmentSettings = collectAttachedCodeEnvironmentPolicySettings(agents);
+  const codeApprovalMode = resolveAttachedCodeApprovalMode(
+    requestedCodeApprovalMode,
+    attachedCodeEnvironmentSettings,
+    agentsEndpointConfig?.toolApproval?.enabled !== false,
+  );
   assertAttachedCodeEnvironmentApprovalSupported({
     hasAttachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
     hitlCapable,
@@ -2012,6 +2028,9 @@ export async function createRun({
   }
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);
+    if (summarizeOnly && agent === agents[0]) {
+      agentInput.summarizeOnly = true;
+    }
     const subagentConfigs = buildSubagentConfigs(
       agent,
       agentInput,
@@ -2133,6 +2152,7 @@ export async function createRun({
                   hook: createAttachedCodeEnvironmentPolicyHook(
                     attachedCodeEnvironmentAgentIds,
                     attachedCodeEnvironmentSettings,
+                    codeApprovalMode,
                   ),
                 },
               ]
@@ -2142,6 +2162,9 @@ export async function createRun({
     : undefined;
   registerResolvedMCPToolAliases = (resolvedAgent) => {
     if (resolvedAgent.codeExecutionContext?.environmentType === 'attached') {
+      // The admission hook closes over these collections. A lazily resolved agent
+      // therefore receives its own current machine policy before its first tool call;
+      // a mode that machine does not permit safely falls back to ask/deny there.
       attachedCodeEnvironmentAgentIds.add(resolvedAgent.id);
       attachedCodeEnvironmentSettings.set(resolvedAgent.id, {
         configSchema: resolvedAgent.codeExecutionContext.codeEnvironmentConfigSchema,

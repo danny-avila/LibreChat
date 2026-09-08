@@ -1,12 +1,17 @@
 /**
  * MCP-specific error classes
  */
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
+import { SseError } from '@modelcontextprotocol/sdk/client/sse.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export const MCPErrorCodes = {
   DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
   INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
   OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+  AUTHENTICATION_REJECTED: 'MCP_AUTHENTICATION_REJECTED',
+  AUTHENTICATION_REFRESH_FAILED: 'MCP_AUTHENTICATION_REFRESH_FAILED',
 } as const;
 
 export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
@@ -16,6 +21,33 @@ interface OAuthErrorLike {
   status?: number;
   statusCode?: number;
   message?: string;
+}
+
+/** A JSON-RPC tool error is never evidence that the MCP transport rejected its bearer. */
+export function isMCPTransportAuthenticationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || error instanceof McpError) {
+    return false;
+  }
+  if (error instanceof UnauthorizedError) {
+    return true;
+  }
+  const candidate = error as OAuthErrorLike;
+  const status = candidate.status ?? candidate.statusCode;
+  if (status === 401 || status === 403) {
+    return true;
+  }
+  return (
+    (error instanceof StreamableHTTPError || error instanceof SseError) &&
+    (error.code === 401 || error.code === 403)
+  );
+}
+
+/** Preserves the actual HTTP status before legacy SSE reduces a failed POST to plain text. */
+export class MCPTransportAuthenticationError extends Error {
+  constructor(public readonly status: 401 | 403) {
+    super(`MCP transport rejected authentication (HTTP ${status})`);
+    this.name = 'MCPTransportAuthenticationError';
+  }
 }
 
 const OAUTH_HTTP_STATUS_PATTERN =
@@ -278,6 +310,49 @@ export class MCPOAuthSecretReentryRequiredError extends Error {
     this.name = 'MCPOAuthSecretReentryRequiredError';
     this.changedFields = changedFields;
     Object.setPrototypeOf(this, MCPOAuthSecretReentryRequiredError.prototype);
+  }
+}
+
+/**
+ * A tool invocation was rejected before LibreChat could know whether the MCP
+ * server executed it. Recovery may prepare a later deliberate retry, but this
+ * outcome never authorizes an automatic replay of the original call.
+ */
+export class MCPAuthenticationRejectedError extends Error {
+  public readonly code: 'MCP_AUTHENTICATION_REJECTED' = MCPErrorCodes.AUTHENTICATION_REJECTED;
+  public readonly statusCode = 403;
+  public readonly retryable: boolean;
+
+  constructor(
+    public readonly serverName: string,
+    public readonly connectionRefreshed: boolean,
+    cause?: unknown,
+  ) {
+    super(
+      connectionRefreshed
+        ? `MCP server "${serverName}" rejected the bearer credential. The connection was refreshed; retry the tool deliberately.`
+        : `MCP server "${serverName}" rejected the bearer credential. Please sign in again.`,
+    );
+    this.name = 'MCPAuthenticationRejectedError';
+    this.retryable = connectionRefreshed;
+    this.cause = cause;
+    Object.setPrototypeOf(this, MCPAuthenticationRejectedError.prototype);
+  }
+}
+
+/** A temporary upstream-session refresh failure, distinct from expired login state. */
+export class MCPAuthenticationRefreshError extends Error {
+  public readonly code: 'MCP_AUTHENTICATION_REFRESH_FAILED' =
+    MCPErrorCodes.AUTHENTICATION_REFRESH_FAILED;
+
+  public readonly statusCode = 503;
+  public readonly retryable = true;
+
+  constructor(cause?: unknown) {
+    super('The OpenID session could not refresh the MCP bearer credential temporarily.');
+    this.name = 'MCPAuthenticationRefreshError';
+    this.cause = cause;
+    Object.setPrototypeOf(this, MCPAuthenticationRefreshError.prototype);
   }
 }
 

@@ -25,10 +25,14 @@ import type {
 import type { OpenIdSessionDeps, OpenIdSessionParams } from '~/images/session';
 import type { TokenResult } from './flight';
 import {
+  OPENID_REFRESH_CANCELLED_BEFORE_GRANT,
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
   toOpenIDLogArgument,
 } from './errors';
+
+const PUBLICATION_WAIT_TIMEOUT_MS = 10_000;
+const PUBLICATION_WAIT_INTERVAL_MS = 250;
 
 interface OpenIDSessionRefreshDeps {
   jwt: {
@@ -102,12 +106,21 @@ interface OpenIDSessionRefreshDeps {
     tokens?: TokenResult | null;
   }) => Promise<RefreshFlightRecord | null>;
   createOpenIDRefreshFlightKey: (input: RefreshKeyInput) => string | null;
+  createRefreshTokenBridgeFlightKey?: (
+    input: RefreshTokenBridgeIdentity & { oldRefreshToken: string },
+  ) => string | null;
   failOpenIDRefreshFlight: (args: {
     key?: string | null;
     ownerId?: string;
     error?: Error | null;
   }) => Promise<RefreshFlightRecord | null>;
-  waitForOpenIDRefreshFlight: (args: { key?: string | null }) => Promise<TokenResult | null>;
+  waitForOpenIDRefreshFlight: (args: {
+    key?: string | null;
+    requirePublication?: boolean;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    intervalMs?: number;
+  }) => Promise<TokenResult | null>;
   assertOpenIDRefreshFlightAvailable: (args: {
     key?: string | null;
     ownerId?: string;
@@ -136,6 +149,7 @@ interface MarkedOIDCTokens extends OIDCTokens {
 
 interface RefreshSessionOptions {
   forceRefresh?: boolean;
+  signal?: AbortSignal;
   assertLeaseOwned?: LeaseAssertion;
   deferPublication?: boolean;
 }
@@ -162,7 +176,7 @@ interface CreateOpenIDSessionTokenProviderInput {
 export interface OpenIDSessionRefreshService {
   createOpenIDSessionTokenProvider: (
     input: CreateOpenIDSessionTokenProviderInput,
-  ) => () => Promise<OIDCTokens | null>;
+  ) => (options?: { forceRefresh?: boolean; signal?: AbortSignal }) => Promise<OIDCTokens | null>;
   refreshOpenIDSession: (
     req: OpenIDRequest,
     res: OpenIDResponse | undefined,
@@ -207,6 +221,7 @@ export function createOpenIDSessionRefreshService(
     isOpenIDSessionIdentityMatch,
     createOpenIDRefreshIdentityTuple,
     createRefreshTokenBridgeIdentity,
+    createRefreshTokenBridgeFlightKey,
     serializeAuthIdentityTuple,
     buildOpenIDRefreshParams,
     setRefreshTokenCookie,
@@ -291,6 +306,7 @@ export function createOpenIDSessionRefreshService(
    * grants for the same key.
    */
   const inFlightRefreshes = new Map<string, Promise<MarkedOIDCTokens | null>>();
+  const flightSignals = new WeakMap<Promise<MarkedOIDCTokens | null>, AbortSignal>();
 
   /**
    * Returns the single-flight key for a refresh attempt, composed from the user's
@@ -1411,6 +1427,7 @@ export function createOpenIDSessionRefreshService(
     resolvedTokens,
     predecessorRefreshToken,
     tokenPreference,
+    signal,
   }: {
     key: string;
     req: OpenIDRequest;
@@ -1420,9 +1437,44 @@ export function createOpenIDSessionRefreshService(
     resolvedTokens: MarkedOIDCTokens;
     predecessorRefreshToken?: string;
     tokenPreference: TokenPreference;
+    signal?: AbortSignal;
   }): Promise<MarkedOIDCTokens> {
+    signal?.throwIfAborted();
     if (resolvedTokens.__deferredPublication) {
-      throw new Error('OpenID refresh result is awaiting identity validation');
+      const predecessor =
+        getPredecessorRefreshTokenMarker(resolvedTokens) ?? predecessorRefreshToken;
+      const identity = createRefreshTokenBridgeIdentity({
+        user,
+        requestUser: req.user,
+        userId: identityContext?.appUserId,
+        tenantId: identityContext?.tenantId,
+        openidIssuer: identityContext?.openidIssuer,
+      });
+      const publicationKey =
+        predecessor && identity
+          ? createRefreshTokenBridgeFlightKey?.({ ...identity, oldRefreshToken: predecessor })
+          : null;
+      const published = publicationKey
+        ? await waitForOpenIDRefreshFlight({
+            key: publicationKey,
+            requirePublication: true,
+            timeoutMs: PUBLICATION_WAIT_TIMEOUT_MS,
+            intervalMs: PUBLICATION_WAIT_INTERVAL_MS,
+            ...(signal ? { signal } : {}),
+          })
+        : null;
+      signal?.throwIfAborted();
+      if (!publicationKey || !published || published.__deferredPublication) {
+        throw Object.assign(new Error('OpenID refresh publication is temporarily unavailable'), {
+          status: 503,
+          retryable: true,
+        });
+      }
+      resolvedTokens = cloneResolvedTokens(published);
+      key = publicationKey;
+      if (published.tokenset) {
+        Object.assign(resolvedTokens, published.tokenset);
+      }
     }
     if (!resolvedTokens.__flightOwnerId) {
       throw new Error('OpenID refresh result is missing its publication generation');
@@ -1442,7 +1494,12 @@ export function createOpenIDSessionRefreshService(
         resolvedTokens,
         predecessorRefreshToken,
         tokenPreference,
-        assertLeaseOwned: () => assertOpenIDRefreshFlightAvailable(publicationGeneration),
+        assertLeaseOwned: async () => {
+          signal?.throwIfAborted();
+          const available = await assertOpenIDRefreshFlightAvailable(publicationGeneration);
+          signal?.throwIfAborted();
+          return available;
+        },
         publicationGeneration,
         effects,
       });
@@ -1471,6 +1528,7 @@ export function createOpenIDSessionRefreshService(
     tokenPreference: TokenPreference,
     identityContext?: AuthIdentityContext,
     deferPublication = false,
+    signal?: AbortSignal,
   ): Promise<MarkedOIDCTokens | null> {
     const refreshToken = req?.session?.openidTokens?.refreshToken;
     const predecessorAccessToken = req?.session?.openidTokens?.accessToken;
@@ -1502,7 +1560,11 @@ export function createOpenIDSessionRefreshService(
       logger.debug('[OpenIDSessionRefresh] Joining shared refresh flight', {
         key: hashKeyForLogs(key),
       });
-      const resolvedTokens = await waitForOpenIDRefreshFlight({ key });
+      const resolvedTokens = await waitForOpenIDRefreshFlight({
+        key,
+        ...(signal ? { signal } : {}),
+      });
+      signal?.throwIfAborted();
       if (resolvedTokens) {
         if (!deferPublication) {
           return publishCompletedFlightTokens({
@@ -1514,6 +1576,7 @@ export function createOpenIDSessionRefreshService(
             resolvedTokens,
             predecessorRefreshToken: refreshToken,
             tokenPreference,
+            signal,
           });
         }
         return resolvedTokens;
@@ -1535,8 +1598,13 @@ export function createOpenIDSessionRefreshService(
         let resolvedTokens: MarkedOIDCTokens | null = null;
         let successorRefreshToken: string | undefined;
         let completionIndeterminate = false;
+        let grantStarted = false;
         const publicationEffects = createSessionPublicationEffects();
         try {
+          /** Cancellation before admission must fail the acquired lease. Once a grant
+           * starts, settle its rotating credentials durably even if its caller stops. */
+          signal?.throwIfAborted();
+          grantStarted = true;
           resolvedTokens = await performIdpRefreshGrant(
             req,
             res,
@@ -1663,10 +1731,15 @@ export function createOpenIDSessionRefreshService(
           }
           if (!completionIndeterminate) {
             try {
+              let failure =
+                error instanceof Error ? error : new Error('OpenID session refresh failed');
+              if (!grantStarted && signal?.aborted) {
+                failure = new Error(OPENID_REFRESH_CANCELLED_BEFORE_GRANT);
+              }
               await failOpenIDRefreshFlight({
                 key,
                 ownerId: flight.ownerId,
-                error: error instanceof Error ? error : new Error('OpenID session refresh failed'),
+                error: failure,
               });
             } catch (flightError) {
               logger.warn('[OpenIDSessionRefresh] Failed to mark shared refresh flight failed', {
@@ -1800,6 +1873,7 @@ export function createOpenIDSessionRefreshService(
     identityContext?: AuthIdentityContext,
     forceRefresh = false,
     deferPublication = false,
+    signal?: AbortSignal,
   ): Promise<MarkedOIDCTokens | null> {
     const sessionTokens = req?.session?.openidTokens;
     if (!sessionTokens) {
@@ -1816,7 +1890,16 @@ export function createOpenIDSessionRefreshService(
       return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
     }
 
-    return performIdpRefresh(req, res, user, tokenPreference, identityContext, deferPublication);
+    signal?.throwIfAborted();
+    return performIdpRefresh(
+      req,
+      res,
+      user,
+      tokenPreference,
+      identityContext,
+      deferPublication,
+      signal,
+    );
   }
 
   /**
@@ -1840,10 +1923,12 @@ export function createOpenIDSessionRefreshService(
     identityContext?: AuthIdentityContext,
     options: RefreshSessionOptions = {},
   ): Promise<MarkedOIDCTokens | null> {
+    options.signal?.throwIfAborted();
     const identityBinding = assertOpenIDSessionIdentityMatch(req, user, identityContext);
     if (identityBinding) {
       await identityBinding;
     }
+    options.signal?.throwIfAborted();
     if (options.assertLeaseOwned) {
       return performIdpRefreshGrant(
         req,
@@ -1865,10 +1950,32 @@ export function createOpenIDSessionRefreshService(
         identityContext,
         options.forceRefresh,
         options.deferPublication,
+        options.signal,
       );
     }
 
-    const inFlight = inFlightRefreshes.get(key);
+    const forcedKey = `${key}:forced`;
+    /** A rejection-driven refresh must not join a normal flight that may merely reuse
+     * the rejected-but-unexpired token. Join and publish that flight first, then force
+     * a distinct refresh so rotating refresh-token state remains serialized. */
+    const normalFlight = inFlightRefreshes.get(key);
+    if (options.forceRefresh && normalFlight) {
+      await refreshOpenIDSession(req, res, user, tokenPreference, identityContext, {
+        ...options,
+        forceRefresh: false,
+      });
+      /** The normal flight is resolved at this point. Remove it defensively before
+       * the forced pass so promise-cleanup scheduling cannot make us rejoin it. */
+      if (inFlightRefreshes.get(key) === normalFlight) {
+        inFlightRefreshes.delete(key);
+      }
+      return refreshOpenIDSession(req, res, user, tokenPreference, identityContext, options);
+    }
+
+    /** Normal callers may safely join a forced flight and receive its fresher result. */
+    const inFlightKey = !options.forceRefresh && inFlightRefreshes.has(forcedKey) ? forcedKey : key;
+    const ownedFlightKey = options.forceRefresh ? forcedKey : inFlightKey;
+    const inFlight = inFlightRefreshes.get(ownedFlightKey);
     if (inFlight) {
       const predecessorRefreshToken = req?.session?.openidTokens?.refreshToken;
       const sharedFlightKey = createOpenIDRefreshFlightKey({
@@ -1877,8 +1984,26 @@ export function createOpenIDSessionRefreshService(
         refreshToken: predecessorRefreshToken,
         identityContext,
       });
-      logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(key)})`);
-      const resolvedTokens = await inFlight;
+      logger.debug(
+        `[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(ownedFlightKey)})`,
+      );
+      let resolvedTokens: MarkedOIDCTokens | null;
+      try {
+        resolvedTokens = await inFlight;
+      } catch (error) {
+        options.signal?.throwIfAborted();
+        const leaderSignal = flightSignals.get(inFlight);
+        if (!leaderSignal?.aborted || error !== leaderSignal.reason) {
+          throw error;
+        }
+        /** A cancelled follower publication must not strand active local joiners.
+         * Rejoin durable coordination; never replay an already-settled IdP grant. */
+        if (inFlightRefreshes.get(ownedFlightKey) === inFlight) {
+          inFlightRefreshes.delete(ownedFlightKey);
+        }
+        return refreshOpenIDSession(req, res, user, tokenPreference, identityContext, options);
+      }
+      options.signal?.throwIfAborted();
       /**
        * The leader mutated only its own request's session. Copy the resolved
        * tokens into THIS request's session so a later OBO call on the joiner
@@ -1886,7 +2011,20 @@ export function createOpenIDSessionRefreshService(
        */
       if (!options.deferPublication) {
         if (resolvedTokens?.__deferredPublication) {
-          throw new Error('OpenID refresh result is awaiting identity validation');
+          if (!sharedFlightKey) {
+            throw new Error('OpenID refresh coordination key is unavailable for publication');
+          }
+          return publishCompletedFlightTokens({
+            key: sharedFlightKey,
+            req,
+            res,
+            user,
+            identityContext,
+            resolvedTokens,
+            predecessorRefreshToken,
+            tokenPreference,
+            signal: options.signal,
+          });
         }
         const currentSessionTokens = req.session?.openidTokens;
         const alreadyCurrent = Boolean(
@@ -1918,6 +2056,7 @@ export function createOpenIDSessionRefreshService(
           resolvedTokens,
           predecessorRefreshToken,
           tokenPreference,
+          signal: options.signal,
         });
       }
       return resolvedTokens;
@@ -1931,12 +2070,16 @@ export function createOpenIDSessionRefreshService(
       identityContext,
       options.forceRefresh,
       options.deferPublication,
+      options.signal,
     ).finally(() => {
-      if (inFlightRefreshes.get(key) === promise) {
-        inFlightRefreshes.delete(key);
+      if (inFlightRefreshes.get(ownedFlightKey) === promise) {
+        inFlightRefreshes.delete(ownedFlightKey);
       }
     });
-    inFlightRefreshes.set(key, promise);
+    inFlightRefreshes.set(ownedFlightKey, promise);
+    if (options.signal) {
+      flightSignals.set(promise, options.signal);
+    }
     /** Swallow rejection on the cleanup chain; the original is delivered to the awaiter. */
     promise.catch(() => {});
     return promise;
@@ -1987,7 +2130,7 @@ export function createOpenIDSessionRefreshService(
    * @param {import('@librechat/data-schemas').IUser} [args.user]
    * @param {import('@librechat/api').AuthIdentityContext} [args.identityContext]
    * @param {'access_token' | 'id_token'} args.tokenPreference
-   * @returns {() => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
+   * @returns {(options?: { forceRefresh?: boolean, signal?: AbortSignal }) => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
    */
   function createOpenIDSessionTokenProvider({
     req,
@@ -1995,13 +2138,17 @@ export function createOpenIDSessionRefreshService(
     user,
     tokenPreference,
     identityContext,
-  }: CreateOpenIDSessionTokenProviderInput): () => Promise<OIDCTokens | null> {
+  }: CreateOpenIDSessionTokenProviderInput): (options?: {
+    forceRefresh?: boolean;
+    signal?: AbortSignal;
+  }) => Promise<OIDCTokens | null> {
     if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
       throw new Error(
         `[OpenIDSessionRefresh] createOpenIDSessionTokenProvider requires tokenPreference 'access_token' or 'id_token', got: ${tokenPreference}`,
       );
     }
-    return async function upstreamTokenProvider() {
+    return async function upstreamTokenProvider(options = {}) {
+      options.signal?.throwIfAborted();
       if (!isOIDCRefreshApplicable(user)) {
         return null;
       }
@@ -2025,7 +2172,10 @@ export function createOpenIDSessionRefreshService(
           user,
           requestUser: req?.user,
         });
-      return refreshOpenIDSession(req, res, user, tokenPreference, resolvedIdentityContext);
+      return refreshOpenIDSession(req, res, user, tokenPreference, resolvedIdentityContext, {
+        forceRefresh: options.forceRefresh,
+        signal: options.signal,
+      });
     };
   }
 

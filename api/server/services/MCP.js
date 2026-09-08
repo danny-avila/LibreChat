@@ -41,7 +41,10 @@ const {
   createAuthIdentityContext,
   isOAuthServer,
   isAbortError,
+  isDirectOpenIDBearerRecoveryEnabled,
   OpenIDReauthRequiredError,
+  MCPAuthenticationRefreshError,
+  MCPAuthenticationRejectedError,
 } = require('@librechat/api');
 const {
   Time,
@@ -700,18 +703,23 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 }
 
 function resolveToolCallUserId({ effectiveUser, capturedUser, invocationUserId, serverConfig }) {
-  if (serverConfig?.obo == null) {
+  const identityBoundCredential =
+    serverConfig?.obo != null || isDirectOpenIDBearerRecoveryEnabled(serverConfig ?? {});
+  if (!identityBoundCredential) {
     return effectiveUser?.id || invocationUserId || capturedUser?.id;
   }
 
   const effectiveUserId = effectiveUser?.id;
   const capturedUserId = capturedUser?.id;
+  const credentialLabel = serverConfig?.obo != null ? 'OBO' : 'Direct OpenID bearer';
   if (!effectiveUserId || !capturedUserId) {
-    throw new Error('OBO tool calls require matching captured and effective user ids');
+    throw new Error(
+      `${credentialLabel} tool calls require matching captured and effective user ids`,
+    );
   }
 
   if (effectiveUserId !== capturedUserId) {
-    throw new Error('OBO tool call user mismatch');
+    throw new Error(`${credentialLabel} tool call user mismatch`);
   }
 
   return effectiveUserId;
@@ -1326,7 +1334,11 @@ function createToolInstance({
       }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
-      if (error instanceof OpenIDReauthRequiredError) {
+      if (
+        error instanceof OpenIDReauthRequiredError ||
+        error instanceof MCPAuthenticationRefreshError ||
+        error instanceof MCPAuthenticationRejectedError
+      ) {
         throw error;
       }
 

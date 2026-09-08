@@ -1,5 +1,6 @@
 import {
   AuthType,
+  CODE_APPROVAL_MODES,
   EModelEndpoint,
   isAgentsEndpoint,
   orderEndpointsConfig,
@@ -72,9 +73,21 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
       const { disableBuilder, capabilities, allowedProviders, statefulCodeSessions, maxSubagents } =
         appConfig.endpoints[EModelEndpoint.agents];
+      const toolApproval = appConfig.endpoints[EModelEndpoint.agents].toolApproval;
+      /** Only advertise Accept edits when the endpoint fallback cannot force every
+       * unmatched tool back to Ask/Deny. Explicit rules and hooks remain free to
+       * tighten individual actions after the user selects the broader mode. */
+      let approvalModes = [...CODE_APPROVAL_MODES];
+      if (toolApproval?.enabled === false) {
+        approvalModes = [];
+      } else if (toolApproval?.enabled === true && toolApproval.mode !== 'bypass') {
+        approvalModes = ['ask'];
+      }
       const clientStatefulCodeSessions = statefulCodeSessions
         ? {
             allowedEnvironments: statefulCodeSessions.allowedEnvironments,
+            approvalsEnabled: toolApproval?.enabled !== false,
+            approvalModes,
             environments: statefulCodeSessions.environments
               ?.filter(
                 (environment) =>

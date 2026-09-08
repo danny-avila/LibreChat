@@ -6,6 +6,9 @@ const {
   loadMCPServerCatalogs: loadCatalogs,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
+  MCPAuthenticationRejectedError,
+  MCPAuthenticationRefreshError,
+  OpenIDReauthRequiredError,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
@@ -33,6 +36,11 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
   OAUTH_REQUIRED: 'oauth_required',
   INITIALIZATION_FAILED: 'initialization_failed',
 };
+
+const isMCPReauthenticationError = (error) =>
+  error instanceof MCPAuthenticationRejectedError ||
+  error instanceof MCPAuthenticationRefreshError ||
+  error instanceof OpenIDReauthRequiredError;
 
 /** Wires application dependencies into the passive, request-local catalog recovery service.
  * @param {Object} params
@@ -272,6 +280,9 @@ async function reinitMCPServer({
 
       logger.info('[MCP Reinitialize] Successfully established connection');
     } catch (err) {
+      if (isMCPReauthenticationError(err)) {
+        throw err;
+      }
       logger.info('[MCP Reinitialize] Connection attempt failed');
       logger.info(
         `[MCP Reinitialize] OAuth state - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
@@ -313,7 +324,10 @@ async function reinitMCPServer({
               `[MCP Reinitialize] Discovered ${tools.length} tools without full authentication`,
             );
           }
-        } catch {
+        } catch (error) {
+          if (isMCPReauthenticationError(error)) {
+            throw error;
+          }
           logger.debug('[MCP Reinitialize] Tool discovery failed');
         }
       } else {
@@ -429,7 +443,10 @@ async function reinitMCPServer({
     });
 
     return result;
-  } catch {
+  } catch (error) {
+    if (isMCPReauthenticationError(error)) {
+      throw error;
+    }
     logger.error('[MCP Reinitialize] Error loading MCP tools; servers may still be initializing');
   } finally {
     if (connection && ephemeralServer && !requestScopedConnections) {

@@ -34,7 +34,7 @@ const ENVIRONMENT_LABELS = {
 
 const DEPLOYMENT_DEFAULT_ENVIRONMENT = '__deployment_default__';
 
-export default function StatefulSessions() {
+export default function CodeSettings() {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { agentsConfig } = useGetAgentsConfig();
@@ -54,12 +54,17 @@ export default function StatefulSessions() {
   const codeEnvironmentId = watch('code_environment_id');
   const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
   const executionEnvironments = agentsConfig?.statefulCodeSessions?.environments ?? [];
+  const statefulSessionsAvailable =
+    agentsConfig?.capabilities.includes(AgentCapabilities.stateful_code_sessions) ?? false;
   const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(configuredEnvironments);
   const effectiveExecutionEnvironment = codeEnvironmentId
     ? executionEnvironments.find((candidate) => candidate.id === codeEnvironmentId)
     : executionEnvironments.find((candidate) => candidate.default === true);
   const showGitIdentity =
-    codeEnabled && enabled && effectiveExecutionEnvironment?.type === 'attached';
+    statefulSessionsAvailable &&
+    codeEnabled &&
+    enabled &&
+    effectiveExecutionEnvironment?.type === 'attached';
   const releaseIdentity = useCallback(() => {
     const identity = getValues('git_identity');
     const empty = !identity?.name?.trim() && !identity?.email?.trim();
@@ -96,6 +101,10 @@ export default function StatefulSessions() {
       );
     }
   };
+
+  if (!statefulSessionsAvailable) {
+    return null;
+  }
 
   return (
     <div className="space-y-3">

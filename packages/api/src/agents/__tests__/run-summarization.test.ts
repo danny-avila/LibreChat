@@ -180,6 +180,7 @@ async function callAndCapture(
   opts: {
     agents?: ReturnType<typeof makeAgent>[];
     summarizationConfig?: SummarizationConfig;
+    summarizeOnly?: boolean;
     initialSummary?: { text: string; tokenCount: number };
     appConfig?: AppConfig;
     messages?: BaseMessage[];
@@ -198,6 +199,7 @@ async function callAndCapture(
     agents: agents as never,
     signal,
     summarizationConfig: opts.summarizationConfig,
+    summarizeOnly: opts.summarizeOnly,
     initialSummary: opts.initialSummary,
     appConfig: opts.appConfig,
     messages: opts.messages,
@@ -3670,5 +3672,24 @@ describe('ask_user_question run wiring', () => {
     const config = (Run.create as jest.Mock).mock.calls[0][0] as Record<string, unknown>;
     expect(config.humanInTheLoop).toBeDefined();
     expect(getCheckpointer(config)).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// summarizeOnly resolution (manual compaction)
+// ---------------------------------------------------------------------------
+describe('summarizeOnly resolution', () => {
+  it('is absent on an ordinary run', async () => {
+    const agents = await callAndCapture();
+    expect(agents[0].summarizeOnly).toBeUndefined();
+  });
+
+  it('marks only the primary agent of a compaction run', async () => {
+    const agents = await callAndCapture({
+      agents: [makeAgent({ id: 'agent_primary' }), makeAgent({ id: 'agent_next' })],
+      summarizeOnly: true,
+    });
+    expect(agents[0].summarizeOnly).toBe(true);
+    expect(agents[1].summarizeOnly).toBeUndefined();
   });
 });

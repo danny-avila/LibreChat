@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
@@ -15,7 +16,9 @@ import {
   useLocalize,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
+import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
+import { pendingApprovalActionFamily } from './approval/state';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { AskAnswerHostProvider } from './ask/state';
 import MessagesView from './Messages/MessagesView';
@@ -44,6 +47,9 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const saveDrafts = useRecoilValue(store.saveDrafts);
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  const pendingAction = useAtomValue(
+    pendingApprovalActionFamily(conversationId ?? Constants.NEW_CONVO),
+  );
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -132,57 +138,59 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       <ChatFormProvider {...methods}>
         <ChatContext.Provider value={chatHelpers}>
           <AddedChatContext.Provider value={addedChatHelpers}>
-            <Presentation>
-              <div className="relative flex h-full w-full flex-col">
-                <h1 className="sr-only">{pageHeading}</h1>
-                <Header
-                  parentConversationId={parentConversationId}
-                  readOnly={isSubagentThreadReadOnly}
-                />
-                <>
-                  <div
-                    className={cn(
-                      'flex flex-col',
-                      isLandingPage
-                        ? 'flex-1 items-center justify-end sm:justify-center'
-                        : 'h-full overflow-y-auto',
-                    )}
-                  >
-                    {content}
-                    {/* Named + opaque so a view transition (the ask_user_question
+            <ApprovalProvider pendingAction={pendingAction}>
+              <Presentation>
+                <div className="relative flex h-full w-full flex-col">
+                  <h1 className="sr-only">{pageHeading}</h1>
+                  <Header
+                    parentConversationId={parentConversationId}
+                    readOnly={isSubagentThreadReadOnly}
+                  />
+                  <>
+                    <div
+                      className={cn(
+                        'flex flex-col',
+                        isLandingPage
+                          ? 'flex-1 items-center justify-end sm:justify-center'
+                          : 'h-full overflow-y-auto',
+                      )}
+                    >
+                      {content}
+                      {/* Named + opaque so a view transition (the ask_user_question
                         popover ⇄ chat-card morph) paints the whole composer band
                         over the travelling card instead of letting it show
                         through below the composer. The background matches the
                         page, so normal rendering is unchanged. */}
-                    <div
-                      className={cn(
-                        'w-full bg-presentation [view-transition-name:chat-form]',
-                        !isLandingPage && 'scrollbar-gutter-spacer',
-                        isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
-                      )}
-                    >
-                      {isLandingPage && <ConversationStarters />}
-                      {isSubagentThreadReadOnly ? (
-                        <div
-                          className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
-                          role="note"
-                        >
-                          {localize('com_ui_subagent_thread_read_only')}
-                        </div>
-                      ) : (
-                        <ChatForm
-                          index={index}
-                          placeholder={chatFormPlaceholder}
-                          project={isProjectLandingPage ? project : undefined}
-                        />
-                      )}
-                      {!isLandingPage && <Footer />}
+                      <div
+                        className={cn(
+                          'w-full bg-presentation [view-transition-name:chat-form]',
+                          !isLandingPage && 'scrollbar-gutter-spacer',
+                          isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
+                        )}
+                      >
+                        {isLandingPage && <ConversationStarters />}
+                        {isSubagentThreadReadOnly ? (
+                          <div
+                            className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
+                            role="note"
+                          >
+                            {localize('com_ui_subagent_thread_read_only')}
+                          </div>
+                        ) : (
+                          <ChatForm
+                            index={index}
+                            placeholder={chatFormPlaceholder}
+                            project={isProjectLandingPage ? project : undefined}
+                          />
+                        )}
+                        {!isLandingPage && <Footer />}
+                      </div>
                     </div>
-                  </div>
-                  {isLandingPage && <Footer />}
-                </>
-              </div>
-            </Presentation>
+                    {isLandingPage && <Footer />}
+                  </>
+                </div>
+              </Presentation>
+            </ApprovalProvider>
           </AddedChatContext.Provider>
         </ChatContext.Provider>
       </ChatFormProvider>

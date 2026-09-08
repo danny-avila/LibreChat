@@ -88,6 +88,16 @@ describe('MCPOptionsSchema', () => {
       expect(result.success).toBe(false);
     });
   });
+
+  it('accepts the direct OpenID bearer placeholder for operator configuration', () => {
+    const result = MCPOptionsSchema.safeParse({
+      type: 'streamable-http',
+      url: 'https://mcp-server.com/http',
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+    });
+
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('MCP schemas', () => {

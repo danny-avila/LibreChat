@@ -1,10 +1,67 @@
 import { HookRegistry, executeHooks } from '@librechat/agents';
+import { buildHITLRunWiring, buildToolApprovalExecutionConfig } from './runtime';
 import { registerToolApprovalHook, clearToolApprovalHooks } from './hooks';
 import { createAttachedCodeEnvironmentPolicyHook } from './byom';
 import { resolveToolApprovalPolicy } from './policy';
-import { buildHITLRunWiring } from './runtime';
 
 describe('buildHITLRunWiring', () => {
+  test.each([
+    ['ask', 'bash_tool', 'ask'],
+    ['deny', 'bash_tool', 'deny'],
+    ['allow', 'bash_tool', 'allow'],
+    ['allow', 'mcp:github:create_issue', 'ask'],
+  ] as const)(
+    'full access preserves endpoint %s rules for %s',
+    async (rule, toolName, expected) => {
+      const settings = new Map([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: {
+                fileWrite: {
+                  allowed: ['ask', 'allow'] as Array<'ask' | 'allow'>,
+                  default: 'ask' as const,
+                },
+                commandExecution: {
+                  allowed: ['ask', 'allow'] as Array<'ask' | 'allow'>,
+                  default: 'ask' as const,
+                },
+              },
+            },
+          },
+        ],
+      ]);
+      const wiring = buildHITLRunWiring(
+        { enabled: true, mode: 'default', [rule]: ['bash_tool'] },
+        {},
+        [],
+        [
+          {
+            hook: createAttachedCodeEnvironmentPolicyHook(
+              new Set(settings.keys()),
+              settings,
+              'fullAccess',
+            ),
+          },
+        ],
+      );
+      const result = await executeHooks({
+        registry: wiring!.hooks,
+        matchQuery: toolName,
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId: 'full-access-policy',
+          toolName,
+          toolInput: {},
+          toolUseId: 'tool-code',
+          executingAgentId: 'attached-agent',
+        },
+      });
+      expect(result.decision).toBe(expected);
+    },
+  );
+
   test('returns undefined when HITL is disabled (the default)', () => {
     expect(buildHITLRunWiring(undefined)).toBeUndefined();
     expect(buildHITLRunWiring({})).toBeUndefined();
@@ -155,5 +212,35 @@ describe('buildHITLRunWiring host-hook composition', () => {
     expect(hook).toHaveBeenCalledTimes(1);
     // Baseline policy + host matcher; plugins registered later remain last.
     expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
+  });
+});
+
+describe('tool approval execution scope', () => {
+  test('reconstructs the same scope for repeated approval resumes', () => {
+    const generation = { responseMessageId: 'response-1', jobCreatedAt: 1000 };
+    const original = buildToolApprovalExecutionConfig(
+      generation.responseMessageId,
+      generation.jobCreatedAt,
+    );
+    const restored = JSON.parse(JSON.stringify(generation)) as typeof generation;
+    expect(
+      buildToolApprovalExecutionConfig(restored.responseMessageId, restored.jobCreatedAt),
+    ).toEqual(original);
+    expect(Object.values(original)[0]).toBeTruthy();
+  });
+
+  test('separates new generations even when an edit reuses the response id', () => {
+    const original = buildToolApprovalExecutionConfig('response-1', 1000);
+    expect(buildToolApprovalExecutionConfig('response-1', 1001)).not.toEqual(original);
+    expect(buildToolApprovalExecutionConfig('response-2', 1000)).not.toEqual(original);
+  });
+
+  test('uses the response id for runs without a generation job', () => {
+    expect(buildToolApprovalExecutionConfig('response-1')).toEqual(
+      buildToolApprovalExecutionConfig('response-1'),
+    );
+    expect(buildToolApprovalExecutionConfig('response-2')).not.toEqual(
+      buildToolApprovalExecutionConfig('response-1'),
+    );
   });
 });

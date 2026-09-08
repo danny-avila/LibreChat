@@ -383,18 +383,27 @@ describe('toClientPendingAction', () => {
         endpoint: 'agents',
         model_parameters: { temperature: 0.5 },
       },
+      codeExecutionBinding: {
+        version: 1,
+        targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
+      },
     });
 
     const clientSafe = toClientPendingAction(full);
     expect(clientSafe).toBeDefined();
     expect(clientSafe?.resumeContext).toBeUndefined();
     expect(clientSafe?.requestFingerprint).toBeUndefined();
+    expect(clientSafe?.codeExecutionBinding).toBeUndefined();
     expect(clientSafe?.actionId).toBe(full.actionId);
     expect(clientSafe?.streamId).toBe('stream-1');
     expect(clientSafe?.payload).toBe(full.payload);
     // Non-mutating: the stored record keeps its replay state for the resume route.
     expect(full.resumeContext).toBeDefined();
     expect(full.requestFingerprint).toBe('fp-hash');
+    expect(full.codeExecutionBinding).toEqual({
+      version: 1,
+      targets: [{ agentId: 'agent-1', targetHash: 'a'.repeat(64) }],
+    });
   });
 
   test('passes through nullish input', () => {
@@ -647,6 +656,12 @@ describe('computeAgentRequestFingerprint', () => {
     expect(computeAgentRequestFingerprint(base)).not.toBe(
       computeAgentRequestFingerprint({ ...base, agent_id: 'agent-2' }),
     );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeApprovalMode: 'acceptEdits' }),
+    );
+    expect(computeAgentRequestFingerprint(base)).not.toBe(
+      computeAgentRequestFingerprint({ ...base, codeApprovalMode: null }),
+    );
   });
 
   it('differs when promptPrefix changes (ephemeral instructions)', () => {
@@ -700,6 +715,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       manualSkills: ['code-reviewer'],
       // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
       modelLabel: 'My Opus',
+      codeApprovalMode: 'acceptEdits',
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -714,7 +730,24 @@ describe('pickResumeContext / applyResumeContext', () => {
       timezone: 'America/New_York',
       manualSkills: ['code-reviewer'],
       modelLabel: 'My Opus',
+      codeApprovalMode: 'acceptEdits',
     });
+  });
+
+  it('pins code approval mode across resume and removes a forged upgrade', () => {
+    const restored: Record<string, unknown> = {
+      conversationId: 'c',
+      codeApprovalMode: 'acceptEdits',
+    };
+    applyResumeContext(restored, { endpoint: 'agents', codeApprovalMode: 'ask' });
+    expect(restored.codeApprovalMode).toBe('ask');
+
+    const injected: Record<string, unknown> = {
+      conversationId: 'c',
+      codeApprovalMode: 'acceptEdits',
+    };
+    applyResumeContext(injected, { endpoint: 'agents' });
+    expect('codeApprovalMode' in injected).toBe(false);
   });
 
   it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {

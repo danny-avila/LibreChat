@@ -19,6 +19,7 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued,
     isTemporary,
     isRegenerate,
+    compact,
     conversation,
     editedContent,
     ephemeralAgent,
@@ -51,7 +52,10 @@ export default function createPayload(submission: t.TSubmission) {
     endpoint,
     addedConvo,
     isTemporary,
-    isRegenerate,
+    /** A compaction borrows the regenerate shape client-side only: the server
+     *  must see it as a compaction, never as a regenerated user turn. */
+    isRegenerate: compact === true ? undefined : isRegenerate,
+    ...(compact === true && { compact: true }),
     editedContent,
     conversationId,
     isContinued: !!(isEdited && isContinued),

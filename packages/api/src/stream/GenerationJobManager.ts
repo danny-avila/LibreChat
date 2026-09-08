@@ -2938,6 +2938,7 @@ class GenerationJobManagerClass {
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,
         agentEventLegacyTurnToken: jobData.agentEventLegacyTurnToken,
         terminalPersistencePending: jobData.terminalPersistencePending,
+        terminalHostActionPending: jobData.terminalHostActionPending,
         terminalPersistenceStartedAt: jobData.terminalPersistenceStartedAt,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
@@ -3091,9 +3092,30 @@ class GenerationJobManagerClass {
     return runtime;
   }
 
-  /**
-   * Get a job by streamId.
-   */
+  /** Durable deletion evidence does not depend on a replica's runtime attachment. */
+  async getCleanupJob(
+    streamId: string,
+  ): Promise<Pick<t.GenerationJob, 'createdAt' | 'status' | 'metadata'> | undefined> {
+    let job = await this.jobStore.getJob(streamId);
+    if (job?.terminalPersistencePending === true) {
+      await this.recoverStaleTerminalPersistence(job);
+      job = await this.jobStore.getJob(streamId);
+    }
+    if (job == null) return undefined;
+    return {
+      createdAt: job.createdAt,
+      status: job.status,
+      metadata: {
+        userId: job.userId,
+        tenantId: job.tenantId,
+        conversationId: job.conversationId,
+        providerDrained: job.providerDrained,
+        terminalPersistencePending: job.terminalPersistencePending,
+        terminalHostActionPending: job.terminalHostActionPending,
+      },
+    };
+  }
+
   async getJob(streamId: string): Promise<t.GenerationJob | undefined> {
     let jobData = await this.jobStore.getJob(streamId);
     if (!jobData) {
@@ -9286,7 +9308,40 @@ class GenerationJobManagerClass {
   /** Returns every generation whose provider can still mutate user-owned data,
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
-    return this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const ownerQuery = this.jobStore.getCleanupJobIdsByUser;
+    const readOwner = (tenant?: string) =>
+      ownerQuery != null
+        ? ownerQuery.call(this.jobStore, userId, tenant)
+        : this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenant);
+    const [current, legacy, hostActions, detachedActions] = await Promise.all([
+      readOwner(tenantId),
+      tenantId == null ? [] : readOwner(),
+      ownerQuery == null ? (this.jobStore.getTerminalHostActionJobs?.() ?? []) : [],
+      ownerQuery == null
+        ? (this.jobStore.getDetachedAgentEventTerminalHostActionJobs?.() ?? [])
+        : [],
+    ]);
+    const pending = [...hostActions, ...detachedActions].filter(
+      (job) =>
+        job.userId === userId &&
+        (!job.tenantId || job.tenantId === tenantId) &&
+        job.terminalHostActionPending === true,
+    );
+    const streamIds = [...new Set([...current, ...legacy, ...pending.map((job) => job.streamId)])];
+    const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job?.userId === userId && (!job.tenantId || job.tenantId === tenantId);
+    });
+  }
+
+  /** Also includes retained paused jobs whose checkpoints belong to this account. */
+  async getAccountCleanupJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    const [retained, blocking] = await Promise.all([
+      this.jobStore.getRetainedJobIdsByUser?.(userId, tenantId) ?? [],
+      this.getCleanupBlockingJobIdsForUser(userId, tenantId),
+    ]);
+    return [...new Set([...retained, ...blocking])];
   }
 
   /** Resolves every cleanup-blocking run attached to any target conversation.
@@ -9301,7 +9356,7 @@ class GenerationJobManagerClass {
       return [];
     }
     const targets = new Set(conversationIds);
-    const streamIds = await this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
+    const streamIds = await this.getCleanupBlockingJobIdsForUser(userId, tenantId);
     const jobs = await Promise.all(streamIds.map((streamId) => this.jobStore.getJob(streamId)));
     return streamIds.filter((_, index) => {
       const job = jobs[index];

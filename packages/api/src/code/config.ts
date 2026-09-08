@@ -112,6 +112,7 @@ export async function mergeAccessibleCodeEnvironments({
       return [
         {
           ...environment,
+          controlPlaneId,
           baseURL: controlPlane.baseURL,
           configSchema: effectiveControlPlanes.get(controlPlaneId)?.configSchema,
         },
@@ -161,7 +162,11 @@ export async function mergeAccessibleCodeEnvironments({
         environment.default === true,
     )
   ) {
-    const defaultIndex = mergedEnvironments.findIndex(isExecutableCodeEnvironment);
+    const defaultIndex = mergedEnvironments.findIndex(
+      (environment) =>
+        isExecutableCodeEnvironment(environment) &&
+        (environment.owner !== 'principal' || !process.env.LIBRECHAT_CODE_BASEURL_STATEFUL?.trim()),
+    );
     if (defaultIndex >= 0) {
       mergedEnvironments = mergedEnvironments.map((environment, index) =>
         index === defaultIndex ? { ...environment, default: true as const } : environment,

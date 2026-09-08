@@ -417,6 +417,7 @@ Also accepts authored skill file paths using "skills/{skillName}/...", including
 
 const READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
+  toolType: 'builtin',
   description: SKILL_READ_FILE_DESCRIPTION,
   parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
   responseFormat: ReadFileToolDefinition.responseFormat,
@@ -465,6 +466,7 @@ const ATTACHED_WORKSPACE_READ_FILE_PARAMETERS: LCTool['parameters'] = Object.fre
 
 const CODE_READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
+  toolType: 'builtin',
   description: CODE_READ_FILE_DESCRIPTION,
   parameters: CODE_READ_FILE_PARAMETERS,
   responseFormat: ReadFileToolDefinition.responseFormat,
@@ -476,6 +478,7 @@ function createAttachedWorkspaceReadFileDef(includeSkillFileInstructions: boolea
     : CODE_READ_FILE_DESCRIPTION;
   return Object.freeze({
     name: ReadFileToolDefinition.name,
+    toolType: 'builtin',
     description: `${baseDescription}\n\n${ATTACHED_WORKSPACE_READ_FILE_INSTRUCTIONS}`,
     parameters: ATTACHED_WORKSPACE_READ_FILE_PARAMETERS,
     responseFormat: ReadFileToolDefinition.responseFormat,
@@ -487,6 +490,7 @@ const ATTACHED_SKILL_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(true);
 
 const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
   name: SEARCH_WORKSPACE_TOOL_NAME,
+  toolType: 'builtin',
   description:
     'Search for literal text within the attached worker workspace directory. Git is not required. Respects normal ignore files, does not follow symlinks, and returns bounded path, line, column, and text matches. Use path to limit the search to a relative file or directory.',
   parameters: Object.freeze({
@@ -514,6 +518,7 @@ const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
 
 const LIST_WORKSPACE_FILES_TOOL_DEF: LCTool = Object.freeze({
   name: LIST_WORKSPACE_FILES_TOOL_NAME,
+  toolType: 'builtin',
   description:
     'List relative file paths in the attached worker workspace directory. Use this to discover files in an existing project, Git repository, or empty directory before reading or searching them. Respects normal ignore files, does not follow symlinks, and returns a bounded deterministic listing. When a result supplies an after_path continuation, pass it unchanged with the same path to fetch the next page.',
   parameters: Object.freeze({
@@ -685,6 +690,7 @@ Targets code-execution sandbox paths, such as /mnt/data/result.txt.`;
 
 const SKILL_CREATE_FILE_DEF: LCTool = Object.freeze({
   name: CREATE_FILE_TOOL_NAME,
+  toolType: 'builtin',
   description: SKILL_CREATE_FILE_DESCRIPTION,
   parameters: SKILL_CREATE_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
@@ -692,6 +698,7 @@ const SKILL_CREATE_FILE_DEF: LCTool = Object.freeze({
 
 const CODE_CREATE_FILE_DEF: LCTool = Object.freeze({
   name: CREATE_FILE_TOOL_NAME,
+  toolType: 'builtin',
   description: CODE_CREATE_FILE_DESCRIPTION,
   parameters: CODE_CREATE_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
@@ -699,6 +706,7 @@ const CODE_CREATE_FILE_DEF: LCTool = Object.freeze({
 
 const SKILL_EDIT_FILE_DEF: LCTool = Object.freeze({
   name: EDIT_FILE_TOOL_NAME,
+  toolType: 'builtin',
   description: SKILL_EDIT_FILE_DESCRIPTION,
   parameters: SKILL_EDIT_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
@@ -706,6 +714,7 @@ const SKILL_EDIT_FILE_DEF: LCTool = Object.freeze({
 
 const CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
   name: EDIT_FILE_TOOL_NAME,
+  toolType: 'builtin',
   description: CODE_EDIT_FILE_DESCRIPTION,
   parameters: CODE_EDIT_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
@@ -864,6 +873,7 @@ function createBashToolDef(
   const descriptionOpts = { enableToolOutputReferences, statefulSessions };
   return Object.freeze({
     name: BashExecutionToolDefinition.name,
+    toolType: 'builtin',
     description: workspaceTools
       ? buildAttachedWorkspaceBashDescription(enableToolOutputReferences)
       : buildBashExecutionToolDescription(descriptionOpts),
