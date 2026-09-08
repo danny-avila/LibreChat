@@ -97,4 +97,35 @@ describe('Assistants message retention', () => {
       expect(convo.lastResponseAt != null).toBe(!isTemporary);
     },
   );
+
+  it('appends the saved turn IDs without reloading message history', async () => {
+    const user = new mongoose.Types.ObjectId().toString();
+    const conversationId = v4();
+    const req = { user: { id: user }, body: {}, config: {} };
+    const params = {
+      user,
+      conversationId,
+      endpoint: 'assistants',
+      assistant_id: 'asst_test',
+      thread_id: 'thread_test',
+      text: 'hello',
+    };
+    const history = jest.spyOn(Message, 'find');
+    try {
+      const userMessage = await saveUserMessage(req, { ...params, messageId: v4() });
+      const { message, conversation } = await saveAssistantMessage(req, {
+        ...params,
+        messageId: v4(),
+        parentMessageId: userMessage.messageId,
+        content: [],
+      });
+
+      expect(history).not.toHaveBeenCalled();
+      expect(new Set(conversation.messages.map(String))).toEqual(
+        new Set([String(userMessage._id), String(message._id)]),
+      );
+    } finally {
+      history.mockRestore();
+    }
+  });
 });

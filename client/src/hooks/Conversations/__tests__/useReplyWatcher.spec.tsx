@@ -2,7 +2,13 @@ import React from 'react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
-import { QueryClient, QueryObserver, QueryClientProvider } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryObserver,
+  InfiniteQueryObserver,
+  QueryClientProvider,
+} from '@tanstack/react-query';
+import type { ConversationListParams } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ConversationCursorData } from '~/utils/convos';
 import {
@@ -401,15 +407,32 @@ describe('useReplyWatcher', () => {
        as long as the user kept the app focused. */
     jest.spyOn(document, 'hasFocus').mockReturnValue(true);
     mockActiveJobIds = [CONVO_ID];
-    const { rerender, queryClient } = setup();
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    const { rerender, queryClient, result } = setup();
+    const observer = new QueryObserver(queryClient, {
+      queryKey: listKey,
+      staleTime: Infinity,
+      queryFn: async () => ({
+        pages: [
+          {
+            conversations: [{ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT }],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null],
+      }),
+    });
+    const unsubscribe = observer.subscribe(() => {});
 
     mockGetConversationById.mockRejectedValue(new Error('network down'));
     mockActiveJobIds = [];
     rerender();
 
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.messages, CONVO_ID]));
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
+    await waitFor(() =>
+      expect(result.current?.unseen).toEqual([
+        expect.objectContaining({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT }),
+      ]),
+    );
+    unsubscribe();
   });
 
   it('lets a conversation deleted while it generated stay gone', async () => {
@@ -527,17 +550,22 @@ describe('useReplyWatcher', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.messages, CONVO_ID]));
   });
 
-  it('refetches the list for a conversation the aggregate cannot see', async () => {
+  it('reveals a point-only conversation to the unread aggregate', async () => {
     /* Opened by URL, so it sits in its own point query: enough for the lookup, invisible to
        the badge and the alerts, which read the lists only. */
     mockActiveJobIds = [CONVO_ID];
-    const { rerender, queryClient } = setup();
+    const { rerender, queryClient, result } = setup();
     queryClient.removeQueries(listKey);
     queryClient.setQueryData([QueryKeys.conversation, CONVO_ID], {
       conversationId: CONVO_ID,
       title: 'Opened by URL',
     });
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    mockListConversations.mockResolvedValue({
+      conversations: [
+        { conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT, updatedAt: RESPONDED_AT },
+      ],
+      nextCursor: null,
+    });
 
     mockGetConversationById.mockResolvedValue({
       conversationId: CONVO_ID,
@@ -546,7 +574,11 @@ describe('useReplyWatcher', () => {
     mockActiveJobIds = [];
     rerender();
 
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
+    await waitFor(() =>
+      expect(result.current?.unseen).toEqual([
+        expect.objectContaining({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT }),
+      ]),
+    );
   });
 
   it('asks for more than one default page while away', async () => {
@@ -563,6 +595,68 @@ describe('useReplyWatcher', () => {
       expect.objectContaining({ limit: expect.any(Number) }),
     );
     expect(mockListConversations.mock.calls[0][0].limit).toBeGreaterThan(25);
+  });
+
+  it('refreshes only the newest page while preserving scrolled rows and cursors', async () => {
+    (document.hasFocus as jest.Mock).mockReturnValue(true);
+    const { queryClient, unmount } = setup();
+    const older = {
+      conversationId: 'older',
+      title: 'Older',
+      endpoint: EModelEndpoint.openAI,
+    };
+    const promoted = {
+      conversationId: 'promoted',
+      title: 'Promoted',
+      endpoint: EModelEndpoint.openAI,
+    };
+    const middle = {
+      conversationId: 'middle',
+      title: 'Middle',
+      endpoint: EModelEndpoint.openAI,
+    };
+    const tail = {
+      conversationId: 'tail',
+      title: 'Tail',
+      endpoint: EModelEndpoint.openAI,
+    };
+    queryClient.setQueryData(listKey, {
+      pages: [
+        {
+          conversations: [older, { conversationId: 'newest', endpoint: EModelEndpoint.openAI }],
+          nextCursor: 'old-1',
+        },
+        { conversations: [promoted, middle], nextCursor: 'old-2' },
+        { conversations: [tail], nextCursor: 'old-3' },
+      ],
+      pageParams: [null, 'old-1', 'old-2'],
+    });
+    mockListConversations.mockResolvedValue({
+      conversations: [{ ...promoted, lastResponseAt: RESPONDED_AT }, { conversationId: 'newest' }],
+      nextCursor: 'fresh-1',
+    });
+    const observer = new InfiniteQueryObserver<ConversationCursorData>(queryClient, {
+      queryKey: listKey,
+      staleTime: 5 * 60_000,
+      queryFn: ({ pageParam }) => mockListConversations({ cursor: pageParam }),
+      getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+
+    await act(async () => {
+      jest.advanceTimersByTime(5 * 60_000);
+    });
+    await waitFor(() => expect(mockListConversations.mock.calls).toHaveLength(2));
+    expect(mockListConversations.mock.calls.every(([params]) => params.cursor == null)).toBe(true);
+    const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey);
+    expect(
+      data?.pages.flatMap((page) => page.conversations).map((convo) => convo.conversationId),
+    ).toEqual(['promoted', 'newest', 'older', 'middle', 'tail']);
+    expect(data?.pageParams).toEqual([null, 'fresh-1', 'old-2']);
+    expect(data?.pages[1].nextCursor).toBe('old-2');
+    expect(observer.getCurrentResult().isStale).toBe(true);
+    unsubscribe();
+    unmount();
   });
 
   it('keeps a mid-merge acknowledgement over an equal-stamp completion snapshot', async () => {
@@ -679,26 +773,29 @@ describe('useReplyWatcher', () => {
     'refreshes replies outside the sidebar filter (focused: %s)',
     async (focused) => {
       (document.hasFocus as jest.Mock).mockReturnValue(focused);
-      mockListConversations.mockResolvedValue({
-        conversations: [
-          {
-            conversationId: 'outside-filter',
-            title: 'Remote',
-            lastResponseAt: RESPONDED_AT,
-            updatedAt: RESPONDED_AT,
-          },
-        ],
+      mockListConversations.mockImplementation(async ({ tags }: ConversationListParams) => ({
+        conversations: tags?.length
+          ? []
+          : [
+              {
+                conversationId: 'outside-filter',
+                title: 'Remote',
+                lastResponseAt: RESPONDED_AT,
+                updatedAt: RESPONDED_AT,
+              },
+            ],
         nextCursor: null,
-      });
+      }));
       const { queryClient, result, unmount } = setup({ notifications: !focused });
       const filteredKey = [QueryKeys.allConversations, { isArchived: false, tags: ['work'] }];
       const filteredData = { pages: [{ conversations: [], nextCursor: null }], pageParams: [null] };
       queryClient.setQueryData(filteredKey, filteredData);
       queryClient.removeQueries({ queryKey: listKey, exact: true });
-      const observer = new QueryObserver(queryClient, {
+      const observer = new InfiniteQueryObserver<ConversationCursorData>(queryClient, {
         queryKey: filteredKey,
         staleTime: Infinity,
-        queryFn: async () => filteredData,
+        queryFn: async () => filteredData.pages[0],
+        getNextPageParam: (page) => page.nextCursor ?? undefined,
       });
       const unsubscribe = observer.subscribe(() => {});
 

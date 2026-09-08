@@ -1,12 +1,25 @@
 import React from 'react';
-import { QueryKeys } from 'librechat-data-provider';
+import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { QueryKeys, tMessageSchema } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useGetMessagesByConvoId } from '~/data-provider/Messages/queries';
 import { suppressFocusAcknowledgement } from '../notificationNavigation';
 import useConversationSeen from '../useConversationSeen';
 import { markLocallyCommittedReply } from '~/utils';
 
 const mockMarkSeen = jest.fn();
+const mockGetMessages = jest.fn();
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getMessagesByConvoId: (...args: string[]) => mockGetMessages(...args),
+    },
+  };
+});
 jest.mock('~/data-provider', () => ({
   ...jest.requireActual('~/data-provider'),
   useMarkConversationSeenMutation: () => ({ mutate: mockMarkSeen }),
@@ -127,6 +140,71 @@ describe('useConversationSeen', () => {
       }),
     );
   });
+  it.each([false, true])(
+    'reuses a cold fetch only for the reply known when it started (newer reply: %s)',
+    async (newerReply) => {
+      const queryClient = createClient();
+      seedUnseen(queryClient);
+      const history = [
+        tMessageSchema.parse({
+          messageId: 'server-reply',
+          conversationId: CONVO_ID,
+          parentMessageId: 'server-user',
+          sender: 'Assistant',
+          text: 'Server reply',
+          isCreatedByUser: false,
+        }),
+      ];
+      let resolveInitial!: (messages: typeof history) => void;
+      let resolveLatest!: (messages: typeof history) => void;
+      const initial = new Promise<typeof history>((resolve) => {
+        resolveInitial = resolve;
+      });
+      const latest = new Promise<typeof history>((resolve) => {
+        resolveLatest = resolve;
+      });
+      const getMessages = mockGetMessages
+        .mockReset()
+        .mockRejectedValue(new Error('unexpected history request'))
+        .mockReturnValueOnce(initial)
+        .mockReturnValueOnce(latest);
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <MemoryRouter initialEntries={[`/c/${CONVO_ID}`]}>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </MemoryRouter>
+      );
+      try {
+        const messages = renderHook(() => useGetMessagesByConvoId(CONVO_ID), { wrapper });
+        await waitFor(() => expect(getMessages).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          if (newerReply) {
+            seedUnseen(queryClient, RESPONDED_LATER_AT);
+          }
+          resolveInitial(history);
+        });
+        await waitFor(() => expect(messages.result.current.isSuccess).toBe(true));
+
+        const seen = renderHook(() => useConversationSeen(CONVO_ID, false), { wrapper });
+        act(() => seen.result.current(true));
+        if (newerReply) {
+          await waitFor(() => expect(getMessages).toHaveBeenCalledTimes(2));
+          expect(mockMarkSeen).not.toHaveBeenCalled();
+          await act(async () => {
+            resolveLatest([...history, { ...history[0], messageId: 'newer-reply' }]);
+          });
+        }
+        await waitFor(() =>
+          expect(mockMarkSeen).toHaveBeenCalledWith({
+            conversationId: CONVO_ID,
+            lastResponseAt: newerReply ? RESPONDED_LATER_AT : RESPONDED_AT,
+          }),
+        );
+        expect(getMessages).toHaveBeenCalledTimes(newerReply ? 2 : 1);
+      } finally {
+        getMessages.mockReset();
+      }
+    },
+  );
 
   it('acknowledges a locally committed final without refetching message history', async () => {
     const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
