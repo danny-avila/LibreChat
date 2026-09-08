@@ -648,7 +648,9 @@ describe('createConversationImportOperation', () => {
         requestUserId: 'authenticated-user',
         format: 'librechat',
       });
-      expect(importer.mock.calls[0][0]).toMatchObject({ messages: [{ [field]: entries }] });
+      expect(importer.mock.calls[0][0]).toMatchObject({
+        messages: [{ [field]: [entries[0], { ...entries[1], metadata: {} }] }],
+      });
     });
   });
 

@@ -32,7 +32,6 @@ const remoteAuth = (getConfig) =>
 const managementAuth = (getConfig) =>
   createAgentManagementAuth({
     findUser: db.findUser,
-    isPrincipalActive: db.isAgentTriggerPrincipalActive,
     getAppConfig: getConfig,
   });
 

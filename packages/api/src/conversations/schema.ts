@@ -625,8 +625,14 @@ function withinContentLimits(value: unknown, depth: number, budget: { nodes: num
   return true;
 }
 
+export function parseConversationContentPart(value: unknown): Record<string, unknown> | undefined {
+  if (!withinContentLimits(value, 0, { nodes: 0 })) return;
+  const parsed = contentSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export function isValidConversationContentPart(value: unknown): boolean {
-  return withinContentLimits(value, 0, { nodes: 0 }) && contentSchema.safeParse(value).success;
+  return parseConversationContentPart(value) !== undefined;
 }
 
 function toTimestamp(value: Date | string | undefined): string | null {

@@ -9,7 +9,7 @@ import {
   conversationMessageMetadataSchema,
   conversationFileSchema,
   conversationAttachmentSchema,
-  isValidConversationContentPart,
+  parseConversationContentPart,
 } from './schema';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
@@ -402,11 +402,13 @@ function assertMessage(
   }
   if (Array.isArray(value.content)) {
     for (let index = 0; index < value.content.length; index++) {
-      if (!isValidConversationContentPart(value.content[index])) {
+      const parsed = parseConversationContentPart(value.content[index]);
+      if (!parsed) {
         throw new ConversationImportError(
           `Field "${location}.content[${index}]" is not a supported content part`,
         );
       }
+      value.content[index] = parsed as JsonObject;
       downgradeContentPreviews(value.content[index]);
     }
   }
@@ -417,12 +419,14 @@ function assertMessage(
       const schema =
         field === 'attachments' ? conversationAttachmentSchema : conversationFileSchema;
       const entry = entries[index];
-      if (!schema.safeParse(entry).success) {
+      const parsed = schema.safeParse(entry);
+      if (!parsed.success) {
         throw new ConversationImportError(
           `Field "${location}.${field}[${index}]" is not a supported file object`,
         );
       }
-      downgradeImportedPreview(entry);
+      entries[index] = parsed.data as JsonObject;
+      downgradeImportedPreview(entries[index]);
     }
   }
   if (

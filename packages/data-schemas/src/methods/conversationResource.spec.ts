@@ -574,3 +574,55 @@ describe('conversation resource methods', () => {
     ).resolves.toBe('missing');
   });
 });
+
+describe('required conversation-list index', () => {
+  it('provisions once, retries failures, and serves indexed pages with autoIndex disabled', async () => {
+    const isolated = new mongoose.Mongoose();
+    await isolated.connect(mongoServer.getUri('resource-index'), { autoIndex: false });
+    createModels(isolated);
+    const Convo = isolated.models.Conversation;
+    const local = createConversationResourceMethods(isolated);
+    await Convo.collection.insertMany(
+      Array.from({ length: 1005 }, (_, index) => ({
+        tenantId: TENANT_A,
+        user: index < 5 ? OWNER : OTHER_OWNER,
+        conversationId: `indexed-${index}`,
+        updatedAt: new Date(1700000000000 + index),
+      })),
+    );
+    const build = jest.spyOn(Convo.collection, 'createIndex');
+    const find = jest.spyOn(Convo, 'find');
+    try {
+      build.mockRejectedValueOnce(new Error('DDL unavailable'));
+      await expect(local.listConversationResources(OWNER, TENANT_A, { limit: 2 })).rejects.toThrow(
+        'DDL unavailable',
+      );
+      expect(find).not.toHaveBeenCalled();
+      const pages = await Promise.all([
+        local.listConversationResources(OWNER, TENANT_A, { limit: 2 }),
+        local.listConversationResources(OWNER, TENANT_A, { limit: 2 }),
+      ]);
+      expect(pages[0]).toHaveLength(3);
+      const calls = find.mock.calls as unknown as [mongoose.FilterQuery<IConversation>][];
+      const explain = (await Convo.find(calls[0][0])
+        .sort({ updatedAt: -1, _id: -1 })
+        .limit(3)
+        .explain('executionStats')) as unknown as {
+        executionStats: { totalDocsExamined: number };
+        queryPlanner: { winningPlan: unknown };
+      };
+      expect(explain.executionStats.totalDocsExamined).toBeLessThan(10);
+      expect(JSON.stringify(explain.queryPlanner.winningPlan)).toContain(
+        'tenantId_1_user_1_updatedAt_-1__id_-1',
+      );
+      expect(JSON.stringify(explain.queryPlanner.winningPlan)).not.toContain('"stage":"SORT"');
+      await local.listConversationResources(OWNER, TENANT_A, { limit: 2 });
+      expect(build).toHaveBeenCalledTimes(2);
+    } finally {
+      build.mockRestore();
+      find.mockRestore();
+      await isolated.connection.dropDatabase();
+      await isolated.disconnect();
+    }
+  });
+});

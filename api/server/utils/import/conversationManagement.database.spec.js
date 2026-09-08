@@ -50,6 +50,66 @@ describe('importConversations database compatibility', () => {
   });
 
   it.each([false, true])(
+    'persists only parsed public content (recursive=%s)',
+    async (recursive) => {
+      const filepath = path.join(tempDir, 'public-content.json');
+      const message = {
+        messageId: 'source-message',
+        parentMessageId: Constants.NO_PARENT,
+        conversationId: 'source',
+        text: 'Visible transcript',
+        sender: 'User',
+        isCreatedByUser: true,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call',
+              name: 'lookup',
+              args: { label: 'keep' },
+              output: 'result',
+              auth: 'private',
+              subagent_content: [{ type: 'text', text: 'Nested text', privateField: 'private' }],
+            },
+          },
+        ],
+        files: [{ file_id: 'file', filename: 'notes.txt', privateField: 'private' }],
+        attachments: [{ file_id: 'attachment', filename: 'result.txt', privateField: 'private' }],
+      };
+      await fs.writeFile(
+        filepath,
+        JSON.stringify({
+          conversationId: 'source',
+          endpoint: 'openAI',
+          recursive,
+          ...(recursive
+            ? { messagesTree: [{ ...message, children: [{ ...message, messageId: 'child' }] }] }
+            : { messages: [message] }),
+        }),
+      );
+      await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+      const stored = await mongoose.models.Message.find({ user: 'owner' }).lean();
+      expect(stored).toHaveLength(recursive ? 2 : 1);
+      for (const item of stored) {
+        expect(item.content).toEqual([
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call',
+              name: 'lookup',
+              args: { label: 'keep' },
+              output: 'result',
+              subagent_content: [{ type: 'text', text: 'Nested text' }],
+            },
+          },
+        ]);
+        expect(item.files).toEqual([{ file_id: 'file', filename: 'notes.txt' }]);
+        expect(item.attachments).toEqual([{ file_id: 'attachment', filename: 'result.txt' }]);
+      }
+    },
+  );
+
+  it.each([false, true])(
     'persists transcript without source provider thread state (recursive=%s)',
     async (recursive) => {
       const filepath = path.join(tempDir, 'transcript.json');

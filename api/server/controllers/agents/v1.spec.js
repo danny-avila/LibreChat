@@ -410,7 +410,6 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       );
       const auth = createAgentManagementAuth({
         findUser: db.findUser,
-        isPrincipalActive: jest.fn().mockResolvedValue(true),
         getAppConfig: jest.fn().mockResolvedValue({
           endpoints: {
             agents: {

@@ -126,7 +126,6 @@ function createApp(
   const managementAuth = (getConfig: ConversationManagementAuthDeps['getAppConfig']) =>
     createAgentManagementAuth({
       findUser: methods.findUser,
-      isPrincipalActive: methods.isAgentTriggerPrincipalActive,
       getAppConfig: getConfig,
       ...(verifyMachine == null
         ? {}

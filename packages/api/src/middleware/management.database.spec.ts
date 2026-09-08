@@ -94,15 +94,20 @@ describe('Agent Management principal resolution with tenant isolation', () => {
     const validResponse = createResponse();
     const validAuth = createAgentManagementAuth({
       findUser: methods.findUser,
-      isPrincipalActive: methods.isAgentTriggerPrincipalActive,
       getAppConfig: jest.fn().mockResolvedValue(createConfig(userId, TENANT_ID)),
       verifyAccessToken,
     });
 
+    const userLookup = jest.spyOn(User, 'findOne');
+    const userExists = jest.spyOn(User, 'exists');
     await validAuth(validRequest, validResponse, () => {
       downstreamTenant = getTenantId();
     });
 
+    expect(userLookup).toHaveBeenCalledTimes(1);
+    expect(userExists).not.toHaveBeenCalled();
+    userLookup.mockRestore();
+    userExists.mockRestore();
     expect(downstreamTenant).toBe(TENANT_ID);
     expect((validRequest as Request & { user?: IUser }).user).toMatchObject({
       id: userId,
@@ -110,11 +115,33 @@ describe('Agent Management principal resolution with tenant isolation', () => {
     });
     expect(validResponse.status).not.toHaveBeenCalled();
 
+    for (const fence of [new Date(), null]) {
+      await tenantStorage.run(
+        { tenantId: TENANT_ID },
+        async () =>
+          await User.updateOne({ _id: userId }, { $set: { agentTriggerDeletionStartedAt: fence } }),
+      );
+      const fencedResponse = createResponse();
+      const fencedNext = jest.fn();
+      const fencedRequest = createRequest();
+      await validAuth(fencedRequest, fencedResponse, fencedNext);
+      expect(fencedResponse.status).toHaveBeenCalledWith(409);
+      expect(fencedNext).not.toHaveBeenCalled();
+      expect(fencedRequest).not.toHaveProperty('user');
+    }
+    await tenantStorage.run(
+      { tenantId: TENANT_ID },
+      async () =>
+        await User.updateOne({ _id: userId }, { $unset: { agentTriggerDeletionStartedAt: 1 } }),
+    );
+    const recoveredNext = jest.fn();
+    await validAuth(createRequest(), createResponse(), recoveredNext);
+    expect(recoveredNext).toHaveBeenCalledTimes(1);
+
     const crossTenantResponse = createResponse();
     const crossTenantNext = jest.fn();
     const crossTenantAuth = createAgentManagementAuth({
       findUser: methods.findUser,
-      isPrincipalActive: methods.isAgentTriggerPrincipalActive,
       getAppConfig: jest.fn().mockResolvedValue(createConfig(userId, OTHER_TENANT_ID)),
       verifyAccessToken,
     });

@@ -1,6 +1,7 @@
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IConversation, IMessage } from '~/types';
 import { activeExpirationFilter, buildRetentionVisibilityFilter } from '~/utils/retention';
+import { buildIndexWithRetry } from '~/utils/retry';
 
 export type ConversationResource = Pick<
   IConversation,
@@ -62,6 +63,25 @@ function tenantBoundary<T>(tenantId?: string): FilterQuery<T> {
 }
 
 export function createConversationResourceMethods(mongoose: typeof import('mongoose')) {
+  let listIndexPromise: Promise<string> | undefined;
+  function ensureListIndex(): Promise<string> {
+    listIndexPromise ??= buildIndexWithRetry(
+      () =>
+        // eslint-disable-next-line no-restricted-syntax -- Index DDL is collection-wide; it does not read or mutate tenant records.
+        mongoose.models.Conversation.collection.createIndex({
+          tenantId: 1,
+          user: 1,
+          updatedAt: -1,
+          _id: -1,
+        }),
+      'createIndex(Conversation.resourceList)',
+    ).catch((error) => {
+      listIndexPromise = undefined;
+      throw error;
+    });
+    return listIndexPromise;
+  }
+
   const visible = (user: string, tenantId?: string): FilterQuery<IConversation> => ({
     user,
     ...tenantBoundary<IConversation>(tenantId),
@@ -164,6 +184,7 @@ export function createConversationResourceMethods(mongoose: typeof import('mongo
         });
       }
 
+      await ensureListIndex();
       return Conversation.find({ $and: filters })
         .select(conversationFields)
         .sort({ updatedAt: -1, _id: -1 })
