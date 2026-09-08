@@ -84,4 +84,22 @@ describe('startIndexSyncScheduler', () => {
 
     expect(run).not.toHaveBeenCalled();
   });
+
+  test('does not report stopped until non-cooperative work settles', async () => {
+    const work = createDeferred();
+    const run = jest.fn(() => work.promise);
+    const scheduler = startIndexSyncScheduler({ run, onError: jest.fn(), intervalMs: 1000 });
+    await Promise.resolve();
+
+    let stopped = false;
+    const stopping = scheduler.stop().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+
+    expect(stopped).toBe(false);
+    work.resolve();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
 });

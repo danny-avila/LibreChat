@@ -21,19 +21,45 @@ interface DistributedJobOptions {
   onLeaseLost?: () => void;
   signal?: AbortSignal;
   timeoutMs?: number;
+  cancellationGraceMs?: number;
+  operationTimeoutMs?: number;
 }
+
+interface OwnershipOperationOptions {
+  signal: AbortSignal;
+  maxTimeMS: number;
+  timeoutMS: number;
+}
+
+type HandlerOutcome<T> =
+  | { status: 'fulfilled'; value: T }
+  | { status: 'rejected'; reason: unknown };
 
 const DEFAULT_LEASE_MS = 30 * 60 * 1000;
 const DEFAULT_REFRESH_MS = 60 * 1000;
 const DEFAULT_COMPLETION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_FAILURE_TTL_MS = 30 * 1000;
 const DEFAULT_POLL_MS = 2000;
+const DEFAULT_CANCELLATION_GRACE_MS = 5000;
+const DEFAULT_OPERATION_TIMEOUT_MS = 10_000;
 const LEASE_SAFETY_MS = 5000;
+const CANCELLED = Symbol('cancelled');
+const SETTLEMENT_TIMEOUT = Symbol('settlement-timeout');
+
+class OwnershipOperationTimeoutError extends Error {
+  constructor(operation: string, timeoutMs: number) {
+    super(`Distributed job ownership operation "${operation}" exceeded ${timeoutMs}ms`);
+    this.name = 'OwnershipOperationTimeoutError';
+  }
+}
 
 const getAbortError = (jobId: string, signal: AbortSignal): Error =>
   signal.reason instanceof Error
     ? signal.reason
     : new Error(`Distributed job ${jobId} was cancelled`);
+
+const getRemainingMs = (deadlineAt?: number): number | undefined =>
+  deadlineAt == null ? undefined : Math.max(0, deadlineAt - Date.now());
 
 const sleep = (duration: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -52,29 +78,134 @@ const sleep = (duration: number, signal: AbortSignal): Promise<void> =>
     signal.addEventListener('abort', onAbort, { once: true });
   });
 
+const waitUntil = <T>(
+  promise: Promise<T>,
+  deadlineAt: number | undefined,
+  timeoutValue: typeof SETTLEMENT_TIMEOUT,
+): Promise<T | typeof SETTLEMENT_TIMEOUT> => {
+  const remainingMs = getRemainingMs(deadlineAt);
+  if (remainingMs == null) {
+    return promise;
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(timeoutValue), remainingMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(timeoutValue);
+      },
+    );
+  });
+};
+
+async function runOwnershipOperation<T>(
+  operation: string,
+  operationTimeoutMs: number,
+  deadlineAt: number | undefined,
+  run: (options: OwnershipOperationOptions) => Promise<T>,
+  cancellationSignal?: AbortSignal,
+): Promise<T> {
+  const remainingMs = getRemainingMs(deadlineAt);
+  const timeoutMs = Math.max(
+    1,
+    Math.min(operationTimeoutMs, remainingMs == null ? operationTimeoutMs : remainingMs),
+  );
+  if (remainingMs === 0) {
+    throw new OwnershipOperationTimeoutError(operation, timeoutMs);
+  }
+
+  const controller = new AbortController();
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      cancellationSignal?.removeEventListener('abort', onCancellation);
+    };
+    const resolveOnce = (value: T) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const failUnsafe = () => {
+      controller.abort();
+      rejectOnce(new OwnershipOperationTimeoutError(operation, timeoutMs));
+    };
+    const onCancellation = () => {
+      controller.abort(cancellationSignal?.reason);
+      rejectOnce(
+        cancellationSignal == null
+          ? new OwnershipOperationTimeoutError(operation, timeoutMs)
+          : getAbortError(operation, cancellationSignal),
+      );
+    };
+    const timer = setTimeout(failUnsafe, timeoutMs);
+
+    if (cancellationSignal?.aborted) {
+      onCancellation();
+      return;
+    }
+    cancellationSignal?.addEventListener('abort', onCancellation, { once: true });
+    run({
+      signal: controller.signal,
+      maxTimeMS: timeoutMs,
+      timeoutMS: timeoutMs,
+    }).then(resolveOnce, (error: unknown) => rejectOnce(error));
+  });
+}
+
 async function tryAcquire(
   collection: Collection<JobState>,
   jobId: string,
   owner: string,
   leaseMs: number,
+  operationTimeoutMs: number,
+  deadlineAt: number | undefined,
+  cancellationSignal: AbortSignal,
 ): Promise<Date | undefined> {
   const now = new Date();
 
   try {
-    const state = await collection.findOneAndUpdate(
-      {
-        _id: jobId,
-        $or: [{ expiresAt: { $lte: now } }, { expiresAt: { $exists: false } }],
-      },
-      {
-        $set: {
-          status: 'running',
-          owner,
-          expiresAt: new Date(now.getTime() + leaseMs),
-          updatedAt: now,
-        },
-      },
-      { upsert: true, returnDocument: 'after', includeResultMetadata: false },
+    const state = await runOwnershipOperation(
+      'acquire',
+      operationTimeoutMs,
+      deadlineAt,
+      (operationOptions) =>
+        collection.findOneAndUpdate(
+          {
+            _id: jobId,
+            $or: [{ expiresAt: { $lte: now } }, { expiresAt: { $exists: false } }],
+          },
+          {
+            $set: {
+              status: 'running',
+              owner,
+              expiresAt: new Date(now.getTime() + leaseMs),
+              updatedAt: now,
+            },
+          },
+          {
+            upsert: true,
+            returnDocument: 'after',
+            includeResultMetadata: false,
+            ...operationOptions,
+          },
+        ),
+      cancellationSignal,
     );
     return state?.owner === owner ? state.expiresAt : undefined;
   } catch (error) {
@@ -88,13 +219,10 @@ async function tryAcquire(
 /**
  * Runs one logical job across replicas under a renewable MongoDB lease.
  *
- * The lease owner alone executes `handler`; followers poll until they can take
- * over or observe a still-valid completion marker. A follower returns
- * `undefined` when another replica already completed the job, while the owner
- * returns the handler result. Completion and failure transitions are fenced by
- * owner and unexpired lease. By default, losing the lease terminates the
- * process so stale work cannot continue; callers may override `onLeaseLost`
- * only when they can provide an equally safe fail-stop action.
+ * Cancellation first asks the handler to stop and keeps renewing its lease until
+ * the handler confirms settlement. If handler or ownership-operation settlement
+ * cannot be confirmed within the deadline, the owner fail-stops without making
+ * the lease acquirable; this prevents stale work from overlapping a new owner.
  */
 export async function runDistributedJob<T>(
   collection: Collection<JobState>,
@@ -108,6 +236,12 @@ export async function runDistributedJob<T>(
   const failureTtlMs = options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
   const timeoutMs = options.timeoutMs;
+  const cancellationGraceMs = options.cancellationGraceMs ?? DEFAULT_CANCELLATION_GRACE_MS;
+  const defaultOperationTimeoutMs = Math.min(
+    DEFAULT_OPERATION_TIMEOUT_MS,
+    leaseMs - LEASE_SAFETY_MS - 1,
+  );
+  const operationTimeoutMs = options.operationTimeoutMs ?? defaultOperationTimeoutMs;
   if (
     !Number.isFinite(leaseMs) ||
     !Number.isFinite(refreshMs) ||
@@ -122,47 +256,126 @@ export async function runDistributedJob<T>(
   if (timeoutMs != null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
     throw new RangeError('Distributed job timeout must be a positive finite number');
   }
+  if (!Number.isFinite(cancellationGraceMs) || cancellationGraceMs < 0) {
+    throw new RangeError('Distributed job cancellation grace must be a finite non-negative number');
+  }
+  if (
+    !Number.isFinite(operationTimeoutMs) ||
+    operationTimeoutMs <= 0 ||
+    operationTimeoutMs >= leaseMs - LEASE_SAFETY_MS
+  ) {
+    throw new RangeError(
+      `Distributed job operation timeout must be positive and leave at least ${LEASE_SAFETY_MS}ms before lease expiry`,
+    );
+  }
+
   const onLeaseLost =
     options.onLeaseLost ??
     (() => {
       process.exit(1);
     });
   const owner = crypto.randomUUID();
+  const startedAt = Date.now();
+  const deadlineAt = timeoutMs == null ? undefined : startedAt + timeoutMs;
   const controller = new AbortController();
-  const abortFromCaller = () =>
-    controller.abort(
+  let cancellationDeadlineAt: number | undefined;
+  const requestCancellation = (reason: Error, settleBy: number | undefined) => {
+    if (controller.signal.aborted) {
+      return;
+    }
+    cancellationDeadlineAt = settleBy;
+    controller.abort(reason);
+  };
+  const abortFromCaller = () => {
+    const callerDeadlineAt = Date.now() + cancellationGraceMs;
+    requestCancellation(
       options.signal?.reason instanceof Error
         ? options.signal.reason
         : new Error(`Distributed job ${jobId} was cancelled`),
+      deadlineAt == null ? callerDeadlineAt : Math.min(deadlineAt, callerDeadlineAt),
     );
-  let deadlineTimer: NodeJS.Timeout | undefined;
+  };
+  let cancellationTimer: NodeJS.Timeout | undefined;
   if (options.signal?.aborted) {
     abortFromCaller();
   } else {
     options.signal?.addEventListener('abort', abortFromCaller, { once: true });
   }
-  if (timeoutMs != null) {
-    deadlineTimer = setTimeout(() => {
-      controller.abort(
-        new Error(`Distributed job ${jobId} did not complete within ${timeoutMs}ms`),
-      );
-    }, timeoutMs);
+  if (deadlineAt != null) {
+    cancellationTimer = setTimeout(
+      () => {
+        requestCancellation(
+          new Error(`Distributed job ${jobId} did not complete within ${timeoutMs}ms`),
+          deadlineAt,
+        );
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
   }
+
+  const failStopBeforeOwnership = (error: unknown): never => {
+    logger.error(`[DistributedJob] Could not safely determine ownership for ${jobId}`, error);
+    onLeaseLost();
+    throw error;
+  };
 
   let acquiredExpiry: Date | undefined;
   try {
     if (controller.signal.aborted) {
       throw getAbortError(jobId, controller.signal);
     }
-    while ((acquiredExpiry = await tryAcquire(collection, jobId, owner, leaseMs)) == null) {
-      if (controller.signal.aborted) {
-        throw getAbortError(jobId, controller.signal);
+    while (acquiredExpiry == null) {
+      try {
+        acquiredExpiry = await tryAcquire(
+          collection,
+          jobId,
+          owner,
+          leaseMs,
+          operationTimeoutMs,
+          deadlineAt,
+          controller.signal,
+        );
+      } catch (error) {
+        return failStopBeforeOwnership(error);
       }
-      const state = (await collection.findOne({ _id: jobId })) as WithId<JobState> | null;
+      if (acquiredExpiry != null) {
+        break;
+      }
+
+      let state: WithId<JobState> | null;
+      try {
+        state = await runOwnershipOperation(
+          'lookup',
+          operationTimeoutMs,
+          deadlineAt,
+          (operationOptions) => collection.findOne({ _id: jobId }, operationOptions),
+          controller.signal,
+        );
+      } catch (error) {
+        if (error instanceof OwnershipOperationTimeoutError || controller.signal.aborted) {
+          return failStopBeforeOwnership(error);
+        }
+        throw error;
+      }
       if (state?.status === 'completed' && state.expiresAt > new Date()) {
         return;
       }
-      await sleep(pollMs, controller.signal);
+      const remainingMs = getRemainingMs(deadlineAt);
+      await sleep(remainingMs == null ? pollMs : Math.min(pollMs, remainingMs), controller.signal);
+    }
+
+    if (deadlineAt != null && !controller.signal.aborted) {
+      clearTimeout(cancellationTimer);
+      const abortAt = Math.max(Date.now(), deadlineAt - cancellationGraceMs);
+      cancellationTimer = setTimeout(
+        () => {
+          requestCancellation(
+            new Error(`Distributed job ${jobId} did not complete within ${timeoutMs}ms`),
+            deadlineAt,
+          );
+        },
+        Math.max(0, abortAt - Date.now()),
+      );
     }
 
     let leaseExpiresAt = acquiredExpiry.getTime();
@@ -171,6 +384,10 @@ export async function runDistributedJob<T>(
     let refreshing = false;
     let watchdogTimer: NodeJS.Timeout | undefined;
     let refreshInFlight: Promise<void> = Promise.resolve();
+    let rejectFatal!: (error: Error) => void;
+    const fatal = new Promise<never>((_resolve, reject) => {
+      rejectFatal = reject;
+    });
 
     const loseLease = (message: string, error?: unknown) => {
       if (leaseLost) {
@@ -179,8 +396,10 @@ export async function runDistributedJob<T>(
       leaseLost = true;
       clearInterval(refreshTimer);
       clearTimeout(watchdogTimer);
+      const leaseError = new Error(`Lost distributed job lease for ${jobId}`);
       logger.error(message, error);
       onLeaseLost();
+      rejectFatal(leaseError);
     };
 
     const scheduleWatchdog = () => {
@@ -195,14 +414,21 @@ export async function runDistributedJob<T>(
     const refreshLease = async () => {
       try {
         const now = new Date();
-        const result = await collection.updateOne(
-          { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
-          {
-            $set: {
-              expiresAt: new Date(now.getTime() + leaseMs),
-              updatedAt: now,
-            },
-          },
+        const result = await runOwnershipOperation(
+          'renew',
+          operationTimeoutMs,
+          deadlineAt,
+          (operationOptions) =>
+            collection.updateOne(
+              { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
+              {
+                $set: {
+                  expiresAt: new Date(now.getTime() + leaseMs),
+                  updatedAt: now,
+                },
+              },
+              operationOptions,
+            ),
         );
         if (result.matchedCount !== 1) {
           if (!finalizing) {
@@ -213,7 +439,7 @@ export async function runDistributedJob<T>(
         leaseExpiresAt = now.getTime() + leaseMs;
         scheduleWatchdog();
       } catch (error) {
-        logger.error(`[DistributedJob] Failed to refresh lease for ${jobId}`, error);
+        loseLease(`[DistributedJob] Lease renewal failed for ${jobId}`, error);
       }
     };
 
@@ -229,91 +455,138 @@ export async function runDistributedJob<T>(
     refreshTimer.unref();
     scheduleWatchdog();
 
+    const getFinalizationDeadline = () => cancellationDeadlineAt ?? deadlineAt;
     const stopRenewal = async () => {
       finalizing = true;
       clearInterval(refreshTimer);
-      await refreshInFlight;
+      const refreshSettled = await Promise.race([
+        waitUntil(refreshInFlight, getFinalizationDeadline(), SETTLEMENT_TIMEOUT),
+        fatal,
+      ]);
+      if (refreshSettled === SETTLEMENT_TIMEOUT) {
+        loseLease(`[DistributedJob] Timed out waiting for lease renewal to settle for ${jobId}`);
+        return await fatal;
+      }
       if (leaseLost) {
-        throw new Error(`Lost distributed job lease for ${jobId}`);
+        return await fatal;
       }
     };
 
-    const rejectCancellation = (reject: (reason?: unknown) => void) =>
-      reject(getAbortError(jobId, controller.signal));
-    let onCancelled: (() => void) | undefined;
-    const cancelled = new Promise<never>((_resolve, reject) => {
-      if (controller.signal.aborted) {
-        rejectCancellation(reject);
-        return;
-      }
-      onCancelled = () => rejectCancellation(reject);
-      controller.signal.addEventListener('abort', onCancelled, { once: true });
-    });
-
-    const failJob = async (error: unknown, renewalStopped = false): Promise<never> => {
-      if (!renewalStopped) {
-        await stopRenewal();
-      }
+    const finalizeFailure = async (error: unknown, cancelled: boolean): Promise<never> => {
+      await stopRenewal();
       const now = new Date();
-      const cancelledOrTimedOut = controller.signal.aborted;
-      const failure = await collection.updateOne(
-        { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
-        {
-          $set: {
-            status: 'failed',
-            expiresAt: cancelledOrTimedOut ? now : new Date(now.getTime() + failureTtlMs),
-            updatedAt: now,
-          },
-          $unset: { owner: '' },
-        },
-      );
-      if (failure.matchedCount !== 1) {
-        loseLease(`[DistributedJob] Lost lease while failing ${jobId}`);
+      try {
+        const failure = await Promise.race([
+          runOwnershipOperation(
+            'fail',
+            operationTimeoutMs,
+            getFinalizationDeadline(),
+            (operationOptions) =>
+              collection.updateOne(
+                { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
+                {
+                  $set: {
+                    status: 'failed',
+                    expiresAt: cancelled ? now : new Date(now.getTime() + failureTtlMs),
+                    updatedAt: now,
+                  },
+                  $unset: { owner: '' },
+                },
+                operationOptions,
+              ),
+          ),
+          fatal,
+        ]);
+        if (failure.matchedCount !== 1) {
+          loseLease(`[DistributedJob] Lost lease while failing ${jobId}`);
+          return await fatal;
+        }
+      } catch (finalizationError) {
+        loseLease(
+          `[DistributedJob] Could not safely finalize failure for ${jobId}`,
+          finalizationError,
+        );
+        return await fatal;
       }
       throw error;
     };
 
+    const handlerOutcome: Promise<HandlerOutcome<T>> = Promise.resolve()
+      .then(() => handler(controller.signal))
+      .then(
+        (value) => ({ status: 'fulfilled', value }),
+        (reason: unknown) => ({ status: 'rejected', reason }),
+      );
+    const cancelled = new Promise<typeof CANCELLED>((resolve) => {
+      if (controller.signal.aborted) {
+        resolve(CANCELLED);
+        return;
+      }
+      controller.signal.addEventListener('abort', () => resolve(CANCELLED), { once: true });
+    });
+
     try {
-      let result: T;
-      try {
-        result = await Promise.race([handler(controller.signal), cancelled]);
-        if (controller.signal.aborted) {
-          throw getAbortError(jobId, controller.signal);
+      const first = await Promise.race([handlerOutcome, cancelled, fatal]);
+      if (first === CANCELLED) {
+        const settled = await Promise.race([
+          waitUntil(handlerOutcome, cancellationDeadlineAt, SETTLEMENT_TIMEOUT),
+          fatal,
+        ]);
+        if (settled === SETTLEMENT_TIMEOUT) {
+          loseLease(
+            `[DistributedJob] Handler did not settle safely after cancellation for ${jobId}`,
+            getAbortError(jobId, controller.signal),
+          );
+          return await fatal;
         }
-      } catch (error) {
-        return await failJob(error);
+        return await finalizeFailure(getAbortError(jobId, controller.signal), true);
+      }
+
+      if (controller.signal.aborted) {
+        return await finalizeFailure(getAbortError(jobId, controller.signal), true);
+      }
+      if (first.status === 'rejected') {
+        return await finalizeFailure(first.reason, false);
       }
 
       await stopRenewal();
       if (controller.signal.aborted) {
-        return await failJob(getAbortError(jobId, controller.signal), true);
+        return await finalizeFailure(getAbortError(jobId, controller.signal), true);
       }
       const now = new Date();
-      const completion = await collection.updateOne(
-        { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
-        {
-          $set: {
-            status: 'completed',
-            expiresAt: new Date(now.getTime() + completionTtlMs),
-            updatedAt: now,
-          },
-          $unset: { owner: '' },
-        },
-      );
-      if (completion.matchedCount !== 1) {
-        loseLease(`[DistributedJob] Lost lease while completing ${jobId}`);
-        throw new Error(`Lost distributed job lease for ${jobId}`);
+      try {
+        const completion = await Promise.race([
+          runOwnershipOperation('complete', operationTimeoutMs, deadlineAt, (operationOptions) =>
+            collection.updateOne(
+              { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
+              {
+                $set: {
+                  status: 'completed',
+                  expiresAt: new Date(now.getTime() + completionTtlMs),
+                  updatedAt: now,
+                },
+                $unset: { owner: '' },
+              },
+              operationOptions,
+            ),
+          ),
+          fatal,
+        ]);
+        if (completion.matchedCount !== 1) {
+          loseLease(`[DistributedJob] Lost lease while completing ${jobId}`);
+          return await fatal;
+        }
+      } catch (error) {
+        loseLease(`[DistributedJob] Could not safely complete ${jobId}`, error);
+        return await fatal;
       }
-      return result;
+      return first.value;
     } finally {
-      if (onCancelled) {
-        controller.signal.removeEventListener('abort', onCancelled);
-      }
       clearInterval(refreshTimer);
       clearTimeout(watchdogTimer);
     }
   } finally {
-    clearTimeout(deadlineTimer);
+    clearTimeout(cancellationTimer);
     options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }

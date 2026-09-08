@@ -25,6 +25,10 @@ const mockMeiliSearch = jest.fn(() => ({
   waitForTask: mockWaitForTask,
 }));
 const mockBatchResetMeiliFlags = jest.fn();
+const mockGetMeiliRebuildState = jest.fn();
+const mockRequestMeiliRebuild = jest.fn();
+const mockMarkMeiliRebuildSyncing = jest.fn();
+const mockCompleteMeiliRebuild = jest.fn();
 const mockIsEnabled = jest.fn();
 const mockRunDistributedJob = jest.fn();
 const mockWaitForMeiliTask = jest.fn();
@@ -53,7 +57,11 @@ jest.mock('meilisearch', () => ({
 }));
 
 jest.mock('./utils', () => ({
-  batchResetMeiliFlags: mockBatchResetMeiliFlags,
+  batchResetMeiliFlags: (collection) => mockBatchResetMeiliFlags(collection),
+  getMeiliRebuildState: mockGetMeiliRebuildState,
+  requestMeiliRebuild: mockRequestMeiliRebuild,
+  markMeiliRebuildSyncing: mockMarkMeiliRebuildSyncing,
+  completeMeiliRebuild: mockCompleteMeiliRebuild,
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -80,6 +88,8 @@ describe('performSync() - syncThreshold logic', () => {
   const ORIGINAL_ENV = process.env;
   let Message;
   let Conversation;
+  let rebuildStates;
+  let rebuildGeneration;
 
   beforeAll(() => {
     Message = createMockModel('messages');
@@ -110,7 +120,9 @@ describe('performSync() - syncThreshold logic', () => {
 
     // Mock isEnabled
     mockIsEnabled.mockImplementation((val) => val === 'true' || val === true);
-    mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) => handler());
+    mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) =>
+      handler(new AbortController().signal),
+    );
     mockWaitForMeiliTask.mockImplementation(
       async (client, taskUid, operation, _isTimeout, options) => {
         const task = await client.waitForTask(taskUid, { timeOutMs: 10_000, intervalMs: 100 });
@@ -132,6 +144,32 @@ describe('performSync() - syncThreshold logic', () => {
     });
 
     mockBatchResetMeiliFlags.mockResolvedValue(undefined);
+    rebuildStates = new Map();
+    rebuildGeneration = 0;
+    mockGetMeiliRebuildState.mockImplementation(async (_collection, indexName) =>
+      rebuildStates.get(indexName),
+    );
+    mockRequestMeiliRebuild.mockImplementation(async (_collection, indexName) => {
+      const existing = rebuildStates.get(indexName);
+      if (existing?.phase === 'resetting') {
+        return existing;
+      }
+      const state = {
+        _id: indexName,
+        generation: `generation-${++rebuildGeneration}`,
+        phase: 'resetting',
+      };
+      rebuildStates.set(indexName, state);
+      return state;
+    });
+    mockMarkMeiliRebuildSyncing.mockImplementation(async (_collection, indexName, generation) => {
+      const state = { _id: indexName, generation, phase: 'syncing' };
+      rebuildStates.set(indexName, state);
+      return state;
+    });
+    mockCompleteMeiliRebuild.mockImplementation(async (_collection, indexName) => {
+      rebuildStates.delete(indexName);
+    });
   });
 
   afterEach(() => {
@@ -711,7 +749,7 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
     expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Messages settings updated. Forcing full message re-sync...',
+      '[indexSync] Resetting messages for the pending index rebuild...',
     );
     expect(mockLogger.info).toHaveBeenCalledWith(
       '[indexSync] Starting message sync (50 unindexed)',
@@ -755,7 +793,7 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Message.syncWithMeili).not.toHaveBeenCalled();
     expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Conversations settings updated. Forcing full conversation re-sync...',
+      '[indexSync] Resetting conversations for the pending index rebuild...',
     );
     expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (50 unindexed)');
   });
@@ -799,15 +837,109 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
     expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Messages settings updated. Forcing full message re-sync...',
+      '[indexSync] Resetting messages for the pending index rebuild...',
     );
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Conversations settings updated. Forcing full conversation re-sync...',
+      '[indexSync] Resetting conversations for the pending index rebuild...',
     );
     expect(mockLogger.info).toHaveBeenCalledWith(
       '[indexSync] Starting message sync (50 unindexed)',
     );
     expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (50 unindexed)');
+  });
+
+  test('persists a message rebuild when a later settings check fails before reset', async () => {
+    let messagesSettingsNeedUpdate = true;
+    let failConversationCheck = true;
+    mockMeiliIndex.mockImplementation((indexName) => ({
+      getSettings: jest.fn().mockImplementation(async () => {
+        if (indexName === 'convos' && failConversationCheck) {
+          throw new Error('conversation settings unavailable');
+        }
+        return {
+          filterableAttributes:
+            indexName === 'messages' && messagesSettingsNeedUpdate ? [] : ['user'],
+        };
+      }),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    }));
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 0,
+      totalDocuments: 50,
+      pendingIndexing: 50,
+      isComplete: false,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      pendingIndexing: 0,
+      isComplete: true,
+    });
+    Message.syncWithMeili.mockResolvedValue(undefined);
+
+    const indexSync = require('./indexSync');
+    await expect(indexSync()).rejects.toThrow('conversation settings unavailable');
+
+    expect(rebuildStates.get('messages')).toMatchObject({ phase: 'resetting' });
+    expect(mockBatchResetMeiliFlags).not.toHaveBeenCalled();
+
+    messagesSettingsNeedUpdate = false;
+    failConversationCheck = false;
+    await expect(indexSync()).resolves.toEqual({ messagesSync: true, convosSync: false });
+
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledTimes(1);
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledWith(Message.collection);
+    expect(mockCompleteMeiliRebuild).toHaveBeenCalledWith(
+      expect.anything(),
+      'messages',
+      'generation-1',
+      expect.anything(),
+    );
+    expect(rebuildStates.has('messages')).toBe(false);
+  });
+
+  test('retries a partially failed reset before starting the affected rebuild', async () => {
+    let messagesSettingsNeedUpdate = true;
+    mockMeiliIndex.mockImplementation((indexName) => ({
+      getSettings: jest.fn().mockImplementation(async () => ({
+        filterableAttributes:
+          indexName === 'messages' && messagesSettingsNeedUpdate ? [] : ['user'],
+      })),
+      updateSettings: jest.fn().mockResolvedValue({ taskUid: 1 }),
+      search: jest.fn().mockResolvedValue({ hits: [] }),
+    }));
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 0,
+      totalDocuments: 1001,
+      pendingIndexing: 1001,
+      isComplete: false,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      pendingIndexing: 0,
+      isComplete: true,
+    });
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    mockBatchResetMeiliFlags
+      .mockRejectedValueOnce(new Error('reset interrupted'))
+      .mockResolvedValueOnce(undefined);
+
+    const indexSync = require('./indexSync');
+    await expect(indexSync()).rejects.toThrow('reset interrupted');
+
+    expect(rebuildStates.get('messages')).toMatchObject({ phase: 'resetting' });
+    expect(mockMarkMeiliRebuildSyncing).not.toHaveBeenCalled();
+
+    messagesSettingsNeedUpdate = false;
+    await expect(indexSync()).resolves.toEqual({ messagesSync: true, convosSync: false });
+
+    expect(mockBatchResetMeiliFlags).toHaveBeenCalledTimes(2);
+    expect(mockMarkMeiliRebuildSyncing).toHaveBeenCalledTimes(1);
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockCompleteMeiliRebuild).toHaveBeenCalledTimes(1);
+    expect(rebuildStates.has('messages')).toBe(false);
   });
 
   test('resumes a forced rebuild after interruption leaves a below-threshold remainder', async () => {

@@ -65,18 +65,20 @@ interface _DocumentWithMeiliIndex extends Document {
 export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
 
 export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
-  syncWithMeili(): Promise<void>;
+  syncWithMeili(signal?: AbortSignal): Promise<void>;
   getSyncProgress(): Promise<SyncProgress>;
   processSyncBatch(
     index: Index<MeiliIndexable>,
     documents: Array<Record<string, unknown>>,
+    signal?: AbortSignal,
   ): Promise<number>;
-  cleanupExcludedMeiliIndex(): Promise<void>;
+  cleanupExcludedMeiliIndex(signal?: AbortSignal): Promise<void>;
   cleanupMeiliIndex(
     index: Index<MeiliIndexable>,
     primaryKey: string,
     batchSize: number,
     delayMs: number,
+    signal?: AbortSignal,
   ): Promise<void>;
   setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown>;
   meiliSearch(
@@ -123,6 +125,35 @@ const meiliRetryBaseDelayMs = 250;
 const meiliVersionReconcileMaxAttempts = 3;
 const completeDetachedOperation: CallbackWithoutResultAndOptionalError = () => undefined;
 
+const throwIfSyncAborted = (signal?: AbortSignal): void => {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new Error('Meilisearch reconciliation cancelled');
+  }
+};
+
+const sleepWithSignal = (duration: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new Error('Meilisearch reconciliation cancelled'),
+      );
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, duration);
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
 interface MeiliTaskResult {
   status: string;
   error?: MeiliSearchErrorInfo | null;
@@ -146,22 +177,27 @@ const waitForTerminalMeiliTask = async (
   waiter: MeiliTaskWaiter,
   taskUid: number,
   operation: string,
+  signal?: AbortSignal,
 ): Promise<MeiliTaskResult> => {
   const startedAt = Date.now();
 
   while (true) {
+    throwIfSyncAborted(signal);
     const remainingMs = meiliTaskTimeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) {
       throw new MeiliTaskDeadlineError(operation, taskUid);
     }
 
     try {
-      return await waiter.waitForTask(taskUid, {
+      const task = await waiter.waitForTask(taskUid, {
         timeOutMs: Math.min(meiliRequestTimeoutMs, remainingMs),
         intervalMs: 100,
       });
+      throwIfSyncAborted(signal);
+      return task;
     } catch (error) {
       if (error instanceof MeiliSearchTimeOutError) {
+        throwIfSyncAborted(signal);
         continue;
       }
       throw error;
@@ -173,8 +209,9 @@ const waitForSuccessfulMeiliTask = async (
   waiter: MeiliTaskWaiter,
   taskUid: number,
   operation: string,
+  signal?: AbortSignal,
 ): Promise<void> => {
-  const task = await waitForTerminalMeiliTask(waiter, taskUid, operation);
+  const task = await waitForTerminalMeiliTask(waiter, taskUid, operation, signal);
   if (task.status !== 'succeeded') {
     throw new Error(`${operation} task ${taskUid} ended with ${task.status}`);
   }
@@ -359,8 +396,8 @@ const createMeiliMongooseModel = ({
 }) => {
   const syncConfig = { ...getSyncConfig(), ...syncOptions };
 
-  const waitForSuccessfulTask = async (taskUid: number): Promise<void> => {
-    await waitForSuccessfulMeiliTask(index, taskUid, 'Meilisearch');
+  const waitForSuccessfulTask = async (taskUid: number, signal?: AbortSignal): Promise<void> => {
+    await waitForSuccessfulMeiliTask(index, taskUid, 'Meilisearch', signal);
   };
 
   const reconcileDeletedSnapshots = async (
@@ -541,7 +578,8 @@ const createMeiliMongooseModel = ({
      * Synchronizes data between the MongoDB collection and the MeiliSearch index by
      * incrementally indexing only non-temporary documents that are unindexed or stale.
      * */
-    static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
+    static async syncWithMeili(this: SchemaWithMeiliMethods, signal?: AbortSignal): Promise<void> {
+      throwIfSyncAborted(signal);
       const startTime = Date.now();
       const { batchSize, delayMs } = syncConfig;
 
@@ -553,6 +591,7 @@ const createMeiliMongooseModel = ({
       // Get an approximate count for logging only; documents may arrive while the sync is running.
       // eslint-disable-next-line no-restricted-syntax -- a collection-wide estimate is the quantity wanted here: it only feeds a progress log, so a tenant-scoped count would be wrong, not just unnecessary.
       const approxTotalCount = await this.estimatedDocumentCount();
+      throwIfSyncAborted(signal);
       logger.info(
         `[syncWithMeili] Approximate total number of all ${collectionName}: ${approxTotalCount}`,
       );
@@ -560,7 +599,7 @@ const createMeiliMongooseModel = ({
       try {
         // First, handle documents that need to be removed from Meili
         logger.info(`[syncWithMeili] Starting cleanup of Meili index ${index.uid} before sync`);
-        await this.cleanupMeiliIndex(index, primaryKey, batchSize, delayMs);
+        await this.cleanupMeiliIndex(index, primaryKey, batchSize, delayMs, signal);
         logger.info(`[syncWithMeili] Completed cleanup of Meili index: ${index.uid}`);
       } catch (error) {
         logger.error('[syncWithMeili] Error during cleanup Meili before sync:', error);
@@ -571,6 +610,7 @@ const createMeiliMongooseModel = ({
       let consecutiveRetryPasses = 0;
 
       while (true) {
+        throwIfSyncAborted(signal);
         const indexableQuery = getIndexableQuery();
         const query: FilterQuery<unknown> = {
           $and: [
@@ -592,6 +632,7 @@ const createMeiliMongooseModel = ({
             .select(attributesToIndex.join(' ') + ' _meiliIndex updatedAt')
             .limit(batchSize)
             .lean();
+          throwIfSyncAborted(signal);
 
           // Check if there are more documents to process
           if (documents.length === 0) {
@@ -599,7 +640,7 @@ const createMeiliMongooseModel = ({
             break;
           }
           // Process the batch
-          const durableProgress = await this.processSyncBatch(index, documents);
+          const durableProgress = await this.processSyncBatch(index, documents, signal);
           processedCount += durableProgress;
           if (durableProgress > 0) {
             consecutiveRetryPasses = 0;
@@ -615,7 +656,7 @@ const createMeiliMongooseModel = ({
 
           // Add delay before every subsequent pass to prevent hot-looping on changed documents
           if (delayMs > 0) {
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            await sleepWithSignal(delayMs, signal);
           }
         } catch (error) {
           logger.error('[syncWithMeili] Error processing documents batch:', error);
@@ -636,7 +677,9 @@ const createMeiliMongooseModel = ({
       this: SchemaWithMeiliMethods,
       index: Index<MeiliIndexable>,
       documents: Array<Record<string, unknown>>,
+      signal?: AbortSignal,
     ): Promise<number> {
+      throwIfSyncAborted(signal);
       if (documents.length === 0) {
         return 0;
       }
@@ -653,14 +696,16 @@ const createMeiliMongooseModel = ({
           { $set: { _meiliIndexAttempted: true } },
           { timestamps: false },
         );
+        throwIfSyncAborted(signal);
 
         // Add documents to MeiliSearch
         const enqueuedTasks = await index.addDocumentsInBatches(formattedDocs, undefined, {
           primaryKey,
         });
         for (const task of enqueuedTasks) {
-          await waitForSuccessfulTask(task.taskUid);
+          await waitForSuccessfulTask(task.taskUid, signal);
         }
+        throwIfSyncAborted(signal);
 
         // Update MongoDB to mark documents as indexed.
         // { timestamps: false } prevents Mongoose from touching updatedAt, preserving
@@ -687,10 +732,12 @@ const createMeiliMongooseModel = ({
           },
           { timestamps: false },
         );
+        throwIfSyncAborted(signal);
 
         const currentDocuments = await this.find({ _id: { $in: docsIds } })
           .select('_id updatedAt +_meiliIndex +_meiliIndexSchemaVersion')
           .lean();
+        throwIfSyncAborted(signal);
         const currentDocumentsById = new Map(
           currentDocuments.map((doc: Record<string, unknown>) => [String(doc._id), doc]),
         );
@@ -700,6 +747,7 @@ const createMeiliMongooseModel = ({
         })
           .select('_id')
           .lean();
+        throwIfSyncAborted(signal);
         const currentIndexableIds = new Set(
           currentIndexableDocuments.map((doc: Record<string, unknown>) => String(doc._id)),
         );
@@ -745,14 +793,16 @@ const createMeiliMongooseModel = ({
             { $set: { _meiliIndex: false, _meiliIndexAttempted: true } },
             { timestamps: false },
           );
+          throwIfSyncAborted(signal);
         }
 
         if (staleSnapshots.length > 0) {
           const staleDocumentIds = staleSnapshots.map((doc) => doc._id);
           const stalePrimaryKeys = staleSnapshots.map((doc) => doc[primaryKey as keyof typeof doc]);
           const deletion = await index.deleteDocuments(stalePrimaryKeys.map(String));
-          await waitForSuccessfulTask(deletion.taskUid);
+          await waitForSuccessfulTask(deletion.taskUid, signal);
           await reconcileDeletedSnapshots(this, staleDocumentIds);
+          throwIfSyncAborted(signal);
           durableProgress += staleSnapshots.length;
         }
         return durableProgress;
@@ -767,7 +817,11 @@ const createMeiliMongooseModel = ({
      * scanning the complete Meili index. The Mongo marker is cleared only
      * after Meili confirms deletion, so interrupted cleanup is retried.
      */
-    static async cleanupExcludedMeiliIndex(this: SchemaWithMeiliMethods): Promise<void> {
+    static async cleanupExcludedMeiliIndex(
+      this: SchemaWithMeiliMethods,
+      signal?: AbortSignal,
+    ): Promise<void> {
+      throwIfSyncAborted(signal);
       const excludedIndexedQuery = getExcludedIndexedQuery();
       if (excludedIndexedQuery == null) {
         return;
@@ -775,10 +829,12 @@ const createMeiliMongooseModel = ({
 
       const { batchSize, delayMs } = syncConfig;
       while (true) {
+        throwIfSyncAborted(signal);
         const pendingExcludedDocuments = await this.find(excludedIndexedQuery)
           .select(primaryKey)
           .limit(batchSize)
           .lean();
+        throwIfSyncAborted(signal);
         if (pendingExcludedDocuments.length === 0) {
           break;
         }
@@ -790,14 +846,15 @@ const createMeiliMongooseModel = ({
           (doc: Record<string, unknown>) => doc._id,
         );
         const deletion = await index.deleteDocuments(pendingIds.map(String));
-        await waitForSuccessfulTask(deletion.taskUid);
+        await waitForSuccessfulTask(deletion.taskUid, signal);
         await reconcileDeletedSnapshots(this, pendingDocumentIds);
+        throwIfSyncAborted(signal);
 
         if (pendingExcludedDocuments.length < batchSize) {
           break;
         }
         if (delayMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          await sleepWithSignal(delayMs, signal);
         }
       }
     }
@@ -811,15 +868,19 @@ const createMeiliMongooseModel = ({
       primaryKey: string,
       batchSize: number,
       delayMs: number,
+      signal?: AbortSignal,
     ): Promise<void> {
       try {
-        await this.cleanupExcludedMeiliIndex();
+        throwIfSyncAborted(signal);
+        await this.cleanupExcludedMeiliIndex(signal);
 
         let offset = 0;
         let moreDocuments = true;
 
         while (moreDocuments) {
+          throwIfSyncAborted(signal);
           const batch = await index.getDocuments({ limit: batchSize, offset });
+          throwIfSyncAborted(signal);
           if (batch.results.length === 0) {
             moreDocuments = false;
             break;
@@ -832,6 +893,7 @@ const createMeiliMongooseModel = ({
           const existingDocs = await this.find({ ...query, ...getIndexableQuery() })
             .select(primaryKey)
             .lean();
+          throwIfSyncAborted(signal);
 
           const existingIds = new Set(
             existingDocs.map((doc: Record<string, unknown>) => doc[primaryKey]),
@@ -841,7 +903,7 @@ const createMeiliMongooseModel = ({
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
             const deletion = await index.deleteDocuments(toDelete.map(String));
-            await waitForSuccessfulTask(deletion.taskUid);
+            await waitForSuccessfulTask(deletion.taskUid, signal);
             await this.updateMany(
               { [primaryKey]: { $in: toDelete } },
               {
@@ -850,6 +912,7 @@ const createMeiliMongooseModel = ({
               },
               { timestamps: false },
             );
+            throwIfSyncAborted(signal);
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
           }
           // if fetch documents request returns less documents than limit, all documents are processed
@@ -861,7 +924,7 @@ const createMeiliMongooseModel = ({
 
           // Add delay between batches
           if (delayMs > 0) {
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            await sleepWithSignal(delayMs, signal);
           }
         }
       } catch (error) {

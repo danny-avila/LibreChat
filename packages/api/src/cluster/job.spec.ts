@@ -43,6 +43,10 @@ describe('runDistributedJob', () => {
     await collection.deleteMany({});
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   afterAll(async () => {
     await mongoClient.close();
     await mongoServer.stop();
@@ -161,7 +165,7 @@ describe('runDistributedJob', () => {
     );
     releaseHandler.resolve();
 
-    await expect(running).rejects.toThrow('handler failed');
+    await expect(running).rejects.toThrow('Lost distributed job lease for stale-failure');
     expect(onLeaseLost).toHaveBeenCalledTimes(1);
     await expect(collection.findOne({ _id: 'stale-failure' })).resolves.toMatchObject({
       status: 'running',
@@ -195,7 +199,7 @@ describe('runDistributedJob', () => {
     expect(onLeaseLost).toHaveBeenCalledTimes(1);
   });
 
-  test('expires ownership and stops renewing when the job deadline is reached', async () => {
+  test('retains ownership and fail-stops when a deadline cannot settle the handler', async () => {
     const handlerStarted = createDeferred<void>();
     const neverSettles = createDeferred<void>();
     const onLeaseLost = jest.fn();
@@ -207,39 +211,55 @@ describe('runDistributedJob', () => {
         expect(signal.aborted).toBe(false);
         await neverSettles.promise;
       },
-      { leaseMs: 6000, refreshMs: 50, timeoutMs: 100, onLeaseLost },
+      {
+        leaseMs: 6000,
+        refreshMs: 50,
+        timeoutMs: 100,
+        cancellationGraceMs: 25,
+        operationTimeoutMs: 100,
+        onLeaseLost,
+      },
     );
     await handlerStarted.promise;
 
-    await expect(running).rejects.toThrow(
-      'Distributed job deadline-job did not complete within 100ms',
-    );
+    await expect(running).rejects.toThrow('Lost distributed job lease for deadline-job');
 
-    const expiredState = await collection.findOne({ _id: 'deadline-job' });
-    expect(expiredState).toMatchObject({ status: 'failed' });
-    expect(expiredState?.owner).toBeUndefined();
-    expect(expiredState?.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
-    const expiredAt = expiredState?.expiresAt.getTime();
+    const fencedState = await collection.findOne({ _id: 'deadline-job' });
+    expect(fencedState).toMatchObject({ status: 'running' });
+    expect(fencedState?.owner).toEqual(expect.any(String));
+    expect(fencedState?.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(onLeaseLost).toHaveBeenCalledTimes(1);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect((await collection.findOne({ _id: 'deadline-job' }))?.expiresAt.getTime()).toBe(
-      expiredAt,
-    );
-    expect(onLeaseLost).not.toHaveBeenCalled();
+    const follower = jest.fn(async () => 'unsafe');
+    await expect(
+      runDistributedJob(collection, 'deadline-job', follower, {
+        pollMs: 5,
+        timeoutMs: 30,
+        cancellationGraceMs: 0,
+        operationTimeoutMs: 100,
+        onLeaseLost: jest.fn(),
+      }),
+    ).rejects.toThrow();
+    expect(follower).not.toHaveBeenCalled();
+    expect((await collection.findOne({ _id: 'deadline-job' }))?.owner).toBe(fencedState?.owner);
   });
 
-  test('releases ownership when the caller cancels an active job', async () => {
+  test('releases ownership after a cooperative handler settles on cancellation', async () => {
     const handlerStarted = createDeferred<void>();
-    const neverSettles = createDeferred<void>();
     const controller = new AbortController();
     const running = runDistributedJob(
       collection,
       'cancelled-job',
-      async () => {
+      async (signal) => {
         handlerStarted.resolve();
-        await neverSettles.promise;
+        await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
       },
-      { signal: controller.signal, onLeaseLost: jest.fn() },
+      {
+        signal: controller.signal,
+        cancellationGraceMs: 100,
+        operationTimeoutMs: 100,
+        onLeaseLost: jest.fn(),
+      },
     );
     await handlerStarted.promise;
 
@@ -249,6 +269,87 @@ describe('runDistributedJob', () => {
     const cancelledState = await collection.findOne({ _id: 'cancelled-job' });
     expect(cancelledState).toMatchObject({ status: 'failed' });
     expect(cancelledState).not.toHaveProperty('owner');
+  });
+
+  test('bounds a never-settling ownership acquisition', async () => {
+    const onLeaseLost = jest.fn();
+    const handler = jest.fn(async () => undefined);
+    const neverSettlingCollection = {
+      findOneAndUpdate: jest.fn(() => new Promise(() => undefined)),
+    } as unknown as Collection<JobState>;
+
+    await expect(
+      runDistributedJob(neverSettlingCollection, 'stuck-acquire', handler, {
+        operationTimeoutMs: 50,
+        onLeaseLost,
+      }),
+    ).rejects.toThrow('ownership operation "acquire" exceeded 50ms');
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(onLeaseLost).toHaveBeenCalledTimes(1);
+  });
+
+  test('bounds a stuck renewal without releasing the lease', async () => {
+    const handlerStarted = createDeferred<void>();
+    const neverSettles = createDeferred<void>();
+    const leaseLost = createDeferred<void>();
+    const onLeaseLost = jest.fn(() => leaseLost.resolve());
+    const running = runDistributedJob(
+      collection,
+      'stuck-renewal',
+      async () => {
+        handlerStarted.resolve();
+        await neverSettles.promise;
+      },
+      {
+        leaseMs: 6000,
+        refreshMs: 50,
+        operationTimeoutMs: 50,
+        onLeaseLost,
+      },
+    );
+    await handlerStarted.promise;
+    jest
+      .spyOn(collection, 'updateOne')
+      .mockImplementationOnce(
+        () => new Promise(() => undefined) as ReturnType<Collection<JobState>['updateOne']>,
+      );
+
+    await leaseLost.promise;
+    await expect(running).rejects.toThrow('Lost distributed job lease for stuck-renewal');
+
+    const fencedState = await collection.findOne({ _id: 'stuck-renewal' });
+    expect(fencedState).toMatchObject({ status: 'running' });
+    expect(fencedState?.owner).toEqual(expect.any(String));
+  });
+
+  test('bounds a stuck completion without claiming the job settled', async () => {
+    const handlerStarted = createDeferred<void>();
+    const releaseHandler = createDeferred<void>();
+    const onLeaseLost = jest.fn();
+    const running = runDistributedJob(
+      collection,
+      'stuck-completion',
+      async () => {
+        handlerStarted.resolve();
+        await releaseHandler.promise;
+        return 'done';
+      },
+      { operationTimeoutMs: 50, onLeaseLost },
+    );
+    await handlerStarted.promise;
+    jest
+      .spyOn(collection, 'updateOne')
+      .mockImplementationOnce(
+        () => new Promise(() => undefined) as ReturnType<Collection<JobState>['updateOne']>,
+      );
+    releaseHandler.resolve();
+
+    await expect(running).rejects.toThrow('Lost distributed job lease for stuck-completion');
+    expect(onLeaseLost).toHaveBeenCalledTimes(1);
+    const fencedState = await collection.findOne({ _id: 'stuck-completion' });
+    expect(fencedState).toMatchObject({ status: 'running' });
+    expect(fencedState?.owner).toEqual(expect.any(String));
   });
 
   test('rejects timing options without a lease safety window', async () => {
