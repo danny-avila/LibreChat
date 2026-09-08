@@ -419,3 +419,26 @@ describe('nested public content', () => {
     ).toEqual([]);
   });
 });
+
+describe('persisted failure markers', () => {
+  it.each([true, false])('preserves input validation marker %s', (inputValidationError) => {
+    const content = [{ type: 'tool_call', tool_call: { name: 'ask_user', inputValidationError } }];
+    expect(projectConversationMessage({ content } as ConversationMessageResource).content).toEqual(
+      content,
+    );
+  });
+  it('rejects malformed input validation markers', () => {
+    expect(
+      isValidConversationContentPart({
+        type: 'tool_call',
+        tool_call: { inputValidationError: 'true' },
+      }),
+    ).toBe(false);
+  });
+  it.each(['ok', 'partial', 'failed'])('preserves existing activity status %s', (status) => {
+    const content = [{ type: 'activity_label', activity_label: 'Tools finished', status }];
+    expect(projectConversationMessage({ content } as ConversationMessageResource).content).toEqual(
+      content,
+    );
+  });
+});

@@ -59,7 +59,7 @@ export async function decrementTagCounts(
       {
         updateOne: {
           filter: { user, tag, ...tenantFilter },
-          update: { $inc: { count: -amount } },
+          update: { $inc: { count: -amount }, $setOnInsert: { reservedNames: [tag] } },
           upsert: true,
         },
       },
@@ -312,7 +312,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
           count: addToConversation ? 1 : 0,
           position,
           description,
-          $setOnInsert: { createdAt: new Date() },
+          $setOnInsert: { createdAt: new Date(), reservedNames: [tag] },
         },
         {
           new: true,
@@ -427,21 +427,17 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
             Conversation.exists({ ...scope, tags: newTag }),
           ]);
           if (catalogTag || committedTag) throw new Error('Tag already exists');
-          const reserved = await ConversationTag.updateOne(
-            { ...scope, _id: existingTag._id, tag: oldTag, renameTo: { $exists: false } },
-            { $set: { renameTo: newTag } },
-          );
-          if (
-            !reserved.matchedCount &&
-            !(await ConversationTag.exists({
-              ...scope,
-              _id: existingTag._id,
-              tag: oldTag,
-              renameTo: newTag,
-            }))
-          )
-            throw new Error('Tag rename conflicted');
         }
+        const reserved = await ConversationTag.updateOne(
+          {
+            ...scope,
+            _id: existingTag._id,
+            tag: oldTag,
+            $or: [{ renameTo: { $exists: false } }, { renameTo: newTag }],
+          },
+          { $set: { renameTo: newTag, reservedNames: [oldTag, newTag] } },
+        );
+        if (!reserved.matchedCount) throw new Error('Tag rename conflicted');
         await Conversation.updateMany({ ...scope, tags: oldTag }, { $set: { 'tags.$': newTag } });
       }
       const count = await Conversation.countDocuments({ ...scope, tags: newTag || oldTag });
@@ -449,6 +445,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const updateData: Record<string, unknown> = {};
       if (newTag) {
         updateData.tag = newTag;
+        if (renaming) updateData.reservedNames = [newTag];
       }
       if (description !== undefined) {
         updateData.description = description;
@@ -509,7 +506,11 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const existingTag = await findMutableTag(user, tag, tenantId);
       if (!existingTag) return null;
       if (existingTag.renameTo) throw new Error('Tag rename is in progress');
-      const deletedTag = await ConversationTag.findOneAndDelete({ ...scope, tag }).lean();
+      const deletedTag = await ConversationTag.findOneAndDelete({
+        ...scope,
+        tag,
+        renameTo: { $exists: false },
+      }).lean();
       if (!deletedTag) {
         return null;
       }
@@ -571,7 +572,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         bulkOps.push({
           updateOne: {
             filter: { user, tag, ...tenantFilter },
-            update: { $inc: { count: 1 } },
+            update: { $inc: { count: 1 }, $setOnInsert: { reservedNames: [tag] } },
             upsert: true,
           },
         });
@@ -581,7 +582,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         bulkOps.push({
           updateOne: {
             filter: { user, tag, ...tenantFilter },
-            update: { $inc: { count: -1 } },
+            update: { $inc: { count: -1 }, $setOnInsert: { reservedNames: [tag] } },
           },
         });
       }
@@ -629,7 +630,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       bulkOps.push({
         updateOne: {
           filter: { user, tag, ...tenantFilter },
-          update: { $inc: { count: 1 } },
+          update: { $inc: { count: 1 }, $setOnInsert: { reservedNames: [tag] } },
           upsert: true,
         },
       });
@@ -638,7 +639,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       bulkOps.push({
         updateOne: {
           filter: { user, tag, ...tenantFilter },
-          update: { $inc: { count: -1 } },
+          update: { $inc: { count: -1 }, $setOnInsert: { reservedNames: [tag] } },
           /** Signed deltas must commute when successful metadata writes reconcile out
            * of order. Retaining a temporary negative row lets a later increment
            * cancel it instead of manufacturing a stale positive count. */
@@ -673,7 +674,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const bulkOps = uniqueTags.map((tag) => ({
         updateOne: {
           filter: { user, tag, ...optionalTenantFilter<IConversationTag>(tenantId) },
-          update: { $inc: { count: 1 } },
+          update: { $inc: { count: 1 }, $setOnInsert: { reservedNames: [tag] } },
         },
       }));
 

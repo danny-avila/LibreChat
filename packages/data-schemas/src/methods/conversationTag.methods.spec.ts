@@ -376,6 +376,62 @@ describe('authoritative public tag counts', () => {
     },
   );
 
+  it.each([null, 'tenant-a'])(
+    'holds the same namespace against metadata reconciliation in tenant %s',
+    async (tenantId) => {
+      const methods = createConversationTagMethods(mongoose);
+      const scope = { user, ...(tenantId == null ? {} : { tenantId }) };
+      await ConversationTag.init();
+      await ConversationTag.create({ ...scope, tag: 'old', description: 'Keep' });
+      await Conversation.create([
+        { ...scope, conversationId: 'renamed', endpoint: 'openAI', tags: ['old'] },
+        { ...scope, conversationId: 'patched', endpoint: 'openAI', tags: [] },
+      ]);
+      let release!: () => void;
+      let entered!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reserved = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const spy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce(((
+        ...args: Parameters<typeof updateMany>
+      ) => {
+        entered();
+        return blocked.then(() => updateMany(...args));
+      }) as typeof Conversation.updateMany);
+      const renaming = methods.updateConversationTag(user, 'old', { tag: 'new' }, tenantId);
+      try {
+        await reserved;
+        await Conversation.updateOne(
+          { ...scope, conversationId: 'patched' },
+          { $set: { tags: ['new'] } },
+        );
+        await expect(
+          methods.reconcileConversationTagCounts(user, [], ['new'], tenantId),
+        ).rejects.toMatchObject({ code: 11000 });
+        await expect(
+          methods.reconcileConversationTagCounts(user, ['new'], [], tenantId),
+        ).rejects.toMatchObject({ code: 11000 });
+        expect(await ConversationTag.exists({ ...scope, tag: 'new' })).toBeNull();
+      } finally {
+        release();
+        spy.mockRestore();
+      }
+      await expect(renaming).resolves.toMatchObject({ tag: 'new', count: 2, description: 'Keep' });
+      expect(await ConversationTag.countDocuments(scope)).toBe(1);
+      const stored = await ConversationTag.findOne({ ...scope, tag: 'new' })
+        .select('+reservedNames +renameTo')
+        .lean();
+      expect(stored).toMatchObject({ reservedNames: ['new'] });
+      expect(stored).not.toHaveProperty('renameTo');
+      for (const tag of await getConversationTags(user, tenantId))
+        expect(tag).not.toHaveProperty('reservedNames');
+    },
+  );
+
   it('reserves a rename destination for only one concurrent source tag', async () => {
     const methods = createConversationTagMethods(mongoose);
     await ConversationTag.init();

@@ -8,6 +8,7 @@ export interface IConversationTag extends Document {
   position?: number;
   tenantId?: string;
   renameTo?: string;
+  reservedNames?: string[];
 }
 
 const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
@@ -34,6 +35,7 @@ const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
       index: true,
     },
     renameTo: { type: String, select: false },
+    reservedNames: { type: [String], default: undefined, select: false },
     tenantId: {
       type: String,
       index: true,
@@ -46,10 +48,10 @@ const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
 conversationTag.index({ tag: 1, user: 1, tenantId: 1 }, { unique: true });
 
 conversationTag.index(
-  { renameTo: 1, user: 1, tenantId: 1 },
+  { reservedNames: 1, user: 1, tenantId: 1 },
   {
     unique: true,
-    partialFilterExpression: { renameTo: { $exists: true } },
+    partialFilterExpression: { reservedNames: { $exists: true } },
   },
 );
 

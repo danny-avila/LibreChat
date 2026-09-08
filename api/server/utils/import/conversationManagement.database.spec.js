@@ -159,6 +159,55 @@ describe('importConversations database compatibility', () => {
     },
   );
 
+  it.each(['files', 'attachments'])(
+    'preserves recursive attachment-only %s turns and their descendants',
+    async (field) => {
+      const filepath = path.join(tempDir, 'attachment-only.json');
+      const turn = {
+        conversationId: 'source',
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: '',
+        isCreatedByUser: true,
+        [field]: [{ file_id: 'asset' }],
+      };
+      await fs.writeFile(
+        filepath,
+        JSON.stringify({
+          conversationId: 'source',
+          endpoint: 'openAI',
+          recursive: true,
+          messagesTree: [
+            {
+              ...turn,
+              messageId: 'parent',
+              children: [
+                {
+                  messageId: 'child',
+                  parentMessageId: 'parent',
+                  conversationId: 'source',
+                  sender: 'Assistant',
+                  text: 'Reply',
+                  isCreatedByUser: false,
+                },
+              ],
+            },
+            { ...turn, messageId: 'leaf' },
+          ],
+        }),
+      );
+      await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+      const messages = await mongoose.models.Message.find({ user: 'owner' }).lean();
+      expect(messages).toHaveLength(3);
+      const attachments = messages.filter((message) => message.text === '');
+      expect(attachments).toHaveLength(2);
+      for (const message of attachments)
+        expect(message[field]).toEqual([expect.objectContaining({ file_id: 'asset' })]);
+      const child = messages.find((message) => message.text === 'Reply');
+      expect(attachments.map((message) => message.messageId)).toContain(child.parentMessageId);
+    },
+  );
+
   it('preserves forward parent references and parent-first timestamps in flat exports', async () => {
     const filepath = path.join(tempDir, 'forward-parents.json');
     const messages = [

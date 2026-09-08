@@ -2336,29 +2336,27 @@ export function createConversationMethods(
         ...explicitTenantFilter,
         ...expectedTagsFilter,
       };
+      const resourceFilter = (filter: Record<string, unknown>): Record<string, unknown> =>
+        metadata?.requireVisible
+          ? {
+              $and: [
+                filter,
+                { subagentThread: { $exists: false } },
+                buildRetentionVisibilityFilter<IConversation>(),
+              ],
+            }
+          : filter;
       const runUpdate = (
         filter: Record<string, unknown>,
         operation: Record<string, unknown>,
         upsert: boolean,
       ) =>
-        Conversation.findOneAndUpdate(
-          metadata?.requireVisible
-            ? {
-                $and: [
-                  filter,
-                  { subagentThread: { $exists: false } },
-                  buildRetentionVisibilityFilter<IConversation>(),
-                ],
-              }
-            : filter,
-          operation,
-          {
-            new: true,
-            upsert,
-            includeResultMetadata: true,
-            ...timestampOptions,
-          },
-        ) as unknown as Promise<ConversationUpdateResult>;
+        Conversation.findOneAndUpdate(resourceFilter(filter), operation, {
+          new: true,
+          upsert,
+          includeResultMetadata: true,
+          ...timestampOptions,
+        }) as unknown as Promise<ConversationUpdateResult>;
 
       let conversationResult: ConversationUpdateResult;
       if (update.isArchived === true) {
@@ -2394,7 +2392,7 @@ export function createConversationMethods(
          * That is a live conversation, so confirm it is really gone before letting the
          * route answer 404, and retry the pair when it is not. */
         for (let attempt = 0; !conversationResult.value && attempt < 2; attempt++) {
-          if (!(await Conversation.exists(baseFilter))) {
+          if (!(await Conversation.exists(resourceFilter(baseFilter)))) {
             break;
           }
           conversationResult = await runArchiveWrites();
@@ -2403,7 +2401,7 @@ export function createConversationMethods(
           conversationResult = await runUpdate(baseFilter, buildOperation(stamped), true);
         }
         if (!conversationResult.value) {
-          if (await Conversation.exists(baseFilter)) {
+          if (await Conversation.exists(resourceFilter(baseFilter))) {
             throw new Error('Conversation archive update conflicted too many times');
           }
         }

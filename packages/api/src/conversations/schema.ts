@@ -199,6 +199,7 @@ const baseToolCall = z
     name: z.string().optional(),
     stepId: z.string().optional(),
     mcpServerName: z.string().optional(),
+    inputValidationError: z.boolean().optional(),
     subagent_content: z.lazy(() => z.array(contentSchema)).optional(),
     args: z.union([z.string(), jsonObject]).optional(),
     output: z.union([z.string(), jsonObject, z.array(z.unknown())]).nullish(),

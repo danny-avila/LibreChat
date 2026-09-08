@@ -143,41 +143,50 @@ beforeEach(async () => {
 });
 
 describe('conversation management handlers with Mongo persistence', () => {
-  it('does not write metadata or reconcile tags when retention expires after the visibility read', async () => {
-    await seedConversation(TENANT_A, {
-      conversationId: SHARED_ID,
-      user: OWNER,
-      expiredAt: new Date(Date.now() + 60000),
-      title: 'Before',
-      tags: ['old'],
-    });
-    const reconcile = jest.spyOn(methods, 'reconcileConversationTagCounts');
-    const app = createApp({
-      saveConvo: async (...args) => {
-        await Conversation.updateOne(
-          { user: OWNER, conversationId: SHARED_ID },
-          { $set: { expiredAt: new Date(0) } },
-        );
-        return methods.saveConvo(...args);
-      },
-    });
-    try {
-      const response = await request(app)
-        .patch(`/${SHARED_ID}`)
-        .send({ title: 'After', tags: ['new'] });
-      expect(response.status).toBe(404);
-      expect(reconcile).not.toHaveBeenCalled();
-      expect(
-        await Conversation.findOne({
-          user: OWNER,
-          tenantId: TENANT_A,
-          conversationId: SHARED_ID,
-        }).lean(),
-      ).toMatchObject({ title: 'Before', tags: ['old'] });
-    } finally {
-      reconcile.mockRestore();
-    }
-  });
+  it.each([
+    { initialArchived: false, patch: {} },
+    { initialArchived: false, patch: { isArchived: true } },
+    { initialArchived: true, patch: { isArchived: true } },
+    { initialArchived: true, patch: { isArchived: false } },
+  ])(
+    'does not write or misclassify expired metadata targets: %j',
+    async ({ initialArchived, patch }) => {
+      await seedConversation(TENANT_A, {
+        conversationId: SHARED_ID,
+        user: OWNER,
+        expiredAt: new Date(Date.now() + 60000),
+        title: 'Before',
+        isArchived: initialArchived,
+        tags: ['old'],
+      });
+      const reconcile = jest.spyOn(methods, 'reconcileConversationTagCounts');
+      const app = createApp({
+        saveConvo: async (...args) => {
+          await Conversation.updateOne(
+            { user: OWNER, conversationId: SHARED_ID },
+            { $set: { expiredAt: new Date(0) } },
+          );
+          return methods.saveConvo(...args);
+        },
+      });
+      try {
+        const response = await request(app)
+          .patch(`/${SHARED_ID}`)
+          .send({ title: 'After', tags: ['new'], ...patch });
+        expect(response.status).toBe(404);
+        expect(reconcile).not.toHaveBeenCalled();
+        expect(
+          await Conversation.findOne({
+            user: OWNER,
+            tenantId: TENANT_A,
+            conversationId: SHARED_ID,
+          }).lean(),
+        ).toMatchObject({ title: 'Before', tags: ['old'], isArchived: initialArchived });
+      } finally {
+        reconcile.mockRestore();
+      }
+    },
+  );
 
   it('returns the committed snapshot when retention expires after a successful write', async () => {
     await seedConversation(TENANT_A, { conversationId: SHARED_ID, user: OWNER });

@@ -400,6 +400,15 @@ function assertMessage(
       }
     }
   }
+  if (
+    recursive &&
+    !value.text &&
+    value.content === undefined &&
+    ((Array.isArray(value.files) && value.files.length > 0) ||
+      (Array.isArray(value.attachments) && value.attachments.length > 0))
+  ) {
+    value.content = [];
+  }
   for (const field of ['depth', 'siblingIndex'] as const) {
     const ordinal = value[field];
     if (
