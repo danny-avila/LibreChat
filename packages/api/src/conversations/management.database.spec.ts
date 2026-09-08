@@ -447,6 +447,43 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(archived.body.data.map((row: { id: string }) => row.id)).toEqual(['archived']);
   });
 
+  it('returns sanitized uploaded and generated references from persisted messages', async () => {
+    await seedConversation(TENANT_A, { user: OWNER, conversationId: SHARED_ID });
+    await seedMessage(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      messageId: 'with-files',
+      files: [
+        {
+          file_id: 'upload',
+          filename: 'notes.txt',
+          user: 'private',
+          tenantId: 'private',
+          storageKey: 'private',
+        },
+      ],
+      attachments: [
+        {
+          file_id: 'artifact',
+          filepath: '/files/artifact',
+          toolCallId: 'tool',
+          metadata: { credentials: 'private' },
+        },
+      ],
+    });
+    const response = await request(createApp()).get(`/${SHARED_ID}/messages`);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([
+      expect.objectContaining({
+        id: 'with-files',
+        files: [{ file_id: 'upload', filename: 'notes.txt' }],
+        attachments: [
+          { file_id: 'artifact', filepath: '/files/artifact', toolCallId: 'tool', metadata: {} },
+        ],
+      }),
+    ]);
+  });
+
   it('returns same 404 for foreign and cross-tenant identifiers and strips persistence metadata', async () => {
     await Promise.all([
       seedConversation(TENANT_A, { conversationId: SHARED_ID, user: OWNER, title: 'tenant a' }),

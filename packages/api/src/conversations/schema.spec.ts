@@ -442,3 +442,50 @@ describe('persisted failure markers', () => {
     );
   });
 });
+
+describe('message attachment projection', () => {
+  it('sanitizes file references and ignores malformed entries', () => {
+    const source = {
+      files: [
+        null,
+        'invalid',
+        {
+          file_id: 'upload',
+          filename: 'notes.txt',
+          type: 'text/plain',
+          bytes: 12,
+          user: 'private',
+          tenantId: 'private',
+          storageKey: 'private',
+          metadata: { credentials: 'private' },
+        },
+      ],
+      attachments: [
+        { file_id: 'artifact', filepath: '/files/artifact', toolCallId: 'tool', auth: 'private' },
+        { bytes: 'invalid' },
+      ],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source)).toMatchObject({
+      files: [
+        { file_id: 'upload', filename: 'notes.txt', type: 'text/plain', bytes: 12, metadata: {} },
+      ],
+      attachments: [{ file_id: 'artifact', filepath: '/files/artifact', toolCallId: 'tool' }],
+    });
+    expect(projectConversationMessage({} as ConversationMessageResource)).toMatchObject({
+      files: [],
+      attachments: [],
+    });
+  });
+  it('bounds nested file references before parsing', () => {
+    let nested: unknown = {};
+    for (let i = 0; i < 30; i++) nested = { nested };
+    const source = {
+      files: [{ file_id: 'deep', metadata: nested }],
+      attachments: [{ file_id: 'valid' }],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source)).toMatchObject({
+      files: [],
+      attachments: [{ file_id: 'valid' }],
+    });
+  });
+});

@@ -441,6 +441,8 @@ export interface ConversationMessageResponse {
   parentMessageId: string | null;
   text: string;
   content: object[];
+  files: object[];
+  attachments: object[];
   sender: string;
   isCreatedByUser: boolean;
   createdAt: string | null;
@@ -466,17 +468,28 @@ export function projectConversationMessage(
   source: ConversationMessageResource,
 ): ConversationMessageResponse {
   const budget = { nodes: 0 };
-  const content = (source.content ?? []).flatMap((part) => {
-    if (!withinContentLimits(part, 0, budget)) return [];
-    const parsed = contentSchema.safeParse(part);
-    return parsed.success ? [parsed.data] : [];
-  });
+  const projectParts = (parts: unknown, schema: z.ZodType<Record<string, unknown>>): object[] => {
+    const projected: object[] = [];
+    if (!Array.isArray(parts)) return projected;
+    for (const part of parts) {
+      if (budget.nodes >= CONTENT_TRAVERSAL_MAX_NODES) break;
+      if (!withinContentLimits(part, 0, budget)) continue;
+      const parsed = schema.safeParse(part);
+      if (parsed.success) projected.push(parsed.data);
+    }
+    return projected;
+  };
+  const content = projectParts(source.content, contentSchema);
+  const files = projectParts(source.files, conversationFileSchema);
+  const attachments = projectParts(source.attachments, conversationFileSchema);
   return {
     id: source.messageId,
     conversationId: source.conversationId,
     parentMessageId: source.parentMessageId ?? null,
     text: source.text ?? '',
     content,
+    files,
+    attachments,
     sender: source.sender ?? '',
     isCreatedByUser: source.isCreatedByUser,
     createdAt: toTimestamp(source.createdAt),
