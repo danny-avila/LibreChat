@@ -2961,6 +2961,33 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(capturedInit.files).toEqual([{ file_id: 'f1' }]);
     });
 
+    it.each([false, true])('preserves the job deadline when re-pause=%s', async (rePause) => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: { isTemporary: true, retentionExpiresAt: expiredAt.toISOString() },
+        }),
+      );
+      if (rePause) {
+        mockInitializeClient.mockResolvedValue({
+          client: makeClient({
+            pendingApproval: { actionId: NEXT_ACTION_ID },
+            contentParts: [{ type: 'text', text: 'partial' }],
+          }),
+          userMCPAuthMap: {},
+        });
+      }
+      const res = await post(approveBody({ isTemporary: false }));
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
     it.each([
       { stored: true, supplied: false, expected: true },
       { stored: false, supplied: true, expected: false },

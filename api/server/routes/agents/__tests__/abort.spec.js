@@ -496,6 +496,7 @@ describe('Agent Abort Endpoint', () => {
 
       it('saves the aborted partial as temporary from job metadata, not the request body', async () => {
         const jobStreamId = 'test-stream-123';
+        const expiredAt = new Date('2030-01-01T00:00:00.000Z');
 
         mockGenerationJobManager.getJob.mockResolvedValue({
           metadata: { userId: 'test-user-123' },
@@ -509,6 +510,7 @@ describe('Agent Abort Endpoint', () => {
             responseMessageId: 'response-msg-456',
             conversationId: jobStreamId,
             isTemporary: true,
+            retentionExpiresAt: expiredAt.toISOString(),
           },
           content: [{ type: 'text', text: 'Partial...' }],
           text: 'Partial...',
@@ -524,7 +526,7 @@ describe('Agent Abort Endpoint', () => {
 
         expect(response.status).toBe(200);
         expect(mockSaveMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ isTemporary: true }),
+          expect.objectContaining({ isTemporary: true, expiredAt }),
           expect.anything(),
           expect.anything(),
         );

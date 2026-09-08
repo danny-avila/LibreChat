@@ -1,4 +1,4 @@
-const { logger, tenantStorage } = require('@librechat/data-schemas');
+const { logger, tenantStorage, createChatExpirationDate } = require('@librechat/data-schemas');
 const { v5: uuidv5 } = require('uuid');
 const {
   Constants,
@@ -1591,6 +1591,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           req._agentEventBindingRetention?.isTemporary ??
           req.resolvedConversation?.isTemporary ??
           req.body?.isTemporary,
+        ...((req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation?.expiredAt) !=
+          null && {
+          retentionExpiresAt: new Date(
+            req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation.expiredAt,
+          ).toISOString(),
+        }),
+        ...((req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation?.expiredAt) ==
+          null &&
+          req.config?.interfaceConfig?.retentionMode === 'all' && {
+            retentionExpiresAt: createChatExpirationDate(
+              req.config.interfaceConfig,
+              req.resolvedConversation?.isTemporary ?? req.body?.isTemporary,
+            ).toISOString(),
+          }),
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
           ...(internalDetachedCompletion == null
