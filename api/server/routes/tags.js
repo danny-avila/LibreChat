@@ -1,5 +1,9 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  isValidObjectIdString,
+  ConversationTagUpdateError,
+} = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
@@ -22,6 +26,13 @@ const checkBookmarkAccess = generateCheckAccess({
 
 router.use(requireJwtAuth);
 router.use(checkBookmarkAccess);
+
+router.param('tagId', (req, res, next, tagId) => {
+  if (!isValidObjectIdString(tagId)) {
+    return res.status(400).json({ error: 'Invalid bookmark ID' });
+  }
+  next();
+});
 
 /**
  * GET /
@@ -71,9 +82,6 @@ router.post('/', async (req, res) => {
 router.put(['/id/:tagId', '/:tag'], async (req, res) => {
   try {
     const decodedTag = req.params.tagId ?? req.params.tag;
-    if (req.body.tag && req.body.tag !== decodedTag && req.body.position !== undefined) {
-      return res.status(400).json({ error: 'Rename and position changes must be sent separately' });
-    }
     const tag = await updateConversationTag(
       req.user.id,
       decodedTag,
@@ -87,6 +95,9 @@ router.put(['/id/:tagId', '/:tag'], async (req, res) => {
       res.status(404).json({ error: 'Tag not found' });
     }
   } catch (error) {
+    if (error instanceof ConversationTagUpdateError) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('Error updating conversation tag:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -134,6 +145,9 @@ router.put('/convo/:conversationId', async (req, res) => {
       (byId && req.body.tags !== undefined)
     ) {
       return res.status(400).json({ error: 'Provide either tags or tagIds as a string array' });
+    }
+    if (byId && values.some((id) => !isValidObjectIdString(id))) {
+      return res.status(400).json({ error: 'tagIds must contain valid bookmark IDs' });
     }
     const conversationTags = await updateTagsForConversation(
       req.user.id,

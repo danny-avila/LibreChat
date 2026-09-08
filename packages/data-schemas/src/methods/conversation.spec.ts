@@ -7082,4 +7082,117 @@ describe('tag enrichment and optional search', () => {
       'Error during meiliSearch',
     );
   });
+  it('starts name and ID filter validation alongside every independent search', async () => {
+    const user = uuidv4();
+    const [nameTag, idTag] = await ConversationTag.create([
+      { user, tag: 'Name filter', position: 0 },
+      { user, tag: 'ID filter', position: 1 },
+    ]);
+    const conversations = await Conversation.create(
+      [[String(nameTag._id)], [String(idTag._id)], [String(nameTag._id), String(idTag._id)]].map(
+        (tagIds) => ({
+          user,
+          conversationId: uuidv4(),
+          title: 'Match',
+          endpoint: EModelEndpoint.openAI,
+          tagIds,
+        }),
+      ),
+    );
+    const hits = conversations.map(({ conversationId }) => ({ conversationId }));
+    const titleSearch = jest.fn().mockResolvedValue({ hits });
+    Object.assign(Conversation, { meiliSearch: titleSearch });
+    searchMessages.mockResolvedValueOnce({ hits: [] });
+    const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+    const tagSearch = jest.spyOn(Tag, 'meiliSearch').mockResolvedValueOnce({
+      hits: [],
+      processingTimeMs: 0,
+      query: 'Match',
+      offset: 0,
+      limit: 1000,
+      estimatedTotalHits: 0,
+    });
+    const bothStarted = deferred();
+    const release = deferred();
+    let started = 0;
+    const originalFind = ConversationTag.collection.find.bind(ConversationTag.collection);
+    jest.spyOn(ConversationTag.collection, 'find').mockImplementation((...args) => {
+      const cursor = originalFind(...args);
+      const toArray = cursor.toArray.bind(cursor);
+      jest.spyOn(cursor, 'toArray').mockImplementation(async () => {
+        if (++started === 2) bothStarted.resolve();
+        await release.promise;
+        return toArray();
+      });
+      return cursor;
+    });
+    const conversationRead = jest.spyOn(Conversation.collection, 'find');
+    const pending = getConvosByCursor(user, {
+      tags: ['Name filter'],
+      tagIds: [String(idTag._id)],
+      search: 'Match',
+    });
+    try {
+      await bothStarted.promise;
+      expect(titleSearch).toHaveBeenCalled();
+      expect(searchMessages).toHaveBeenCalledWith('Match', expect.any(Object));
+      expect(tagSearch).toHaveBeenCalled();
+      expect(conversationRead).not.toHaveBeenCalled();
+    } finally {
+      release.resolve();
+    }
+    const result = await pending;
+    expect(result.conversations.map(({ conversationId }) => conversationId)).toEqual([
+      conversations[2].conversationId,
+    ]);
+  });
+
+  it.each(['missing-name', 'missing-id', 'foreign-id', 'empty'])(
+    'preserves %s filter semantics during search',
+    async (kind) => {
+      const user = uuidv4();
+      const foreign = await ConversationTag.create({ user: uuidv4(), tag: 'Foreign', position: 0 });
+      const conversation = await Conversation.create({
+        user,
+        conversationId: uuidv4(),
+        title: 'Match',
+        endpoint: EModelEndpoint.openAI,
+        tagIds: [String(foreign._id)],
+      });
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: conversation.conversationId }] }),
+      });
+      searchMessages.mockResolvedValueOnce({ hits: [] });
+      const filter: NonNullable<Parameters<typeof getConvosByCursor>[1]> = { tags: [], tagIds: [] };
+      if (kind === 'missing-name') filter.tags = ['Not created'];
+      if (kind === 'missing-id') filter.tagIds = [new mongoose.Types.ObjectId().toString()];
+      if (kind === 'foreign-id') filter.tagIds = [String(foreign._id)];
+      const result = await getConvosByCursor(user, { ...filter, search: 'Match' });
+      expect(result.conversations.map(({ conversationId }) => conversationId)).toEqual(
+        kind === 'empty' ? [conversation.conversationId] : [],
+      );
+      expect(await ConversationTag.countDocuments({ user })).toBe(0);
+    },
+  );
+
+  it('still validates malformed filters when every search has no hits', async () => {
+    Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+    searchMessages.mockResolvedValueOnce({ hits: [] });
+    await expect(
+      getConvosByCursor(uuidv4(), { tagIds: ['invalid'], search: 'No hits' }),
+    ).rejects.toThrow('Invalid tag ID');
+  });
+
+  it('does not hide required catalog read failures behind empty search results', async () => {
+    Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+    searchMessages.mockResolvedValueOnce({ hits: [] });
+    jest.spyOn(ConversationTag.collection, 'find').mockImplementationOnce(() => {
+      throw new Error('Catalog unavailable');
+    });
+    await expect(
+      getConvosByCursor(uuidv4(), { tags: ['Required'], search: 'No hits' }),
+    ).rejects.toThrow('Catalog unavailable');
+  });
 });

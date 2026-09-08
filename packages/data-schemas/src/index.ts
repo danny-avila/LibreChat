@@ -5,6 +5,7 @@ export * from './crypto';
 export * from './schema';
 export * from './utils';
 export { createModels } from './models';
+export { ConversationTagUpdateError } from './methods/conversationTag';
 export {
   createMethods,
   CLIENT_MESSAGE_SELECT,

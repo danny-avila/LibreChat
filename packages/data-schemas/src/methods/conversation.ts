@@ -2836,18 +2836,6 @@ export function createConversationMethods(
       filters.push({ pinned: true } as FilterQuery<IConversation>);
     }
 
-    if (Array.isArray(tags) && tags.length > 0) {
-      filters.push({
-        tagIds: { $in: await resolveTagNames(mongoose, user, tags, undefined, false) },
-      });
-    }
-
-    if (tagIds?.length) {
-      filters.push({
-        tagIds: { $in: await ownedTagIds(mongoose, user, tagIds, undefined, false) },
-      });
-    }
-
     if (projectId === 'unassigned') {
       filters.push({
         $or: [{ chatProjectId: null }, { chatProjectId: { $exists: false } }],
@@ -2859,7 +2847,8 @@ export function createConversationMethods(
     filters.push(getVisibleConversationRetentionFilter());
     filters.push(getHumanConversationFilter());
 
-    if (search) {
+    const resolveSearchMatches = async () => {
+      if (!search) return null;
       try {
         const searchParams: SearchParams = {
           filter: `user = "${escapeMeiliFilterValue(user)}"`,
@@ -2893,16 +2882,30 @@ export function createConversationMethods(
             matchingIds.add(hit.conversationId);
           }
         }
-        if (!matchingIds.size && !matchingTagIds.length) {
-          return { conversations: [], nextCursor: null };
-        }
-        filters.push({
-          $or: [{ conversationId: { $in: [...matchingIds] } }, { tagIds: { $in: matchingTagIds } }],
-        } as FilterQuery<IConversation>);
+        return { matchingIds: [...matchingIds], matchingTagIds };
       } catch (error) {
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
         throw new Error('Error during meiliSearch');
       }
+    };
+
+    const [nameFilterIds, idFilterIds, searchMatches] = await Promise.all([
+      Array.isArray(tags) && tags.length > 0
+        ? resolveTagNames(mongoose, user, tags, undefined, false)
+        : null,
+      tagIds?.length ? ownedTagIds(mongoose, user, tagIds, undefined, false) : null,
+      resolveSearchMatches(),
+    ]);
+    if (nameFilterIds) filters.push({ tagIds: { $in: nameFilterIds } });
+    if (idFilterIds) filters.push({ tagIds: { $in: idFilterIds } });
+    if (searchMatches) {
+      const { matchingIds, matchingTagIds } = searchMatches;
+      if (!matchingIds.length && !matchingTagIds.length) {
+        return { conversations: [], nextCursor: null };
+      }
+      filters.push({
+        $or: [{ conversationId: { $in: matchingIds } }, { tagIds: { $in: matchingTagIds } }],
+      });
     }
 
     const validSortFields = ['title', 'createdAt', 'updatedAt', 'archivedAt'];

@@ -161,6 +161,9 @@ module.exports = {
   }),
 
   dataSchemas: () => ({
+    isValidObjectIdString: jest.requireActual(
+      '../../../../packages/data-schemas/src/utils/objectId',
+    ).isValidObjectIdString,
     logger: {
       debug: jest.fn(),
       info: jest.fn(),

@@ -1,4 +1,4 @@
-import { useState, useId, useMemo, useCallback, memo } from 'react';
+import { useState, useId, useMemo, useCallback, useEffect, memo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
@@ -18,16 +18,21 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   const localize = useLocalize();
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { data } = useGetConversationTags();
+  const { data, isSuccess, isFetching } = useGetConversationTags();
+
+  useEffect(() => {
+    if (!isSuccess || isFetching || data === undefined || tags.length === 0) return;
+    const catalogIds = new Set(data.map((tag) => tag._id));
+    const remaining = tags.filter((id) => catalogIds.has(id));
+    if (remaining.length !== tags.length) setTags(remaining);
+  }, [data, isSuccess, isFetching, tags, setTags]);
 
   const label = useMemo(
     () =>
-      tags.length > 0
-        ? tags
-            .map((id) => data?.find((tag) => tag._id === id)?.tag)
-            .filter(Boolean)
-            .join(', ')
-        : localize('com_ui_bookmarks'),
+      tags
+        .map((id) => data?.find((tag) => tag._id === id)?.tag)
+        .filter(Boolean)
+        .join(', ') || localize('com_ui_bookmarks'),
     [tags, data, localize],
   );
 

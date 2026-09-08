@@ -1775,6 +1775,30 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / bookmark ID validation', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    it.each(['not-an-id', '', ['0123456789abcdef01234567', 'bad']])(
+      'rejects malformed bookmark IDs: %j',
+      async (tagIds) => {
+        const response = await request(app).get('/api/convos').query({ tagIds });
+        expect(response.status).toBe(400);
+        expect(getConvosByCursor).not.toHaveBeenCalled();
+      },
+    );
+
+    it('passes valid repeated bookmark IDs to the model', async () => {
+      const tagIds = ['0123456789abcdef01234567', 'ABCDEF0123456789ABCDEF01'];
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+      const response = await request(app).get('/api/convos').query({ tagIds });
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ tagIds }),
+      );
+    });
+  });
+
   describe('GET / pinned filter', () => {
     const { getConvosByCursor } = require('~/models');
 

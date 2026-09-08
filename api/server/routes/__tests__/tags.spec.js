@@ -70,3 +70,69 @@ it('returns a failed response when deletion wins a create-and-attach race', asyn
   });
   expect(await mongoose.models.ConversationTag.countDocuments({ user: 'owner' })).toBe(0);
 });
+
+it.each(['id', 'label'])(
+  'accepts unchanged-label reordering through the %s route',
+  async (route) => {
+    const tag = await methods.createConversationTag('owner', { tag: 'bookmark' });
+    await methods.createConversationTag('owner', { tag: 'other' });
+    const path = route === 'id' ? `id/${tag._id}` : 'bookmark';
+    const response = await request(app)
+      .put(`/tags/${path}`)
+      .send({ tag: 'bookmark', position: 1 })
+      .expect(200);
+    expect(response.body).toMatchObject({ _id: String(tag._id), tag: 'bookmark', position: 1 });
+    expect(
+      await mongoose.models.ConversationTag.findOne({ user: 'owner', tag: 'other' }).lean(),
+    ).toMatchObject({ position: 0 });
+  },
+);
+
+it.each(['id', 'label'])(
+  'rejects an actual combined rename/reorder through the %s route',
+  async (route) => {
+    const tag = await methods.createConversationTag('owner', { tag: 'bookmark' });
+    const path = route === 'id' ? `id/${tag._id}` : 'bookmark';
+    const response = await request(app)
+      .put(`/tags/${path}`)
+      .send({ tag: 'renamed', position: 1 })
+      .expect(400);
+    expect(response.body).toEqual({ error: 'Rename and position changes must be sent separately' });
+    expect(await mongoose.models.ConversationTag.findById(tag._id).lean()).toMatchObject({
+      tag: 'bookmark',
+      position: 0,
+    });
+  },
+);
+
+it.each(['put', 'delete'])(
+  'rejects malformed IDs on the %s identity route without a lookup',
+  async (method) => {
+    const find = jest.spyOn(mongoose.models.ConversationTag.collection, 'findOne');
+    const remove = jest.spyOn(mongoose.models.ConversationTag.collection, 'findOneAndDelete');
+    await request(app)[method]('/tags/id/not-an-id').send({ tag: 'bookmark' }).expect(400);
+    expect(find).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  },
+);
+
+it('rejects malformed membership IDs before changing a conversation', async () => {
+  const write = jest.spyOn(mongoose.models.Conversation.collection, 'findOneAndUpdate');
+  await request(app)
+    .put('/tags/convo/convo')
+    .send({ tagIds: ['not-an-id'] })
+    .expect(400);
+  expect(write).not.toHaveBeenCalled();
+});
+
+it('keeps database failures as server errors', async () => {
+  const tag = await methods.createConversationTag('owner', { tag: 'bookmark' });
+  jest
+    .spyOn(mongoose.models.ConversationTag.collection, 'findOne')
+    .mockRejectedValueOnce(new Error('DB unavailable'));
+  const response = await request(app)
+    .put(`/tags/id/${tag._id}`)
+    .send({ description: 'note' })
+    .expect(500);
+  expect(response.body).toEqual({ error: 'Internal server error' });
+});

@@ -11,6 +11,13 @@ import {
 } from '~/tags/membership';
 import { getTenantId } from '~/config/tenantContext';
 
+export class ConversationTagUpdateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConversationTagUpdateError';
+  }
+}
+
 interface TagInput {
   tag: string;
   description?: string;
@@ -141,23 +148,23 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   ): Promise<TagRecord | null> {
     const scope = tagScope(user, tenantId);
     if (data.description !== undefined && typeof data.description !== 'string')
-      throw new Error('Invalid description');
+      throw new ConversationTagUpdateError('Invalid description');
     if (data.tag !== undefined && (typeof data.tag !== 'string' || !data.tag.length))
-      throw new Error('Invalid tag name');
+      throw new ConversationTagUpdateError('Invalid tag name');
     await ensureTagIndexes(mongoose);
     const existing = await Tag()
       .findOne({ ...scope, ...identity(value, byId) })
       .lean();
     if (!existing) return null;
     if (data.position !== undefined && data.tag !== undefined && data.tag !== existing.tag) {
-      throw new Error('Rename and position changes must be sent separately');
+      throw new ConversationTagUpdateError('Rename and position changes must be sent separately');
     }
     const update: TagUpdate = {};
     if (data.tag !== undefined) update.tag = data.tag;
     if (data.description !== undefined) update.description = data.description;
     if (data.position !== undefined) {
       if (!Number.isSafeInteger(data.position) || data.position < 0)
-        throw new Error('Invalid position');
+        throw new ConversationTagUpdateError('Invalid position');
       update.position = data.position;
     }
     const tag = await Tag().findOneAndUpdate(
