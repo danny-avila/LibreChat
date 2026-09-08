@@ -22,6 +22,7 @@ interface MongoMeiliOptions {
   primaryKey: string;
   mongoose: typeof import('mongoose');
   syncBatchSize?: number;
+  searchableAttributes?: string[];
   syncDelayMs?: number;
   /** Documents carrying this path remain in MongoDB but are excluded from search. */
   excludeFromIndexPath?: string;
@@ -286,6 +287,7 @@ const createMeiliMongooseModel = ({
   getExcludedIndexedQuery,
   excludeFromIndexPath,
   attributesToIndex,
+  searchableAttributes,
   primaryKey,
   syncOptions,
 }: {
@@ -295,6 +297,7 @@ const createMeiliMongooseModel = ({
   getExcludedIndexedQuery: () => FilterQuery<unknown> | null;
   excludeFromIndexPath?: string;
   attributesToIndex: string[];
+  searchableAttributes?: string[];
   primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
@@ -472,7 +475,7 @@ const createMeiliMongooseModel = ({
       const startTime = Date.now();
       const { batchSize, delayMs } = syncConfig;
 
-      const collectionName = primaryKey === 'messageId' ? 'messages' : 'conversations';
+      const collectionName = this.modelName;
       logger.info(
         `[syncWithMeili] Starting sync for ${collectionName} with batch size ${batchSize}`,
       );
@@ -683,11 +686,11 @@ const createMeiliMongooseModel = ({
             .lean();
 
           const existingIds = new Set(
-            existingDocs.map((doc: Record<string, unknown>) => doc[primaryKey]),
+            existingDocs.map((doc: Record<string, unknown>) => String(doc[primaryKey])),
           );
 
           // Delete documents that don't exist in MongoDB
-          const toDelete = meiliIds.filter((id) => !existingIds.has(id));
+          const toDelete = meiliIds.filter((id) => !existingIds.has(String(id)));
           if (toDelete.length > 0) {
             const deletion = await index.deleteDocuments(toDelete.map(String));
             const deletionTask = await client.waitForTask(deletion.taskUid, {
@@ -742,7 +745,10 @@ const createMeiliMongooseModel = ({
       params: SearchParams,
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
-      const data = await index.search(q, params);
+      const data = await index.search(q, {
+        ...params,
+        ...(searchableAttributes ? { attributesToSearchOn: searchableAttributes } : {}),
+      });
 
       if (populate) {
         const query: Record<string, unknown> = {};
@@ -1077,6 +1083,8 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     }, []),
   ];
 
+  if (!attributesToIndex.includes(primaryKey)) attributesToIndex.push(primaryKey);
+
   // CRITICAL: Always include 'user' field for proper filtering
   // This ensures existing deployments can filter by user after migration
   if (schema.obj.user && !attributesToIndex.includes('user')) {
@@ -1092,6 +1100,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       getExcludedIndexedQuery: () => buildExcludedIndexedQuery(options.excludeFromIndexPath),
       excludeFromIndexPath: options.excludeFromIndexPath,
       attributesToIndex,
+      searchableAttributes: options.searchableAttributes,
       primaryKey,
       syncOptions,
     }),

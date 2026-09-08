@@ -6,12 +6,12 @@ const useBookmarkSuccess = (conversationId: string) => {
   const updateConversation = useSetRecoilState(store.updateConversationSelector(conversationId));
   const { updateTagsInConversation } = useUpdateTagsInConvo();
 
-  return (newTags: string[]) => {
+  return (newTags: string[], tagIds?: string[]) => {
     if (!conversationId) {
       return;
     }
-    updateTagsInConversation(conversationId, newTags);
-    updateConversation({ tags: newTags });
+    updateTagsInConversation(conversationId, newTags, tagIds);
+    updateConversation({ tags: newTags, ...(tagIds === undefined ? {} : { tagIds }) });
   };
 };
 

@@ -79,7 +79,6 @@ describe('ConversationTag Utilities', () => {
           tag: 'tag1-new',
           description: 'description1-new',
         },
-        'tag1',
       );
 
       expect(updated[0].tag).toBe('saved');
@@ -106,7 +105,6 @@ describe('ConversationTag Utilities', () => {
         tag: 'tag3-new',
         description: 'description3-new',
       },
-      'tag3',
     );
 
     expect(updated[0].tag).toBe('saved');
@@ -133,7 +131,6 @@ describe('ConversationTag Utilities', () => {
         ...conversations[3],
         position: 2,
       },
-      'tag3',
     );
 
     expect(updated[0].tag).toBe('saved');
@@ -159,7 +156,6 @@ describe('ConversationTag Utilities', () => {
         ...conversations[3],
         position: 5,
       },
-      'tag3',
     );
 
     expect(updated[0].tag).toBe('saved');

@@ -1,4 +1,5 @@
 import { useState, useId } from 'react';
+import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { DropdownPopup, TooltipAnchor, Button } from '@librechat/client';
@@ -12,7 +13,9 @@ import useTemporaryChat from '~/hooks/Chat/useTemporaryChat';
 import useExportShare from '~/hooks/Chat/useExportShare';
 import useMultiConvo from '~/hooks/Chat/useMultiConvo';
 import { useHasAccess, useLocalize } from '~/hooks';
+import { useBookmarkSuccess } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 /**
  * Mobile overflow menu. Collapses the header's secondary actions behind a
@@ -46,7 +49,13 @@ export default function HeaderMenu({
 
   const multiConvo = useMultiConvo();
   const temporary = useTemporaryChat();
-  const bookmarks = useBookmarkItems({ enabled: hasAccessToBookmarks === true });
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const onTagsUpdated = useBookmarkSuccess(conversation?.conversationId ?? '');
+  const bookmarks = useBookmarkItems({
+    enabled: hasAccessToBookmarks === true,
+    conversation,
+    onTagsUpdated,
+  });
   const exportShare = useExportShare({
     isSharedButtonEnabled: startupConfig?.sharedLinksEnabled ?? false,
   });

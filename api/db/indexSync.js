@@ -334,6 +334,12 @@ async function performSync(flowManager, flowId, flowType) {
       );
     }
 
+    const tagModel = mongoose.models.ConversationTag;
+    if (tagModel?.getSyncProgress) {
+      const progress = await tagModel.getSyncProgress();
+      if (!progress.isComplete) await tagModel.syncWithMeili();
+    }
+
     if (messageSyncError) {
       throw messageSyncError;
     }

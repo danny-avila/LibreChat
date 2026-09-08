@@ -16,10 +16,11 @@ import { useLocalize } from '~/hooks';
 
 const DeleteBookmarkButton: FC<{
   bookmark: string;
+  tagId: string;
   tabIndex?: number;
   onFocus?: () => void;
   onBlur?: () => void;
-}> = ({ bookmark, tabIndex = 0, onFocus, onBlur }) => {
+}> = ({ bookmark, tagId, tabIndex = 0, onFocus, onBlur }) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [open, setOpen] = useState(false);
@@ -39,8 +40,8 @@ const DeleteBookmarkButton: FC<{
   });
 
   const confirmDelete = useCallback(async () => {
-    await deleteBookmarkMutation.mutateAsync(bookmark);
-  }, [bookmark, deleteBookmarkMutation]);
+    await deleteBookmarkMutation.mutateAsync(tagId);
+  }, [tagId, deleteBookmarkMutation]);
 
   return (
     <>

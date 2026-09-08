@@ -65,9 +65,9 @@ router.post('/', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.put('/:tag', async (req, res) => {
+router.put(['/id/:tagId', '/:tag'], async (req, res) => {
   try {
-    const decodedTag = decodeURIComponent(req.params.tag);
+    const decodedTag = req.params.tagId ?? req.params.tag;
     if (req.body.tag && req.body.tag !== decodedTag && req.body.position !== undefined) {
       return res.status(400).json({ error: 'Rename and position changes must be sent separately' });
     }
@@ -76,6 +76,7 @@ router.put('/:tag', async (req, res) => {
       decodedTag,
       req.body,
       req.user.tenantId ?? null,
+      req.params.tagId != null,
     );
     if (tag) {
       res.status(200).json(tag);
@@ -94,10 +95,15 @@ router.put('/:tag', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.delete('/:tag', async (req, res) => {
+router.delete(['/id/:tagId', '/:tag'], async (req, res) => {
   try {
-    const decodedTag = decodeURIComponent(req.params.tag);
-    const tag = await deleteConversationTag(req.user.id, decodedTag, req.user.tenantId ?? null);
+    const decodedTag = req.params.tagId ?? req.params.tag;
+    const tag = await deleteConversationTag(
+      req.user.id,
+      decodedTag,
+      req.user.tenantId ?? null,
+      req.params.tagId != null,
+    );
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -117,11 +123,21 @@ router.delete('/:tag', async (req, res) => {
  */
 router.put('/convo/:conversationId', async (req, res) => {
   try {
+    const byId = req.body.tagIds !== undefined;
+    const values = byId ? req.body.tagIds : req.body.tags;
+    if (
+      !Array.isArray(values) ||
+      values.some((value) => typeof value !== 'string') ||
+      (byId && req.body.tags !== undefined)
+    ) {
+      return res.status(400).json({ error: 'Provide either tags or tagIds as a string array' });
+    }
     const conversationTags = await updateTagsForConversation(
       req.user.id,
       req.params.conversationId,
-      req.body.tags,
+      values,
       req.user.tenantId ?? null,
+      byId,
     );
     res.status(200).json(conversationTags);
   } catch (error) {

@@ -21,8 +21,14 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   const { data } = useGetConversationTags();
 
   const label = useMemo(
-    () => (tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')),
-    [tags, localize],
+    () =>
+      tags.length > 0
+        ? tags
+            .map((id) => data?.find((tag) => tag._id === id)?.tag)
+            .filter(Boolean)
+            .join(', ')
+        : localize('com_ui_bookmarks'),
+    [tags, data, localize],
   );
 
   const buttonAriaLabel = useMemo(() => {
@@ -69,9 +75,9 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
       });
     } else {
       for (const bookmark of bookmarks) {
-        const isSelected = tags.includes(bookmark.tag);
+        const isSelected = tags.includes(bookmark._id);
         items.push({
-          id: bookmark.tag,
+          id: bookmark._id,
           label: bookmark.tag,
           hideOnClick: false,
           icon: isSelected ? (
@@ -79,7 +85,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
           ) : (
             <BookmarkIcon className="size-4" />
           ),
-          onClick: () => handleTagClick(bookmark.tag),
+          onClick: () => handleTagClick(bookmark._id),
           ariaChecked: isSelected,
         });
       }

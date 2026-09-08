@@ -158,7 +158,7 @@ async function forkConversation({
       new Date(),
       originalConvo,
     );
-    await importBatchBuilder.saveBatch();
+    await importBatchBuilder.saveBatch({ tagSource: 'owned' });
     logger.debug(
       `user: ${requestUserId} | New conversation "${
         newTitle || originalConvo.title
@@ -599,7 +599,7 @@ async function duplicateConversation({
 
   const duplicateTitle = title || originalConvo.title;
   const result = importBatchBuilder.finishConversation(duplicateTitle, new Date(), originalConvo);
-  await importBatchBuilder.saveBatch();
+  await importBatchBuilder.saveBatch({ tagSource: 'owned' });
   logger.debug('Conversation duplicated', {
     userId,
     sourceConversationId: conversationId,

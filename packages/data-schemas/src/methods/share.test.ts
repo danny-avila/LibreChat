@@ -10,6 +10,7 @@ import {
   type ShareMethods,
   type SharedLinkContentSnapshot,
 } from './share';
+import { createConversationTagModel } from '~/models/conversationTag';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
@@ -118,6 +119,9 @@ describe('Share Methods', () => {
         conversationSchema,
       )) as SchemaWithMeiliMethods;
     File = mongoose.models.File || mongoose.model<t.IMongoFile>('File', fileSchema);
+
+    const Tag = createConversationTagModel(mongoose) as unknown as SchemaWithMeiliMethods;
+    Tag.meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
 
     // Create share methods
     shareMethods = createShareMethods(mongoose);

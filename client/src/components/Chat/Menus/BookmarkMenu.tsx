@@ -6,7 +6,7 @@ import { DropdownPopup, TooltipAnchor, Spinner } from '@librechat/client';
 import type { FC } from 'react';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import useBookmarkItems from '~/hooks/Chat/useBookmarkItems';
-import { useLocalize } from '~/hooks';
+import { useBookmarkSuccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -14,9 +14,11 @@ const BookmarkMenu: FC = () => {
   const localize = useLocalize();
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const conversationId = useRecoilValue(store.conversationByIndex(0))?.conversationId ?? '';
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const conversationId = conversation?.conversationId ?? '';
+  const onTagsUpdated = useBookmarkSuccess(conversationId);
   const { show, items, bookmarks, hasBookmarks, isLoading, triggerAriaLabel, dialog } =
-    useBookmarkItems();
+    useBookmarkItems({ conversation, onTagsUpdated });
 
   if (!show) {
     return null;

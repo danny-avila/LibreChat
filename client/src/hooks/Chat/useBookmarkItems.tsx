@@ -1,21 +1,17 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
-import { useRecoilValue } from 'recoil';
 import { BookmarkPlusIcon } from 'lucide-react';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-
-import type { TConversationTag } from 'librechat-data-provider';
+import type { TConversation, TConversationTag } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type * as t from '~/common';
-
 import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
-import { useBookmarkSuccess, useLocalize } from '~/hooks';
 import { isTemporaryConversation, logger } from '~/utils';
 import { NotificationSeverity } from '~/common';
-import store from '~/store';
+import { useLocalize } from '~/hooks';
 
 export type UseBookmarkItemsResult = {
   /** Bookmarks only apply to a saved, non-temporary conversation. */
@@ -35,14 +31,20 @@ export type UseBookmarkItemsResult = {
  */
 export default function useBookmarkItems({
   enabled = true,
-}: { enabled?: boolean } = {}): UseBookmarkItemsResult {
+  conversation,
+  onTagsUpdated,
+}: {
+  enabled?: boolean;
+  conversation?: TConversation | null;
+  onTagsUpdated: (names: string[], ids?: string[]) => void;
+}): UseBookmarkItemsResult {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
 
-  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
   const conversationId = conversation?.conversationId ?? '';
-  const updateConvoTags = useBookmarkSuccess(conversationId);
+  const updateConvoTags = onTagsUpdated;
+  const tagIds = conversation?.tagIds;
   const tags = conversation?.tags;
   const isTemporary = isTemporaryConversation(conversation);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -56,8 +58,14 @@ export default function useBookmarkItems({
   }, []);
 
   const mutation = useTagConversationMutation(conversationId, {
-    onSuccess: (newTags: string[], vars) => {
-      updateConvoTags(newTags);
+    onSuccess: (newIds: string[], vars) => {
+      const catalog =
+        queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
+      const names = newIds.flatMap((id) => {
+        const tag = catalog.find((item) => item._id === id);
+        return tag ? [tag.tag] : [];
+      });
+      updateConvoTags(names, newIds);
       focusTag(vars.tag);
     },
     onError: () => {
@@ -95,8 +103,8 @@ export default function useBookmarkItems({
 
       const allTags =
         queryClient.getQueryData<TConversationTag[]>([QueryKeys.conversationTags]) ?? [];
-      const existingTags = allTags.map((t) => t.tag);
-      const filteredTags = tags?.filter((t) => existingTags.includes(t));
+      const existingTags = allTags.map((t) => t._id);
+      const filteredTags = tagIds?.filter((t) => existingTags.includes(t));
 
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after filtering', filteredTags);
       const newTags =
@@ -105,12 +113,12 @@ export default function useBookmarkItems({
           : [...(filteredTags ?? []), tag];
 
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
-      mutation.mutate({ tags: newTags, tag });
+      mutation.mutate({ tagIds: newTags, tag });
     },
-    [tags, conversationId, mutation, queryClient, showToast],
+    [tags, tagIds, conversationId, mutation, queryClient, showToast],
   );
 
-  const tagsCount = tags?.length ?? 0;
+  const tagsCount = tagIds?.filter((id) => data?.some((tag) => tag._id === id)).length ?? 0;
 
   const triggerAriaLabel = useMemo(() => {
     if (tagsCount > 0) {
@@ -134,9 +142,9 @@ export default function useBookmarkItems({
 
     if (data) {
       for (const tag of data) {
-        const isSelected = tags?.includes(tag.tag) === true;
+        const isSelected = tagIds?.includes(tag._id) === true;
         next.push({
-          id: tag.tag,
+          id: tag._id,
           label: tag.tag,
           hideOnClick: false,
           icon: isSelected ? (
@@ -144,7 +152,7 @@ export default function useBookmarkItems({
           ) : (
             <BookmarkIcon className="size-4" />
           ),
-          onClick: () => handleSubmit(tag.tag),
+          onClick: () => handleSubmit(tag._id),
           disabled: mutation.isLoading,
           ariaChecked: isSelected,
         });
@@ -152,11 +160,12 @@ export default function useBookmarkItems({
     }
 
     return next;
-  }, [tags, data, handleSubmit, mutation.isLoading, localize]);
+  }, [tagIds, data, handleSubmit, mutation.isLoading, localize]);
 
   const dialog = (
     <BookmarkEditDialog
       tags={tags}
+      tagIds={tagIds}
       open={isDialogOpen}
       setTags={updateConvoTags}
       setOpen={setIsDialogOpen}

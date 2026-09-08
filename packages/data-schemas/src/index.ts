@@ -102,3 +102,8 @@ export {
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,
 } from './migrations';
+
+export {
+  migrateConversationTags,
+  assertConversationTagMigration,
+} from './migrations/conversationTags';

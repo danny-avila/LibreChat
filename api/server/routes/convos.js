@@ -172,6 +172,7 @@ router.get('/', async (req, res) => {
       isArchived,
       pinned,
       tags,
+      tagIds: req.query.tagIds == null ? undefined : [].concat(req.query.tagIds),
       search,
       sortBy,
       sortDirection,

@@ -1,11 +1,11 @@
 import React, { useRef } from 'react';
-import { useDrag, useDrop } from 'react-dnd';
 import { GripVertical } from 'lucide-react';
-import type { TConversationTag } from 'librechat-data-provider';
+import { useDrag, useDrop } from 'react-dnd';
 import { TooltipAnchor, useToastContext } from '@librechat/client';
+import type { TConversationTag } from 'librechat-data-provider';
 import { useConversationTagMutation } from '~/data-provider';
-import { NotificationSeverity } from '~/common';
 import BookmarkCardActions from './BookmarkCardActions';
+import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -29,11 +29,12 @@ export default function BookmarkCard({ bookmark, position, moveRow }: BookmarkCa
   const mutation = useConversationTagMutation({
     context: 'BookmarkCard',
     tag: bookmark.tag,
+    tagId: bookmark._id,
   });
 
   const handleDrop = (item: DragItem) => {
     mutation.mutate(
-      { ...bookmark, position: item.index },
+      { position: item.index },
       {
         onSuccess: () => {
           showToast({

@@ -1,781 +1,319 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IConversation } from '..';
-import type { IConversationTag } from '~/schema/conversationTag';
-import { createConversationTagMethods, decrementTagCounts } from './conversationTag';
-import { tenantStorage } from '~/config/tenantContext';
+import type { TagRecord } from '~/tags/membership';
+import type { IConversation } from '~/types';
+import {
+  migrateConversationTags,
+  assertConversationTagMigration,
+} from '~/migrations/conversationTags';
+import { hydrateConversationTags, resolveTagNames } from '~/tags/membership';
+import { createConversationTagMethods } from './conversationTag';
+import { createMethods } from '~/methods';
 import { createModels } from '~/models';
 
-jest.mock('~/config/winston', () => ({
-  error: jest.fn(),
-  warn: jest.fn(),
-  info: jest.fn(),
-  debug: jest.fn(),
-}));
-
-let mongoServer: InstanceType<typeof MongoMemoryServer>;
-let ConversationTag: mongoose.Model<IConversationTag>;
-let Conversation: mongoose.Model<IConversation>;
-let deleteConversationTag: ReturnType<typeof createConversationTagMethods>['deleteConversationTag'];
-let getConversationTags: ReturnType<typeof createConversationTagMethods>['getConversationTags'];
-let reconcileConversationTagCounts: ReturnType<
-  typeof createConversationTagMethods
->['reconcileConversationTagCounts'];
-
+let server: MongoMemoryServer;
+let Conversations: mongoose.Model<IConversation>;
+let Catalog: mongoose.Model<TagRecord>;
+let methods: ReturnType<typeof createConversationTagMethods>;
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const mongoUri = mongoServer.getUri();
-
-  // Register models
-  const models = createModels(mongoose);
-  Object.assign(mongoose.models, models);
-
-  ConversationTag = mongoose.models.ConversationTag;
-  Conversation = mongoose.models.Conversation;
-
-  // Create methods from factory
-  const methods = createConversationTagMethods(mongoose);
-  deleteConversationTag = methods.deleteConversationTag;
-  getConversationTags = methods.getConversationTags;
-  reconcileConversationTagCounts = methods.reconcileConversationTagCounts;
-
-  await mongoose.connect(mongoUri);
+  server = await MongoMemoryServer.create();
+  await mongoose.connect(server.getUri());
+  createModels(mongoose);
+  Conversations = mongoose.models.Conversation;
+  Catalog = mongoose.models.ConversationTag;
+  methods = createConversationTagMethods(mongoose);
 });
-
+afterEach(async () => {
+  jest.restoreAllMocks();
+  await Conversations.deleteMany({});
+  await Catalog.deleteMany({});
+});
 afterAll(async () => {
   await mongoose.disconnect();
-  await mongoServer.stop();
+  await server.stop();
 });
 
-afterEach(async () => {
-  await ConversationTag.deleteMany({});
-  await Conversation.deleteMany({});
-});
-
-describe('ConversationTag model - $pullAll operations', () => {
-  const userId = new mongoose.Types.ObjectId().toString();
-
-  describe('deleteConversationTag', () => {
-    it('should remove the tag from all conversations that have it', async () => {
-      await ConversationTag.create({ tag: 'work', user: userId, position: 1 });
-
-      await Conversation.create([
-        { conversationId: 'conv1', user: userId, endpoint: 'openAI', tags: ['work', 'important'] },
-        { conversationId: 'conv2', user: userId, endpoint: 'openAI', tags: ['work'] },
-        { conversationId: 'conv3', user: userId, endpoint: 'openAI', tags: ['personal'] },
-      ]);
-
-      await deleteConversationTag(userId, 'work');
-
-      const convos = await Conversation.find({ user: userId }).sort({ conversationId: 1 }).lean();
-      expect(convos[0].tags).toEqual(['important']);
-      expect(convos[1].tags).toEqual([]);
-      expect(convos[2].tags).toEqual(['personal']);
-    });
-
-    it('should delete the tag document itself', async () => {
-      await ConversationTag.create({ tag: 'temp', user: userId, position: 1 });
-
-      const result = await deleteConversationTag(userId, 'temp');
-
-      expect(result).toBeDefined();
-      expect(result!.tag).toBe('temp');
-
-      const remaining = await ConversationTag.find({ user: userId }).lean();
-      expect(remaining).toHaveLength(0);
-    });
-
-    it('returns the committed deletion without a fallible count read', async () => {
-      await ConversationTag.create({ tag: 'removed', user: userId, position: 1, count: 77 });
-      await Conversation.create({
-        conversationId: 'tag-delete',
-        user: userId,
-        endpoint: 'openAI',
-        tags: ['removed'],
-      });
-      const count = jest
-        .spyOn(Conversation, 'countDocuments')
-        .mockRejectedValue(new Error('count unavailable'));
-      try {
-        await expect(deleteConversationTag(userId, 'removed')).resolves.toMatchObject({
-          tag: 'removed',
-          count: 0,
-        });
-        expect(count).not.toHaveBeenCalled();
-        expect(await ConversationTag.findOne({ user: userId, tag: 'removed' })).toBeNull();
-        expect((await Conversation.findOne({ user: userId }).lean())?.tags).toEqual([]);
-      } finally {
-        count.mockRestore();
-      }
-    });
-
-    it('should return null when the tag does not exist', async () => {
-      const result = await deleteConversationTag(userId, 'nonexistent');
-      expect(result).toBeNull();
-    });
-
-    it('should adjust positions of tags after the deleted one', async () => {
-      await ConversationTag.create([
-        { tag: 'first', user: userId, position: 1 },
-        { tag: 'second', user: userId, position: 2 },
-        { tag: 'third', user: userId, position: 3 },
-      ]);
-
-      await deleteConversationTag(userId, 'first');
-
-      const tags = await ConversationTag.find({ user: userId }).sort({ position: 1 }).lean();
-      expect(tags).toHaveLength(2);
-      expect(tags[0].tag).toBe('second');
-      expect(tags[0].position).toBe(1);
-      expect(tags[1].tag).toBe('third');
-      expect(tags[1].position).toBe(2);
-    });
-
-    it('should not affect conversations of other users', async () => {
-      const otherUser = new mongoose.Types.ObjectId().toString();
-
-      await ConversationTag.create({ tag: 'shared-name', user: userId, position: 1 });
-      await ConversationTag.create({ tag: 'shared-name', user: otherUser, position: 1 });
-
-      await Conversation.create([
-        { conversationId: 'mine', user: userId, endpoint: 'openAI', tags: ['shared-name'] },
-        { conversationId: 'theirs', user: otherUser, endpoint: 'openAI', tags: ['shared-name'] },
-      ]);
-
-      await deleteConversationTag(userId, 'shared-name');
-
-      const myConvo = await Conversation.findOne({ conversationId: 'mine' }).lean();
-      const theirConvo = await Conversation.findOne({ conversationId: 'theirs' }).lean();
-
-      expect(myConvo?.tags).toEqual([]);
-      expect(theirConvo?.tags).toEqual(['shared-name']);
-    });
-
-    it('should handle duplicate tags in conversations correctly', async () => {
-      await ConversationTag.create({ tag: 'dup', user: userId, position: 1 });
-
-      const conv = await Conversation.create({
-        conversationId: 'conv-dup',
-        user: userId,
-        endpoint: 'openAI',
-        tags: ['dup', 'other', 'dup'],
-      });
-
-      await deleteConversationTag(userId, 'dup');
-
-      const updated = await Conversation.findById(conv._id).lean();
-      expect(updated?.tags).toEqual(['other']);
-    });
-  });
-});
-
-describe('reconcileConversationTagCounts', () => {
-  const userId = new mongoose.Types.ObjectId().toString();
-
-  it('commutes when a later transition reconciles before its predecessor', async () => {
-    await Conversation.create({
-      conversationId: 'committed',
-      user: userId,
-      endpoint: 'openAI',
-      tags: ['blue'],
-    });
-    await reconcileConversationTagCounts(userId, ['red'], ['blue']);
-
-    await expect(getConversationTags(userId)).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ tag: 'red', count: 0 }),
-        expect.objectContaining({ tag: 'blue', count: 1 }),
-      ]),
-    );
-
-    await reconcileConversationTagCounts(userId, [], ['red']);
-
-    await expect(
-      ConversationTag.findOne({ user: userId, tag: 'red' }).lean(),
-    ).resolves.toMatchObject({ count: 0 });
-    await expect(
-      ConversationTag.findOne({ user: userId, tag: 'blue' }).lean(),
-    ).resolves.toMatchObject({ count: 1 });
-  });
-});
-
-describe('authoritative public tag counts', () => {
-  const user = 'count-owner';
-
-  it('reads stable derived tags without writes after reconciliation fails', async () => {
-    await Conversation.create({
-      conversationId: 'committed',
-      user,
-      endpoint: 'openAI',
-      tags: ['new', 'new'],
-    });
-    const write = jest
-      .spyOn(ConversationTag, 'bulkWrite')
-      .mockRejectedValueOnce(new Error('transient'));
-    await expect(reconcileConversationTagCounts(user, [], ['new'])).rejects.toThrow('transient');
-    write.mockClear();
-    const first = await getConversationTags(user);
-    expect(await getConversationTags(user)).toEqual(first);
-    expect(write).not.toHaveBeenCalled();
-    expect(await ConversationTag.countDocuments({ user })).toBe(0);
-    write.mockRestore();
-    await expect(getConversationTags(user)).resolves.toEqual([
-      expect.objectContaining({ tag: 'new', count: 1 }),
-    ]);
-    await expect(getConversationTags(user)).resolves.toEqual([
-      expect.objectContaining({ tag: 'new', count: 1 }),
-    ]);
-  });
-
-  it.each(['delete', 'rename'])(
-    'ignores delayed signed deltas after catalog %s',
-    async (action) => {
-      const methods = createConversationTagMethods(mongoose);
-      await Conversation.create({
-        conversationId: 'committed',
-        user,
-        endpoint: 'openAI',
-        tags: ['blue'],
-      });
-      await reconcileConversationTagCounts(user, ['red'], ['blue']);
-      if (action === 'delete') await methods.deleteConversationTag(user, 'red');
-      else await methods.updateConversationTag(user, 'red', { tag: 'renamed' });
-      await reconcileConversationTagCounts(user, [], ['red']);
-      const tags = await getConversationTags(user);
-      expect(tags.find((tag) => tag.tag === 'blue')).toMatchObject({ count: 1 });
-      expect(tags.filter((tag) => tag.tag !== 'blue').every((tag) => tag.count === 0)).toBe(true);
-    },
+async function seed(user = 'owner', tenantId?: string) {
+  const tag = await methods.createConversationTag(
+    user,
+    { tag: 'old', description: 'description' },
+    tenantId ?? null,
   );
-
-  it('separates named and tenantless counts and preserves catalog metadata', async () => {
-    await Conversation.create([
-      { conversationId: 'plain', user, endpoint: 'openAI', tags: ['shared'] },
-      { conversationId: 'foreign', user: 'foreign', endpoint: 'openAI', tags: ['shared'] },
-    ]);
-    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
-      await Conversation.create({
-        conversationId: 'named',
-        user,
-        endpoint: 'openAI',
-        tags: ['shared', 'shared'],
-      });
-      await ConversationTag.create({
-        user,
-        tag: 'empty',
-        count: 999,
-        description: 'Keep me',
-        position: 3,
-      });
-      expect(await getConversationTags(user)).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ tag: 'shared', count: 1, tenantId: 'tenant-a' }),
-          expect.objectContaining({ tag: 'empty', count: 0, description: 'Keep me', position: 3 }),
-        ]),
-      );
-    });
-    expect(await getConversationTags(user, null)).toEqual([
-      expect.objectContaining({ tag: 'shared', count: 1 }),
-    ]);
-    expect(
-      (await ConversationTag.find({ user }).lean()).filter((tag) => tag.tag === 'shared'),
-    ).toHaveLength(0);
+  const conversation = await Conversations.create({
+    user,
+    tenantId,
+    conversationId: 'convo',
+    endpoint: 'openAI',
+    tagIds: [],
   });
+  return { tag: tag!, conversation };
+}
 
-  it.each(['rename', 'delete'])('does not repair catalog rows during %s', async (action) => {
-    const methods = createConversationTagMethods(mongoose);
-    await Conversation.create({
-      conversationId: 'interleaved',
-      user,
-      endpoint: 'openAI',
-      tags: ['red'],
+it.each([null, 'tenant-a'])(
+  'assignment retains identity when rename wins before membership commit (%s)',
+  async (tenantId) => {
+    const { tag } = await seed('owner', tenantId ?? undefined);
+    const Conversation = Conversations;
+    const original = Conversation.collection.findOneAndUpdate.bind(Conversation.collection);
+    let arrive!: () => void;
+    let release!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      arrive = resolve;
     });
-    await ConversationTag.create({ user, tag: 'red', count: 1, position: 1 });
-    const updateMany = Conversation.collection.updateMany.bind(Conversation.collection);
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const write = jest
-      .spyOn(Conversation.collection, 'updateMany')
+      .spyOn(Conversation.collection, 'findOneAndUpdate')
       .mockImplementationOnce(async (...args) => {
-        if (action === 'delete') await getConversationTags(user);
-        const result = await updateMany(...args);
-        if (action === 'rename') await getConversationTags(user);
-        return result;
+        arrive();
+        await resume;
+        return original(...args);
       });
-    try {
-      if (action === 'rename') await methods.updateConversationTag(user, 'red', { tag: 'blue' });
-      else await methods.deleteConversationTag(user, 'red');
-    } finally {
-      write.mockRestore();
-    }
-    expect(await ConversationTag.find({ user }).distinct('tag')).toEqual(
-      action === 'rename' ? ['blue'] : [],
-    );
-    expect((await getConversationTags(user)).map(({ tag, count }) => ({ tag, count }))).toEqual(
-      action === 'rename' ? [{ tag: 'blue', count: 1 }] : [],
-    );
-  });
+    const assignment = methods.updateTagsForConversation('owner', 'convo', ['old'], tenantId);
+    await paused;
+    await methods.updateConversationTag('owner', String(tag._id), { tag: 'new' }, tenantId, true);
+    release();
+    expect(await assignment).toEqual(['new']);
+    write.mockRestore();
+    const row = await Conversation.findOne({ user: 'owner' }).lean();
+    expect(row?.tagIds).toEqual([String(tag._id)]);
+    expect(await methods.getConversationTags('owner', tenantId)).toEqual([
+      expect.objectContaining({ tag: 'new', count: 1 }),
+    ]);
+  },
+);
 
-  it('allows explicit rename and deletion of tags with no catalog row', async () => {
-    const methods = createConversationTagMethods(mongoose);
-    await Conversation.create({
-      conversationId: 'derived',
-      user,
+it('renames without rewriting membership or conversation timestamps', async () => {
+  const { tag } = await seed();
+  await methods.updateTagsForConversation('owner', 'convo', [String(tag._id)], null, true);
+  const before = await Conversations.findOne({ user: 'owner' }).lean();
+  const update = jest.spyOn(Conversations, 'updateMany');
+  await methods.updateConversationTag('owner', String(tag._id), { tag: 'new' }, null, true);
+  expect(update).not.toHaveBeenCalled();
+  const after = await Conversations.findOne({ user: 'owner' }).lean();
+  expect(after?.tagIds).toEqual(before?.tagIds);
+  expect(after?.updatedAt).toEqual(before?.updatedAt);
+});
+
+it('a late assignment to a deleted identity never joins its replacement', async () => {
+  const { tag } = await seed();
+  const Conversation = Conversations;
+  const original = Conversation.collection.findOneAndUpdate.bind(Conversation.collection);
+  let arrive!: () => void;
+  let release!: () => void;
+  const paused = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  const resume = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  jest
+    .spyOn(Conversation.collection, 'findOneAndUpdate')
+    .mockImplementationOnce(async (...args) => {
+      arrive();
+      await resume;
+      return original(...args);
+    });
+  const assignment = methods.updateTagsForConversation(
+    'owner',
+    'convo',
+    [String(tag._id)],
+    null,
+    true,
+  );
+  await paused;
+  await methods.deleteConversationTag('owner', String(tag._id), null, true);
+  const replacement = await methods.createConversationTag('owner', { tag: 'old' }, null);
+  release();
+  expect(await assignment).toEqual([]);
+  expect(String(replacement?._id)).not.toBe(String(tag._id));
+  expect(await methods.getConversationTags('owner', null)).toEqual([
+    expect.objectContaining({ count: 0 }),
+  ]);
+  const row = await Conversation.findOne({ user: 'owner' }).lean();
+  expect((await hydrateConversationTags(mongoose, [row!]))[0].tagIds).toEqual([]);
+});
+
+it('rejects foreign IDs and does not interpret a hex label as an identity', async () => {
+  await seed();
+  const foreign = await methods.createConversationTag('foreign', { tag: 'foreign' });
+  const tenant = await methods.createConversationTag('owner', { tag: 'tenant' }, 'other');
+  for (const id of [foreign!._id, tenant!._id]) {
+    await expect(
+      methods.updateTagsForConversation('owner', 'convo', [String(id)], null, true),
+    ).rejects.toThrow('Tag not found');
+  }
+  const hex = String(new mongoose.Types.ObjectId());
+  const [id] = await resolveTagNames(mongoose, 'owner', [hex], null);
+  expect(id).not.toBe(hex);
+  expect(await methods.updateTagsForConversation('owner', 'convo', [hex], null)).toEqual([hex]);
+});
+
+it('only one concurrent rename can claim a destination name', async () => {
+  const first = await methods.createConversationTag('owner', { tag: 'first' });
+  const second = await methods.createConversationTag('owner', { tag: 'second' });
+  const results = await Promise.allSettled(
+    [first, second].map((tag) =>
+      methods.updateConversationTag('owner', String(tag!._id), { tag: 'destination' }, null, true),
+    ),
+  );
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+  expect(await Catalog.countDocuments({ user: 'owner', tag: 'destination' })).toBe(1);
+});
+
+it('counts committed distinct membership without relying on cached counts', async () => {
+  const { tag } = await seed();
+  await Catalog.updateOne({ _id: tag._id }, { $set: { count: 999 } });
+  await Conversations.updateOne(
+    { user: 'owner' },
+    { $set: { tagIds: [String(tag._id), String(tag._id)] } },
+  );
+  expect((await methods.getConversationTags('owner'))[0].count).toBe(1);
+  await Conversations.deleteMany({ user: 'owner' });
+  expect((await methods.getConversationTags('owner'))[0].count).toBe(0);
+});
+
+it('dry-runs and idempotently migrates catalog and missing names without changing history', async () => {
+  const Tag = Catalog;
+  const Convo = Conversations;
+  const tag = await Tag.create({
+    user: 'owner',
+    tag: 'existing',
+    description: 'keep',
+    position: 9,
+  });
+  const updatedAt = new Date('2020-01-01');
+  await Convo.collection.insertMany([
+    {
+      user: 'owner',
+      conversationId: 'legacy',
+      tags: ['existing', 'missing', 'existing'],
+      updatedAt,
+    },
+    {
+      user: 'owner',
+      tenantId: 'tenant-a',
+      conversationId: 'tenant',
+      tags: ['existing'],
+      updatedAt,
+    },
+  ]);
+  await expect(assertConversationTagMigration(mongoose.connection)).rejects.toThrow(
+    'migration required',
+  );
+  expect(await migrateConversationTags(mongoose.connection)).toEqual({
+    scanned: 2,
+    updated: 2,
+    createdTags: 2,
+  });
+  expect(await Tag.countDocuments()).toBe(1);
+  await migrateConversationTags(mongoose.connection, { dryRun: false });
+  expect(await migrateConversationTags(mongoose.connection, { dryRun: false })).toEqual({
+    scanned: 2,
+    updated: 0,
+    createdTags: 0,
+  });
+  const row = await Convo.findOne({ conversationId: 'legacy' }).lean();
+  expect(row?.tagIds).toHaveLength(2);
+  expect(row?.tagIds?.[0]).toBe(String(tag._id));
+  expect(row?.updatedAt).toEqual(updatedAt);
+  expect(await Tag.findById(tag._id).lean()).toMatchObject({ description: 'keep', position: 9 });
+  expect((await hydrateConversationTags(mongoose, [row!]))[0].tags).toEqual([
+    'existing',
+    'missing',
+  ]);
+  await expect(assertConversationTagMigration(mongoose.connection)).resolves.toBeUndefined();
+});
+
+it('validates all legacy records before any migration writes', async () => {
+  await Conversations.collection.insertMany([
+    { user: 'owner', conversationId: 'valid', tags: ['new'] },
+    { user: 'owner', conversationId: 'invalid', tags: [null] },
+  ]);
+  await expect(migrateConversationTags(mongoose.connection, { dryRun: false })).rejects.toThrow(
+    'malformed',
+  );
+  expect(await Catalog.countDocuments()).toBe(0);
+  expect(await Conversations.countDocuments({ tagIds: { $exists: true } })).toBe(0);
+});
+
+it('keeps creation idempotent and appends new labels without overwriting descriptions', async () => {
+  const first = await methods.createConversationTag('owner', { tag: 'first', description: 'kept' });
+  const second = await methods.createConversationTag('owner', { tag: 'second' });
+  const retried = await methods.createConversationTag('owner', {
+    tag: 'first',
+    description: 'ignored',
+  });
+  expect(retried?._id).toEqual(first?._id);
+  expect(retried?.description).toBe('kept');
+  expect(second?.position).toBe((first?.position ?? 0) + 1);
+});
+
+it('resolves portable import labels locally and ignores source IDs', async () => {
+  const foreign = await methods.createConversationTag('foreign', { tag: 'source' });
+  const db = createMethods(mongoose);
+  await db.bulkSaveConvos([
+    {
+      user: 'owner',
+      conversationId: 'import',
       endpoint: 'openAI',
-      tags: ['red', 'green'],
-    });
-    expect(await methods.updateConversationTag(user, 'red', { tag: 'blue' })).toMatchObject({
-      count: 1,
-    });
-    expect(await methods.deleteConversationTag(user, 'green')).toMatchObject({ count: 0 });
-    expect((await getConversationTags(user)).map(({ tag, count }) => ({ tag, count }))).toEqual([
-      { tag: 'blue', count: 1 },
-    ]);
-  });
-
-  it('rejects combined rename and reorder before any catalog or membership write', async () => {
-    const methods = createConversationTagMethods(mongoose);
-    await ConversationTag.create({ user, tag: 'old', position: 1 });
-    const before = await ConversationTag.find({ user }).lean();
-    const membership = jest.spyOn(Conversation, 'updateMany');
-    const catalog = jest.spyOn(ConversationTag, 'updateOne');
-    try {
-      await expect(
-        methods.updateConversationTag(user, 'old', { tag: 'new', position: 3 }, null),
-      ).rejects.toThrow();
-      expect(membership).not.toHaveBeenCalled();
-      expect(catalog).not.toHaveBeenCalled();
-      expect(await ConversationTag.find({ user }).lean()).toEqual(before);
-    } finally {
-      membership.mockRestore();
-      catalog.mockRestore();
-    }
-  });
-
-  it.each(['membership', 'count', 'catalog'] as const)(
-    'resumes a pending rename after %s failure',
-    async (failure) => {
-      const methods = createConversationTagMethods(mongoose);
-      await ConversationTag.create({ user, tag: 'old', description: 'Keep', position: 2 });
-      await ConversationTag.create({ user, tag: 'neighbor', position: 3 });
-      await Conversation.create({
-        user,
-        conversationId: 'rename-retry',
-        endpoint: 'openAI',
-        tags: ['old'],
-      });
-      const failures = {
-        membership: () => jest.spyOn(Conversation, 'updateMany'),
-        count: () => jest.spyOn(Conversation, 'countDocuments'),
-        catalog: () => jest.spyOn(ConversationTag, 'findOneAndUpdate'),
-      };
-      const failing = failures[failure]().mockRejectedValueOnce(new Error('unavailable'));
-      try {
-        await expect(
-          methods.updateConversationTag(user, 'old', { tag: 'new' }, null),
-        ).rejects.toThrow();
-      } finally {
-        failing.mockRestore();
-      }
-      expect(
-        await ConversationTag.findOne({ user, tag: 'old' }).select('+renameTo').lean(),
-      ).toMatchObject({ renameTo: 'new', description: 'Keep' });
-      for (const tag of await getConversationTags(user, null)) {
-        expect(tag).not.toHaveProperty('renameTo');
-      }
-      await expect(
-        methods.updateConversationTag(user, 'old', { tag: 'different' }, null),
-      ).rejects.toThrow();
-      await expect(methods.deleteConversationTag(user, 'old', null)).rejects.toThrow();
-      await expect(methods.createConversationTag(user, { tag: 'new' }, null)).rejects.toThrow();
-      await expect(
-        methods.updateConversationTag(user, 'old', { tag: 'new' }, null),
-      ).resolves.toMatchObject({ tag: 'new', count: 1, description: 'Keep', position: 2 });
-      expect(await ConversationTag.exists({ user, tag: 'old' })).toBeNull();
-      expect(
-        await ConversationTag.findOne({ user, tag: 'new' }).select('+renameTo').lean(),
-      ).not.toHaveProperty('renameTo');
-      expect((await Conversation.findOne({ user }).lean())?.tags).toEqual(['new']);
-      expect(await ConversationTag.findOne({ user, tag: 'neighbor' }).lean()).toMatchObject({
-        position: 3,
-      });
+      tags: ['portable'],
+      tagIds: [String(foreign!._id)],
     },
-  );
-
-  it.each([null, 'tenant-a'])(
-    'holds the same namespace against metadata reconciliation in tenant %s',
-    async (tenantId) => {
-      const methods = createConversationTagMethods(mongoose);
-      const scope = { user, ...(tenantId == null ? {} : { tenantId }) };
-      await ConversationTag.init();
-      await ConversationTag.create({ ...scope, tag: 'old', description: 'Keep' });
-      await Conversation.create([
-        { ...scope, conversationId: 'renamed', endpoint: 'openAI', tags: ['old'] },
-        { ...scope, conversationId: 'patched', endpoint: 'openAI', tags: [] },
-      ]);
-      let release!: () => void;
-      let entered!: () => void;
-      const blocked = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const reserved = new Promise<void>((resolve) => {
-        entered = resolve;
-      });
-      const updateMany = Conversation.updateMany.bind(Conversation);
-      const spy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce(((
-        ...args: Parameters<typeof updateMany>
-      ) => {
-        entered();
-        return blocked.then(() => updateMany(...args));
-      }) as typeof Conversation.updateMany);
-      const renaming = methods.updateConversationTag(user, 'old', { tag: 'new' }, tenantId);
-      try {
-        await reserved;
-        await Conversation.updateOne(
-          { ...scope, conversationId: 'patched' },
-          { $set: { tags: ['new'] } },
-        );
-        await expect(
-          methods.reconcileConversationTagCounts(user, [], ['new'], tenantId),
-        ).rejects.toMatchObject({ code: 11000 });
-        await expect(
-          methods.reconcileConversationTagCounts(user, ['new'], [], tenantId),
-        ).rejects.toMatchObject({ code: 11000 });
-        expect(await ConversationTag.exists({ ...scope, tag: 'new' })).toBeNull();
-      } finally {
-        release();
-        spy.mockRestore();
-      }
-      await expect(renaming).resolves.toMatchObject({ tag: 'new', count: 2, description: 'Keep' });
-      expect(await ConversationTag.countDocuments(scope)).toBe(1);
-      const stored = await ConversationTag.findOne({ ...scope, tag: 'new' })
-        .select('+reservedNames +renameTo')
-        .lean();
-      expect(stored).toMatchObject({ reservedNames: ['new'] });
-      expect(stored).not.toHaveProperty('renameTo');
-      for (const tag of await getConversationTags(user, tenantId))
-        expect(tag).not.toHaveProperty('reservedNames');
-    },
-  );
-
-  it('reserves a rename destination for only one concurrent source tag', async () => {
-    const methods = createConversationTagMethods(mongoose);
-    await ConversationTag.init();
-    await ConversationTag.create([
-      { user, tag: 'first' },
-      { user, tag: 'second' },
-    ]);
-    await Conversation.create([
-      { user, conversationId: 'first', endpoint: 'openAI', tags: ['first'] },
-      { user, conversationId: 'second', endpoint: 'openAI', tags: ['second'] },
-    ]);
-    const outcomes = await Promise.allSettled(
-      ['first', 'second'].map((tag) =>
-        methods.updateConversationTag(user, tag, { tag: 'target' }, null),
-      ),
-    );
-    expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
-    expect(await Conversation.countDocuments({ user, tags: 'target' })).toBe(1);
-  });
-
-  it.each([null, 'tenant-a'])(
-    'rejects a rename into a derived tag in tenant %s',
-    async (tenantId) => {
-      const methods = createConversationTagMethods(mongoose);
-      const scope = { user, ...(tenantId == null ? {} : { tenantId }) };
-      await ConversationTag.collection.insertOne({
-        ...scope,
-        tag: 'old',
-        description: 'Keep',
-        position: 2,
-      });
-      await Conversation.collection.insertMany([
-        { ...scope, conversationId: 'old', tags: ['old'] },
-        { ...scope, conversationId: 'derived', tags: ['target'] },
-      ]);
-      await expect(
-        methods.updateConversationTag(
-          user,
-          'old',
-          { tag: 'target', description: 'Changed' },
-          tenantId,
-        ),
-      ).rejects.toThrow('Error updating conversation tag');
-      expect(await ConversationTag.findOne({ user, tenantId, tag: 'old' }).lean()).toMatchObject({
-        description: 'Keep',
-        position: 2,
-      });
-      expect(await ConversationTag.exists({ user, tenantId, tag: 'target' })).toBeNull();
-      expect(
-        (await Conversation.findOne({ ...scope, conversationId: 'old' }).lean())?.tags,
-      ).toEqual(['old']);
-      expect(
-        (await Conversation.findOne({ ...scope, conversationId: 'derived' }).lean())?.tags,
-      ).toEqual(['target']);
-    },
-  );
-
-  it('does not treat another tenant or owner membership as a rename conflict', async () => {
-    const methods = createConversationTagMethods(mongoose);
-    await ConversationTag.create({ user, tag: 'old', position: 0 });
-    await Conversation.collection.insertMany([
-      { user, conversationId: 'mine', tags: ['old'] },
-      { user, tenantId: 'historical', conversationId: 'other-tenant', tags: ['target'] },
-      { user: 'other-user', conversationId: 'other-owner', tags: ['target'] },
-    ]);
-    await expect(
-      methods.updateConversationTag(user, 'old', { tag: 'target' }, null),
-    ).resolves.toMatchObject({ tag: 'target', count: 1 });
-  });
-
-  it('returns committed counts from create and rename responses', async () => {
-    const methods = createConversationTagMethods(mongoose);
-    await Conversation.create({
-      conversationId: 'committed',
-      user,
-      endpoint: 'openAI',
-      tags: ['red'],
-    });
-    await ConversationTag.create({ user, tag: 'red', count: -7, position: 1 });
-    expect(await methods.createConversationTag(user, { tag: 'red' })).toMatchObject({ count: 1 });
-    expect(await methods.updateConversationTag(user, 'red', { tag: 'blue' })).toMatchObject({
-      count: 1,
-    });
-    expect(await methods.deleteConversationTag(user, 'blue')).toMatchObject({ count: 0 });
-  });
+  ]);
+  const saved = await db.getConvo('owner', 'import');
+  expect(saved?.tags).toEqual(['portable']);
+  expect(saved?.tagIds).toHaveLength(1);
+  expect(saved?.tagIds).not.toContain(String(foreign!._id));
 });
 
-describe('decrementTagCounts', () => {
-  const userId = new mongoose.Types.ObjectId().toString();
-
-  const readCount = async (tag: string, user: string = userId) =>
-    (await ConversationTag.findOne({ user, tag }).lean())?.count;
-
-  it('preserves a delayed metadata increment across deletion of another tagged conversation', async () => {
-    await ConversationTag.create({ tag: 'red', user: userId, position: 1, count: 1 });
-    await reconcileConversationTagCounts(userId, ['red'], ['blue']);
-    await decrementTagCounts(mongoose, userId, ['red']);
-    expect(await readCount('red')).toBe(-1);
-    await reconcileConversationTagCounts(userId, [], ['red']);
-    expect(await readCount('red')).toBe(0);
-    expect(await readCount('blue')).toBe(1);
+it('preserves a local copy identity when the source label changes before persistence', async () => {
+  const { tag } = await seed();
+  await methods.updateTagsForConversation('owner', 'convo', [String(tag._id)], null, true);
+  const db = createMethods(mongoose);
+  const original = await db.getConvo('owner', 'convo');
+  await methods.updateConversationTag('owner', String(tag._id), { tag: 'renamed' }, null, true);
+  const copy = { ...original, conversationId: 'local-copy' };
+  delete copy._id;
+  await db.bulkSaveConvos([copy], { tagSource: 'owned' });
+  expect(await db.getConvo('owner', 'local-copy')).toMatchObject({
+    tags: ['renamed'],
+    tagIds: [String(tag._id)],
   });
-
-  it('decrements once per tag occurrence', async () => {
-    await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 5 });
-
-    await decrementTagCounts(mongoose, userId, ['work', 'work']);
-
-    expect(await readCount('work')).toBe(3);
-  });
-
-  it('decrements an exact count down to zero', async () => {
-    await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 2 });
-
-    await decrementTagCounts(mongoose, userId, ['work', 'work']);
-
-    expect(await readCount('work')).toBe(0);
-  });
-
-  it('retains signed deltas when decrements precede increments', async () => {
-    await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 1 });
-
-    await decrementTagCounts(mongoose, userId, ['work', 'work', 'work']);
-
-    expect(await readCount('work')).toBe(-2);
-  });
-
-  it('retains a decrement of a zero count', async () => {
-    await ConversationTag.create({ tag: 'empty', user: userId, position: 1, count: 0 });
-
-    await decrementTagCounts(mongoose, userId, ['empty']);
-
-    expect(await readCount('empty')).toBe(-1);
-  });
-
-  it('preserves an existing negative delta', async () => {
-    await ConversationTag.create({ tag: 'drift', user: userId, position: 1, count: -3 });
-
-    await decrementTagCounts(mongoose, userId, ['drift']);
-
-    expect(await readCount('drift')).toBe(-4);
-  });
-
-  it('treats a missing count as zero', async () => {
-    await ConversationTag.collection.insertOne({ tag: 'legacy', user: userId, position: 1 });
-
-    await decrementTagCounts(mongoose, userId, ['legacy']);
-
-    expect(await readCount('legacy')).toBe(-1);
-  });
-
-  it('combines concurrent decrements without discarding negative deltas', async () => {
-    await ConversationTag.create({ tag: 'race', user: userId, position: 1, count: 3 });
-
-    await Promise.all([
-      decrementTagCounts(mongoose, userId, ['race', 'race']),
-      decrementTagCounts(mongoose, userId, ['race', 'race']),
-    ]);
-
-    expect(await readCount('race')).toBe(-1);
-  });
-
-  it("leaves other users' tags untouched", async () => {
-    const otherUserId = new mongoose.Types.ObjectId().toString();
-    await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 4 });
-    await ConversationTag.create({ tag: 'work', user: otherUserId, position: 1, count: 4 });
-
-    await decrementTagCounts(mongoose, userId, ['work']);
-
-    expect(await readCount('work')).toBe(3);
-    expect(await readCount('work', otherUserId)).toBe(4);
-  });
-
-  it('ignores empty and unknown tags without throwing', async () => {
-    await expect(decrementTagCounts(mongoose, userId, ['', 'nonexistent'])).resolves.not.toThrow();
-  });
+  expect(await Catalog.countDocuments({ user: 'owner', tag: 'old' })).toBe(0);
 });
 
-describe('catalog mutation tenant boundaries', () => {
-  const user = 'catalog-owner';
-
-  it.each([null, 'tenant-a'])(
-    'keeps catalog and membership mutations inside tenant %s',
-    async (tenantId) => {
-      const methods = createConversationTagMethods(mongoose);
-      const owners = [
-        { user },
-        { user, tenantId: 'tenant-a' },
-        { user, tenantId: 'tenant-b' },
-        { user: 'foreign' },
-      ];
-      for (const owner of owners) {
-        await Conversation.collection.insertOne({
-          ...owner,
-          conversationId: 'same',
-          endpoint: 'openAI',
-          tags: ['shared'],
-        });
-        await ConversationTag.collection.insertMany([
-          { ...owner, tag: 'shared', count: 5, position: 1 },
-          { ...owner, tag: 'later', count: 0, position: 2 },
-        ]);
-        if (owner.user !== user || (owner.tenantId ?? null) !== tenantId) {
-          await ConversationTag.collection.insertOne({
-            ...owner,
-            tag: 'renamed',
-            count: 0,
-            position: 99,
-          });
-        }
-      }
-      const outside = {
-        $or: [
-          { user: { $ne: user } },
-          tenantId == null ? { tenantId: { $exists: true } } : { tenantId: { $ne: tenantId } },
-        ],
-      };
-      const catalogBefore = await ConversationTag.collection
-        .find(outside)
-        .sort({ _id: 1 })
-        .toArray();
-      const messagesBefore = await Conversation.collection.find(outside).sort({ _id: 1 }).toArray();
-      await tenantStorage.run(tenantId == null ? {} : { tenantId }, async () => {
-        const created = await methods.createConversationTag(
-          user,
-          { tag: 'fresh', addToConversation: true, conversationId: 'same' },
-          tenantId,
-        );
-        expect(created).toMatchObject({ tag: 'fresh', position: 3, count: 1 });
-        await methods.bulkIncrementTagCounts(user, ['shared']);
-        const renamed = await methods.updateConversationTag(
-          user,
-          'shared',
-          { tag: 'renamed' },
-          tenantId,
-        );
-        expect(renamed).toMatchObject({ tag: 'renamed', count: 1, position: 1 });
-        await methods.updateConversationTag(user, 'renamed', { position: 3 }, tenantId);
-        await methods.deleteConversationTag(user, 'later', tenantId);
-        await methods.deleteConversationTag(user, 'renamed', tenantId);
-        expect(await methods.getConversationTags(user, tenantId)).toEqual([
-          expect.objectContaining({ tag: 'fresh', position: 1, count: 1 }),
-        ]);
-      });
-      expect(await ConversationTag.collection.find(outside).sort({ _id: 1 }).toArray()).toEqual(
-        catalogBefore,
-      );
-      expect(await Conversation.collection.find(outside).sort({ _id: 1 }).toArray()).toEqual(
-        messagesBefore,
-      );
-    },
-  );
-
-  it('does not materialize historical derived tags in a tenantless mutation', async () => {
-    const methods = createConversationTagMethods(mongoose);
-    await Conversation.collection.insertOne({
-      user,
-      tenantId: 'historical',
-      conversationId: 'same',
-      tags: ['derived'],
-    });
-    await expect(
-      methods.updateConversationTag(user, 'derived', { tag: 'renamed' }, null),
-    ).resolves.toBeNull();
-    await expect(methods.deleteConversationTag(user, 'derived', null)).resolves.toBeNull();
-    expect(await ConversationTag.countDocuments({ user })).toBe(0);
-    expect((await Conversation.findOne({ user }).lean())?.tags).toEqual(['derived']);
-    await Conversation.collection.insertOne({ user, conversationId: 'same', tags: ['derived'] });
-    await expect(
-      methods.updateConversationTag(user, 'derived', { tag: 'renamed' }, null),
-    ).resolves.toMatchObject({ tag: 'renamed', count: 1 });
-    await methods.deleteConversationTag(user, 'renamed', null);
-    expect((await Conversation.findOne({ user, tenantId: 'historical' }).lean())?.tags).toEqual([
-      'derived',
-    ]);
-  });
+it('returns an empty page for a deleted bookmark filter', async () => {
+  const { tag } = await seed();
+  await methods.deleteConversationTag('owner', String(tag._id), null, true);
+  expect(
+    await createMethods(mongoose).getConvosByCursor('owner', { tagIds: [String(tag._id)] }),
+  ).toMatchObject({ conversations: [] });
 });
 
-describe('required tag indexes without automatic indexing', () => {
-  it.each([false, true])(
-    'provisions once and recovers from a failed build: %s',
-    async (failFirst) => {
-      const isolated = new mongoose.Mongoose();
-      await isolated.connect(mongoServer.getUri(`tag-index-${failFirst}`), { autoIndex: false });
-      createModels(isolated);
-      const Tag = isolated.models.ConversationTag;
-      const localMethods = createConversationTagMethods(isolated);
-      await Tag.init();
-      const build = jest.spyOn(Tag, 'createIndexes');
-      try {
-        if (failFirst) {
-          build.mockRejectedValueOnce(new Error('DDL unavailable'));
-          await expect(
-            localMethods.createConversationTag('owner', { tag: 'blocked' }, null),
-          ).rejects.toThrow();
-          expect(await Tag.countDocuments({})).toBe(0);
-        }
-        await Promise.all([
-          localMethods.createConversationTag('owner', { tag: 'first' }, null),
-          localMethods.createConversationTag('owner', { tag: 'second' }, null),
-        ]);
-        expect(build).toHaveBeenCalledTimes(failFirst ? 2 : 1);
-        const indexes = await Tag.collection.indexes();
-        expect(indexes).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              key: { reservedNames: 1, user: 1, tenantId: 1 },
-              unique: true,
-            }),
-          ]),
-        );
-        await expect(
-          localMethods.updateConversationTag('owner', 'first', { tag: 'second' }, null),
-        ).rejects.toThrow();
-        expect(await Tag.countDocuments({})).toBe(2);
-      } finally {
-        build.mockRestore();
-        await isolated.connection.dropDatabase();
-        await isolated.disconnect();
-      }
-    },
+it('resumes an interrupted offline batch without allocating replacement identities', async () => {
+  const rows = Array.from({ length: 501 }, (_, index) => ({
+    user: 'owner',
+    conversationId: `migration-${index}`,
+    tags: ['portable'],
+    updatedAt: new Date('2020-01-01'),
+  }));
+  await Conversations.collection.insertMany(rows);
+  const collection = mongoose.connection.db!.collection('conversations');
+  const original = collection.bulkWrite.bind(collection);
+  const write = jest
+    .spyOn(Object.getPrototypeOf(collection) as typeof collection, 'bulkWrite')
+    .mockImplementationOnce((...args) => original(...args))
+    .mockRejectedValueOnce(new Error('interrupted batch'));
+  await expect(migrateConversationTags(mongoose.connection, { dryRun: false })).rejects.toThrow(
+    'interrupted batch',
   );
+  write.mockRestore();
+  const catalog = await Catalog.findOne({ user: 'owner', tag: 'portable' }).lean();
+  expect(await collection.countDocuments({ tagIds: { $exists: true } })).toBe(500);
+  await migrateConversationTags(mongoose.connection, { dryRun: false });
+  expect(await collection.countDocuments({ tagIds: [String(catalog!._id)] })).toBe(501);
+  expect(await Catalog.countDocuments({ user: 'owner' })).toBe(1);
+  expect(await collection.countDocuments({ updatedAt: new Date('2020-01-01') })).toBe(501);
 });

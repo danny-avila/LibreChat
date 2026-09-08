@@ -11,7 +11,8 @@ type BookmarkEditDialogProps = {
   open: boolean;
   setOpen: Dispatch<SetStateAction<boolean>>;
   tags?: string[];
-  setTags?: (tags: string[]) => void;
+  tagIds?: string[];
+  setTags?: (tags: string[], tagIds?: string[]) => void;
   context: string;
   bookmark?: TConversationTag;
   conversationId?: string;
@@ -23,6 +24,7 @@ const BookmarkEditDialog = ({
   open,
   setOpen,
   tags,
+  tagIds,
   setTags,
   context,
   bookmark,
@@ -37,6 +39,7 @@ const BookmarkEditDialog = ({
   const mutation = useConversationTagMutation({
     context,
     tag: bookmark?.tag,
+    tagId: bookmark?._id,
     options: {
       onSuccess: (_data, vars) => {
         showToast({
@@ -51,7 +54,7 @@ const BookmarkEditDialog = ({
           const newTags = [...(tags || []), vars.tag].filter(
             (tag) => tag !== undefined,
           ) as string[];
-          setTags(newTags);
+          setTags(newTags, [...(tagIds ?? []), _data._id]);
 
           logger.log('tag_mutation', 'tags after', newTags);
           if (vars.tag == null || vars.tag === '') {
@@ -59,7 +62,7 @@ const BookmarkEditDialog = ({
           }
 
           setTimeout(() => {
-            const tagElement = document.getElementById(vars.tag ?? '');
+            const tagElement = document.getElementById(_data._id);
             console.log('tagElement', tagElement);
             if (!tagElement) {
               return;

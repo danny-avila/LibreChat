@@ -32,8 +32,8 @@ jest.mock('librechat-data-provider', () => {
       listConversations: jest.fn(),
       pinConversation: jest.fn(),
       deleteConversation: jest.fn(),
-      updateConversationTag: jest.fn(),
-      deleteConversationTag: jest.fn(),
+      updateConversationTagById: jest.fn(),
+      deleteConversationTagById: jest.fn(),
     },
   };
 });
@@ -47,11 +47,11 @@ const pinConversation = dataService.pinConversation as jest.MockedFunction<
 const deleteConversation = dataService.deleteConversation as jest.MockedFunction<
   typeof dataService.deleteConversation
 >;
-const updateConversationTag = dataService.updateConversationTag as jest.MockedFunction<
-  typeof dataService.updateConversationTag
+const updateConversationTagById = dataService.updateConversationTagById as jest.MockedFunction<
+  typeof dataService.updateConversationTagById
 >;
-const deleteConversationTag = dataService.deleteConversationTag as jest.MockedFunction<
-  typeof dataService.deleteConversationTag
+const deleteConversationTagById = dataService.deleteConversationTagById as jest.MockedFunction<
+  typeof dataService.deleteConversationTagById
 >;
 
 const pinnedConversationId = 'convo-pinned';
@@ -556,12 +556,12 @@ const tagResponse: TConversationTag = {
 
 describe('bookmark mutations invalidate the pinned cache', () => {
   it('invalidates pins when a bookmark is renamed', async () => {
-    updateConversationTag.mockResolvedValue(tagResponse);
+    updateConversationTagById.mockResolvedValue(tagResponse);
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(
-      () => useConversationTagMutation({ context: 'test', tag: 'work' }),
+      () => useConversationTagMutation({ context: 'test', tag: 'work', tagId: tagResponse._id }),
       { wrapper: createWrapper(queryClient) },
     );
 
@@ -574,7 +574,7 @@ describe('bookmark mutations invalidate the pinned cache', () => {
   });
 
   it('invalidates pins when a bookmark is deleted', async () => {
-    deleteConversationTag.mockResolvedValue({ ...tagResponse, tag: 'work' });
+    deleteConversationTagById.mockResolvedValue({ ...tagResponse, tag: 'work' });
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
@@ -583,7 +583,7 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     });
 
     await act(async () => {
-      result.current.mutate('work');
+      result.current.mutate(tagResponse._id);
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 

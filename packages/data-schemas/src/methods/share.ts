@@ -8,7 +8,8 @@ import {
   sanitizeUIResourceContent,
   stripMessageUIResourceMarkers,
 } from '~/utils/stripUIResourceMarkers';
-import { activeExpirationFilter } from '~/utils/retention';
+import { activeExpirationFilter, buildRetentionVisibilityFilter } from '~/utils/retention';
+import { searchTagIds, tagScope } from '~/tags/membership';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { CLIENT_MESSAGE_SELECT } from './message';
@@ -969,13 +970,27 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       if (search && search.trim()) {
         try {
-          const searchResults = await Conversation.meiliSearch(search, {
-            filter: `user = "${user}"`,
-            limit: MEILI_SEARCH_LIMIT,
-            attributesToRetrieve: ['conversationId'],
-          });
+          const [searchResults, matchingTagIds] = await Promise.all([
+            Conversation.meiliSearch(search, {
+              filter: `user = "${user}"`,
+              limit: MEILI_SEARCH_LIMIT,
+              attributesToRetrieve: ['conversationId'],
+            }),
+            searchTagIds(mongoose, user, search),
+          ]);
+          const tagConversations = matchingTagIds.length
+            ? await Conversation.find({
+                $and: [
+                  tagScope(user),
+                  { tagIds: { $in: matchingTagIds }, subagentThread: { $exists: false } },
+                  buildRetentionVisibilityFilter(),
+                ],
+              })
+                .select('conversationId')
+                .lean()
+            : [];
 
-          if (!searchResults?.hits?.length) {
+          if (!searchResults?.hits?.length && !tagConversations.length) {
             return {
               links: [],
               nextCursor: undefined,
@@ -983,7 +998,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             };
           }
 
-          const conversationIds = searchResults.hits.map((hit) => hit.conversationId);
+          const conversationIds = [
+            ...searchResults.hits.map((hit) => hit.conversationId),
+            ...tagConversations.map((conversation) => conversation.conversationId),
+          ];
           query['conversationId'] = { $in: conversationIds };
         } catch (searchError) {
           logger.error('[getSharedLinks] Meilisearch error', {

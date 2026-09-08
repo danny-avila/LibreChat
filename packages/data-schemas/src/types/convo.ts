@@ -298,6 +298,7 @@ export interface IConversation extends Document {
   greeting?: string;
   spec?: string;
   tags?: string[];
+  tagIds?: string[];
   chatProjectId?: string | null;
   tools?: string[];
   maxContextTokens?: number;
