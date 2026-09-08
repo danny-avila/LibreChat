@@ -464,6 +464,7 @@ const processFileURL = async ({
  * @returns {Promise<void>}
  */
 const processImageFile = async ({ req, res, metadata, returnFile = false, sseStream }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const { file } = req;
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
@@ -490,7 +491,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       context: FileContext.message_attachment,
       source,
       type: `image/${appConfig.imageOutputType}`,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
       width,
       height,
       tenantId: req.user.tenantId,
@@ -577,6 +578,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * constructing it re-reads the user's key.
  */
 const processFileUpload = async ({ req, res, metadata, sseStream, openai: providedOpenAI }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -662,7 +664,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
       embedded,
       source,
       height,
@@ -704,6 +706,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   if (!messageAttachment && !agent_id) {
     throw new Error('No agent ID provided for agent file upload');
   }
+
+  const retentionExpiryPromise = getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
+  });
 
   const isImage = file.mimetype.startsWith('image');
   let fileInfoMetadata;
@@ -829,11 +837,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           return;
         }
       }
-      const retentionExpiry = await getAgentFileRetentionExpiry({
-        req,
-        messageAttachment,
-        tool_resource,
-      });
+      const retentionExpiry = await retentionExpiryPromise;
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -1079,11 +1083,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     });
   }
 
-  const retentionExpiry = await getAgentFileRetentionExpiry({
-    req,
-    messageAttachment,
-    tool_resource,
-  });
+  const retentionExpiry = await retentionExpiryPromise;
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,

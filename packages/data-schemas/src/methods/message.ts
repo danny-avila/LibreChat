@@ -272,14 +272,27 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
  */
 function buildMessageSaveUpdate(
   update: Record<string, unknown>,
-  options: { stampModelOutputOnInsert: boolean; unsetContextMeta: boolean },
+  options: {
+    stampModelOutputOnInsert: boolean;
+    unsetContextMeta: boolean;
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+  },
 ): UpdateQuery<IMessage> {
-  if (!options.stampModelOutputOnInsert && !options.unsetContextMeta) {
+  if (
+    !options.stampModelOutputOnInsert &&
+    !options.unsetContextMeta &&
+    options.retentionOnInsert == null
+  ) {
     return update;
   }
   return {
     $set: update,
-    ...(options.stampModelOutputOnInsert && { $setOnInsert: { isUserSubmitted: false } }),
+    ...((options.stampModelOutputOnInsert || options.retentionOnInsert != null) && {
+      $setOnInsert: {
+        ...(options.stampModelOutputOnInsert && { isUserSubmitted: false }),
+        ...options.retentionOnInsert,
+      },
+    }),
     ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
   };
 }
@@ -290,7 +303,12 @@ async function findOneAndMergeMessageProvenance(
   update: Record<string, unknown>,
   userSubmittedPaths: readonly string[],
   userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
-  options: { upsert: boolean; stampModelOutputOnInsert?: boolean; unsetContextMeta?: boolean },
+  options: {
+    upsert: boolean;
+    stampModelOutputOnInsert?: boolean;
+    unsetContextMeta?: boolean;
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+  },
 ) {
   const safeUpdate = { ...update };
   delete safeUpdate._id;
@@ -332,6 +350,8 @@ async function findOneAndMergeMessageProvenance(
         filter,
         {
           $set: { ...safeUpdate, ...provenance },
+          ...(current == null &&
+            options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
           ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
         },
         { upsert: options.upsert && current == null, new: true },
@@ -768,6 +788,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
+      delete update.isTemporary;
+      delete update.expiredAt;
+      let retentionOnInsert: { expiredAt: Date; isTemporary: false } | undefined;
 
       if (expiredAt instanceof Date && !Number.isNaN(expiredAt.getTime())) {
         if (typeof isTemporary === 'boolean') {
@@ -788,6 +811,20 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             logger.error('Error creating chat expiration date:', err);
             logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
             update.expiredAt = createFallbackRetentionDate();
+          }
+        } else {
+          try {
+            retentionOnInsert = {
+              expiredAt: createChatExpirationDate(interfaceConfig, false),
+              isTemporary: false,
+            };
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+            retentionOnInsert = {
+              expiredAt: createFallbackRetentionDate(),
+              isTemporary: false,
+            };
           }
         }
       } else if (isTemporary === true) {
@@ -839,11 +876,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             update,
             userSubmittedPaths,
             userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert, unsetContextMeta },
+            { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
           )
         : await Message.findOneAndUpdate(
             { messageId: params.messageId, user: userId },
-            buildMessageSaveUpdate(update, { stampModelOutputOnInsert, unsetContextMeta }),
+            buildMessageSaveUpdate(update, {
+              stampModelOutputOnInsert,
+              unsetContextMeta,
+              retentionOnInsert,
+            }),
             { upsert: true, new: true },
           );
 

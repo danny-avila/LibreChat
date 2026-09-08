@@ -155,6 +155,25 @@ describe('retention helpers', () => {
     expect(result).toEqual({});
   });
 
+  it('uses temporary retention when an all-data lookup cannot determine the chat type', async () => {
+    dependencies.getConvo.mockRejectedValue(new Error('offline'));
+
+    await getRetentionExpiry(
+      request({
+        config: {
+          interfaceConfig: {
+            retentionMode: RetentionMode.ALL,
+            temporaryChatRetention: 1,
+            generalChatRetention: 2160,
+          },
+        },
+      }),
+      dependencies,
+    );
+
+    expect(dependencies.createExpirationDate).toHaveBeenCalledWith(expect.any(Object), true);
+  });
+
   it('returns expiry when isTemporary is true', async () => {
     dependencies.getConvo.mockResolvedValue(null);
 

@@ -147,7 +147,7 @@ async function computeRetentionExpiry(
         err,
       );
       if (isRetentionAll || isBooleanOrStringTrue(req?.body?.isTemporary)) {
-        return createRetentionExpiry(req, dependencies);
+        return createRetentionExpiry(req, dependencies, true);
       }
       return {};
     }

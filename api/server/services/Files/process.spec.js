@@ -237,7 +237,9 @@ const db = require('~/models');
 const {
   processAgentFileUpload,
   processDeleteRequest,
+  processFileUpload,
   processFileURL,
+  processImageFile,
   sweepExpiredFiles,
   startExpiredFileSweep,
 } = require('./process');
@@ -328,6 +330,58 @@ const setupStoredFileUpload = (result = {}) => {
   getStrategyFunctions.mockReturnValue({ handleFileUpload });
   return handleFileUpload;
 };
+
+describe('upload retention scheduling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+  });
+
+  it.each([
+    ['image', processImageFile, 'handleImageUpload'],
+    ['file', processFileUpload, 'handleFileUpload'],
+  ])(
+    'overlaps the retention lookup with %s storage',
+    async (_label, processUpload, strategyKey) => {
+      let resolveRetention;
+      let resolveStorage;
+      getRetentionExpiry.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRetention = resolve;
+        }),
+      );
+      const storage = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveStorage = resolve;
+          }),
+      );
+      getStrategyFunctions.mockReturnValue({ [strategyKey]: storage });
+      const req = makeReq({ body: { endpoint: 'openAI' } });
+      req.config.imageOutputType = 'webp';
+
+      const pending = processUpload({
+        req,
+        res: mockRes,
+        metadata: { endpoint: 'openAI', file_id: 'file-uuid-123' },
+      });
+      await Promise.resolve();
+
+      expect(getRetentionExpiry).toHaveBeenCalledWith(req, expect.any(Object));
+      expect(storage).toHaveBeenCalledTimes(1);
+      resolveStorage({
+        bytes: 42,
+        filename: 'upload.bin',
+        filepath: '/uploads/upload.bin',
+        width: 10,
+        height: 10,
+      });
+      resolveRetention({ expiredAt: new Date('2030-01-01T00:00:00.000Z') });
+      await pending;
+    },
+  );
+});
 
 describe('processAgentFileUpload', () => {
   beforeEach(() => {

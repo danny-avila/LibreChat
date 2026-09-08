@@ -2898,6 +2898,43 @@ describe('Message Operations', () => {
       },
     );
 
+    it('atomically assigns general retention when inserting without a chat type', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const followupWrite = jest
+        .spyOn(Message, 'updateOne')
+        .mockRejectedValue(new Error('offline'));
+
+      const result = await saveMessage(mockCtx, mockMessageData);
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+      expect(followupWrite).not.toHaveBeenCalled();
+    });
+
+    it('ignores caller-supplied retention fields', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const suppliedExpiration = new Date('2099-01-01T00:00:00.000Z');
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isTemporary: true,
+        expiredAt: suppliedExpiration,
+      });
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).not.toEqual(suppliedExpiration);
+    });
+
     it.each([true, false])(
       'preserves the stored deadline when chat type %s is omitted',
       async (isTemporary) => {
