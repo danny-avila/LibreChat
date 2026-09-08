@@ -136,3 +136,35 @@ it('keeps database failures as server errors', async () => {
     .expect(500);
   expect(response.body).toEqual({ error: 'Internal server error' });
 });
+
+it.each(['missing', 'deleted', 'foreign'])(
+  'returns404 for a %s membership identity without changing existing tags',
+  async (kind) => {
+    const retained = await methods.createConversationTag('owner', { tag: 'retained' });
+    await mongoose.models.Conversation.create({
+      user: 'owner',
+      conversationId: 'convo',
+      endpoint: 'openAI',
+      tagIds: [String(retained._id)],
+    });
+    let missingId = new mongoose.Types.ObjectId().toString();
+    if (kind === 'deleted') {
+      const deleted = await methods.createConversationTag('owner', { tag: 'deleted' });
+      missingId = String(deleted._id);
+      await methods.deleteConversationTag('owner', missingId, null, true);
+    } else if (kind === 'foreign') {
+      const foreign = await methods.createConversationTag('other-owner', { tag: 'foreign' });
+      missingId = String(foreign._id);
+    }
+    const write = jest.spyOn(mongoose.models.Conversation.collection, 'findOneAndUpdate');
+    const response = await request(app)
+      .put('/tags/convo/convo')
+      .send({ tagIds: [missingId] })
+      .expect(404);
+    expect(response.body).toEqual({ error: 'Tag not found' });
+    expect(write).not.toHaveBeenCalled();
+    expect(
+      await mongoose.models.Conversation.findOne({ user: 'owner', conversationId: 'convo' }).lean(),
+    ).toMatchObject({ tagIds: [String(retained._id)] });
+  },
+);

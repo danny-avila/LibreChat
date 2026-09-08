@@ -65,7 +65,18 @@ interface _DocumentWithMeiliIndex extends Document {
 
 export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
 
-export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
+export interface MeiliBulkInsertMethods {
+  prepareMeiliInsert(): {
+    _meiliIndex?: boolean;
+    _meiliIndexAttempted?: boolean;
+    _meiliIndexVersion?: string;
+  };
+  queueMeiliDocuments(documents: Array<{ _id: Types.ObjectId }>): Promise<void>;
+}
+
+export interface SchemaWithMeiliMethods
+  extends Model<DocumentWithMeiliIndex>,
+    MeiliBulkInsertMethods {
   syncWithMeili(): Promise<void>;
   getSyncProgress(): Promise<SyncProgress>;
   processSyncBatch(
@@ -147,7 +158,7 @@ const retryDetachedMeiliWrite = async (
 const createDetachedMeiliRunner = () => {
   const pendingOperations = new Map<string, Promise<void>>();
 
-  return (key: string, operation: () => Promise<void> | void, context: string): void => {
+  return (key: string, operation: () => Promise<void> | void, context: string): Promise<void> => {
     const previousOperation = pendingOperations.get(key) ?? Promise.resolve();
     const operationPromise = previousOperation.then(operation).catch((error) => {
       logger.error(context, error);
@@ -159,6 +170,7 @@ const createDetachedMeiliRunner = () => {
     });
 
     pendingOperations.set(key, trackedOperation);
+    return trackedOperation;
   };
 };
 
@@ -1022,6 +1034,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   const client = new MeiliSearch({ host, apiKey, timeout: meiliRequestTimeoutMs });
   const runDetachedMeiliOperation = createDetachedMeiliRunner();
+  const runDetachedBulkOperation = createDetachedMeiliRunner();
   const getOperationKey = (doc: DocumentWithMeiliIndex): string =>
     `${indexName}:${String(doc[primaryKey as keyof DocumentWithMeiliIndex] ?? doc._id)}`;
 
@@ -1104,6 +1117,44 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       primaryKey,
       syncOptions,
     }),
+  );
+
+  schema.static('prepareMeiliInsert', function () {
+    if (!meiliEnabled) return {};
+    return {
+      _meiliIndex: false,
+      _meiliIndexAttempted: true,
+      _meiliIndexVersion: new mongoose.Types.ObjectId().toString(),
+    };
+  });
+  schema.static(
+    'queueMeiliDocuments',
+    function (this: Model<DocumentWithMeiliIndex>, documents: Array<{ _id: Types.ObjectId }>) {
+      if (!meiliEnabled) return Promise.resolve();
+      return runDetachedBulkOperation(
+        indexName,
+        () =>
+          processBatch(
+            documents,
+            Math.min(syncOptions.batchSize, 100),
+            syncOptions.delayMs,
+            async (batch) => {
+              await Promise.all(
+                batch.map((row) => {
+                  const doc = this.hydrate(row);
+                  if (!doc._meiliIndexVersion) return;
+                  return runDetachedMeiliOperation(
+                    getOperationKey(doc),
+                    () => doc.addObjectToMeili!(completeDetachedOperation),
+                    '[mongoMeili] Detached bulk-insert indexing failed:',
+                  );
+                }),
+              );
+            },
+          ),
+        '[mongoMeili] Detached bulk-insert batch failed:',
+      );
+    },
   );
 
   // Register Mongoose hooks

@@ -1,6 +1,8 @@
 import type { FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
+import type { MeiliBulkInsertMethods } from '~/models/plugins/mongoMeili';
 import type { IConversation } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { ConversationTagNotFoundError } from './errors';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { getTenantId } from '~/config/tenantContext';
 import logger from '~/config/winston';
@@ -54,7 +56,7 @@ export async function resolveTagNames(
     throw new Error('Invalid tag name');
   }
   const uniqueNames = [...new Set(names)];
-  const Tag = mongoose.models.ConversationTag as Model<TagRecord>;
+  const Tag = mongoose.models.ConversationTag as Model<TagRecord> & Partial<MeiliBulkInsertMethods>;
   const scope = tagScope(user, tenantId);
   if (create) await ensureTagIndexes(mongoose);
   const byName = new Map<string, string>();
@@ -67,6 +69,8 @@ export async function resolveTagNames(
     for (const tag of existing) byName.set(tag.tag, String(tag._id));
     const missing = create ? batch.filter((name) => !byName.has(name)) : [];
     if (!missing.length) continue;
+    let writeError: unknown;
+    let writeFailed = false;
     try {
       await tenantSafeBulkWrite(
         Tag,
@@ -74,7 +78,12 @@ export async function resolveTagNames(
           updateOne: {
             filter: { ...scope, tag },
             update: {
-              $setOnInsert: { tag, user, position: (last?.position ?? -1) + offset + index + 1 },
+              $setOnInsert: {
+                tag,
+                user,
+                position: (last?.position ?? -1) + offset + index + 1,
+                ...Tag.prepareMeiliInsert?.(),
+              },
             },
             upsert: true,
           },
@@ -82,10 +91,25 @@ export async function resolveTagNames(
         { ordered: true },
       );
     } catch (error) {
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 11000) throw error;
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 11000) {
+        writeError = error;
+        writeFailed = true;
+      }
     }
-    const created = await Tag.find({ ...scope, tag: { $in: missing } }).lean();
-    for (const tag of created) byName.set(tag.tag, String(tag._id));
+    try {
+      const created = await Tag.find({ ...scope, tag: { $in: missing } })
+        .select('+_meiliIndex +_meiliIndexAttempted +_meiliIndexVersion')
+        .lean();
+      Tag.queueMeiliDocuments?.(created);
+      for (const tag of created) byName.set(tag.tag, String(tag._id));
+    } catch (error) {
+      if (writeFailed) {
+        logger.error('[resolveTagNames] Failed to read partially written catalog rows', error);
+        throw writeError;
+      }
+      throw error;
+    }
+    if (writeFailed) throw writeError;
     if (missing.some((name) => !byName.has(name))) {
       throw new Error('Tag catalog changed during name resolution; retry the operation');
     }
@@ -149,7 +173,7 @@ export async function ownedTagIds(
   const rows = await Tag.find({ ...tagScope(user, tenantId), _id: { $in: uniqueIds } })
     .select('_id')
     .lean();
-  if (requireAll && rows.length !== uniqueIds.length) throw new Error('Tag not found');
+  if (requireAll && rows.length !== uniqueIds.length) throw new ConversationTagNotFoundError();
   const found = new Set(rows.map((row) => String(row._id)));
   return uniqueIds.filter((id) => found.has(id));
 }

@@ -9,14 +9,8 @@ import {
   resolveTagNames,
   tagScope,
 } from '~/tags/membership';
+import { ConversationTagUpdateError } from '~/tags/errors';
 import { getTenantId } from '~/config/tenantContext';
-
-export class ConversationTagUpdateError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ConversationTagUpdateError';
-  }
-}
 
 interface TagInput {
   tag: string;

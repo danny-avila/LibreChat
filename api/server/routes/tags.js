@@ -3,6 +3,7 @@ const {
   logger,
   isValidObjectIdString,
   ConversationTagUpdateError,
+  ConversationTagNotFoundError,
 } = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -158,6 +159,9 @@ router.put('/convo/:conversationId', async (req, res) => {
     );
     res.status(200).json(conversationTags);
   } catch (error) {
+    if (error instanceof ConversationTagNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
     logger.error('Error updating conversation tags', error);
     res.status(500).send('Error updating conversation tags');
   }

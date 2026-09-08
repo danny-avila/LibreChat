@@ -1011,47 +1011,53 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       if (!matchingTagIds.length) {
         sharedLinks.push(...(await candidates.limit(pageSize + 1)));
       } else {
-        const batchSize = 100;
-        const cursor = candidates.cursor({ batchSize });
-        try {
-          let exhausted = false;
-          while (!exhausted && sharedLinks.length <= pageSize) {
-            const batch: t.ISharedLink[] = [];
-            while (batch.length < batchSize) {
-              const link = await cursor.next();
-              if (!link) {
-                exhausted = true;
-                break;
-              }
-              batch.push(link);
-            }
-            if (!batch.length) break;
-            const tagConversations = await Conversation.find({
-              $and: [
-                tagScope(user),
-                {
-                  conversationId: { $in: batch.map((link) => link.conversationId) },
-                  tagIds: { $in: matchingTagIds },
-                  subagentThread: { $exists: false },
-                },
-                buildRetentionVisibilityFilter(),
-              ],
-            })
-              .select('conversationId')
-              .lean();
-            const matchedIds = new Set(tagConversations.map((convo) => convo.conversationId));
-            for (const link of batch) {
-              if (
-                titleConversationIds?.has(link.conversationId) ||
-                matchedIds.has(link.conversationId)
-              ) {
-                sharedLinks.push(link);
-                if (sharedLinks.length > pageSize) break;
-              }
-            }
-          }
-        } finally {
-          await cursor.close();
+        const scope = tagScope(user);
+        const [titleLinks, taggedLinks] = await Promise.all([
+          titleConversationIds?.size
+            ? SharedLink.find({ ...query, conversationId: { $in: [...titleConversationIds] } })
+                .sort(sort)
+                .limit(pageSize + 1)
+                .select('_id')
+                .lean()
+            : [],
+          Conversation.aggregate<Pick<t.ISharedLink, '_id'>>([
+            {
+              $match: {
+                $and: [
+                  scope,
+                  { tagIds: { $in: matchingTagIds }, subagentThread: { $exists: false } },
+                  buildRetentionVisibilityFilter(),
+                ],
+              },
+            },
+            { $project: { conversationId: 1 } },
+            {
+              $lookup: {
+                from: 'sharedlinks',
+                localField: 'conversationId',
+                foreignField: 'conversationId',
+                as: 'matchedShare',
+              },
+            },
+            { $unwind: '$matchedShare' },
+            { $match: { 'matchedShare.user': user, 'matchedShare.tenantId': scope.tenantId } },
+            { $replaceRoot: { newRoot: '$matchedShare' } },
+            { $match: query },
+            { $project: { _id: 1, [sortBy]: 1 } },
+            { $sort: sort },
+            { $limit: pageSize + 1 },
+            { $project: { _id: 1 } },
+          ]),
+        ]);
+        const ids = [...new Set([...titleLinks, ...taggedLinks].map((link) => String(link._id)))];
+        if (ids.length) {
+          sharedLinks.push(
+            ...(await SharedLink.find({ ...query, _id: { $in: ids } })
+              .sort(sort)
+              .limit(pageSize + 1)
+              .select('-__v -user')
+              .lean()),
+          );
         }
       }
 
