@@ -42,6 +42,72 @@ describe('imported Assistants continuation', () => {
     expect(result).not.toContain('isUserSubmitted');
   });
 
+  it('replays sanitized attachment and quoted context as text', async () => {
+    const result = await buildImportedAssistantPrompt(input, {
+      getImportedAssistantMessages: jest.fn().mockResolvedValue([
+        {
+          ...message('leaf'),
+          text: '',
+          content: [],
+          quotes: ['Quoted context'],
+          files: [
+            {
+              file_id: 'file',
+              filename: 'notes.txt',
+              text: 'Extracted notes',
+              privateKey: 'private',
+            },
+          ],
+          attachments: [
+            {
+              type: 'web_search',
+              web_search: {
+                organic: [
+                  {
+                    title: 'Search result',
+                    link: 'https://example.com',
+                    snippet: 'Search context',
+                  },
+                ],
+                credentials: 'private',
+              },
+            },
+          ],
+        },
+      ]),
+    });
+    for (const value of ['notes.txt', 'Extracted notes', 'Search context', 'Quoted context'])
+      expect(result).toContain(value);
+    expect(result).not.toContain('private');
+    expect(result).toContain('"files":');
+  });
+
+  it('bounds long replay to recent context without truncating current input', async () => {
+    const result = await buildImportedAssistantPrompt(input, {
+      getImportedAssistantMessages: jest.fn().mockResolvedValue([
+        { ...message('root'), text: 'Old context ' + 'a'.repeat(50000) },
+        { ...message('leaf', 'root'), text: 'Recent context' },
+      ]),
+    });
+    expect(result.length).toBeLessThanOrEqual(32768);
+    expect(result).toContain('[Earlier imported context omitted]');
+    expect(result).not.toContain('Old context');
+    expect(result).toContain('Recent context');
+    expect(result.endsWith('Current message:\nFollow up')).toBe(true);
+  });
+
+  it('preserves a current message that consumes the provider message budget', async () => {
+    const text = 'x'.repeat(32768);
+    expect(
+      await buildImportedAssistantPrompt(
+        { ...input, text },
+        {
+          getImportedAssistantMessages: jest.fn().mockResolvedValue([message('leaf')]),
+        },
+      ),
+    ).toBe(text);
+  });
+
   it.each([
     null,
     [message('leaf', 'missing')],

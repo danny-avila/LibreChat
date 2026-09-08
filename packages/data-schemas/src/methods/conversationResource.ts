@@ -215,7 +215,7 @@ export function createConversationResourceMethods(mongoose: typeof import('mongo
           ...activeExpirationFilter<IMessage>(),
         })
           .select(
-            'messageId conversationId parentMessageId text content isCreatedByUser isUserSubmitted thread_id',
+            'messageId conversationId parentMessageId text content files attachments quotes isCreatedByUser isUserSubmitted thread_id',
           )
           .limit(4097)
           .lean<ImportedConversationMessage[]>(),

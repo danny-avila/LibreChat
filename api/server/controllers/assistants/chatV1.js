@@ -573,8 +573,17 @@ const chatV1 = async (req, res) => {
       }
     }
 
-    const promises = [initializeThread(), checkBalanceBeforeRun()];
-    await Promise.all(promises);
+    try {
+      await checkBalanceBeforeRun();
+    } catch (error) {
+      completedRun = true;
+      throw error;
+    }
+    if (res.destroyed || res.writableEnded) {
+      completedRun = true;
+      return;
+    }
+    await initializeThread();
 
     const sendInitialResponse = () => {
       sendEvent(res, {

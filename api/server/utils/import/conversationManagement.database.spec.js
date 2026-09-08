@@ -62,7 +62,11 @@ describe('importConversations database compatibility', () => {
       messageId: 'source-message',
       conversationId: 'source',
       parentMessageId: Constants.NO_PARENT,
-      text: 'Imported context',
+      text: '',
+      content: [],
+      files: [{ file_id: 'source-file', filename: 'notes.txt', text: 'Imported context' }],
+      attachments: [{ file_id: 'result', filename: 'result.txt', text: 'Attached context' }],
+      quotes: ['Quoted context'],
       sender: 'Assistant',
       isCreatedByUser: false,
       thread_id: 'source-thread',
@@ -91,6 +95,9 @@ describe('importConversations database compatibility', () => {
       db,
     );
     expect(prompt).toContain('Imported context');
+    expect(prompt).toContain('Attached context');
+    expect(prompt).toContain('notes.txt');
+    expect(prompt).toContain('Quoted context');
     expect(prompt).toContain('Continue');
     expect(prompt).not.toContain('source-thread');
   });

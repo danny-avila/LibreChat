@@ -99,6 +99,9 @@ describe('conversation resource methods', () => {
         user: OWNER,
         isUserSubmitted: true,
         text: 'Owned history',
+        files: [{ file_id: 'file', text: 'Extracted context' }],
+        attachments: [{ file_id: 'attachment', filename: 'notes.txt' }],
+        quotes: ['Quote'],
       });
       await seedMessage(TENANT_B, {
         conversationId: SAME_CONVERSATION_ID,
@@ -118,6 +121,9 @@ describe('conversation resource methods', () => {
         messageId: 'imported',
         isUserSubmitted: true,
         text: 'Owned history',
+        files: [{ file_id: 'file', text: 'Extracted context' }],
+        attachments: [{ file_id: 'attachment', filename: 'notes.txt' }],
+        quotes: ['Quote'],
       });
       expect(
         await methods.getImportedAssistantMessages(

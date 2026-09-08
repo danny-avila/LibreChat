@@ -8,6 +8,8 @@ import {
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
 import { projectConversationMessage } from './schema';
 
+const MAX_ASSISTANT_MESSAGE_CHARACTERS = 32768;
+
 interface ImportedAssistantPromptInput {
   userId: string;
   tenantId?: string;
@@ -49,6 +51,9 @@ export async function buildImportedAssistantPrompt(
       role: message.isCreatedByUser ? 'user' : 'assistant',
       text: projected.text,
       content: projected.content,
+      files: projected.files,
+      attachments: projected.attachments,
+      quotes: projected.quotes,
     });
     characters += entry.length;
     if (characters > CONTENT_MATERIALIZATION_MAX_CHARACTERS) throw invalid();
@@ -56,7 +61,19 @@ export async function buildImportedAssistantPrompt(
     id = message.parentMessageId ?? Constants.NO_PARENT;
   }
   if (history.length === 0) throw invalid();
-  const prompt = `Imported conversation transcript:\n${history.reverse().join('\n')}\n\nCurrent message:\n${text}`;
+  const prefix = 'Imported conversation transcript:\n';
+  const suffix = `\n\nCurrent message:\n${text}`;
+  const omitted = '[Earlier imported context omitted]\n';
+  const transcript = history.reverse().join('\n');
+  const available = MAX_ASSISTANT_MESSAGE_CHARACTERS - prefix.length - suffix.length;
+  let context = transcript;
+  if (context.length > available) {
+    const tailLength = Math.max(0, available - omitted.length);
+    let start = context.length - tailLength;
+    if (context.charCodeAt(start) >= 0xdc00 && context.charCodeAt(start) <= 0xdfff) start++;
+    context = omitted + context.slice(start);
+  }
+  const prompt = available < omitted.length ? text : prefix + context + suffix;
   assertModelBoundContent({
     filters: input.config?.filters,
     legacyPii: input.config?.messageFilter?.pii,

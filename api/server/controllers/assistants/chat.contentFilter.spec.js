@@ -420,6 +420,65 @@ describe.each([
     },
   );
 
+  it.each(['assistants', 'azureAssistants'])(
+    'rejects %s balance admission before writes and permits retry',
+    async (endpoint) => {
+      req.body.endpoint = endpoint;
+      req.body.conversationId = 'imported-conversation';
+      req.body.parentMessageId = 'imported-parent';
+      delete req.body.thread_id;
+      mockGetImportedAssistantMessages.mockResolvedValue([
+        {
+          messageId: 'imported-parent',
+          conversationId: 'imported-conversation',
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+          text: 'History',
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+      getBalanceConfig.mockReturnValue({ enabled: true });
+      getModelMaxTokens.mockReturnValue(8192);
+      countTokens.mockResolvedValue(321);
+      let signalBalanceStarted;
+      const balanceStarted = new Promise((resolve) => {
+        signalBalanceStarted = resolve;
+      });
+      let rejectBalance;
+      checkBalance.mockImplementation(() => {
+        signalBalanceStarted();
+        return new Promise((_resolve, reject) => {
+          rejectBalance = reject;
+        });
+      });
+      const pending = chatController(req, res);
+      await balanceStarted;
+      expect(mockInitThread).not.toHaveBeenCalled();
+      expect(mockSaveUserMessage).not.toHaveBeenCalled();
+      rejectBalance(new Error('balance admission rejected'));
+      await pending;
+      expect(mockInitThread).not.toHaveBeenCalled();
+      expect(mockSaveUserMessage).not.toHaveBeenCalled();
+      checkBalance.mockResolvedValue(undefined);
+      mockInitThread.mockRejectedValueOnce(new Error('stop after admitted initialization'));
+      await chatController(req, res);
+      expect(mockInitThread).toHaveBeenCalledTimes(1);
+      expect(mockInitThread.mock.calls[0][0].thread_id).toBeUndefined();
+    },
+  );
+
+  it('does not initialize after the request closes during balance admission', async () => {
+    getBalanceConfig.mockReturnValue({ enabled: true });
+    getModelMaxTokens.mockReturnValue(8192);
+    countTokens.mockResolvedValue(1);
+    checkBalance.mockImplementation(async () => {
+      res.destroyed = true;
+    });
+    await chatController(req, res);
+    expect(mockInitThread).not.toHaveBeenCalled();
+    expect(mockSaveUserMessage).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])('preserves attachment-only input (imported=%s)', async (imported) => {
     req.body.text = '   ';
     req.body.files = [{ file_id: 'attachment', type: 'text/plain' }];
