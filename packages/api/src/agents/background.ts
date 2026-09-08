@@ -2230,6 +2230,7 @@ export async function runCheckBackgroundTask(params: {
 
     const subagentTasks = params.subagentTasks;
     let subagentPollChecked = false;
+    let subagentPollError: unknown;
     /** Routed subagents have their own durable/cross-replica store. Resolve
      * them before ordinary-tool Mongo recovery so two fallback reads—or a
      * message-store outage—cannot delay or mask a healthy subagent result. */
@@ -2249,14 +2250,10 @@ export async function runCheckBackgroundTask(params: {
           return JSON.stringify(claimed);
         }
       } catch (error) {
-        if (error instanceof SubagentTaskOwnerUnavailableError) {
-          return JSON.stringify({
-            status: 'unavailable',
-            background_task_id: taskId,
-            message: error.message,
-          });
-        }
-        throw error;
+        /** This id may still belong to an ordinary background tool whose
+         * durable receipt is healthy. Defer the subagent failure until after
+         * that independent recovery path has had a chance to identify it. */
+        subagentPollError = error;
       }
     }
 
@@ -2348,17 +2345,28 @@ export async function runCheckBackgroundTask(params: {
     if (subagentTasks != null) {
       try {
         const routedStore = routedSubagentStore(subagentTasks.store);
-        if (action === 'poll' && !subagentPollChecked) {
-          const claim =
-            routedStore == null
-              ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
-              : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
-          const claimed = serializeSubagentClaim(
-            claim,
-            agentUsesSubagentCompletionWakeups(subagentTasks, params.agentId),
-          );
-          if (claimed != null) {
-            return JSON.stringify(claimed);
+        if (action === 'poll') {
+          if (!subagentPollChecked) {
+            const claim =
+              routedStore == null
+                ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
+                : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
+            const claimed = serializeSubagentClaim(
+              claim,
+              agentUsesSubagentCompletionWakeups(subagentTasks, params.agentId),
+            );
+            if (claimed != null) {
+              return JSON.stringify(claimed);
+            }
+          } else if (subagentPollError != null) {
+            if (subagentPollError instanceof SubagentTaskOwnerUnavailableError) {
+              return JSON.stringify({
+                status: 'unavailable',
+                background_task_id: taskId,
+                message: subagentPollError.message,
+              });
+            }
+            throw subagentPollError;
           }
         } else {
           const command = buildSubagentControlCommand(args, action);

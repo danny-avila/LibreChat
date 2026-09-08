@@ -2652,6 +2652,63 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(claimBackgroundToolResult).not.toHaveBeenCalled();
   });
 
+  it('falls through cleanly when neither background store recognizes a poll id', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_found' as const }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: 'unknown-task' },
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toEqual({
+      status: 'not_found',
+      background_task_id: 'unknown-task',
+      message: 'No background task with that id exists in this thread.',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers an ordinary durable result even when the subagent store is unavailable', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      results: [
+        {
+          taskId: 'ordinary-task',
+          toolCallId: 'ordinary-call',
+          toolName: 'mutating_tool',
+          status: 'completed' as const,
+          output: 'ordinary result',
+        },
+      ],
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: 'ordinary-task' },
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      background_task_id: 'ordinary-task',
+      result: 'ordinary result',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
+  });
+
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
     const store = new InMemorySubagentTaskStore();
     const subagentTasks: HostSubagentTaskConfig = {
