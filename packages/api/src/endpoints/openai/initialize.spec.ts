@@ -145,11 +145,12 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
   });
 
-  it('should not validate a stale user Azure URL when an admin model group baseURL is selected', async () => {
+  it('should not load stale user Azure values when an admin model group config is selected', async () => {
     const params = createParams({
-      AZURE_API_KEY: 'az-env-key',
+      AZURE_API_KEY: AuthType.USER_PROVIDED,
       AZURE_OPENAI_BASEURL: AuthType.USER_PROVIDED,
     });
+    (params.db.getUserKeyValues as jest.Mock).mockResolvedValue(null);
     params.endpoint = EModelEndpoint.azureOpenAI;
     params.model_parameters = { model: 'gpt-4o' };
     params.req.config = {
@@ -176,6 +177,7 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
       (params as unknown as { _restore: () => void })._restore();
     }
 
+    expect(params.db.getUserKeyValues).not.toHaveBeenCalled();
     expect(mockValidateEndpointURL).not.toHaveBeenCalled();
     expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
       'az-admin-key',
