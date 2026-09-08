@@ -466,8 +466,13 @@ export interface BackgroundToolResultRecord {
 
 export type BackgroundToolResultClaim =
   | { status: 'not_found' | 'not_ready' }
-  | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
-  | { status: 'acquired'; results: BackgroundToolResultRecord[] };
+  | { status: 'outcome_unknown'; toolName: string }
+  | {
+      status: 'claimed';
+      claim?: { kind: 'manual' | 'wakeup'; claimId: string };
+      messageId?: string;
+    }
+  | { status: 'acquired'; results: BackgroundToolResultRecord[]; messageId?: string };
 
 export type SubagentThreadViewMessageRecord = Pick<
   IMessage,
@@ -654,7 +659,8 @@ export interface MessageMethods {
   claimBackgroundToolResults(params: {
     userId: string;
     conversationId: string;
-    messageId: string;
+    /** Optional on recovery polls after the process-local task registry was lost. */
+    messageId?: string;
     taskId: string;
     agentId?: string;
     kind: 'manual' | 'wakeup';
@@ -1417,6 +1423,38 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     return results;
   }
 
+  function readBackgroundToolHandle(message: IMessage, taskId: string): string | undefined {
+    for (const part of message.content ?? []) {
+      if (part == null || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const output = (part as { tool_call?: { output?: unknown } }).tool_call?.output;
+      if (typeof output !== 'string' || !output.includes(taskId)) {
+        continue;
+      }
+      try {
+        const handle = JSON.parse(output) as {
+          background_task_id?: unknown;
+          subagent_type?: unknown;
+          tool?: unknown;
+          status?: unknown;
+        };
+        if (
+          handle.background_task_id === taskId &&
+          handle.status === 'running' &&
+          typeof handle.subagent_type !== 'string' &&
+          typeof handle.tool === 'string' &&
+          handle.tool.length > 0
+        ) {
+          return handle.tool;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return;
+  }
+
   /** Atomically elects manual polling or one automatic continuation. Wakeups
    * also claim a bounded set of already-settled siblings from the same parent
    * response, avoiding one paid continuation per concurrently completed tool. */
@@ -1432,16 +1470,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }: {
     userId: string;
     conversationId: string;
-    messageId: string;
+    messageId?: string;
     taskId: string;
     agentId?: string;
     kind: 'manual' | 'wakeup';
     claimId: string;
     limit?: number;
   }): Promise<BackgroundToolResultClaim> {
+    const requestedMessageId = messageId?.trim();
     if (
-      messageId.length === 0 ||
-      messageId.length > 256 ||
+      (requestedMessageId != null &&
+        (requestedMessageId.length === 0 || requestedMessageId.length > 256)) ||
       taskId.length === 0 ||
       taskId.length > 256 ||
       claimId.length === 0 ||
@@ -1452,15 +1491,56 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
     const boundedLimit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, limit));
     const Message = mongoose.models.Message as Model<IMessage>;
-    const row = await Message.findOne({ user: userId, conversationId, messageId })
-      .select({ content: 1, unfinished: 1 })
+    const row = await Message.findOne({
+      user: userId,
+      conversationId,
+      ...(requestedMessageId != null
+        ? { messageId: requestedMessageId }
+        : {
+            content: {
+              $elemMatch: { 'tool_call.backgroundTask.taskId': taskId },
+            },
+          }),
+    })
+      .select({ content: 1, unfinished: 1, messageId: 1 })
+      .sort({ createdAt: -1, _id: -1 })
       .lean<IMessage | null>();
     if (row == null) {
+      if (requestedMessageId == null) {
+        const escapedTaskId = taskId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const handleRow = await Message.findOne({
+          user: userId,
+          conversationId,
+          content: {
+            $elemMatch: {
+              type: 'tool_call',
+              'tool_call.output': new RegExp(`"background_task_id"\\s*:\\s*"${escapedTaskId}"`),
+            },
+          },
+        })
+          .select({ content: 1 })
+          .sort({ createdAt: -1, _id: -1 })
+          .lean<IMessage | null>();
+        const toolName =
+          handleRow == null ? undefined : readBackgroundToolHandle(handleRow, taskId);
+        if (toolName != null) {
+          return { status: 'outcome_unknown', toolName };
+        }
+      }
       return { status: 'not_found' };
     }
-    if (row.unfinished === true) {
+    /** A manual poll belongs to this in-flight generation, so it may consume a
+     * terminal receipt already anchored on the unfinished response. Automatic
+     * wakeups still wait for the parent generation to finish before starting a
+     * second generation. */
+    if (row.unfinished === true && kind === 'wakeup') {
       return { status: 'not_ready' };
     }
+    const resolvedMessageId = row.messageId;
+    if (typeof resolvedMessageId !== 'string' || resolvedMessageId.length === 0) {
+      return { status: 'not_found' };
+    }
+    const recoveredSource = requestedMessageId == null ? { messageId: resolvedMessageId } : {};
     const requestedClaim = readBackgroundToolResultClaim(row, taskId);
     const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
     const candidates: string[] = [];
@@ -1512,6 +1592,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return {
         status: 'claimed',
         ...(requestedClaim == null ? {} : { claim: requestedClaim }),
+        ...recoveredSource,
       };
     }
     if (!candidates.includes(taskId)) {
@@ -1524,8 +1605,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       {
         user: userId,
         conversationId,
-        messageId,
-        unfinished: { $ne: true },
+        messageId: resolvedMessageId,
+        ...(kind === 'wakeup' ? { unfinished: { $ne: true } } : {}),
         content: {
           $elemMatch: {
             type: 'tool_call',
@@ -1617,10 +1698,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const results = parseBackgroundToolResults(updated, { kind, claimId });
     const competingClaim = readBackgroundToolResultClaim(updated, taskId);
     return results.some((result) => result.taskId === taskId)
-      ? { status: 'acquired', results }
+      ? { status: 'acquired', results, ...recoveredSource }
       : {
           status: 'claimed',
           ...(competingClaim == null ? {} : { claim: competingClaim }),
+          ...recoveredSource,
         };
   }
 

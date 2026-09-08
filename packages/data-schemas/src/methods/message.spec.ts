@@ -1118,6 +1118,200 @@ describe('Message Operations', () => {
       expect(task).not.toHaveProperty('completionWakeup');
     });
 
+    it('lets a same-generation manual poll claim an anchored terminal receipt', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        unfinished: true,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-same-generation',
+              name: 'slow_tool',
+              output: 'settled output',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-same-generation',
+                toolName: 'slow_tool',
+                status: 'completed',
+                settledAt: new Date(),
+                completionWakeup: true,
+              },
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-same-generation',
+          kind: 'wakeup',
+          claimId: 'automatic-delivery',
+        }),
+      ).resolves.toEqual({ status: 'not_ready' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-same-generation',
+          kind: 'manual',
+          claimId: 'manual-poll',
+        }),
+      ).resolves.toEqual({
+        status: 'acquired',
+        results: [
+          {
+            taskId: 'task-same-generation',
+            toolCallId: 'call-same-generation',
+            toolName: 'slow_tool',
+            status: 'completed',
+            output: 'settled output',
+          },
+        ],
+      });
+    });
+
+    it('recovers an unclaimed terminal receipt by task id after process-local state is lost', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent-a',
+            tool_call: {
+              id: 'call-recovered',
+              name: 'slow_tool',
+              output: 'durable result',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-recovered',
+                toolName: 'slow_tool',
+                status: 'completed',
+                settledAt: new Date(),
+              },
+            },
+          },
+        ],
+      });
+
+      const recovery = {
+        status: 'acquired',
+        messageId: 'msg123',
+        results: [
+          {
+            taskId: 'task-recovered',
+            toolCallId: 'call-recovered',
+            toolName: 'slow_tool',
+            status: 'completed',
+            output: 'durable result',
+            agentId: 'agent-a',
+          },
+        ],
+      };
+      const recover = () =>
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-recovered',
+          agentId: 'agent-a',
+          kind: 'manual',
+          claimId: 'recovery-poll',
+        });
+      await expect(recover()).resolves.toEqual(recovery);
+      await expect(recover()).resolves.toEqual(recovery);
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-recovered',
+          agentId: 'agent-a',
+          kind: 'manual',
+          claimId: 'competing-poll',
+        }),
+      ).resolves.toEqual({
+        status: 'claimed',
+        messageId: 'msg123',
+        claim: { kind: 'manual', claimId: 'recovery-poll' },
+      });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'another-user',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-recovered',
+          kind: 'manual',
+          claimId: 'cross-user-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    it('reports an exact durable launch handle as outcome unknown after executor loss', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-lost',
+              name: 'mutating_tool',
+              output: JSON.stringify({
+                background_task_id: 'task-lost',
+                tool: 'mutating_tool',
+                status: 'running',
+                message: 'Use check_background_task to poll.',
+              }),
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-lost',
+          kind: 'manual',
+          claimId: 'recovery-poll',
+        }),
+      ).resolves.toEqual({ status: 'outcome_unknown', toolName: 'mutating_tool' });
+    });
+
+    it('leaves a durable subagent handle to the routed subagent store', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-subagent',
+              name: 'subagent',
+              output: JSON.stringify({
+                background_task_id: 'task-subagent',
+                subagent_thread_id: 'thread-subagent',
+                tool: 'subagent',
+                subagent_type: 'researcher',
+                status: 'running',
+                progress: 0,
+              }),
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-subagent',
+          kind: 'manual',
+          claimId: 'subagent-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
     it('claims a terminal result whose persisted claim stamp is a stored null', async () => {
       /** A full-row save can persist `resultClaim: null`, and the
        * subfield-preserving settle write keeps it where the old whole-object

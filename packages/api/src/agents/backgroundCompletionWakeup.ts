@@ -329,6 +329,12 @@ export function createBackgroundToolCompletionWakeupResolver({
     if (claim.status === 'claimed') {
       return { status: 'settled' };
     }
+    if (claim.status === 'outcome_unknown') {
+      throw executionError('The process-local background tool outcome is unknown.', {
+        code: 'BACKGROUND_TOOL_OUTCOME_UNKNOWN',
+        retryable: false,
+      });
+    }
     if (claim.status !== 'acquired') {
       let producerLease: AgentTriggerProducerLeaseStatus;
       try {

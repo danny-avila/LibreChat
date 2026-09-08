@@ -38,6 +38,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
 import type {
+  BackgroundToolResultClaim,
+  BackgroundToolResultRecord,
+} from '@librechat/data-schemas';
+import type {
   LCTool,
   LCToolRegistry,
   JsonSchemaType,
@@ -653,6 +657,8 @@ export interface BackgroundTask {
    * finalize and deadlocking that same generation. */
   liveArtifactPollRequired?: boolean;
   completionWakeup?: boolean;
+  /** The automatic delivery was durably retired before a manual poll took over. */
+  completionWakeupRetired?: boolean;
   /** True while the terminal result is being persisted for automatic delivery. */
   completionPersistencePending?: boolean;
   /** Process-local cancellation handle for the preregistered durable delivery.
@@ -1552,6 +1558,7 @@ export class BackgroundTaskRegistryClass {
     const retired = await task.completionWakeupRetire(reason, options);
     if (retired) {
       task.completionWakeupRetire = undefined;
+      task.completionWakeupRetired = true;
       task.updatedAt = Date.now();
     }
     return retired;
@@ -1793,6 +1800,16 @@ function serializeTask(
   };
 }
 
+function serializeDurableTask(task: BackgroundToolResultRecord): SerializedBackgroundTask {
+  return {
+    background_task_id: task.taskId,
+    tool: task.toolName,
+    status: task.status,
+    progress: 1,
+    ...(task.status === 'completed' ? { result: task.output } : { error: task.output }),
+  };
+}
+
 interface SerializedSubagentTask {
   background_task_id: string;
   subagent_thread_id?: string;
@@ -1953,15 +1970,12 @@ export async function runCheckBackgroundTask(params: {
   claimBackgroundToolResult?: (params: {
     userId: string;
     conversationId: string;
-    messageId: string;
+    messageId?: string;
     taskId: string;
     agentId?: string;
     kind: 'manual';
     claimId: string;
-  }) => Promise<
-    | { status: 'acquired' | 'not_found' | 'not_ready' }
-    | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
-  >;
+  }) => Promise<BackgroundToolResultClaim>;
   recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
 }): Promise<string> {
   const { userId, conversationId } = params;
@@ -2062,37 +2076,39 @@ export async function runCheckBackgroundTask(params: {
                * ownership. A live resolver lease wins. Once that resolver is
                * irreversibly dead-lettered, a dead-only repair reopens the
                * process-local poll fallback without stealing live work. */
-              let retired = false;
-              try {
-                retired = await backgroundTaskRegistry.retireCompletionWakeup(
-                  userId,
-                  conversationId,
-                  taskId,
-                  'completion claimed by same-generation manual poll',
-                  { onlyIfUnclaimed: true },
-                );
-                if (!retired) {
+              let retired = task.completionWakeupRetired === true;
+              if (!retired) {
+                try {
                   retired = await backgroundTaskRegistry.retireCompletionWakeup(
                     userId,
                     conversationId,
                     taskId,
-                    'dead completion recovered by same-generation manual poll',
-                    { onlyIfDead: true },
+                    'completion claimed by same-generation manual poll',
+                    { onlyIfUnclaimed: true },
                   );
-                  if (retired) {
-                    localClaimNeedsNoDurableConfirmation = true;
-                    backgroundTaskRegistry.markCompletionPersistenceFailed(
+                  if (!retired) {
+                    retired = await backgroundTaskRegistry.retireCompletionWakeup(
                       userId,
                       conversationId,
                       taskId,
+                      'dead completion recovered by same-generation manual poll',
+                      { onlyIfDead: true },
                     );
+                    if (retired) {
+                      localClaimNeedsNoDurableConfirmation = true;
+                      backgroundTaskRegistry.markCompletionPersistenceFailed(
+                        userId,
+                        conversationId,
+                        taskId,
+                      );
+                    }
                   }
+                } catch (error) {
+                  logger.warn(
+                    `[background] Failed to retire automatic completion for manual claim ${taskId}:`,
+                    error,
+                  );
                 }
-              } catch (error) {
-                logger.warn(
-                  `[background] Failed to retire automatic completion for manual claim ${taskId}:`,
-                  error,
-                );
               }
               if (!retired) {
                 return JSON.stringify({
@@ -2102,28 +2118,28 @@ export async function runCheckBackgroundTask(params: {
                     'The task is finished and completion ownership is being settled. Retry this poll shortly.',
                 });
               }
-              const localClaim = backgroundTaskRegistry.claimResult(
-                userId,
-                conversationId,
-                taskId,
-                { kind: 'manual', claimId: invocationId },
-              );
-              if (localClaim === 'claimed') {
-                return JSON.stringify({
-                  status: 'delivery_scheduled',
-                  background_task_id: taskId,
-                  message: 'This result is already assigned to an automatic continuation.',
-                });
-              }
-              if (localClaim === 'not_ready') {
-                return JSON.stringify({
-                  status: 'result_persisting',
-                  background_task_id: taskId,
-                  message:
-                    'The task is finished and its result is being made durable. Retry this poll shortly.',
-                });
-              }
               if (task.liveArtifactPollRequired === true) {
+                const localClaim = backgroundTaskRegistry.claimResult(
+                  userId,
+                  conversationId,
+                  taskId,
+                  { kind: 'manual', claimId: invocationId },
+                );
+                if (localClaim === 'claimed') {
+                  return JSON.stringify({
+                    status: 'delivery_scheduled',
+                    background_task_id: taskId,
+                    message: 'This result is already assigned to an automatic continuation.',
+                  });
+                }
+                if (localClaim === 'not_ready') {
+                  return JSON.stringify({
+                    status: 'result_persisting',
+                    background_task_id: taskId,
+                    message:
+                      'The task is finished and its result is being made durable. Retry this poll shortly.',
+                  });
+                }
                 /** The poll is executing inside the still-unfinished dispatch
                  * generation, so waiting for the durable row would require
                  * that generation to end before it can obey its mandatory
@@ -2134,10 +2150,11 @@ export async function runCheckBackgroundTask(params: {
                 localClaimNeedsNoDurableConfirmation = true;
               }
             }
-            /** Ordinary polls do not expose the local result until the durable
-             * row has copied this manual claim. The owner-process live-artifact
-             * exception above cannot wait for its own generation to finalize;
-             * its persister re-reads the local claim after finalization. */
+            /** Ordinary polls claim the durable terminal receipt directly.
+             * They never reserve a process-local claim while the receipt is
+             * absent: a later poll has a different provider tool-call id and
+             * could never take over that abandoned reservation. The live-
+             * artifact exception above cannot wait for its own generation. */
             if (!localClaimNeedsNoDurableConfirmation) {
               const reconciledClaim = await params.claimBackgroundToolResult(durableClaimInput);
               if (reconciledClaim.status === 'claimed') {
@@ -2164,6 +2181,80 @@ export async function runCheckBackgroundTask(params: {
         }
       }
       return JSON.stringify(serializeTask(task, { includeResult: true }));
+    }
+
+    if (action === 'poll' && params.claimBackgroundToolResult != null) {
+      const durableClaimInput = {
+        userId,
+        conversationId,
+        taskId,
+        agentId: params.agentId,
+        kind: 'manual' as const,
+        claimId: invocationId,
+      };
+      let durableClaim: BackgroundToolResultClaim;
+      try {
+        durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
+        if (
+          durableClaim.status === 'claimed' &&
+          durableClaim.claim?.kind === 'wakeup' &&
+          durableClaim.messageId != null &&
+          params.recoverDeadBackgroundToolClaim != null
+        ) {
+          const recovered = await params.recoverDeadBackgroundToolClaim({
+            userId,
+            conversationId,
+            messageId: durableClaim.messageId,
+            claimId: durableClaim.claim.claimId,
+          });
+          if (recovered) {
+            durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
+          }
+        }
+      } catch (error) {
+        logger.warn(`[background] Failed to recover durable task ${taskId} during polling:`, error);
+        return JSON.stringify({
+          status: 'result_unavailable',
+          background_task_id: taskId,
+          message:
+            'The durable task receipt is temporarily unavailable. Do not repeat a mutating operation; retry this status check later.',
+        });
+      }
+      if (durableClaim.status === 'acquired') {
+        const durableTask = durableClaim.results.find((result) => result.taskId === taskId);
+        if (durableTask != null) {
+          return JSON.stringify(serializeDurableTask(durableTask));
+        }
+        return JSON.stringify({
+          status: 'result_persisting',
+          background_task_id: taskId,
+          message: 'The task receipt is settling. Retry this poll shortly.',
+        });
+      }
+      if (durableClaim.status === 'claimed') {
+        return JSON.stringify({
+          status: 'delivery_scheduled',
+          background_task_id: taskId,
+          message: 'This result is already assigned to another poll or automatic continuation.',
+        });
+      }
+      if (durableClaim.status === 'outcome_unknown') {
+        return JSON.stringify({
+          status: 'outcome_unknown',
+          background_task_id: taskId,
+          tool: durableClaim.toolName,
+          message:
+            'The task was launched, but this server cannot confirm a live executor or a durable terminal receipt. Do not repeat a mutating operation automatically; inspect the target system before retrying.',
+        });
+      }
+      if (durableClaim.status === 'not_ready') {
+        return JSON.stringify({
+          status: 'result_persisting',
+          background_task_id: taskId,
+          message:
+            'The task exists, but its terminal receipt is not ready. Do not repeat a mutating operation; retry this status check later.',
+        });
+      }
     }
 
     const subagentTasks = params.subagentTasks;

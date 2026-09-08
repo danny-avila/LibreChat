@@ -2096,7 +2096,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('returns a same-generation result through a local claim that persistence can preserve', async () => {
+  it('lets a later poll collect a receipt without inheriting an abandoned local claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -2124,20 +2124,26 @@ describe('runCheckBackgroundTask (singleton)', () => {
       userId: 'claim_user',
       conversationId: 'claim_convo',
       args: { background_task_id: created.task.id },
-      toolCallId: 'poll-call',
       agentId: 'agent_parent_1',
       runId: 'poll-run',
       claimBackgroundToolResult,
     };
 
-    const persisting = JSON.parse(await runCheckBackgroundTask(request));
+    const persisting = JSON.parse(
+      await runCheckBackgroundTask({ ...request, toolCallId: 'poll-call-1' }),
+    );
     expect(persisting).toMatchObject({ status: 'result_persisting' });
     expect(JSON.stringify(persisting)).not.toContain('CLAIMED RESULT');
-    const replay = JSON.parse(await runCheckBackgroundTask(request));
-    expect(replay).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
     expect(
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
-    ).toMatchObject({ kind: 'manual' });
+    ).toBeUndefined();
+    const laterPoll = JSON.parse(
+      await runCheckBackgroundTask({ ...request, toolCallId: 'poll-call-2' }),
+    );
+    expect(laterPoll).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    expect(
+      backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
+    ).toBeUndefined();
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
@@ -2231,6 +2237,68 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
   });
 
+  it.each([
+    { status: 'completed' as const, field: 'result', output: 'RECOVERED RESULT' },
+    { status: 'error' as const, field: 'error', output: 'RECOVERED FAILURE' },
+  ])('recovers a durable $status receipt after process-local state is lost', async (terminal) => {
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      messageId: 'response-recovered',
+      results: [
+        {
+          taskId: 'task-recovered',
+          toolCallId: 'call-recovered',
+          toolName: 'slow_tool',
+          status: terminal.status,
+          output: terminal.output,
+        },
+      ],
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'recovered_user',
+        conversationId: 'recovered_convo',
+        args: { background_task_id: 'task-recovered' },
+        toolCallId: 'recovery-poll',
+        runId: 'recovery-run',
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: terminal.status,
+      background_task_id: 'task-recovered',
+      [terminal.field]: terminal.output,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledWith(
+      expect.not.objectContaining({ messageId: expect.anything() }),
+    );
+  });
+
+  it('reports a lost executor without implying that a mutating task is safe to retry', async () => {
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'unknown_user',
+        conversationId: 'unknown_convo',
+        args: { background_task_id: 'task-unknown' },
+        toolCallId: 'unknown-poll',
+        runId: 'unknown-run',
+        claimBackgroundToolResult: async () => ({
+          status: 'outcome_unknown',
+          toolName: 'mutating_tool',
+        }),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'outcome_unknown',
+      background_task_id: 'task-unknown',
+      tool: 'mutating_tool',
+    });
+    expect(result.message).toContain('Do not repeat a mutating operation automatically');
+  });
+
   it('recovers a result through its dead batch-owner claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'dead_claim_user',
@@ -2256,7 +2324,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
         status: 'claimed',
         claim: { kind: 'wakeup', claimId: 'sibling-batch-root' },
       })
-      .mockResolvedValueOnce({ status: 'acquired' });
+      .mockResolvedValueOnce({ status: 'acquired', results: [] });
     const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
 
     const result = JSON.parse(
@@ -2472,6 +2540,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
   it('polls and one-shot claims a detached subagent result', async () => {
     const store = new InMemorySubagentTaskStore();
     const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_found' as const }));
     const started = store.start({
       scopeId: subagentTasks.scopeId,
       idempotencyKey: 'parent-run:parent-agent:call-1',
@@ -2494,6 +2563,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
+        claimBackgroundToolResult,
       }),
     );
     expect(first).toEqual(
@@ -2512,10 +2582,12 @@ describe('runCheckBackgroundTask (singleton)', () => {
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
+        claimBackgroundToolResult,
       }),
     );
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
   });
 
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
