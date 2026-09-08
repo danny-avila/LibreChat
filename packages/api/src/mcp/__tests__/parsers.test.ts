@@ -503,6 +503,60 @@ describe('formatToolContent', () => {
       expect(content).toBe('Response with metadata');
       expect(artifacts).toBeUndefined();
     });
+
+    it('should fall back to structuredContent when content is empty', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [],
+        isError: false,
+        structuredContent: {
+          id: 10491,
+          deviceId: 1,
+          latitude: 50.996575,
+          longitude: 12.9628766,
+        },
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toContain('"id": 10491');
+      expect(content).toContain('"latitude": 50.996575');
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('should prefer content over structuredContent when both are present', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'text', text: 'Text from content' }],
+        structuredContent: { id: 10491 },
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+      expect(content).toBe('Text from content');
+      expect(artifacts).toBeUndefined();
+    });
+  });
+
+  describe('structuredContent fallback (unrecognized providers)', () => {
+    it('should serialize structuredContent when content is empty for unrecognized provider', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [],
+        structuredContent: { status: 'ok', nodes: ['node-1', 'node-2'] },
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'unknown' as t.Provider);
+      expect(content).toContain('"status": "ok"');
+      expect(content).toContain('"node-1"');
+      expect(artifacts).toBeUndefined();
+    });
+
+    it('should still return "(No response)" when neither content nor structuredContent is present', () => {
+      const result: t.MCPToolCallResponse = { content: [] };
+      const [content, artifacts] = formatToolContent(result, 'unknown' as t.Provider);
+      expect(content).toBe('(No response)');
+      expect(artifacts).toBeUndefined();
+
+      const undefinedResult: t.MCPToolCallResponse = undefined;
+      const [undefinedContent] = formatToolContent(undefinedResult, 'unknown' as t.Provider);
+      expect(undefinedContent).toBe('(No response)');
+    });
   });
 
   describe('blob resource contents', () => {
