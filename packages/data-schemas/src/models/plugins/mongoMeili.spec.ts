@@ -1282,6 +1282,48 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(1);
     });
 
+    test('waits for an enqueued Meilisearch task to settle before honoring cancellation', async () => {
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+      let finishTask: ((task: { status: string }) => void) | undefined;
+      mockWaitForTask.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishTask = resolve;
+          }),
+      );
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Cancel safely',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: false,
+        expiredAt: null,
+      });
+      const controller = new AbortController();
+
+      const syncing = conversationModel.syncWithMeili(controller.signal);
+      let settled = false;
+      void syncing.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await waitForMock(mockWaitForTask);
+      controller.abort(new Error('shutdown'));
+      await Promise.resolve();
+
+      expect(settled).toBe(false);
+      finishTask?.({ status: 'succeeded' });
+      await expect(syncing).rejects.toThrow('shutdown');
+      expect(await conversationModel.countDocuments({ _meiliIndex: true })).toBe(0);
+    });
+
     test('bounds repeated SDK timeout windows with an overall task deadline', async () => {
       const modelName = `TaskDeadline${Date.now()}`;
       const Model = createDynamicMeiliModel(modelName);
