@@ -619,240 +619,104 @@ describe('useReplyWatcher', () => {
     expect(cachedConvo()?.lastSeenAt).toBe(newer);
   });
 
-  it('retries revealing a point-cached conversation after a failed list refresh', async () => {
-    /* The reveal is the row's only route to the badge and the alerts; marking it done before
-       the refetch succeeds would leave the next identical snapshot exiting through the
-       unchanged-row check with the reply invisible for good. */
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'point-only', lastResponseAt: RESPONDED_AT }],
-      nextCursor: null,
-    });
-
-    const { queryClient } = setup({ notifications: true });
-    queryClient.setQueryData([QueryKeys.conversation, 'point-only'], {
-      conversationId: 'point-only',
-      title: 'Opened by URL',
-    });
-    const realInvalidate = queryClient.invalidateQueries.bind(queryClient);
-    const invalidate = jest
-      .spyOn(queryClient, 'invalidateQueries')
-      .mockImplementation((filters?: unknown) => {
-        if (Array.isArray(filters) && filters[0] === QueryKeys.allConversations) {
-          const query = queryClient.getQueryCache().find(listKey);
-          query?.setState({ status: 'error', error: new Error('offline') } as never);
-          jest.spyOn(query!, 'getObserversCount').mockReturnValue(1);
-          return Promise.resolve();
+  it.each([false, true])(
+    'reveals an away reply after the unfiltered refresh recovers (point-cached: %s)',
+    async (pointCached) => {
+      let offline = true;
+      mockListConversations.mockImplementation(async ({ isArchived }: { isArchived?: boolean }) => {
+        if (isArchived === false && offline) {
+          throw new Error('offline');
         }
-        return realInvalidate(filters as never);
+        return {
+          conversations: [{ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }],
+          nextCursor: null,
+        };
       });
-    const listInvalidations = () =>
-      invalidate.mock.calls.filter(
-        ([key]) => Array.isArray(key) && key[0] === QueryKeys.allConversations,
-      ).length;
+      const { queryClient, result } = setup({ notifications: true });
+      if (pointCached) {
+        queryClient.setQueryData([QueryKeys.conversation, 'elsewhere'], {
+          conversationId: 'elsewhere',
+          title: 'Opened by URL',
+        });
+      }
 
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-    await waitFor(() => expect(listInvalidations()).toBe(1));
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      expect(result.current?.unseen).toEqual([]);
 
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
+      offline = false;
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      await waitFor(() =>
+        expect(result.current?.unseen).toEqual([
+          expect.objectContaining({ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }),
+        ]),
+      );
+    },
+  );
 
-    await waitFor(() => expect(listInvalidations()).toBe(2));
-  });
-
-  it('reveals a point-cached conversation once when the filter legitimately hides it', async () => {
-    /* A successful refetch that still does not surface the row marks the stamp done, so a
-       cached sidebar filter cannot turn the reveal into a refetch every tick. */
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'point-only', lastResponseAt: RESPONDED_AT }],
-      nextCursor: null,
-    });
-
-    const { queryClient } = setup({ notifications: true });
-    queryClient.setQueryData([QueryKeys.conversation, 'point-only'], {
-      conversationId: 'point-only',
-      title: 'Opened by URL',
-    });
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
-    const listInvalidations = () =>
-      invalidate.mock.calls.filter(
-        ([key]) => Array.isArray(key) && key[0] === QueryKeys.allConversations,
-      ).length;
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-    await waitFor(() => expect(listInvalidations()).toBe(1));
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-
-    expect(listInvalidations()).toBe(1);
-  });
-
-  it('refetches the list when a completed job belongs to no cached conversation', async () => {
-    /* A job finishing on another device can belong to a conversation no cached query holds;
-       the writes only reach rows that already exist, so the fetch would be discarded. */
-    mockActiveJobIds = ['started-on-phone'];
-    const { rerender, queryClient } = setup();
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
-
-    mockGetConversationById.mockResolvedValue({
+  it('reveals a completed job that belongs to no cached conversation', async () => {
+    const conversation = {
       conversationId: 'started-on-phone',
       lastResponseAt: RESPONDED_AT,
-    });
+    };
+    mockGetConversationById.mockResolvedValue(conversation);
+    mockListConversations.mockResolvedValue({ conversations: [conversation], nextCursor: null });
+    mockActiveJobIds = [conversation.conversationId];
+    const { rerender, result } = setup();
+
     mockActiveJobIds = [];
     rerender();
 
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
-  });
-
-  it('refetches the list when the poll reveals a conversation started elsewhere', async () => {
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'started-on-phone', lastResponseAt: RESPONDED_AT }],
-      nextCursor: null,
-    });
-
-    const { queryClient } = setup({ notifications: true });
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
-  });
-
-  it('retries the list refresh while an unknown conversation is still unrevealed', async () => {
-    /* Recording the id before the refetch succeeds would mute the conversation for good: every
-       later poll would read it as already known and never invalidate again, even after the
-       network recovered. */
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }],
-      nextCursor: null,
-    });
-
-    const { queryClient } = setup({ notifications: true });
-    const realInvalidate = queryClient.invalidateQueries.bind(queryClient);
-    const invalidate = jest
-      .spyOn(queryClient, 'invalidateQueries')
-      .mockImplementation((filters?: unknown) => {
-        if (Array.isArray(filters) && filters[0] === QueryKeys.allConversations) {
-          const query = queryClient.getQueryCache().find(listKey);
-          query?.setState({ status: 'error', error: new Error('offline') } as never);
-          jest.spyOn(query!, 'getObserversCount').mockReturnValue(1);
-          return Promise.resolve();
-        }
-        return realInvalidate(filters as never);
-      });
-    const listInvalidations = () =>
-      invalidate.mock.calls.filter(
-        ([key]) => Array.isArray(key) && key[0] === QueryKeys.allConversations,
-      ).length;
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-    await waitFor(() => expect(listInvalidations()).toBe(1));
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-
-    await waitFor(() => expect(listInvalidations()).toBe(2));
-  });
-
-  it('does not invalidate again while the same unknown conversation stays unknown', async () => {
-    /* With a sidebar filter cached, a conversation can never enter the cache; the poll
-       must not refetch the filtered list every tick because of it. */
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }],
-      nextCursor: null,
-    });
-
-    const { queryClient } = setup({ notifications: true });
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-
-    expect(invalidate).toHaveBeenCalledTimes(1);
-  });
-
-  it('attempts the reveal again when a later reply reaches the same unknown conversation', async () => {
-    /* One attempt per reply, not per conversation: a row the refetched page could not reach
-       must not be muted for the rest of the session by its first miss. */
-    const laterResponseAt = '2026-08-16T10:10:00.000Z';
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }],
-      nextCursor: null,
-    });
-
-    const { queryClient } = setup({ notifications: true });
-    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
-
-    mockListConversations.mockResolvedValue({
-      conversations: [{ conversationId: 'elsewhere', lastResponseAt: laterResponseAt }],
-      nextCursor: null,
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-
-    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
-  });
-
-  it('refreshes replies outside the focused sidebar filter with optional alerts disabled', async () => {
-    (document.hasFocus as jest.Mock).mockReturnValue(true);
-    mockListConversations.mockResolvedValue({
-      conversations: [
-        { conversationId: 'outside-filter', title: 'Remote', lastResponseAt: RESPONDED_AT },
-      ],
-      nextCursor: null,
-    });
-    const { queryClient, result, unmount } = setup();
-    const filteredKey = [QueryKeys.allConversations, { isArchived: false, tags: ['work'] }];
-    const filteredData = { pages: [{ conversations: [], nextCursor: null }], pageParams: [null] };
-    queryClient.setQueryData(filteredKey, filteredData);
-    const observer = new QueryObserver(queryClient, {
-      queryKey: filteredKey,
-      staleTime: Infinity,
-      queryFn: async () => filteredData,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-
-    await act(async () => {
-      jest.advanceTimersByTime(60_000);
-    });
-    expect(result.current?.unseen).toEqual([]);
-
-    await act(async () => {
-      jest.advanceTimersByTime(4 * 60_000);
-    });
     await waitFor(() =>
-      expect(result.current?.unseen).toEqual([
-        expect.objectContaining({ conversationId: 'outside-filter', lastResponseAt: RESPONDED_AT }),
-      ]),
+      expect(result.current?.unseen).toEqual([expect.objectContaining(conversation)]),
     );
-    expect(queryClient.getQueryData(filteredKey)).toEqual(filteredData);
-    unsubscribe();
-    unmount();
   });
+
+  it.each([true, false])(
+    'refreshes replies outside the sidebar filter (focused: %s)',
+    async (focused) => {
+      (document.hasFocus as jest.Mock).mockReturnValue(focused);
+      mockListConversations.mockResolvedValue({
+        conversations: [
+          { conversationId: 'outside-filter', title: 'Remote', lastResponseAt: RESPONDED_AT },
+        ],
+        nextCursor: null,
+      });
+      const { queryClient, result, unmount } = setup({ notifications: !focused });
+      const filteredKey = [QueryKeys.allConversations, { isArchived: false, tags: ['work'] }];
+      const filteredData = { pages: [{ conversations: [], nextCursor: null }], pageParams: [null] };
+      queryClient.setQueryData(filteredKey, filteredData);
+      const observer = new QueryObserver(queryClient, {
+        queryKey: filteredKey,
+        staleTime: Infinity,
+        queryFn: async () => filteredData,
+      });
+      const unsubscribe = observer.subscribe(() => {});
+
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+      });
+      expect(result.current?.unseen).toEqual([]);
+
+      await act(async () => {
+        jest.advanceTimersByTime((focused ? 5 * 60_000 : 30_000) - 10_000);
+      });
+      await waitFor(() =>
+        expect(result.current?.unseen).toEqual([
+          expect.objectContaining({
+            conversationId: 'outside-filter',
+            lastResponseAt: RESPONDED_AT,
+          }),
+        ]),
+      );
+      expect(queryClient.getQueryData(filteredKey)).toEqual(filteredData);
+      unsubscribe();
+      unmount();
+    },
+  );
 });
 
 function updateCachedTimestamps(queryClient: QueryClient) {

@@ -57,6 +57,23 @@ const didListRefreshFail = (queryClient: QueryClient): boolean =>
     .findAll([QueryKeys.allConversations], { exact: false })
     .some((query) => query.getObserversCount() > 0 && query.state.status === 'error');
 
+/** Refresh both the visible sidebar and the unfiltered cache read by global reply indicators. */
+const refreshConversationLists = async (queryClient: QueryClient): Promise<void> => {
+  await Promise.all([
+    queryClient.invalidateQueries([QueryKeys.allConversations]),
+    queryClient.fetchInfiniteQuery({
+      queryKey: [QueryKeys.allConversations, { isArchived: false }],
+      queryFn: ({ pageParam }) =>
+        dataService.listConversations({
+          isArchived: false,
+          limit: AWAY_POLL_LIMIT,
+          cursor: pageParam?.toString(),
+        }),
+      getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    }),
+  ]);
+};
+
 const mergeTimestamps = async (
   queryClient: QueryClient,
   convo: Partial<TConversation>,
@@ -85,11 +102,10 @@ const mergeTimestamps = async (
      the alerts, so it still needs the list. Checked before the unchanged-row return, because a
      transiently failed refetch leaves the next snapshot looking identical: absence from the
      aggregate caches re-arms the attempt, and marking a stamp done only on a refetch that
-     succeeded keeps a sidebar filter that legitimately hides the row from turning this into a
-     refetch loop. */
+     succeeded keeps a row that moved beyond the refreshed pages from causing a refetch loop. */
   if (!isConvoInAggregateCaches(queryClient, conversationId)) {
     if (aggregateRevealed.get(conversationId) !== lastResponseAt) {
-      await queryClient.invalidateQueries([QueryKeys.allConversations]);
+      await refreshConversationLists(queryClient);
       if (!isCurrent()) {
         return;
       }
@@ -265,20 +281,7 @@ export default function useReplyWatcher() {
     /* Sidebar dots are unconditional, even when every optional away alert is disabled. */
     const timer = window.setInterval(() => {
       if (document.hasFocus()) {
-        void queryClient.invalidateQueries([QueryKeys.allConversations]);
-        /* The mounted sidebar may be filtered. Refresh the ordinary unfiltered cache too,
-           so replies outside that filter reach the aggregate without changing the sidebar. */
-        void queryClient
-          .fetchInfiniteQuery({
-            queryKey: [QueryKeys.allConversations, { isArchived: false }],
-            queryFn: ({ pageParam }) =>
-              dataService.listConversations({
-                isArchived: false,
-                cursor: pageParam?.toString(),
-              }),
-            getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
-          })
-          .catch(() => {});
+        void refreshConversationLists(queryClient).catch(() => {});
       }
     }, FOCUSED_REFRESH_MS);
     return () => window.clearInterval(timer);
@@ -365,7 +368,7 @@ export default function useReplyWatcher() {
            Recording them first would let a transient list failure mute those conversations for
            good: every later poll would read them as already attempted and never invalidate
            again, even after the network recovered. */
-        await queryClient.invalidateQueries([QueryKeys.allConversations]);
+        await refreshConversationLists(queryClient);
         if (!isCurrent() || didListRefreshFail(queryClient)) {
           return;
         }
@@ -387,11 +390,9 @@ export default function useReplyWatcher() {
             );
             continue;
           }
-          /* Still in no cache: a sidebar filter hides it, or it sits past the page the sidebar
-             query loads. Recorded against this reply, so the next one to the same conversation
-             is attempted again while this one stops costing a refetch every tick. Covering a
-             batch larger than that page wants an unseen query on the server rather than a
-             wider refetch here. */
+          /* The row moved beyond the refreshed pages. Retry a new reply stamp without
+             refetching on every tick for this one; covering larger batches needs an unseen
+             query rather than repeatedly widening the list. */
           unknownIdsRef.current.set(conversationId, unknownStamps.get(conversationId) as string);
         }
       } catch {
