@@ -546,8 +546,9 @@ export function createConversationMethods(
     filter: FilterQuery<IConversation>,
     projection?: Record<string, 0 | 1>,
   ): Promise<{ stamp: Date; conversation: Partial<IConversation> } | null> {
+    const replyFilter = { ...filter, isTemporary: { $ne: true } };
     for (;;) {
-      const current = await Conversation.findOne(filter)
+      const current = await Conversation.findOne(replyFilter)
         .select({ lastResponseAt: 1 })
         .lean<Pick<IConversation, 'lastResponseAt'> | null>();
       if (!current) {
@@ -558,10 +559,10 @@ export function createConversationMethods(
       const casFilter: FilterQuery<IConversation> =
         previous == null
           ? {
-              ...filter,
+              ...replyFilter,
               $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
             }
-          : { ...filter, lastResponseAt: previous };
+          : { ...replyFilter, lastResponseAt: previous };
       const stamped = await Conversation.findOneAndUpdate(
         casFilter,
         {

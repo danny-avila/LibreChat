@@ -48,7 +48,7 @@ const sendError = async (req, res, options, callback) => {
 
   let settledReadState;
   if (shouldSaveMessage) {
-    const isTemporary = req?.body?.isTemporary === true;
+    const isTemporary = (req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary) === true;
     const savedError = await saveMessage(
       {
         userId: req?.user?.id,

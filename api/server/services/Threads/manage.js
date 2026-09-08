@@ -183,7 +183,7 @@ async function saveAssistantMessage(req, params) {
        *  that resolved empty would announce a reply nobody can open. `saveConvo` assigns the
        *  timestamp past its own awaited reads, so a catch-up recorded while one of them is in
        *  flight cannot outrank this reply. */
-      stampReply: message != null && req?.body?.isTemporary !== true,
+      stampReply: message != null && ctx.isTemporary !== true,
     },
   );
 
@@ -275,7 +275,6 @@ async function syncMessages({
     if (dbMessage.role === 'assistant') {
       assistantRecordPromises.push(recorded);
     }
-
 
     if (!apiMessage.id.includes('msg_')) {
       return;
@@ -401,7 +400,7 @@ async function syncMessages({
      raise its unseen indicator. Only a write that actually persisted counts, and it is
      best-effort, since those messages are already durable. */
   const persistedAssistantReply = recordedAssistantReplies.some((message) => message != null);
-  if (persistedAssistantReply && openai.req?.body?.isTemporary !== true) {
+  if (persistedAssistantReply && ctx.isTemporary !== true) {
     try {
       await stampConvoLastResponse(openai.req.user.id, conversationId);
     } catch (error) {

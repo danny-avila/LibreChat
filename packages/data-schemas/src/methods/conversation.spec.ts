@@ -2251,6 +2251,22 @@ describe('Conversation Operations', () => {
       expect(settled).toBeNull();
       expect(convo?.lastResponseAt).toBeUndefined();
     });
+
+    it('does not expose a reply stamp for a stored temporary conversation', async () => {
+      const original = await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: true,
+      });
+
+      const settled = await stampConvoLastResponse('user123', original.conversationId);
+      const current = await Conversation.findById(original._id).lean<IConversation>();
+
+      expect(settled).toBeNull();
+      expect(current?.lastResponseAt).toBeUndefined();
+      expect(current?.updatedAt).toEqual(original.updatedAt);
+    });
   });
 
   describe('markConvoUnread', () => {
