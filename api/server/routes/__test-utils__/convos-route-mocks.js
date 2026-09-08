@@ -187,6 +187,7 @@ module.exports = {
   conversationModel: () => ({
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),
+    getConvoWithTags: jest.fn(),
     deleteConvos: jest.fn(),
     deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     saveConvo: jest.fn(),
@@ -197,6 +198,7 @@ module.exports = {
   sharedModels: () => ({
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),
+    getConvoWithTags: jest.fn(),
     deleteConvos: jest.fn(),
     deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     archiveAllConvos: jest.fn(),
