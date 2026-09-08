@@ -31,7 +31,7 @@ router.use(checkBookmarkAccess);
  */
 router.get('/', async (req, res) => {
   try {
-    const tags = await getConversationTags(req.user.id);
+    const tags = await getConversationTags(req.user.id, req.user.tenantId ?? null);
     if (tags) {
       res.status(200).json(tags);
     } else {
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const tag = await createConversationTag(req.user.id, req.body);
+    const tag = await createConversationTag(req.user.id, req.body, req.user.tenantId ?? null);
     res.status(200).json(tag);
   } catch (error) {
     logger.error('Error creating conversation tag:', error);
@@ -68,7 +68,15 @@ router.post('/', async (req, res) => {
 router.put('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
-    const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
+    if (req.body.tag && req.body.tag !== decodedTag && req.body.position !== undefined) {
+      return res.status(400).json({ error: 'Rename and position changes must be sent separately' });
+    }
+    const tag = await updateConversationTag(
+      req.user.id,
+      decodedTag,
+      req.body,
+      req.user.tenantId ?? null,
+    );
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -89,7 +97,7 @@ router.put('/:tag', async (req, res) => {
 router.delete('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
-    const tag = await deleteConversationTag(req.user.id, decodedTag);
+    const tag = await deleteConversationTag(req.user.id, decodedTag, req.user.tenantId ?? null);
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -113,6 +121,7 @@ router.put('/convo/:conversationId', async (req, res) => {
       req.user.id,
       req.params.conversationId,
       req.body.tags,
+      req.user.tenantId ?? null,
     );
     res.status(200).json(conversationTags);
   } catch (error) {

@@ -1,9 +1,13 @@
-import type { Model } from 'mongoose';
+import { createHash } from 'crypto';
+import type { FilterQuery, Model } from 'mongoose';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { createIndexesWithRetry } from '~/utils/retry';
+import { getTenantId } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 interface IConversationTag {
   user: string;
+  tenantId?: string;
   tag: string;
   description?: string;
   position: number;
@@ -12,26 +16,36 @@ interface IConversationTag {
   [key: string]: unknown;
 }
 
-/**
- * Atomically decrements tag counts for a user. Each entry in `tags` counts as a
- * single decrement, so callers must dedupe tags per conversation before flattening
- * to avoid double-decrementing a conversation's duplicate tag entries. Counts are
- * clamped at zero to tolerate any pre-existing drift.
- *
- * Each tag emits three ops in one ordered bulkWrite instead of a
- * `$max`/`$subtract` aggregation-pipeline update (which Amazon DocumentDB
- * rejects): normalize a null/missing count to zero, apply the `$inc`, then
- * clamp a negative result back to zero. The clamp keys on `count < 0` rather
- * than `count < amount` so it composes with concurrent decrements of the same
- * tag: increments commute and every interleaved call ends with its own clamp,
- * so the count still converges on `max(0, ...)` exactly as the serialized
- * pipeline did. The only trade-off is a transiently negative count between an
- * op pair, which readers already tolerate.
- */
+function optionalTenantFilter<T>(tenantId?: string | null): FilterQuery<T> {
+  if (tenantId === null) {
+    return { tenantId: { $exists: false } } as FilterQuery<T>;
+  }
+  return (tenantId === undefined ? {} : { tenantId }) as FilterQuery<T>;
+}
+
+const tagIndexBuilds = new WeakMap<object, Promise<void>>();
+
+/** Name claims are authoritative even when automatic schema indexing is disabled. */
+function ensureTagIndexes(mongoose: typeof import('mongoose')): Promise<void> {
+  const model = mongoose.models.ConversationTag;
+  let pending = tagIndexBuilds.get(model);
+  if (!pending) {
+    pending = createIndexesWithRetry(model).catch((error) => {
+      tagIndexBuilds.delete(model);
+      throw error;
+    });
+    tagIndexBuilds.set(model, pending);
+  }
+  return pending;
+}
+
+/** Maintains legacy cached deltas for existing writers. Public counts are derived
+ * from committed conversations; callers deduplicate tags per conversation. */
 export async function decrementTagCounts(
   mongoose: typeof import('mongoose'),
   user: string,
   tags: string[],
+  tenantId?: string | null,
 ): Promise<void> {
   if (!tags.length) {
     return;
@@ -51,27 +65,24 @@ export async function decrementTagCounts(
 
   try {
     const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+    const tenantFilter = optionalTenantFilter<IConversationTag>(tenantId);
     const bulkOps = [...decrementByTag.entries()].flatMap(([tag, amount]) => [
       {
         updateOne: {
-          filter: { user, tag, count: null },
+          filter: { user, tag, count: null, ...tenantFilter },
           update: { $set: { count: 0 } },
         },
       },
       {
         updateOne: {
-          filter: { user, tag },
-          update: { $inc: { count: -amount } },
-        },
-      },
-      {
-        updateOne: {
-          filter: { user, tag, count: { $lt: 0 } },
-          update: { $set: { count: 0 } },
+          filter: { user, tag, ...tenantFilter },
+          update: { $inc: { count: -amount }, $setOnInsert: { reservedNames: [tag] } },
+          upsert: true,
         },
       },
     ]);
 
+    await ensureTagIndexes(mongoose);
     await tenantSafeBulkWrite(ConversationTag, bulkOps);
   } catch (error) {
     logger.error('[decrementTagCounts] Error decrementing tag counts', error);
@@ -79,7 +90,10 @@ export async function decrementTagCounts(
 }
 
 export function createConversationTagMethods(mongoose: typeof import('mongoose')): {
-  getConversationTags: (user: string) => Promise<
+  getConversationTags: (
+    user: string,
+    tenantId?: string | null,
+  ) => Promise<
     (import('mongoose').FlattenMaps<{
       [x: string]: unknown;
       user: string;
@@ -102,6 +116,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       addToConversation?: boolean;
       conversationId?: string;
     },
+    tenantId?: string | null,
   ) => Promise<
     | (import('mongoose').FlattenMaps<{
         [x: string]: unknown;
@@ -122,6 +137,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     user: string,
     oldTag: string,
     data: { tag?: string; description?: string; position?: number },
+    tenantId?: string | null,
   ) => Promise<
     | (import('mongoose').FlattenMaps<{
         [x: string]: unknown;
@@ -141,6 +157,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   deleteConversationTag: (
     user: string,
     tag: string,
+    tenantId?: string | null,
   ) => Promise<
     | (import('mongoose').FlattenMaps<{
         [x: string]: unknown;
@@ -158,17 +175,40 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     | null
   >;
   deleteConversationTags: (filter: Record<string, unknown>) => Promise<number>;
-  bulkIncrementTagCounts: (user: string, tags: string[]) => Promise<void>;
+  bulkIncrementTagCounts: (user: string, tags: string[], tenantId?: string | null) => Promise<void>;
   updateTagsForConversation: (
     user: string,
     conversationId: string,
     tags: string[],
+    tenantId?: string | null,
   ) => Promise<string[]>;
+  reconcileConversationTagCounts: (
+    user: string,
+    previousTags: string[],
+    nextTags: string[],
+    tenantId?: string | null,
+  ) => Promise<void>;
 } {
+  function countKey(tag: string, tenantId?: string | null): string {
+    return JSON.stringify([tag, tenantId ?? null]);
+  }
+
+  async function withCommittedCount<T extends IConversationTag>(tag: T): Promise<T> {
+    const count = await mongoose.models.Conversation.countDocuments({
+      user: tag.user,
+      tags: tag.tag,
+      ...optionalTenantFilter(tag.tenantId ?? null),
+    });
+    return { ...tag, count };
+  }
+
   /**
    * Retrieves all conversation tags for a user.
    */
-  async function getConversationTags(user: string): Promise<
+  async function getConversationTags(
+    user: string,
+    tenantId?: string | null,
+  ): Promise<
     (import('mongoose').FlattenMaps<{
       [x: string]: unknown;
       user: string;
@@ -185,7 +225,52 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   > {
     try {
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-      return await ConversationTag.find({ user }).sort({ position: 1 }).lean();
+      const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
+      const [tags, counts] = await Promise.all([
+        ConversationTag.find(scope).sort({ position: 1 }).lean(),
+        mongoose.models.Conversation.aggregate<{
+          _id: { tag: string; tenantId: string | null };
+          count: number;
+        }>([
+          { $match: { ...scope, 'tags.0': { $exists: true } } },
+          { $project: { tenantId: 1, tags: { $setUnion: ['$tags', []] } } },
+          { $unwind: '$tags' },
+          { $match: { tags: { $type: 'string', $ne: '' } } },
+          {
+            $group: {
+              _id: { tag: '$tags', tenantId: { $ifNull: ['$tenantId', null] } },
+              count: { $sum: 1 },
+            },
+          },
+        ]),
+      ]);
+      const byTag = new Map(
+        counts.map(({ _id, count }) => [countKey(_id.tag, _id.tenantId), count]),
+      );
+      const catalogKeys = new Set(tags.map((tag) => countKey(tag.tag, tag.tenantId)));
+      const missing = counts.filter(({ _id }) => !catalogKeys.has(countKey(_id.tag, _id.tenantId)));
+
+      // Missing catalog metadata is a read-only view of committed membership.
+      // Routes mutate tags by name; these presentation IDs are never persistence keys.
+      return [
+        ...tags.map((tag) => ({ ...tag, count: byTag.get(countKey(tag.tag, tag.tenantId)) ?? 0 })),
+        ...missing.map(({ _id, count }) => ({
+          _id: new mongoose.Types.ObjectId(
+            createHash('sha256')
+              .update(JSON.stringify([user, _id.tenantId, _id.tag]))
+              .digest('hex')
+              .slice(0, 24),
+          ),
+          __v: 0,
+          user,
+          ...(_id.tenantId == null ? {} : { tenantId: _id.tenantId }),
+          tag: _id.tag,
+          count,
+          position: 0,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        })),
+      ].sort((a, b) => a.position - b.position);
     } catch (error) {
       logger.error('[getConversationTags] Error getting conversation tags', error);
       throw new Error('Error getting conversation tags');
@@ -203,6 +288,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       addToConversation?: boolean;
       conversationId?: string;
     },
+    tenantId: string | null = getTenantId() ?? null,
   ): Promise<
     | (import('mongoose').FlattenMaps<{
         [x: string]: unknown;
@@ -223,24 +309,29 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
       const Conversation = mongoose.models.Conversation;
       const { tag, description, addToConversation, conversationId } = data;
+      const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
 
-      const existingTag = await ConversationTag.findOne({ user, tag }).lean();
+      if (await ConversationTag.exists({ ...scope, renameTo: tag })) {
+        throw new Error('Tag rename is in progress');
+      }
+      const existingTag = await ConversationTag.findOne({ ...scope, tag }).lean();
       if (existingTag) {
-        return existingTag;
+        return withCommittedCount(existingTag);
       }
 
-      const maxPosition = await ConversationTag.findOne({ user }).sort('-position').lean();
+      const maxPosition = await ConversationTag.findOne(scope).sort('-position').lean();
       const position = (maxPosition?.position || 0) + 1;
 
+      await ensureTagIndexes(mongoose);
       const newTag = await ConversationTag.findOneAndUpdate(
-        { tag, user },
+        { ...scope, tag },
         {
           tag,
           user,
           count: addToConversation ? 1 : 0,
           position,
           description,
-          $setOnInsert: { createdAt: new Date() },
+          $setOnInsert: { createdAt: new Date(), reservedNames: [tag] },
         },
         {
           new: true,
@@ -251,23 +342,39 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
 
       if (addToConversation && conversationId) {
         await Conversation.findOneAndUpdate(
-          { user, conversationId },
+          { ...scope, conversationId },
           { $addToSet: { tags: tag } },
           { new: true },
         );
       }
 
-      return newTag;
+      return newTag == null ? null : withCommittedCount(newTag);
     } catch (error) {
       logger.error('[createConversationTag] Error creating conversation tag', error);
       throw new Error('Error creating conversation tag');
     }
   }
 
+  async function findMutableTag(user: string, tag: string, tenantId: string | null) {
+    const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
+    const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+    const existing = await ConversationTag.findOne({ ...scope, tag })
+      .select('+renameTo')
+      .lean();
+    if (existing) return existing;
+    if (!(await mongoose.models.Conversation.exists({ ...scope, tags: tag }))) return null;
+    return createConversationTag(user, { tag }, tenantId);
+  }
+
   /**
    * Adjusts positions of tags when a tag's position is changed.
    */
-  async function adjustPositions(user: string, oldPosition: number, newPosition: number) {
+  async function adjustPositions(
+    user: string,
+    oldPosition: number,
+    newPosition: number,
+    tenantId: string | null,
+  ) {
     if (oldPosition === newPosition) {
       return;
     }
@@ -287,7 +394,10 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
             $lt: Math.max(oldPosition, newPosition),
           };
 
-    await ConversationTag.updateMany({ user, position }, update);
+    await ConversationTag.updateMany(
+      { user, position, ...optionalTenantFilter<IConversationTag>(tenantId) },
+      update,
+    );
   }
 
   /**
@@ -297,6 +407,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     user: string,
     oldTag: string,
     data: { tag?: string; description?: string; position?: number },
+    tenantId: string | null = getTenantId() ?? null,
   ): Promise<
     | (import('mongoose').FlattenMaps<{
         [x: string]: unknown;
@@ -316,38 +427,68 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     try {
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
       const Conversation = mongoose.models.Conversation;
+      const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
       const { tag: newTag, description, position } = data;
+      const renaming = !!newTag && newTag !== oldTag;
+      if (renaming && position !== undefined) {
+        throw new Error('Rename and position changes must be sent separately');
+      }
 
-      const existingTag = await ConversationTag.findOne({ user, tag: oldTag }).lean();
+      const existingTag = await findMutableTag(user, oldTag, tenantId);
       if (!existingTag) {
         return null;
       }
 
-      if (newTag && newTag !== oldTag) {
-        const tagAlreadyExists = await ConversationTag.findOne({ user, tag: newTag }).lean();
-        if (tagAlreadyExists) {
-          throw new Error('Tag already exists');
-        }
-
-        await Conversation.updateMany({ user, tags: oldTag }, { $set: { 'tags.$': newTag } });
+      if (existingTag.renameTo && existingTag.renameTo !== newTag) {
+        throw new Error('Tag rename is in progress');
       }
+      if (renaming) {
+        await ensureTagIndexes(mongoose);
+        if (!existingTag.renameTo) {
+          const [catalogTag, committedTag] = await Promise.all([
+            ConversationTag.exists({ ...scope, $or: [{ tag: newTag }, { renameTo: newTag }] }),
+            Conversation.exists({ ...scope, tags: newTag }),
+          ]);
+          if (catalogTag || committedTag) throw new Error('Tag already exists');
+        }
+        const reserved = await ConversationTag.updateOne(
+          {
+            ...scope,
+            _id: existingTag._id,
+            tag: oldTag,
+            $or: [{ renameTo: { $exists: false } }, { renameTo: newTag }],
+          },
+          { $set: { renameTo: newTag, reservedNames: [oldTag, newTag] } },
+        );
+        if (!reserved.matchedCount) throw new Error('Tag rename conflicted');
+        await Conversation.updateMany({ ...scope, tags: oldTag }, { $set: { 'tags.$': newTag } });
+      }
+      const count = await Conversation.countDocuments({ ...scope, tags: newTag || oldTag });
 
       const updateData: Record<string, unknown> = {};
       if (newTag) {
         updateData.tag = newTag;
+        if (renaming) updateData.reservedNames = [newTag];
       }
       if (description !== undefined) {
         updateData.description = description;
       }
       if (position !== undefined) {
-        await adjustPositions(user, existingTag.position, position);
+        await adjustPositions(user, existingTag.position, position, tenantId);
         updateData.position = position;
       }
 
-      return await ConversationTag.findOneAndUpdate({ user, tag: oldTag }, updateData, {
-        new: true,
-        lean: true,
-      });
+      const updatedTag = await ConversationTag.findOneAndUpdate(
+        {
+          ...scope,
+          _id: existingTag._id,
+          tag: oldTag,
+          ...(renaming ? { renameTo: newTag } : { renameTo: { $exists: false } }),
+        },
+        { $set: updateData, ...(renaming ? { $unset: { renameTo: 1 } } : {}) },
+        { new: true, lean: true },
+      );
+      return updatedTag == null ? null : { ...updatedTag, count };
     } catch (error) {
       logger.error('[updateConversationTag] Error updating conversation tag', error);
       throw new Error('Error updating conversation tag');
@@ -360,6 +501,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   async function deleteConversationTag(
     user: string,
     tag: string,
+    tenantId: string | null = getTenantId() ?? null,
   ): Promise<
     | (import('mongoose').FlattenMaps<{
         [x: string]: unknown;
@@ -379,20 +521,31 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     try {
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
       const Conversation = mongoose.models.Conversation;
+      const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
 
-      const deletedTag = await ConversationTag.findOneAndDelete({ user, tag }).lean();
+      if (await ConversationTag.exists({ ...scope, renameTo: tag })) {
+        throw new Error('Tag rename is in progress');
+      }
+      const existingTag = await findMutableTag(user, tag, tenantId);
+      if (!existingTag) return null;
+      if (existingTag.renameTo) throw new Error('Tag rename is in progress');
+      const deletedTag = await ConversationTag.findOneAndDelete({
+        ...scope,
+        tag,
+        renameTo: { $exists: false },
+      }).lean();
       if (!deletedTag) {
         return null;
       }
 
-      await Conversation.updateMany({ user, tags: tag }, { $pullAll: { tags: [tag] } });
+      await Conversation.updateMany({ ...scope, tags: tag }, { $pullAll: { tags: [tag] } });
 
       await ConversationTag.updateMany(
-        { user, position: { $gt: deletedTag.position } },
+        { ...scope, position: { $gt: deletedTag.position } },
         { $inc: { position: -1 } },
       );
 
-      return deletedTag;
+      return { ...deletedTag, count: 0 };
     } catch (error) {
       logger.error('[deleteConversationTag] Error deleting conversation tag', error);
       throw new Error('Error deleting conversation tag');
@@ -406,12 +559,18 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     user: string,
     conversationId: string,
     tags: string[],
+    tenantId?: string | null,
   ): Promise<string[]> {
     try {
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
       const Conversation = mongoose.models.Conversation;
+      const tenantFilter = optionalTenantFilter<Record<string, unknown>>(tenantId);
 
-      const conversation = await Conversation.findOne({ user, conversationId }).lean();
+      const conversation = await Conversation.findOne({
+        user,
+        conversationId,
+        ...tenantFilter,
+      }).lean();
       if (!conversation) {
         throw new Error('Conversation not found');
       }
@@ -435,8 +594,8 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       for (const tag of addedTags) {
         bulkOps.push({
           updateOne: {
-            filter: { user, tag },
-            update: { $inc: { count: 1 } },
+            filter: { user, tag, ...tenantFilter },
+            update: { $inc: { count: 1 }, $setOnInsert: { reservedNames: [tag] } },
             upsert: true,
           },
         });
@@ -445,19 +604,20 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       for (const tag of removedTags) {
         bulkOps.push({
           updateOne: {
-            filter: { user, tag },
-            update: { $inc: { count: -1 } },
+            filter: { user, tag, ...tenantFilter },
+            update: { $inc: { count: -1 }, $setOnInsert: { reservedNames: [tag] } },
           },
         });
       }
 
       if (bulkOps.length > 0) {
+        await ensureTagIndexes(mongoose);
         await tenantSafeBulkWrite(ConversationTag, bulkOps);
       }
 
       const updatedConversation = (
         await Conversation.findOneAndUpdate(
-          { user, conversationId },
+          { user, conversationId, ...tenantFilter },
           { $set: { tags: [...newTags] } },
           { new: true },
         )
@@ -470,10 +630,61 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     }
   }
 
+  /** Maintains legacy cached deltas after a metadata commit. Public reads derive
+   * catalog membership and counts independently of these writes. */
+  async function reconcileConversationTagCounts(
+    user: string,
+    previousTags: string[],
+    nextTags: string[],
+    tenantId?: string | null,
+  ): Promise<void> {
+    const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+    const tenantFilter = optionalTenantFilter<IConversationTag>(tenantId);
+    const oldTags = new Set(previousTags);
+    const newTags = new Set(nextTags);
+    const bulkOps: Array<{
+      updateOne: {
+        filter: FilterQuery<IConversationTag>;
+        update: Record<string, unknown>;
+        upsert?: boolean;
+      };
+    }> = [];
+
+    for (const tag of [...newTags].filter((value) => !oldTags.has(value))) {
+      bulkOps.push({
+        updateOne: {
+          filter: { user, tag, ...tenantFilter },
+          update: { $inc: { count: 1 }, $setOnInsert: { reservedNames: [tag] } },
+          upsert: true,
+        },
+      });
+    }
+    for (const tag of [...oldTags].filter((value) => !newTags.has(value))) {
+      bulkOps.push({
+        updateOne: {
+          filter: { user, tag, ...tenantFilter },
+          update: { $inc: { count: -1 }, $setOnInsert: { reservedNames: [tag] } },
+          /** Signed deltas must commute when successful metadata writes reconcile out
+           * of order. Retaining a temporary negative row lets a later increment
+           * cancel it instead of manufacturing a stale positive count. */
+          upsert: true,
+        },
+      });
+    }
+    if (bulkOps.length > 0) {
+      await ensureTagIndexes(mongoose);
+      await tenantSafeBulkWrite(ConversationTag, bulkOps);
+    }
+  }
+
   /**
    * Increments tag counts for existing tags only.
    */
-  async function bulkIncrementTagCounts(user: string, tags: string[]): Promise<void> {
+  async function bulkIncrementTagCounts(
+    user: string,
+    tags: string[],
+    tenantId: string | null = getTenantId() ?? null,
+  ): Promise<void> {
     if (!tags || tags.length === 0) {
       return;
     }
@@ -487,11 +698,12 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
 
       const bulkOps = uniqueTags.map((tag) => ({
         updateOne: {
-          filter: { user, tag },
-          update: { $inc: { count: 1 } },
+          filter: { user, tag, ...optionalTenantFilter<IConversationTag>(tenantId) },
+          update: { $inc: { count: 1 }, $setOnInsert: { reservedNames: [tag] } },
         },
       }));
 
+      await ensureTagIndexes(mongoose);
       const result = await tenantSafeBulkWrite(ConversationTag, bulkOps);
       if (result && result.modifiedCount > 0) {
         logger.debug(
@@ -525,6 +737,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     deleteConversationTags,
     bulkIncrementTagCounts,
     updateTagsForConversation,
+    reconcileConversationTagCounts,
   };
 }
 
