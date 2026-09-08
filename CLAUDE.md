@@ -21,7 +21,13 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 ## Workspace Boundaries
 
 - **All new backend code must be TypeScript** in `/packages/api`.
-- Keep `/api` changes to the absolute minimum (thin JS wrappers calling into `/packages/api`).
+- **`/api` holds wiring, not behavior.** When a change would add logic to a CJS file under `/api` —
+  a branch, a helper, a validation step, a new service call — that logic goes in `/packages/api`,
+  and the JS file keeps only what wires it up: requires, route registration, request plumbing, and
+  the call into the TS module. `api/server/services/MCPRequestContext.js` is the shape, at thirteen
+  lines of re-export. "Minimum" describes how much behavior `/api` gains, not how small the diff is:
+  lifting a function into `/packages/api` and calling it is the larger diff and the correct one.
+  Editing an existing CJS file is the common case and the rule applies there, not only to new files.
 - Database-specific shared logic goes in `/packages/data-schemas`.
 - Frontend/backend shared API logic (endpoints, types, data-service) goes in `/packages/data-provider`.
 - Build data-provider from project root: `npm run build:data-provider`.
@@ -261,15 +267,24 @@ Multi-line imports count total character length across all lines. Consolidate va
 
 ### Client State Ownership
 
-The client is migrating from Recoil to Jotai. Convert the areas you touch rather than
-migrating wholesale, and split the work by who owns the state:
+The client is migrating from Recoil to Jotai. **New state is always Jotai**, including inside a file
+that already imports Recoil. For existing state, the unit of conversion is one atom together with
+every file that reads or writes it: the two libraries hold different atom objects, so an atom cannot
+be half converted, and many files already import both — mixed imports are not a signal that either
+choice is fine here. Convert the areas you touch rather than migrating wholesale, and split the work
+by who owns the state:
 
 - **Feature-owned state** — atoms a single feature both writes and reads. Convert these to
-  Jotai as you touch them, and keep them inside the feature.
+  Jotai as you touch them, with all of their consumers, and keep them inside the feature.
+  `client/src/store/jotai-utils.ts` carries the equivalents for persisted atoms
+  (`createStorageAtom`, `createStorageAtomWithEffect`, `createTabIsolatedAtom`), so a Recoil atom
+  with a localStorage effect has a direct port.
 - **App-global state** — preferences and shell state a feature merely consumes
   (`maximizeChatSpace`, `showScrollButton`, `enterToSend`, artifact visibility). A feature
   that could plausibly be extracted must not reach into `~/store` for these; accept them
-  through props or a small context the host supplies.
+  through props or a small context the host supplies. When a consumer sits outside the feature you
+  are changing, leave the atom on Recoil and pass it in — do not convert the shell to make one
+  feature tidy.
 
 Passing app-global state in — rather than reaching for it — is what lets a feature move to
 its own workspace later without a rewrite, and it keeps the Jotai conversion scoped to the

@@ -50,6 +50,12 @@ changed. `packages/client` excludes `*.spec.ts(x)` and `*.test.ts(x)` from typec
 
 ## Module boundaries and configuration
 
+`/api` holds wiring, not behavior. When a change would add logic to a CJS file there — a branch, a
+helper, a validation step, a service call — the logic belongs in `packages/api`, and the JS file
+keeps requires, route registration and the call into the TS module (`MCPRequestContext.js` is the
+shape, thirteen lines of re-export). "Minimum" means how much behavior `/api` gains, not how small
+the diff is, and the rule applies to editing existing CJS, which is the common case.
+
 Database contracts belong to `packages/data-schemas`. Keep Mongoose types (`FilterQuery`,
 `Types.ObjectId`, `Document`) out of exported signatures in `packages/api`, `packages/data-provider`
 and `client`, because they make the storage engine part of that module's public API. Take and return
@@ -88,11 +94,15 @@ under “Auth cache invalidation”.
 
 ## Client state ownership
 
-The client is migrating from Recoil to Jotai — convert the areas you touch, not the whole store.
+The client is migrating from Recoil to Jotai. New state is always Jotai, even in a file that already
+imports Recoil; many files import both, so mixed imports say nothing about which to use. For existing
+state the unit of conversion is one atom plus every file that reads or writes it, because an atom
+cannot be half converted — convert the areas you touch, not the whole store.
 Split by ownership: state a feature both writes and reads is feature-owned, so convert it to Jotai
 and keep it inside the feature; app-global preferences and shell state a feature merely consumes
 (`maximizeChatSpace`, `showScrollButton`, `enterToSend`, artifact visibility) must be passed in
-through props or a small host-supplied context rather than reached for through `~/store`. Passing
+through props or a small host-supplied context rather than reached for through `~/store`; when a
+consumer sits outside the feature you are changing, leave that atom on Recoil and pass it in. Passing
 them in is what lets a feature move to its own workspace later without a rewrite, and it keeps the
 Jotai conversion scoped to the state a feature owns. See the detailed policy in `CLAUDE.md` under
 “Client State Ownership”.
