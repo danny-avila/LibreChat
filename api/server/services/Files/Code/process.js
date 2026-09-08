@@ -53,6 +53,7 @@ const {
   mergeCodeEnvRef,
   getCodeEnvRefForProfile,
   getEndpointFileConfig,
+  resolveSandboxFilename,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
@@ -1395,11 +1396,20 @@ const primeFiles = async (options) => {
      * codeapi can resolve sessionKey per-file (kind switch +
      * tenant prefix from auth context).
      */
+    const sandboxName = resolveSandboxFilename(file.filename, file.type);
+    let claimedDestination;
+    const getDestination = () => {
+      claimedDestination ??= claimCodeDestination(destinations, sandboxName, file.file_id);
+      return claimedDestination;
+    };
+
     const pushFile = (overrideSessionId, overrideId) => {
       /* Claimed here rather than up front so files that never reach the
        * sandbox — no code-env ref, or a failed re-upload — do not reserve a
        * name and push a file that does reach it onto a counter. */
-      const destination = claimCodeDestination(destinations, file.filename, file.file_id);
+      /* The sandbox holds the converted name, not the record's, so the mount path has
+       * to follow the same rule provisioning uploaded under. */
+      const destination = getDestination();
       if (destination !== file.filename) {
         logger.debug(
           `[primeCodeFiles] file=${file.file_id} destination=${destination} ` +
@@ -1441,7 +1451,7 @@ const primeFiles = async (options) => {
         const uploaded = await uploadCodeEnvFile({
           req: options.req,
           stream,
-          filename: file.filename,
+          filename: getDestination(),
           kind: sourceRef.kind,
           id: sourceRef.id,
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
