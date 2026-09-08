@@ -2508,24 +2508,28 @@ export function createConversationMethods(
       /* Advance the version and clear the previous catch-up atomically. The database CAS orders
        * concurrent replies even when their application hosts disagree about wall-clock time. */
       if (metadata?.stampReply === true) {
-        const stamped = await stampReplyWithCas(
-          Conversation,
-          { _id: conversation._id },
-          {
-            lastResponseAt: 1,
-            lastResponseIsManual: 1,
-            updatedAt: 1,
-          },
-        );
-        if (stamped) {
-          /* The caller hands this document to the client as the turn's conversation, and the
-           * seen acknowledgement is bound to the stamp it carries. */
-          conversation.lastResponseAt = stamped.stamp;
-          conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
-          conversation.lastSeenAt = undefined;
-          if (stamped.conversation.updatedAt) {
-            conversation.updatedAt = stamped.conversation.updatedAt;
+        try {
+          const stamped = await stampReplyWithCas(
+            Conversation,
+            { _id: conversation._id },
+            {
+              lastResponseAt: 1,
+              lastResponseIsManual: 1,
+              updatedAt: 1,
+            },
+          );
+          if (stamped) {
+            /* The caller hands this document to the client as the turn's conversation, and the
+             * seen acknowledgement is bound to the stamp it carries. */
+            conversation.lastResponseAt = stamped.stamp;
+            conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
+            conversation.lastSeenAt = undefined;
+            if (stamped.conversation.updatedAt) {
+              conversation.updatedAt = stamped.conversation.updatedAt;
+            }
           }
+        } catch (error) {
+          logger.error('[saveConvo] Failed to stamp persisted reply', error);
         }
       }
 
