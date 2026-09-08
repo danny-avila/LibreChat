@@ -94,6 +94,7 @@ describe('Assistants message retention', () => {
         expect(row.isTemporary).toBe(isTemporary);
         expect(row.expiredAt).toEqual(userMessage.expiredAt);
       }
+      expect(convo.lastResponseAt != null).toBe(!isTemporary);
     },
   );
 });

@@ -28,7 +28,7 @@ jest.mock('~/server/services/Files/process', () => ({
 }));
 
 const { recordUsage, saveAssistantMessage } = require('./manage');
-const { saveConvo, recordMessage } = require('~/models');
+const { saveConvo, saveMessage } = require('~/models');
 
 describe('recordUsage', () => {
   beforeEach(() => {
@@ -94,7 +94,7 @@ describe('recordUsage', () => {
 describe('saveAssistantMessage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    recordMessage.mockResolvedValue({ messageId: 'assistant-msg' });
+    saveMessage.mockResolvedValue({ messageId: 'assistant-msg' });
     saveConvo.mockResolvedValue({});
   });
 
