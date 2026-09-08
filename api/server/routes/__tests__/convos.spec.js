@@ -860,6 +860,38 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /', () => {
+    it('keeps browser deletion successful when retried after the root is gone', async () => {
+      let exists = true;
+      deleteConvos.mockImplementation(async (_owner, filter, options) => {
+        if (typeof filter.conversationId !== 'string') {
+          return { deletedCount: 0, conversationIds: [] };
+        }
+        if (!exists && !options.allowEmpty) {
+          throw new Error('Conversation not found or already deleted.');
+        }
+        const deletedCount = exists ? 1 : 0;
+        await options.beforeDelete?.([filter.conversationId]);
+        exists = false;
+        return { deletedCount, conversationIds: [filter.conversationId] };
+      });
+      const remove = () =>
+        request(app)
+          .delete('/api/convos')
+          .set('x-test-tenant', 'tenant-a')
+          .send({ arg: { conversationId: 'deleted-root' } });
+
+      expect((await remove()).status).toBe(201);
+      const retry = await remove();
+      expect(retry.status).toBe(201);
+      expect(retry.body.deletedCount).toBe(0);
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        { conversationId: 'deleted-root' },
+        expect.objectContaining({ allowEmpty: true, tenantId: 'tenant-a' }),
+      );
+      expect(deleteToolCalls).toHaveBeenLastCalledWith('test-user-123', 'deleted-root', 'tenant-a');
+    });
+
     it('fences the owner when DELETE / is called without a conversation filter', async () => {
       deleteConvos.mockResolvedValue({ deletedCount: 3, conversationIds: ['a', 'b', 'c'] });
 

@@ -296,6 +296,7 @@ describe('missing-root deletion with real persistence', () => {
         expect(
           await mongoose.models.Message.countDocuments({ user: 'aaaaaaaaaaaaaaaaaaaaaaaa' }),
         ).toBe(0);
+        await expect(remove()).resolves.toMatchObject({ deletedCount: 0 });
         for (const name of ['recovery_cp', 'recovery_writes']) {
           const remaining = await mongoose.connection.db!.collection(name).find().toArray();
           expect(remaining.map((row) => row.checkpoint_ns).sort()).toEqual(

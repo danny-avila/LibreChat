@@ -291,7 +291,9 @@ router.delete('/', configMiddleware, async (req, res) => {
         ? req.user.tenantId
         : undefined;
     const checkpointer = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
-    const dbResponse = await deleteConversations(req.user.id, filter, tenantId, checkpointer);
+    const dbResponse = await deleteConversations(req.user.id, filter, tenantId, checkpointer, {
+      allowMissingRoot: true,
+    });
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
