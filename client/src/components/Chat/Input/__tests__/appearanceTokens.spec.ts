@@ -13,7 +13,10 @@ const themedControls = [
   ],
   ['InterruptSteerButton.tsx', ['size-theme-control', 'rounded-theme-control-round']],
   ['AudioRecorder.tsx', ['size="theme"', 'shape="theme"']],
-  ['MCPSelect.tsx', ['h-theme-control', 'rounded-theme-control-round']],
+  /** Controls that draw their shape from `composerControlClasses()` prove it by
+   *  consuming the shared recipe; its own tokens are asserted where it lives. */
+  ['MCPSelect.tsx', ['composerControlClasses()', 'min-w-theme-control', 'md:px-theme-normal']],
+  ['CodeApprovalMenu.tsx', ['composerControlClasses()', 'md:px-theme-normal']],
   ['TokenUsage/index.tsx', ['size-theme-control', 'rounded-theme-control-round']],
   ['Files/AttachFile.tsx', ['size-theme-control', 'rounded-theme-control-round']],
   ['Files/AttachFileMenu.tsx', ['size-theme-control', 'rounded-theme-control-round']],

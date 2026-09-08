@@ -1,16 +1,39 @@
-import { ShieldCheck, ShieldAlert, Hand } from 'lucide-react';
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@librechat/client';
+import * as Ariakit from '@ariakit/react';
+import { TooltipAnchor, composerControlClasses } from '@librechat/client';
+import { Check, ChevronDown, FilePen, FileQuestionMark, FileTerminal } from 'lucide-react';
 import type { CodeApprovalMode, TConversation } from 'librechat-data-provider';
+import type { LucideIcon } from 'lucide-react';
 import type { SetterOrUpdater } from 'recoil';
+import type { TranslationKeys } from '~/hooks';
 import { useCodeApprovalMode, useLocalize } from '~/hooks';
+import { cn } from '~/utils';
+
+/** The modes answer one question — what may happen to the workspace without the
+ *  reader — so they share the document glyph and differ only in what is drawn on
+ *  it, escalating with what each mode permits: a question the reader answers, a
+ *  pen for writes that need no answer, a prompt for commands that need none
+ *  either. The shield stays with the pending review button, which sits in this
+ *  same row. */
+const modeOptions: Record<
+  CodeApprovalMode,
+  { icon: LucideIcon; label: TranslationKeys; description: TranslationKeys }
+> = {
+  ask: {
+    icon: FileQuestionMark,
+    label: 'com_ui_code_approval_ask',
+    description: 'com_ui_code_approval_ask_description',
+  },
+  acceptEdits: {
+    icon: FilePen,
+    label: 'com_ui_code_approval_accept_edits',
+    description: 'com_ui_code_approval_accept_edits_description',
+  },
+  fullAccess: {
+    icon: FileTerminal,
+    label: 'com_ui_code_approval_full_access',
+    description: 'com_ui_code_approval_full_access_description',
+  },
+};
 
 export default function CodeApprovalMenu({
   conversation,
@@ -25,61 +48,104 @@ export default function CodeApprovalMenu({
 }) {
   const localize = useLocalize();
   const { available, modes, selected } = useCodeApprovalMode(conversation, addedConversation);
+  const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
+  const isOpen = menuStore.useState('open');
 
   if (!available || selected == null) {
     return null;
   }
-  const labels: Record<CodeApprovalMode, string> = {
-    ask: localize('com_ui_code_approval_ask'),
-    acceptEdits: localize('com_ui_code_approval_accept_edits'),
-    fullAccess: localize('com_ui_code_approval_full_access'),
+
+  const selectMode = (mode: CodeApprovalMode) => {
+    if (!modes.includes(mode)) {
+      return;
+    }
+    setConversation((current) =>
+      current == null ? current : { ...current, codeApprovalMode: mode },
+    );
   };
-  const descriptions: Record<CodeApprovalMode, string> = {
-    ask: localize('com_ui_code_approval_ask_description'),
-    acceptEdits: localize('com_ui_code_approval_accept_edits_description'),
-    fullAccess: localize('com_ui_code_approval_full_access_description'),
-  };
-  const ModeIcon = { ask: Hand, acceptEdits: ShieldCheck, fullAccess: ShieldAlert }[selected];
+
+  const SelectedIcon = modeOptions[selected].icon;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={disabled}
-          aria-label={localize('com_ui_code_approval_mode')}
-          className="h-8 gap-1.5 rounded-full px-2 text-text-secondary"
-          data-testid="code-approval-mode"
+    <Ariakit.MenuProvider store={menuStore}>
+      <TooltipAnchor
+        description={localize('com_ui_code_approval_mode')}
+        disabled={isOpen}
+        render={
+          <Ariakit.MenuButton
+            disabled={disabled}
+            data-testid="code-approval-mode"
+            aria-label={`${localize('com_ui_code_approval_mode')}: ${localize(
+              modeOptions[selected].label,
+            )}`}
+            className={cn(
+              composerControlClasses(),
+              'px-2.5 md:px-theme-normal',
+              isOpen && 'bg-surface-hover',
+              disabled && 'cursor-not-allowed opacity-50',
+            )}
+          />
+        }
+      >
+        <SelectedIcon className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+        <span className="max-w-[12rem] truncate">{localize(modeOptions[selected].label)}</span>
+        <ChevronDown
+          className={cn(
+            'size-3 shrink-0 text-text-secondary transition-transform',
+            isOpen && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </TooltipAnchor>
+      <Ariakit.Menu
+        portal={true}
+        gutter={8}
+        unmountOnHide={true}
+        className={cn(
+          'z-50 flex min-w-[280px] max-w-[min(320px,calc(100vw-2rem))] flex-col rounded-xl',
+          'border border-border-light bg-presentation p-1.5 shadow-lg',
+          'origin-bottom opacity-0 transition-[opacity,transform] duration-200 ease-out',
+          'data-[enter]:scale-100 data-[enter]:opacity-100',
+          'scale-95 data-[leave]:scale-95 data-[leave]:opacity-0',
+        )}
+      >
+        {/* Names the menu without adding an `h1` to the page outline. */}
+        <Ariakit.MenuHeading
+          render={<div />}
+          className="px-2.5 py-1.5 text-xs font-medium text-text-secondary"
         >
-          <ModeIcon aria-hidden="true" />
-          <span>{labels[selected]}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-72">
-        <DropdownMenuLabel>{localize('com_ui_code_approval_mode')}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={selected}
-          onValueChange={(value) => {
-            if (!modes.includes(value as CodeApprovalMode)) return;
-            setConversation((current) =>
-              current == null
-                ? current
-                : { ...current, codeApprovalMode: value as CodeApprovalMode },
-            );
-          }}
-        >
-          {modes.map((mode) => (
-            <DropdownMenuRadioItem key={mode} value={mode}>
-              <div>
-                <div>{labels[mode]}</div>
-                <div className="text-xs text-text-tertiary">{descriptions[mode]}</div>
+          {localize('com_ui_code_approval_mode')}
+        </Ariakit.MenuHeading>
+        {modes.map((mode) => {
+          const { icon: Icon, label, description } = modeOptions[mode];
+          const isSelected = mode === selected;
+          return (
+            <Ariakit.MenuItemRadio
+              key={mode}
+              name="codeApprovalMode"
+              value={mode}
+              checked={isSelected}
+              hideOnClick={true}
+              onChange={() => selectMode(mode)}
+              className={cn(
+                'group flex w-full cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2',
+                'outline-none transition-colors duration-theme-fast',
+                'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
+                isSelected && 'bg-surface-active-alt',
+              )}
+            >
+              <Icon className="mt-0.5 size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+              <div className="min-w-0 flex-1 text-left">
+                <div className="text-sm font-medium text-text-primary">{localize(label)}</div>
+                <p className="text-xs text-text-secondary">{localize(description)}</p>
               </div>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+              {isSelected && (
+                <Check className="mt-0.5 size-4 shrink-0 text-text-primary" aria-hidden="true" />
+              )}
+            </Ariakit.MenuItemRadio>
+          );
+        })}
+      </Ariakit.Menu>
+    </Ariakit.MenuProvider>
   );
 }
