@@ -25,7 +25,7 @@ describe('startIndexSyncScheduler', () => {
     const scheduler = startIndexSyncScheduler({ run, onError, intervalMs: 1000 });
     await jest.advanceTimersByTimeAsync(0);
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenLastCalledWith('startup');
+    expect(run).toHaveBeenLastCalledWith('startup', expect.any(AbortSignal));
 
     await jest.advanceTimersByTimeAsync(3000);
     expect(run).toHaveBeenCalledTimes(1);
@@ -34,10 +34,10 @@ describe('startIndexSyncScheduler', () => {
     await jest.advanceTimersByTimeAsync(0);
     await jest.advanceTimersByTimeAsync(1000);
     expect(run).toHaveBeenCalledTimes(2);
-    expect(run).toHaveBeenLastCalledWith('periodic');
+    expect(run).toHaveBeenLastCalledWith('periodic', expect.any(AbortSignal));
     expect(onError).not.toHaveBeenCalled();
 
-    scheduler.stop();
+    await scheduler.stop();
   });
 
   test('reports failures and continues scheduling', async () => {
@@ -53,6 +53,35 @@ describe('startIndexSyncScheduler', () => {
     await jest.advanceTimersByTimeAsync(1000);
     expect(run).toHaveBeenCalledTimes(2);
 
-    scheduler.stop();
+    await scheduler.stop();
+  });
+
+  test('stops future scheduling and awaits cancellation of the active run', async () => {
+    jest.useFakeTimers();
+    const cancelled = createDeferred();
+    const run = jest.fn((_reason: 'startup' | 'periodic', signal: AbortSignal) => {
+      signal.addEventListener('abort', cancelled.resolve, { once: true });
+      return cancelled.promise;
+    });
+    const onError = jest.fn();
+
+    const scheduler = startIndexSyncScheduler({ run, onError, intervalMs: 1000 });
+    await jest.advanceTimersByTimeAsync(0);
+
+    await scheduler.stop();
+    await jest.advanceTimersByTimeAsync(5000);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][1].aborted).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  test('does not start a queued invocation after stop begins', async () => {
+    const run = jest.fn().mockResolvedValue(undefined);
+    const scheduler = startIndexSyncScheduler({ run, onError: jest.fn(), intervalMs: 1000 });
+
+    await scheduler.stop();
+
+    expect(run).not.toHaveBeenCalled();
   });
 });

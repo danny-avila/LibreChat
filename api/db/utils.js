@@ -40,7 +40,7 @@ async function batchResetMeiliFlags(collection) {
       const ids = docs.map((doc) => doc._id);
       const result = await collection.updateMany(
         { _id: { $in: ids } },
-        { $set: { _meiliIndex: false } },
+        { $set: { _meiliIndex: false, _meiliIndexAttempted: true } },
       );
 
       totalModified += result.modifiedCount;

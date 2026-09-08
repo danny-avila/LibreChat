@@ -63,6 +63,7 @@ describe('batchResetMeiliFlags', () => {
 
       const updatedDocs = await testCollection.find({ _meiliIndex: false }).toArray();
       expect(updatedDocs).toHaveLength(3);
+      expect(updatedDocs.every((doc) => doc._meiliIndexAttempted === true)).toBe(true);
 
       const notUpdatedDocs = await testCollection.find({ _meiliIndex: true }).toArray();
       expect(notUpdatedDocs).toHaveLength(0);
@@ -187,6 +188,29 @@ describe('batchResetMeiliFlags', () => {
 
       const updatedDocs = await testCollection.find({ _meiliIndex: false }).toArray();
       expect(updatedDocs).toHaveLength(5);
+    });
+
+    it('keeps an interrupted forced rebuild mandatory when the remainder drops below threshold', async () => {
+      process.env.MEILI_SYNC_BATCH_SIZE = '250';
+      process.env.MEILI_SYNC_DELAY_MS = '0';
+      const docs = Array.from({ length: 1001 }, () => ({
+        _id: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+        _meiliIndex: true,
+      }));
+      await testCollection.insertMany(docs);
+
+      await batchResetMeiliFlags(testCollection);
+      await testCollection.updateMany(
+        { _id: { $in: docs.slice(0, 1000).map((doc) => doc._id) } },
+        { $set: { _meiliIndex: true } },
+      );
+
+      const pendingRemainder = await testCollection.countDocuments({
+        _meiliIndex: { $ne: true },
+        _meiliIndexAttempted: true,
+      });
+      expect(pendingRemainder).toBe(1);
     });
 
     it('should handle large datasets with small batch sizes', async () => {

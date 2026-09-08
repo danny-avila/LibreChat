@@ -19,6 +19,8 @@ interface DistributedJobOptions {
   failureTtlMs?: number;
   pollMs?: number;
   onLeaseLost?: () => void;
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 const DEFAULT_LEASE_MS = 30 * 60 * 1000;
@@ -28,7 +30,27 @@ const DEFAULT_FAILURE_TTL_MS = 30 * 1000;
 const DEFAULT_POLL_MS = 2000;
 const LEASE_SAFETY_MS = 5000;
 
-const sleep = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
+const getAbortError = (jobId: string, signal: AbortSignal): Error =>
+  signal.reason instanceof Error
+    ? signal.reason
+    : new Error(`Distributed job ${jobId} was cancelled`);
+
+const sleep = (duration: number, signal: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(getAbortError('acquisition', signal));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, duration);
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 
 async function tryAcquire(
   collection: Collection<JobState>,
@@ -77,7 +99,7 @@ async function tryAcquire(
 export async function runDistributedJob<T>(
   collection: Collection<JobState>,
   jobId: string,
-  handler: () => Promise<T>,
+  handler: (signal: AbortSignal) => Promise<T>,
   options: DistributedJobOptions = {},
 ): Promise<T | undefined> {
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
@@ -85,6 +107,7 @@ export async function runDistributedJob<T>(
   const completionTtlMs = options.completionTtlMs ?? DEFAULT_COMPLETION_TTL_MS;
   const failureTtlMs = options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
+  const timeoutMs = options.timeoutMs;
   if (
     !Number.isFinite(leaseMs) ||
     !Number.isFinite(refreshMs) ||
@@ -96,108 +119,149 @@ export async function runDistributedJob<T>(
       `Invalid distributed job timing: leaseMs must exceed ${LEASE_SAFETY_MS}ms and refreshMs must be positive with at least ${LEASE_SAFETY_MS}ms safety margin`,
     );
   }
+  if (timeoutMs != null && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    throw new RangeError('Distributed job timeout must be a positive finite number');
+  }
   const onLeaseLost =
     options.onLeaseLost ??
     (() => {
       process.exit(1);
     });
   const owner = crypto.randomUUID();
-
-  let acquiredExpiry: Date | undefined;
-  while ((acquiredExpiry = await tryAcquire(collection, jobId, owner, leaseMs)) == null) {
-    const state = (await collection.findOne({ _id: jobId })) as WithId<JobState> | null;
-    if (state?.status === 'completed' && state.expiresAt > new Date()) {
-      return;
-    }
-    await sleep(pollMs);
+  const controller = new AbortController();
+  const abortFromCaller = () =>
+    controller.abort(
+      options.signal?.reason instanceof Error
+        ? options.signal.reason
+        : new Error(`Distributed job ${jobId} was cancelled`),
+    );
+  let deadlineTimer: NodeJS.Timeout | undefined;
+  if (options.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
+  if (timeoutMs != null) {
+    deadlineTimer = setTimeout(() => {
+      controller.abort(
+        new Error(`Distributed job ${jobId} did not complete within ${timeoutMs}ms`),
+      );
+    }, timeoutMs);
   }
 
-  let leaseExpiresAt = acquiredExpiry.getTime();
-  let leaseLost = false;
-  let finalizing = false;
-  let refreshing = false;
-  let watchdogTimer: NodeJS.Timeout | undefined;
-  let refreshInFlight: Promise<void> = Promise.resolve();
-
-  const loseLease = (message: string, error?: unknown) => {
-    if (leaseLost) {
-      return;
+  let acquiredExpiry: Date | undefined;
+  try {
+    if (controller.signal.aborted) {
+      throw getAbortError(jobId, controller.signal);
     }
-    leaseLost = true;
-    clearInterval(refreshTimer);
-    clearTimeout(watchdogTimer);
-    logger.error(message, error);
-    onLeaseLost();
-  };
-
-  const scheduleWatchdog = () => {
-    clearTimeout(watchdogTimer);
-    const delay = Math.max(0, leaseExpiresAt - Date.now() - LEASE_SAFETY_MS);
-    watchdogTimer = setTimeout(() => {
-      loseLease(`[DistributedJob] Lease renewal deadline reached for ${jobId}`);
-    }, delay);
-    watchdogTimer.unref();
-  };
-
-  const refreshLease = async () => {
-    try {
-      const now = new Date();
-      const result = await collection.updateOne(
-        { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
-        {
-          $set: {
-            expiresAt: new Date(now.getTime() + leaseMs),
-            updatedAt: now,
-          },
-        },
-      );
-      if (result.matchedCount !== 1) {
-        if (!finalizing) {
-          loseLease(`[DistributedJob] Lost lease for ${jobId}`);
-        }
+    while ((acquiredExpiry = await tryAcquire(collection, jobId, owner, leaseMs)) == null) {
+      if (controller.signal.aborted) {
+        throw getAbortError(jobId, controller.signal);
+      }
+      const state = (await collection.findOne({ _id: jobId })) as WithId<JobState> | null;
+      if (state?.status === 'completed' && state.expiresAt > new Date()) {
         return;
       }
-      leaseExpiresAt = now.getTime() + leaseMs;
-      scheduleWatchdog();
-    } catch (error) {
-      logger.error(`[DistributedJob] Failed to refresh lease for ${jobId}`, error);
+      await sleep(pollMs, controller.signal);
     }
-  };
 
-  const refreshTimer = setInterval(() => {
-    if (finalizing || refreshing) {
-      return;
-    }
-    refreshing = true;
-    refreshInFlight = refreshLease().finally(() => {
-      refreshing = false;
+    let leaseExpiresAt = acquiredExpiry.getTime();
+    let leaseLost = false;
+    let finalizing = false;
+    let refreshing = false;
+    let watchdogTimer: NodeJS.Timeout | undefined;
+    let refreshInFlight: Promise<void> = Promise.resolve();
+
+    const loseLease = (message: string, error?: unknown) => {
+      if (leaseLost) {
+        return;
+      }
+      leaseLost = true;
+      clearInterval(refreshTimer);
+      clearTimeout(watchdogTimer);
+      logger.error(message, error);
+      onLeaseLost();
+    };
+
+    const scheduleWatchdog = () => {
+      clearTimeout(watchdogTimer);
+      const delay = Math.max(0, leaseExpiresAt - Date.now() - LEASE_SAFETY_MS);
+      watchdogTimer = setTimeout(() => {
+        loseLease(`[DistributedJob] Lease renewal deadline reached for ${jobId}`);
+      }, delay);
+      watchdogTimer.unref();
+    };
+
+    const refreshLease = async () => {
+      try {
+        const now = new Date();
+        const result = await collection.updateOne(
+          { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
+          {
+            $set: {
+              expiresAt: new Date(now.getTime() + leaseMs),
+              updatedAt: now,
+            },
+          },
+        );
+        if (result.matchedCount !== 1) {
+          if (!finalizing) {
+            loseLease(`[DistributedJob] Lost lease for ${jobId}`);
+          }
+          return;
+        }
+        leaseExpiresAt = now.getTime() + leaseMs;
+        scheduleWatchdog();
+      } catch (error) {
+        logger.error(`[DistributedJob] Failed to refresh lease for ${jobId}`, error);
+      }
+    };
+
+    const refreshTimer = setInterval(() => {
+      if (finalizing || refreshing) {
+        return;
+      }
+      refreshing = true;
+      refreshInFlight = refreshLease().finally(() => {
+        refreshing = false;
+      });
+    }, refreshMs);
+    refreshTimer.unref();
+    scheduleWatchdog();
+
+    const stopRenewal = async () => {
+      finalizing = true;
+      clearInterval(refreshTimer);
+      await refreshInFlight;
+      if (leaseLost) {
+        throw new Error(`Lost distributed job lease for ${jobId}`);
+      }
+    };
+
+    const rejectCancellation = (reject: (reason?: unknown) => void) =>
+      reject(getAbortError(jobId, controller.signal));
+    let onCancelled: (() => void) | undefined;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      if (controller.signal.aborted) {
+        rejectCancellation(reject);
+        return;
+      }
+      onCancelled = () => rejectCancellation(reject);
+      controller.signal.addEventListener('abort', onCancelled, { once: true });
     });
-  }, refreshMs);
-  refreshTimer.unref();
-  scheduleWatchdog();
 
-  const stopRenewal = async () => {
-    finalizing = true;
-    clearInterval(refreshTimer);
-    await refreshInFlight;
-    if (leaseLost) {
-      throw new Error(`Lost distributed job lease for ${jobId}`);
-    }
-  };
-
-  try {
-    let result: T;
-    try {
-      result = await handler();
-    } catch (error) {
-      await stopRenewal();
+    const failJob = async (error: unknown, renewalStopped = false): Promise<never> => {
+      if (!renewalStopped) {
+        await stopRenewal();
+      }
       const now = new Date();
+      const cancelledOrTimedOut = controller.signal.aborted;
       const failure = await collection.updateOne(
         { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
         {
           $set: {
             status: 'failed',
-            expiresAt: new Date(now.getTime() + failureTtlMs),
+            expiresAt: cancelledOrTimedOut ? now : new Date(now.getTime() + failureTtlMs),
             updatedAt: now,
           },
           $unset: { owner: '' },
@@ -207,28 +271,49 @@ export async function runDistributedJob<T>(
         loseLease(`[DistributedJob] Lost lease while failing ${jobId}`);
       }
       throw error;
-    }
+    };
 
-    await stopRenewal();
-    const now = new Date();
-    const completion = await collection.updateOne(
-      { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
-      {
-        $set: {
-          status: 'completed',
-          expiresAt: new Date(now.getTime() + completionTtlMs),
-          updatedAt: now,
+    try {
+      let result: T;
+      try {
+        result = await Promise.race([handler(controller.signal), cancelled]);
+        if (controller.signal.aborted) {
+          throw getAbortError(jobId, controller.signal);
+        }
+      } catch (error) {
+        return await failJob(error);
+      }
+
+      await stopRenewal();
+      if (controller.signal.aborted) {
+        return await failJob(getAbortError(jobId, controller.signal), true);
+      }
+      const now = new Date();
+      const completion = await collection.updateOne(
+        { _id: jobId, status: 'running', owner, expiresAt: { $gt: now } },
+        {
+          $set: {
+            status: 'completed',
+            expiresAt: new Date(now.getTime() + completionTtlMs),
+            updatedAt: now,
+          },
+          $unset: { owner: '' },
         },
-        $unset: { owner: '' },
-      },
-    );
-    if (completion.matchedCount !== 1) {
-      loseLease(`[DistributedJob] Lost lease while completing ${jobId}`);
-      throw new Error(`Lost distributed job lease for ${jobId}`);
+      );
+      if (completion.matchedCount !== 1) {
+        loseLease(`[DistributedJob] Lost lease while completing ${jobId}`);
+        throw new Error(`Lost distributed job lease for ${jobId}`);
+      }
+      return result;
+    } finally {
+      if (onCancelled) {
+        controller.signal.removeEventListener('abort', onCancelled);
+      }
+      clearInterval(refreshTimer);
+      clearTimeout(watchdogTimer);
     }
-    return result;
   } finally {
-    clearInterval(refreshTimer);
-    clearTimeout(watchdogTimer);
+    clearTimeout(deadlineTimer);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }

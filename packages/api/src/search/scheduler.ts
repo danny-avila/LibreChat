@@ -3,13 +3,13 @@ export const MEILI_INDEX_SYNC_INTERVAL_MS = 60_000;
 type IndexSyncReason = 'startup' | 'periodic';
 
 interface IndexSyncSchedulerOptions {
-  run: (reason: IndexSyncReason) => Promise<unknown>;
+  run: (reason: IndexSyncReason, signal: AbortSignal) => Promise<unknown>;
   onError: (error: unknown) => void;
   intervalMs?: number;
 }
 
 interface IndexSyncScheduler {
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 /**
@@ -26,17 +26,31 @@ export function startIndexSyncScheduler({
   }
 
   let inFlight: Promise<void> | undefined;
+  let activeController: AbortController | undefined;
+  let stopped = false;
   const invoke = (reason: IndexSyncReason): void => {
-    if (inFlight != null) {
+    if (stopped || inFlight != null) {
       return;
     }
+    const controller = new AbortController();
+    activeController = controller;
     const current = Promise.resolve()
-      .then(() => run(reason))
-      .catch(onError)
+      .then(() => {
+        if (stopped) {
+          return;
+        }
+        return run(reason, controller.signal);
+      })
+      .catch((error) => {
+        if (!stopped) {
+          onError(error);
+        }
+      })
       .then(() => undefined)
       .finally(() => {
         if (inFlight === current) {
           inFlight = undefined;
+          activeController = undefined;
         }
       });
     inFlight = current;
@@ -47,6 +61,11 @@ export function startIndexSyncScheduler({
   timer.unref();
 
   return {
-    stop: () => clearInterval(timer),
+    stop: async () => {
+      stopped = true;
+      clearInterval(timer);
+      activeController?.abort(new Error('Meilisearch index sync scheduler stopped'));
+      await inFlight;
+    },
   };
 }

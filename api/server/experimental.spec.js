@@ -23,6 +23,19 @@ describe('Experimental server configuration', () => {
     expect(source).toMatch(/if \(shuttingDown\) \{[\s\S]*?return;[\s\S]*?Starting a new worker/);
   });
 
+  it('stops and drains each worker index sync scheduler during pre-drain shutdown', () => {
+    const schedulerIndex = source.indexOf('const indexSyncScheduler = startIndexSyncScheduler');
+    const registrationIndex = source.indexOf(
+      "registerShutdownTask('Meilisearch index sync', () => indexSyncScheduler.stop()",
+    );
+
+    expect(schedulerIndex).toBeGreaterThan(-1);
+    expect(registrationIndex).toBeGreaterThan(schedulerIndex);
+    expect(source.slice(registrationIndex, registrationIndex + 180)).toContain(
+      "phase: 'pre-drain'",
+    );
+  });
+
   it('starts approval expiry after installing the scheduled-run callback', () => {
     const handlerIndex = source.indexOf(
       'GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);',
