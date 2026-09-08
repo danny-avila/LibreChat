@@ -13,8 +13,9 @@ default branch, so close linked issues by hand. Worktrees share one stash stack,
 Write the description for a reader who has not followed the branch: what breaks, what triggers it,
 how it behaves after the change, then one or two views of the mechanism — a focused diff, a call
 tree, a shallow file tree, or a Mermaid sequence. Keep only what the change carries, and describe
-the code as it stands rather than narrating earlier commits or review rounds. The formats and
-examples live in `.github/pull_request_template.md`.
+the code as it stands rather than narrating earlier commits or review rounds. Naming the merged
+pull request that caused the bug is not the same thing; that is history the reader needs. The
+formats and examples live in `.github/pull_request_template.md`.
 
 ## Review and completion
 
