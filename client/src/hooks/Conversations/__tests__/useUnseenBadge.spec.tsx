@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { unseenTabBadgeAtom } from '../replyNotificationSettings';
 import useUnseenBadge from '../useUnseenBadge';
+import { setDocumentTitle } from '~/utils';
 
 function mountIcons() {
   const icon32 = document.createElement('link');
@@ -92,6 +93,22 @@ describe('useUnseenBadge', () => {
     rerender(0);
 
     await waitFor(() => expect(document.title).toBe('Renamed Conversation'));
+  });
+
+  it('preserves an equal-valued canonical title write through count changes and unmount', () => {
+    document.title = 'Notes';
+    const { rerender, unmount } = mount(3);
+
+    expect(document.title).toBe('(3) Notes');
+
+    setDocumentTitle('(3) Notes', true);
+    rerender(4);
+
+    expect(document.title).toBe('(4) (3) Notes');
+
+    unmount();
+
+    expect(document.title).toBe('(3) Notes');
   });
 
   it('leaves the title and icons alone while the setting is off', async () => {

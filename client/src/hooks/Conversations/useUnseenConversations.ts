@@ -29,7 +29,7 @@ export type ReplyReadState = {
    * baseline on it: a seen conversation marked unread from another device re-enters `unseen`
    * carrying the stamp it always had, which only this record can tell from a new reply. */
   stamps: Array<[conversationId: string, lastResponseAt: string]>;
-  /** Reply stamps observed after the aggregate first became aware of its list query. */
+  /** Reply stamps observed when a known row changed through a local cache merge. */
   arrivalStamps: Array<[conversationId: string, lastResponseAt: string]>;
 };
 
@@ -131,9 +131,10 @@ const readReplyState = (
   return { unseen, stamps, arrivalStamps };
 };
 
-type ArrivalSnapshot = Map<string, string>;
+type ArrivalSnapshot = Map<string, string | null>;
 type ArrivalSnapshots = Map<string, ArrivalSnapshot | null>;
 type ArrivalEvidence = Map<string, string>;
+type ArrivalMode = 'server' | 'local' | 'none';
 
 const snapshotForQuery = (query: Query): ArrivalSnapshot | null => {
   const data = query.state.data as
@@ -147,8 +148,10 @@ const snapshotForQuery = (query: Query): ArrivalSnapshot | null => {
   const pages = 'pages' in data ? data.pages : [data];
   for (const page of pages) {
     for (const convo of page.conversations) {
-      if (convo.conversationId && convo.lastResponseAt) {
-        snapshot.set(convo.conversationId, convo.lastResponseAt);
+      if (convo.conversationId) {
+        /* Keep user-only rows in the snapshot. A locally merged first reply must be distinguishable
+         * from a conversation that was newly discovered by a later page or query variant. */
+        snapshot.set(convo.conversationId, convo.lastResponseAt ?? null);
       }
     }
   }
@@ -159,7 +162,7 @@ const observeArrivalQuery = (
   query: Query,
   snapshots: ArrivalSnapshots,
   evidence: ArrivalEvidence,
-  allowArrivals: boolean,
+  mode: ArrivalMode,
 ): void => {
   const current = snapshotForQuery(query);
   const previous = snapshots.get(query.queryHash);
@@ -167,12 +170,17 @@ const observeArrivalQuery = (
     snapshots.set(query.queryHash, current);
     return;
   }
-  if (allowArrivals) {
+  if (mode !== 'none') {
     const data = query.state.data as InfiniteData<ConversationCursorData> | PinnedConversationsData;
     const firstPage = 'pages' in data ? data.pages[0] : data;
     for (const convo of firstPage?.conversations ?? []) {
       const { conversationId, lastResponseAt } = convo;
-      if (!conversationId || !lastResponseAt || convo.lastResponseIsManual === true) {
+      if (
+        !conversationId ||
+        !lastResponseAt ||
+        convo.lastResponseIsManual === true ||
+        (mode === 'local' && !previous.has(conversationId))
+      ) {
         continue;
       }
       if (previous.get(conversationId) === lastResponseAt) {
@@ -246,7 +254,7 @@ export default function useUnseenConversations(): ReplyReadState | null {
       ) {
         convoQueryAuthority(queryClient, query);
         if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
-          observeArrivalQuery(query, arrivalSnapshots.current, arrivalEvidence.current, false);
+          observeArrivalQuery(query, arrivalSnapshots.current, arrivalEvidence.current, 'none');
         }
       }
     }
@@ -265,12 +273,11 @@ export default function useUnseenConversations(): ReplyReadState | null {
       if (event.type === 'removed') {
         arrivalSnapshots.current.delete(query.queryHash);
       } else if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
-        observeArrivalQuery(
-          query,
-          arrivalSnapshots.current,
-          arrivalEvidence.current,
-          event.type === 'updated' && event.action.type === 'success',
-        );
+        let mode: ArrivalMode = 'none';
+        if (event.type === 'updated' && event.action.type === 'success') {
+          mode = event.action.manual === true ? 'local' : 'server';
+        }
+        observeArrivalQuery(query, arrivalSnapshots.current, arrivalEvidence.current, mode);
       }
       refresh();
     });

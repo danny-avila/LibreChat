@@ -1,11 +1,15 @@
 import React from 'react';
+import { QueryKeys } from 'librechat-data-provider';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { renderHook, waitFor, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReplyReadState, UnseenConversation } from '../useUnseenConversations';
 import { replyNotificationsAtom, replyNotificationSoundAtom } from '../replyNotificationSettings';
 import useReplyAlerts, { requestReplyNotificationPermission } from '../useReplyAlerts';
 import { consumeFocusSuppression } from '../notificationNavigation';
+import useUnseenConversations from '../useUnseenConversations';
+import { applyServerReplyStamp } from '~/utils';
 
 /* The hooks barrel is circular with ~/data-provider; mocking it wholesale keeps the
    suite off that cycle while still exercising the hook's real diff/notify logic. */
@@ -120,6 +124,43 @@ function setup(
       wrapper,
     }),
     pathnameRef,
+  };
+}
+function setupWithAggregate(toggles: Toggles = {}) {
+  const { notifications = false, sound = false } = toggles;
+  const settings = createStore();
+  settings.set(replyNotificationsAtom, notifications);
+  settings.set(replyNotificationSoundAtom, sound);
+
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData([QueryKeys.allConversations, { isArchived: false }], {
+    pages: [
+      {
+        conversations: [{ conversationId: 'user-only', title: 'User only' }],
+        nextCursor: null,
+      },
+    ],
+    pageParams: [null],
+  });
+
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <JotaiProvider store={settings}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </JotaiProvider>
+    </QueryClientProvider>
+  );
+
+  return {
+    ...renderHook(
+      () => {
+        const state = useUnseenConversations();
+        useReplyAlerts(state);
+        return state;
+      },
+      { wrapper },
+    ),
+    queryClient,
   };
 }
 
@@ -329,6 +370,18 @@ describe('useReplyAlerts', () => {
     expect(createdNotifications[0].title).toBe('com_ui_reply_ready');
     expect(createdNotifications[0].options?.body).toBe('Beta');
     expect(createdNotifications[0].options?.tag).toBe('convo-b');
+  });
+  it('notifies for the first reply merged into a known user-only conversation', async () => {
+    const { queryClient } = setupWithAggregate({ notifications: true });
+
+    act(() => {
+      applyServerReplyStamp(queryClient, 'user-only', {
+        lastResponseAt: '2026-08-16T10:00:00.000Z',
+      });
+    });
+
+    await waitFor(() => expect(createdNotifications).toHaveLength(1));
+    expect(createdNotifications[0].options?.tag).toBe('user-only');
   });
 
   const otherTabLease = (at = Date.now()) =>

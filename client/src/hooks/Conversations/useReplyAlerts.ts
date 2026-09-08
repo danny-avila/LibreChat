@@ -254,9 +254,9 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
-    /* Newly cached conversations need evidence from a live first-page update, not a timestamp
-       comparison with another conversation: server clocks can differ across app hosts.
-       Pagination and newly mounted filter variants expose backlog rather than arrivals. */
+    /* A local first-page merge must update a row already known without a reply stamp; a server
+       first-page success may also provide evidence for a newly discovered reply. Pagination and
+       newly mounted filter variants expose backlog rather than arrivals. */
     const discovered = new Map(arrivalStamps);
     const arrivals = unseen.filter(
       (conversation) =>

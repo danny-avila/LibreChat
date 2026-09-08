@@ -3,8 +3,8 @@ import { QueryKeys } from 'librechat-data-provider';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
+import { applyServerReplyStamp, updateConvoInAllQueries } from '~/utils';
 import useUnseenConversations from '../useUnseenConversations';
-import { updateConvoInAllQueries } from '~/utils';
 
 const listKeyActive = [QueryKeys.allConversations, { isArchived: false }];
 const listKeyArchived = [QueryKeys.allConversations, { isArchived: true }];
@@ -142,6 +142,45 @@ describe('useUnseenConversations', () => {
       });
     });
     expect(result.current?.arrivalStamps).toEqual([['pin', RESPONDED_AT]]);
+  });
+  it('records a first reply delivered by a local cache merge for a known user-only row', () => {
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([{ conversationId: 'user-only', title: 'User only' }]),
+      );
+    });
+    expect(result.current?.unseen).toEqual([]);
+
+    act(() => {
+      applyServerReplyStamp(queryClient, 'user-only', { lastResponseAt: RESPONDED_AT });
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([['user-only', RESPONDED_AT]]);
+    expect(result.current?.unseen).toEqual([
+      {
+        conversationId: 'user-only',
+        title: 'User only',
+        lastResponseAt: RESPONDED_AT,
+        flagged: false,
+      },
+    ]);
+  });
+
+  it('does not record a stamp when a new cached row brings in backlog', () => {
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(listKeyActive, page([]));
+      queryClient.setQueryData(
+        listKeyActive,
+        page([{ conversationId: 'backlog', title: 'Backlog', lastResponseAt: RESPONDED_AT }]),
+      );
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([]);
   });
 
   it('tags the explicit manual marker of a never-replied conversation', () => {
@@ -424,7 +463,7 @@ describe('useUnseenConversations', () => {
       },
     ]);
   });
-  it('records a first-page reply arrival even when its server clock is behind another row', () => {
+  it('records a first-page server reply arrival even when its clock is behind another row', async () => {
     const { result, queryClient } = setup();
 
     act(() => {
@@ -437,14 +476,38 @@ describe('useUnseenConversations', () => {
       );
     });
 
+    await act(async () => {
+      await queryClient.fetchQuery({
+        queryKey: listKeyActive,
+        queryFn: async () =>
+          page([
+            { conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT },
+            { conversationId: 'new', title: 'New', lastResponseAt: RESPONDED_AT },
+          ]),
+      });
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([['new', RESPONDED_AT]]);
+  });
+  it('records a reply to a newly discovered first-page row from a server refetch', async () => {
+    const { result, queryClient } = setup();
+
     act(() => {
       queryClient.setQueryData(
         listKeyActive,
-        page([
-          { conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT },
-          { conversationId: 'new', title: 'New', lastResponseAt: RESPONDED_AT },
-        ]),
+        page([{ conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT }]),
       );
+    });
+
+    await act(async () => {
+      await queryClient.fetchQuery({
+        queryKey: listKeyActive,
+        queryFn: async () =>
+          page([
+            { conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT },
+            { conversationId: 'new', title: 'New', lastResponseAt: RESPONDED_AT },
+          ]),
+      });
     });
 
     expect(result.current?.arrivalStamps).toEqual([['new', RESPONDED_AT]]);
