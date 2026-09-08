@@ -13,6 +13,7 @@ import { steerOverlayHeightFamily } from '~/store/steer';
 import { autoScrollAtom } from '~/store/autoScroll';
 import { FLAT_THREAD, ThreadList } from './Thread';
 import { fontSizeAtom } from '~/store/fontSize';
+import ChatDisclaimer from './ChatDisclaimer';
 import MultiMessage from './MultiMessage';
 import MessageNav from './MessageNav';
 import { cn } from '~/utils';
@@ -203,6 +204,7 @@ function MessagesViewContent({
                   </div>
                 </>
               )}
+              <ChatDisclaimer />
               <div
                 id="messages-end"
                 className="group h-0 w-full flex-shrink-0"
