@@ -2,6 +2,7 @@ const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const { EModelEndpoint, getCodeEnvRefs } = require('librechat-data-provider');
+const { getCodeApiTimeoutMs } = require('./timeout');
 const {
   logAxiosError,
   appendCodeEnvFile,
@@ -56,7 +57,7 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route 
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
-      timeout: 15000,
+      timeout: getCodeApiTimeoutMs(),
     };
 
     const response = await axios(options);
@@ -144,7 +145,7 @@ async function deleteCodeEnvFile(req, file) {
         },
         httpAgent: codeServerHttpAgent,
         httpsAgent: codeServerHttpsAgent,
-        timeout: 15000,
+        timeout: getCodeApiTimeoutMs(),
       });
     } catch (error) {
       if (error.response?.status !== 404) {

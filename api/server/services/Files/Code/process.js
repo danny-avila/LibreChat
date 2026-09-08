@@ -55,6 +55,7 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { getCodeApiTimeoutMs } = require('~/server/services/Files/Code/timeout');
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -240,7 +241,7 @@ const downloadCodeOutputBuffer = async ({
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
-      timeout: 15000,
+      timeout: getCodeApiTimeoutMs(),
       ...(Number.isFinite(maxBytes) && maxBytes >= 0
         ? {
             maxContentLength: maxBytes,
@@ -1636,7 +1637,7 @@ async function readSandboxFile({
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
-      timeout: 15000,
+      timeout: getCodeApiTimeoutMs(),
     });
   } catch (error) {
     logAxiosError({
@@ -2033,7 +2034,7 @@ async function execSandboxImageChunk({
           },
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
-          timeout: 15000,
+          timeout: getCodeApiTimeoutMs(),
         });
       },
     });
@@ -2126,7 +2127,7 @@ async function writeSandboxFile({
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
-      timeout: 15000,
+      timeout: getCodeApiTimeoutMs(),
     });
     const result = response?.data ?? {};
     if (result.stderr && (result.stdout == null || result.stdout === '')) {
