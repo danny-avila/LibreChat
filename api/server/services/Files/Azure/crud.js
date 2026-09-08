@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const mime = require('mime');
-const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -246,18 +245,26 @@ async function uploadFileToAzure({
 /**
  * Retrieves a readable stream for a blob from Azure Blob Storage.
  *
+ * Uses the authenticated Azure SDK client so private containers are supported.
+ *
  * @param {object} _req - The Express request object.
  * @param {string} fileURL - The URL of the blob.
  * @returns {Promise<ReadableStream>} A readable stream of the blob.
  */
 async function getAzureFileStream(_req, fileURL) {
   try {
-    const response = await axios({
-      method: 'get',
-      url: fileURL,
-      responseType: 'stream',
-    });
-    return response.data;
+    const segments = new URL(fileURL).pathname.split('/').filter(Boolean);
+    const containerIndex = segments.indexOf(AZURE_CONTAINER_NAME);
+    if (containerIndex === -1 || containerIndex === segments.length - 1) {
+      throw new Error('Blob path could not be derived from the file URL');
+    }
+    const blobPath = segments
+      .slice(containerIndex + 1)
+      .map(decodeURIComponent)
+      .join('/');
+    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
+    const downloadResponse = await containerClient.getBlockBlobClient(blobPath).download();
+    return downloadResponse.readableStreamBody;
   } catch (error) {
     logger.error('[getAzureFileStream] Error getting blob stream:', error);
     throw error;
