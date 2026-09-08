@@ -75,6 +75,49 @@ describe('conversation management cursors', () => {
 });
 
 describe('conversation message projection', () => {
+  it('preserves public text annotations and strips unknown annotation properties', () => {
+    const annotations = [
+      {
+        type: 'file_citation',
+        start_index: 0,
+        end_index: 3,
+        text: 'ref',
+        file_citation: { file_id: 'citation', quote: 'quoted text' },
+      },
+      {
+        type: 'file_path',
+        start_index: 4,
+        end_index: 8,
+        text: 'file',
+        file_path: { file_id: 'generated' },
+      },
+    ];
+    const source = {
+      messageId: 'message',
+      conversationId: 'conversation',
+      text: 'ref file',
+      content: [
+        {
+          type: ContentTypes.TEXT,
+          text: {
+            value: 'ref file',
+            storageKey: 'private',
+            annotations: annotations.map((annotation) => ({
+              ...annotation,
+              credentials: 'private',
+              ...(annotation.file_path
+                ? { file_path: { ...annotation.file_path, storageKey: 'private' } }
+                : {}),
+            })),
+          },
+        },
+      ],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source).content).toEqual([
+      { type: ContentTypes.TEXT, text: { value: 'ref file', annotations } },
+    ]);
+  });
+
   it('keeps supported visible content variants and strips stored internal fields', () => {
     const source = {
       _id: new Types.ObjectId(),

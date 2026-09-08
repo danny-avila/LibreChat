@@ -6,6 +6,7 @@ import {
   updateChatProjectLastConversationForUser,
   type ChatProjectMethods,
 } from './chatProject';
+import { tenantStorage } from '~/config/tenantContext';
 import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
@@ -107,20 +108,82 @@ describe('ChatProject methods', () => {
     expect(noMatch.projects).toHaveLength(0);
   });
 
+  it.each([undefined, 'tenant-a'])(
+    'reads committed statistics without repairing cache in tenant %s',
+    async (tenantId) => {
+      await tenantStorage.run({ tenantId }, async () => {
+        const project = await methods.createChatProject(user, { name: 'Stale cache' });
+        const projectId = String(project._id);
+        await ChatProject.updateOne(
+          { _id: project._id },
+          {
+            $set: {
+              conversationCount: 999,
+              lastConversationId: 'hidden',
+              lastConversationAt: new Date('2026-09-01'),
+            },
+          },
+        );
+        const scope = { user, ...(tenantId ? { tenantId } : {}), chatProjectId: projectId };
+        await Conversation.collection.insertMany([
+          { ...scope, conversationId: 'visible', updatedAt: new Date('2026-01-01') },
+          {
+            ...scope,
+            conversationId: 'archived',
+            isArchived: true,
+            updatedAt: new Date('2026-08-01'),
+          },
+          { ...scope, conversationId: 'temporary', isTemporary: true },
+          {
+            ...scope,
+            conversationId: 'expired',
+            isTemporary: false,
+            expiredAt: new Date('2020-01-01'),
+          },
+          { ...scope, user: otherUser, conversationId: 'foreign-owner' },
+          { ...scope, tenantId: 'foreign-tenant', conversationId: 'foreign-tenant' },
+        ]);
+        const expected = {
+          conversationCount: 1,
+          lastConversationId: 'visible',
+          lastConversationAt: new Date('2026-01-01'),
+        };
+        expect(await methods.getChatProject(user, projectId)).toMatchObject(expected);
+        expect((await methods.listChatProjects(user)).projects).toEqual([
+          expect.objectContaining(expected),
+        ]);
+        expect(await ChatProject.findById(project._id).lean()).toMatchObject({
+          conversationCount: 999,
+          lastConversationId: 'hidden',
+        });
+        await Conversation.updateOne({ conversationId: 'visible' }, { $set: { isArchived: true } });
+        expect(await methods.getChatProject(user, projectId)).toMatchObject({
+          conversationCount: 0,
+          lastConversationId: null,
+          lastConversationAt: null,
+        });
+      });
+    },
+  );
+
   it('paginates projects deterministically when latest activity is null', async () => {
     const staleProject = await methods.createChatProject(user, { name: 'Stale' });
     await methods.createChatProject(user, { name: 'Quiet A' });
     await methods.createChatProject(user, { name: 'Quiet B' });
     const recentProject = await methods.createChatProject(user, { name: 'Recent' });
 
-    await ChatProject.updateOne(
-      { _id: staleProject._id },
-      { $set: { lastConversationAt: new Date('2026-01-01T00:00:00.000Z') } },
-    );
-    await ChatProject.updateOne(
-      { _id: recentProject._id },
-      { $set: { lastConversationAt: new Date('2026-02-01T00:00:00.000Z') } },
-    );
+    await Conversation.collection.insertOne({
+      user,
+      conversationId: 'staleProject',
+      chatProjectId: String(staleProject._id),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await Conversation.collection.insertOne({
+      user,
+      conversationId: 'recentProject',
+      chatProjectId: String(recentProject._id),
+      updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
 
     const firstPage = await methods.listChatProjects(user, {
       sortBy: 'lastConversationAt',
@@ -161,14 +224,18 @@ describe('ChatProject methods', () => {
     await methods.createChatProject(user, { name: 'Quiet B' });
     const recentProject = await methods.createChatProject(user, { name: 'Recent' });
 
-    await ChatProject.updateOne(
-      { _id: staleProject._id },
-      { $set: { lastConversationAt: new Date('2026-01-01T00:00:00.000Z') } },
-    );
-    await ChatProject.updateOne(
-      { _id: recentProject._id },
-      { $set: { lastConversationAt: new Date('2026-02-01T00:00:00.000Z') } },
-    );
+    await Conversation.collection.insertOne({
+      user,
+      conversationId: 'staleProject',
+      chatProjectId: String(staleProject._id),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await Conversation.collection.insertOne({
+      user,
+      conversationId: 'recentProject',
+      chatProjectId: String(recentProject._id),
+      updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
 
     // limit equals the number of dated projects, so the cursor lands on a dated
     // project; the null (chat-less) projects must still appear on the next page.

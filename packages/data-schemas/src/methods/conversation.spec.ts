@@ -18,6 +18,7 @@ import type {
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { buildRetentionVisibilityFilter } from '~/utils/retention';
+import { createChatProjectMethods } from './chatProject';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -342,13 +343,19 @@ describe('Conversation Operations', () => {
       try {
         const result = await saveConvo(
           mockCtx,
-          { conversationId, title: 'After' },
+          { conversationId, title: 'After', isArchived: true },
           { noUpsert: true, appendMessageIds: [] },
         );
 
         expect(result).toMatchObject({ conversationId, title: 'After', chatProjectId });
         await expect(Conversation.findOne({ conversationId }).lean()).resolves.toMatchObject({
           title: 'After',
+        });
+        const projects = createChatProjectMethods(mongoose);
+        expect(await projects.getChatProject(mockCtx.userId, chatProjectId)).toMatchObject({
+          conversationCount: 0,
+          lastConversationId: null,
+          lastConversationAt: null,
         });
       } finally {
         updateOneSpy.mockRestore();

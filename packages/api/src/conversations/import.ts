@@ -584,7 +584,7 @@ export function prepareLibreChatConversationImport(
       }
       value.options.tags = tags.data;
     }
-    for (const field of [...SOURCE_PROVENANCE_FIELDS, 'conversationId'] as const) {
+    for (const field of [...SOURCE_PROVENANCE_FIELDS, 'conversationId', 'file_ids'] as const) {
       delete value.options[field];
     }
   }

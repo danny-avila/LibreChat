@@ -392,6 +392,22 @@ describe('createConversationImportOperation', () => {
     expect(deps.getImporter).not.toHaveBeenCalled();
   });
 
+  it('strips provider file IDs from options before any importer or policy runs', async () => {
+    const { deps, importer } = createDependencies(
+      JSON.stringify({
+        ...baseExport,
+        options: { ...baseExport.options, file_ids: ['provider-file-reference'] },
+      }),
+    );
+    await createConversationImportOperation(deps)({
+      filepath: '/tmp/provider-options.json',
+      requestUserId: 'owner',
+      format: 'librechat',
+    });
+    expect(importer.mock.calls[0][0]).toMatchObject({ options: baseExport.options });
+    expect(importer.mock.calls[0][0]).not.toHaveProperty('options.file_ids');
+  });
+
   describe.each(['files', 'attachments'])('imported %s', (field) => {
     it.each([null, false, 1, 'file', [], { filename: {} }, { filepath: 4 }, { text: [] }])(
       'rejects malformed entry %j in flat and recursive exports',

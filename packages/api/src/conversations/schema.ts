@@ -140,7 +140,33 @@ const contentMetadata = {
   backgrounded: z.boolean().optional(),
 };
 
-const textValue = z.union([z.string(), z.object({ value: z.string().optional() }).strip()]);
+const annotationRange = {
+  start_index: z.number().int().nonnegative(),
+  end_index: z.number().int().nonnegative(),
+  text: z.string(),
+};
+const textAnnotation = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('file_citation'),
+      ...annotationRange,
+      file_citation: z.object({ file_id: z.string(), quote: z.string().optional() }).strip(),
+    })
+    .strip(),
+  z
+    .object({
+      type: z.literal('file_path'),
+      ...annotationRange,
+      file_path: z.object({ file_id: z.string() }).strip(),
+    })
+    .strip(),
+]);
+const textValue = z.union([
+  z.string(),
+  z
+    .object({ value: z.string().optional(), annotations: z.array(textAnnotation).optional() })
+    .strip(),
+]);
 const jsonObject = z.record(z.string(), z.unknown());
 const toolCall = z
   .object({
