@@ -58,6 +58,55 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 
 ---
 
+## Review and Completion
+
+### AI review cycles
+
+The reviewer, its trigger phrase and its cadence all change; this subsection is the fluid one, so
+rewrite it when they do. What survives a change of tool: a review counts only for the exact commit
+it ran on, its findings are judged against the code rather than accepted or dismissed wholesale, and
+findings that keep arriving mean the subsystem needs a sweep, not another patch.
+
+- **Inline review threads are the source of truth.** A summary comment, a check name or a
+  notification list omits findings — read the threads on the pull request itself.
+- Audit every finding against the current code. Fix the valid ones; reject the obsolete or wrong
+  ones in a reply that says why.
+- After each round of fixes, run the focused tests and `npx tsc --noEmit` for every workspace you
+  changed, push, read the pull request's remote head (`gh pr view <n> --json headRefOid`), and
+  request the next review naming that exact SHA. **A clean review of an earlier head says nothing
+  about what you just pushed.** Do not wait for CI before asking — review and CI run on their own
+  clocks.
+- Reply on each thread you resolved with the commit that resolved it and the coverage that proves
+  it.
+- **After two actionable rounds** — or sooner, when each fix uncovers an adjacent defect — stop
+  answering threads one at a time and read the subsystem by invariant: identity, ownership,
+  authorization, persistence, retry, replay, abort, cleanup, expiry, rollout. Follow producers,
+  consumers, adapters, alternate write paths, and the final consumer of every limit; check
+  mixed-version behavior in both directions; read the whole base-to-head diff with the callers and
+  tests around it; then add transition or failure-injection coverage at the deepest boundary that
+  owns the behavior.
+- The cycle ends when the exact pushed head draws no major findings, or only repeats ones already
+  resolved. A clean review is one completion signal, not the definition of done.
+
+### Definition of done
+
+- **Ship the observable experience, not the reported path.** Where they apply, cover loading, empty,
+  success, failure, cancellation, retry and restored-session behavior.
+- **A backend capability with no frontend entry point is unfinished**, and so is a control with no
+  validation, persistence, error handling or authorization behind it.
+- Localize every visible string through `useLocalize()`, keep semantic HTML, keyboard behavior and
+  ARIA intact, and compose shared primitives and semantic theme roles before adding local styling
+  (see "Frontend Rules"). Custom styling that proves unavoidable still supports light/dark and
+  reduced motion.
+- Preserve existing defaults, configuration compatibility, stored data, and mixed-version behavior.
+- Make the fix the smallest one consistent with the patterns already in the file, and test the
+  behavior that was missed rather than the line a reviewer pointed at.
+- **Report what you actually ran**: the pushed head, the local checks from "Testing" and
+  "Typechecking", CI state, the review result at that head, and any finding you rejected with the
+  reasoning. Name the checks you could not run instead of implying coverage.
+
+---
+
 ## Code Style
 
 ### Naming and File Organization
