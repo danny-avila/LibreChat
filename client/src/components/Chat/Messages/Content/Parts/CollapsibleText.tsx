@@ -1,11 +1,11 @@
 import { useLayoutEffect, memo, useId, useRef, useState } from 'react';
-import { Button } from '@librechat/client';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { Button, useRemScale } from '@librechat/client';
 import type { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-/** Collapsed preview height (px) for a long message before "Show more". The
+/** Collapsed preview height (baseline px) for a long message before "Show more". The
  *  tolerance below only decides whether the toggle appears: it absorbs the
  *  trailing markdown margin so content that fits but for its own bottom margin
  *  does not trip a pointless toggle. The clamp itself is applied only once the
@@ -29,6 +29,9 @@ const CollapsibleText = memo(function CollapsibleText({
   children: ReactNode;
 }) {
   const localize = useLocalize();
+  const remScale = useRemScale();
+  const collapsedMaxHeight = COLLAPSED_MAX_HEIGHT * remScale;
+  const overflowTolerance = OVERFLOW_TOLERANCE * remScale;
   const contentRef = useRef<HTMLDivElement>(null);
   const contentId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -55,8 +58,7 @@ const CollapsibleText = memo(function CollapsibleText({
     if (el == null) {
       return;
     }
-    const measure = () =>
-      setOverflowing(el.scrollHeight - COLLAPSED_MAX_HEIGHT > OVERFLOW_TOLERANCE);
+    const measure = () => setOverflowing(el.scrollHeight - collapsedMaxHeight > overflowTolerance);
     measure();
     if (typeof ResizeObserver === 'undefined') {
       return;
@@ -64,7 +66,7 @@ const CollapsibleText = memo(function CollapsibleText({
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [enabled]);
+  }, [enabled, collapsedMaxHeight, overflowTolerance]);
 
   if (!enabled) {
     return <>{children}</>;
@@ -83,7 +85,7 @@ const CollapsibleText = memo(function CollapsibleText({
       return;
     }
     const target = event.target as HTMLElement;
-    const boundary = event.currentTarget.getBoundingClientRect().top + COLLAPSED_MAX_HEIGHT;
+    const boundary = event.currentTarget.getBoundingClientRect().top + collapsedMaxHeight;
     if (target.getBoundingClientRect().bottom > boundary) {
       setExpanded(true);
     }
@@ -94,7 +96,7 @@ const CollapsibleText = memo(function CollapsibleText({
       <div
         id={contentId}
         className={cn('relative w-full', clamped && 'overflow-hidden')}
-        style={clamped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
+        style={clamped ? { maxHeight: collapsedMaxHeight } : undefined}
         onFocus={revealIfClipped}
       >
         <div ref={contentRef} className="w-full">
