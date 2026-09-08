@@ -25,6 +25,11 @@ export type UseBookmarkItemsResult = {
   dialog: ReactNode;
 };
 
+export type BookmarkMenuProps = {
+  conversation?: TConversation | null;
+  onTagsUpdated: (names: string[], ids?: string[]) => void;
+};
+
 /**
  * Bookmark tagging as menu items, so the desktop icon menu and the mobile
  * overflow menu share one set of items, one mutation, and one edit dialog.
@@ -33,11 +38,7 @@ export default function useBookmarkItems({
   enabled = true,
   conversation,
   onTagsUpdated,
-}: {
-  enabled?: boolean;
-  conversation?: TConversation | null;
-  onTagsUpdated: (names: string[], ids?: string[]) => void;
-}): UseBookmarkItemsResult {
+}: BookmarkMenuProps & { enabled?: boolean }): UseBookmarkItemsResult {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();

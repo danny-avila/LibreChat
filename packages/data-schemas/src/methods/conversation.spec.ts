@@ -6953,3 +6953,133 @@ describe('Conversation Operations', () => {
     });
   });
 });
+
+describe('tag enrichment and optional search', () => {
+  const deferred = () => {
+    let resolve = () => {};
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  };
+
+  it.each(['tags', 'shares'])(
+    'joins independent enrichment when %s finish first',
+    async (first) => {
+      const user = uuidv4();
+      const tag = await ConversationTag.create({ user, tag: 'Parallel', position: 0 });
+      const conversation = await Conversation.create({
+        user,
+        conversationId: uuidv4(),
+        title: 'Parallel',
+        endpoint: EModelEndpoint.openAI,
+        tagIds: [String(tag._id)],
+      });
+      const SharedLink = mongoose.models.SharedLink;
+      await SharedLink.create({
+        user,
+        conversationId: conversation.conversationId,
+        shareId: uuidv4(),
+      });
+      const tagStarted = deferred();
+      const shareStarted = deferred();
+      const tagFinished = deferred();
+      const shareFinished = deferred();
+      const releaseTags = deferred();
+      const releaseShares = deferred();
+      const originalTagFind = ConversationTag.collection.find.bind(ConversationTag.collection);
+      const originalShareFind = SharedLink.collection.find.bind(SharedLink.collection);
+      jest.spyOn(ConversationTag.collection, 'find').mockImplementation((...args) => {
+        const cursor = originalTagFind(...args);
+        const toArray = cursor.toArray.bind(cursor);
+        jest.spyOn(cursor, 'toArray').mockImplementation(async () => {
+          tagStarted.resolve();
+          await releaseTags.promise;
+          const rows = await toArray();
+          tagFinished.resolve();
+          return rows;
+        });
+        return cursor;
+      });
+      jest.spyOn(SharedLink.collection, 'find').mockImplementation((...args) => {
+        const cursor = originalShareFind(...args);
+        const toArray = cursor.toArray.bind(cursor);
+        jest.spyOn(cursor, 'toArray').mockImplementation(async () => {
+          shareStarted.resolve();
+          await releaseShares.promise;
+          const rows = await toArray();
+          shareFinished.resolve();
+          return rows;
+        });
+        return cursor;
+      });
+      const previous = process.env.ALLOW_SHARED_LINKS;
+      process.env.ALLOW_SHARED_LINKS = 'true';
+      try {
+        const pending = getConvosQueried(user, [{ conversationId: conversation.conversationId }]);
+        await Promise.all([tagStarted.promise, shareStarted.promise]);
+        (first === 'tags' ? releaseTags : releaseShares).resolve();
+        await (first === 'tags' ? tagFinished : shareFinished).promise;
+        await new Promise((resolve) => setImmediate(resolve));
+        (first === 'tags' ? releaseShares : releaseTags).resolve();
+        const result = await pending;
+        expect(result.conversations).toHaveLength(1);
+        expect(result.conversations[0]).toMatchObject({
+          isShared: true,
+          tags: ['Parallel'],
+          tagIds: [String(tag._id)],
+        });
+        expect(result.convoMap[conversation.conversationId]).toBe(result.conversations[0]);
+      } finally {
+        releaseTags.resolve();
+        releaseShares.resolve();
+        if (previous === undefined) delete process.env.ALLOW_SHARED_LINKS;
+        else process.env.ALLOW_SHARED_LINKS = previous;
+      }
+    },
+  );
+
+  it('preserves title and message hits during a catalog index outage', async () => {
+    const user = uuidv4();
+    const [title, message] = await Conversation.create(
+      ['title', 'message'].map((label) => ({
+        user,
+        conversationId: uuidv4(),
+        title: label,
+        endpoint: EModelEndpoint.openAI,
+      })),
+    );
+    Object.assign(Conversation, {
+      meiliSearch: jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: title.conversationId }] }),
+    });
+    searchMessages.mockResolvedValueOnce({ hits: [{ conversationId: message.conversationId }] });
+    const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+    jest.spyOn(Tag, 'meiliSearch').mockRejectedValueOnce(new Error('index_not_found'));
+    const result = await getConvosByCursor(user, { search: 'query' });
+    expect(new Set(result.conversations.map((convo) => convo.conversationId))).toEqual(
+      new Set([title.conversationId, message.conversationId]),
+    );
+  });
+
+  it('does not swallow Mongo failures validating tag search hits', async () => {
+    const user = uuidv4();
+    const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+    jest.spyOn(Tag, 'meiliSearch').mockResolvedValueOnce({
+      hits: [{ _id: new mongoose.Types.ObjectId().toString() }],
+      processingTimeMs: 0,
+      query: 'query',
+      limit: 1000,
+      offset: 0,
+      estimatedTotalHits: 1,
+    });
+    Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+    jest.spyOn(ConversationTag.collection, 'find').mockImplementationOnce(() => {
+      throw new Error('Mongo validation unavailable');
+    });
+    await expect(getConvosByCursor(user, { search: 'query' })).rejects.toThrow(
+      'Error during meiliSearch',
+    );
+  });
+});

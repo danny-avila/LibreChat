@@ -540,7 +540,7 @@ export const useConversationTagMutation = ({
       );
     }
     // Change the tag title to the new title
-    if (tag != null) {
+    if (tag != null && vars.tag !== undefined && vars.tag !== tag) {
       replaceTagsInAllConversations(tag, _data.tag, _data._id);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
       queryClient.invalidateQueries([QueryKeys.conversation]);
@@ -554,10 +554,11 @@ export const useConversationTagMutation = ({
         : dataService.createConversationTag(payload),
     {
       onSuccess: (...args) => {
-        /** Renaming a selected bookmark rewrites that tag on every matching
-         * conversation. The pinned query is keyed by the old filter until it
-         * is invalidated. */
-        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+        const [, vars] = args;
+        const renamed = tag != null && vars.tag !== undefined && vars.tag !== tag;
+        if (renamed || vars.addToConversation === true) {
+          queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+        }
         onMutationSuccess(...args);
         onSuccess?.(...args);
       },

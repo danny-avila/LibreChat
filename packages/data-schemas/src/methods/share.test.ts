@@ -1341,6 +1341,60 @@ describe('Share Methods', () => {
       },
     );
 
+    test('retains title search matches when the optional tag index is unavailable', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      await SharedLink.create({
+        user,
+        shareId: 'outage-share',
+        conversationId: 'outage-convo',
+        title: 'Title',
+      });
+      Conversation.meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: 'outage-convo' }] });
+      (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+        .fn()
+        .mockRejectedValue(new Error('index_not_found'));
+      const result = await shareMethods.getSharedLinks(
+        user,
+        undefined,
+        10,
+        'createdAt',
+        'desc',
+        'Title',
+      );
+      expect(result.links.map((link) => link.shareId)).toEqual(['outage-share']);
+    });
+
+    test('fails closed when Mongo cannot validate catalog search hits', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      await SharedLink.create({
+        user,
+        shareId: 'db-outage-share',
+        conversationId: 'db-outage-convo',
+        title: 'Title',
+      });
+      Conversation.meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: 'db-outage-convo' }] });
+      const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+      Tag.meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ _id: new mongoose.Types.ObjectId().toString() }] });
+      jest.spyOn(Tag.collection, 'find').mockImplementationOnce(() => {
+        throw new Error('Mongo validation unavailable');
+      });
+      const result = await shareMethods.getSharedLinks(
+        user,
+        undefined,
+        10,
+        'createdAt',
+        'desc',
+        'Title',
+      );
+      expect(result.links).toEqual([]);
+    });
+
     test('should handle empty results', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const result = await shareMethods.getSharedLinks(userId);

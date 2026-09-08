@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react';
+import type { BookmarkMenuProps } from '~/hooks/Chat/useBookmarkItems';
 import type { MenuItemProps } from '~/common';
 
 const mockAccess: Record<string, boolean> = {};
-const mockBookmarkArgs: { enabled?: boolean }[] = [];
+const mockBookmarkArgs: (BookmarkMenuProps & { enabled?: boolean })[] = [];
+const onTagsUpdated = jest.fn();
 const mockHookState = {
   multiConvo: { show: true, addConversation: jest.fn() },
   temporary: { show: true, isTemporary: false, toggle: jest.fn() },
@@ -39,7 +41,7 @@ jest.mock('~/hooks/Chat/useTemporaryChat', () => ({
 }));
 jest.mock('~/hooks/Chat/useBookmarkItems', () => ({
   __esModule: true,
-  default: (args: { enabled?: boolean } = {}) => {
+  default: (args: BookmarkMenuProps & { enabled?: boolean }) => {
     mockBookmarkArgs.push(args);
     return mockHookState.bookmarks;
   },
@@ -91,6 +93,7 @@ jest.mock('@librechat/client', () => ({
 }));
 
 import HeaderMenu from '../HeaderMenu';
+import BookmarkMenu from '../BookmarkMenu';
 
 const rows = () => Array.from(screen.getByTestId('menu-items').children);
 const labels = () =>
@@ -113,7 +116,7 @@ describe('HeaderMenu', () => {
   });
 
   it('collapses every secondary action behind one trigger', () => {
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     expect(screen.getByTestId('header-overflow-menu')).toBeInTheDocument();
     expect(labels()).toEqual([
@@ -126,7 +129,7 @@ describe('HeaderMenu', () => {
   });
 
   it('keeps every action reachable when groups are divided', () => {
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     /** A divider is its own entry; flagging an action as one deletes it. */
     expect(labels()).toContain('share');
@@ -135,7 +138,7 @@ describe('HeaderMenu', () => {
   });
 
   it('nests bookmarks rather than flattening every tag into the top level', () => {
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     expect(rows()[0]).toHaveAttribute('data-sub', 'true');
   });
@@ -146,7 +149,7 @@ describe('HeaderMenu', () => {
     mockHookState.bookmarks.show = false;
     mockHookState.exportShare.show = false;
 
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     expect(screen.queryByTestId('header-overflow-menu')).not.toBeInTheDocument();
   });
@@ -155,7 +158,7 @@ describe('HeaderMenu', () => {
     mockAccess.BOOKMARKS = false;
     mockAccess.MULTI_CONVO = false;
 
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     expect(labels()).toEqual(['share', 'export', 'com_ui_temporary']);
   });
@@ -164,7 +167,7 @@ describe('HeaderMenu', () => {
     mockAccess.BOOKMARKS = false;
     mockAccess.MULTI_CONVO = false;
 
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     expect(rows()[0]).toHaveAttribute('data-kind', 'item');
   });
@@ -172,7 +175,7 @@ describe('HeaderMenu', () => {
   it('does not query bookmark tags without the bookmark permission', () => {
     mockAccess.BOOKMARKS = false;
 
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     expect(mockBookmarkArgs.every((args) => args.enabled === false)).toBe(true);
   });
@@ -180,7 +183,7 @@ describe('HeaderMenu', () => {
   it('keeps surfacing an active shared link on the collapsed trigger', () => {
     mockHookState.exportShare.hasSharedLink = true;
 
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     /** Distinct from the desktop menu's indicator; both are mounted at once. */
     expect(screen.getByTestId('header-menu-shared-link-indicator')).toBeInTheDocument();
@@ -193,10 +196,26 @@ describe('HeaderMenu', () => {
   it('shows temporary chat as active to sighted users, not just assistive tech', () => {
     mockHookState.temporary.isTemporary = true;
 
-    render(<HeaderMenu />);
+    render(<HeaderMenu onTagsUpdated={onTagsUpdated} />);
 
     const temporaryRow = rows().find((node) => node.textContent === 'com_ui_temporary');
     expect(temporaryRow).toBeDefined();
     expect(labels()).toContain('com_ui_temporary');
   });
 });
+
+it.each([HeaderMenu, BookmarkMenu])(
+  'passes host conversation and update callback to the bookmark feature',
+  (Menu) => {
+    const conversation = { conversationId: 'host-chat', tagIds: ['stable-id'] };
+    render(
+      <Menu
+        conversation={conversation as BookmarkMenuProps['conversation']}
+        onTagsUpdated={onTagsUpdated}
+      />,
+    );
+    expect(mockBookmarkArgs.at(-1)).toEqual(
+      expect.objectContaining({ conversation, onTagsUpdated }),
+    );
+  },
+);

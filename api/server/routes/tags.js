@@ -52,6 +52,9 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const tag = await createConversationTag(req.user.id, req.body, req.user.tenantId ?? null);
+    if (!tag) {
+      return res.status(404).json({ error: 'Tag not found' });
+    }
     res.status(200).json(tag);
   } catch (error) {
     logger.error('Error creating conversation tag:', error);

@@ -415,7 +415,10 @@ it.each(['attach', 'save', 'bulk'] as const)(
     await methods.deleteConversationTag('owner', String(tag._id), null, true);
     const replacement = await methods.createConversationTag('owner', { tag: 'old' });
     release();
-    await write;
+    const result = await write;
+    if (kind === 'attach') {
+      expect(result).toBeNull();
+    }
     expect(String(replacement?._id)).not.toBe(String(tag._id));
     expect(await Conversations.findOne({ conversationId: 'convo' }).lean()).toMatchObject({
       tagIds: [],

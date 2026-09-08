@@ -39,6 +39,7 @@ jest.mock('librechat-data-provider', () => {
       forkConversation: jest.fn(),
       deleteConversation: jest.fn(),
       updateConversationTagById: jest.fn(),
+      createConversationTag: jest.fn(),
       deleteConversationTagById: jest.fn(),
     },
   };
@@ -577,6 +578,51 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.conversation]);
+  });
+
+  it.each([{ position: 2 }, { tag: 'office', description: 'Updated' }])(
+    'keeps conversation caches fresh for metadata-only updates %o',
+    async (payload) => {
+      updateConversationTagById.mockResolvedValue({ ...tagResponse, ...payload });
+      const queryClient = createQueryClient();
+      const keys = [
+        [QueryKeys.allConversations],
+        [QueryKeys.conversation, 'chat'],
+        [QueryKeys.pinnedConversations],
+      ];
+      for (const key of keys) queryClient.setQueryData(key, { marker: true });
+      const { result } = renderHook(
+        () =>
+          useConversationTagMutation({ context: 'test', tag: 'office', tagId: tagResponse._id }),
+        { wrapper: createWrapper(queryClient) },
+      );
+      await act(async () => {
+        await result.current.mutateAsync(payload);
+      });
+      for (const key of keys) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
+      expect(queryClient.getQueryData([QueryKeys.conversationTags])).toEqual([
+        { ...tagResponse, ...payload },
+      ]);
+    },
+  );
+
+  it('invalidates pinned membership when creating and attaching a bookmark', async () => {
+    jest.mocked(dataService.createConversationTag).mockResolvedValue(tagResponse);
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([]));
+    const { result } = renderHook(() => useConversationTagMutation({ context: 'test' }), {
+      wrapper: createWrapper(queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({
+        tag: 'office',
+        addToConversation: true,
+        conversationId: 'chat',
+      });
+    });
+    expect(queryClient.getQueryState([QueryKeys.pinnedConversations])?.isInvalidated).toBe(true);
   });
 
   it('invalidates pins when a bookmark is deleted', async () => {

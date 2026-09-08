@@ -3092,11 +3092,13 @@ export function createConversationMethods(
         nextCursor = (limited[limited.length - 1].updatedAt as Date).toISOString();
       }
 
-      await attachSharedFlags(user, limited);
-
-      const hydrated = await hydrateConversationTags(mongoose, limited);
+      const [, hydrated] = await Promise.all([
+        attachSharedFlags(user, limited),
+        hydrateConversationTags(mongoose, limited),
+      ]);
       const convoMap: Record<string, unknown> = {};
-      hydrated.forEach((convo) => {
+      hydrated.forEach((convo, index) => {
+        convo.isShared = limited[index].isShared;
         convoMap[convo.conversationId] = convo;
       });
 

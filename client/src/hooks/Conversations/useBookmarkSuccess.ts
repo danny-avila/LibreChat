@@ -1,9 +1,11 @@
-import { useSetRecoilState } from 'recoil';
+import type { TConversation } from 'librechat-data-provider';
+import type { Dispatch, SetStateAction } from 'react';
 import useUpdateTagsInConvo from './useUpdateTagsInConvo';
-import store from '~/store';
 
-const useBookmarkSuccess = (conversationId: string) => {
-  const updateConversation = useSetRecoilState(store.updateConversationSelector(conversationId));
+const useBookmarkSuccess = (
+  conversationId: string,
+  setConversation: Dispatch<SetStateAction<TConversation | null>>,
+) => {
   const { updateTagsInConversation } = useUpdateTagsInConvo();
 
   return (newTags: string[], tagIds?: string[]) => {
@@ -11,7 +13,11 @@ const useBookmarkSuccess = (conversationId: string) => {
       return;
     }
     updateTagsInConversation(conversationId, newTags, tagIds);
-    updateConversation({ tags: newTags, ...(tagIds === undefined ? {} : { tagIds }) });
+    setConversation((current) =>
+      current?.conversationId === conversationId
+        ? { ...current, tags: newTags, ...(tagIds === undefined ? {} : { tagIds }) }
+        : current,
+    );
   };
 };
 

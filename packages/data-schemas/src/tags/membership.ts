@@ -3,6 +3,7 @@ import type { IConversation } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { getTenantId } from '~/config/tenantContext';
+import logger from '~/config/winston';
 
 export interface TagRecord {
   _id: Types.ObjectId;
@@ -227,11 +228,17 @@ export async function searchTagIds(
 ): Promise<string[]> {
   const Tag = mongoose.models.ConversationTag as Model<TagRecord> &
     Pick<import('~/models/plugins/mongoMeili').SchemaWithMeiliMethods, 'meiliSearch'>;
-  const results = await Tag.meiliSearch(search, {
-    filter: `user = ${JSON.stringify(user)}`,
-    limit: 1000,
-    attributesToRetrieve: ['_id'],
-  });
+  let results: Awaited<ReturnType<typeof Tag.meiliSearch>>;
+  try {
+    results = await Tag.meiliSearch(search, {
+      filter: `user = ${JSON.stringify(user)}`,
+      limit: 1000,
+      attributesToRetrieve: ['_id'],
+    });
+  } catch (error) {
+    logger.error('[searchTagIds] Tag search failed, continuing without tag matches', error);
+    return [];
+  }
   const ids = results.hits.flatMap((hit) =>
     typeof hit._id === 'string' && /^[a-f\d]{24}$/i.test(hit._id) ? [hit._id] : [],
   );
