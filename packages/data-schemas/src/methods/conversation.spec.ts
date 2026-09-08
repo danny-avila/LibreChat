@@ -2187,6 +2187,35 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('returns the durable reply stamp when project maintenance fails', async () => {
+      const project = await ChatProject.create({
+        name: 'Unavailable project update',
+        user: 'user123',
+      });
+      await Conversation.create({
+        ...mockConversationData,
+        user: 'user123',
+        chatProjectId: project._id.toString(),
+      });
+      const update = jest.spyOn(ChatProject, 'updateOne').mockImplementationOnce(() => {
+        throw new Error('project update unavailable');
+      });
+      try {
+        const settled = await stampConvoLastResponse(
+          'user123',
+          mockConversationData.conversationId,
+        );
+        const saved = await Conversation.findOne({
+          conversationId: mockConversationData.conversationId,
+        }).lean<IConversation>();
+        expect(settled?.lastResponseAt).toBeInstanceOf(Date);
+        expect(settled?.lastResponseAt).toEqual(saved?.lastResponseAt);
+        expect(settled?.updatedAt).toEqual(saved?.updatedAt);
+      } finally {
+        update.mockRestore();
+      }
+    });
+
     it('stamps lastResponseAt and lifts the conversation like any other reply', async () => {
       /* The away poll pages by `updatedAt`, so a reply that left the order alone would be
          invisible on any conversation that had fallen past the first page. BaseClient's own

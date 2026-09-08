@@ -3571,12 +3571,16 @@ export function createConversationMethods(
        * workspace sorts on `ChatProject.lastConversationAt`, so lifting the conversation
        * while leaving its project behind would make the two views disagree. */
       if (stamped?.conversation.chatProjectId) {
-        await updateChatProjectLastConversationForUser(
-          mongoose,
-          user,
-          stamped.conversation.chatProjectId,
-          stamped.conversation as IConversation,
-        );
+        try {
+          await updateChatProjectLastConversationForUser(
+            mongoose,
+            user,
+            stamped.conversation.chatProjectId,
+            stamped.conversation as IConversation,
+          );
+        } catch (error) {
+          logger.error('[stampConvoLastResponse] Failed to update project activity', error);
+        }
       }
 
       /* Return the exact server-side stamp that won the CAS. Callers that deliver a terminal
