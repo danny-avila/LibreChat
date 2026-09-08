@@ -504,7 +504,10 @@ export interface ConversationMethods {
     user: string,
     conversationId: string,
   ): Promise<{ modified: boolean; lastResponseAt?: Date; lastResponseIsManual?: boolean }>;
-  stampConvoLastResponse(user: string, conversationId: string): Promise<void>;
+  stampConvoLastResponse(
+    user: string,
+    conversationId: string,
+  ): Promise<{ lastResponseAt: Date; updatedAt?: Date } | null>;
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
@@ -3560,8 +3563,8 @@ export function createConversationMethods(
       );
 
       /* Moving `updatedAt` is only half of what `saveConvo` does for a project chat: the
-       * workspace sorts on `ChatProject.lastConversationAt`, so a reply landing through one of
-       * the direct-save paths would lift the conversation while leaving its project behind. */
+       * workspace sorts on `ChatProject.lastConversationAt`, so lifting the conversation
+       * while leaving its project behind would make the two views disagree. */
       if (stamped?.conversation.chatProjectId) {
         await updateChatProjectLastConversationForUser(
           mongoose,
@@ -3570,6 +3573,17 @@ export function createConversationMethods(
           stamped.conversation as IConversation,
         );
       }
+
+      /* Return the exact server-side stamp that won the CAS. Callers that deliver a terminal
+       * event can merge this into their read-state cache without inventing a browser timestamp. */
+      return stamped
+        ? {
+            lastResponseAt: stamped.stamp,
+            ...(stamped.conversation.updatedAt
+              ? { updatedAt: stamped.conversation.updatedAt }
+              : {}),
+          }
+        : null;
     } catch (error) {
       logger.error('[stampConvoLastResponse] Error stamping conversation reply', error);
       throw new Error('Error stamping conversation reply');

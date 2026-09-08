@@ -1025,6 +1025,27 @@ export default function useEventHandlers({
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
 
+      /** A persisted terminal error carries the server's winning reply stamp in its nested
+       * conversation snapshot. Merge it before the error message renders so useConversationSeen
+       * acknowledges the exact error turn rather than the stale pre-error cache value. */
+      const applySettledErrorReadState = (convoId: string) => {
+        if (submission.isTemporary === true || !data || !convoId) {
+          return;
+        }
+        const settledConversation = data.conversation;
+        const lastResponseAt = settledConversation?.lastResponseAt;
+        if (typeof lastResponseAt !== 'string' || lastResponseAt.length === 0) {
+          return;
+        }
+        applyServerReplyStamp(queryClient, convoId, {
+          lastResponseAt,
+          updatedAt:
+            typeof settledConversation.updatedAt === 'string'
+              ? settledConversation.updatedAt
+              : undefined,
+        });
+      };
+
       const parseErrorResponse = (data: TResData | Partial<TMessage>): TMessage => {
         const metadata = data['responseMessage'] ?? data;
         const errorMessage: Partial<TMessage> = {
@@ -1079,6 +1100,7 @@ export default function useEventHandlers({
         return;
       } else if (!receivedConvoId) {
         const errorResponse = parseErrorResponse(data);
+        applySettledErrorReadState(conversationId);
         setErrorMessages(conversationId, errorResponse);
         setIsSubmitting(false);
         return;
@@ -1090,6 +1112,7 @@ export default function useEventHandlers({
         parentMessageId: userMessage.messageId,
       }) as TMessage;
 
+      applySettledErrorReadState(receivedConvoId);
       setErrorMessages(receivedConvoId, errorResponse);
       if (receivedConvoId && paramId === Constants.NEW_CONVO && newConversation) {
         newConversation({

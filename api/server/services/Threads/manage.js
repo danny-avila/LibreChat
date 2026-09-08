@@ -134,7 +134,8 @@ async function saveUserMessage(req, params) {
  * @param {string} [params.iconURL]
  * Overrides the instructions of the assistant.
  * @param {string} [params.promptPrefix] - Optional: from preset for `additional_instructions` field.
- * @return {Promise<Run>} A promise that resolves to the created run object.
+ * @return {Promise<{message: Object|null, conversation: Object|null}>} The persisted assistant
+ * message and the conversation snapshot settled by the same write.
  */
 async function saveAssistantMessage(req, params) {
   // const tokenCount = // TODO: need to count each content part
@@ -190,7 +191,7 @@ async function saveAssistantMessage(req, params) {
     req.resolvedConversation = savedConvo;
   }
 
-  return message;
+  return { message, conversation: savedConvo };
 }
 
 /**

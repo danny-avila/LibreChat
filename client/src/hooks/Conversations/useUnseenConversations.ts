@@ -48,10 +48,7 @@ const readReplyState = (
   const byId = new Map<string, ConvoCandidate>();
   let hasList = false;
 
-  const collect = (
-    convo: TConversation,
-    authority: Pick<ConvoCandidate, 'heardAt' | 'fromServer'>,
-  ) => {
+  const collect = (convo: TConversation, authority: Omit<ConvoCandidate, 'convo'>) => {
     const { conversationId } = convo;
     if (!conversationId) {
       return;

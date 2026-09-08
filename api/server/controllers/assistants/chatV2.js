@@ -536,20 +536,35 @@ const chatV2 = async (req, res) => {
       iconURL: endpointOption.iconURL,
     };
 
+    if (userMessagePromise) {
+      await userMessagePromise;
+    }
+
+    /* The final event is the history barrier for active clients. Persist the response first so
+     * the conversation snapshot carries the exact server-owned read-state stamp that the client
+     * must acknowledge, rather than inventing a timestamp from the response. */
+    const { message: savedMessage, conversation: persistedConversation } =
+      await saveAssistantMessage(req, { ...responseMessage, model });
+    if (!savedMessage) {
+      throw new Error('Assistant response could not be persisted before final publication');
+    }
+    if (!persistedConversation || persistedConversation.message) {
+      throw new Error('Assistant conversation could not be persisted before final publication');
+    }
+    const settledConversation =
+      typeof persistedConversation.toObject === 'function'
+        ? persistedConversation.toObject()
+        : persistedConversation;
+
     sendEvent(res, {
       final: true,
-      conversation,
+      conversation: { ...conversation, ...settledConversation },
       requestMessage: {
         parentMessageId,
         thread_id,
       },
     });
     res.end();
-
-    if (userMessagePromise) {
-      await userMessagePromise;
-    }
-    await saveAssistantMessage(req, { ...responseMessage, model });
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {

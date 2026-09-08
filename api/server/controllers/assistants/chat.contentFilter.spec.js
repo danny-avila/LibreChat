@@ -5,6 +5,8 @@ const mockCreateRun = jest.fn();
 const mockStreamRunManager = jest.fn();
 const mockSendEvent = jest.fn();
 const mockSaveUserMessage = jest.fn();
+const mockSaveAssistantMessage = jest.fn();
+const mockCreateRunBody = jest.fn();
 const mockSendResponse = jest.fn();
 const mockHandleError = jest.fn();
 const mockRetrieveAssistant = jest.fn();
@@ -65,7 +67,7 @@ jest.mock('~/server/services/Threads', () => ({
   saveUserMessage: (...args) => mockSaveUserMessage(...args),
   checkMessageGaps: jest.fn(),
   addThreadMetadata: jest.fn(),
-  saveAssistantMessage: jest.fn(),
+  saveAssistantMessage: (...args) => mockSaveAssistantMessage(...args),
 }));
 
 jest.mock('~/server/services/AssistantService', () => ({
@@ -103,7 +105,7 @@ jest.mock('~/server/services/Endpoints/assistants', () => ({
 }));
 
 jest.mock('~/server/services/createRunBody', () => ({
-  createRunBody: jest.fn(),
+  createRunBody: (...args) => mockCreateRunBody(...args),
 }));
 
 jest.mock('~/server/middleware/error', () => ({
@@ -158,6 +160,18 @@ describe.each([
     mockGetFiles.mockReset().mockResolvedValue([]);
     mockGetConvo.mockReset().mockResolvedValue(null);
     mockInitThread.mockReset();
+    mockCreateRun.mockReset();
+    mockRunAssistant.mockReset();
+    mockCreateRunBody.mockReset();
+    mockSaveAssistantMessage.mockReset();
+    mockGetOpenAIClient.mockReset().mockResolvedValue({
+      openai: {
+        beta: {
+          assistants: { retrieve: mockRetrieveAssistant },
+          threads: { messages: { list: mockListThreadMessages }, runs: {} },
+        },
+      },
+    });
     closeHandler = undefined;
     req = {
       config: {
@@ -232,6 +246,67 @@ describe.each([
     expect(mockHandleError).not.toHaveBeenCalled();
     expect(mockSendResponse).not.toHaveBeenCalled();
   }
+  it('persists the assistant before FINAL and forwards the settled read-state stamp', async () => {
+    const stamp = new Date('2026-09-08T12:00:00.000Z');
+    const settledConversation = {
+      conversationId: 'generated-id',
+      endpoint: 'azureAssistants',
+      lastResponseAt: stamp,
+      lastSeenAt: undefined,
+      lastResponseIsManual: undefined,
+      title: 'Existing title',
+    };
+    mockCreateRunBody.mockReturnValue({});
+    mockInitThread.mockResolvedValue({ thread_id: 'thread-new' });
+    mockCreateRun.mockResolvedValue({ id: 'run-1' });
+    mockRunAssistant.mockResolvedValue({
+      run: { status: 'completed', usage: {} },
+      responseMessage: { messageId: 'assistant-msg' },
+      text: 'done',
+      messages: [],
+      steps: [],
+    });
+    mockSaveUserMessage.mockResolvedValue({ messageId: 'user-msg' });
+    mockSaveAssistantMessage.mockResolvedValue({
+      message: { messageId: 'assistant-msg' },
+      conversation: settledConversation,
+    });
+    mockGetOpenAIClient.mockResolvedValue({
+      openai: {
+        _options: { model: 'gpt-4' },
+        responseMessage: { messageId: 'assistant-msg' },
+        beta: {
+          assistants: { retrieve: mockRetrieveAssistant },
+          threads: {
+            messages: {
+              list: mockListThreadMessages,
+              update: jest.fn().mockResolvedValue({}),
+            },
+            runs: {},
+          },
+        },
+      },
+    });
+    req.body.endpoint = 'azureAssistants';
+
+    await chatController(req, res);
+
+    const finalCall = mockSendEvent.mock.calls.find(([, event]) => event.final === true);
+    expect(finalCall?.[1]).toEqual(
+      expect.objectContaining({
+        final: true,
+        conversation: expect.objectContaining(settledConversation),
+      }),
+    );
+    expect(mockSaveAssistantMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSendEvent.mock.invocationCallOrder.at(-1),
+    );
+    expect(mockSaveAssistantMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ messageId: 'assistant-msg' }),
+    );
+    expect(res.end).toHaveBeenCalledTimes(1);
+  });
 
   it('blocks persisted instructions before thread, message, run, or stream side effects', async () => {
     req.config.filters = {
