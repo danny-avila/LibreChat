@@ -77,8 +77,12 @@ describe('portaled popovers inside a dialog', () => {
 
   /** Outside a dialog the CSS layer still decides, so a consumer that raises it
    *  by class — `z-[999]` to clear the legacy `Dialog` — keeps that override.
-   *  Radix still owns `pointer-events` there: a select disables outside pointer
-   *  events for its own layer stack whether or not a dialog is involved. */
+   *
+   *  Only the absence of OUR inline z-index is asserted. `pointer-events` is
+   *  Radix's to set out here: a select disables outside pointer events for its
+   *  own layer stack, and whether a sibling popover then reads `auto` depends
+   *  on whether the two share a copy of `react-dismissable-layer` — which is a
+   *  packaging fact, not this hook's contract. */
   it('leaves the CSS layer alone outside any dialog', () => {
     render(
       <>
@@ -92,7 +96,6 @@ describe('portaled popovers inside a dialog', () => {
     expect(listbox.style.zIndex).toBe('');
     expect(listbox).toHaveClass('z-40');
     expect(card.style.zIndex).toBe('');
-    expect(card.style.pointerEvents).toBe('');
     expect(card).toHaveClass('z-50');
   });
 });

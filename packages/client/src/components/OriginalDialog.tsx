@@ -29,7 +29,7 @@ export const usePopoverZIndex = (): number => {
  *
  * Radix coordinates nested layers through module-level state, so it only
  * coordinates layers from the *same copy* of `react-dismissable-layer`. This
- * app has three: `react-dialog` is pinned at 1.0.2 (#11023) while `react-select`
+ * app has three: `react-dialog` is pinned at 1.0.2 (see PR 11023) while `react-select`
  * and `react-hover-card` resolve to their own newer copies. A popover therefore
  * never learns that the dialog disabled body pointer events, and never lifts
  * itself over the dialog — it opens behind an opaque overlay, inert.
