@@ -197,6 +197,7 @@ async function uploadCodeEnvFile({
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
+  signal,
 }) {
   try {
     const form = new FormData();
@@ -220,6 +221,7 @@ async function uploadCodeEnvFile({
       timeout: 120000,
       maxContentLength: MAX_FILE_SIZE,
       maxBodyLength: MAX_FILE_SIZE,
+      ...(signal ? { signal } : {}),
     };
 
     const response = await axios.post(`${baseURL}/upload`, form, options);

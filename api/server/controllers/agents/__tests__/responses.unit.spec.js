@@ -196,6 +196,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /* Provisioning moved into this package; the controllers build the callback from it. */
+  createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
   /** Grants both by default; the capability set is what these specs vary. */
   resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),

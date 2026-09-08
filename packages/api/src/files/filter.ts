@@ -48,12 +48,32 @@ export function filterFilesByEndpointConfig(
 }
 
 /** Request-free endpoint file-policy adapter used by Agent execution hosts. */
+/**
+ * Whether this endpoint still presents the explicit upload-destination chooser. In that
+ * mode the destination is the user's choice and the upload path acts on it immediately,
+ * so nothing may be provisioned to a service they did not select.
+ */
+export function isLegacyFileUploadUX(
+  appConfig: AppConfig | undefined,
+  params: { endpoint?: string | null; endpointType?: string | null },
+): boolean {
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig: mergeFileConfig(appConfig?.fileConfig),
+    endpoint: params.endpoint,
+    endpointType: params.endpointType,
+  });
+  return endpointFileConfig?.legacyFileUploadUX === true;
+}
+
 export function filterFilesByEndpointRuntimeConfig(
   appConfig: AppConfig | undefined,
   params: {
     files: IMongoFile[] | undefined;
     endpoint?: string | null;
     endpointType?: string | null;
+    /** Bytes already committed by an earlier call, so a request split across several
+     *  sets spends one shared `totalSizeLimit` instead of restarting it per set. */
+    consumedBytes?: number;
     skipTotalSizeLimit?: boolean;
     preserveTextSources?: boolean;
   },
@@ -62,6 +82,7 @@ export function filterFilesByEndpointRuntimeConfig(
     files,
     endpoint,
     endpointType,
+    consumedBytes = 0,
     skipTotalSizeLimit = false,
     preserveTextSources = false,
   } = params;
@@ -97,19 +118,21 @@ export function filterFilesByEndpointRuntimeConfig(
     });
   }
 
-  /** Filter by MIME type */
+  /** Filter by MIME type, against the type the upload was accepted as. Conversion rewrites
+   *  `type`, so screening a converted image by its stored format drops a file the same
+   *  allowlist admitted minutes earlier. */
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
     filteredFiles = filteredFiles.filter((file) => {
       return (
         (preserveTextSources && (file.source ?? FileSources.local) === FileSources.text) ||
-        isMimeTypeSupported(file.type, supportedMimeTypes)
+        isMimeTypeSupported(file.metadata?.routingMimeType ?? file.type, supportedMimeTypes)
       );
     });
   }
 
   /** Filter by total size limit - keep files until total exceeds limit */
   if (!skipTotalSizeLimit && totalSizeLimit !== undefined && totalSizeLimit > 0) {
-    let totalSize = 0;
+    let totalSize = consumedBytes;
     const withinTotalLimit: IMongoFile[] = [];
 
     for (let i = 0; i < filteredFiles.length; i++) {

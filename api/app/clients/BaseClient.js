@@ -38,6 +38,9 @@ const {
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
+  resolveUploadLLMDeliveryPath,
+  isSpeechProviderConfigured,
+  resolveUseResponsesApi,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1720,6 +1723,16 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  /** Whether this turn talks to the Responses API, which is what lets Azure carry a
+   *  document natively. A saved agent holds it in its parameters and a plain conversation
+   *  in its model options, and both readers of it have been wrong by consulting one. */
+  usesResponsesApi() {
+    return resolveUseResponsesApi(
+      this.options.agent?.model_parameters?.useResponsesApi,
+      this.modelOptions?.useResponsesApi,
+    );
+  }
+
   async addDocuments(message, attachments) {
     const documentResult = await encodeAndFormatDocuments(
       this.options.req,
@@ -1727,7 +1740,7 @@ class BaseClient {
       {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
-        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+        useResponsesApi: this.usesResponsesApi(),
         model: this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
@@ -1777,8 +1790,9 @@ class BaseClient {
    * @returns {Promise<void>}
    */
   async addFileContextToMessage(message, attachments) {
+    const textAttachments = this.getTextContextAttachments(attachments);
     const fileContext = await extractFileContext({
-      attachments,
+      attachments: textAttachments,
       req: this.options?.req,
       tokenCountFn: (text) => countTokens(text),
     });
@@ -1786,6 +1800,44 @@ class BaseClient {
     if (fileContext) {
       message.fileContext = fileContext;
     }
+  }
+
+  getTextContextAttachments(attachments) {
+    return attachments.filter((file) => {
+      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      /* Records predating delivery paths keep legacy extraction. Current routing is
+       * authoritative for inferred uploads, so native provider bytes are not also
+       * injected as extracted text after a provider handoff. */
+      return deliveryPath == null || deliveryPath === 'text';
+    });
+  }
+
+  /** Re-resolves an inferred upload route against the provider handling this turn. */
+  getAttachmentDeliveryPath(file) {
+    if (!this._mergedFileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
+      /* Agent file policy is configured under the endpoint it names, not the client
+       * family initialization may rewrite it to. */
+      const agentEndpoint = this.options.agent?.endpoint ?? this.options.agent?.provider;
+      this._deliveryEndpoint = agentEndpoint ?? this.options.endpoint;
+      this._endpointFileConfig = getEndpointFileConfig({
+        fileConfig: this._mergedFileConfig,
+        endpoint: this._deliveryEndpoint,
+        endpointType: agentEndpoint != null ? undefined : this.options.endpointType,
+      });
+    }
+
+    return file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
+      ? file.llmDeliveryPath
+      : resolveUploadLLMDeliveryPath({
+          /* Conversion changes the stored type, so use the type routing originally saw. */
+          mimeType: file.metadata?.routingMimeType ?? file.type,
+          endpointConfig: this._endpointFileConfig,
+          fileConfig: this._mergedFileConfig,
+          endpoint: this._deliveryEndpoint,
+          useResponsesApi: this.usesResponsesApi(),
+          sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
+        });
   }
 
   async processAttachments(message, attachments) {
@@ -1797,20 +1849,14 @@ class BaseClient {
     };
 
     const allFiles = [];
-
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
-    if (!this._mergedFileConfig) {
-      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
-      this._endpointFileConfig = getEndpointFileConfig({
-        fileConfig: this._mergedFileConfig,
-        endpoint,
-        endpointType: this.options.endpointType,
-      });
-    }
-
+    /* The stored path records what upload time inferred from the endpoint it saw, and this
+     * turn may be running somewhere else: audio stored as `provider` under Google reaches
+     * an encoder that emits nothing for OpenAI, delivering neither media nor text. An
+     * explicit chooser decision is the user's and survives, and a record predating the
+     * field keeps its legacy handling. */
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1818,11 +1864,20 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
+      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      if (deliveryPath === 'text' || deliveryPath === 'none') {
+        allFiles.push(file);
+        continue;
+      }
+      /* An explicit `provider` path is authoritative: lazy provisioning stamps
+       * `embedded`/`codeEnvRef` on files that are still meant for the model, so the
+       * legacy tool-provisioning exclusion only applies to records without one. */
       if (
-        file.embedded === true ||
-        file.metadata?.codeEnvRef != null ||
-        file.metadata?.codeEnvRefs != null ||
-        file.metadata?.fileIdentifier != null
+        deliveryPath !== 'provider' &&
+        (file.embedded === true ||
+          file.metadata?.codeEnvRef != null ||
+          file.metadata?.codeEnvRefs != null ||
+          file.metadata?.fileIdentifier != null)
       ) {
         allFiles.push(file);
         continue;

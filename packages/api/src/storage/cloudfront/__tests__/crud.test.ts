@@ -624,6 +624,7 @@ describe('CloudFront CRUD', () => {
       expect(mockGetS3FileStream).toHaveBeenCalledWith(
         mockReq,
         'https://d123.cloudfront.net/images/u/f.webp',
+        undefined,
       );
       expect(result).toBe(readable);
     });
