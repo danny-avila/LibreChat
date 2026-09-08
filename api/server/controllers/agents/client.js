@@ -53,6 +53,7 @@ const {
   isHITLEnabled,
   resolveToolApprovalPolicy,
   buildToolApprovalHooks,
+  buildToolApprovalExecutionConfig,
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   buildAttachedCodeEnvironmentAdmissionHooks,
@@ -4452,6 +4453,7 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          ...buildToolApprovalExecutionConfig(this.responseMessageId, this.jobCreatedAt),
           // LangGraph owns `checkpoint_ns` and resets it to '' at every root
           // invocation. The saver maps this private immutable generation key
           // into its physical namespace while tools keep the conversation id.
@@ -5243,6 +5245,7 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          ...buildToolApprovalExecutionConfig(this.responseMessageId, this.jobCreatedAt),
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
           [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
