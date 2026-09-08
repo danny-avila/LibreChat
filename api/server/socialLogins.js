@@ -1,7 +1,12 @@
 const passport = require('passport');
 const session = require('express-session');
 const { CacheKeys } = require('librechat-data-provider');
-const { math, isEnabled, shouldUseSecureCookie } = require('@librechat/api');
+const {
+  math,
+  isEnabled,
+  shouldUseSecureCookie,
+  registerOpenIdWithRetry,
+} = require('@librechat/api');
 const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const {
   openIdJwtLogin,
@@ -21,11 +26,6 @@ const {
 const { getLogStores } = require('~/cache');
 
 const DEFAULT_OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
-const DEFAULT_OPENID_DISCOVERY_RETRY_ATTEMPTS = 3;
-const DEFAULT_OPENID_DISCOVERY_RETRY_DELAY_MS = 5000;
-
-let openIdRetryTimeout;
-
 const getSessionExpiry = () => math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
 
 const getOpenIdSessionExpiry = () => {
@@ -41,59 +41,18 @@ const getOpenIdSessionExpiry = () => {
   return Math.max(sessionExpiry, reuseMaxSessionAge);
 };
 
-const getOpenIdRetryAttempts = () => {
-  const attempts = math(
-    process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
-    DEFAULT_OPENID_DISCOVERY_RETRY_ATTEMPTS,
-  );
-  return Number.isFinite(attempts) && attempts >= 0
-    ? Math.trunc(attempts)
-    : DEFAULT_OPENID_DISCOVERY_RETRY_ATTEMPTS;
-};
-
-const getOpenIdRetryDelay = () => {
-  const delay = math(
-    process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
-    DEFAULT_OPENID_DISCOVERY_RETRY_DELAY_MS,
-  );
-  return Number.isFinite(delay) && delay > 0 ? delay : DEFAULT_OPENID_DISCOVERY_RETRY_DELAY_MS;
-};
-
-const wait = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
-
 async function registerOpenIdStrategies() {
-  try {
-    const config = await setupOpenId();
-    if (!config) {
-      return false;
-    }
-
-    if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      logger.info('OpenID token reuse is enabled.');
-      passport.use('openidJwt', openIdJwtLogin(config));
-    }
-    logger.info('OpenID Connect configured successfully.');
-    return true;
-  } catch (error) {
-    logger.error('OpenID Connect strategy registration failed.', error);
+  const config = await setupOpenId();
+  if (!config) {
     return false;
   }
-}
 
-function scheduleOpenIdRetry() {
-  if (openIdRetryTimeout) {
-    return;
+  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+    logger.info('OpenID token reuse is enabled.');
+    passport.use('openidJwt', openIdJwtLogin(config));
   }
-
-  const retryDelay = getOpenIdRetryDelay();
-  logger.warn(`OpenID Connect configuration is unavailable. Retrying in ${retryDelay}ms.`);
-  openIdRetryTimeout = setTimeout(async () => {
-    openIdRetryTimeout = undefined;
-    if (!(await registerOpenIdStrategies())) {
-      scheduleOpenIdRetry();
-    }
-  }, retryDelay);
-  openIdRetryTimeout.unref?.();
+  logger.info('OpenID Connect configured successfully.');
+  return true;
 }
 
 /**
@@ -117,22 +76,11 @@ async function configureOpenId(app) {
   app.use(session(sessionOptions));
   app.use(passport.session());
 
-  const retryAttempts = getOpenIdRetryAttempts();
-  const retryDelay = getOpenIdRetryDelay();
-  for (let attempt = 1; attempt <= retryAttempts; attempt++) {
-    if (await registerOpenIdStrategies()) {
-      return;
-    }
-    if (attempt < retryAttempts) {
-      logger.warn(
-        `OpenID Connect setup attempt ${attempt}/${retryAttempts} failed. Retrying in ${retryDelay}ms.`,
-      );
-      await wait(retryDelay);
-    }
-  }
-
-  logger.error('OpenID Connect configuration failed - strategy not registered.');
-  scheduleOpenIdRetry();
+  await registerOpenIdWithRetry({
+    register: registerOpenIdStrategies,
+    startupAttempts: process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
+    retryDelayMs: process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
+  });
 }
 
 /**
