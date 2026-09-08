@@ -2564,6 +2564,47 @@ describe('User parameter passing tests', () => {
       expect(mockGetMCPManager).not.toHaveBeenCalled();
     });
 
+    it('should reject direct OpenID bearer execution when effective and captured users differ', async () => {
+      const capturedUser = { id: 'captured-user', email: 'captured@example.com', role: 'USER' };
+      const effectiveUser = { id: 'effective-user', email: 'effective@example.com', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: capturedUser,
+        toolKey: `test-tool${D}direct-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        config: {
+          type: 'streamable-http',
+          url: 'https://direct.example.com',
+          source: 'yaml',
+          headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        },
+        availableTools: {
+          [`test-tool${D}direct-server`]: {
+            function: {
+              description: 'Cached direct bearer tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: { user: effectiveUser },
+            metadata: { provider: 'openai', thread_id: 't1', run_id: 'r1' },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow('Direct OpenID bearer tool call user mismatch');
+
+      expect(mockGetMCPManager).not.toHaveBeenCalled();
+    });
+
     it('should reject OBO tool execution when an effective or captured user id is missing', async () => {
       const capturedUser = { email: 'captured@example.com', role: 'USER' };
       const effectiveUser = { id: 'effective-user', email: 'effective@example.com', role: 'USER' };

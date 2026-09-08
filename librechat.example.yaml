@@ -474,6 +474,14 @@ actions:
 #     url: http://localhost:3001/sse
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   private-openid:
+#     type: streamable-http
+#     url: https://mcp.example.com/mcp
+#     headers:
+#       # Trusted operator configs automatically use the live session token and replace the
+#       # connection once after a 401/403. A rejected tools/call is never replayed automatically.
+#       # Enabled oauth or obo configuration takes precedence over this passthrough mode.
+#       Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
 #   puppeteer:
 #     type: stdio
 #     command: npx
@@ -620,6 +628,10 @@ endpoints:
   #               allowed: [allow, ask, deny]
   #               default: ask
   #             commandExecution:
+  #               # Add allow to offer Full access in the chat composer. Both
+  #               # permission categories must permit allow; defaults can stay ask.
+  #               # Full access skips routine code prompts within the worker sandbox.
+  #               # Explicit endpoint ask/deny rules and hooks still apply.
   #               allowed: [ask, deny]
   #               default: ask
   #         pairing:
@@ -1013,7 +1025,11 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   fileContextSizeLimit: 128  # Maximum aggregate model-bound attachment size in one agent turn (MB)
+#   fileContextCharLimit: 1000000  # Maximum aggregate extracted-text characters in one agent turn
 #   endpoints:
+#     agents:
+#       fileLimit: 10
 #     assistants:
 #       fileLimit: 5
 #       fileSizeLimit: 10  # Maximum size for an individual file in MB

@@ -120,6 +120,7 @@ export interface RecordRunOutcomeParams {
     'success' | 'error' | 'requires_action' | 'interrupted' | 'skipped_balance' | 'skipped_overlap'
   >;
   conversationId?: string;
+  checkpointNamespace?: string;
   /** Erase the run row's RESERVED conversationId in the same terminal write: a
    *  pre-start abort reserved an id but never created the conversation, and any
    *  recovery replay that reads the row would otherwise project a dead link. */
@@ -1414,6 +1415,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           $set: {
             status: 'requires_action',
             ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+            ...(params.checkpointNamespace != null
+              ? { checkpointNamespace: params.checkpointNamespace }
+              : {}),
           },
           // Leaving `started` frees the global capacity slot; the resume claims a
           // fresh one from the allocator rather than re-adopting a possibly-taken slot.
@@ -1756,6 +1760,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function getActiveRunsForSchedule(scheduleId: string): Promise<IScheduleRun[]> {
     return ScheduleRun()
       .find({ scheduleId, status: { $in: ACTIVE_RUN_STATUSES } })
+      .select('+checkpointNamespace')
       .lean<IScheduleRun[]>();
   }
 

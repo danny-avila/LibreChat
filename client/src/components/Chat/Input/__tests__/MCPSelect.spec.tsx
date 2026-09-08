@@ -41,6 +41,8 @@ jest.mock('@librechat/client', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const R = require('react');
   return {
+    /** The real recipe, so the geometry assertions below cover shipped classes. */
+    composerControlClasses: jest.requireActual('@librechat/client').composerControlClasses,
     TooltipAnchor: ({
       children,
       render,

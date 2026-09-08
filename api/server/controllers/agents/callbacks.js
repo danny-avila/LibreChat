@@ -26,6 +26,7 @@ const {
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
+  getModelRefusalInfo,
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
 } = require('@librechat/api');
@@ -141,14 +142,14 @@ class ModelEndHandler {
     let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
-      if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
-        const info = { ...data.output.additional_kwargs };
+      const refusalInfo = getModelRefusalInfo(data?.output);
+      if (refusalInfo) {
         errorMessage = JSON.stringify({
           type: ErrorTypes.REFUSAL,
-          info,
+          info: refusalInfo,
         });
         logger.debug(`[ModelEndHandler] Model refused to respond`, {
-          ...info,
+          ...refusalInfo,
           userId: metadata.user_id,
           messageId: metadata.run_id,
           conversationId: metadata.thread_id,
@@ -157,7 +158,7 @@ class ModelEndHandler {
 
       const usage = data?.output?.usage_metadata;
       if (!usage) {
-        return this.finalize(errorMessage);
+        return;
       }
       let taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
       /** Hidden intermediate sequential-agent calls are billed but never shown.
@@ -238,7 +239,8 @@ class ModelEndHandler {
       }
     } catch (error) {
       logger.error('Error handling model end event:', error);
-      return this.finalize(errorMessage);
+    } finally {
+      this.finalize(errorMessage);
     }
   }
 }

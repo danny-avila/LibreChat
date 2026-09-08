@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto';
+
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
+const CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES = 64 * 1024;
 
 export type CodeBridgePrincipalType = 'deployment' | 'tenant' | 'user' | 'role' | 'group';
 
@@ -52,12 +55,79 @@ export class CodeBridgeLifecycleError extends Error {
 
 export class CodeBridgeStatusError extends Error {
   constructor(
-    public readonly reason: 'rejected' | 'invalid' | 'timeout' | 'failed',
+    public readonly reason: 'rejected' | 'invalid' | 'timeout' | 'failed' | 'busy',
     public readonly upstreamStatus?: number,
   ) {
     super(`Code bridge status request ${reason}`);
     this.name = 'CodeBridgeStatusError';
   }
+}
+
+export function createCodeBridgeStatusPoller({
+  fetchImpl,
+  maxConcurrent = 32,
+  maxEntries = 1_000,
+  cacheTtlMs = 2_000,
+}: {
+  fetchImpl?: CodeBridgeFetch;
+  maxConcurrent?: number;
+  maxEntries?: number;
+  cacheTtlMs?: number;
+} = {}): (params: {
+  baseURL: string;
+  token: string;
+  workerId: string;
+}) => Promise<CodeBridgeWorkerStatus> {
+  const requests = new Map<
+    string,
+    { expiresAt: number; request: Promise<CodeBridgeWorkerStatus> }
+  >();
+  let active = 0;
+  return (params) => {
+    const credentialId = createHash('sha256').update(params.token).digest('base64url');
+    const normalizedBaseURL = params.baseURL.trim().replace(/\/+$/, '');
+    const key = `${normalizedBaseURL}\u0000${params.workerId}\u0000${credentialId}`;
+    const now = Date.now();
+    const cached = requests.get(key);
+    if (cached != null && cached.expiresAt > now) return cached.request;
+    if (cached != null) requests.delete(key);
+    if (active >= maxConcurrent) return Promise.reject(new CodeBridgeStatusError('busy'));
+    if (requests.size >= maxEntries) {
+      for (const [cachedKey, entry] of requests) {
+        if (entry.expiresAt <= now) requests.delete(cachedKey);
+      }
+      if (requests.size >= maxEntries) {
+        return Promise.reject(new CodeBridgeStatusError('busy'));
+      }
+    }
+    active += 1;
+    const startedAt = Date.now();
+    const request = getCodeBridgeWorkerStatus({ ...params, fetchImpl })
+      .then((status) => {
+        const completedAt = Date.now();
+        const ttl =
+          status.leaseExpiresInMs == null
+            ? cacheTtlMs
+            : Math.max(
+                0,
+                Math.min(cacheTtlMs, status.leaseExpiresInMs - (completedAt - startedAt)),
+              );
+        requests.set(key, {
+          expiresAt: completedAt + ttl,
+          request: Promise.resolve(status),
+        });
+        return status;
+      })
+      .catch((error: unknown) => {
+        requests.delete(key);
+        throw error;
+      })
+      .finally(() => {
+        active -= 1;
+      });
+    requests.set(key, { expiresAt: Number.POSITIVE_INFINITY, request });
+    return request;
+  };
 }
 
 function validStatusString(value: unknown): value is string {
@@ -68,6 +138,30 @@ function validStatusStringArray(value: unknown): value is string[] {
   return (
     Array.isArray(value) && value.length <= 32 && value.every((item) => validStatusString(item))
   );
+}
+
+async function readBoundedStatusJson(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (reader == null) throw new CodeBridgeStatusError('invalid');
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let json = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > CODE_BRIDGE_STATUS_RESPONSE_MAX_BYTES) {
+      await reader.cancel();
+      throw new CodeBridgeStatusError('invalid');
+    }
+    json += decoder.decode(value, { stream: true });
+  }
+  json += decoder.decode();
+  try {
+    return JSON.parse(json) as unknown;
+  } catch {
+    throw new CodeBridgeStatusError('invalid');
+  }
 }
 
 export async function getCodeBridgeWorkerStatus({
@@ -91,9 +185,10 @@ export async function getCodeBridgeWorkerStatus({
       },
     );
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       throw new CodeBridgeStatusError('rejected', response.status);
     }
-    const payload = (await response.json()) as unknown;
+    const payload = await readBoundedStatusJson(response);
     if (typeof payload !== 'object' || payload == null) {
       throw new CodeBridgeStatusError('invalid');
     }

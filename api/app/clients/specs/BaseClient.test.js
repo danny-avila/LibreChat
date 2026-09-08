@@ -278,6 +278,36 @@ describe('BaseClient', () => {
       expect(getMessages).toHaveBeenCalledTimes(1);
       expect(result.map((m) => m.messageId)).toEqual(['root', 'reply']);
     });
+
+    test('prunes pre-summary history before hydrating attachments', async () => {
+      const addPreviousAttachments = jest.fn(async (messages) => messages);
+      receiver.shouldSummarize = true;
+      receiver.addPreviousAttachments = addPreviousAttachments;
+      getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'pre-summary',
+          parentMessageId: Constants.NO_PARENT,
+          files: [{ file_id: 'old-file' }],
+        },
+        {
+          messageId: 'summary',
+          parentMessageId: 'pre-summary',
+          summary: 'Earlier context',
+          summaryTokenCount: 10,
+        },
+        { messageId: 'latest', parentMessageId: 'summary', text: 'Continue' },
+      ]);
+
+      const result = await loadHistory('latest');
+
+      expect(result.map((message) => message.messageId)).toEqual(['summary', 'latest']);
+      expect(addPreviousAttachments).toHaveBeenCalledWith(
+        expect.not.arrayContaining([expect.objectContaining({ messageId: 'pre-summary' })]),
+      );
+      receiver.shouldSummarize = false;
+      receiver.addPreviousAttachments = async (messages) => messages;
+      receiver.previous_summary = undefined;
+    });
   });
 
   describe('getMessagesForConversation', () => {
@@ -2443,6 +2473,7 @@ describe('BaseClient', () => {
         }
       });
       TestClient.processAttachments = jest.fn(async (_message, files) => files);
+      TestClient.assertHistoricalAttachmentLimits = undefined;
       TestClient.checkVisionRequest = jest.fn();
     });
 
@@ -2717,7 +2748,7 @@ describe('BaseClient', () => {
       const [message] = await messagesPromise;
 
       expect(message.fileContext).toBe('authorized owner text');
-      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([ownerFile]);
+      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([]);
     });
 
     test('preserves download-only historical attachments without trusting file fields', async () => {
@@ -2756,6 +2787,92 @@ describe('BaseClient', () => {
       expect(JSON.stringify(message)).not.toContain('untrusted text');
       expect(JSON.stringify(message)).not.toContain('forged-source');
       expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('processes only historical files admitted by the runtime endpoint policy', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async () => []);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          text: 'Use the attachment',
+          files: [{ file_id: modelFile.file_id }],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([modelFile]);
+      expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(TestClient.processAttachments).not.toHaveBeenCalled();
+      expect(message.files).toEqual([expect.objectContaining({ file_id: modelFile.file_id })]);
+    });
+
+    test('includes nested steer file references in historical admission', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-steer',
+          content: [
+            {
+              type: 'steer',
+              steer: 'Use the attachment',
+              files: [{ file_id: modelFile.file_id }],
+            },
+          ],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([modelFile]);
+      expect(TestClient.authorizedHistoricalReplayFiles.get(modelFile.file_id)).toEqual(modelFile);
+    });
+
+    test('preserves repeated steer file injections in historical admission', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.assertHistoricalAttachmentLimits = jest.fn(async (files) => files);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-steer-repeat',
+          content: [
+            {
+              type: 'steer',
+              steer: 'Use the attachment once.',
+              files: [{ file_id: modelFile.file_id }],
+            },
+            {
+              type: 'steer',
+              steer: 'Use the attachment again.',
+              files: [{ file_id: modelFile.file_id }],
+            },
+          ],
+        },
+      ]);
+
+      expect(TestClient.assertHistoricalAttachmentLimits).toHaveBeenCalledWith([
+        modelFile,
+        modelFile,
+      ]);
+      expect(TestClient.modelBoundHistoricalSteerFiles).toEqual([modelFile, modelFile]);
+    });
+
+    test('keeps canonical byte metadata for processed historical survivors', async () => {
+      const modelFile = { ...ownerFile, metadata: undefined, bytes: 120 * 1024 * 1024 };
+      getFiles.mockResolvedValueOnce([modelFile]);
+      TestClient.processAttachments.mockResolvedValue([{ file_id: modelFile.file_id }]);
+
+      await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-canonical-bytes',
+          files: [{ file_id: modelFile.file_id }],
+        },
+      ]);
+
+      expect(TestClient.message_file_map['msg-canonical-bytes']).toEqual([modelFile]);
     });
 
     test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
@@ -2965,5 +3082,142 @@ describe('BaseClient', () => {
         completion[0],
       ]);
     });
+  });
+});
+
+describe('BaseClient compaction turns', () => {
+  const compactionOptions = { modelOptions: { model: 'gpt-4o-mini', temperature: 0 } };
+  const compactionHistory = [
+    { role: 'user', isCreatedByUser: true, text: 'Hello', messageId: 'u1' },
+    {
+      role: 'assistant',
+      isCreatedByUser: false,
+      text: 'Hi',
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      tokenCount: 7,
+    },
+  ];
+  let CompactClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compactionHistory);
+  });
+
+  test('presents the leaf as the user message and never re-saves it', async () => {
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 'a1',
+      preallocatedUserMessageId: 'a1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage).toEqual({
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      conversationId: undefined,
+      isCreatedByUser: false,
+      text: '',
+    });
+    expect(CompactClient.skipSaveUserMessage).toBe(true);
+    /** History is loaded through the leaf, and nothing is appended to it. */
+    expect(CompactClient.currentMessages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+  });
+
+  test('refuses a compaction whose anchor is not the loaded leaf', async () => {
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 'missing',
+        preallocatedUserMessageId: 'missing',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'COMPACTION_ANCHOR_NOT_FOUND' });
+  });
+
+  test('refuses to compact a branch whose leaf is already a finished compaction', async () => {
+    const compacted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [
+          {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+          },
+        ],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compacted);
+
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 's1',
+        preallocatedUserMessageId: 's1',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'NOTHING_TO_COMPACT',
+      message: JSON.stringify({ type: 'compaction_skipped', reason: 'nothing_to_summarize' }),
+    });
+  });
+
+  test('lets an interrupted compaction be retried', async () => {
+    const interrupted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [{ type: ContentTypes.SUMMARY, content: [], summarizing: true }],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, interrupted);
+
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 's1',
+      preallocatedUserMessageId: 's1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage.messageId).toBe('s1');
+  });
+
+  test('parents the response onto the leaf and persists only the response', async () => {
+    const saveSpy = jest.spyOn(CompactClient, 'saveMessageToDatabase').mockResolvedValue({});
+    const updateSpy = jest.spyOn(CompactClient, 'updateMessageInDatabase').mockResolvedValue({});
+    /** A calibration ratio and a counted anchor would, on an ordinary turn,
+     *  rewrite the user message's persisted count; the leaf's must survive. */
+    CompactClient.contextMeta = { calibrationRatio: 0.5 };
+    CompactClient.buildMessages = jest.fn(async () => ({
+      prompt: [],
+      tokenCountMap: { a1: 7 },
+      promptTokens: 7,
+    }));
+
+    const response = await CompactClient.sendMessage('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 'a1',
+      preallocatedUserMessageId: 'a1',
+      isCompaction: true,
+    });
+
+    expect(response.parentMessageId).toBe('a1');
+    expect(response.isCreatedByUser).toBe(false);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(saveSpy.mock.calls[0][0].messageId).toBe(response.messageId);
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(CompactClient.currentMessages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+    expect(compactionHistory[1].tokenCount).toBe(7);
   });
 });

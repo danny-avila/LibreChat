@@ -11,6 +11,7 @@ import type {
   RefreshKeyInput,
 } from './types';
 import {
+  OPENID_REFRESH_CANCELLED_BEFORE_GRANT,
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
   toOpenIDLogArgument,
@@ -128,6 +129,8 @@ export interface OpenIDRefreshFlightService {
     key?: string | null;
     timeoutMs?: number;
     intervalMs?: number;
+    requirePublication?: boolean;
+    signal?: AbortSignal;
   }) => Promise<TokenResult | null>;
   withOpenIDRefreshFlightLease: <T>(args: {
     key?: string | null;
@@ -592,6 +595,15 @@ export function createOpenIDRefreshFlightService({
     flight: RefreshFlightRecord | null,
   ): Promise<TokenResult | null> {
     if (!flight) return null;
+    if (
+      flight.status === 'failed' &&
+      flight.errorMessage === OPENID_REFRESH_CANCELLED_BEFORE_GRANT
+    ) {
+      throw Object.assign(new Error('OpenID refresh owner stopped before starting the grant'), {
+        status: 503,
+        retryable: true,
+      });
+    }
     if (flight.status === 'revoked')
       throw new Error(flight.errorMessage || 'OpenID refresh was revoked by logout');
     if (flight.status === 'failed')
@@ -618,24 +630,38 @@ export function createOpenIDRefreshFlightService({
     key,
     timeoutMs,
     intervalMs = DEFAULT_WAIT_INTERVAL_MS,
+    requirePublication = false,
+    signal,
   }: {
     key?: string | null;
     timeoutMs?: number;
     intervalMs?: number;
+    requirePublication?: boolean;
+    signal?: AbortSignal;
   }): Promise<TokenResult | null> {
+    signal?.throwIfAborted();
     if (!key) return null;
-    const followRenewals = timeoutMs == null;
+    const followRenewals = timeoutMs == null && !requirePublication;
     let deadline = Date.now() + (timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS);
     while (Date.now() <= deadline) {
+      signal?.throwIfAborted();
       const flight = await db.findOpenIDRefreshFlight({ key });
+      signal?.throwIfAborted();
       const completed = await readCompletedFlight(flight);
-      if (completed) return completed;
-      if (flight?.status === 'completed') return null;
-      if (!flight) return null;
+      signal?.throwIfAborted();
+      const awaitingPublication = requirePublication && completed?.__deferredPublication;
+      if (completed && !awaitingPublication) return completed;
+      if (flight?.status === 'completed' && !awaitingPublication) return null;
+      if (!flight && !requirePublication) return null;
       if (followRenewals) {
         deadline = getRenewedWaitDeadline(deadline, flight);
       }
-      await delay(intervalMs);
+      try {
+        await delay(intervalMs, undefined, { signal });
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw error;
+      }
     }
     logger.warn('[OpenIDRefreshFlight] Timed out waiting for refresh flight', { key });
     return null;

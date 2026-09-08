@@ -11,6 +11,7 @@ const {
 const {
   checkAccess,
   GenerationJobManager,
+  GENERATION_RECOVERY_FAILED_ERROR,
   isPendingActionStale,
   mapToolApprovalResolutions,
   resolveAskUserQuestionResume,
@@ -45,6 +46,8 @@ const {
   createAgentEventActionRecorder,
   createAgentEventActorDetachedActionLifecycle,
   findAgentEventAppliedAction,
+  assertCodeExecutionApprovalBinding,
+  collectReachableAgents,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -1031,7 +1034,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let resumeState;
   let preparedContent;
   try {
-    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt, {
+      validateEarlyBufferRecovery: true,
+    });
     const batchedAnswer =
       mapped.resumeValue?.answers != null &&
       typeof mapped.resumeValue.answers === 'object' &&
@@ -1086,6 +1091,40 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       '[ResumeAgentController] Resume content preflight failed',
       getSafeErrorMetadata(err),
     );
+    if (scheduleId) {
+      const terminalJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+      if (
+        terminalJob?.createdAt === job.createdAt &&
+        terminalJob.status === 'error' &&
+        terminalJob.error === GENERATION_RECOVERY_FAILED_ERROR
+      ) {
+        try {
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: 'error',
+            conversationId,
+            error: GENERATION_RECOVERY_FAILED_ERROR,
+          });
+        } catch (scheduleError) {
+          logger.error(
+            '[ResumeAgentController] Failed to settle scheduled recovery failure',
+            getSafeErrorMetadata(scheduleError),
+          );
+        }
+        await deleteFailedResumeCheckpoint(
+          {
+            conversationId,
+            checkpointerCfg,
+            job,
+            checkpointGeneration: await checkpointGenerationPromise,
+          },
+          'scheduled recovery validation failure',
+        );
+      }
+    }
     if (isContentFilterError(err)) {
       return sendGenerationJson(res, err.statusCode, err.body, generationProtocolVersion);
     }
@@ -1789,6 +1828,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     });
     client = result.client;
 
+    // The user approved the code action against the route/session selected at
+    // pause time. Re-resolve it on this replica and fail before provider/tool
+    // execution if the environment, worker, or workspace scope moved.
+    assertCodeExecutionApprovalBinding(
+      pendingAction.codeExecutionBinding,
+      collectReachableAgents([client.options?.agent, ...(client.agentConfigs?.values() ?? [])]),
+    );
+
     // Bind the rebuilt client to the in-flight turn's identity (no new user message).
     client.conversationId = streamId;
     // The resume operates on the SAME job (it moved it running again), so its identity is
@@ -1930,6 +1977,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             jobCreatedAt: job.createdAt,
             status: 'requires_action',
             conversationId,
+            checkpointNamespace: client.checkpointNamespace,
           });
         }
       } else {

@@ -12,6 +12,7 @@ import type {
 } from './schemas';
 import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
 import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
+import type { CodeApprovalMode } from './code/approval';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
@@ -132,6 +133,9 @@ export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
     isRegenerate?: boolean;
+    /** Manual context compaction: summarize the branch up to `parentMessageId`
+     *  and end without a reply. No user message is created. */
+    compact?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
@@ -146,6 +150,8 @@ export type TPayload = Partial<TMessage> &
      * before the LLM turn runs.
      */
     manualSkills?: string[];
+    /** Conversation-scoped preference for code tool approval behavior. */
+    codeApprovalMode?: CodeApprovalMode;
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
     timezone?: string;
     /**
@@ -186,6 +192,9 @@ export type TSubmission = {
   /** Client-only full message context used to restore branch siblings after scoped regenerate. */
   regenerateMessages?: TMessage[];
   isRegenerate?: boolean;
+  /** Manual context compaction; shaped like a regenerate on the client (no new
+   *  user bubble) and sent to the server as a summarize-only turn. */
+  compact?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
@@ -222,6 +231,8 @@ export type TSubmission = {
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */
   manualSkills?: string[];
+  /** Conversation-scoped preference for code tool approval behavior. */
+  codeApprovalMode?: CodeApprovalMode;
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
   clientRequestId?: string;
   /** Client-only carry-through for a receipt-bound queued recovery. */
@@ -604,6 +615,9 @@ export type TConfig = {
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
     environments?: TPublicCodeEnvironment[];
+    approvalsEnabled?: boolean;
+    /** Approval modes the endpoint policy permits the client to offer. */
+    approvalModes?: CodeApprovalMode[];
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;
