@@ -1,4 +1,4 @@
-import { ShieldCheck, Hand } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Hand } from 'lucide-react';
 import {
   Button,
   DropdownMenu,
@@ -32,7 +32,14 @@ export default function CodeApprovalMenu({
   const labels: Record<CodeApprovalMode, string> = {
     ask: localize('com_ui_code_approval_ask'),
     acceptEdits: localize('com_ui_code_approval_accept_edits'),
+    fullAccess: localize('com_ui_code_approval_full_access'),
   };
+  const descriptions: Record<CodeApprovalMode, string> = {
+    ask: localize('com_ui_code_approval_ask_description'),
+    acceptEdits: localize('com_ui_code_approval_accept_edits_description'),
+    fullAccess: localize('com_ui_code_approval_full_access_description'),
+  };
+  const ModeIcon = { ask: Hand, acceptEdits: ShieldCheck, fullAccess: ShieldAlert }[selected];
 
   return (
     <DropdownMenu>
@@ -46,7 +53,7 @@ export default function CodeApprovalMenu({
           className="h-8 gap-1.5 rounded-full px-2 text-text-secondary"
           data-testid="code-approval-mode"
         >
-          {selected === 'ask' ? <Hand aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
+          <ModeIcon aria-hidden="true" />
           <span>{labels[selected]}</span>
         </Button>
       </DropdownMenuTrigger>
@@ -67,13 +74,7 @@ export default function CodeApprovalMenu({
             <DropdownMenuRadioItem key={mode} value={mode}>
               <div>
                 <div>{labels[mode]}</div>
-                <div className="text-xs text-text-tertiary">
-                  {localize(
-                    mode === 'ask'
-                      ? 'com_ui_code_approval_ask_description'
-                      : 'com_ui_code_approval_accept_edits_description',
-                  )}
-                </div>
+                <div className="text-xs text-text-tertiary">{descriptions[mode]}</div>
               </div>
             </DropdownMenuRadioItem>
           ))}

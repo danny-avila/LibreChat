@@ -175,7 +175,7 @@ try {
               configSchema: {
                 permissions: {
                   fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
-                  commandExecution: { allowed: ['ask'], default: 'ask' },
+                  commandExecution: { allowed: ['ask', 'allow'], default: 'ask' },
                 },
               },
             },

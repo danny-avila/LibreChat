@@ -56,4 +56,26 @@ describe('CodeApprovalMenu', () => {
     );
     expect(screen.queryByTestId('code-approval-mode')).not.toBeInTheDocument();
   });
+
+  test('selects full access on the conversation with sandbox scope explained', async () => {
+    mockUseCodeApprovalMode.mockReturnValue({
+      available: true,
+      modes: ['ask', 'acceptEdits', 'fullAccess'],
+      selected: 'ask',
+    });
+    render(
+      <CodeApprovalMenu
+        conversation={conversation}
+        setConversation={mockSetConversation}
+        disabled={false}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('code-approval-mode'));
+    expect(screen.getByText('com_ui_code_approval_full_access_description')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('com_ui_code_approval_full_access'));
+    expect(mockSetConversation.mock.calls[0][0](conversation)).toEqual({
+      ...conversation,
+      codeApprovalMode: 'fullAccess',
+    });
+  });
 });

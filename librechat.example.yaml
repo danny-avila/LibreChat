@@ -628,6 +628,10 @@ endpoints:
   #               allowed: [allow, ask, deny]
   #               default: ask
   #             commandExecution:
+  #               # Add allow to offer Full access in the chat composer. Both
+  #               # permission categories must permit allow; defaults can stay ask.
+  #               # Full access skips routine code prompts within the worker sandbox.
+  #               # Explicit endpoint ask/deny rules and hooks still apply.
   #               allowed: [ask, deny]
   #               default: ask
   #         pairing:

@@ -274,7 +274,7 @@ describe('createEndpointsConfigService', () => {
       expect(result?.[EModelEndpoint.agents]?.statefulCodeSessions).toEqual({
         allowedEnvironments: ['user'],
         approvalsEnabled: true,
-        approvalModes: ['ask', 'acceptEdits'],
+        approvalModes: ['ask', 'acceptEdits', 'fullAccess'],
         environments: [],
       });
     });
@@ -283,7 +283,7 @@ describe('createEndpointsConfigService', () => {
       [{ enabled: true }, ['ask']],
       [{ enabled: true, mode: 'default' }, ['ask']],
       [{ enabled: true, mode: 'dontAsk' }, ['ask']],
-      [{ enabled: true, mode: 'bypass' }, ['ask', 'acceptEdits']],
+      [{ enabled: true, mode: 'bypass' }, ['ask', 'acceptEdits', 'fullAccess']],
     ])('exposes approval modes allowed by endpoint policy %p', async (toolApproval, expected) => {
       const deps = createMockDeps({
         loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({

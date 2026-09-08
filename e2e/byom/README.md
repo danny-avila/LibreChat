@@ -40,6 +40,8 @@ do not relax that policy to make the test pass.
 6. Rejected creation leaves no file, and creation has no side effect before approval.
 7. Selecting worker B does not expose worker A's file; B's write leaves A unchanged.
 8. Stopping B produces a persisted tool failure, not success or fallback to A.
+9. Selecting **Full access** runs commands and physically creates a file without
+   approval prompts, survives reload, and can switch back to **Ask before changes**.
 
 Assertions inspect **tool outputs**, not echoed arguments or the model's final prose.
 The default hosted Code API URL is deliberately pointed at an invalid local route,
@@ -52,7 +54,8 @@ and workspaces. Ports are dynamically assigned, not the usual development ports.
 Listeners are loopback-only. No existing database, launchd worker, pairing, or project
 directory is reused. Children receive an allowlisted environment; checkout `.env`
 keys are neutralized. Mutations default to real UI approval; the test explicitly selects
-**Accept edits** for one file edit, while commands remain approval-gated and reads are allowed.
+**Accept edits** for one file edit, then **Full access** for unattended commands and
+file creation. Returning to **Ask before changes** restores approval prompts.
 
 The command stops its children on success, failure, SIGINT, and SIGTERM. The private
 temporary run directory is printed and retained for debugging; it contains test-only
