@@ -505,12 +505,44 @@ describe('useUnseenConversations', () => {
         queryFn: async () =>
           page([
             { conversationId: 'known', title: 'Known', lastResponseAt: RESPONDED_AGAIN_AT },
-            { conversationId: 'new', title: 'New', lastResponseAt: RESPONDED_AT },
+            {
+              conversationId: 'new',
+              title: 'New',
+              lastResponseAt: RESPONDED_AT,
+              updatedAt: RESPONDED_AT,
+            },
           ]),
       });
     });
 
     expect(result.current?.arrivalStamps).toEqual([['new', RESPONDED_AT]]);
+  });
+
+  it('keeps metadata-promoted unread backlog out of reply arrivals', async () => {
+    const { result, queryClient } = setup();
+    act(() => {
+      queryClient.setQueryData(listKeyArchived, page([]));
+    });
+    await act(async () => {
+      await queryClient.fetchQuery({
+        queryKey: listKeyActive,
+        meta: { replyDiscovery: true },
+        queryFn: async () =>
+          page([
+            {
+              conversationId: 'renamed-backlog',
+              title: 'Renamed on another device',
+              lastResponseAt: RESPONDED_AT,
+              updatedAt: RESPONDED_AGAIN_AT,
+            },
+          ]),
+      });
+    });
+
+    expect(result.current?.unseen.map((convo) => convo.conversationId)).toEqual([
+      'renamed-backlog',
+    ]);
+    expect(result.current?.arrivalStamps).toEqual([]);
   });
 
   it('does not treat pagination or a newly mounted variant as a reply arrival', () => {

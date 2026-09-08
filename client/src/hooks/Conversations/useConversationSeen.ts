@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import { findConvoInAllQueries, isConversationUnseen } from '~/utils';
+import { findConvoInAllQueries, hasLocallyCommittedReply, isConversationUnseen } from '~/utils';
 import { consumeFocusSuppression } from './notificationNavigation';
 import { useMarkConversationSeenMutation } from '~/data-provider';
 
@@ -49,6 +49,46 @@ export default function useConversationSeen(
    * rejection would immediately re-arm the trigger and spin requests for as long as the
    * network keeps refusing them. Re-armed by a genuinely newer reply, or by refocusing. */
   const attemptedRef = useRef<Map<string, string | undefined>>(new Map());
+  const markSeenRef = useRef<() => void>(() => undefined);
+
+  const scheduleRenderedCheck = useCallback(
+    (expectedStamp: string | undefined, locallyCommitted: boolean) => {
+      if (!conversationId) {
+        return;
+      }
+      if (pendingFrameRef.current != null) {
+        window.cancelAnimationFrame(pendingFrameRef.current);
+      }
+      pendingFrameRef.current = window.requestAnimationFrame(() => {
+        pendingFrameRef.current = window.requestAnimationFrame(() => {
+          pendingFrameRef.current = null;
+          const cached = findConvoInAllQueries(queryClient, conversationId);
+          const messagesState = queryClient.getQueryState([QueryKeys.messages, conversationId]);
+          const messagesReady =
+            messagesState?.status === 'success' && messagesState.fetchStatus === 'idle';
+          const proofStillHolds =
+            locallyCommitted &&
+            expectedStamp != null &&
+            hasLocallyCommittedReply(queryClient, conversationId, expectedStamp);
+          if (
+            expectedStamp != null &&
+            messagesReady &&
+            cached?.lastResponseAt === expectedStamp &&
+            isConversationUnseen(cached) &&
+            (locallyCommitted ? cached.lastResponseIsManual !== true && proofStillHolds : true)
+          ) {
+            renderedMessagesRef.current.set(conversationId, expectedStamp);
+          }
+          const measured = measureRef.current?.() ?? null;
+          if (measured != null) {
+            isNearBottomRef.current = measured;
+          }
+          markSeenRef.current();
+        });
+      });
+    },
+    [conversationId, queryClient],
+  );
 
   const markSeenIfCaughtUp = useCallback(
     (retryMessages = false) => {
@@ -87,6 +127,17 @@ export default function useConversationSeen(
       }
 
       const renderedStamp = renderedMessagesRef.current.get(conversationId);
+      if (
+        renderedStamp !== lastResponseAt &&
+        cached?.lastResponseIsManual !== true &&
+        hasLocallyCommittedReply(queryClient, conversationId, lastResponseAt)
+      ) {
+        /* The terminal SSE handler paired this exact durable stamp with the messages cache. It
+         * is proof of the reply only after the same two-frame commit/paint delay as a fetch. */
+        scheduleRenderedCheck(lastResponseAt, true);
+        return;
+      }
+
       if (renderedStamp !== lastResponseAt) {
         if (requestedMessagesRef.current.get(conversationId) === lastResponseAt) {
           /* The requested fetch succeeded, but its cache event has not painted yet. */
@@ -108,8 +159,10 @@ export default function useConversationSeen(
        * newer, so a reply persisted from another device mid-request stays unseen. */
       markSeen({ conversationId, lastResponseAt });
     },
-    [conversationId, queryClient, markSeen],
+    [conversationId, queryClient, markSeen, scheduleRenderedCheck],
   );
+
+  markSeenRef.current = markSeenIfCaughtUp;
 
   /** Refocusing is a deliberate return to the conversation, and a human-paced one, so it is
    *  the right moment to let a write or message refresh that failed while offline try again. */
@@ -193,27 +246,7 @@ export default function useConversationSeen(
         const stampAtFetchStart = fetchStartStampRef.current.get(conversationId);
         /* Capture the stamp from fetch start, not success: a newer reply can reach the list while
          * this request is in flight, and that reply was not part of the fetched/rendered tree. */
-        if (pendingFrameRef.current != null) {
-          window.cancelAnimationFrame(pendingFrameRef.current);
-        }
-        pendingFrameRef.current = window.requestAnimationFrame(() => {
-          pendingFrameRef.current = window.requestAnimationFrame(() => {
-            pendingFrameRef.current = null;
-            const cached = findConvoInAllQueries(queryClient, conversationId);
-            if (
-              stampAtFetchStart &&
-              cached?.lastResponseAt === stampAtFetchStart &&
-              isConversationUnseen(cached)
-            ) {
-              renderedMessagesRef.current.set(conversationId, stampAtFetchStart);
-            }
-            const measured = measureRef.current?.() ?? null;
-            if (measured != null) {
-              isNearBottomRef.current = measured;
-            }
-            markSeenIfCaughtUp();
-          });
-        });
+        scheduleRenderedCheck(stampAtFetchStart, false);
         return;
       }
       if (
@@ -232,7 +265,7 @@ export default function useConversationSeen(
         pendingFrameRef.current = null;
       }
     };
-  }, [conversationId, queryClient, markSeenIfCaughtUp]);
+  }, [conversationId, queryClient, markSeenIfCaughtUp, scheduleRenderedCheck]);
 
   return reportNearBottom;
 }

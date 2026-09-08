@@ -539,7 +539,8 @@ export function createConversationMethods(
    *
    * The read and write are a classic compare-and-set pair so this remains compatible with
    * DocumentDB: concurrent writers that read the same value retry against the winner and use
-   * `max(now, previous + 1ms)`. Only a successful write supplies a reply stamp.
+   * `max(now, previous + 1ms, updatedAt + 1ms)`. Advancing both versions makes the reply itself
+   * distinguishable from a metadata-only promotion. Only a successful write supplies a stamp.
    */
   async function stampReplyWithCas(
     Conversation: Model<IConversation>,
@@ -549,20 +550,25 @@ export function createConversationMethods(
     const replyFilter = { ...filter, isTemporary: { $ne: true } };
     for (;;) {
       const current = await Conversation.findOne(replyFilter)
-        .select({ lastResponseAt: 1 })
-        .lean<Pick<IConversation, 'lastResponseAt'> | null>();
+        .select({ lastResponseAt: 1, updatedAt: 1 })
+        .lean<Pick<IConversation, 'lastResponseAt' | 'updatedAt'> | null>();
       if (!current) {
         return null;
       }
       const previous = current.lastResponseAt;
-      const stamp = nextMonotonicStamp(previous);
+      const latestActivity =
+        current.updatedAt && (!previous || current.updatedAt > previous)
+          ? current.updatedAt
+          : previous;
+      const stamp = nextMonotonicStamp(latestActivity);
       const casFilter: FilterQuery<IConversation> =
         previous == null
           ? {
               ...replyFilter,
+              updatedAt: current.updatedAt ?? null,
               $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
             }
-          : { ...replyFilter, lastResponseAt: previous };
+          : { ...replyFilter, lastResponseAt: previous, updatedAt: current.updatedAt ?? null };
       const stamped = await Conversation.findOneAndUpdate(
         casFilter,
         {

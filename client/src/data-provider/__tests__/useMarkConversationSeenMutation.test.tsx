@@ -4,10 +4,11 @@ import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { ConversationCursorData } from '~/utils/convos';
+import { useMarkConversationSeenMutation, useMarkConversationUnreadMutation } from '../mutations';
 import { isConversationUnseen, updateConvoInAllQueries } from '~/utils';
-import { useMarkConversationSeenMutation } from '../mutations';
 
 const mockMarkSeen = jest.fn();
+const mockMarkUnread = jest.fn();
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
   return {
@@ -15,6 +16,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       markConversationSeen: (...args: unknown[]) => mockMarkSeen(...args),
+      markConversationUnread: (...args: unknown[]) => mockMarkUnread(...args),
     },
   };
 });
@@ -60,12 +62,13 @@ function setup(lastSeenAt?: string) {
     queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey)?.pages[0]
       .conversations[0];
 
-  return { ...view, cached, queryClient };
+  return { ...view, cached, queryClient, wrapper };
 }
 
 describe('useMarkConversationSeenMutation', () => {
   beforeEach(() => {
     mockMarkSeen.mockReset();
+    mockMarkUnread.mockReset();
   });
 
   it('optimistically marks the conversation seen while the request is in flight', async () => {
@@ -108,26 +111,28 @@ describe('useMarkConversationSeenMutation', () => {
     expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
   });
 
-  it('re-applies the acknowledgement when a refetch lands on top of it', async () => {
-    /* A list refetch already in flight can have read the old catch-up before the write and
-       commit afterwards, putting the dot back for a reply the server did accept. */
-    const request = deferred();
-    mockMarkSeen.mockReturnValue(request.promise);
-    const { result, cached, queryClient } = setup();
+  it('does not reapply a stale seen acknowledgement after a later unread write clears it', async () => {
+    const seenRequest = deferred();
+    mockMarkSeen.mockReturnValue(seenRequest.promise);
+    mockMarkUnread.mockResolvedValue({ modified: true, lastResponseAt: RESPONDED_AT });
+    const { result, cached, queryClient, wrapper } = setup(SEEN_AT);
+    const unread = renderHook(() => useMarkConversationUnreadMutation(), { wrapper });
 
     await act(async () => {
-      const pending = result.current.mutateAsync({
+      const seenPending = result.current.mutateAsync({
         conversationId: CONVO_ID,
         lastResponseAt: RESPONDED_AT,
       });
       await flush();
-      seedList(queryClient);
-      request.resolve({ modified: true });
-      await pending;
+      await unread.result.current.mutateAsync({ conversationId: CONVO_ID });
+      /* A server refresh after the unread settles carries the cleared catch-up. */
+      seedList(queryClient, RESPONDED_AT);
+      seenRequest.resolve({ modified: true });
+      await seenPending;
     });
 
-    expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
-    expect(isConversationUnseen(cached())).toBe(false);
+    expect(cached()?.lastSeenAt).toBeUndefined();
+    expect(isConversationUnseen(cached())).toBe(true);
   });
 
   it('cancels list fetches already reading the old catch-up', async () => {

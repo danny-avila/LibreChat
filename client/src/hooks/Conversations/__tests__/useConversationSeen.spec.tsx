@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { suppressFocusAcknowledgement } from '../notificationNavigation';
 import useConversationSeen from '../useConversationSeen';
+import { markLocallyCommittedReply } from '~/utils';
 
 const mockMarkSeen = jest.fn();
 jest.mock('~/data-provider', () => ({
@@ -125,6 +126,23 @@ describe('useConversationSeen', () => {
         lastResponseAt: RESPONDED_AT,
       }),
     );
+  });
+
+  it('acknowledges a locally committed final without refetching message history', async () => {
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
+    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'final-reply' }]);
+    markLocallyCommittedReply(queryClient, CONVO_ID, RESPONDED_AT);
+    const invalidateMessages = jest.spyOn(queryClient, 'invalidateQueries');
+
+    act(() => result.current(true));
+
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+    expect(invalidateMessages).not.toHaveBeenCalled();
   });
 
   it('sends nothing while the user is scrolled away from the newest message', () => {

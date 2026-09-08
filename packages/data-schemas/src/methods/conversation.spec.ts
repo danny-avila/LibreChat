@@ -2243,6 +2243,24 @@ describe('Conversation Operations', () => {
       expect(convo?.updatedAt?.getTime()).toBeGreaterThan(createdAt.getTime());
     });
 
+    it('makes a new reply the latest activity even after a future-dated metadata update', async () => {
+      const metadataAt = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        ...mockConversationData,
+        user: 'user123',
+      });
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { updatedAt: metadataAt } },
+        { timestamps: false },
+      );
+
+      const settled = await stampConvoLastResponse('user123', mockConversationData.conversationId);
+
+      expect(settled?.lastResponseAt?.getTime()).toBeGreaterThan(metadataAt.getTime());
+      expect(settled?.updatedAt).toEqual(settled?.lastResponseAt);
+    });
+
     it('clears a catch-up and manual marker when the real reply advances the stamp', async () => {
       /* `/seen` can accept the previous reply while this one is being persisted, and a
          replica's clock can date that catch-up ahead: the stamp and the clear are one write. */

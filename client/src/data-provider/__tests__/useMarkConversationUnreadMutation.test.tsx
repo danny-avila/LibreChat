@@ -269,6 +269,80 @@ describe('useMarkConversationUnreadMutation', () => {
     expect(cached()?.lastSeenAt).toBeUndefined();
     expect(isConversationUnseen(cached())).toBe(true);
   });
+  it('keeps an accepted unread when the successor request fails', async () => {
+    const first = deferred();
+    const second = deferred();
+    mockMarkUnread.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, cached } = setup(RESPONDED_AT, SEEN_AT);
+
+    await act(async () => {
+      const firstPending = result.current.mutateAsync({ conversationId: CONVO_ID });
+      await flush();
+      const secondPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      first.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
+      await firstPending;
+      second.reject(new Error('network down'));
+      await secondPending;
+    });
+
+    expect(cached()?.lastSeenAt).toBeUndefined();
+    expect(isConversationUnseen(cached())).toBe(true);
+  });
+
+  it('reasserts an earlier accepted unread when the failed successor settles first', async () => {
+    const first = deferred();
+    const second = deferred();
+    mockMarkUnread.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, cached } = setup(RESPONDED_AT, SEEN_AT);
+
+    await act(async () => {
+      const firstPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      const secondPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      second.reject(new Error('network down'));
+      await secondPending;
+      first.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
+      await firstPending;
+    });
+
+    expect(cached()?.lastSeenAt).toBeUndefined();
+    expect(isConversationUnseen(cached())).toBe(true);
+  });
+
+  it('restores the original read state when overlapping unread requests both fail', async () => {
+    const first = deferred();
+    const second = deferred();
+    mockMarkUnread.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, cached } = setup();
+
+    await act(async () => {
+      const firstPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      const secondPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      /* The successor owns the optimistic row but must still roll back to the first baseline. */
+      second.reject(new Error('network down'));
+      first.reject(new Error('network down'));
+      await Promise.all([firstPending, secondPending]);
+    });
+
+    expect(cached()?.lastResponseAt).toBeUndefined();
+    expect(cached()?.lastResponseIsManual).toBeUndefined();
+    expect(cached()?.lastSeenAt).toBeUndefined();
+    expect(isConversationUnseen(cached())).toBe(false);
+  });
 });
 
 /** Lets a test place work between the optimistic pass and the response callback. */
