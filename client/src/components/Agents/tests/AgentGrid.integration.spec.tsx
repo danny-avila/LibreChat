@@ -23,13 +23,14 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string, options?: any) => {
   const mockTranslations: Record<string, string> = {
     com_agents_top_picks: 'Top Picks',
     com_agents_all: 'All Agents',
-    com_agents_recommended: 'Our recommended agents',
     com_agents_results_for: 'Results for "{{query}}"',
     com_agents_see_more: 'See more',
     com_agents_error_loading: 'Error loading agents',
     com_agents_error_searching: 'Error searching agents',
     com_agents_search_empty_heading: 'No results found',
     com_agents_empty_state_heading: 'No agents available',
+    com_agents_mine_empty_state_heading: "You haven't created any Agents yet",
+    com_agents_mine_promoted_empty_state_heading: 'None of your Agents are in Top Picks',
     com_agents_loading: 'Loading...',
     com_agents_grid_announcement: '{{count}} agents in {{category}}',
     com_agents_no_more_results: "You've reached the end of the results",
@@ -264,7 +265,7 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
         requiredPermission: 1,
         category: 'finance',
         search: 'test query',
-        limit: 6,
+        limit: 8,
       });
     });
 
@@ -274,7 +275,7 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
       expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
         requiredPermission: 1,
         promoted: 1,
-        limit: 6,
+        limit: 8,
       });
     });
 
@@ -283,7 +284,7 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
 
       expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
         requiredPermission: 1,
-        limit: 6,
+        limit: 8,
       });
     });
 
@@ -293,8 +294,102 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
       expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
         requiredPermission: 1,
         search: 'test',
-        limit: 6,
+        limit: 8,
       });
+    });
+
+    it('should not include sort/mine in query params when neither prop is provided (preserves existing cache key)', () => {
+      render(<AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />);
+
+      const calledWith = mockUseMarketplaceAgentsInfiniteQuery.mock.calls[0][0];
+      expect(calledWith).not.toHaveProperty('sort');
+      expect(calledWith).not.toHaveProperty('mine');
+    });
+
+    it('should include sort in query params when a sort mode is provided', () => {
+      render(
+        <AgentGrid
+          category="finance"
+          searchQuery=""
+          onSelectAgent={mockOnSelectAgent}
+          sort="popular"
+        />,
+      );
+
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        category: 'finance',
+        sort: 'popular',
+        limit: 8,
+      });
+    });
+
+    it('should include mine=1 in query params when the mine filter is on', () => {
+      render(
+        <AgentGrid category="all" searchQuery="" onSelectAgent={mockOnSelectAgent} mine={1} />,
+      );
+
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        mine: 1,
+        limit: 8,
+      });
+    });
+
+    it('should not include mine in query params when mine is 0', () => {
+      render(
+        <AgentGrid category="all" searchQuery="" onSelectAgent={mockOnSelectAgent} mine={0} />,
+      );
+
+      const calledWith = mockUseMarketplaceAgentsInfiniteQuery.mock.calls[0][0];
+      expect(calledWith).not.toHaveProperty('mine');
+    });
+
+    it('should combine sort, mine, category and search into a single query params object', () => {
+      render(
+        <AgentGrid
+          category="finance"
+          searchQuery="automation"
+          onSelectAgent={mockOnSelectAgent}
+          sort="author"
+          mine={1}
+        />,
+      );
+
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        category: 'finance',
+        search: 'automation',
+        sort: 'author',
+        mine: 1,
+        limit: 8,
+      });
+    });
+
+    it('should send promoted=1 alongside mine rather than a category name', () => {
+      render(
+        <AgentGrid category="promoted" searchQuery="" onSelectAgent={mockOnSelectAgent} mine={1} />,
+      );
+
+      expect(mockUseMarketplaceAgentsInfiniteQuery).toHaveBeenCalledWith({
+        requiredPermission: 1,
+        promoted: 1,
+        mine: 1,
+        limit: 8,
+      });
+    });
+
+    it('should rebuild the query params when mine flips on', () => {
+      const { rerender } = render(
+        <AgentGrid category="all" searchQuery="" onSelectAgent={mockOnSelectAgent} mine={0} />,
+      );
+
+      rerender(
+        <AgentGrid category="all" searchQuery="" onSelectAgent={mockOnSelectAgent} mine={1} />,
+      );
+
+      const lastCall = mockUseMarketplaceAgentsInfiniteQuery.mock.calls.at(-1)?.[0];
+      expect(lastCall).toEqual({ requiredPermission: 1, mine: 1, limit: 8 });
     });
   });
 
@@ -416,6 +511,71 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
 
       expect(screen.getByText('Error: Failed to fetch agents')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+  });
+
+  describe('Mine Filter empty states', () => {
+    const renderEmptyGrid = (props: { category: string; searchQuery?: string; mine?: 0 | 1 }) => {
+      mockUseMarketplaceAgentsInfiniteQuery.mockReturnValue({
+        ...defaultMockQueryResult,
+        data: {
+          pages: [
+            {
+              data: [],
+            },
+          ],
+        },
+        hasNextPage: false,
+      });
+
+      const Wrapper = createWrapper();
+      return render(
+        <Wrapper>
+          <AgentGrid
+            category={props.category}
+            searchQuery={props.searchQuery ?? ''}
+            onSelectAgent={mockOnSelectAgent}
+            mine={props.mine}
+          />
+        </Wrapper>,
+      );
+    };
+
+    it('should use the generic empty state when the mine filter is off', () => {
+      renderEmptyGrid({ category: 'all', mine: 0 });
+
+      expect(screen.getByText('No agents available')).toBeInTheDocument();
+    });
+
+    it('should explain that the user has authored nothing when the mine filter is on', () => {
+      renderEmptyGrid({ category: 'all', mine: 1 });
+
+      expect(screen.getByText("You haven't created any Agents yet")).toBeInTheDocument();
+    });
+
+    it('should use a category-specific message for mine + promoted, which the generic one would misstate', () => {
+      // Reachable by direct URL or history navigation only - the toggle itself
+      // moves off `promoted`, because that pair is empty by construction.
+      renderEmptyGrid({ category: 'promoted', mine: 1 });
+
+      expect(screen.getByText('None of your Agents are in Top Picks')).toBeInTheDocument();
+      expect(screen.queryByText("You haven't created any Agents yet")).not.toBeInTheDocument();
+      expect(mockOnSelectAgent).not.toHaveBeenCalled();
+    });
+
+    it('should let a search win over both mine-specific messages', () => {
+      renderEmptyGrid({ category: 'promoted', searchQuery: 'invoice', mine: 1 });
+
+      expect(screen.getByText('No agents available')).toBeInTheDocument();
+      expect(screen.queryByText('None of your Agents are in Top Picks')).not.toBeInTheDocument();
+    });
+
+    it('should announce the same heading it renders', () => {
+      renderEmptyGrid({ category: 'promoted', mine: 1 });
+
+      expect(
+        screen.getByRole('status', { name: 'None of your Agents are in Top Picks' }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -878,6 +1038,80 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
           expect(screen.getAllByRole('gridcell')).toHaveLength(12);
         });
       });
+    });
+  });
+
+  describe('Loaded Count Reporting (onCountChange)', () => {
+    it('should report the initially loaded agent count', () => {
+      const onCountChange = jest.fn();
+      const Wrapper = createWrapper();
+      render(
+        <Wrapper>
+          <AgentGrid
+            category="finance"
+            searchQuery=""
+            onSelectAgent={mockOnSelectAgent}
+            onCountChange={onCountChange}
+          />
+        </Wrapper>,
+      );
+
+      // defaultMockQueryResult has 2 agents loaded on the first page.
+      expect(onCountChange).toHaveBeenCalledWith(2);
+    });
+
+    it('should report the accumulated count as more pages are loaded', async () => {
+      const firstPage = createMockResponse(['1', '2', '3'], true, 'cursor-3');
+      const secondPage = createMockResponse(['4', '5', '6'], false);
+      let currentPages = [firstPage];
+      const onCountChange = jest.fn();
+
+      mockUseMarketplaceAgentsInfiniteQuery.mockImplementation(() =>
+        createMockInfiniteQuery(currentPages, { hasNextPage: currentPages.length < 2 }),
+      );
+
+      const Wrapper = createWrapper();
+      const { rerender } = render(
+        <Wrapper>
+          <AgentGrid
+            category="all"
+            searchQuery=""
+            onSelectAgent={mockOnSelectAgent}
+            onCountChange={onCountChange}
+          />
+        </Wrapper>,
+      );
+
+      await waitFor(() => {
+        expect(onCountChange).toHaveBeenCalledWith(3);
+      });
+
+      currentPages = [firstPage, secondPage];
+      rerender(
+        <Wrapper>
+          <AgentGrid
+            category="all"
+            searchQuery=""
+            onSelectAgent={mockOnSelectAgent}
+            onCountChange={onCountChange}
+          />
+        </Wrapper>,
+      );
+
+      await waitFor(() => {
+        expect(onCountChange).toHaveBeenLastCalledWith(6);
+      });
+    });
+
+    it('should not throw when onCountChange is not provided', () => {
+      const Wrapper = createWrapper();
+      expect(() =>
+        render(
+          <Wrapper>
+            <AgentGrid category="finance" searchQuery="" onSelectAgent={mockOnSelectAgent} />
+          </Wrapper>,
+        ),
+      ).not.toThrow();
     });
   });
 });
