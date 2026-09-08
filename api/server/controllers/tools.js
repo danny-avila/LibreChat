@@ -5,6 +5,8 @@ const {
   assertDirectToolOutputAllowed,
   loadWebSearchAuth,
   isContentFilterError,
+  isActiveExpirationDate,
+  getConversationExpirationDate,
 } = require('@librechat/api');
 const {
   Tools,
@@ -123,13 +125,18 @@ const callTool = async (req, res) => {
     }
 
     const message = await getMessage({ user: req.user.id, messageId });
-    if (!message) {
+    const sourceExpiration = getConversationExpirationDate(message);
+    if (!message || (sourceExpiration != null && !isActiveExpirationDate(sourceExpiration))) {
       logger.debug(`[${toolId}/call] User ${req.user.id} attempted call with invalid message ID`);
       res.status(404).json({ message: 'Message not found' });
       return;
     }
     const conversationId = message.conversationId;
     req.body.conversationId = conversationId;
+    req.fileRetentionSource = {
+      isTemporary: message.isTemporary,
+      expiredAt: message.expiredAt,
+    };
     const retentionExpiryPromise = getRetentionExpiry(req);
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;

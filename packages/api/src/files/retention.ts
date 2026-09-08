@@ -18,6 +18,8 @@ export type RetentionConversation = {
 };
 
 export type RetentionRequest = {
+  /** Owner-authenticated source row for operations attached to an existing message. */
+  fileRetentionSource?: RetentionConversation;
   user?: {
     id?: string;
     tenantId?: string;
@@ -101,6 +103,9 @@ const getRetentionCacheKey = (req: RetentionRequest): string =>
     req.user?.id ?? '',
     req.body?.conversationId ?? '',
     String(req.body?.isTemporary ?? ''),
+    String(req.fileRetentionSource?.expiredAt ?? ''),
+    String(req.fileRetentionSource?.isTemporary ?? ''),
+    String(req.fileRetentionSource != null),
   ].join('|');
 
 async function computeRetentionExpiry(
@@ -111,6 +116,16 @@ async function computeRetentionExpiry(
   const isRetentionAll = interfaceConfig?.retentionMode === RetentionMode.ALL;
   const conversationId = req?.body?.conversationId;
   const userId = req?.user?.id;
+  if (req?.fileRetentionSource != null) {
+    const source = req.fileRetentionSource;
+    const expiredAt = getConversationExpirationDate(source);
+    if (expiredAt != null) {
+      return { expiredAt };
+    }
+    return isRetentionAll || source.isTemporary === true
+      ? createRetentionExpiry(req, dependencies, source.isTemporary === true)
+      : {};
+  }
   if (
     isRetentionAll &&
     (interfaceConfig.generalChatRetention === undefined ||
@@ -269,6 +284,7 @@ export const createMinimalRetentionRequest = (
   }
 
   return {
+    fileRetentionSource: req.fileRetentionSource,
     user: req.user
       ? {
           id: req.user.id,

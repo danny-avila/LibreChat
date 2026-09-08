@@ -114,8 +114,15 @@ describe('callTool generated-content protection', () => {
 
   it('starts retention before tool invocation using the authenticated message conversation', async () => {
     const { getRetentionExpiry } = require('~/server/services/Files/retention');
+    const { getMessage } = require('~/models');
     let resolveRetention;
     const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+    getMessage.mockResolvedValueOnce({
+      messageId: 'message-id',
+      conversationId: 'conversation-id',
+      isTemporary: true,
+      expiredAt,
+    });
     getRetentionExpiry.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -132,6 +139,7 @@ describe('callTool generated-content protection', () => {
     const res = createResponse();
     await callTool(req, res);
     expect(req.body.conversationId).toBe('conversation-id');
+    expect(req.fileRetentionSource).toEqual({ isTemporary: true, expiredAt });
     expect(mockCreateToolCall).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: 'conversation-id',
@@ -139,6 +147,28 @@ describe('callTool generated-content protection', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('rejects an expired source message before loading or invoking a tool', async () => {
+    const { getMessage } = require('~/models');
+    const { loadTools } = require('~/app/clients/tools/util');
+    const { getRetentionExpiry } = require('~/server/services/Files/retention');
+    getMessage.mockResolvedValueOnce({
+      messageId: 'message-id',
+      conversationId: 'conversation-id',
+      isTemporary: true,
+      expiredAt: new Date(Date.now() - 1000),
+    });
+    const req = createRequest(undefined);
+    req.body.isTemporary = false;
+    const res = createResponse();
+    await callTool(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(getRetentionExpiry).not.toHaveBeenCalled();
+    expect(mockCreateToolCall).not.toHaveBeenCalled();
+    expect(mockProcessCodeOutput).not.toHaveBeenCalled();
   });
 
   it('blocks a configured tool output before tool-call persistence', async () => {

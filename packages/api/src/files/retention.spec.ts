@@ -53,6 +53,32 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
+  it('preserves a loaded message deadline across file request reconstruction without a read', async () => {
+    const req = request({
+      body: { isTemporary: false },
+      config: { interfaceConfig: { retentionMode: RetentionMode.ALL } },
+    });
+    req.fileRetentionSource = { isTemporary: true, expiredAt: expirationDate };
+    const result = await getRetentionExpiry(createMinimalRetentionRequest(req), dependencies);
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
+  });
+
+  it('uses loaded message type when a legacy row lacks a deadline', async () => {
+    const req = request({
+      body: { isTemporary: false },
+      config: { interfaceConfig: { retentionMode: RetentionMode.ALL } },
+    });
+    req.fileRetentionSource = { isTemporary: true };
+    await getRetentionExpiry(req, dependencies);
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).toHaveBeenCalledWith(
+      req.config?.interfaceConfig,
+      true,
+    );
+  });
+
   describe('independent retention periods', () => {
     const interfaceConfig = {
       retentionMode: RetentionMode.ALL,
