@@ -81,6 +81,9 @@ describe('Convos Routes', () => {
     /** Mock authenticated user */
     app.use((req, res, next) => {
       const tenantId = req.get('x-test-tenant');
+      if (req.get('x-test-resolved-temporary') === 'true') {
+        req.resolvedConversation = { isTemporary: true, expiredAt: new Date('2027-01-01') };
+      }
       req.user = {
         id: 'test-user-123',
         role: 'USER',
@@ -2034,19 +2037,24 @@ describe('Convos Routes', () => {
       );
     });
 
-    it('preserves the browser temporary-chat retention hint', async () => {
+    it('preserves resolved retention instead of accepting the browser hint', async () => {
       saveConvo.mockResolvedValue({ conversationId: 'temporary', isArchived: true });
 
       const response = await request(app)
         .post('/api/convos/archive')
+        .set('x-test-resolved-temporary', 'true')
         .send({
-          isTemporary: true,
+          isTemporary: false,
           arg: { conversationId: 'temporary', isArchived: true },
         });
 
       expect(response.status).toBe(200);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'test-user-123', isTemporary: true }),
+        expect.objectContaining({
+          userId: 'test-user-123',
+          isTemporary: true,
+          expiredAt: new Date('2027-01-01'),
+        }),
         expect.anything(),
         expect.anything(),
       );
@@ -2165,19 +2173,24 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(500);
     });
 
-    it('uses the shared title operation and preserves the temporary-chat retention hint', async () => {
+    it('uses the shared title operation and preserves resolved retention', async () => {
       saveConvo.mockResolvedValue({ conversationId: 'temporary', title: 'Trimmed title' });
 
       const response = await request(app)
         .post('/api/convos/update')
+        .set('x-test-resolved-temporary', 'true')
         .send({
-          isTemporary: true,
+          isTemporary: false,
           arg: { conversationId: 'temporary', title: '  Trimmed title  ' },
         });
 
       expect(response.status).toBe(201);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'test-user-123', isTemporary: true }),
+        expect.objectContaining({
+          userId: 'test-user-123',
+          isTemporary: true,
+          expiredAt: new Date('2027-01-01'),
+        }),
         { conversationId: 'temporary', title: 'Trimmed title' },
         expect.objectContaining({ noUpsert: true, tenantId: null }),
       );

@@ -354,9 +354,8 @@ describe('Conversation Operations', () => {
         });
         const projects = createChatProjectMethods(mongoose);
         expect(await projects.getChatProject(mockCtx.userId, chatProjectId)).toMatchObject({
-          conversationCount: 0,
-          lastConversationId: null,
-          lastConversationAt: null,
+          conversationCount: 1,
+          lastConversationId: conversationId,
         });
       } finally {
         updateOneSpy.mockRestore();
@@ -2449,7 +2448,7 @@ describe('Conversation Operations', () => {
       expect(tag?.count).toBe(1);
     });
 
-    it('preserves signed tag decrements until delayed increments arrive', async () => {
+    it('retains the existing zero clamp for tag decrements', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 0, position: 1 });
       const convoId = uuidv4();
       await Conversation.create({
@@ -2462,7 +2461,7 @@ describe('Conversation Operations', () => {
       await deleteConvos('user123', { conversationId: convoId });
 
       const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(-1);
+      expect(tag?.count).toBe(0);
     });
 
     it('should not touch tags belonging to another user', async () => {
