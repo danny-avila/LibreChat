@@ -3,13 +3,14 @@ import {
   Constants,
   EToolResources,
   PermissionBits,
+  PrincipalType,
   ResourceType,
   SkillsScope,
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, ProjectionType, Types } from 'mongoose';
-import type { AgentToolResources } from 'librechat-data-provider';
+import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
+import type { AgentSortOption, AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -17,6 +18,258 @@ import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
 const { mcp_delimiter } = Constants;
+
+/**
+ * Fallback used for the `author` sort when an agent has neither a joined
+ * user display name nor a denormalized `authorName`. U+10FFFF is the highest
+ * valid Unicode code point, so this sentinel sorts after every real display
+ * name — including ones starting with an emoji, whose leading UTF-8 byte is
+ * otherwise higher than any ASCII sentinel like `'zzz_unknown'`.
+ */
+const AUTHOR_SORT_SENTINEL = String.fromCodePoint(0x10ffff);
+
+/**
+ * The `author` sort's owner-fallback tier (see the `else` branch below) needs the exact
+ * same ACL entry the card's own `attachOwnerContacts` resolves against
+ * (`api/server/services/Agents/ownerContact.js`'s `OWNER_PERMISSION_BITS`): an entry
+ * granting every bit an owner holds, not merely VIEW.
+ */
+const OWNER_ACL_PERMISSION_BITS =
+  PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+
+/**
+ * Picks the earlier of two ACL entry sub-documents by (`grantedAt`, `createdAt`, `_id`) —
+ * the same tie-break `getFirstOwnerIdsByResource` applies via its `$sort`+`$group` pipeline
+ * (`api/server/services/Agents/ownerContact.js`). Written as a manual `$lt`/`$eq` cascade,
+ * not `$sortArray`+`$first`, because DocumentDB (this project's CI gate,
+ * `documentdb.spec.ts`) rejects `$sortArray` outright.
+ */
+function earlierAclEntry(a: string, b: string): Record<string, unknown> {
+  return {
+    $or: [
+      { $lt: [`${a}.grantedAt`, `${b}.grantedAt`] },
+      {
+        $and: [
+          { $eq: [`${a}.grantedAt`, `${b}.grantedAt`] },
+          {
+            $or: [
+              { $lt: [`${a}.createdAt`, `${b}.createdAt`] },
+              {
+                $and: [
+                  { $eq: [`${a}.createdAt`, `${b}.createdAt`] },
+                  { $lt: [`${a}._id`, `${b}._id`] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * `true` when `varRef` (already `$trim`-ed by the caller, so it is either `null` or a
+ * non-empty-checked string) is usable as a display name: non-empty, and not email-shaped.
+ * Mirrors `normalizeDisplayName` (`packages/api/src/agents/contact.ts`), which the card's
+ * owner-fallback also runs through — an owner's account email is never shown as their
+ * display name, only an opted-in `support_contact.email` is.
+ *
+ * The `$cond` guard keeps `$indexOfCP` from ever running on a `null` input (DocumentDB/Mongo
+ * both throw on that): when `varRef` is `null` the guard short-circuits to `-1` ("no `@`
+ * found"), which is moot anyway since the `$ne: [varRef, null]` branch already fails the
+ * `$and` in that case.
+ */
+function isValidDisplayName(varRef: string): Record<string, unknown> {
+  return {
+    $and: [
+      { $ne: [varRef, null] },
+      { $ne: [varRef, ''] },
+      {
+        $eq: [{ $cond: [{ $eq: [varRef, null] }, -1, { $indexOfCP: [varRef, '@'] }] }, -1],
+      },
+    ],
+  };
+}
+
+/**
+ * How each marketplace sort mode orders the agent list, and how a cursor taken from
+ * that ordering has to be read back.
+ *
+ * `createdAt` is a stored field, so 'newest'/'oldest' run as a plain `.find()`.
+ * `favoriteCount` and `authorDisplayName` only exist once the aggregation has computed
+ * them, so their cursor condition has to be applied as a later pipeline stage — but the
+ * comparison itself is identical in both cases, which is why one table covers all four.
+ *
+ * The `_id` tie-break is always ascending (`$gt`), independently of `direction`.
+ */
+const AGENT_SORT_CONFIG: Record<
+  AgentSortOption,
+  {
+    field: 'createdAt' | 'favoriteCount' | 'authorDisplayName';
+    direction: 1 | -1;
+    valueType: 'date' | 'number' | 'string';
+  }
+> = {
+  newest: { field: 'createdAt', direction: -1, valueType: 'date' },
+  oldest: { field: 'createdAt', direction: 1, valueType: 'date' },
+  popular: { field: 'favoriteCount', direction: -1, valueType: 'number' },
+  author: { field: 'authorDisplayName', direction: 1, valueType: 'string' },
+};
+
+/**
+ * Sort keys the list query needs internally — to order rows and to build the cursor —
+ * but which are not part of the endpoint's response contract. `createdAt` in particular
+ * has never been returned by this endpoint, and leaking any of them would make the
+ * response shape depend on `?sort=`.
+ */
+const INTERNAL_SORT_FIELDS = ['createdAt', 'favoriteCount', 'authorDisplayName'] as const;
+
+/**
+ * A stringified ObjectId is always exactly 24 hex characters. Checked explicitly rather
+ * than with `ObjectId.isValid`, which also accepts any 12-character string — so
+ * `'not-an-objec'` would pass and produce a garbage query instead of being rejected.
+ */
+const OBJECT_ID_HEX = /^[0-9a-fA-F]{24}$/;
+
+interface AgentSortCursor {
+  /** The last row's value for the mode's sort field; `''` means "that value was absent". */
+  primary: string;
+  /** The last row's `_id`, used as the tie-break. */
+  secondary: string;
+}
+
+function castCursorPrimary(
+  valueType: 'date' | 'number' | 'string',
+  raw: string,
+): Date | number | string {
+  if (valueType === 'date') {
+    return new Date(raw);
+  }
+  if (valueType === 'number') {
+    return Number(raw);
+  }
+  return raw;
+}
+
+/**
+ * Decodes a base64 cursor produced by `encodeAgentSortCursor`, returning `null` for
+ * anything the caller should treat as "start from page one": malformed base64/JSON, a
+ * `secondary` that is not an ObjectId, a `primary` that does not parse as the current
+ * mode's value type, or a cursor minted before sort modes existed (which had no
+ * `primary` key at all).
+ *
+ * Validating `primary` matters because it flows straight into a Mongo query: without
+ * this, a hand-edited `{"primary": null, ...}` reaches the driver as an `Invalid Date`.
+ */
+function decodeAgentSortCursor(after: string, sort: AgentSortOption): AgentSortCursor | null {
+  try {
+    const decoded = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
+    if (typeof decoded?.primary === 'undefined' || typeof decoded?.secondary !== 'string') {
+      return null;
+    }
+    if (!OBJECT_ID_HEX.test(decoded.secondary)) {
+      return null;
+    }
+    const primary = String(decoded.primary);
+    const { valueType } = AGENT_SORT_CONFIG[sort];
+    if (valueType === 'date') {
+      // `''` is exempt on purpose: it is the explicit "this row had no createdAt" tier
+      // read by `buildAgentSortCursorCondition`, not a malformed value.
+      if (primary !== '' && Number.isNaN(new Date(primary).getTime())) {
+        return null;
+      }
+    } else if (valueType === 'number' && !Number.isFinite(Number(primary))) {
+      return null;
+    }
+    return { primary, secondary: decoded.secondary };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builds the filter that selects everything ordered after a decoded cursor.
+ *
+ * Field-name-agnostic: the same Date/Number/String comparison works whether the sort
+ * field is stored (`createdAt`) or computed by an aggregation
+ * (`favoriteCount`/`authorDisplayName`).
+ *
+ * Agents inserted outside Mongoose (raw driver, migration scripts) can genuinely lack
+ * `createdAt`, since `timestamps: true` only fills documents Mongoose itself creates.
+ * Mongo sorts a missing field as `null`, the smallest possible value, so those agents
+ * cluster at one end: first under 'oldest' (ascending), last under 'newest'
+ * (descending). Plain `{createdAt: {$lt: <Date>}}` never matches a document that lacks
+ * the field at all, so without the two `$exists` branches below they would silently
+ * vanish from page two onwards.
+ */
+function buildAgentSortCursorCondition(
+  sort: AgentSortOption,
+  decoded: AgentSortCursor,
+  /**
+   * `decoded.secondary` already cast to an ObjectId. Passed in rather than constructed
+   * here because this module receives its mongoose instance through
+   * `createAgentMethods`, and the aggregation branch gets no automatic query casting.
+   */
+  secondaryId: Types.ObjectId,
+): Record<string, unknown> {
+  const { field, direction, valueType } = AGENT_SORT_CONFIG[sort];
+  const tieBreak = { _id: { $gt: secondaryId } };
+
+  // The previous page ended inside the group that has no `createdAt`.
+  if (valueType === 'date' && decoded.primary === '') {
+    const stillMissing = { [field]: { $exists: false }, ...tieBreak };
+    if (direction === 1) {
+      // 'oldest': that group sorts first, so everything with a real date is still ahead.
+      return { $or: [stillMissing, { [field]: { $exists: true } }] };
+    }
+    // 'newest': that group sorts last, so only the rest of it remains.
+    return stillMissing;
+  }
+
+  const op = direction === -1 ? '$lt' : '$gt';
+  const primaryValue = castCursorPrimary(valueType, decoded.primary);
+  const branches: Record<string, unknown>[] = [
+    { [field]: { [op]: primaryValue } },
+    { [field]: primaryValue, ...tieBreak },
+  ];
+
+  // 'newest' only: the previous page ended on the last row that *has* a date, so the
+  // whole missing-`createdAt` group is still ahead and must stay reachable. 'oldest'
+  // needs no equivalent — there, that group was exhausted by an earlier page.
+  if (valueType === 'date' && direction === -1) {
+    branches.push({ [field]: { $exists: false } });
+  }
+
+  return { $or: branches };
+}
+
+/**
+ * Encodes the cursor for the last row of a page. Reads whatever ended up on the mode's
+ * sort field, whether stored or computed by this request's aggregation.
+ *
+ * A row with no usable date encodes an empty `primary` rather than falling back to the
+ * epoch: an epoch cursor would be a date the row never had, and the resulting condition
+ * could never re-select it. It would also throw on `.toISOString()`, surfacing as a 500.
+ */
+function encodeAgentSortCursor(sort: AgentSortOption, lastAgent: Record<string, unknown>): string {
+  const { field, valueType } = AGENT_SORT_CONFIG[sort];
+  const rawValue = lastAgent[field];
+
+  let primary: string;
+  if (valueType === 'date') {
+    const asDate = rawValue instanceof Date ? rawValue : new Date(rawValue as string);
+    primary = Number.isNaN(asDate.getTime()) ? '' : asDate.toISOString();
+  } else if (valueType === 'number') {
+    primary = String(rawValue ?? 0);
+  } else {
+    primary = String(rawValue ?? AUTHOR_SORT_SENTINEL);
+  }
+
+  return Buffer.from(JSON.stringify({ primary, secondary: String(lastAgent._id) })).toString(
+    'base64',
+  );
+}
 
 /**
  * Whether emptying an allowlist has to fall back to disabling skills.
@@ -604,12 +857,14 @@ export function createAgentMethods(
     limit,
     after,
     includeSkillConfig,
+    sort,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
+    sort?: AgentSortOption;
   }) => Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -1345,6 +1600,19 @@ export function createAgentMethods(
   /**
    * Get agents by accessible IDs with cursor pagination. Defaults to a 100-page
    * limit (max 1000); pass `limit: null` to opt out entirely.
+   *
+   * `sort` picks the branch: 'newest'/'oldest' (the default) reuse the original
+   * `.find()` path, which has an index to sort on. 'popular'/'author' need data
+   * that only `users` has (favorite counts, display names), so they run an
+   * aggregation instead. That pipeline must stay Amazon DocumentDB-compatible
+   * (see `documentdb.spec.ts`, which statically scans this file): equality-form
+   * `$lookup` only (no `let`/sub-pipeline), and never `allowDiskUse` — both
+   * forbidden constructs. Tenant safety for the joined `users` doc is enforced
+   * with `$filter`/`$let` on the array *after* the join, not inside the lookup.
+   *
+   * The response shape is the same for every mode: whichever key the chosen mode
+   * sorts and paginates on is stripped before returning, so `?sort=` cannot change
+   * the field set a client receives.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
@@ -1352,12 +1620,14 @@ export function createAgentMethods(
     limit = 100,
     after = null,
     includeSkillConfig = false,
+    sort: sortInput = 'newest',
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
+    sort?: AgentSortOption;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -1371,38 +1641,20 @@ export function createAgentMethods(
     const normalizedLimit = isPaginated
       ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 1000)
       : null;
+    // The HTTP layer allowlists `sort`, but this method is also called directly by
+    // internal callers, and everything below indexes `AGENT_SORT_CONFIG` by it.
+    const sort: AgentSortOption = AGENT_SORT_CONFIG[sortInput] != null ? sortInput : 'newest';
 
     const baseQuery: Record<string, unknown> = {
       ...otherParams,
       _id: { $in: accessibleIds },
     };
 
-    if (after) {
-      try {
-        const cursor = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
-        const { updatedAt, _id } = cursor;
-
-        const cursorCondition = {
-          $or: [
-            { updatedAt: { $lt: new Date(updatedAt) } },
-            {
-              updatedAt: new Date(updatedAt),
-              _id: { $gt: new mongoose.Types.ObjectId(_id) },
-            },
-          ],
-        };
-
-        if (Object.keys(baseQuery).length > 0) {
-          baseQuery.$and = [{ ...baseQuery }, cursorCondition];
-          Object.keys(baseQuery).forEach((key) => {
-            if (key !== '$and') delete baseQuery[key];
-          });
-        } else {
-          Object.assign(baseQuery, cursorCondition);
-        }
-      } catch (error) {
-        logger.warn('Invalid cursor:', (error as Error).message);
-      }
+    // `.find()` casts query values against the schema automatically; the aggregate
+    // branch below builds a raw `$match` stage, which does not. Cast unconditionally
+    // (both branches) so this stays true even if the `.find()` branch changes later.
+    if (typeof baseQuery.author === 'string') {
+      baseQuery.author = new mongoose.Types.ObjectId(baseQuery.author);
     }
 
     const projection: Record<string, 1> = {
@@ -1414,6 +1666,7 @@ export function createAgentMethods(
       description: 1,
       conversation_starters: 1,
       updatedAt: 1,
+      createdAt: 1,
       category: 1,
       support_contact: 1,
       is_promoted: 1,
@@ -1426,7 +1679,281 @@ export function createAgentMethods(
       projection.skills_scope = 1;
     }
 
-    let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
+    const finalizeAgent = (agent: Record<string, unknown>): Record<string, unknown> => {
+      if (agent.author) {
+        agent.author = (agent.author as Types.ObjectId).toString();
+      }
+      return agent;
+    };
+
+    /**
+     * Strips the internal sort keys and wraps the page in the response envelope.
+     *
+     * Taking `nextCursor` as an argument is what keeps the stripping safe: the rows in
+     * `data` are the same objects the cursor is encoded from (`.map()` mutates in place
+     * and `slice()` shares references), so deleting a sort key before the cursor exists
+     * would leave the encoder reading `undefined` and silently emit a cursor that
+     * restarts the traversal instead of continuing it. Requiring the cursor up front
+     * makes that ordering impossible to get wrong.
+     */
+    const buildEnvelope = (
+      data: Array<Record<string, unknown>>,
+      hasMore: boolean,
+      nextCursor: string | null,
+    ) => {
+      for (const agent of data) {
+        for (const field of INTERNAL_SORT_FIELDS) {
+          delete agent[field];
+        }
+      }
+
+      return {
+        object: 'list',
+        data,
+        first_id: data.length > 0 ? (data[0].id as string) : null,
+        last_id: data.length > 0 ? (data[data.length - 1].id as string) : null,
+        has_more: hasMore,
+        after: nextCursor,
+      };
+    };
+
+    /** Decodes `after` for the active sort mode; `null` means "fall back to page one". */
+    const readCursor = (): AgentSortCursor | null => {
+      if (!after) {
+        return null;
+      }
+      const decoded = decodeAgentSortCursor(after, sort);
+      if (!decoded) {
+        // Never log the cursor itself — it is client-supplied input.
+        logger.warn(
+          `[getListAgentsByAccess] Rejected cursor for sort mode "${sort}", falling back to page one`,
+        );
+      }
+      return decoded;
+    };
+
+    if (sort === 'popular' || sort === 'author') {
+      const pipeline: PipelineStage[] = [{ $match: baseQuery }];
+
+      if (sort === 'popular') {
+        pipeline.push({
+          $lookup: {
+            from: 'users',
+            localField: 'id',
+            foreignField: 'favorites.agentId',
+            as: '_joinedUsers',
+          },
+        });
+        // Count only favorites from users in the same tenant as the agent — the
+        // join can't cross tenants in practice (ids are tenant-unique), but this
+        // validates it explicitly rather than trusting that invariant silently.
+        pipeline.push({
+          $addFields: {
+            favoriteCount: {
+              $size: {
+                $filter: {
+                  input: '$_joinedUsers',
+                  as: 'u',
+                  cond: { $eq: ['$$u.tenantId', '$tenantId'] },
+                },
+              },
+            },
+          },
+        });
+      } else {
+        // author — matches the card's own contact formula end to end (support_contact,
+        // then the ACL-resolved owner), not just the same-document support_contact half
+        // of it. The card's owner fallback (`attachOwnerContacts` /
+        // `resolveAgentOwnerContact`, `api/server/services/Agents/ownerContact.js` +
+        // `packages/api/src/agents/contact.ts`) doesn't read `author` directly — it reads
+        // whichever user holds the OWNER ACL entry on this agent, falling back to
+        // `author` only when no such entry exists (sharing can grant ownership to someone
+        // other than the original creator). Reproducing just the `author`-join half here
+        // would sort by the wrong person whenever those two differ, and reproducing
+        // neither (support_contact only) is exactly the mismatch this replaces: most
+        // agents have no support_contact, so they all tied at the sentinel while the card
+        // still showed a real owner name next to them.
+        //
+        // Equality `$lookup`s (indexed on `_id`/`resourceId`, then on `_ownerId`/`_id`),
+        // not correlated sub-pipelines — same reasoning as the `popular` sort's
+        // uncorrelated join above: a correlated per-agent lookup re-scans `aclentries`/
+        // `users` once per row instead of joining through the index.
+        pipeline.push({
+          $lookup: {
+            from: 'aclentries',
+            localField: '_id',
+            foreignField: 'resourceId',
+            as: '_ownerAclEntries',
+          },
+        });
+        pipeline.push({
+          $addFields: {
+            // Resource-scoped by `_id`/`resourceId`, both tenant-unique ObjectIds, so —
+            // unlike the `popular` sort's join on the application-level `id` string —
+            // there is no cross-tenant collision to guard against here.
+            _ownerId: {
+              $let: {
+                vars: {
+                  ownerEntry: {
+                    $reduce: {
+                      input: {
+                        $filter: {
+                          input: '$_ownerAclEntries',
+                          as: 'e',
+                          cond: {
+                            $and: [
+                              { $eq: ['$$e.principalType', PrincipalType.USER] },
+                              { $eq: ['$$e.permBits', OWNER_ACL_PERMISSION_BITS] },
+                            ],
+                          },
+                        },
+                      },
+                      initialValue: null,
+                      in: {
+                        $cond: [
+                          { $eq: ['$$value', null] },
+                          '$$this',
+                          {
+                            $cond: [earlierAclEntry('$$this', '$$value'), '$$this', '$$value'],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
+                in: { $ifNull: ['$$ownerEntry.principalId', '$author'] },
+              },
+            },
+          },
+        });
+        pipeline.push({
+          $lookup: {
+            from: 'users',
+            localField: '_ownerId',
+            foreignField: '_id',
+            as: '_ownerUser',
+          },
+        });
+        pipeline.push({
+          $addFields: {
+            authorDisplayName: {
+              $let: {
+                vars: {
+                  supportName: { $ifNull: ['$support_contact.name', null] },
+                  supportEmail: { $ifNull: ['$support_contact.email', null] },
+                  // `$trim` is null-safe (returns `null` for missing/null input), so these
+                  // are always either `null` or a trimmed string by the time `isValidDisplayName`
+                  // runs on them.
+                  ownerName: { $trim: { input: { $arrayElemAt: ['$_ownerUser.name', 0] } } },
+                  ownerUsername: {
+                    $trim: { input: { $arrayElemAt: ['$_ownerUser.username', 0] } },
+                  },
+                  // Dead on Agent documents in practice (only Prompts/Skills write it) —
+                  // kept as the final real-value tier for exact parity with
+                  // `resolveAgentOwnerContact`, which checks it too.
+                  authorName: { $trim: { input: '$authorName' } },
+                },
+                in: {
+                  $switch: {
+                    branches: [
+                      {
+                        case: {
+                          $and: [{ $ne: ['$$supportName', null] }, { $ne: ['$$supportName', ''] }],
+                        },
+                        then: '$$supportName',
+                      },
+                      {
+                        case: {
+                          $and: [
+                            { $ne: ['$$supportEmail', null] },
+                            { $ne: ['$$supportEmail', ''] },
+                          ],
+                        },
+                        then: '$$supportEmail',
+                      },
+                      { case: isValidDisplayName('$$ownerName'), then: '$$ownerName' },
+                      { case: isValidDisplayName('$$ownerUsername'), then: '$$ownerUsername' },
+                      { case: isValidDisplayName('$$authorName'), then: '$$authorName' },
+                    ],
+                    default: AUTHOR_SORT_SENTINEL,
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      // Applied after the `$addFields` above, since it compares against the computed
+      // sort key rather than a stored field.
+      const decodedCursor = readCursor();
+      if (decodedCursor) {
+        pipeline.push({
+          $match: buildAgentSortCursorCondition(
+            sort,
+            decodedCursor,
+            new mongoose.Types.ObjectId(decodedCursor.secondary),
+          ),
+        } as PipelineStage);
+      }
+
+      // Inclusion-only projection: `_joinedUsers` is simply not listed, so it is
+      // dropped along with everything else the pipeline doesn't need. Mixing an
+      // explicit exclusion into an inclusion projection (other than `_id`) is
+      // invalid MongoDB/DocumentDB syntax, which an earlier draft of this pipeline
+      // got wrong by trying to exclude `_joinedUsers` explicitly.
+      pipeline.push({
+        $project: {
+          ...projection,
+          ...(sort === 'popular' ? { favoriteCount: 1 } : { authorDisplayName: 1 }),
+        },
+      });
+
+      pipeline.push({
+        $sort: { [AGENT_SORT_CONFIG[sort].field]: AGENT_SORT_CONFIG[sort].direction, _id: 1 },
+      });
+
+      if (isPaginated && normalizedLimit) {
+        pipeline.push({ $limit: normalizedLimit + 1 });
+      }
+
+      const agents = (await Agent.aggregate(pipeline)) as Array<Record<string, unknown>>;
+
+      const hasMore = isPaginated && normalizedLimit ? agents.length > normalizedLimit : false;
+      const trimmed = isPaginated && normalizedLimit ? agents.slice(0, normalizedLimit) : agents;
+      const data = trimmed.map(finalizeAgent);
+
+      let nextCursor: string | null = null;
+      if (isPaginated && hasMore && data.length > 0 && normalizedLimit) {
+        nextCursor = encodeAgentSortCursor(sort, agents[normalizedLimit - 1]);
+      }
+
+      return buildEnvelope(data, hasMore, nextCursor);
+    }
+
+    // 'newest' (default) / 'oldest': unchanged `.find()` path with an existing
+    // index, only parametrized by direction. Sorts/cursors on `createdAt`
+    // (immutable) rather than `updatedAt`, which advances on side effects
+    // unrelated to content — e.g. the S3 avatar refresh in the list
+    // controller — and would otherwise reorder an agent out from under a
+    // user mid-scroll.
+    const dir = AGENT_SORT_CONFIG[sort].direction;
+
+    let finalQuery: Record<string, unknown> = baseQuery;
+    const decodedCursor = readCursor();
+    if (decodedCursor) {
+      const cursorCondition = buildAgentSortCursorCondition(
+        sort,
+        decodedCursor,
+        new mongoose.Types.ObjectId(decodedCursor.secondary),
+      );
+      finalQuery =
+        Object.keys(baseQuery).length > 0
+          ? { $and: [{ ...baseQuery }, cursorCondition] }
+          : { ...cursorCondition };
+    }
+
+    let query = Agent.find(finalQuery, projection).sort({ createdAt: dir, _id: 1 });
 
     if (isPaginated && normalizedLimit) {
       query = query.limit(normalizedLimit + 1);
@@ -1436,33 +1963,15 @@ export function createAgentMethods(
 
     const hasMore = isPaginated && normalizedLimit ? agents.length > normalizedLimit : false;
     const data = (isPaginated && normalizedLimit ? agents.slice(0, normalizedLimit) : agents).map(
-      (agent) => {
-        if (agent.author) {
-          agent.author = (agent.author as Types.ObjectId).toString();
-        }
-        return agent;
-      },
+      finalizeAgent,
     );
 
     let nextCursor: string | null = null;
     if (isPaginated && hasMore && data.length > 0 && normalizedLimit) {
-      const lastAgent = agents[normalizedLimit - 1];
-      nextCursor = Buffer.from(
-        JSON.stringify({
-          updatedAt: (lastAgent.updatedAt as Date).toISOString(),
-          _id: (lastAgent._id as Types.ObjectId).toString(),
-        }),
-      ).toString('base64');
+      nextCursor = encodeAgentSortCursor(sort, agents[normalizedLimit - 1]);
     }
 
-    return {
-      object: 'list',
-      data,
-      first_id: data.length > 0 ? (data[0].id as string) : null,
-      last_id: data.length > 0 ? (data[data.length - 1].id as string) : null,
-      has_more: hasMore,
-      after: nextCursor,
-    };
+    return buildEnvelope(data, hasMore, nextCursor);
   }
 
   /**
