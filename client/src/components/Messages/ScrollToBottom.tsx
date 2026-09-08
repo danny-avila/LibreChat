@@ -1,7 +1,6 @@
 import { forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
-import { Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -36,29 +35,34 @@ const ScrollToBottom = forwardRef<HTMLDivElement, Props>(
         className="scrollbar-gutter-spacer pointer-events-none absolute inset-x-0 z-10"
         style={{ bottom: `calc(1.25rem + ${overlayHeight}px)` }}
       >
+        {/* The composer's own column, so the control stacks over the send
+            button one row down: the same end inset (`me-2`, mirroring Send's
+            `mr-2`) and the same control geometry as every button in the
+            composer's action row. A plain button rather than the `Button`
+            primitive: its `icon` size is a fixed 40px, and its disabled state
+            dims, which the wrapper's fade must not compound. */}
         <div
           className={cn(
-            'mx-auto flex justify-end px-4 sm:px-2',
+            'mx-auto flex justify-end sm:px-2',
             maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
           )}
         >
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="icon"
             onClick={scrollHandler}
             disabled={!interactive}
             aria-label={localize('com_ui_scroll_to_bottom')}
             className={cn(
-              'rounded-full bg-surface-chat/90 text-text-primary active:scale-[0.96] motion-reduce:active:scale-100',
-              /* The wrapper owns the fade, so being briefly unreachable must not
-                 dim the control on its way in on top of it. */
-              'disabled:opacity-100',
+              'me-2 flex size-theme-control items-center justify-center rounded-theme-control-round',
+              'border border-border-light bg-surface-chat/90 text-text-primary',
+              'transition-colors duration-theme-fast hover:bg-surface-hover',
+              'ring-offset-surface-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2',
+              'active:scale-[0.96] motion-reduce:active:scale-100',
               interactive ? 'pointer-events-auto' : 'pointer-events-none',
             )}
           >
             <ChevronDown className="size-4" aria-hidden="true" />
-          </Button>
+          </button>
         </div>
       </div>
     );

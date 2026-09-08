@@ -35,8 +35,22 @@ describe('ScrollToBottom', () => {
     const { container } = renderButton();
     const column = container.querySelector('.sm\\:px-2');
 
-    expect(column).toHaveClass('px-4', 'md:max-w-3xl', 'xl:max-w-4xl');
+    expect(column).toHaveClass('md:max-w-3xl', 'xl:max-w-4xl');
+    expect(column).not.toHaveClass('px-4');
     expect(container.firstChild).toHaveClass('scrollbar-gutter-spacer');
+  });
+
+  /* The send button sits one row below at the composer's `mr-2`. Sharing its
+     end inset and control geometry is what makes the two read as one rail
+     instead of a stagger: the column edge is 8px out, and `size-10` is 4px
+     larger than every other control in the band. */
+  it('stacks over the send button on the composer rail', () => {
+    renderButton();
+    const button = screen.getByRole('button');
+
+    expect(button).toHaveClass('me-2', 'size-theme-control', 'rounded-theme-control-round');
+    expect(button).not.toHaveClass('size-10');
+    expect(button).not.toHaveClass('rounded-full');
   });
 
   /* The gutter has to be reserved with padding rather than by reserving a real
@@ -83,8 +97,7 @@ describe('ScrollToBottom', () => {
   it('does not dim while it is unreachable', () => {
     renderButton();
 
-    expect(screen.getByRole('button')).toHaveClass('disabled:opacity-100');
-    expect(screen.getByRole('button')).not.toHaveClass('disabled:opacity-50');
+    expect(screen.getByRole('button').className).not.toMatch(/disabled:opacity/);
   });
 
   it('rests just above the composer when nothing is queued', () => {

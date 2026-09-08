@@ -5,6 +5,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import { PendingToolApprovalButton, PendingToolApprovalPanel } from '../Review';
 import ApprovalProvider from '../../Messages/Content/ApprovalContext';
+import { composerOverlayCountFamily } from '~/store/overlay';
 import { pendingApprovalActionFamily } from '../state';
 
 jest.mock('@librechat/client', () => ({
@@ -102,6 +103,7 @@ describe('PendingToolApproval', () => {
     );
 
     expect(await screen.findByRole('region', { name: 'Review 2 actions' })).toBeInTheDocument();
+    expect(jotaiStore.get(composerOverlayCountFamily('conversation-1'))).toBe(1);
     expect(screen.getByText(/Create src\/new\.ts/)).toBeInTheDocument();
     expect(screen.getByText('npm test -- new')).toBeInTheDocument();
     expect(screen.getByText('0 of 2 decisions selected')).toBeInTheDocument();
@@ -116,6 +118,7 @@ describe('PendingToolApproval', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
     expect(screen.queryByRole('region', { name: 'Review 2 actions' })).not.toBeInTheDocument();
+    expect(jotaiStore.get(composerOverlayCountFamily('conversation-1'))).toBe(0);
     expect(screen.getByTestId('pending-tool-approval-button')).toHaveAttribute(
       'aria-expanded',
       'false',
