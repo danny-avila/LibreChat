@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { easings } from '@react-spring/web';
 import { MessageCircleDashed } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
+import { BirthdayIcon, TooltipAnchor, SplitText, useRemScale } from '@librechat/client';
 import {
   getIconEndpoint,
   getEntity,
@@ -51,6 +51,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+  const remScale = useRemScale();
   const isTemporary = useRecoilValue(temporaryStore.isTemporary);
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
@@ -118,7 +119,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     if (contentRef.current) {
       setContentHeight(contentRef.current.offsetHeight);
     }
-  }, [lineCount, description, selectedAgent]);
+  }, [lineCount, description, selectedAgent, remScale]);
 
   const getDynamicMargin = useMemo(() => {
     let margin = 'mb-0';

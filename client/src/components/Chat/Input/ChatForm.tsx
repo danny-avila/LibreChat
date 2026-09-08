@@ -521,7 +521,7 @@ const ChatForm = memo(function ChatForm({
       const lineHeight = parseFloat(style.lineHeight);
       setVisualRowCount(Math.floor(textAreaRef.current.scrollHeight / lineHeight));
     }
-  }, [textValue]);
+  }, [textValue, remScale]);
 
   useEffect(() => {
     if (isEditingBadges && backupBadges.length === 0) {
