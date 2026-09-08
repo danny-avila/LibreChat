@@ -432,8 +432,12 @@ async function saveErrorTurn(
 
     const reqCtx = {
       userId,
-      isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-      expiredAt: req?._agentEventBindingRetention?.expiredAt,
+      isTemporary:
+        req?._agentEventBindingRetention?.isTemporary ??
+        req?.resolvedConversation?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt:
+        req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     };
     const context = 'api/server/controllers/agents/request.js - failed turn';
@@ -1583,7 +1587,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         agent_id: endpointOption.agent_id ?? req.body?.agent_id,
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
-        isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
+        isTemporary:
+          req._agentEventBindingRetention?.isTemporary ??
+          req.resolvedConversation?.isTemporary ??
+          req.body?.isTemporary,
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
           ...(internalDetachedCompletion == null
@@ -1845,8 +1852,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           saveMessage(
             {
               userId,
-              isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-              expiredAt: req?._agentEventBindingRetention?.expiredAt,
+              isTemporary:
+                req?._agentEventBindingRetention?.isTemporary ??
+                req?.resolvedConversation?.isTemporary ??
+                req?.body?.isTemporary,
+              expiredAt:
+                req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
               interfaceConfig: req?.config?.interfaceConfig,
             },
             partialMessage,
@@ -2629,8 +2640,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     {
                       userId,
                       isTemporary:
-                        req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-                      expiredAt: req?._agentEventBindingRetention?.expiredAt,
+                        req?._agentEventBindingRetention?.isTemporary ??
+                        req?.resolvedConversation?.isTemporary ??
+                        req?.body?.isTemporary,
+                      expiredAt:
+                        req?._agentEventBindingRetention?.expiredAt ??
+                        req?.resolvedConversation?.expiredAt,
                       interfaceConfig: req?.config?.interfaceConfig,
                     },
                     userMessage,
@@ -2651,8 +2666,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 {
                   userId,
                   isTemporary:
-                    req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-                  expiredAt: req?._agentEventBindingRetention?.expiredAt,
+                    req?._agentEventBindingRetention?.isTemporary ??
+                    req?.resolvedConversation?.isTemporary ??
+                    req?.body?.isTemporary,
+                  expiredAt:
+                    req?._agentEventBindingRetention?.expiredAt ??
+                    req?.resolvedConversation?.expiredAt,
                   interfaceConfig: req?.config?.interfaceConfig,
                 },
                 {
@@ -2830,8 +2849,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // where client refetch happens before database is updated
         const reqCtx = {
           userId: req?.user?.id,
-          isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-          expiredAt: req?._agentEventBindingRetention?.expiredAt,
+          isTemporary:
+            req?._agentEventBindingRetention?.isTemporary ??
+            req?.resolvedConversation?.isTemporary ??
+            req?.body?.isTemporary,
+          expiredAt:
+            req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
           interfaceConfig: req?.config?.interfaceConfig,
         };
         const terminalMemoryContext = {

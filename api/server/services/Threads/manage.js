@@ -94,7 +94,8 @@ async function saveUserMessage(req, params) {
   await saveConvo(
     {
       userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
+      isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
+      expiredAt: req?.resolvedConversation?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     },
     convo,
@@ -150,7 +151,8 @@ async function saveAssistantMessage(req, params) {
   await saveConvo(
     {
       userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
+      isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
+      expiredAt: req?.resolvedConversation?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     },
     {
@@ -346,7 +348,8 @@ async function syncMessages({
   await saveConvo(
     {
       userId: openai.req?.user?.id,
-      isTemporary: openai.req?.body?.isTemporary,
+      isTemporary: openai.req?.resolvedConversation?.isTemporary ?? openai.req?.body?.isTemporary,
+      expiredAt: openai.req?.resolvedConversation?.expiredAt,
       interfaceConfig: openai.req?.config?.interfaceConfig,
     },
     {

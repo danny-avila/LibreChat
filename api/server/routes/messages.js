@@ -61,7 +61,14 @@ router.use(requireJwtAuth);
 
 async function rejectSubagentThreadWrite(req, res, conversationId) {
   const blocked = await isSubagentThreadWriteBlocked(
-    { getConvo: db.getConvo, store: subagentThreadTaskStore },
+    {
+      getConvo: async (...args) => {
+        const conversation = await db.getConvo(...args);
+        req.resolvedConversation = conversation;
+        return conversation;
+      },
+      store: subagentThreadTaskStore,
+    },
     {
       userId: req.user.id,
       conversationId,
@@ -441,7 +448,8 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
     const savedMessage = await db.saveMessage(
       {
         userId: req?.user?.id,
-        isTemporary: req?.body?.isTemporary,
+        isTemporary: message.isTemporary,
+        expiredAt: message.expiredAt,
         interfaceConfig: req?.config?.interfaceConfig,
       },
       {
@@ -519,7 +527,8 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     delete message.contextMeta;
     const reqCtx = {
       userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
+      isTemporary: req.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
+      expiredAt: req.resolvedConversation?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(

@@ -83,12 +83,13 @@ describe('retention helpers', () => {
     it.each([
       { supplied: false, stored: true, hours: 1 },
       { supplied: true, stored: false, hours: 2160 },
+      { supplied: true, stored: false, hours: 2160, expiredAt: null },
     ])(
       'uses stored chat type $stored instead of caller-supplied type $supplied',
-      async ({ supplied, stored, hours }) => {
+      async ({ supplied, stored, hours, expiredAt }) => {
         dependencies.getConvo.mockResolvedValue({
           isTemporary: stored,
-          expiredAt: expirationDate,
+          expiredAt: expiredAt === null ? null : expirationDate,
         });
         const now = Date.now();
         const result = await getRetentionExpiry(

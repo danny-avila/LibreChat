@@ -2049,7 +2049,7 @@ describe('BaseClient', () => {
         expect.any(Object),
         expect.any(Object),
       );
-      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(req.resolvedConversation).toBe(existingConvo);
       expect(TestClient.fetchedConvo).toBe(true);
       expect(saveConvo).toHaveBeenCalledWith(
         expect.any(Object),
@@ -2058,6 +2058,19 @@ describe('BaseClient', () => {
           unsetFields: expect.objectContaining({ temperature: 1 }),
         }),
       );
+      await TestClient.saveMessageToDatabase(
+        { messageId: 'response-1', conversationId: existingConvo.conversationId, text: 'reply' },
+        { endpoint: 'openai' },
+        user,
+      );
+      for (const save of [saveMessage, saveConvo]) {
+        expect(save).toHaveBeenLastCalledWith(
+          expect.objectContaining({ isTemporary: true, expiredAt: existingConvo.expiredAt }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      }
+      expect(getConvo).not.toHaveBeenCalled();
     });
 
     test('userMessagePromise is awaited before saving response message', async () => {

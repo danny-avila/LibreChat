@@ -1130,6 +1130,7 @@ const processOpenAIFile = async ({
   saveFile = false,
   updateUsage = false,
 }) => {
+  const retentionExpiryPromise = saveFile ? getRetentionExpiry(openai.req) : null;
   const _file = await openai.files.retrieve(file_id);
   const originalName = filename ?? (_file.filename ? path.basename(_file.filename) : undefined);
   const filepath = `${openai.baseURL}/files/${userId}/${file_id}${
@@ -1151,7 +1152,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
-    ...(await getRetentionExpiry(openai.req)),
+    ...(await retentionExpiryPromise),
     tenantId: openai.req?.user?.tenantId,
   };
 
@@ -1246,6 +1247,12 @@ async function retrieveAndProcessFile({
   const fileExt = path.extname(basename);
   if (client.attachedFileIds?.has(file_id) || client.processedFileIds?.has(file_id)) {
     return processOpenAIFile({ ...processArgs, updateUsage: true });
+  }
+
+  // Prime both consumers before downloading content; each reuses its request's cached lookup.
+  void getRetentionExpiry(client.req);
+  if (openai.req !== client.req) {
+    void getRetentionExpiry(openai.req);
   }
 
   /**

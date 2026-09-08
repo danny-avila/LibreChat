@@ -240,6 +240,7 @@ const {
   processFileUpload,
   processFileURL,
   processImageFile,
+  retrieveAndProcessFile,
   sweepExpiredFiles,
   startExpiredFileSweep,
 } = require('./process');
@@ -337,6 +338,38 @@ describe('upload retention scheduling', () => {
     mockRes.status.mockReturnThis();
     mockRes.json.mockReturnValue({});
   });
+
+  it.each([false, true])(
+    'resolves assistant file retention only for new records (existing=%s)',
+    async (existing) => {
+      const req = makeReq({ body: { endpoint: 'assistants' } });
+      let resolveProvider;
+      const retrieve = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveProvider = resolve;
+          }),
+      );
+      const openai = { req, baseURL: 'https://example.com', files: { retrieve } };
+      const pending = retrieveAndProcessFile({
+        openai,
+        client: { req, attachedFileIds: new Set(existing ? ['file-1'] : []) },
+        file_id: 'file-1',
+        basename: 'output.txt',
+      });
+      expect(retrieve).toHaveBeenCalledTimes(1);
+      if (existing) {
+        expect(getRetentionExpiry).not.toHaveBeenCalled();
+      } else {
+        expect(getRetentionExpiry).toHaveBeenCalled();
+      }
+      resolveProvider({ filename: 'output.txt' });
+      await pending;
+      if (existing) {
+        expect(getRetentionExpiry).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it.each([
     ['image', processImageFile, 'handleImageUpload'],
