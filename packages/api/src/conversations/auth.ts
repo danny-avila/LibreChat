@@ -5,9 +5,9 @@ import type { GetAppConfigOptions } from '../app/service';
 
 export interface ConversationManagementAuthDeps {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
-  remoteAuth: RequestHandler;
+  remoteAuth: (getConfig: ConversationManagementAuthDeps['getAppConfig']) => RequestHandler;
   remoteAccess: RequestHandler;
-  managementAuth: RequestHandler;
+  managementAuth: (getConfig: ConversationManagementAuthDeps['getAppConfig']) => RequestHandler;
 }
 
 function sendUnauthorized(res: Response): void {
@@ -23,6 +23,10 @@ export function createConversationManagementAuth({
   const handler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const config = await getAppConfig({ baseOnly: true });
+      const getRequestConfig: ConversationManagementAuthDeps['getAppConfig'] = (options) =>
+        options?.baseOnly === true && !options.refresh
+          ? Promise.resolve(config)
+          : getAppConfig(options);
       const mode = config.endpoints?.agents?.conversationApi?.auth;
       if (mode !== 'management' && mode !== 'remote') {
         sendUnauthorized(res);
@@ -30,11 +34,11 @@ export function createConversationManagementAuth({
       }
 
       if (mode === 'management') {
-        await Promise.resolve(managementAuth(req, res, next));
+        await Promise.resolve(managementAuth(getRequestConfig)(req, res, next));
         return;
       }
       await Promise.resolve(
-        remoteAuth(req, res, (error) => {
+        remoteAuth(getRequestConfig)(req, res, (error) => {
           if (error) return next(error);
           return Promise.resolve(remoteAccess(req, res, next)).catch(next);
         }),

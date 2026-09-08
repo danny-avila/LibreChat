@@ -454,6 +454,8 @@ describe('conversation management handlers with Mongo persistence', () => {
       conversationId: SHARED_ID,
       messageId: 'with-files',
       quotes: ['Referenced excerpt'],
+      manualSkills: ['selected-skill'],
+      alwaysAppliedSkills: ['automatic-skill'],
       files: [
         {
           file_id: 'upload',
@@ -478,6 +480,8 @@ describe('conversation management handlers with Mongo persistence', () => {
       expect.objectContaining({
         id: 'with-files',
         quotes: ['Referenced excerpt'],
+        manualSkills: ['selected-skill'],
+        alwaysAppliedSkills: ['automatic-skill'],
         files: [{ file_id: 'upload', filename: 'notes.txt' }],
         attachments: [
           { file_id: 'artifact', filepath: '/files/artifact', toolCallId: 'tool', metadata: {} },

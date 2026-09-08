@@ -14,12 +14,12 @@ import {
 } from '@librechat/data-schemas';
 import type { JwtPayload } from 'jsonwebtoken';
 import type { ServerRequest } from '~/types';
+import { createConversationManagementAuth, type ConversationManagementAuthDeps } from './auth';
 import { createRequireApiKeyAuth, type ApiKeyAuthRequest } from '../apiKeys/middleware';
 import { createRemoteAgentAuth } from '../middleware/remoteAgentAuth';
 import { createAgentManagementAuth } from '../middleware/management';
 import { createConversationManagementHandlers } from './management';
 import { generateCheckAccess } from '../middleware/access';
-import { createConversationManagementAuth } from './auth';
 import * as oidc from '../auth/oidc';
 
 jest.mock('@librechat/data-schemas', () => {
@@ -114,25 +114,27 @@ function createApp(
   const apiKeyAuth: RequestHandler = async (req, res, next) => {
     await apiKeyAuthHandler(req as ApiKeyAuthRequest, res, next);
   };
-  const remoteAuth = createRemoteAgentAuth({
-    apiKeyMiddleware: apiKeyAuth,
-    findUser: methods.findUser,
-    getRolesByNames: methods.findRolesByNames,
-    updateUser: methods.updateUser,
-    isPrincipalActive: methods.isAgentTriggerPrincipalActive,
-    getAppConfig,
-  });
-  const managementAuth = createAgentManagementAuth({
-    findUser: methods.findUser,
-    isPrincipalActive: methods.isAgentTriggerPrincipalActive,
-    getAppConfig,
-    ...(verifyMachine == null
-      ? {}
-      : {
-          verifyAccessToken: async (token, config) =>
-            verifyMachine(token, config) as Promise<JwtPayload>,
-        }),
-  });
+  const remoteAuth = (getConfig: ConversationManagementAuthDeps['getAppConfig']) =>
+    createRemoteAgentAuth({
+      apiKeyMiddleware: apiKeyAuth,
+      findUser: methods.findUser,
+      getRolesByNames: methods.findRolesByNames,
+      updateUser: methods.updateUser,
+      isPrincipalActive: methods.isAgentTriggerPrincipalActive,
+      getAppConfig: getConfig,
+    });
+  const managementAuth = (getConfig: ConversationManagementAuthDeps['getAppConfig']) =>
+    createAgentManagementAuth({
+      findUser: methods.findUser,
+      isPrincipalActive: methods.isAgentTriggerPrincipalActive,
+      getAppConfig: getConfig,
+      ...(verifyMachine == null
+        ? {}
+        : {
+            verifyAccessToken: async (token, config) =>
+              verifyMachine(token, config) as Promise<JwtPayload>,
+          }),
+    });
   const remoteAccess = generateCheckAccess({
     permissionType: PermissionTypes.REMOTE_AGENTS,
     permissions: [Permissions.USE],

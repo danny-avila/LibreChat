@@ -504,3 +504,62 @@ describe('quoted message context', () => {
     ).toEqual([]);
   });
 });
+
+describe('public approval and skill context', () => {
+  it('preserves the approval contract while stripping private fields', () => {
+    const source = {
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            name: 'tool',
+            approval: {
+              actionId: 'action',
+              allowed_decisions: ['approve', 'reject', 'edit', 'respond'],
+              description: 'Review this action',
+              secret: 'private',
+            },
+          },
+        },
+      ],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source).content).toEqual([
+      {
+        type: 'tool_call',
+        tool_call: {
+          name: 'tool',
+          approval: {
+            actionId: 'action',
+            allowed_decisions: ['approve', 'reject', 'edit', 'respond'],
+            description: 'Review this action',
+          },
+        },
+      },
+    ]);
+    expect(
+      projectConversationMessage({
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: { approval: { actionId: 'action', allowed_decisions: ['invalid'] } },
+          },
+        ],
+      } as ConversationMessageResource).content,
+    ).toEqual([]);
+  });
+
+  it('returns only persisted skill strings with empty defaults', () => {
+    const source = {
+      manualSkills: ['selected', null, 12],
+      alwaysAppliedSkills: ['automatic'],
+    } as unknown as ConversationMessageResource;
+    expect(projectConversationMessage(source)).toMatchObject({
+      manualSkills: ['selected'],
+      alwaysAppliedSkills: ['automatic'],
+    });
+    expect(projectConversationMessage({} as ConversationMessageResource)).toMatchObject({
+      manualSkills: [],
+      alwaysAppliedSkills: [],
+    });
+  });
+});

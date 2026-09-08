@@ -200,6 +200,14 @@ const baseToolCall = z
     stepId: z.string().optional(),
     mcpServerName: z.string().optional(),
     inputValidationError: z.boolean().optional(),
+    approval: z
+      .object({
+        actionId: z.string(),
+        allowed_decisions: z.array(z.enum(['approve', 'reject', 'edit', 'respond'])),
+        description: z.string().optional(),
+      })
+      .strip()
+      .optional(),
     subagent_content: z.lazy(() => z.array(contentSchema)).optional(),
     args: z.union([z.string(), jsonObject]).optional(),
     output: z.union([z.string(), jsonObject, z.array(z.unknown())]).nullish(),
@@ -444,6 +452,8 @@ export interface ConversationMessageResponse {
   files: object[];
   attachments: object[];
   quotes: string[];
+  manualSkills: string[];
+  alwaysAppliedSkills: string[];
   sender: string;
   isCreatedByUser: boolean;
   createdAt: string | null;
@@ -480,10 +490,13 @@ export function projectConversationMessage(
     }
     return projected;
   };
-  const quotes =
-    withinContentLimits(source.quotes, 0, budget) && Array.isArray(source.quotes)
-      ? source.quotes.filter((quote): quote is string => typeof quote === 'string')
+  const projectStrings = (values: unknown): string[] =>
+    withinContentLimits(values, 0, budget) && Array.isArray(values)
+      ? values.filter((value): value is string => typeof value === 'string')
       : [];
+  const quotes = projectStrings(source.quotes);
+  const manualSkills = projectStrings(source.manualSkills);
+  const alwaysAppliedSkills = projectStrings(source.alwaysAppliedSkills);
   const content = projectParts(source.content, contentSchema);
   const files = projectParts(source.files, conversationFileSchema);
   const attachments = projectParts(source.attachments, conversationFileSchema);
@@ -496,6 +509,8 @@ export function projectConversationMessage(
     files,
     attachments,
     quotes,
+    manualSkills,
+    alwaysAppliedSkills,
     sender: source.sender ?? '',
     isCreatedByUser: source.isCreatedByUser,
     createdAt: toTimestamp(source.createdAt),

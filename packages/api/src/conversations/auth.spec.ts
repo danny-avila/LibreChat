@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
+import type { ConversationManagementAuthDeps } from './auth';
 import { createConversationManagementAuth } from './auth';
 
 function createConfig(auth?: 'remote' | 'management'): AppConfig {
@@ -21,7 +22,12 @@ async function run(
 ) {
   const app = express();
   app.use(
-    createConversationManagementAuth({ getAppConfig, remoteAuth, remoteAccess, managementAuth }),
+    createConversationManagementAuth({
+      getAppConfig,
+      remoteAuth: () => remoteAuth,
+      remoteAccess,
+      managementAuth: () => managementAuth,
+    }),
   );
   app.get('/', (_req, res) => {
     res.sendStatus(204);
@@ -31,6 +37,77 @@ async function run(
 }
 
 describe('conversation management authentication selector', () => {
+  it.each(['remote', 'management'] as const)(
+    'reuses only the request base config in %s mode',
+    async (mode) => {
+      const base = createConfig(mode);
+      const tenant = createConfig();
+      const getAppConfig = jest.fn(async (options) => (options?.baseOnly ? base : tenant));
+      const authenticate: ConversationManagementAuthDeps['remoteAuth'] =
+        (getConfig) => async (_req, _res, next) => {
+          expect(await getConfig({ baseOnly: true })).toBe(base);
+          expect(await getConfig({ baseOnly: true })).toBe(base);
+          expect(await getConfig({ tenantId: 'tenant-a', userId: 'owner', role: 'USER' })).toBe(
+            tenant,
+          );
+          expect(await getConfig({ baseOnly: true, refresh: true })).toBe(base);
+          next();
+        };
+      const app = express();
+      app.use(
+        createConversationManagementAuth({
+          getAppConfig,
+          remoteAuth: authenticate,
+          managementAuth: authenticate,
+          remoteAccess: (_req, _res, next) => next(),
+        }),
+      );
+      app.get('/', (_req, res) => {
+        res.sendStatus(204);
+      });
+      const responses = await Promise.all([request(app).get('/'), request(app).get('/')]);
+      expect(responses.map((response) => response.status)).toEqual([204, 204]);
+      expect(getAppConfig.mock.calls.map(([options]) => options)).toEqual(
+        expect.arrayContaining([
+          { tenantId: 'tenant-a', userId: 'owner', role: 'USER' },
+          { baseOnly: true, refresh: true },
+        ]),
+      );
+      expect(
+        getAppConfig.mock.calls.filter(([options]) => options?.baseOnly && !options.refresh),
+      ).toHaveLength(2);
+      expect(getAppConfig).toHaveBeenCalledTimes(6);
+    },
+  );
+
+  it('keeps different requests on their own config snapshots', async () => {
+    const first = createConfig('management');
+    const second = createConfig('remote');
+    const getAppConfig = jest.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const seen: AppConfig[] = [];
+    const authenticate: ConversationManagementAuthDeps['remoteAuth'] =
+      (getConfig) => async (_req, _res, next) => {
+        seen.push(await getConfig({ baseOnly: true }));
+        next();
+      };
+    const app = express();
+    app.use(
+      createConversationManagementAuth({
+        getAppConfig,
+        remoteAuth: authenticate,
+        managementAuth: authenticate,
+        remoteAccess: (_req, _res, next) => next(),
+      }),
+    );
+    app.get('/', (_req, res) => {
+      res.sendStatus(204);
+    });
+    expect((await request(app).get('/')).status).toBe(204);
+    expect((await request(app).get('/')).status).toBe(204);
+    expect(seen).toEqual([first, second]);
+    expect(getAppConfig).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ['absent', createConfig()],
     ['disabled', createConfig(undefined)],

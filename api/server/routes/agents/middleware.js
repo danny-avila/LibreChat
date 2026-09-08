@@ -19,20 +19,25 @@ const apiKeyMiddleware = createRequireApiKeyAuth({
   isPrincipalActive: db.isAgentTriggerPrincipalActive,
 });
 
-const requireRemoteAgentAuth = createRemoteAgentAuth({
-  apiKeyMiddleware,
-  findUser: db.findUser,
-  getRolesByNames: db.findRolesByNames,
-  updateUser: db.updateUser,
-  isPrincipalActive: db.isAgentTriggerPrincipalActive,
-  getAppConfig,
-});
+const remoteAuth = (getConfig) =>
+  createRemoteAgentAuth({
+    apiKeyMiddleware,
+    findUser: db.findUser,
+    getRolesByNames: db.findRolesByNames,
+    updateUser: db.updateUser,
+    isPrincipalActive: db.isAgentTriggerPrincipalActive,
+    getAppConfig: getConfig,
+  });
 
-const requireAgentManagementAuth = createAgentManagementAuth({
-  findUser: db.findUser,
-  isPrincipalActive: db.isAgentTriggerPrincipalActive,
-  getAppConfig,
-});
+const managementAuth = (getConfig) =>
+  createAgentManagementAuth({
+    findUser: db.findUser,
+    isPrincipalActive: db.isAgentTriggerPrincipalActive,
+    getAppConfig: getConfig,
+  });
+
+const requireRemoteAgentAuth = remoteAuth(getAppConfig);
+const requireAgentManagementAuth = managementAuth(getAppConfig);
 
 const checkRemoteAgentsFeature = generateCheckAccess({
   permissionType: PermissionTypes.REMOTE_AGENTS,
@@ -42,9 +47,9 @@ const checkRemoteAgentsFeature = generateCheckAccess({
 
 const requireConversationManagementAuth = createConversationManagementAuth({
   getAppConfig,
-  remoteAuth: requireRemoteAgentAuth,
+  remoteAuth,
   remoteAccess: checkRemoteAgentsFeature,
-  managementAuth: requireAgentManagementAuth,
+  managementAuth,
 });
 
 const agentAccessDependencies = {
