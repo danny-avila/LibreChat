@@ -127,6 +127,38 @@ describe('importConversations database compatibility', () => {
     },
   );
 
+  it.each([false, true])(
+    'imports nullable exported metadata with existing fallbacks (recursive=%s)',
+    async (recursive) => {
+      const filepath = path.join(tempDir, 'nullable-export.json');
+      const message = {
+        messageId: 'source-message',
+        conversationId: 'source',
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: 'Nullable conversation metadata',
+        isCreatedByUser: true,
+      };
+      await fs.writeFile(
+        filepath,
+        JSON.stringify({
+          conversationId: 'source',
+          endpoint: null,
+          title: null,
+          recursive,
+          ...(recursive ? { messagesTree: [message] } : { messages: [message] }),
+        }),
+      );
+      await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+      const conversation = await mongoose.models.Conversation.findOne({ user: 'owner' }).lean();
+      expect(conversation).toMatchObject({
+        title: 'Imported Chat',
+        endpoint: EModelEndpoint.openAI,
+      });
+      expect(await mongoose.models.Message.countDocuments({ user: 'owner' })).toBe(1);
+    },
+  );
+
   it('preserves forward parent references and parent-first timestamps in flat exports', async () => {
     const filepath = path.join(tempDir, 'forward-parents.json');
     const messages = [

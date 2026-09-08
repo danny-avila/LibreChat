@@ -152,6 +152,21 @@ describe('createConversationImportOperation', () => {
     },
   );
 
+  it.each([{ endpoint: 42 }, { title: {} }, { exportAt: null }])(
+    'rejects invalid exported metadata: %j',
+    async (metadata) => {
+      const { deps } = createDependencies(JSON.stringify({ ...baseExport, ...metadata }));
+      await expect(
+        createConversationImportOperation(deps)({
+          filepath: '/tmp/invalid-metadata.json',
+          requestUserId: 'owner',
+          format: 'librechat',
+        }),
+      ).rejects.toBeInstanceOf(ConversationImportError);
+      expect(deps.getImporter).not.toHaveBeenCalled();
+    },
+  );
+
   it('runs a valid LibreChat export with the authenticated owner and import configuration', async () => {
     const { deps, importer } = createDependencies(JSON.stringify(baseExport));
     const operation = createConversationImportOperation(deps);

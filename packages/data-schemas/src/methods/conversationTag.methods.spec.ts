@@ -437,3 +437,102 @@ describe('decrementTagCounts', () => {
     await expect(decrementTagCounts(mongoose, userId, ['', 'nonexistent'])).resolves.not.toThrow();
   });
 });
+
+describe('catalog mutation tenant boundaries', () => {
+  const user = 'catalog-owner';
+
+  it.each([null, 'tenant-a'])(
+    'keeps catalog and membership mutations inside tenant %s',
+    async (tenantId) => {
+      const methods = createConversationTagMethods(mongoose);
+      const owners = [
+        { user },
+        { user, tenantId: 'tenant-a' },
+        { user, tenantId: 'tenant-b' },
+        { user: 'foreign' },
+      ];
+      for (const owner of owners) {
+        await Conversation.collection.insertOne({
+          ...owner,
+          conversationId: 'same',
+          endpoint: 'openAI',
+          tags: ['shared'],
+        });
+        await ConversationTag.collection.insertMany([
+          { ...owner, tag: 'shared', count: 5, position: 1 },
+          { ...owner, tag: 'later', count: 0, position: 2 },
+        ]);
+        if (owner.user !== user || (owner.tenantId ?? null) !== tenantId) {
+          await ConversationTag.collection.insertOne({
+            ...owner,
+            tag: 'renamed',
+            count: 0,
+            position: 99,
+          });
+        }
+      }
+      const outside = {
+        $or: [
+          { user: { $ne: user } },
+          tenantId == null ? { tenantId: { $exists: true } } : { tenantId: { $ne: tenantId } },
+        ],
+      };
+      const catalogBefore = await ConversationTag.collection
+        .find(outside)
+        .sort({ _id: 1 })
+        .toArray();
+      const messagesBefore = await Conversation.collection.find(outside).sort({ _id: 1 }).toArray();
+      await tenantStorage.run(tenantId == null ? {} : { tenantId }, async () => {
+        const created = await methods.createConversationTag(
+          user,
+          { tag: 'fresh', addToConversation: true, conversationId: 'same' },
+          tenantId,
+        );
+        expect(created).toMatchObject({ tag: 'fresh', position: 3, count: 1 });
+        await methods.bulkIncrementTagCounts(user, ['shared']);
+        const renamed = await methods.updateConversationTag(
+          user,
+          'shared',
+          { tag: 'renamed', position: 3 },
+          tenantId,
+        );
+        expect(renamed).toMatchObject({ tag: 'renamed', count: 1, position: 3 });
+        await methods.deleteConversationTag(user, 'later', tenantId);
+        await methods.deleteConversationTag(user, 'renamed', tenantId);
+        expect(await methods.getConversationTags(user, tenantId)).toEqual([
+          expect.objectContaining({ tag: 'fresh', position: 1, count: 1 }),
+        ]);
+      });
+      expect(await ConversationTag.collection.find(outside).sort({ _id: 1 }).toArray()).toEqual(
+        catalogBefore,
+      );
+      expect(await Conversation.collection.find(outside).sort({ _id: 1 }).toArray()).toEqual(
+        messagesBefore,
+      );
+    },
+  );
+
+  it('does not materialize historical derived tags in a tenantless mutation', async () => {
+    const methods = createConversationTagMethods(mongoose);
+    await Conversation.collection.insertOne({
+      user,
+      tenantId: 'historical',
+      conversationId: 'same',
+      tags: ['derived'],
+    });
+    await expect(
+      methods.updateConversationTag(user, 'derived', { tag: 'renamed' }, null),
+    ).resolves.toBeNull();
+    await expect(methods.deleteConversationTag(user, 'derived', null)).resolves.toBeNull();
+    expect(await ConversationTag.countDocuments({ user })).toBe(0);
+    expect((await Conversation.findOne({ user }).lean())?.tags).toEqual(['derived']);
+    await Conversation.collection.insertOne({ user, conversationId: 'same', tags: ['derived'] });
+    await expect(
+      methods.updateConversationTag(user, 'derived', { tag: 'renamed' }, null),
+    ).resolves.toMatchObject({ tag: 'renamed', count: 1 });
+    await methods.deleteConversationTag(user, 'renamed', null);
+    expect((await Conversation.findOne({ user, tenantId: 'historical' }).lean())?.tags).toEqual([
+      'derived',
+    ]);
+  });
+});

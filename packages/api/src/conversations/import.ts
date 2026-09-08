@@ -60,6 +60,12 @@ export interface ConversationImportDependencies<TBuilder> {
   onCleanupError?: (error: Error, filepath: string, requestUserId: string) => void;
 }
 
+const importMetadataSchema = z.object({
+  endpoint: z.string().nullish(),
+  title: z.string().nullish(),
+  exportAt: z.string().optional(),
+});
+
 const TOP_LEVEL_FIELDS = new Set([
   'conversationId',
   'endpoint',
@@ -490,10 +496,11 @@ export function prepareLibreChatConversationImport(
   if (typeof value.conversationId !== 'string' || value.conversationId.length === 0) {
     throw new ConversationImportError('A LibreChat conversationId is required');
   }
-  for (const field of ['endpoint', 'title', 'exportAt'] as const) {
-    if (value[field] !== undefined && typeof value[field] !== 'string') {
-      throw new ConversationImportError(`Field "conversation.${field}" must be a string`);
-    }
+  const metadata = importMetadataSchema.safeParse(value);
+  if (!metadata.success) {
+    throw new ConversationImportError('The exported conversation metadata is not valid', {
+      cause: metadata.error,
+    });
   }
   if (
     typeof value.title === 'string' &&
