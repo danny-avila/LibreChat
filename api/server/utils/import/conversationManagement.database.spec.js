@@ -50,6 +50,38 @@ describe('importConversations database compatibility', () => {
   });
 
   it.each([false, true])(
+    'persists transcript without source provider thread state (recursive=%s)',
+    async (recursive) => {
+      const filepath = path.join(tempDir, 'transcript.json');
+      const message = {
+        messageId: 'source-message',
+        parentMessageId: Constants.NO_PARENT,
+        conversationId: 'source',
+        text: 'Saved transcript',
+        sender: 'User',
+        isCreatedByUser: true,
+        thread_id: 'source-thread',
+      };
+      await fs.writeFile(
+        filepath,
+        JSON.stringify({
+          conversationId: 'source',
+          endpoint: 'openAI',
+          title: 'Transcript',
+          recursive,
+          options: { endpoint: 'openAI', model: 'gpt-4o' },
+          ...(recursive ? { messagesTree: [message] } : { messages: [message] }),
+        }),
+      );
+      await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+      const stored = await mongoose.models.Message.find({ user: 'owner' }).lean();
+      expect(stored).toHaveLength(1);
+      expect(stored[0].text).toBe('Saved transcript');
+      expect(stored[0]).not.toHaveProperty('thread_id');
+    },
+  );
+
+  it.each([false, true])(
     'round-trips client-visible added-conversation markers (recursive=%s)',
     async (recursive) => {
       const filepath = path.join(tempDir, 'client-export.json');

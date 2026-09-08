@@ -499,12 +499,17 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const query =
       filters.length === 1 ? filters[0] : ({ $and: filters } as FilterQuery<IChatProjectDocument>);
     await ensureProjectLookupIndex();
+    const sort: PipelineStage.Sort = { $sort: { [sortBy]: sortOrder, _id: sortOrder } };
+    const page: PipelineStage[] = [
+      ...(cursorFilter ? [{ $match: cursorFilter }] : []),
+      sort,
+      { $limit: limit + 1 },
+    ];
     const projects = await ChatProject.aggregate<ProjectLean>([
       { $match: query },
-      ...committedProjectStats(),
-      ...(cursorFilter ? [{ $match: cursorFilter }] : []),
-      { $sort: { [sortBy]: sortOrder, _id: sortOrder } },
-      { $limit: limit + 1 },
+      ...(sortBy === 'lastConversationAt'
+        ? [...committedProjectStats(), ...page]
+        : [...page, ...committedProjectStats(), sort]),
     ]);
 
     let nextCursor: string | null = null;

@@ -429,13 +429,16 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const Conversation = mongoose.models.Conversation;
       const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
       const { tag: newTag, description, position } = data;
+      const renaming = !!newTag && newTag !== oldTag;
+      if (renaming && position !== undefined) {
+        throw new Error('Rename and position changes must be sent separately');
+      }
 
       const existingTag = await findMutableTag(user, oldTag, tenantId);
       if (!existingTag) {
         return null;
       }
 
-      const renaming = !!newTag && newTag !== oldTag;
       if (existingTag.renameTo && existingTag.renameTo !== newTag) {
         throw new Error('Tag rename is in progress');
       }

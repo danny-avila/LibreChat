@@ -330,11 +330,31 @@ describe('authoritative public tag counts', () => {
     ]);
   });
 
+  it('rejects combined rename and reorder before any catalog or membership write', async () => {
+    const methods = createConversationTagMethods(mongoose);
+    await ConversationTag.create({ user, tag: 'old', position: 1 });
+    const before = await ConversationTag.find({ user }).lean();
+    const membership = jest.spyOn(Conversation, 'updateMany');
+    const catalog = jest.spyOn(ConversationTag, 'updateOne');
+    try {
+      await expect(
+        methods.updateConversationTag(user, 'old', { tag: 'new', position: 3 }, null),
+      ).rejects.toThrow();
+      expect(membership).not.toHaveBeenCalled();
+      expect(catalog).not.toHaveBeenCalled();
+      expect(await ConversationTag.find({ user }).lean()).toEqual(before);
+    } finally {
+      membership.mockRestore();
+      catalog.mockRestore();
+    }
+  });
+
   it.each(['membership', 'count', 'catalog'] as const)(
     'resumes a pending rename after %s failure',
     async (failure) => {
       const methods = createConversationTagMethods(mongoose);
       await ConversationTag.create({ user, tag: 'old', description: 'Keep', position: 2 });
+      await ConversationTag.create({ user, tag: 'neighbor', position: 3 });
       await Conversation.create({
         user,
         conversationId: 'rename-retry',
@@ -373,6 +393,9 @@ describe('authoritative public tag counts', () => {
         await ConversationTag.findOne({ user, tag: 'new' }).select('+renameTo').lean(),
       ).not.toHaveProperty('renameTo');
       expect((await Conversation.findOne({ user }).lean())?.tags).toEqual(['new']);
+      expect(await ConversationTag.findOne({ user, tag: 'neighbor' }).lean()).toMatchObject({
+        position: 3,
+      });
     },
   );
 
@@ -666,10 +689,11 @@ describe('catalog mutation tenant boundaries', () => {
         const renamed = await methods.updateConversationTag(
           user,
           'shared',
-          { tag: 'renamed', position: 3 },
+          { tag: 'renamed' },
           tenantId,
         );
-        expect(renamed).toMatchObject({ tag: 'renamed', count: 1, position: 3 });
+        expect(renamed).toMatchObject({ tag: 'renamed', count: 1, position: 1 });
+        await methods.updateConversationTag(user, 'renamed', { position: 3 }, tenantId);
         await methods.deleteConversationTag(user, 'later', tenantId);
         await methods.deleteConversationTag(user, 'renamed', tenantId);
         expect(await methods.getConversationTags(user, tenantId)).toEqual([

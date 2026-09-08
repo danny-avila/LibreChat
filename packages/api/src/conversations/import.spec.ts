@@ -454,6 +454,31 @@ describe('createConversationImportOperation', () => {
     },
   );
 
+  it.each([false, true])(
+    'discards imported provider thread state (recursive=%s)',
+    async (recursive) => {
+      const message = { ...baseExport.messages[0], thread_id: 'source-thread' };
+      const { messages: _messages, ...conversation } = baseExport;
+      const { deps, importer } = createDependencies(
+        JSON.stringify({
+          ...conversation,
+          recursive,
+          ...(recursive
+            ? { messagesTree: [{ ...message, children: [{ ...message, messageId: 'child' }] }] }
+            : { messages: [message] }),
+        }),
+      );
+      await createConversationImportOperation(deps)({
+        filepath: '/tmp/transcript.json',
+        requestUserId: 'owner',
+        format: 'librechat',
+      });
+      const normalized = JSON.stringify(importer.mock.calls[0][0]);
+      expect(normalized).not.toContain('thread_id');
+      expect(normalized).toContain('hello');
+    },
+  );
+
   it('strips provider file IDs from options before any importer or policy runs', async () => {
     const { deps, importer } = createDependencies(
       JSON.stringify({

@@ -119,6 +119,55 @@ describe('ChatProject methods', () => {
     }
   });
 
+  it.each([
+    ['name', 'asc'],
+    ['name', 'desc'],
+    ['createdAt', 'asc'],
+    ['createdAt', 'desc'],
+  ] as const)('pages before joining conversations for %s %s', async (sortBy, sortDirection) => {
+    for (let index = 0; index < 6; index++) {
+      const project = await ChatProject.create({
+        user,
+        name: `Project ${index}`,
+        createdAt: new Date(2026, 0, index + 1),
+      });
+      await Conversation.collection.insertOne({
+        user,
+        conversationId: `conversation-${index}`,
+        chatProjectId: String(project._id),
+        updatedAt: new Date(2026, 1, 6 - index),
+      });
+    }
+    const aggregate = jest.spyOn(ChatProject, 'aggregate');
+    try {
+      const names: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page = await methods.listChatProjects(user, {
+          sortBy,
+          sortDirection,
+          limit: 2,
+          cursor,
+        });
+        names.push(...page.projects.map((project) => project.name));
+        expect(page.projects.every((project) => project.conversationCount === 1)).toBe(true);
+        cursor = page.nextCursor;
+      } while (cursor);
+      const expected = Array.from({ length: 6 }, (_, index) => `Project ${index}`);
+      expect(names).toEqual(sortDirection === 'asc' ? expected : expected.reverse());
+      const pipelines = aggregate.mock.calls.map(([pipeline]) => pipeline ?? []);
+      for (const pipeline of pipelines) {
+        const lookupIndex = pipeline.findIndex((stage) => '$lookup' in stage);
+        const prefix = pipeline.slice(0, lookupIndex);
+        expect(prefix).toContainEqual({ $limit: 3 });
+        const admitted = await ChatProject.aggregate(prefix);
+        expect(admitted.length).toBeLessThanOrEqual(3);
+      }
+    } finally {
+      aggregate.mockRestore();
+    }
+  });
+
   it('filters projects by name or description search', async () => {
     await methods.createChatProject(user, {
       name: 'Customer Alpha',

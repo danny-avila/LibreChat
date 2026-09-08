@@ -443,6 +443,7 @@ export interface ConversationMessageResponse {
   content: object[];
   files: object[];
   attachments: object[];
+  quotes: string[];
   sender: string;
   isCreatedByUser: boolean;
   createdAt: string | null;
@@ -479,6 +480,10 @@ export function projectConversationMessage(
     }
     return projected;
   };
+  const quotes =
+    withinContentLimits(source.quotes, 0, budget) && Array.isArray(source.quotes)
+      ? source.quotes.filter((quote): quote is string => typeof quote === 'string')
+      : [];
   const content = projectParts(source.content, contentSchema);
   const files = projectParts(source.files, conversationFileSchema);
   const attachments = projectParts(source.attachments, conversationFileSchema);
@@ -490,6 +495,7 @@ export function projectConversationMessage(
     content,
     files,
     attachments,
+    quotes,
     sender: source.sender ?? '',
     isCreatedByUser: source.isCreatedByUser,
     createdAt: toTimestamp(source.createdAt),

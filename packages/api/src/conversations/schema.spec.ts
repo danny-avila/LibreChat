@@ -489,3 +489,18 @@ describe('message attachment projection', () => {
     });
   });
 });
+
+describe('quoted message context', () => {
+  it('preserves only quoted strings and defaults absent or invalid arrays to empty', () => {
+    expect(
+      projectConversationMessage({
+        quotes: ['first', 12, null, 'second'],
+      } as unknown as ConversationMessageResource).quotes,
+    ).toEqual(['first', 'second']);
+    expect(projectConversationMessage({} as ConversationMessageResource).quotes).toEqual([]);
+    expect(
+      projectConversationMessage({ quotes: 'invalid' } as unknown as ConversationMessageResource)
+        .quotes,
+    ).toEqual([]);
+  });
+});

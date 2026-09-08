@@ -453,6 +453,7 @@ describe('conversation management handlers with Mongo persistence', () => {
       user: OWNER,
       conversationId: SHARED_ID,
       messageId: 'with-files',
+      quotes: ['Referenced excerpt'],
       files: [
         {
           file_id: 'upload',
@@ -476,6 +477,7 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(response.body.data).toEqual([
       expect.objectContaining({
         id: 'with-files',
+        quotes: ['Referenced excerpt'],
         files: [{ file_id: 'upload', filename: 'notes.txt' }],
         attachments: [
           { file_id: 'artifact', filepath: '/files/artifact', toolCallId: 'tool', metadata: {} },

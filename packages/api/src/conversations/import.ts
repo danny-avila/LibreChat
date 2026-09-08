@@ -420,7 +420,7 @@ function assertMessage(
       );
     }
   }
-  for (const field of SOURCE_PROVENANCE_FIELDS) {
+  for (const field of [...SOURCE_PROVENANCE_FIELDS, 'thread_id'] as const) {
     delete value[field];
   }
 

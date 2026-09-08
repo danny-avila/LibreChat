@@ -68,6 +68,9 @@ router.post('/', async (req, res) => {
 router.put('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
+    if (req.body.tag && req.body.tag !== decodedTag && req.body.position !== undefined) {
+      return res.status(400).json({ error: 'Rename and position changes must be sent separately' });
+    }
     const tag = await updateConversationTag(
       req.user.id,
       decodedTag,
