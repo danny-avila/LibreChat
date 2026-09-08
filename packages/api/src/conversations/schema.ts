@@ -168,24 +168,87 @@ const textValue = z.union([
     .strip(),
 ]);
 const jsonObject = z.record(z.string(), z.unknown());
-const toolCall = z
+const baseToolCall = z
   .object({
     id: z.string().optional(),
     type: z.string().optional(),
     name: z.string().optional(),
     args: z.union([z.string(), jsonObject]).optional(),
-    output: z.union([z.string(), jsonObject, z.array(z.unknown())]).optional(),
+    output: z.union([z.string(), jsonObject, z.array(z.unknown())]).nullish(),
     function: z
       .object({
         name: z.string(),
         arguments: z.union([z.string(), jsonObject]),
-        output: z.union([z.string(), jsonObject, z.array(z.unknown())]).optional(),
+        output: z.union([z.string(), jsonObject, z.array(z.unknown())]).nullish(),
       })
       .strip()
       .optional(),
     ...contentMetadata,
   })
   .strip();
+
+const codeOutput = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('logs'),
+      logs: z.string().optional(),
+      index: z.number().int().optional(),
+    })
+    .strip(),
+  z
+    .object({
+      type: z.literal('image'),
+      index: z.number().int().optional(),
+      image: z
+        .object({ file_id: z.string().optional(), detail: z.string().optional() })
+        .strip()
+        .optional(),
+    })
+    .strip(),
+]);
+const toolCall = z.union([
+  baseToolCall.extend({
+    type: z.literal('code_interpreter'),
+    code_interpreter: z
+      .object({ input: z.string().optional(), outputs: z.array(codeOutput).optional() })
+      .strip()
+      .optional(),
+  }),
+  baseToolCall.extend({ type: z.literal('retrieval'), retrieval: z.object({}).strip().optional() }),
+  baseToolCall.extend({
+    type: z.literal('file_search'),
+    file_search: z
+      .object({
+        ranking_options: z
+          .object({ ranker: z.string(), score_threshold: z.number() })
+          .strip()
+          .optional(),
+        results: z
+          .array(
+            z
+              .object({
+                file_id: z.string(),
+                file_name: z.string(),
+                score: z.number(),
+                content: z
+                  .array(
+                    z
+                      .object({ type: z.literal('text').optional(), text: z.string().optional() })
+                      .strip(),
+                  )
+                  .optional(),
+              })
+              .strip(),
+          )
+          .optional(),
+      })
+      .strip()
+      .optional(),
+  }),
+  baseToolCall.refine(
+    (value) => !['code_interpreter', 'retrieval', 'file_search'].includes(value.type ?? ''),
+  ),
+]);
 
 const contentSchema = z.discriminatedUnion('type', [
   z

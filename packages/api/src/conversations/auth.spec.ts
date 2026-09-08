@@ -17,9 +17,12 @@ async function run(
   remoteAuth: RequestHandler,
   managementAuth: RequestHandler,
   getAppConfig = jest.fn().mockResolvedValue(config),
+  remoteAccess: RequestHandler = (_req, _res, next) => next(),
 ) {
   const app = express();
-  app.use(createConversationManagementAuth({ getAppConfig, remoteAuth, managementAuth }));
+  app.use(
+    createConversationManagementAuth({ getAppConfig, remoteAuth, remoteAccess, managementAuth }),
+  );
   app.get('/', (_req, res) => {
     res.sendStatus(204);
   });
@@ -63,6 +66,41 @@ describe('conversation management authentication selector', () => {
     expect(remoteAuth).toHaveBeenCalledTimes(1);
     expect(managementAuth).not.toHaveBeenCalled();
     expect(result.response.status).toBe(204);
+  });
+
+  it.each(['remote', 'management'] as const)(
+    'applies the remote grant only in %s mode',
+    async (mode) => {
+      const authenticate: RequestHandler = (_req, _res, next) => next();
+      const remoteAccess = jest.fn((_req, res) => {
+        res.sendStatus(403);
+      });
+      const { response } = await run(
+        createConfig(mode),
+        authenticate,
+        authenticate,
+        jest.fn().mockResolvedValue(createConfig(mode)),
+        remoteAccess,
+      );
+      expect(response.status).toBe(mode === 'remote' ? 403 : 204);
+      expect(remoteAccess).toHaveBeenCalledTimes(mode === 'remote' ? 1 : 0);
+    },
+  );
+
+  it('never checks the grant or reaches the handler after remote authentication fails', async () => {
+    const reject: RequestHandler = (_req, res) => {
+      res.sendStatus(401);
+    };
+    const remoteAccess = jest.fn();
+    const { response } = await run(
+      createConfig('remote'),
+      reject,
+      jest.fn(),
+      jest.fn().mockResolvedValue(createConfig('remote')),
+      remoteAccess,
+    );
+    expect(response.status).toBe(401);
+    expect(remoteAccess).not.toHaveBeenCalled();
   });
 
   it('does not fall back to remote when selected management authentication rejects', async () => {

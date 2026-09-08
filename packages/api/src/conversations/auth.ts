@@ -6,6 +6,7 @@ import type { GetAppConfigOptions } from '../app/service';
 export interface ConversationManagementAuthDeps {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
   remoteAuth: RequestHandler;
+  remoteAccess: RequestHandler;
   managementAuth: RequestHandler;
 }
 
@@ -16,6 +17,7 @@ function sendUnauthorized(res: Response): void {
 export function createConversationManagementAuth({
   getAppConfig,
   remoteAuth,
+  remoteAccess,
   managementAuth,
 }: ConversationManagementAuthDeps): RequestHandler {
   const handler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -27,8 +29,16 @@ export function createConversationManagementAuth({
         return;
       }
 
-      const selected = mode === 'management' ? managementAuth : remoteAuth;
-      await Promise.resolve(selected(req, res, next));
+      if (mode === 'management') {
+        await Promise.resolve(managementAuth(req, res, next));
+        return;
+      }
+      await Promise.resolve(
+        remoteAuth(req, res, (error) => {
+          if (error) return next(error);
+          return Promise.resolve(remoteAccess(req, res, next)).catch(next);
+        }),
+      );
     } catch (error) {
       logger.error('[conversationManagementAuth] Failed to resolve authentication policy', error);
       res.status(500).json({ error: 'Internal server error' });

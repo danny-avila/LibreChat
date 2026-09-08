@@ -8,6 +8,7 @@ import {
   decodeConversationCursor,
   encodeConversationCursor,
   projectConversationMessage,
+  isValidConversationContentPart,
 } from './schema';
 
 describe('conversation management request schemas', () => {
@@ -116,6 +117,94 @@ describe('conversation message projection', () => {
     expect(projectConversationMessage(source).content).toEqual([
       { type: ContentTypes.TEXT, text: { value: 'ref file', annotations } },
     ]);
+  });
+
+  it.each([
+    { id: 'partial-code', type: 'code_interpreter' },
+    { id: 'partial-search', type: 'file_search' },
+    { id: 'partial-retrieval', type: 'retrieval' },
+    {
+      id: 'code',
+      type: 'code_interpreter',
+      code_interpreter: {
+        input: 'print(1)',
+        outputs: [
+          { type: 'logs', logs: '1' },
+          { type: 'image', image: { file_id: 'image' } },
+        ],
+      },
+    },
+    { id: 'retrieval', type: 'retrieval', retrieval: {} },
+    {
+      id: 'search',
+      type: 'file_search',
+      file_search: {
+        ranking_options: { ranker: 'auto', score_threshold: 0.2 },
+        results: [
+          {
+            file_id: 'file',
+            file_name: 'notes.txt',
+            score: 0.9,
+            content: [{ type: 'text', text: 'excerpt' }],
+          },
+        ],
+      },
+    },
+    {
+      id: 'pending-function',
+      type: 'function',
+      function: { name: 'lookup', arguments: '{}', output: null },
+    },
+  ])('preserves the public payload of $type tool calls', (tool_call) => {
+    const content = { type: ContentTypes.TOOL_CALL, tool_call };
+    expect(isValidConversationContentPart(content)).toBe(true);
+    const source = {
+      messageId: 'message',
+      conversationId: 'conversation',
+      content: [{ ...content, tool_call: { ...tool_call, credentials: 'private' } }],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source).content).toEqual([content]);
+  });
+
+  it('strips internal code-output fields and rejects malformed known tool variants', () => {
+    const source = {
+      messageId: 'message',
+      conversationId: 'conversation',
+      content: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            type: 'code_interpreter',
+            code_interpreter: {
+              input: 'code',
+              storageKey: 'private',
+              outputs: [{ type: 'image', image: { file_id: 'image', storageKey: 'private' } }],
+            },
+          },
+        },
+      ],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source).content).toEqual([
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          type: 'code_interpreter',
+          code_interpreter: {
+            input: 'code',
+            outputs: [{ type: 'image', image: { file_id: 'image' } }],
+          },
+        },
+      },
+    ]);
+    for (const tool_call of [
+      { type: 'code_interpreter', code_interpreter: { input: [] } },
+      { type: 'code_interpreter', code_interpreter: { outputs: [null] } },
+      { type: 'retrieval', retrieval: null },
+      { type: 'file_search', file_search: { results: 'invalid' } },
+    ])
+      expect(isValidConversationContentPart({ type: ContentTypes.TOOL_CALL, tool_call })).toBe(
+        false,
+      );
   });
 
   it('keeps supported visible content variants and strips stored internal fields', () => {

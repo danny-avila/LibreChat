@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import request from 'supertest';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import express, { type RequestHandler, type Response } from 'express';
+import { EModelEndpoint, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   createMethods,
   createModels,
@@ -18,6 +18,7 @@ import { createRequireApiKeyAuth, type ApiKeyAuthRequest } from '../apiKeys/midd
 import { createRemoteAgentAuth } from '../middleware/remoteAgentAuth';
 import { createAgentManagementAuth } from '../middleware/management';
 import { createConversationManagementHandlers } from './management';
+import { generateCheckAccess } from '../middleware/access';
 import { createConversationManagementAuth } from './auth';
 import * as oidc from '../auth/oidc';
 
@@ -132,7 +133,19 @@ function createApp(
             verifyMachine(token, config) as Promise<JwtPayload>,
         }),
   });
-  const auth = createConversationManagementAuth({ getAppConfig, remoteAuth, managementAuth });
+  const remoteAccess = generateCheckAccess({
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    permissions: [Permissions.USE],
+    getRoleByName: methods.getRoleByName,
+  });
+  const auth = createConversationManagementAuth({
+    getAppConfig,
+    remoteAuth,
+    managementAuth,
+    remoteAccess: async (req, res, next) => {
+      await remoteAccess(req, res, next);
+    },
+  });
   const handlers = createConversationManagementHandlers({
     canRecoverAgentConversationDeletion: async () => false,
     getConversationResourceDeletionState: methods.getConversationResourceDeletionState,
@@ -169,6 +182,17 @@ afterAll(async () => {
 beforeEach(async () => {
   jest.restoreAllMocks();
   await mongoose.connection.dropDatabase();
+  for (const tenantId of [TENANT_A, TENANT_B]) {
+    await asTenant(tenantId, async () => {
+      await methods.getRoleByName('USER');
+      await mongoose.models.Role.updateOne(
+        { name: 'USER' },
+        {
+          $set: { 'permissions.REMOTE_AGENTS.USE': true },
+        },
+      );
+    });
+  }
   userA = await asTenant(TENANT_A, () =>
     User.create({
       email: 'a@example.com',
@@ -223,6 +247,27 @@ describe('conversation API principal composition', () => {
     expect(own.body.title).toBe('A history');
     expect(other.status).toBe(404);
     expect(revoked.status).toBe(401);
+  });
+
+  it('rejects an existing API key immediately after its role grant is revoked', async () => {
+    const key = await asTenant(TENANT_A, () =>
+      methods.createAgentApiKey({ userId: userA._id, name: 'role-revocation' }),
+    );
+    const app = createApp('remote');
+    expect(
+      (await request(app).get('/a-history').set('Authorization', `Bearer ${key.key}`)).status,
+    ).toBe(200);
+    await asTenant(TENANT_A, () =>
+      mongoose.models.Role.updateOne(
+        { name: 'USER' },
+        {
+          $set: { 'permissions.REMOTE_AGENTS.USE': false },
+        },
+      ),
+    );
+    expect(
+      (await request(app).get('/a-history').set('Authorization', `Bearer ${key.key}`)).status,
+    ).toBe(403);
   });
 
   it('binds a machine token to exactly its configured user and tenant without remote fallback', async () => {
@@ -313,6 +358,18 @@ describe('conversation API principal composition', () => {
       openidId: 'oidc-user-a',
       openidIssuer: 'https://issuer.example',
     });
+    await asTenant(TENANT_A, () =>
+      mongoose.models.Role.updateOne(
+        { name: 'USER' },
+        {
+          $set: { 'permissions.REMOTE_AGENTS.USE': false },
+        },
+      ),
+    );
+    expect(
+      (await request(app).get('/a-history').set('Authorization', 'Bearer remote-user-token'))
+        .status,
+    ).toBe(403);
   });
 
   it('rejects invalid OIDC claims or verification without API-key fallback when disabled', async () => {

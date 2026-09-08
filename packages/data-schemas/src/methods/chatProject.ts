@@ -223,11 +223,11 @@ function projectStatsSnapshotFilter(
 }
 
 /** Public statistics come from committed membership even when cache reconciliation fails. */
-function committedProjectStats(mongoose: typeof import('mongoose')): PipelineStage[] {
+function committedProjectStats(): PipelineStage[] {
   return [
     {
       $lookup: {
-        from: mongoose.models.Conversation.collection.name,
+        from: 'conversations',
         let: {
           projectId: { $toString: '$_id' },
           user: '$user',
@@ -427,7 +427,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
           ...optionalTenantFilter<IChatProjectDocument>(getTenantId() ?? null),
         },
       },
-      ...committedProjectStats(mongoose),
+      ...committedProjectStats(),
     ]);
     return projects[0] ?? null;
   }
@@ -460,7 +460,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       filters.length === 1 ? filters[0] : ({ $and: filters } as FilterQuery<IChatProjectDocument>);
     const projects = await ChatProject.aggregate<ProjectLean>([
       { $match: query },
-      ...committedProjectStats(mongoose),
+      ...committedProjectStats(),
       ...(cursorFilter ? [{ $match: cursorFilter }] : []),
       { $sort: { [sortBy]: sortOrder, _id: sortOrder } },
       { $limit: limit + 1 },

@@ -34,16 +34,17 @@ const requireAgentManagementAuth = createAgentManagementAuth({
   getAppConfig,
 });
 
-const requireConversationManagementAuth = createConversationManagementAuth({
-  getAppConfig,
-  remoteAuth: requireRemoteAgentAuth,
-  managementAuth: requireAgentManagementAuth,
-});
-
 const checkRemoteAgentsFeature = generateCheckAccess({
   permissionType: PermissionTypes.REMOTE_AGENTS,
   permissions: [Permissions.USE],
   getRoleByName: db.getRoleByName,
+});
+
+const requireConversationManagementAuth = createConversationManagementAuth({
+  getAppConfig,
+  remoteAuth: requireRemoteAgentAuth,
+  remoteAccess: checkRemoteAgentsFeature,
+  managementAuth: requireAgentManagementAuth,
 });
 
 const agentAccessDependencies = {
