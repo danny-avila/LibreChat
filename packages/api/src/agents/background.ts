@@ -2270,20 +2270,21 @@ export async function runCheckBackgroundTask(params: {
       let durableClaim: BackgroundToolResultClaim;
       try {
         durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
-        const existingClaim = durableClaim.status === 'claimed' ? durableClaim.claim : undefined;
+        const claimedResult = durableClaim.status === 'claimed' ? durableClaim : undefined;
+        const existingClaim = claimedResult?.claim;
         const recoverableClaim =
           existingClaim?.kind === 'wakeup' ||
           (existingClaim?.kind === 'manual' && existingClaim.generationId != null);
         if (
           recoverableClaim &&
           existingClaim != null &&
-          durableClaim.messageId != null &&
+          claimedResult?.messageId != null &&
           params.recoverDeadBackgroundToolClaim != null
         ) {
           const recovered = await params.recoverDeadBackgroundToolClaim({
             userId,
             conversationId,
-            messageId: durableClaim.messageId,
+            messageId: claimedResult.messageId,
             claimId: existingClaim.claimId,
             ...(existingClaim.kind === 'manual'
               ? {
