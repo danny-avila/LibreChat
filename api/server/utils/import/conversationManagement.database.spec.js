@@ -50,6 +50,63 @@ describe('importConversations database compatibility', () => {
   });
 
   it.each([false, true])(
+    'imports hydrated, minimal, legacy and cleared feedback (recursive=%s)',
+    async (recursive) => {
+      const filepath = path.join(tempDir, 'feedback.json');
+      const minimal = { rating: 'thumbsDown', tag: 'inaccurate', text: 'Needs correction' };
+      const feedbacks = [
+        {
+          ...minimal,
+          _id: '65f1ad8c90523874d2d409ef',
+          tag: {
+            key: 'inaccurate',
+            label: 'Exported label',
+            icon: 'AlertCircle',
+            direction: 'thumbsDown',
+            extra: 'discard',
+          },
+        },
+        minimal,
+        { rating: 'thumbsUp' },
+        null,
+      ];
+      const messages = feedbacks.map((feedback, index) => ({
+        messageId: `message-${index}`,
+        conversationId: 'source',
+        parentMessageId: index === 0 ? Constants.NO_PARENT : `message-${index - 1}`,
+        sender: 'User',
+        text: `Rated ${index}`,
+        isCreatedByUser: true,
+        feedback,
+      }));
+      const tree = messages.reduceRight((children, message) => [{ ...message, children }], []);
+      await fs.writeFile(
+        filepath,
+        JSON.stringify({
+          conversationId: 'source',
+          endpoint: 'openAI',
+          recursive,
+          ...(recursive ? { messagesTree: tree } : { messages }),
+        }),
+      );
+      await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+      const stored = await mongoose.models.Message.find({ user: 'owner' }).sort({ text: 1 }).lean();
+      expect(stored).toHaveLength(4);
+      expect(
+        stored.map(
+          (message) =>
+            message.feedback && {
+              rating: message.feedback.rating,
+              tag: message.feedback.tag,
+              text: message.feedback.text,
+            },
+        ),
+      ).toEqual([minimal, minimal, { rating: 'thumbsUp' }, null]);
+      expect(String(stored[0].feedback._id)).not.toBe('65f1ad8c90523874d2d409ef');
+    },
+  );
+
+  it.each([false, true])(
     'persists only parsed public content (recursive=%s)',
     async (recursive) => {
       const filepath = path.join(tempDir, 'public-content.json');

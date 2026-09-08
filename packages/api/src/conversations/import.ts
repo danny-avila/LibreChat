@@ -6,6 +6,7 @@ import type { Document } from 'mongodb';
 import {
   MAX_CONVERSATION_MANAGEMENT_TITLE_LENGTH,
   conversationTagsSchema,
+  conversationFeedbackSchema,
   conversationMessageMetadataSchema,
   conversationFileSchema,
   conversationAttachmentSchema,
@@ -107,7 +108,10 @@ const COERCED_NUMBER_OPTION_FIELDS = [
 
 const SOURCE_RETENTION_FIELDS = ['isTemporary', 'expiredAt'] as const;
 const UNSAFE_MESSAGE_FIELDS = new Set(['contextMeta']);
-const importMessageSchema = tMessageSchema.extend({ addedConvo: z.boolean().optional() });
+const importMessageSchema = tMessageSchema.extend({
+  addedConvo: z.boolean().optional(),
+  feedback: conversationFeedbackSchema.nullish(),
+});
 const MESSAGE_FIELDS = new Set([
   ...Object.keys(importMessageSchema.shape).filter((field) => !UNSAFE_MESSAGE_FIELDS.has(field)),
   'children',
@@ -462,7 +466,10 @@ function assertMessage(
     value.metadata = metadata.data as JsonObject;
   }
   if (value.feedback != null) {
+    // Mongoose includes a generated feedback subdocument ID in browser exports.
+    if (isJsonObject(value.feedback)) delete value.feedback._id;
     assertNoOwnershipFields(value.feedback, `${location}.feedback`);
+    value.feedback = parsedMessage.data.feedback as JsonObject;
   }
   if (value.files != null) {
     stripOwnershipFields(value.files);

@@ -508,6 +508,27 @@ describe('createConversationImportOperation', () => {
     expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    { rating: 'invalid', tag: 'inaccurate' },
+    { rating: 'thumbsUp', tag: { key: 'inaccurate' } },
+    { rating: 'thumbsDown', tag: { key: 'unknown' } },
+    { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 42 },
+    { rating: 'thumbsDown', tag: { key: 'inaccurate', ownerId: 'other-owner' } },
+  ])('rejects malformed or ownership-bearing feedback before importing: %j', async (feedback) => {
+    const { deps, importer } = createDependencies(
+      JSON.stringify({ ...baseExport, messages: [{ ...baseExport.messages[0], feedback }] }),
+    );
+    await expect(
+      createConversationImportOperation(deps)({
+        filepath: '/tmp/feedback.json',
+        requestUserId: 'owner',
+        format: 'librechat',
+      }),
+    ).rejects.toBeInstanceOf(ConversationImportError);
+    expect(importer).not.toHaveBeenCalled();
+    expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
+  });
+
   it('strips provider file IDs from options before any importer or policy runs', async () => {
     const { deps, importer } = createDependencies(
       JSON.stringify({

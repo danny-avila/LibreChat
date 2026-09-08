@@ -183,7 +183,9 @@ const jsonObject = z.record(z.string(), z.unknown());
 const publicTimestamp = z
   .union([z.date(), z.string().datetime({ offset: true })])
   .transform((value) => (typeof value === 'string' ? new Date(value) : value).toISOString());
-const publicFeedback = z
+export type ConversationFeedback = Omit<TMinimalFeedback, 'tag'> &
+  Partial<Pick<TMinimalFeedback, 'tag'>>;
+export const conversationFeedbackSchema: z.ZodType<ConversationFeedback, z.ZodTypeDef, unknown> = z
   .object({
     rating: feedbackRatingSchema,
     tag: z
@@ -723,7 +725,7 @@ export interface ConversationMessageResponse {
   tokenCount: number | null;
   addedConvo: boolean;
   metadata: ConversationMessageMetadata | null;
-  feedback: (Omit<TMinimalFeedback, 'tag'> & Partial<Pick<TMinimalFeedback, 'tag'>>) | null;
+  feedback: ConversationFeedback | null;
 }
 
 export function projectConversation(source: ConversationResource): ConversationResponse {
@@ -763,7 +765,7 @@ export function projectConversationMessage(
   const manualSkills = projectStrings(source.manualSkills);
   const alwaysAppliedSkills = projectStrings(source.alwaysAppliedSkills);
   const feedback = withinContentLimits(source.feedback, 0, budget)
-    ? publicFeedback.safeParse(source.feedback)
+    ? conversationFeedbackSchema.safeParse(source.feedback)
     : undefined;
   const metadata = withinContentLimits(source.metadata, 0, budget)
     ? conversationMessageMetadataSchema.safeParse(source.metadata)
