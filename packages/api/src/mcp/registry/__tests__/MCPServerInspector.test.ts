@@ -81,6 +81,22 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    it('should keep trusted direct OpenID bearer configuration out of MCP OAuth detection', async () => {
+      const rawConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://api.example.com/mcp',
+        source: 'yaml' as const,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      } as t.MCPOptions;
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.oauthMetadata).toBeNull();
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
     it('should skip capabilities fetch when startup=false', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',

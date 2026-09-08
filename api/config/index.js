@@ -4,6 +4,7 @@ const {
   mcpConfig,
   MCPManager,
   FlowStateManager,
+  evalKeyvRedisScript,
   MCPServersRegistry,
   OAuthReconnectionManager,
 } = require('@librechat/api');
@@ -27,6 +28,7 @@ function getFlowStateManager(flowsCache) {
       ttl: mcpConfig.OAUTH_FLOW_TTL,
       monitorTimeout: mcpConfig.OAUTH_HANDLING_TIMEOUT,
       retainedFailureTypes: ['mcp_oauth'],
+      redisScriptExecutor: evalKeyvRedisScript,
     });
   }
   return flowManager;

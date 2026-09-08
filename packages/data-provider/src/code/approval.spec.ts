@@ -97,7 +97,7 @@ describe('conversation code approval constraints', () => {
     ).toEqual(['ask']);
   });
 
-  test.each(['autoApprove', 'bypass', 'fullAccess', '', {}, ['ask'], true, 1])(
+  test.each(['autoApprove', 'bypass', 'invalidMode', '', {}, ['ask'], true, 1])(
     'rejects invalid request state: %j',
     (value) => {
       expect(() => resolveCodeApprovalMode(value, constraints)).toThrow(CodeApprovalModeError);
@@ -107,7 +107,7 @@ describe('conversation code approval constraints', () => {
   test('rejects an unvalidated runtime mode before permission lookup', () => {
     expect(() =>
       resolveCodePermissionDecision({
-        mode: 'fullAccess' as never,
+        mode: 'invalidMode' as never,
         category: 'fileWrite',
         decision: 'ask',
       }),
@@ -124,6 +124,24 @@ describe('conversation code approval constraints', () => {
   test.each(CODE_APPROVAL_MODES)('preserves deny under %s', (mode) => {
     for (const category of ['fileWrite', 'commandExecution'] as const) {
       expect(resolveCodePermissionDecision({ mode, category, decision: 'deny' })).toBe('deny');
+    }
+  });
+
+  test('full access allows commands and file writes only with both machine grants', () => {
+    const mode = resolveCodeApprovalMode('fullAccess', constraints);
+    for (const category of ['fileWrite', 'commandExecution'] as const) {
+      expect(resolveCodePermissionDecision({ mode, category, decision: 'ask' })).toBe('allow');
+      expect(() =>
+        resolveCodeApprovalMode('fullAccess', {
+          ...constraints,
+          configSchema: {
+            permissions: {
+              ...constraints.configSchema?.permissions,
+              [category]: { allowed: ['ask'], default: 'ask' },
+            },
+          },
+        }),
+      ).toThrow(CodeApprovalModeError);
     }
   });
 

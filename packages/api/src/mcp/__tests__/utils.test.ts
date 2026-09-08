@@ -20,6 +20,7 @@ import {
   isUserSourced,
   validateMCPServerConfig,
   requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
   isChatSelectableMCPServer,
   filterChatSelectableMCPServers,
 } from '~/mcp/utils';
@@ -686,6 +687,44 @@ describe('isUserSourced', () => {
 
   it('returns false when both source and dbId are absent (pre-upgrade YAML server)', () => {
     expect(isUserSourced({})).toBe(false);
+  });
+});
+
+describe('requiresOAuthMachinery', () => {
+  it('preserves explicit OAuth when a direct bearer placeholder is also present', () => {
+    expect(
+      requiresOAuthMachinery({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        oauth: { client_id: 'explicit-client' },
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      }),
+    ).toBe(true);
+  });
+  it('suppresses MCP OAuth for a trusted direct OpenID bearer even if inspection stamped OAuth', () => {
+    expect(
+      requiresOAuthMachinery({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        requiresOAuth: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps OBO wiring when both OBO and the direct bearer placeholder are present', () => {
+    expect(
+      requiresOAuthMachinery({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com',
+        source: 'yaml',
+        requiresOAuth: true,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        obo: { scopes: 'api://mcp/.default' },
+      }),
+    ).toBe(true);
   });
 });
 

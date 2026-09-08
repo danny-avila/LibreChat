@@ -130,3 +130,29 @@ describe('Error: agent context budget errors', () => {
     expect(screen.getByText(catalog.com_error_final_context_overflow)).toBeInTheDocument();
   });
 });
+
+describe('Error — manual compaction', () => {
+  it('renders the failed-compaction copy', () => {
+    render(<Error text={JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })} />);
+
+    expect(screen.getByText(catalog.com_error_compaction_failed)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['disabled', 'com_error_compaction_disabled'],
+    ['instructions_exceed_budget', 'com_error_compaction_budget'],
+    ['nothing_to_summarize', 'com_error_compaction_nothing'],
+  ])('renders the copy for a compaction skipped because %s', (reason, key) => {
+    render(<Error text={JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason })} />);
+
+    expect(screen.getByText(catalog[key])).toBeInTheDocument();
+  });
+
+  it('falls back to the failed copy for an unknown skip reason', () => {
+    render(
+      <Error text={JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason: 'exhausted' })} />,
+    );
+
+    expect(screen.getByText(catalog.com_error_compaction_failed)).toBeInTheDocument();
+  });
+});

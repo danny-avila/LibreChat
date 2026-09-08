@@ -5,13 +5,14 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { AgentForm } from '~/common';
-import StatefulSessions from '../Advanced/StatefulSessions';
+import CodeSettings from '../Code/Settings';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useAuthContext: () => ({ user: {} }),
   useGetAgentsConfig: () => ({
     agentsConfig: {
+      capabilities: ['stateful_code_sessions'],
       statefulCodeSessions: {
         environments: [{ id: 'byom', name: 'My machine', type: 'attached', default: true }],
       },
@@ -20,7 +21,7 @@ jest.mock('~/hooks', () => ({
 }));
 
 function IdentityForm({ savedIdentity }: { savedIdentity?: AgentForm['git_identity'] }) {
-  const [advanced, setAdvanced] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(true);
   const methods = useForm<AgentForm>({
     mode: 'onChange',
     defaultValues: {
@@ -31,8 +32,8 @@ function IdentityForm({ savedIdentity }: { savedIdentity?: AgentForm['git_identi
   });
   return (
     <FormProvider {...methods}>
-      {advanced && <StatefulSessions />}
-      <button onClick={() => setAdvanced(!advanced)}>Toggle Advanced</button>
+      {dialogOpen && <CodeSettings />}
+      <button onClick={() => setDialogOpen(!dialogOpen)}>Toggle Dialog</button>
       <button onClick={() => methods.setValue(AgentCapabilities.execute_code, false)}>
         Disable code
       </button>
@@ -55,8 +56,8 @@ test.each(['', 'not-an-email'])(
       target: { value: email },
     });
     expect(await screen.findByRole('alert')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Toggle Advanced'));
-    fireEvent.click(screen.getByText('Toggle Advanced'));
+    fireEvent.click(screen.getByText('Toggle Dialog'));
+    fireEvent.click(screen.getByText('Toggle Dialog'));
     expect(screen.getByLabelText('com_ui_agent_git_name')).toHaveValue('Saved Agent');
     expect(screen.getByLabelText('com_ui_agent_git_email')).toHaveValue('saved@example.com');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -77,7 +78,7 @@ test('clears cross-field errors when completing or clearing a Git identity', asy
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });
 
-test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Advanced'])(
+test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Dialog'])(
   'discards a partial identity when its controls disappear: %s',
   async (action) => {
     render(<IdentityForm />);
@@ -91,7 +92,7 @@ test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Advanced']
   },
 );
 
-test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Advanced'])(
+test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Dialog'])(
   'discards an invalid email when its controls disappear: %s',
   async (action) => {
     render(<IdentityForm />);
@@ -118,9 +119,9 @@ test.each([
   fireEvent.change(screen.getByLabelText('com_ui_agent_git_email'), {
     target: { value: identity.email },
   });
-  fireEvent.click(screen.getByText('Toggle Advanced'));
+  fireEvent.click(screen.getByText('Toggle Dialog'));
   expect(screen.getByTestId('identity')).toHaveTextContent(JSON.stringify(identity));
-  fireEvent.click(screen.getByText('Toggle Advanced'));
+  fireEvent.click(screen.getByText('Toggle Dialog'));
   expect(screen.getByLabelText('com_ui_agent_git_name')).toHaveValue(identity.name);
   expect(screen.getByLabelText('com_ui_agent_git_email')).toHaveValue(identity.email);
   fireEvent.change(screen.getByLabelText('com_ui_agent_git_email'), {

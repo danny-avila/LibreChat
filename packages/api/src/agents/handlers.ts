@@ -765,6 +765,13 @@ function getSafeToolError(error: unknown): {
     message,
     logContext: {
       name: error instanceof Error ? error.name : typeof error,
+      ...(error instanceof WorkspaceToolHttpError
+        ? {
+            upstreamStatus: error.upstreamStatus,
+            upstreamBody: error.upstreamBody,
+            upstreamBodyTruncated: error.upstreamBodyTruncated,
+          }
+        : {}),
       message,
       messageLength: rawMessage.length,
       messageTruncated: message.length !== rawMessage.length,
@@ -2378,6 +2385,7 @@ async function handleWorkspaceFileRead(
       content: numbered,
     };
   } catch (error) {
+    if (error instanceof WorkspaceToolHttpError) throw error;
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceFileRead] Attached workspace read failed',
@@ -2464,6 +2472,7 @@ async function handleWorkspaceSearchCall(
       content: truncated ? `${content}${truncationNotice}` : content,
     };
   } catch (error) {
+    if (error instanceof WorkspaceToolHttpError) throw error;
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceSearchCall] Attached workspace search failed',
@@ -2566,6 +2575,7 @@ async function handleWorkspaceListCall(
       content: `${content}${truncationNotice}`,
     };
   } catch (error) {
+    if (error instanceof WorkspaceToolHttpError) throw error;
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceListCall] Attached workspace file listing failed',
@@ -3725,8 +3735,11 @@ async function handleAttachedWorkspaceCreateFileCall({
       created: result.created,
     });
   } catch (error) {
-    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409 && !overwrite) {
-      return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+    if (error instanceof WorkspaceToolHttpError) {
+      if (error.upstreamStatus === 409 && !overwrite) {
+        error.message += '. File already exists. Pass overwrite: true to replace.';
+      }
+      throw error;
     }
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn('[file_authoring] Attached workspace write failed', getSafeErrorMetadata(error));
@@ -3798,10 +3811,8 @@ async function handleAttachedWorkspaceEditFileCall({
       } catch (error) {
         if (signal?.aborted === true && isAbortError(error)) throw error;
         if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 400) {
-          return errorResult(
-            tc,
-            'This attached environment must update its LibreChat Code worker before protected files can be edited.',
-          );
+          error.message +=
+            '. This attached environment must update its LibreChat Code worker before protected files can be edited.';
         }
         throw error;
       }
@@ -3828,11 +3839,11 @@ async function handleAttachedWorkspaceEditFileCall({
       },
     );
   } catch (error) {
-    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409) {
-      return errorResult(
-        tc,
-        `The requested text did not match exactly once in "workspace/${path.filePath}". Re-read the file and retry.`,
-      );
+    if (error instanceof WorkspaceToolHttpError) {
+      if (error.upstreamStatus === 409) {
+        error.message += `; The requested text did not match exactly once in "workspace/${path.filePath}". Re-read the file and retry.`;
+      }
+      throw error;
     }
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn('[file_authoring] Attached workspace edit failed', getSafeErrorMetadata(error));
@@ -5963,6 +5974,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       policyError == null
                         ? filteredToolOutputResult(tc, backgroundReq, {
                             errorMessage: errorOutput,
+                            upstreamBody:
+                              toolError instanceof WorkspaceToolHttpError
+                                ? toolError.upstreamBody
+                                : undefined,
                           })
                         : null;
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
@@ -6373,6 +6388,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const { message, logContext } = getSafeToolError(toolError);
                       const filteredError = filteredToolOutputResult(tc, req, {
                         errorMessage: message,
+                        upstreamBody:
+                          toolError instanceof WorkspaceToolHttpError
+                            ? toolError.upstreamBody
+                            : undefined,
                       });
                       if (filteredError != null) {
                         logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
@@ -6781,6 +6800,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
+                      upstreamBody:
+                        toolError instanceof WorkspaceToolHttpError
+                          ? toolError.upstreamBody
+                          : undefined,
                     });
                     if (filteredError != null) {
                       logToolFailure({

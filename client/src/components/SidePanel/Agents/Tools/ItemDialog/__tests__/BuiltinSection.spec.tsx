@@ -8,7 +8,15 @@ import BuiltinSection from '../sections/BuiltinSection';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
-  useGetAgentsConfig: () => ({ agentsConfig: undefined }),
+  useAuthContext: () => ({ user: {} }),
+  useGetAgentsConfig: () => ({
+    agentsConfig: {
+      capabilities: ['stateful_code_sessions'],
+      statefulCodeSessions: {
+        environments: [{ id: 'byom', name: 'My machine', type: 'attached', default: true }],
+      },
+    },
+  }),
   useAgentCapabilities: () => ({ backgroundToolsEnabled: false }),
 }));
 jest.mock('~/data-provider', () => ({ useVerifyAgentToolAuth: () => ({ data: undefined }) }));
@@ -80,5 +88,21 @@ describe('BuiltinSection memory scope', () => {
   test('other builtins do not render the scope control', () => {
     renderSection('execute_code', { memory: true, memory_scope: MemoryScope.agent });
     expect(screen.queryByRole('checkbox', { name: 'com_agents_memory_scope' })).toBeNull();
+  });
+});
+
+describe('BuiltinSection Run Code settings', () => {
+  test('exposes stateful code configuration with the Run Code tool', () => {
+    renderSection('execute_code', {
+      execute_code: true,
+      stateful_code_sessions: true,
+      stateful_code_environment: 'user',
+    });
+
+    expect(screen.getByRole('switch', { name: 'com_ui_stateful_sessions' })).toBeChecked();
+    expect(screen.getByTestId('code-environment-id')).toBeInTheDocument();
+    expect(screen.getByTestId('stateful-code-environment')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_agent_git_name')).toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_agent_git_email')).toBeInTheDocument();
   });
 });

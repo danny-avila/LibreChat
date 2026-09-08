@@ -273,7 +273,7 @@ describe('executeWorkspaceTool', () => {
     ).rejects.toMatchObject({ reason: 'invalid' });
   });
 
-  test('surfaces bounded upstream failures without returning their body', async () => {
+  test('preserves the upstream status when the error body stalls', async () => {
     const cancel = jest.fn();
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(
@@ -296,8 +296,103 @@ describe('executeWorkspaceTool', () => {
         },
         fetchImpl,
       }),
-    ).rejects.toMatchObject({ reason: 'rejected', upstreamStatus: 503 });
+    ).rejects.toMatchObject({
+      reason: 'rejected',
+      upstreamStatus: 503,
+      upstreamBodyTruncated: true,
+    });
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([400, 409, 503, 504])('preserves HTTP %i and its diagnostic body', async (status) => {
+    const body = JSON.stringify({ code: 'ASSIGNMENT_EXPIRED', error: 'Assignment expired' });
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com',
+        authHeaders: {},
+        request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+        fetchImpl: jest.fn(async () => new Response(body, { status })),
+      }),
+    ).rejects.toMatchObject({
+      reason: 'rejected',
+      upstreamStatus: status,
+      upstreamBody: body,
+      upstreamBodyTruncated: false,
+      message: expect.stringContaining(`upstreamStatus: ${status}`),
+    });
+  });
+
+  test.each([4095, 4096, 4097])(
+    'reports truncation correctly for a %i-byte error body',
+    async (size) => {
+      await expect(
+        executeWorkspaceTool({
+          baseURL: 'https://code.example.com',
+          authHeaders: {},
+          request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+          fetchImpl: jest.fn(async () => new Response('x'.repeat(size), { status: 503 })),
+        }),
+      ).rejects.toMatchObject({
+        upstreamStatus: 503,
+        upstreamBody: 'x'.repeat(Math.min(size, 4096)),
+        upstreamBodyTruncated: size > 4096,
+      });
+    },
+  );
+
+  test('preserves caller cancellation during a rejected response body read', async () => {
+    const controller = new AbortController();
+    const cancel = jest.fn();
+    const request = executeWorkspaceTool({
+      baseURL: 'https://code.example.com',
+      authHeaders: {},
+      signal: controller.signal,
+      request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+      fetchImpl: jest.fn(async () => new Response(new ReadableStream({ cancel }), { status: 503 })),
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+    await expect(request).rejects.toBe(controller.signal.reason);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  test('bounds a streaming error body and cancels the unread remainder', async () => {
+    const cancel = jest.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('x'.repeat(10_000)));
+      },
+      cancel,
+    });
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com',
+        authHeaders: {},
+        request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+        fetchImpl: jest.fn(async () => new Response(body, { status: 504 })),
+      }),
+    ).rejects.toMatchObject({
+      upstreamStatus: 504,
+      upstreamBody: 'x'.repeat(4096),
+      upstreamBodyTruncated: true,
+    });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  test('retains HTTP status when reading the error body fails', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('socket closed'));
+      },
+    });
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example.com',
+        authHeaders: {},
+        request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+        fetchImpl: jest.fn(async () => new Response(body, { status: 503 })),
+      }),
+    ).rejects.toMatchObject({ upstreamStatus: 503, upstreamBodyTruncated: true });
   });
 
   test('validates bounded search matches before returning them', async () => {

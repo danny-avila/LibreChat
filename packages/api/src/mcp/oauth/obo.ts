@@ -38,7 +38,10 @@ export type OboTokenResolver = (
  *   - throws: refresh was attempted and the IdP rejected it. Caller wraps as
  *     `session_refresh_failed`.
  */
-export type UpstreamTokenProvider = () => Promise<OIDCTokens | null>;
+export type UpstreamTokenProvider = (options?: {
+  forceRefresh?: boolean;
+  signal?: AbortSignal;
+}) => Promise<OIDCTokens | null>;
 
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
@@ -116,7 +119,7 @@ export class OboTokenResolutionError extends Error {
   }
 }
 
-function isRetryableOboExchangeError(error: unknown): boolean {
+export function isRetryableOboExchangeError(error: unknown): boolean {
   const taggedRetryable = getErrorRetryableFlag(error);
   if (taggedRetryable != null) {
     return taggedRetryable;

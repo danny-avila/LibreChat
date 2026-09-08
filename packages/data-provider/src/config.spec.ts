@@ -27,6 +27,8 @@ describe('excludedKeys', () => {
     'conversationId',
     'agentEventBinding',
     'agentEventActor',
+    'agentEventActorCleanup',
+    'agentEventActorSuspension',
     'agentEventActorReconciliations',
     '__v',
   ])('excludes system field "%s"', (field) => {

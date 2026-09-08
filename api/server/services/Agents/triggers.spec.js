@@ -2,6 +2,7 @@ const mockCreateAgentTriggerService = jest.fn();
 const mockGenerationJobManager = {
   supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
+  getAccountCleanupJobIdsForUser: jest.fn().mockResolvedValue([]),
   getGenerationAdmissionEvidence: jest.fn(),
 };
 const mockQueuedTurnLifecycle = {
@@ -16,6 +17,7 @@ const mockQueuedTurnLifecycle = {
 };
 
 jest.mock('@librechat/api', () => ({
+  createCheckpointDeletionReclaimer: jest.fn((getJobs) => () => getJobs('owner', 'tenant')),
   createAgentTriggerService: (...args) => mockCreateAgentTriggerService(...args),
   createAgentContinuationResolver: jest.fn(() => jest.fn()),
   createAgentEventContinueResolver: jest.fn(() => jest.fn()),
@@ -51,6 +53,15 @@ describe('agent trigger service composition', () => {
       cancelUserPurge: jest.fn(),
       purgeUser: jest.fn(),
     });
+  });
+
+  it('uses complete owner job discovery for checkpoint evidence reclamation', async () => {
+    require('./triggers');
+    await mockCreateAgentTriggerService.mock.calls[0][0].reclaimCheckpointDeletions(25);
+    expect(mockGenerationJobManager.getAccountCleanupJobIdsForUser).toHaveBeenCalledWith(
+      'owner',
+      'tenant',
+    );
   });
 
   it('advertises detached completion capability for every compatible generation store', () => {

@@ -4,6 +4,7 @@ import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
@@ -31,6 +32,10 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
+import {
+  PendingToolApprovalButton,
+  PendingToolApprovalPanel,
+} from '~/components/Chat/approval/Review';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
@@ -45,6 +50,7 @@ import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
 import useSteering from '~/hooks/Chat/useSteering';
+import CodeApprovalMenu from './CodeApprovalMenu';
 import FileFormChat from './Files/FileFormChat';
 import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
@@ -70,6 +76,7 @@ interface ChatFormProps {
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   conversation: TConversation | null;
+  setConversation: SetterOrUpdater<TConversation | null>;
   isSubmitting: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
@@ -101,6 +108,7 @@ const ChatForm = memo(function ChatForm({
   files,
   setFiles,
   conversation,
+  setConversation,
   isSubmitting,
   setFilesLoading,
   newConversation,
@@ -626,6 +634,9 @@ const ChatForm = memo(function ChatForm({
             {index === 0 && (
               <AskUserQuestionPopover conversationId={conversationId} textAreaRef={textAreaRef} />
             )}
+            {index === 0 && conversationId != null && (
+              <PendingToolApprovalPanel conversationId={conversationId} />
+            )}
             <SkillsCommand
               index={index}
               textAreaRef={textAreaRef}
@@ -779,6 +790,15 @@ const ChatForm = memo(function ChatForm({
                     Array.isArray(conversation?.messages) && conversation.messages.length >= 1
                   }
                 />
+                <CodeApprovalMenu
+                  conversation={conversation}
+                  addedConversation={addedConvo}
+                  setConversation={setConversation}
+                  disabled={disableInputs || isSubmitting}
+                />
+                {index === 0 && conversationId != null && (
+                  <PendingToolApprovalButton conversationId={conversationId} />
+                )}
                 <div className="mx-auto flex" />
                 <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
                 {SpeechToText && (
@@ -850,6 +870,7 @@ function ChatFormWrapper({
     files,
     setFiles,
     conversation,
+    setConversation,
     isSubmitting,
     setFilesLoading,
     newConversation,
@@ -875,6 +896,7 @@ function ChatFormWrapper({
       conversation?.useResponsesApi,
       conversation?.model,
       conversation?.maxContextTokens,
+      conversation?.codeApprovalMode,
       hasMessages,
     ],
   );
@@ -909,6 +931,7 @@ function ChatFormWrapper({
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
+      setConversation={setConversation}
       isSubmitting={isSubmitting}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}

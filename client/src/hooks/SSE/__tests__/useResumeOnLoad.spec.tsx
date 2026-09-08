@@ -3,11 +3,12 @@ import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider, createStore, useAtomValue } from 'jotai';
 import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
-import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 
@@ -185,6 +186,7 @@ function renderUseResumeOnLoad({
 
   return {
     queryClient,
+    jotaiStore,
     getMessages,
     setSubmission: (nextSubmission: TSubmission | null) => setSubmissionState?.(nextSubmission),
     setIsSubmitting: (value: boolean) => setIsSubmittingState?.(value),
@@ -341,6 +343,53 @@ describe('useResumeOnLoad', () => {
         | null;
       expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
       expect(attached?.resumeGenerationCreatedAt).toBe(4242);
+    });
+
+    it('restores the composer approval surface from the authoritative status snapshot', async () => {
+      const pendingAction: Agents.PendingAction = {
+        actionId: 'action-1',
+        streamId: CONVERSATION_ID,
+        conversationId: CONVERSATION_ID,
+        createdAt: 4242,
+        payload: {
+          type: 'tool_approval',
+          action_requests: [
+            {
+              name: 'bash_tool',
+              tool_call_id: 'call-1',
+              arguments: { command: 'npm test' },
+            },
+          ],
+          review_configs: [
+            {
+              action_name: 'bash_tool',
+              tool_call_id: 'call-1',
+              allowed_decisions: ['approve', 'reject'],
+            },
+          ],
+        },
+      };
+      mockUseStreamStatus.mockReturnValue({
+        ...ACTIVE_STATUS,
+        data: {
+          ...ACTIVE_STATUS.data,
+          status: 'requires_action',
+          pendingAction,
+          resumeState: {
+            ...ACTIVE_STATUS.data.resumeState,
+            pendingAction,
+          },
+        },
+      });
+
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingApprovalActionFamily(CONVERSATION_ID))).toEqual(pendingAction);
     });
 
     /** The elapsed indicator's baseline must be the generation's real start:

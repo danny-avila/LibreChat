@@ -3084,3 +3084,140 @@ describe('BaseClient', () => {
     });
   });
 });
+
+describe('BaseClient compaction turns', () => {
+  const compactionOptions = { modelOptions: { model: 'gpt-4o-mini', temperature: 0 } };
+  const compactionHistory = [
+    { role: 'user', isCreatedByUser: true, text: 'Hello', messageId: 'u1' },
+    {
+      role: 'assistant',
+      isCreatedByUser: false,
+      text: 'Hi',
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      tokenCount: 7,
+    },
+  ];
+  let CompactClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compactionHistory);
+  });
+
+  test('presents the leaf as the user message and never re-saves it', async () => {
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 'a1',
+      preallocatedUserMessageId: 'a1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage).toEqual({
+      messageId: 'a1',
+      parentMessageId: 'u1',
+      conversationId: undefined,
+      isCreatedByUser: false,
+      text: '',
+    });
+    expect(CompactClient.skipSaveUserMessage).toBe(true);
+    /** History is loaded through the leaf, and nothing is appended to it. */
+    expect(CompactClient.currentMessages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+  });
+
+  test('refuses a compaction whose anchor is not the loaded leaf', async () => {
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 'missing',
+        preallocatedUserMessageId: 'missing',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'COMPACTION_ANCHOR_NOT_FOUND' });
+  });
+
+  test('refuses to compact a branch whose leaf is already a finished compaction', async () => {
+    const compacted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [
+          {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+          },
+        ],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, compacted);
+
+    await expect(
+      CompactClient.handleStartMethods('', {
+        conversationId: 'convo-compact',
+        parentMessageId: 's1',
+        preallocatedUserMessageId: 's1',
+        isCompaction: true,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'NOTHING_TO_COMPACT',
+      message: JSON.stringify({ type: 'compaction_skipped', reason: 'nothing_to_summarize' }),
+    });
+  });
+
+  test('lets an interrupted compaction be retried', async () => {
+    const interrupted = [
+      ...compactionHistory,
+      {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: '',
+        messageId: 's1',
+        parentMessageId: 'a1',
+        content: [{ type: ContentTypes.SUMMARY, content: [], summarizing: true }],
+      },
+    ];
+    CompactClient = initializeFakeClient(apiKey, compactionOptions, interrupted);
+
+    const result = await CompactClient.handleStartMethods('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 's1',
+      preallocatedUserMessageId: 's1',
+      isCompaction: true,
+    });
+
+    expect(result.userMessage.messageId).toBe('s1');
+  });
+
+  test('parents the response onto the leaf and persists only the response', async () => {
+    const saveSpy = jest.spyOn(CompactClient, 'saveMessageToDatabase').mockResolvedValue({});
+    const updateSpy = jest.spyOn(CompactClient, 'updateMessageInDatabase').mockResolvedValue({});
+    /** A calibration ratio and a counted anchor would, on an ordinary turn,
+     *  rewrite the user message's persisted count; the leaf's must survive. */
+    CompactClient.contextMeta = { calibrationRatio: 0.5 };
+    CompactClient.buildMessages = jest.fn(async () => ({
+      prompt: [],
+      tokenCountMap: { a1: 7 },
+      promptTokens: 7,
+    }));
+
+    const response = await CompactClient.sendMessage('', {
+      conversationId: 'convo-compact',
+      parentMessageId: 'a1',
+      preallocatedUserMessageId: 'a1',
+      isCompaction: true,
+    });
+
+    expect(response.parentMessageId).toBe('a1');
+    expect(response.isCreatedByUser).toBe(false);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(saveSpy.mock.calls[0][0].messageId).toBe(response.messageId);
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(CompactClient.currentMessages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+    expect(compactionHistory[1].tokenCount).toBe(7);
+  });
+});
