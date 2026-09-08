@@ -201,6 +201,8 @@ export const useMarketplaceAgentsInfiniteQuery = (
     search?: string;
     limit?: number;
     promoted?: 0 | 1;
+    sort?: t.AgentSortOption;
+    mine?: 0 | 1;
     cursor?: string; // For pagination
   },
   config?: UseInfiniteQueryOptions<t.AgentListResponse, unknown>,
@@ -221,7 +223,15 @@ export const useMarketplaceAgentsInfiniteQuery = (
     cacheTime: 10 * 60 * 1000, // 10 minutes
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchOnMount: false,
+    /**
+     * Unconditional, for every parameter combination this query is keyed by.
+     * Remounting a cache entry that is past `staleTime` — or that was invalidated with
+     * `refetchType: 'none'`, which is how a pin/unpin marks the 'popular' pages stale
+     * (see `Favorites.ts`) — refetches it; still-fresh entries read straight through.
+     * Without this, that invalidation has no effect at all: nothing would ever act on
+     * the stale mark, so 'popular' would keep serving its pre-pin order indefinitely.
+     */
+    refetchOnMount: true,
     ...config,
   });
 };
