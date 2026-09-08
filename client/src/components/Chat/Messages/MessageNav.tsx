@@ -1,8 +1,8 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useRemScale } from '@librechat/client';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
+import { pxToRem, useRemScale } from '@librechat/client';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { useGetMessagesByConvoId } from '~/data-provider';
@@ -254,7 +254,7 @@ const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
  *  from length alone — the only axis a 3px line has left once colour is spent
  *  on the in-view band. */
 const RIB_CURRENT: RibDims = { baseW: 21, baseH: 3, peakW: 39, peakH: 6 };
-/** Row height in px. `peakH` may reach it but never exceed it: the magnifier
+/** Row height in baseline px. `peakH` may reach it but never exceed it: the magnifier
  *  writes into normal flow, and a rib taller than its row would reflow every
  *  rib below the pointer — moving the rail out from under the pointer and
  *  leaving the measured centres (and so the preview and the click target)
@@ -332,7 +332,7 @@ const MessageIndicator = memo(function MessageIndicator({
         indicatorButtonClasses,
         isEmphasized || isInView ? 'opacity-100' : dimIndicatorClasses,
       )}
-      style={{ height: RIB_ROW_HEIGHT }}
+      style={{ height: pxToRem(RIB_ROW_HEIGHT) }}
       aria-label={label}
       aria-current={isCurrent ? 'true' : undefined}
       tabIndex={tabIndex}
@@ -344,7 +344,7 @@ const MessageIndicator = memo(function MessageIndicator({
           entry.isEnd === true || entry.isStart === true ? 'mr-[0.28125rem]' : '',
           tone,
         )}
-        style={{ width: dims.baseW, height: dims.baseH }}
+        style={{ width: pxToRem(dims.baseW), height: pxToRem(dims.baseH) }}
       />
     </button>
   );
@@ -1004,8 +1004,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       const t = magnifyFalloff(d, influence);
       const dims = rib.dims;
       rib.line.style.transition = 'none';
-      rib.line.style.width = `${((dims.baseW + (dims.peakW - dims.baseW) * t) * scale).toFixed(2)}px`;
-      rib.line.style.height = `${((dims.baseH + (dims.peakH - dims.baseH) * t) * scale).toFixed(2)}px`;
+      rib.line.style.width = pxToRem(dims.baseW + (dims.peakW - dims.baseW) * t);
+      rib.line.style.height = pxToRem(dims.baseH + (dims.peakH - dims.baseH) * t);
     }
     if (nearestId != null && nearestD <= influence && !isDraggingRef.current) {
       const top = colRect.top - scrollTop + nearestCenter;
@@ -1025,8 +1025,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     for (let i = 0; i < layout.length; i++) {
       const rib = layout[i];
       rib.line.style.transition = 'width 140ms ease-out, height 140ms ease-out';
-      rib.line.style.width = `${rib.dims.baseW}px`;
-      rib.line.style.height = `${rib.dims.baseH}px`;
+      rib.line.style.width = pxToRem(rib.dims.baseW);
+      rib.line.style.height = pxToRem(rib.dims.baseH);
     }
   }, [ensureRibLayout]);
 

@@ -379,7 +379,7 @@ export default function DialogImage({
           {/* Side Panel */}
           <div
             data-side-panel
-            className={`fixed right-0 top-0 z-30 h-full w-80 transform border-l border-white/10 bg-surface-primary shadow-2xl transition-transform duration-300 ${
+            className={`fixed right-0 top-0 z-30 h-full w-80 max-w-full transform border-l border-white/10 bg-surface-primary shadow-2xl transition-transform duration-300 ${
               isPromptOpen ? 'translate-x-0' : 'translate-x-full'
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -392,7 +392,8 @@ export default function DialogImage({
                 <Button
                   onClick={() => setIsPromptOpen(false)}
                   variant="ghost"
-                  className="h-10 w-10 p-0 sm:hidden"
+                  className={detailsBeside ? 'hidden' : 'h-10 w-10 p-0'}
+                  aria-label={localize('com_ui_hide_image_details')}
                 >
                   <X className="size-5" aria-hidden="true" />
                 </Button>
