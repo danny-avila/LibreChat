@@ -328,6 +328,28 @@ describe('Conversation Operations', () => {
       expect(convo?.lastSeenAt == null).toBe(true);
     });
 
+    it('returns the durable conversation when the optional reply stamp fails', async () => {
+      const find = jest.spyOn(Conversation, 'findOne').mockImplementationOnce(() => {
+        throw new Error('reply stamp read unavailable');
+      });
+      let result;
+      try {
+        result = await saveConvo(mockCtx, mockConversationData, { stampReply: true });
+      } finally {
+        find.mockRestore();
+      }
+
+      expect(result).toMatchObject({
+        conversationId: mockConversationData.conversationId,
+        title: mockConversationData.title,
+      });
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(saved?.title).toBe(mockConversationData.title);
+      expect(saved?.lastResponseAt).toBeUndefined();
+    });
+
     it('advances past a future stamp when a save host clock is behind', async () => {
       await saveConvo(mockCtx, { ...mockConversationData }, { stampReply: true });
       const newer = new Date(Date.now() + 60_000);

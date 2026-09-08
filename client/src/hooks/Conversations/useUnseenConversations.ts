@@ -166,7 +166,12 @@ const observeArrivalQuery = (
 ): void => {
   const current = snapshotForQuery(query);
   const previous = snapshots.get(query.queryHash);
-  if (previous == null || current === null) {
+  /* An explicit watcher discovery is live even when it creates the unfiltered query.
+     Ordinary first loads and newly mounted filter variants still establish a quiet baseline. */
+  if (
+    current === null ||
+    (previous == null && !(mode === 'server' && query.meta?.replyDiscovery === true))
+  ) {
     snapshots.set(query.queryHash, current);
     return;
   }
@@ -179,11 +184,11 @@ const observeArrivalQuery = (
         !conversationId ||
         !lastResponseAt ||
         convo.lastResponseIsManual === true ||
-        (mode === 'local' && !previous.has(conversationId))
+        (mode === 'local' && !previous?.has(conversationId))
       ) {
         continue;
       }
-      if (previous.get(conversationId) === lastResponseAt) {
+      if (previous?.get(conversationId) === lastResponseAt) {
         continue;
       }
       const recorded = evidence.get(conversationId);

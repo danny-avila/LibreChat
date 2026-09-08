@@ -689,6 +689,7 @@ describe('useReplyWatcher', () => {
       const filteredKey = [QueryKeys.allConversations, { isArchived: false, tags: ['work'] }];
       const filteredData = { pages: [{ conversations: [], nextCursor: null }], pageParams: [null] };
       queryClient.setQueryData(filteredKey, filteredData);
+      queryClient.removeQueries({ queryKey: listKey, exact: true });
       const observer = new QueryObserver(queryClient, {
         queryKey: filteredKey,
         staleTime: Infinity,
@@ -713,10 +714,38 @@ describe('useReplyWatcher', () => {
         ]),
       );
       expect(queryClient.getQueryData(filteredKey)).toEqual(filteredData);
+      expect(result.current?.arrivalStamps).toContainEqual(['outside-filter', RESPONDED_AT]);
       unsubscribe();
       unmount();
     },
   );
+
+  it('refreshes a pinned unread row outside the canonical first page', async () => {
+    (document.hasFocus as jest.Mock).mockReturnValue(true);
+    mockListConversations.mockResolvedValue({ conversations: [], nextCursor: null });
+    const { queryClient, result, unmount } = setup();
+    const pinnedKey = [QueryKeys.pinnedConversations, {}];
+    const pinned = { conversationId: 'old-pin', title: 'Old pin', lastResponseAt: RESPONDED_AT };
+    queryClient.setQueryData(pinnedKey, {
+      conversations: [{ ...pinned, lastSeenAt: RESPONDED_AT }],
+      nextCursor: null,
+    });
+    const observer = new QueryObserver(queryClient, {
+      queryKey: pinnedKey,
+      staleTime: Infinity,
+      queryFn: async () => ({ conversations: [pinned], nextCursor: null }),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+
+    await act(async () => {
+      jest.advanceTimersByTime(5 * 60_000);
+    });
+
+    expect(isConversationUnseen(observer.getCurrentResult().data?.conversations[0])).toBe(true);
+    expect(result.current?.unseen).toEqual([expect.objectContaining(pinned)]);
+    unsubscribe();
+    unmount();
+  });
 });
 
 function updateCachedTimestamps(queryClient: QueryClient) {

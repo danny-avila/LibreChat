@@ -61,8 +61,10 @@ const didListRefreshFail = (queryClient: QueryClient): boolean =>
 const refreshConversationLists = async (queryClient: QueryClient): Promise<void> => {
   await Promise.all([
     queryClient.invalidateQueries([QueryKeys.allConversations]),
+    queryClient.invalidateQueries([QueryKeys.pinnedConversations]),
     queryClient.fetchInfiniteQuery({
       queryKey: [QueryKeys.allConversations, { isArchived: false }],
+      meta: { replyDiscovery: true },
       queryFn: ({ pageParam }) =>
         dataService.listConversations({
           isArchived: false,
