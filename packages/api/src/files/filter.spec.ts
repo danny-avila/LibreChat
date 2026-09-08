@@ -847,6 +847,99 @@ describe('filterFilesByEndpointConfig', () => {
       expect(result).toEqual([pdfFile, pngFile]);
     });
 
+    it('should preserve code-environment files outside the provider MIME allowlist', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              OpenRouter: {
+                disabled: false,
+                supportedMimeTypes: ['^image/.*$', '^application/pdf$'],
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const spreadsheet = {
+        ...createMockFile('sample.xlsx'),
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-1',
+            storage_session_id: 'session-1',
+            file_id: 'code-file-1',
+          },
+        },
+      } as IMongoFile;
+
+      const result = filterFilesByEndpointConfig(req, {
+        files: [spreadsheet],
+        endpoint: 'OpenRouter',
+        endpointType: EModelEndpoint.custom,
+      });
+
+      expect(result).toEqual([spreadsheet]);
+    });
+
+    it('should still reject a raw spreadsheet outside the provider MIME allowlist', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              OpenRouter: {
+                disabled: false,
+                supportedMimeTypes: ['^image/.*$', '^application/pdf$'],
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const spreadsheet = {
+        ...createMockFile('sample.xlsx'),
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      } as IMongoFile;
+
+      const result = filterFilesByEndpointConfig(req, {
+        files: [spreadsheet],
+        endpoint: 'OpenRouter',
+        endpointType: EModelEndpoint.custom,
+      });
+
+      expect(result).toEqual([]);
+    });
+
+    it('should preserve embedded retrieval files outside the provider MIME allowlist', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              OpenRouter: {
+                disabled: false,
+                supportedMimeTypes: ['^image/.*$', '^application/pdf$'],
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const embeddedFile = {
+        ...createMockFile('knowledge.docx'),
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        embedded: true,
+      } as IMongoFile;
+
+      const result = filterFilesByEndpointConfig(req, {
+        files: [embeddedFile],
+        endpoint: 'OpenRouter',
+        endpointType: EModelEndpoint.custom,
+      });
+
+      expect(result).toEqual([embeddedFile]);
+    });
+
     it('should keep all files when supportedMimeTypes is not set', () => {
       const req = {
         config: {
