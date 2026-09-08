@@ -318,6 +318,32 @@ describe('message route conversation ownership filters', () => {
     ]);
   });
 
+  it('inherits the source message retention when branching', async () => {
+    const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+    getMessage.mockResolvedValue({
+      messageId: 'source-message',
+      conversationId: 'convo-1',
+      parentMessageId: 'parent-1',
+      isCreatedByUser: false,
+      isTemporary: true,
+      expiredAt,
+      content: [{ type: 'text', text: 'Assistant content', agentId: 'agent-1' }],
+    });
+    saveMessage.mockImplementation(async (_ctx, message) => message);
+
+    const response = await request(app).post('/api/messages/branch').send({
+      messageId: 'source-message',
+      agentId: 'agent-1',
+    });
+
+    expect(response.status).toBe(201);
+    expect(saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ isTemporary: true, expiredAt }),
+      expect.any(Object),
+      { context: 'POST /api/messages/branch' },
+    );
+  });
+
   it.each([
     {
       name: 'carries server-private context meta onto the branch',

@@ -350,7 +350,8 @@ router.post('/branch', configMiddleware, async (req, res) => {
     const savedMessage = await db.saveMessage(
       {
         userId: req?.user?.id,
-        isTemporary: req?.body?.isTemporary,
+        isTemporary: sourceMessage.isTemporary,
+        expiredAt: sourceMessage.expiredAt,
         interfaceConfig: req?.config?.interfaceConfig,
       },
       newMessage,
