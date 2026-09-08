@@ -31,11 +31,14 @@
       /* Applied before first paint so the app does not flash at the wrong scale.
          A stored value outside the supported range is clamped rather than ignored,
          so the rendered scale cannot disagree with the value the setting shows. */
-      const storedScale = parseFloat(localStorage.getItem('uiScale'));
-      if (isFinite(storedScale)) {
-        const uiScale = Math.min(1.5, Math.max(0.5, storedScale));
-        document.documentElement.style.setProperty('--ui-scale', String(uiScale));
-      }
+      let uiScale = 1;
+      try {
+        const storedScale = JSON.parse(localStorage.getItem('uiScale'));
+        if (typeof storedScale === 'number' && Number.isFinite(storedScale)) {
+          uiScale = Math.min(1.5, Math.max(0.5, storedScale));
+        }
+      } catch {}
+      document.documentElement.style.setProperty('--ui-scale', String(uiScale));
 
       const theme = localStorage.getItem('color-theme');
       const loadingContainerStyle = document.createElement('style');
