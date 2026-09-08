@@ -1,5 +1,6 @@
-import type { FilterQuery, Model } from 'mongoose';
+import type { FilterQuery, Model, Types } from 'mongoose';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 interface IConversationTag {
@@ -485,49 +486,75 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     }
   }
 
-  /** Applies the committed management metadata transition to legacy cached counts. */
+  let managementTagIndexes: Promise<void> | undefined;
+
+  /** Refreshes only metadata touched by a committed management PATCH. */
   async function reconcileConversationTagCounts(
     user: string,
     previousTags: string[],
     nextTags: string[],
     tenantId?: string | null,
   ): Promise<void> {
+    const pending = new Set([...previousTags, ...nextTags]);
+    if (!pending.size) return;
     const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-    const tenantFilter = optionalTenantFilter<IConversationTag>(tenantId);
-    const oldTags = new Set(previousTags);
-    const newTags = new Set(nextTags);
-    const bulkOps: Array<{
-      updateOne: {
-        filter: FilterQuery<IConversationTag>;
-        update: Record<string, unknown>;
-        upsert?: boolean;
-      };
-    }> = [];
+    const Conversation = mongoose.models.Conversation;
+    const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
+    managementTagIndexes ??= createIndexesWithRetry(ConversationTag).catch((error) => {
+      managementTagIndexes = undefined;
+      throw error;
+    });
+    await managementTagIndexes;
 
-    for (const tag of [...newTags].filter((value) => !oldTags.has(value))) {
-      bulkOps.push({
-        updateOne: {
-          filter: { user, tag, ...tenantFilter },
-          update: { $inc: { count: 1 } },
-          upsert: true,
-        },
-      });
+    for (let attempt = 0; attempt < 4 && pending.size; attempt++) {
+      const names = [...pending];
+      const snapshots = await ConversationTag.find({ ...scope, tag: { $in: names } })
+        .select('tag count __v')
+        .lean<Array<{ _id: Types.ObjectId; tag: string; count?: number; __v?: number }>>();
+      const byName = new Map(snapshots.map((tag) => [tag.tag, tag]));
+      const counts = await Conversation.aggregate<{ _id: string; count: number }>([
+        { $match: { ...scope, tags: { $in: names } } },
+        { $project: { tags: { $setUnion: ['$tags', []] } } },
+        { $unwind: '$tags' },
+        { $match: { tags: { $in: names } } },
+        { $group: { _id: '$tags', count: { $sum: 1 } } },
+      ]);
+      const byTag = new Map(counts.map((row) => [row._id, row.count]));
+      for (const tag of names) {
+        const count = byTag.get(tag) ?? 0;
+        const snapshot = byName.get(tag);
+        if (!snapshot) {
+          if (count === 0) {
+            pending.delete(tag);
+            continue;
+          }
+          try {
+            await ConversationTag.updateOne(
+              { ...scope, tag },
+              { $setOnInsert: { count: 0 } },
+              { upsert: true },
+            );
+          } catch (error) {
+            if (!(error instanceof Error) || !('code' in error) || error.code !== 11000)
+              throw error;
+          }
+          // Recount after creation: membership may have changed while this row was absent.
+          continue;
+        }
+        const updated = await ConversationTag.updateOne(
+          {
+            ...scope,
+            _id: snapshot._id,
+            tag,
+            count: snapshot.count === undefined ? { $exists: false } : snapshot.count,
+            __v: snapshot.__v === undefined ? { $exists: false } : snapshot.__v,
+          },
+          { $set: { count, __v: (snapshot.__v ?? 0) + 1 } },
+        );
+        if (updated.matchedCount) pending.delete(tag);
+      }
     }
-    for (const tag of [...oldTags].filter((value) => !newTags.has(value))) {
-      bulkOps.push({
-        updateOne: {
-          filter: { user, tag, ...tenantFilter },
-          update: { $inc: { count: -1 } },
-          /** Signed deltas must commute when successful metadata writes reconcile out
-           * of order. Retaining a temporary negative row lets a later increment
-           * cancel it instead of manufacturing a stale positive count. */
-          upsert: true,
-        },
-      });
-    }
-    if (bulkOps.length > 0) {
-      await tenantSafeBulkWrite(ConversationTag, bulkOps);
-    }
+    if (pending.size) throw new Error('Tag metadata changed during every refresh attempt');
   }
 
   /**

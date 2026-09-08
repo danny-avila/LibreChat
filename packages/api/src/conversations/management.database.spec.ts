@@ -716,7 +716,7 @@ describe('conversation management handlers with Mongo persistence', () => {
     await seedConversation(TENANT_A, { conversationId: 'recover-tags', user: OWNER });
     const app = createApp();
     const write = jest
-      .spyOn(mongoose.models.ConversationTag, 'bulkWrite')
+      .spyOn(mongoose.models.ConversationTag, 'updateOne')
       .mockRejectedValueOnce(new Error('transient catalog outage'));
     const first = await request(app)
       .patch('/recover-tags')
