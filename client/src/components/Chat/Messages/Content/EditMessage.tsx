@@ -1,10 +1,11 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useMemo, useEffect, useCallback, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
+import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
@@ -23,6 +24,14 @@ const EditMessage = ({
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [saveError, setSaveError] = useState(false);
+  const [files, setFiles] = useState(() => message.files ?? []);
+  const [initialFileIds] = useState(() => [
+    ...new Set(
+      (message.files ?? []).flatMap((file) =>
+        typeof file.file_id === 'string' && file.file_id.length > 0 ? [file.file_id] : [],
+      ),
+    ),
+  ]);
   const { conversation } = useMessagesConversation();
   const { getMessages, setMessages } = useMessagesOperations();
 
@@ -44,6 +53,7 @@ const EditMessage = ({
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { isDirty, isValid },
   } = useForm({
     mode: 'onChange',
@@ -51,6 +61,23 @@ const EditMessage = ({
       text: text ?? '',
     },
   });
+
+  const removedFileIds = useMemo(() => {
+    const retainedFileIds = new Set(
+      files.flatMap((file) =>
+        typeof file.file_id === 'string' && file.file_id.length > 0 ? [file.file_id] : [],
+      ),
+    );
+    return initialFileIds.filter((fileId) => !retainedFileIds.has(fileId));
+  }, [files, initialFileIds]);
+  const removedFileIdSet = useMemo(() => new Set(removedFileIds), [removedFileIds]);
+  const filesChanged = removedFileIds.length > 0;
+  const hasChanges = isDirty || filesChanged;
+  const hasContent = watch('text').trim().length > 0 || files.length > 0;
+  const removeFile = useCallback(
+    (fileId: string) => setFiles((current) => current.filter((file) => file.file_id !== fileId)),
+    [],
+  );
 
   useEffect(() => {
     const textArea = textAreaRef.current;
@@ -72,7 +99,7 @@ const EditMessage = ({
         conversationId,
       },
       {
-        overrideFiles: message.files,
+        overrideFiles: filesChanged || message.files != null ? files : undefined,
         /** Pills on the edited user message stay visible after save-and-submit;
          *  carry the picks forward so the new turn primes the same skills
          *  instead of running unprimed. */
@@ -138,6 +165,7 @@ const EditMessage = ({
         model: conversation?.model ?? 'gpt-3.5-turbo',
         text: data.text,
         messageId,
+        ...(filesChanged && { removedFileIds }),
       });
 
       /** Read the thread after the request, not before it. An earlier turn stays
@@ -155,6 +183,11 @@ const EditMessage = ({
       );
       if (!isInMessages) {
         message.text = data.text;
+        if (filesChanged) {
+          message.files = (message.files ?? files).filter(
+            (file) => !removedFileIdSet.has(file.file_id ?? ''),
+          );
+        }
       } else {
         setMessages(
           messages.map((msg) =>
@@ -162,6 +195,11 @@ const EditMessage = ({
               ? {
                   ...msg,
                   text: data.text,
+                  ...(filesChanged && {
+                    files: (msg.files ?? files).filter(
+                      (file) => !removedFileIdSet.has(file.file_id ?? ''),
+                    ),
+                  }),
                 }
               : msg,
           ),
@@ -195,18 +233,32 @@ const EditMessage = ({
   const { ref, ...registerProps } = register('text', {
     /** Retained attachments make an otherwise empty edit submittable, matching
      *  the composer; `ask` replays them through `overrideFiles`. */
-    required: (message.files?.length ?? 0) === 0,
+    required: files.length === 0,
     onChange: (e) => {
       setValue('text', e.target.value, { shouldDirty: true, shouldValidate: true });
     },
   });
 
   return (
-    <Container message={message}>
+    <Container message={{ ...message, files: [] }}>
       <section
         aria-label={localize('com_ui_edit_message')}
         className="mt-2 flex w-full flex-col gap-2"
       >
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {files.map((file) => {
+              const fileId = file.file_id;
+              return (
+                <FileContainer
+                  key={fileId ?? file.filepath ?? file.filename}
+                  file={file}
+                  onDelete={fileId ? () => removeFile(fileId) : undefined}
+                />
+              );
+            })}
+          </div>
+        )}
         {saveError && <Alert variant="error">{localize('com_ui_save_message_error')}</Alert>}
         <TextareaAutosize
           {...registerProps}
@@ -237,7 +289,7 @@ const EditMessage = ({
             className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
             aria-live="polite"
           >
-            {isDirty
+            {hasChanges
               ? localize(isUserTurn ? 'com_ui_unsaved_changes' : 'com_ui_rerun_discards_changes')
               : ''}
           </span>
@@ -254,7 +306,13 @@ const EditMessage = ({
               ref={saveButtonRef}
               size="sm"
               variant="outline"
-              disabled={isSubmitting || updateMessageMutation.isLoading || !isDirty || !isValid}
+              disabled={
+                isSubmitting ||
+                updateMessageMutation.isLoading ||
+                !hasChanges ||
+                !isValid ||
+                !hasContent
+              }
               onClick={handleSubmit(updateMessage)}
             >
               {updateMessageMutation.isLoading
@@ -275,11 +333,13 @@ const EditMessage = ({
               disabled={
                 isSubmitting ||
                 updateMessageMutation.isLoading ||
-                (isUserTurn && isDirty && !isValid)
+                (isUserTurn && hasChanges && (!isValid || !hasContent))
               }
               onClick={isUserTurn ? handleSubmit(resubmitMessage) : rerunResponse}
             >
-              {isDirty && isUserTurn ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
+              {hasChanges && isUserTurn
+                ? localize('com_ui_update_rerun')
+                : localize('com_ui_rerun')}
             </Button>
           </div>
         </footer>
