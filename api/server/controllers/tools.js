@@ -115,7 +115,7 @@ const callTool = async (req, res) => {
       return;
     }
 
-    const { partIndex, blockIndex, messageId, conversationId, ...args } = req.body;
+    const { partIndex, blockIndex, messageId, conversationId: _conversationId, ...args } = req.body;
     if (!messageId) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call without message ID`);
       res.status(400).json({ message: 'Message ID required' });
@@ -128,6 +128,9 @@ const callTool = async (req, res) => {
       res.status(404).json({ message: 'Message not found' });
       return;
     }
+    const conversationId = message.conversationId;
+    req.body.conversationId = conversationId;
+    const retentionExpiryPromise = getRetentionExpiry(req);
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;
     if (toolAccessPermType[toolId]) {
@@ -186,7 +189,7 @@ const callTool = async (req, res) => {
       conversationId,
       result: content,
       user: req.user.id,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
     };
 
     if (!hasGeneratedArtifacts) {

@@ -25,7 +25,7 @@ jest.mock('~/models', () => ({
   createToolCall: mockCreateToolCall,
   getRoleByName: jest.fn(),
   getToolCallsByConvo: jest.fn(),
-  getMessage: jest.fn(async () => ({ messageId: 'message-id' })),
+  getMessage: jest.fn(async () => ({ messageId: 'message-id', conversationId: 'conversation-id' })),
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
@@ -110,6 +110,35 @@ describe('callTool generated-content protection', () => {
     mockProcessCodeOutput.mockResolvedValue({
       file: { file_id: 'persisted-file', filename: 'safe.txt' },
     });
+  });
+
+  it('starts retention before tool invocation using the authenticated message conversation', async () => {
+    const { getRetentionExpiry } = require('~/server/services/Files/retention');
+    let resolveRetention;
+    const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+    getRetentionExpiry.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetention = resolve;
+        }),
+    );
+    mockInvoke.mockImplementationOnce(async () => {
+      expect(getRetentionExpiry).toHaveBeenCalledTimes(1);
+      resolveRetention({ expiredAt });
+      return { content: 'safe output' };
+    });
+    const req = createRequest(undefined);
+    req.body.conversationId = 'forged-conversation';
+    const res = createResponse();
+    await callTool(req, res);
+    expect(req.body.conversationId).toBe('conversation-id');
+    expect(mockCreateToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conversation-id',
+        expiredAt,
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('blocks a configured tool output before tool-call persistence', async () => {
