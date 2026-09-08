@@ -92,6 +92,9 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Marketplace list sort modes; validated against this allowlist rather than trusting
+ * the query string directly, since the value flows into a `$sort`/`$lookup` pipeline. */
+const ALLOWED_SORTS = new Set(['newest', 'oldest', 'popular', 'author']);
 const getSafeModelParameters = (modelParameters) => {
   const { useResponsesApi } = modelParameters ?? {};
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
@@ -1663,12 +1666,17 @@ const deleteAgentHandler = async (req, res) => {
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
  * @param {string} [req.query.user] - The user ID of the agent's author.
+ * @param {string} [req.query.sort] - One of 'newest' | 'oldest' | 'popular' | 'author';
+ *   invalid or missing values fall back to 'newest'.
+ * @param {string} [req.query.mine] - '1' to restrict results to agents authored by the
+ *   caller; any other value is ignored.
  * @returns {Promise<AgentListResponse>} 200 - success response - application/json
  */
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { category, search, limit = 100, cursor, promoted } = req.query;
+    const { category, search, limit = 100, cursor, promoted, sort, mine } = req.query;
+    const sortMode = ALLOWED_SORTS.has(sort) ? sort : 'newest';
     let requiredPermission = req.query.requiredPermission;
     if (typeof requiredPermission === 'string') {
       requiredPermission = parseInt(requiredPermission, 10);
@@ -1698,6 +1706,13 @@ const getListAgentsHandler = async (req, res) => {
       filter.is_promoted = true;
     } else if (promoted === '0') {
       filter.is_promoted = { $ne: true };
+    }
+
+    // "Only my agents" filter - narrows to agents authored by the caller, on top of
+    // (not instead of) the ACL-resolved `accessibleIds` below. No tenant/role logic
+    // here: it's a plain author match, same as any other `filter` field.
+    if (mine === '1') {
+      filter.author = userId;
     }
 
     // Handle search filter (escape regex and cap length)
@@ -1802,6 +1817,11 @@ const getListAgentsHandler = async (req, res) => {
           otherParams: { 'avatar.source': FileSources.s3 },
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
+          // Pin the warm-up set to newest-created explicitly, rather than
+          // implicitly riding getListAgentsByAccess's own default — this set
+          // must stay stable regardless of what sort mode the client-facing
+          // call below is currently serving.
+          sort: 'newest',
         });
         const { urlCache } = await refreshListAvatars({
           agents: fullList?.data ?? [],
@@ -1827,6 +1847,7 @@ const getListAgentsHandler = async (req, res) => {
       limit,
       after: cursor,
       includeSkillConfig: true,
+      sort: sortMode,
     });
 
     const agents = data?.data ?? [];
