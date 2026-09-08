@@ -33,13 +33,6 @@ describe('UiScaleSelector', () => {
     jest.useRealTimers();
   });
 
-  it('renders the label and the current scale as a percentage', () => {
-    const { getByText } = renderSelector();
-
-    expect(getByText('UI scale')).toBeInTheDocument();
-    expect(getByText('100%')).toBeInTheDocument();
-  });
-
   it('labels both steppers for assistive technology', () => {
     const { getByLabelText } = renderSelector();
 

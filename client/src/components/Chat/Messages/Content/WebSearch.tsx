@@ -411,14 +411,15 @@ export default function WebSearch({
                           )}
                         </span>
                         <span className="shrink-0 text-right">
-                          <span className="block text-[0.6875rem] text-text-secondary">{domain}</span>
+                          <span className="block text-[0.6875rem] text-text-secondary">
+                            {domain}
+                          </span>
                           {source.date && (
                             <span className="block text-[0.625rem] text-text-secondary">
                               {source.date}
                             </span>
                           )}
                         </span>
-
                       </a>
                     );
                   })}

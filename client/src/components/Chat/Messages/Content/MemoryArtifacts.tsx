@@ -94,6 +94,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
               fill="currentColor"
             />
           </svg>
+          <span className="tool-status-text font-medium">
             {hasErrors ? localize('com_ui_memory_error') : localize('com_ui_memory_updated')}
           </span>
           <ChevronDown

@@ -9,6 +9,7 @@ import {
 } from 'librechat-data-provider';
 import { OpenSidebar, PresetsMenu, NewChat, HeaderMenu } from './Menus';
 import { TemporaryChat, TemporaryChatIndicator } from './TemporaryChat';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
@@ -21,12 +22,7 @@ import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
-/**
- * Three zones in a single DOM order that serves both layouts: hidden items
- * generate no flex gap, so each breakpoint collapses to the right row without
- * reordering. Branching is CSS-only — `useMediaQuery` resolves after paint and
- * would pop the row a frame late on every mount.
- */
+/** Keep one DOM order while sharing the sidebar's scaled drawer breakpoint. */
 function Header({
   parentConversationId,
   readOnly = false,
@@ -36,6 +32,7 @@ function Header({
 }) {
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
+  const isSmallScreen = useDrawerViewport();
 
   /** The mobile row only offers a new chat when there is one to leave. Read
    *  from the route rather than the context conversation, which still holds the
@@ -65,17 +62,18 @@ function Header({
   });
 
   /** The drawer covers the header on mobile; keep its controls out of the tab order. */
-  const hiddenBehindNav = navVisible === true && 'max-md:hidden';
+  const hiddenBehindNav = navVisible === true && isSmallScreen && 'hidden';
 
   return (
     <div className="absolute top-0 z-10 flex h-[3.25rem] w-full items-center gap-2 bg-gradient-to-b from-presentation via-presentation/70 to-transparent p-2 font-semibold text-text-primary md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 2xl:via-transparent">
-      <div className="flex flex-shrink-0 items-center md:hidden">
+      <div className={cn('flex-shrink-0 items-center', isSmallScreen ? 'flex' : 'hidden')}>
         <OpenSidebar testId="header-open-sidebar-button" />
       </div>
 
       <div
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-2 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
+          'flex min-w-0 flex-1 items-center gap-2',
+          !isSmallScreen && 'pl-3 transition-all duration-200 ease-in-out',
           hiddenBehindNav,
         )}
       >
@@ -87,12 +85,12 @@ function Header({
           <PresetsMenu />
         )}
         {hasAccessToBookmarks === true && (
-          <div className="hidden items-center md:flex">
+          <div className={cn('items-center', isSmallScreen ? 'hidden' : 'flex')}>
             <BookmarkMenu />
           </div>
         )}
         {hasAccessToMultiConvo === true && (
-          <div className="hidden items-center md:flex">
+          <div className={cn('items-center', isSmallScreen ? 'hidden' : 'flex')}>
             <AddMultiConvo />
           </div>
         )}
@@ -100,9 +98,12 @@ function Header({
 
       <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
         {hasAccessToTemporaryChat === true && <TemporaryChatIndicator />}
-        {!isNewChat && <NewChat className="md:hidden" />}
-        <HeaderMenu startupConfig={startupConfig} className="md:hidden" />
-        <div className="hidden items-center gap-2 md:flex">
+        {!isNewChat && <NewChat className={isSmallScreen ? undefined : 'hidden'} />}
+        <HeaderMenu
+          startupConfig={startupConfig}
+          className={isSmallScreen ? undefined : 'hidden'}
+        />
+        <div className={cn('items-center gap-2', isSmallScreen ? 'hidden' : 'flex')}>
           <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
           {hasAccessToTemporaryChat === true && <TemporaryChat />}
         </div>

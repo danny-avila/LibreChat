@@ -134,7 +134,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
         >
           <MorphIcon
             icon={stateIcon}
-            size={18}
+            size="1.125rem"
             className={cn(
               'absolute transition-opacity duration-300',
               isLoading ? 'opacity-0' : 'opacity-100',
@@ -148,7 +148,6 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
           >
             <Spinner className="size-[1.125rem] animate-spin" />
           </span>
-
         </span>
         {!iconOnly && (
           <span className="relative hidden overflow-hidden md:block">

@@ -19,8 +19,8 @@ import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '.
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { DataTableSearch } from './DataTableSearch';
-import { MorphIcon } from '../MorphIcon';
 import useRemScale from '~/hooks/useRemScale';
+import { MorphIcon } from '../MorphIcon';
 import { cn, logger } from '~/utils';
 import { Button } from '../Button';
 import { Label } from '../Label';
