@@ -464,6 +464,7 @@ async function performSync(flowManager, flowId, flowType, options = {}) {
         );
       }
     } catch (error) {
+      throwIfAborted(options.signal);
       messageSyncError = error;
       logger.error(
         '[indexSync] Message reconciliation failed; continuing with conversations:',
@@ -472,6 +473,7 @@ async function performSync(flowManager, flowId, flowType, options = {}) {
     }
 
     // Check if we need to sync conversations
+    throwIfAborted(options.signal);
     const convoProgress = await Conversation.getSyncProgress();
     throwIfAborted(options.signal);
     const forceConvoSync = conversationsRebuild != null || missingIndexes.conversations;

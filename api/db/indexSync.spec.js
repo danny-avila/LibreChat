@@ -1126,4 +1126,36 @@ describe('performSync() - syncThreshold logic', () => {
       cleanupError,
     );
   });
+
+  test('does not start conversation progress reads after message reconciliation is cancelled', async () => {
+    const cancellationError = new Error('index sync cancelled');
+    const controller = new AbortController();
+    mockRunDistributedJob.mockImplementation((_collection, _jobId, handler) =>
+      handler(controller.signal),
+    );
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 0,
+      totalDocuments: 1001,
+      pendingIndexing: 1001,
+      isComplete: false,
+    });
+    Message.syncWithMeili.mockImplementation(async () => {
+      controller.abort(cancellationError);
+      throw cancellationError;
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      isComplete: true,
+    });
+
+    const indexSync = require('./indexSync');
+    await expect(indexSync()).rejects.toBe(cancellationError);
+
+    expect(Conversation.getSyncProgress).not.toHaveBeenCalled();
+    expect(mockLogger.error).not.toHaveBeenCalledWith(
+      '[indexSync] Message reconciliation failed; continuing with conversations:',
+      cancellationError,
+    );
+  });
 });
