@@ -3,10 +3,10 @@ import { useWatch } from 'react-hook-form';
 import { Button, TooltipAnchor } from '@librechat/client';
 import { ChevronDown, CornerDownLeft, TriangleAlert } from 'lucide-react';
 import AskUserQuestions from '~/components/Chat/Messages/Content/AskUserQuestions';
-import useComposerOverlay from '~/hooks/Input/useComposerOverlay';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
 import { useChatFormContext } from '~/Providers';
+import { useComposerOverlay } from './overlay';
 import { useLocalize } from '~/hooks';
 
 /**

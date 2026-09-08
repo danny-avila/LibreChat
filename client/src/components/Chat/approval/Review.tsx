@@ -12,7 +12,7 @@ import {
 import { buildApprovalPreview, buildApprovalPreviews } from '~/components/Chat/approval/preview';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
-import useComposerOverlay from '~/hooks/Input/useComposerOverlay';
+import { useComposerOverlay } from '~/components/Chat/Input/overlay';
 import { useLocalize } from '~/hooks';
 
 const approvalPanelOpenFamily = atomFamily((_conversationId: string) => atom(false));

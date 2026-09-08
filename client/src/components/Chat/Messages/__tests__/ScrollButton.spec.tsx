@@ -1,8 +1,7 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { Provider, createStore } from 'jotai';
 import { act, render, screen } from '@testing-library/react';
-import { composerOverlayCountFamily } from '~/store/overlay';
+import { composerOverlayCountFamily } from '~/components/Chat/Input/overlay';
 import ScrollButton from '../ScrollButton';
 
 jest.mock('~/hooks', () => ({
@@ -46,23 +45,23 @@ class MockIntersectionObserver {
 const originalIO = global.IntersectionObserver;
 let jotaiStore = createStore();
 
-function renderButton() {
+function renderButton({ enabled = true }: { enabled?: boolean } = {}) {
   const scrollable = document.createElement('div');
   const messagesEnd = document.createElement('div');
   scrollable.appendChild(messagesEnd);
   return render(
-    <RecoilRoot>
-      <Provider store={jotaiStore}>
-        <ScrollButton
-          conversationId={CONVO_ID}
-          scrollableRef={{ current: scrollable }}
-          messagesEndRef={{ current: messagesEnd }}
-          scrollHandler={jest.fn()}
-          onNearBottomChange={jest.fn()}
-          overlayHeight={0}
-        />
-      </Provider>
-    </RecoilRoot>,
+    <Provider store={jotaiStore}>
+      <ScrollButton
+        conversationId={CONVO_ID}
+        enabled={enabled}
+        maximizeChatSpace={false}
+        scrollableRef={{ current: scrollable }}
+        messagesEndRef={{ current: messagesEnd }}
+        scrollHandler={jest.fn()}
+        onNearBottomChange={jest.fn()}
+        overlayHeight={0}
+      />
+    </Provider>,
   );
 }
 
@@ -141,6 +140,12 @@ describe('ScrollButton', () => {
   it('does not show a scrolled-up thread under an already open panel', () => {
     setOpenPanels(1);
     renderButton();
+    scrollAway();
+    expect(button()).toBeNull();
+  });
+
+  it('stays hidden when the host preference turns it off', () => {
+    renderButton({ enabled: false });
     scrollAway();
     expect(button()).toBeNull();
   });

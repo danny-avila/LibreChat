@@ -4,8 +4,8 @@ import { Provider as JotaiProvider, createStore } from 'jotai';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import { PendingToolApprovalButton, PendingToolApprovalPanel } from '../Review';
+import { composerOverlayCountFamily } from '~/components/Chat/Input/overlay';
 import ApprovalProvider from '../../Messages/Content/ApprovalContext';
-import { composerOverlayCountFamily } from '~/store/overlay';
 import { pendingApprovalActionFamily } from '../state';
 
 jest.mock('@librechat/client', () => ({

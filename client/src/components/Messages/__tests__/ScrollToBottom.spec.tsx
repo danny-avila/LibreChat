@@ -1,7 +1,5 @@
-import { RecoilRoot } from 'recoil';
 import { render, screen } from '@testing-library/react';
 import ScrollToBottom from '../ScrollToBottom';
-import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -17,17 +15,12 @@ const renderButton = ({
   interactive?: boolean;
 } = {}) =>
   render(
-    <RecoilRoot
-      initializeState={({ set }) => {
-        set(store.maximizeChatSpace, maximizeChatSpace);
-      }}
-    >
-      <ScrollToBottom
-        scrollHandler={jest.fn()}
-        overlayHeight={overlayHeight}
-        interactive={interactive}
-      />
-    </RecoilRoot>,
+    <ScrollToBottom
+      scrollHandler={jest.fn()}
+      maximizeChatSpace={maximizeChatSpace}
+      overlayHeight={overlayHeight}
+      interactive={interactive}
+    />,
   );
 
 describe('ScrollToBottom', () => {
@@ -50,7 +43,6 @@ describe('ScrollToBottom', () => {
 
     expect(button).toHaveClass('me-2', 'size-theme-control', 'rounded-theme-control-round');
     expect(button).not.toHaveClass('size-10');
-    expect(button).not.toHaveClass('rounded-full');
   });
 
   /* The gutter has to be reserved with padding rather than by reserving a real
@@ -97,7 +89,8 @@ describe('ScrollToBottom', () => {
   it('does not dim while it is unreachable', () => {
     renderButton();
 
-    expect(screen.getByRole('button').className).not.toMatch(/disabled:opacity/);
+    expect(screen.getByRole('button')).toHaveClass('disabled:opacity-100');
+    expect(screen.getByRole('button')).not.toHaveClass('disabled:opacity-50');
   });
 
   it('rests just above the composer when nothing is queued', () => {

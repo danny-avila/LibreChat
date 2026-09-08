@@ -1,10 +1,8 @@
 import { memo, useState, useRef, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
-import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
+import { composerOverlayCountFamily } from '~/components/Chat/Input/overlay';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
-import { composerOverlayCountFamily } from '~/store/overlay';
-import store from '~/store';
 
 const intersectionThreshold = 0.85;
 const visibilityDebounceRate = 150;
@@ -24,6 +22,8 @@ const visibilityDebounceRate = 150;
  */
 const ScrollButton = memo(function ScrollButton({
   conversationId,
+  enabled,
+  maximizeChatSpace,
   scrollableRef,
   messagesEndRef,
   scrollHandler,
@@ -31,13 +31,16 @@ const ScrollButton = memo(function ScrollButton({
   overlayHeight,
 }: {
   conversationId: string;
+  /** The user's show-scroll-button preference, handed down by the host. */
+  enabled: boolean;
+  /** The host's chat-width preference, which sets the column the control sits in. */
+  maximizeChatSpace: boolean;
   scrollableRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   scrollHandler: (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onNearBottomChange: (isNearBottom: boolean) => void;
   overlayHeight: number;
 }) {
-  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const panelOpen = useAtomValue(composerOverlayCountFamily(conversationId)) > 0;
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isSettled, setIsSettled] = useState(false);
@@ -70,7 +73,7 @@ const ScrollButton = memo(function ScrollButton({
 
   return (
     <CSSTransition
-      in={showScrollButton && scrollButtonPreference && !panelOpen}
+      in={showScrollButton && enabled && !panelOpen}
       timeout={{
         enter: 300,
         exit: 180,
@@ -85,6 +88,7 @@ const ScrollButton = memo(function ScrollButton({
       <ScrollToBottom
         ref={scrollToBottomRef}
         scrollHandler={scrollHandler}
+        maximizeChatSpace={maximizeChatSpace}
         overlayHeight={overlayHeight}
         interactive={isSettled}
       />

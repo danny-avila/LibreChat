@@ -6,6 +6,7 @@ import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
 import { MessagesViewProvider, useChatContext, useFileMapContext } from '~/Providers';
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
+import { useChatSurface } from '~/components/Chat/Subagents/surface';
 import useThreadRows from '~/hooks/Messages/useThreadRows';
 import { steerOverlayHeightFamily } from '~/store/steer';
 import { autoScrollAtom } from '~/store/autoScroll';
@@ -47,6 +48,7 @@ function MessagesViewContent({
 
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const { showScrollButton, maximizeChatSpace } = useChatSurface();
   const autoScroll = useAtomValue(autoScrollAtom);
   /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
    *  conversation id lags the route during warm-cache navigation, and keying
@@ -135,6 +137,8 @@ function MessagesViewContent({
 
           <ScrollButton
             conversationId={overlayConversationId}
+            enabled={showScrollButton}
+            maximizeChatSpace={maximizeChatSpace}
             scrollableRef={scrollableRef}
             messagesEndRef={messagesEndRef}
             scrollHandler={handleSmoothToRef}

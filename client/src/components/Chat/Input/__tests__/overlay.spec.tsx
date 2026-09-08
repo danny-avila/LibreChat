@@ -1,8 +1,7 @@
 import React from 'react';
 import { Provider, createStore } from 'jotai';
 import { renderHook } from '@testing-library/react';
-import { composerOverlayCountFamily } from '~/store/overlay';
-import useComposerOverlay from './useComposerOverlay';
+import { composerOverlayCountFamily, useComposerOverlay } from '../overlay';
 
 const CONVO_ID = 'convo-1';
 
