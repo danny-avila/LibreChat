@@ -10,6 +10,12 @@ reaches it at the next sync. Pull requests opened against `main` are retargeted 
 default branch, so close linked issues by hand. Worktrees share one stash stack, so never use a bare
 `git stash pop`. See the detailed policy in `CLAUDE.md` under "Branching and Pull Requests".
 
+Write the description for a reader who has not followed the branch: what breaks, what triggers it,
+how it behaves after the change, then one or two views of the mechanism — a focused diff, a call
+tree, a shallow file tree, or a Mermaid sequence. Keep only what the change carries, and describe
+the code as it stands rather than narrating earlier commits or review rounds. The formats and
+examples live in `.github/pull_request_template.md`.
+
 ## Verification
 
 For startup, auth, config, file, or message-loading changes, avoid serial database

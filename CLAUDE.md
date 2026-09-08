@@ -48,6 +48,13 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 - **Git worktrees share one stash stack.** `refs/stash` lives in the common `.git` directory, so a
   bare `git stash pop` in one worktree can take work stashed in another. Prefer a throwaway WIP
   commit; if you must stash, `git stash push -m <tag>` and `apply` that specific entry.
+- **Write the description for a reader who has not followed the branch.** Say what breaks, what
+  triggers it, and how it behaves after the change, then show the mechanism with whichever one or
+  two views make it reviewable — a focused diff, a call tree, a shallow file tree, or a Mermaid
+  sequence — keeping only the calls, files and state the change actually carries. Describe the code
+  as it stands: do not narrate what earlier commits tried or what a review round changed. Naming the
+  merged pull request that caused the bug is different — that is history the reader needs.
+  `.github/pull_request_template.md` carries the formats and examples.
 
 ---
 
