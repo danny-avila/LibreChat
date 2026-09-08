@@ -10,7 +10,7 @@ import {
   startOfYear,
   isWithinInterval,
 } from 'date-fns';
-import type { TConversation, GroupedConversations } from 'librechat-data-provider';
+import type { TConversation, TMessage, GroupedConversations } from 'librechat-data-provider';
 import type { InfiniteData, Query } from '@tanstack/react-query';
 import { isTemporaryConversation } from './conversation';
 
@@ -783,6 +783,52 @@ function findPinnedCandidate(
   }
   return freshest;
 }
+type LocallyCommittedReply = {
+  conversationId: string;
+  lastResponseAt: string;
+};
+
+const locallyCommittedReplies = new WeakMap<
+  QueryClient,
+  WeakMap<TMessage[], LocallyCommittedReply>
+>();
+
+/**
+ * Records the exact messages cache object written by a durable SSE terminal event. The marker is
+ * intentionally explicit: arbitrary manual cache writes (streaming tokens, optimistic user
+ * messages, or list merges) are not evidence that the stamped reply has rendered.
+ */
+export function markLocallyCommittedReply(
+  queryClient: QueryClient,
+  conversationId: string,
+  lastResponseAt: string,
+): void {
+  const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
+  if (messages == null) {
+    return;
+  }
+  let commits = locallyCommittedReplies.get(queryClient);
+  if (commits == null) {
+    commits = new WeakMap();
+    locallyCommittedReplies.set(queryClient, commits);
+  }
+  commits.set(messages, { conversationId, lastResponseAt });
+}
+
+/** Confirms that the terminal event's exact messages cache entry still owns this stamp. */
+export function hasLocallyCommittedReply(
+  queryClient: QueryClient,
+  conversationId: string,
+  lastResponseAt: string,
+): boolean {
+  const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
+  if (messages == null) {
+    return false;
+  }
+  const commit = locallyCommittedReplies.get(queryClient)?.get(messages);
+  return commit?.conversationId === conversationId && commit.lastResponseAt === lastResponseAt;
+}
+
 /**
  * Applies the stamps a completed run reported to the sidebar caches.
  *

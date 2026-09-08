@@ -188,6 +188,11 @@ const observeArrivalQuery = (
       ) {
         continue;
       }
+      /* An unknown row can enter this page because it was renamed. Real reply writes advance
+         both stamps together; a later metadata-only update must not announce old backlog. */
+      if (!previous?.has(conversationId) && convo.updatedAt !== lastResponseAt) {
+        continue;
+      }
       if (previous?.get(conversationId) === lastResponseAt) {
         continue;
       }

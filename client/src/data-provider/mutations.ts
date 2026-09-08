@@ -312,26 +312,77 @@ const refreshConvoReadCaches = (queryClient: QueryClient, conversationId: string
 };
 
 /**
- * Writes a settled catch-up back, but only when it is safe to.
+ * Orders local read-state intent across seen and unread writes.
  *
+ * A stale seen response can arrive after a later unread write (or its refetch) has cleared
+ * `lastSeenAt`. Keeping the latest operation id outside the query data lets settlement distinguish
+ * that clear from an old catch-up, even when the unread request has already settled.
+ */
+type ReadWriteState = {
+  next: number;
+  latest: Map<string, number>;
+  unreadOwners?: Map<string, UnreadWriteOwner>;
+  unreadChains?: Map<string, UnreadWriteChain>;
+};
+
+const readWriteStates = new WeakMap<QueryClient, ReadWriteState>();
+
+const getReadWriteState = (queryClient: QueryClient): ReadWriteState => {
+  let state = readWriteStates.get(queryClient);
+  if (!state) {
+    state = { next: 0, latest: new Map() };
+    readWriteStates.set(queryClient, state);
+  }
+  return state;
+};
+
+const claimReadWrite = (queryClient: QueryClient, conversationId: string): number => {
+  const state = getReadWriteState(queryClient);
+  state.next += 1;
+  state.latest.set(conversationId, state.next);
+  return state.next;
+};
+
+const isLatestReadWrite = (
+  queryClient: QueryClient,
+  conversationId: string,
+  token: number | undefined,
+): boolean =>
+  token !== undefined && getReadWriteState(queryClient).latest.get(conversationId) === token;
+
+const releaseReadWrite = (
+  queryClient: QueryClient,
+  conversationId: string,
+  token: number | undefined,
+): void => {
+  if (isLatestReadWrite(queryClient, conversationId, token)) {
+    getReadWriteState(queryClient).latest.delete(conversationId);
+  }
+};
+
+/**
  * Requests for two replies can be in flight at once, and the first to return is not always the
- * first sent. Settling is safe while the cache still holds this mutation's own acknowledgement,
- * or while it moves the catch-up forward; anything else would undo a newer acknowledgement that
- * has already landed, and the caller's attempt guard would not send it again.
+ * first sent. Settlement is safe only for the latest local read-state operation, while the cache
+ * still holds this mutation's own acknowledgement or while it moves the catch-up forward;
+ * anything else would undo newer intent that has already landed.
  */
 const settleCatchUp = (
   queryClient: QueryClient,
   conversationId: string,
   settled: string | undefined,
   acknowledged: string | undefined,
+  operationToken: number | undefined,
 ): void => {
+  if (!isLatestReadWrite(queryClient, conversationId, operationToken)) {
+    return;
+  }
   const cached = findConvoInAllQueries(queryClient, conversationId);
   if (!cached || cached.lastSeenAt === settled) {
     return;
   }
   const current = cached.lastSeenAt;
   const isOwnWrite = current === acknowledged;
-  const movesForward = settled != null && (current == null || settled > current);
+  const movesForward = settled != null && current != null && settled > current;
   if (!isOwnWrite && !movesForward) {
     return;
   }
@@ -361,6 +412,7 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
     (payload: t.TMarkConversationSeenRequest) => dataService.markConversationSeen(payload),
     {
       onMutate: async (vars) => {
+        const operationToken = claimReadWrite(queryClient, vars.conversationId);
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Acknowledging exactly the observed reply, rather than the browser's idea of "now":
@@ -373,7 +425,7 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
           ...convo,
           lastSeenAt: acknowledged,
         }));
-        return { previous: cached?.lastSeenAt, acknowledged, interrupted };
+        return { previous: cached?.lastSeenAt, acknowledged, operationToken, interrupted };
       },
       onSuccess: (data, vars, context) => {
         /* A list refetch already in flight can have read the old catch-up before this write
@@ -382,7 +434,13 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
            reply was no longer the newest. The caller's attempt guard keeps either from
            re-arming the same request. */
         const settled = data.modified ? context?.acknowledged : context?.previous;
-        settleCatchUp(queryClient, vars.conversationId, settled, context?.acknowledged);
+        settleCatchUp(
+          queryClient,
+          vars.conversationId,
+          settled,
+          context?.acknowledged,
+          context?.operationToken,
+        );
         if (!data.modified) {
           /* Rejected means the server has since stamped a reply this tab has not read, so the
              cache it just restored is known to be behind. */
@@ -395,40 +453,117 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
            unrelated refetch. Same ownership guard as the success path: a request for an
            older reply can fail after a newer one was acknowledged, and rolling back
            unconditionally would take that newer acknowledgement with it. */
-        settleCatchUp(queryClient, vars.conversationId, context?.previous, context?.acknowledged);
+        settleCatchUp(
+          queryClient,
+          vars.conversationId,
+          context?.previous,
+          context?.acknowledged,
+          context?.operationToken,
+        );
       },
-      onSettled: (_data, _error, _vars, context) => {
+      onSettled: (_data, _error, vars, context) => {
         restartInterruptedReads(queryClient, context?.interrupted);
+        releaseReadWrite(queryClient, vars.conversationId, context?.operationToken);
       },
     },
   );
 };
 
 /**
- * The newest mark-unread write per conversation.
- *
  * Two clicks before the first request settles both write the same optimistic state, so value
- * comparison alone cannot tell whose write the cache holds: the first request failing would
- * restore the catch-up it captured, and the second's settlement would then read that restored
- * value as a newer acknowledgement and leave the row seen although the server marked it unread.
- * Only the latest write owns the cache; earlier ones settle silently.
+ * comparison alone cannot tell whose write the cache holds. The latest write owns the cache, but
+ * every successor carries the original pre-chain baseline so an all-failure chain restores the
+ * state from before the first click; an accepted predecessor keeps a later failure unread.
  */
-const unreadWriteOwners = new Map<string, number>();
-let unreadWriteSequence = 0;
+type UnreadWriteBaseline = Pick<
+  t.TConversation,
+  'lastResponseAt' | 'lastResponseIsManual' | 'lastSeenAt'
+>;
 
-const claimUnreadWrite = (conversationId: string): number => {
-  unreadWriteSequence += 1;
-  unreadWriteOwners.set(conversationId, unreadWriteSequence);
-  return unreadWriteSequence;
+type UnreadWriteChain = {
+  baseline: UnreadWriteBaseline;
+  latestToken: number;
+  pending: number;
+  accepted: boolean;
+  latestFailureSettled: boolean;
 };
 
-const ownsUnreadWrite = (conversationId: string, token: number | undefined): boolean =>
-  token !== undefined && unreadWriteOwners.get(conversationId) === token;
+type UnreadWriteOwner = {
+  token: number;
+  chain: UnreadWriteChain;
+};
 
-const releaseUnreadWrite = (conversationId: string, token: number | undefined): void => {
-  if (ownsUnreadWrite(conversationId, token)) {
-    unreadWriteOwners.delete(conversationId);
+const claimUnreadWrite = (
+  queryClient: QueryClient,
+  conversationId: string,
+  baseline: UnreadWriteBaseline,
+): UnreadWriteOwner => {
+  const state = getReadWriteState(queryClient);
+  const owners = (state.unreadOwners ??= new Map());
+  const chains = (state.unreadChains ??= new Map());
+  const chain = owners.get(conversationId)?.chain ??
+    chains.get(conversationId) ?? {
+      baseline,
+      latestToken: 0,
+      pending: 0,
+      accepted: false,
+      latestFailureSettled: false,
+    };
+  const token = claimReadWrite(queryClient, conversationId);
+  chain.latestToken = token;
+  chain.pending += 1;
+  chains.set(conversationId, chain);
+  const owner = { token, chain };
+  owners.set(conversationId, owner);
+  return owner;
+};
+
+const ownsUnreadWrite = (
+  queryClient: QueryClient,
+  conversationId: string,
+  token: number | undefined,
+): boolean =>
+  token !== undefined &&
+  getReadWriteState(queryClient).unreadOwners?.get(conversationId)?.token === token;
+
+const releaseUnreadWrite = (
+  queryClient: QueryClient,
+  conversationId: string,
+  token: number | undefined,
+): void => {
+  if (ownsUnreadWrite(queryClient, conversationId, token)) {
+    getReadWriteState(queryClient).unreadOwners?.delete(conversationId);
   }
+};
+
+const reassertAcceptedUnread = (
+  queryClient: QueryClient,
+  conversationId: string,
+  chain: UnreadWriteChain | undefined,
+  data: t.TMarkConversationUnreadResponse,
+): void => {
+  if (!chain || !isLatestReadWrite(queryClient, conversationId, chain.latestToken)) {
+    return;
+  }
+  const cached = findConvoInAllQueries(queryClient, conversationId);
+  if (!cached || cached.lastSeenAt !== chain.baseline.lastSeenAt) {
+    return;
+  }
+  const serverResponseAt = data.lastResponseAt;
+  if (
+    cached.lastResponseAt != null &&
+    serverResponseAt != null &&
+    cached.lastResponseAt > serverResponseAt
+  ) {
+    return;
+  }
+  updateConvoInAllQueries(queryClient, conversationId, (convo) => ({
+    ...convo,
+    lastResponseAt: serverResponseAt ?? convo.lastResponseAt,
+    lastResponseIsManual:
+      serverResponseAt == null ? convo.lastResponseIsManual : data.lastResponseIsManual,
+    lastSeenAt: undefined,
+  }));
 };
 
 /**
@@ -450,6 +585,12 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
     (payload: t.TMarkConversationUnreadRequest) => dataService.markConversationUnread(payload),
     {
       onMutate: async (vars) => {
+        const observed = findConvoInAllQueries(queryClient, vars.conversationId);
+        const owner = claimUnreadWrite(queryClient, vars.conversationId, {
+          lastResponseAt: observed?.lastResponseAt,
+          lastResponseIsManual: observed?.lastResponseIsManual,
+          lastSeenAt: observed?.lastSeenAt,
+        });
         const interrupted = await cancelConvoReadFetches(queryClient, vars.conversationId);
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
@@ -459,11 +600,12 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         const optimisticResponseAt =
           previous?.lastResponseAt ?? previous?.updatedAt ?? new Date().toISOString();
         const context = {
-          lastResponseAt: previous?.lastResponseAt,
-          lastResponseIsManual: previous?.lastResponseIsManual,
-          lastSeenAt: previous?.lastSeenAt,
+          chain: owner.chain,
+          lastResponseAt: owner.chain.baseline.lastResponseAt,
+          lastResponseIsManual: owner.chain.baseline.lastResponseIsManual,
+          lastSeenAt: owner.chain.baseline.lastSeenAt,
           optimisticResponseAt,
-          token: claimUnreadWrite(vars.conversationId),
+          token: owner.token,
           interrupted,
         };
         updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
@@ -476,10 +618,14 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         return context;
       },
       onSuccess: (data, vars, context) => {
-        /* A second click captured this pass's optimistic state as its own baseline, so its
-           request now owns the row: settling an earlier one against a cache it no longer wrote
-           would undo the newer request's work. */
-        if (!ownsUnreadWrite(vars.conversationId, context?.token)) {
+        if (data.modified && context?.chain) {
+          context.chain.accepted = true;
+        }
+        const owns = ownsUnreadWrite(queryClient, vars.conversationId, context?.token);
+        if (!owns) {
+          if (data.modified && context?.chain?.latestFailureSettled) {
+            reassertAcceptedUnread(queryClient, vars.conversationId, context.chain, data);
+          }
           return;
         }
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
@@ -488,6 +634,12 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
            longer exists counted in the badge, but only this mutation's own state is safe to
            undo, for the same reason the failure path checks. */
         if (!data.modified) {
+          if (context?.chain?.accepted) {
+            return;
+          }
+          if (context?.chain) {
+            context.chain.latestFailureSettled = true;
+          }
           const isOwnWrite =
             cached?.lastSeenAt === undefined &&
             cached?.lastResponseAt === context?.optimisticResponseAt;
@@ -557,8 +709,14 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
            own baseline: rolling back here would restore a catch-up the newer request is about
            to be judged against, and its settlement would then read the restored value as a
            newer acknowledgement and leave the row seen although the server marked it unread. */
-        if (!ownsUnreadWrite(vars.conversationId, context?.token)) {
+        if (!ownsUnreadWrite(queryClient, vars.conversationId, context?.token)) {
           return;
+        }
+        if (context?.chain?.accepted) {
+          return;
+        }
+        if (context?.chain) {
+          context.chain.latestFailureSettled = true;
         }
         /* Only while the cache still holds what this mutation wrote. A newer reply can be
            merged by the watcher or the SSE path while the request is open, and restoring the
@@ -579,7 +737,16 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         }));
       },
       onSettled: (_data, _error, vars, context) => {
-        releaseUnreadWrite(vars.conversationId, context?.token);
+        releaseUnreadWrite(queryClient, vars.conversationId, context?.token);
+        const chain = context?.chain;
+        if (chain) {
+          chain.pending -= 1;
+          const chains = getReadWriteState(queryClient).unreadChains;
+          if (chain.pending === 0 && chains?.get(vars.conversationId) === chain) {
+            chains.delete(vars.conversationId);
+            releaseReadWrite(queryClient, vars.conversationId, chain.latestToken);
+          }
+        }
         restartInterruptedReads(queryClient, context?.interrupted);
       },
     },

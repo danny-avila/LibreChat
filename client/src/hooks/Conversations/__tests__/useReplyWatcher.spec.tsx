@@ -681,7 +681,12 @@ describe('useReplyWatcher', () => {
       (document.hasFocus as jest.Mock).mockReturnValue(focused);
       mockListConversations.mockResolvedValue({
         conversations: [
-          { conversationId: 'outside-filter', title: 'Remote', lastResponseAt: RESPONDED_AT },
+          {
+            conversationId: 'outside-filter',
+            title: 'Remote',
+            lastResponseAt: RESPONDED_AT,
+            updatedAt: RESPONDED_AT,
+          },
         ],
         nextCursor: null,
       });
