@@ -330,6 +330,56 @@ describe('authoritative public tag counts', () => {
     ]);
   });
 
+  it.each([null, 'tenant-a'])(
+    'rejects a rename into a derived tag in tenant %s',
+    async (tenantId) => {
+      const methods = createConversationTagMethods(mongoose);
+      const scope = { user, ...(tenantId == null ? {} : { tenantId }) };
+      await ConversationTag.collection.insertOne({
+        ...scope,
+        tag: 'old',
+        description: 'Keep',
+        position: 2,
+      });
+      await Conversation.collection.insertMany([
+        { ...scope, conversationId: 'old', tags: ['old'] },
+        { ...scope, conversationId: 'derived', tags: ['target'] },
+      ]);
+      await expect(
+        methods.updateConversationTag(
+          user,
+          'old',
+          { tag: 'target', description: 'Changed' },
+          tenantId,
+        ),
+      ).rejects.toThrow('Error updating conversation tag');
+      expect(await ConversationTag.findOne({ user, tenantId, tag: 'old' }).lean()).toMatchObject({
+        description: 'Keep',
+        position: 2,
+      });
+      expect(await ConversationTag.exists({ user, tenantId, tag: 'target' })).toBeNull();
+      expect(
+        (await Conversation.findOne({ ...scope, conversationId: 'old' }).lean())?.tags,
+      ).toEqual(['old']);
+      expect(
+        (await Conversation.findOne({ ...scope, conversationId: 'derived' }).lean())?.tags,
+      ).toEqual(['target']);
+    },
+  );
+
+  it('does not treat another tenant or owner membership as a rename conflict', async () => {
+    const methods = createConversationTagMethods(mongoose);
+    await ConversationTag.create({ user, tag: 'old', position: 0 });
+    await Conversation.collection.insertMany([
+      { user, conversationId: 'mine', tags: ['old'] },
+      { user, tenantId: 'historical', conversationId: 'other-tenant', tags: ['target'] },
+      { user: 'other-user', conversationId: 'other-owner', tags: ['target'] },
+    ]);
+    await expect(
+      methods.updateConversationTag(user, 'old', { tag: 'target' }, null),
+    ).resolves.toMatchObject({ tag: 'target', count: 1 });
+  });
+
   it('returns committed counts from create and rename responses', async () => {
     const methods = createConversationTagMethods(mongoose);
     await Conversation.create({

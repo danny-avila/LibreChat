@@ -412,8 +412,11 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       }
 
       if (newTag && newTag !== oldTag) {
-        const tagAlreadyExists = await ConversationTag.findOne({ ...scope, tag: newTag }).lean();
-        if (tagAlreadyExists) {
+        const [catalogTag, committedTag] = await Promise.all([
+          ConversationTag.exists({ ...scope, tag: newTag }),
+          Conversation.exists({ ...scope, tags: newTag }),
+        ]);
+        if (catalogTag || committedTag) {
           throw new Error('Tag already exists');
         }
 

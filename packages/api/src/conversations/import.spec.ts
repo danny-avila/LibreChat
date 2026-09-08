@@ -392,6 +392,61 @@ describe('createConversationImportOperation', () => {
     expect(deps.getImporter).not.toHaveBeenCalled();
   });
 
+  describe.each(['files', 'attachments'])('imported %s', (field) => {
+    it.each([null, false, 1, 'file', [], { filename: {} }, { filepath: 4 }, { text: [] }])(
+      'rejects malformed entry %j in flat and recursive exports',
+      async (entry) => {
+        for (const recursive of [false, true]) {
+          const { deps } = createDependencies(
+            JSON.stringify({
+              ...baseExport,
+              recursive,
+              messages: [{ ...baseExport.messages[0], [field]: [entry] }],
+            }),
+          );
+          await expect(
+            createConversationImportOperation(deps)({
+              filepath: '/tmp/malformed-file.json',
+              requestUserId: 'authenticated-user',
+              format: 'librechat',
+            }),
+          ).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+          expect(deps.getImporter).not.toHaveBeenCalled();
+          expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
+        }
+      },
+    );
+
+    it('preserves partial references and complete render fields', async () => {
+      const entries = [
+        { file_id: 'reference' },
+        {
+          filename: 'example.txt',
+          filepath: '/files/example.txt',
+          type: 'text/plain',
+          text: 'contents',
+          bytes: 8,
+          embedded: false,
+          messageId: 'source-message',
+          toolCallId: 'call',
+          metadata: { fileIdentifier: 'reference' },
+        },
+      ];
+      const { deps, importer } = createDependencies(
+        JSON.stringify({
+          ...baseExport,
+          messages: [{ ...baseExport.messages[0], [field]: entries }],
+        }),
+      );
+      await createConversationImportOperation(deps)({
+        filepath: '/tmp/files.json',
+        requestUserId: 'authenticated-user',
+        format: 'librechat',
+      });
+      expect(importer.mock.calls[0][0]).toMatchObject({ messages: [{ [field]: entries }] });
+    });
+  });
+
   it('strips source retention and attachment ownership before importer execution', async () => {
     const { deps, importer } = createDependencies(
       JSON.stringify({

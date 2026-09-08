@@ -17,6 +17,7 @@ import type {
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -1005,6 +1006,55 @@ describe('Conversation Operations', () => {
         );
 
         expect(result?.isArchived).toBe(true);
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('reports required retention backfill failure and repairs visibility on retry', async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Legacy',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        const ctx = {
+          userId: 'user123',
+          interfaceConfig: { retentionMode: RetentionMode.ALL, temporaryChatRetention: 24 },
+        };
+        const backfill = jest
+          .spyOn(Conversation, 'updateOne')
+          .mockRejectedValueOnce(new Error('retention write unavailable'));
+        try {
+          await expect(
+            saveConvo(
+              ctx,
+              { conversationId, title: 'Renamed' },
+              { preserveUpdatedAt: true, noUpsert: true },
+            ),
+          ).resolves.toEqual({
+            message: 'Error saving conversation',
+          });
+        } finally {
+          backfill.mockRestore();
+        }
+        const visibility = { conversationId, ...buildRetentionVisibilityFilter<IConversation>() };
+        expect(await Conversation.exists(visibility)).toBeNull();
+        await expect(
+          saveConvo(
+            ctx,
+            { conversationId, title: 'Renamed' },
+            { preserveUpdatedAt: true, noUpsert: true },
+          ),
+        ).resolves.toMatchObject({
+          conversationId,
+          title: 'Renamed',
+          isTemporary: false,
+        });
+        expect(await Conversation.exists(visibility)).not.toBeNull();
         const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
         expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
       });

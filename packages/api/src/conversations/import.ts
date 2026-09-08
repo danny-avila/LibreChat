@@ -66,6 +66,25 @@ const importMetadataSchema = z.object({
   exportAt: z.string().optional(),
 });
 
+/** Exports contain partial file references as well as complete attachment records. */
+const importFileSchema = z.object({
+  file_id: z.string().nullish(),
+  filename: z.string().nullish(),
+  filepath: z.string().nullish(),
+  type: z.string().nullish(),
+  text: z.string().nullish(),
+  preview: z.string().nullish(),
+  messageId: z.string().nullish(),
+  toolCallId: z.string().nullish(),
+  agentId: z.string().nullish(),
+  stepId: z.string().nullish(),
+  bytes: z.number().nullish(),
+  width: z.number().nullish(),
+  height: z.number().nullish(),
+  embedded: z.boolean().nullish(),
+  metadata: z.object({}).passthrough().nullish(),
+});
+
 const TOP_LEVEL_FIELDS = new Set([
   'conversationId',
   'endpoint',
@@ -385,6 +404,17 @@ function assertMessage(
       if (!isValidConversationContentPart(value.content[index])) {
         throw new ConversationImportError(
           `Field "${location}.content[${index}]" is not a supported content part`,
+        );
+      }
+    }
+  }
+  for (const field of ['files', 'attachments'] as const) {
+    const entries = value[field];
+    if (!Array.isArray(entries)) continue;
+    for (let index = 0; index < entries.length; index++) {
+      if (!importFileSchema.safeParse(entries[index]).success) {
+        throw new ConversationImportError(
+          `Field "${location}.${field}[${index}]" is not a supported file object`,
         );
       }
     }
