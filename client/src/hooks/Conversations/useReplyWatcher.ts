@@ -1,9 +1,10 @@
 import { useRef, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
-import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
-import type { QueryClient } from '@tanstack/react-query';
+import { useQueryClient, replaceEqualDeep } from '@tanstack/react-query';
+import type { TConversation, ConversationListParams } from 'librechat-data-provider';
+import type { InfiniteData, QueryClient } from '@tanstack/react-query';
+import type { ConversationCursorData } from '~/utils/convos';
 import {
   unseenTabBadgeAtom,
   replyNotificationsAtom,
@@ -57,21 +58,156 @@ const didListRefreshFail = (queryClient: QueryClient): boolean =>
     .findAll([QueryKeys.allConversations], { exact: false })
     .some((query) => query.getObserversCount() > 0 && query.state.status === 'error');
 
-/** Refresh both the visible sidebar and the unfiltered cache read by global reply indicators. */
+type ConversationPages = InfiniteData<ConversationCursorData>;
+
+/**
+ * A first-page refetch can promote a row out of a loaded page. Keep the old first-page rows that
+ * were displaced, remove the promoted duplicates from later pages, and move the first page cursor
+ * forward. This leaves the already-scrolled rows usable without asking the server for every page.
+ */
+const reconcileFirstPage = (
+  previous: ConversationPages | undefined,
+  current: ConversationPages | undefined,
+): ConversationPages | undefined => {
+  if (!previous || !current || previous.pages.length === 0 || current.pages.length === 0) {
+    return current;
+  }
+
+  const freshFirst = replaceEqualDeep(previous.pages[0], current.pages[0]);
+  if (freshFirst === previous.pages[0]) {
+    return previous;
+  }
+  const freshIds = new Set<string>();
+  const uniqueFirst = freshFirst.conversations.filter((convo) => {
+    const id = convo.conversationId;
+    if (!id) {
+      return true;
+    }
+    if (freshIds.has(id)) {
+      return false;
+    }
+    freshIds.add(id);
+    return true;
+  });
+
+  if (freshFirst.nextCursor == null) {
+    return {
+      ...current,
+      pages: [{ ...freshFirst, conversations: uniqueFirst }],
+      pageParams: current.pageParams.slice(0, 1),
+    };
+  }
+
+  /* Keep rows displaced into the loaded tail. A normal full revalidation still owns pruning
+     historical rows, which is why the partial merge never refreshes the original query's age. */
+  const displaced =
+    current.pages.length > 1 && freshFirst.nextCursor != null
+      ? previous.pages[0].conversations.filter(
+          (convo) => convo.conversationId && !freshIds.has(convo.conversationId),
+        )
+      : [];
+  const seen = new Set(freshIds);
+  const pages = current.pages.map((page, pageIndex) => {
+    if (pageIndex === 0) {
+      return uniqueFirst.length === freshFirst.conversations.length
+        ? freshFirst
+        : { ...freshFirst, conversations: uniqueFirst };
+    }
+
+    const conversations = [...(pageIndex === 1 ? displaced : []), ...page.conversations].filter(
+      (convo) => {
+        const id = convo.conversationId;
+        if (!id) {
+          return true;
+        }
+        if (seen.has(id)) {
+          return false;
+        }
+        seen.add(id);
+        return true;
+      },
+    );
+    if (
+      conversations.length === page.conversations.length &&
+      conversations.every((convo, index) => convo === page.conversations[index])
+    ) {
+      return page;
+    }
+    return { ...page, conversations };
+  });
+
+  const pageParams = [...current.pageParams];
+  if (
+    pages.length > 1 &&
+    freshFirst.nextCursor != null &&
+    pageParams[1] !== freshFirst.nextCursor
+  ) {
+    pageParams[1] = freshFirst.nextCursor;
+  }
+  const pagesChanged = pages.some((page, index) => page !== current.pages[index]);
+  const pageParamsChanged = pageParams.some((param, index) => param !== current.pageParams[index]);
+  return pagesChanged || pageParamsChanged ? { ...current, pages, pageParams } : current;
+};
+
+/** Refresh the visible sidebar and the unfiltered cache read by global reply indicators. */
 const refreshConversationLists = async (queryClient: QueryClient): Promise<void> => {
+  const cache = queryClient.getQueryCache();
+  const active = cache
+    .findAll([QueryKeys.allConversations], { exact: false })
+    .filter((query) => query.isActive());
+  const invalidation = queryClient.invalidateQueries([QueryKeys.allConversations], {
+    refetchType: 'none',
+  });
+  const refreshes = active.map(async (query) => {
+    const queryFn = query.options.queryFn;
+    const snapshot = await queryClient.fetchInfiniteQuery<ConversationCursorData>({
+      queryKey: [...query.queryKey, 'reply-discovery'],
+      meta: { replyDiscovery: true },
+      queryFn: async ({ signal }) => {
+        if (typeof queryFn !== 'function') {
+          return dataService.listConversations({
+            ...(query.queryKey[1] as ConversationListParams | undefined),
+            cursor: undefined,
+          });
+        }
+        return (await queryFn({
+          queryKey: query.queryKey,
+          pageParam: undefined,
+          signal,
+          meta: query.meta,
+        })) as ConversationCursorData;
+      },
+      getNextPageParam: () => undefined,
+    });
+    if (cache.find(query.queryKey) !== query) {
+      return;
+    }
+    const current = queryClient.getQueryData<ConversationPages>(query.queryKey);
+    if (!current || !snapshot.pages[0]) {
+      return;
+    }
+    const reconciled = reconcileFirstPage(current, {
+      ...current,
+      pages: [snapshot.pages[0], ...current.pages.slice(1)],
+    });
+    if (reconciled && reconciled !== current) {
+      /* The snapshot owns the new first page, not the old loaded tail. Keep the original
+         query's age so normal focus/mount revalidation can still refresh those older pages. */
+      queryClient.setQueryData(query.queryKey, reconciled, {
+        updatedAt: query.state.dataUpdatedAt,
+      });
+    }
+  });
+
   await Promise.all([
-    queryClient.invalidateQueries([QueryKeys.allConversations]),
+    invalidation,
+    ...refreshes,
     queryClient.invalidateQueries([QueryKeys.pinnedConversations]),
     queryClient.fetchInfiniteQuery({
-      queryKey: [QueryKeys.allConversations, { isArchived: false }],
+      queryKey: [QueryKeys.allConversations, { isArchived: false, replyDiscovery: true }],
       meta: { replyDiscovery: true },
-      queryFn: ({ pageParam }) =>
-        dataService.listConversations({
-          isArchived: false,
-          limit: AWAY_POLL_LIMIT,
-          cursor: pageParam?.toString(),
-        }),
-      getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+      queryFn: () => dataService.listConversations({ isArchived: false, limit: AWAY_POLL_LIMIT }),
+      getNextPageParam: () => undefined,
     }),
   ]);
 };

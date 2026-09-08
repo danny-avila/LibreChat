@@ -783,15 +783,45 @@ function findPinnedCandidate(
   }
   return freshest;
 }
-type LocallyCommittedReply = {
+type ReplyProof = {
   conversationId: string;
   lastResponseAt: string;
+  locallyCommitted?: boolean;
+  serverFetched?: boolean;
 };
 
-const locallyCommittedReplies = new WeakMap<
-  QueryClient,
-  WeakMap<TMessage[], LocallyCommittedReply>
->();
+const messagesReplyProofs = new WeakMap<QueryClient, WeakMap<TMessage[], ReplyProof>>();
+
+function markReplyProof(
+  queryClient: QueryClient,
+  conversationId: string,
+  lastResponseAt: string,
+  source: 'local' | 'server',
+  messages: TMessage[] | undefined = queryClient.getQueryData<TMessage[]>([
+    QueryKeys.messages,
+    conversationId,
+  ]),
+): void {
+  if (messages == null) {
+    return;
+  }
+  let commits = messagesReplyProofs.get(queryClient);
+  if (commits == null) {
+    commits = new WeakMap();
+    messagesReplyProofs.set(queryClient, commits);
+  }
+  const previous = commits.get(messages);
+  const proof =
+    previous?.conversationId === conversationId && previous.lastResponseAt === lastResponseAt
+      ? previous
+      : { conversationId, lastResponseAt };
+  if (source === 'local') {
+    proof.locallyCommitted = true;
+  } else {
+    proof.serverFetched = true;
+  }
+  commits.set(messages, proof);
+}
 
 /**
  * Records the exact messages cache object written by a durable SSE terminal event. The marker is
@@ -803,16 +833,35 @@ export function markLocallyCommittedReply(
   conversationId: string,
   lastResponseAt: string,
 ): void {
+  markReplyProof(queryClient, conversationId, lastResponseAt, 'local');
+}
+
+/** Records a successful server messages fetch against the exact cache object it committed. */
+export function markServerFetchedReply(
+  queryClient: QueryClient,
+  conversationId: string,
+  lastResponseAt: string,
+  messages: TMessage[],
+): void {
+  markReplyProof(queryClient, conversationId, lastResponseAt, 'server', messages);
+}
+
+function hasReplyProof(
+  queryClient: QueryClient,
+  conversationId: string,
+  lastResponseAt: string,
+  source: 'local' | 'server',
+): boolean {
   const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
   if (messages == null) {
-    return;
+    return false;
   }
-  let commits = locallyCommittedReplies.get(queryClient);
-  if (commits == null) {
-    commits = new WeakMap();
-    locallyCommittedReplies.set(queryClient, commits);
-  }
-  commits.set(messages, { conversationId, lastResponseAt });
+  const proof = messagesReplyProofs.get(queryClient)?.get(messages);
+  return (
+    proof?.conversationId === conversationId &&
+    proof.lastResponseAt === lastResponseAt &&
+    (source === 'local' ? proof.locallyCommitted === true : proof.serverFetched === true)
+  );
 }
 
 /** Confirms that the terminal event's exact messages cache entry still owns this stamp. */
@@ -821,12 +870,104 @@ export function hasLocallyCommittedReply(
   conversationId: string,
   lastResponseAt: string,
 ): boolean {
-  const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-  if (messages == null) {
-    return false;
+  return hasReplyProof(queryClient, conversationId, lastResponseAt, 'local');
+}
+
+/** Confirms that a successful server fetch's exact messages cache entry still owns this stamp. */
+export function hasServerFetchedReply(
+  queryClient: QueryClient,
+  conversationId: string,
+  lastResponseAt: string,
+): boolean {
+  return hasReplyProof(queryClient, conversationId, lastResponseAt, 'server');
+}
+type MessagesReplyFetch = {
+  stamp: string;
+  acceptedServerResult: boolean;
+};
+
+const messagesReplyFetches = new WeakMap<Query, MessagesReplyFetch>();
+const messagesReplyTracking = new WeakSet<QueryClient>();
+
+function trackMessagesReplyFetches(queryClient: QueryClient): void {
+  if (messagesReplyTracking.has(queryClient)) {
+    return;
   }
-  const commit = locallyCommittedReplies.get(queryClient)?.get(messages);
-  return commit?.conversationId === conversationId && commit.lastResponseAt === lastResponseAt;
+  messagesReplyTracking.add(queryClient);
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.query.queryKey[0] !== QueryKeys.messages) {
+      return;
+    }
+    const action = event.action;
+    const pending = messagesReplyFetches.get(event.query);
+    if (pending == null) {
+      return;
+    }
+    if (action.type === 'error') {
+      messagesReplyFetches.delete(event.query);
+      return;
+    }
+    if (action.type !== 'success' || action.manual === true) {
+      pending.acceptedServerResult = false;
+      return;
+    }
+    messagesReplyFetches.delete(event.query);
+    if (!pending.acceptedServerResult) {
+      return;
+    }
+    const committedMessages = event.query.state.data;
+    if (Array.isArray(committedMessages)) {
+      markServerFetchedReply(
+        queryClient,
+        event.query.queryKey[1] as string,
+        pending.stamp,
+        committedMessages as TMessage[],
+      );
+    }
+  });
+}
+
+/**
+ * Captures the list reply stamp before a messages request crosses its loading gate. The returned
+ * request record is weakly tied to the query so an abandoned conversation cannot retain history.
+ */
+export function beginMessagesReplyFetch(
+  queryClient: QueryClient,
+  conversationId: string,
+  stamp: string | undefined,
+): MessagesReplyFetch | undefined {
+  if (stamp == null) {
+    return undefined;
+  }
+  trackMessagesReplyFetches(queryClient);
+  const query = queryClient.getQueryCache().find([QueryKeys.messages, conversationId]);
+  if (query == null) {
+    return undefined;
+  }
+  const request: MessagesReplyFetch = { stamp, acceptedServerResult: false };
+  messagesReplyFetches.set(query, request);
+  return request;
+}
+
+/** Arms a request record only when its server result won the concurrent-cache race. */
+export function completeMessagesReplyFetch(
+  queryClient: QueryClient,
+  conversationId: string,
+  request: MessagesReplyFetch | undefined,
+  acceptedServerResult: boolean,
+): void {
+  if (request == null) {
+    return;
+  }
+  const query = queryClient.getQueryCache().find([QueryKeys.messages, conversationId]);
+  if (query == null || messagesReplyFetches.get(query) !== request) {
+    return;
+  }
+  if (!acceptedServerResult) {
+    messagesReplyFetches.delete(query);
+    return;
+  }
+  request.acceptedServerResult = true;
 }
 
 /**

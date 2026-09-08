@@ -1,7 +1,12 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
-import { findConvoInAllQueries, hasLocallyCommittedReply, isConversationUnseen } from '~/utils';
+import {
+  findConvoInAllQueries,
+  hasLocallyCommittedReply,
+  hasServerFetchedReply,
+  isConversationUnseen,
+} from '~/utils';
 import { consumeFocusSuppression } from './notificationNavigation';
 import { useMarkConversationSeenMutation } from '~/data-provider';
 
@@ -52,7 +57,7 @@ export default function useConversationSeen(
   const markSeenRef = useRef<() => void>(() => undefined);
 
   const scheduleRenderedCheck = useCallback(
-    (expectedStamp: string | undefined, locallyCommitted: boolean) => {
+    (expectedStamp: string | undefined, proofSource?: 'local' | 'server') => {
       if (!conversationId) {
         return;
       }
@@ -67,15 +72,17 @@ export default function useConversationSeen(
           const messagesReady =
             messagesState?.status === 'success' && messagesState.fetchStatus === 'idle';
           const proofStillHolds =
-            locallyCommitted &&
             expectedStamp != null &&
-            hasLocallyCommittedReply(queryClient, conversationId, expectedStamp);
+            ((proofSource === 'local' &&
+              hasLocallyCommittedReply(queryClient, conversationId, expectedStamp)) ||
+              (proofSource === 'server' &&
+                hasServerFetchedReply(queryClient, conversationId, expectedStamp)));
           if (
             expectedStamp != null &&
             messagesReady &&
             cached?.lastResponseAt === expectedStamp &&
             isConversationUnseen(cached) &&
-            (locallyCommitted ? cached.lastResponseIsManual !== true && proofStillHolds : true)
+            (proofSource == null ? true : cached.lastResponseIsManual !== true && proofStillHolds)
           ) {
             renderedMessagesRef.current.set(conversationId, expectedStamp);
           }
@@ -127,14 +134,16 @@ export default function useConversationSeen(
       }
 
       const renderedStamp = renderedMessagesRef.current.get(conversationId);
+      const hasLocalProof = hasLocallyCommittedReply(queryClient, conversationId, lastResponseAt);
+      const hasServerProof = hasServerFetchedReply(queryClient, conversationId, lastResponseAt);
       if (
         renderedStamp !== lastResponseAt &&
         cached?.lastResponseIsManual !== true &&
-        hasLocallyCommittedReply(queryClient, conversationId, lastResponseAt)
+        (hasLocalProof || hasServerProof)
       ) {
-        /* The terminal SSE handler paired this exact durable stamp with the messages cache. It
-         * is proof of the reply only after the same two-frame commit/paint delay as a fetch. */
-        scheduleRenderedCheck(lastResponseAt, true);
+        /* A terminal SSE event or a server fetch paired this exact cache object with the reply.
+         * It is proof only after the same two-frame commit/paint delay as a fetch. */
+        scheduleRenderedCheck(lastResponseAt, hasLocalProof ? 'local' : 'server');
         return;
       }
 
@@ -246,7 +255,7 @@ export default function useConversationSeen(
         const stampAtFetchStart = fetchStartStampRef.current.get(conversationId);
         /* Capture the stamp from fetch start, not success: a newer reply can reach the list while
          * this request is in flight, and that reply was not part of the fetched/rendered tree. */
-        scheduleRenderedCheck(stampAtFetchStart, false);
+        scheduleRenderedCheck(stampAtFetchStart);
         return;
       }
       if (

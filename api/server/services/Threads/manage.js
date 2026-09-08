@@ -106,7 +106,10 @@ async function saveUserMessage(req, params) {
   const savedConvo = await saveConvo(
     { ...ctx, expiredAt: message?.expiredAt ?? ctx.expiredAt },
     convo,
-    { context: 'api/server/services/Threads/manage.js #saveUserMessage' },
+    {
+      context: 'api/server/services/Threads/manage.js #saveUserMessage',
+      ...(message?._id != null ? { appendMessageIds: [message._id] } : {}),
+    },
   );
   if (savedConvo != null) {
     req.resolvedConversation = savedConvo;
@@ -184,6 +187,7 @@ async function saveAssistantMessage(req, params) {
        *  timestamp past its own awaited reads, so a catch-up recorded while one of them is in
        *  flight cannot outrank this reply. */
       stampReply: message != null && ctx.isTemporary !== true,
+      ...(message?._id != null ? { appendMessageIds: [message._id] } : {}),
     },
   );
 
