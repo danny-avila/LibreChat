@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ScrollText } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import { useSetAtom } from 'jotai';
+import { useSetAtom, useAtomValue } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
 import { Input, Spinner, useCombobox, useRemScale } from '@librechat/client';
 import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';

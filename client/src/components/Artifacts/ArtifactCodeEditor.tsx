@@ -1,7 +1,12 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import debounce from 'lodash/debounce';
 import MonacoEditor from '@monaco-editor/react';
-import { ThemeContext, highContrastDarkTheme, highContrastLightTheme, useRemScale } from '@librechat/client';
+import {
+  ThemeContext,
+  highContrastDarkTheme,
+  highContrastLightTheme,
+  useRemScale,
+} from '@librechat/client';
 import type { Monaco } from '@monaco-editor/react';
 import type { IThemeRGB } from '@librechat/client';
 import type { editor } from 'monaco-editor';

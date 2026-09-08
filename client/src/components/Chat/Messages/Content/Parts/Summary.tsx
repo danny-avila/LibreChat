@@ -121,10 +121,7 @@ const SummaryButton = memo(
             <span className="sr-only">
               {isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_summary')}
             </span>
-            <MorphIcon
-              icon={isCopied ? Check : Copy}
-              className="h-[1.125rem] w-[1.125rem]"
-            />
+            <MorphIcon icon={isCopied ? Check : Copy} className="h-[1.125rem] w-[1.125rem]" />
           </Button>
         )}
       </div>
@@ -196,10 +193,7 @@ const FloatingSummaryBar = memo(
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
                 )}
               >
-                <MorphIcon
-                  icon={isCopied ? Check : Copy}
-                  className="h-[1.125rem] w-[1.125rem]"
-                />
+                <MorphIcon icon={isCopied ? Check : Copy} className="h-[1.125rem] w-[1.125rem]" />
               </button>
             }
           />

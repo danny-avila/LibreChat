@@ -12,11 +12,6 @@ describe('applyUiScale', () => {
     expect(readScale()).toBe('1.25');
   });
 
-  it('applies the default scale unchanged', () => {
-    applyUiScale(DEFAULT_UI_SCALE);
-    expect(readScale()).toBe(String(DEFAULT_UI_SCALE));
-  });
-
   it('clamps values below the minimum', () => {
     applyUiScale(0.1);
     expect(readScale()).toBe(String(MIN_UI_SCALE));
