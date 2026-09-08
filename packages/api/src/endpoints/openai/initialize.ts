@@ -68,6 +68,8 @@ export async function initializeOpenAI(
   let userValues: UserKeyValues | null = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
+  }
+  if (userProvidesKey || userProvidesURL) {
     userValues = await db.getUserKeyValues({ userId: user?.id ?? '', name: endpoint });
   }
 

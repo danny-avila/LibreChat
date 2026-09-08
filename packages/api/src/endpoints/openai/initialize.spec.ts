@@ -188,6 +188,33 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
   });
 });
 
+describe('initializeOpenAI – user-provided credentials', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('loads the stored API key when a resumed request omits expiry metadata', async () => {
+    const params = createParams({ OPENAI_API_KEY: AuthType.USER_PROVIDED });
+    params.req.body = {};
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    expect(params.db.getUserKeyValues).toHaveBeenCalledWith({
+      userId: 'user-1',
+      name: EModelEndpoint.openAI,
+    });
+    expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
+      'sk-user-key',
+      expect.any(Object),
+      EModelEndpoint.openAI,
+    );
+  });
+});
+
 describe('initializeOpenAI – custom headers', () => {
   afterEach(() => {
     jest.clearAllMocks();
