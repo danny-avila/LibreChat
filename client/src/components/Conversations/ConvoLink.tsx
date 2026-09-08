@@ -135,7 +135,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
             })
           : localize('com_ui_conversation_label', {
               title: title || localize('com_ui_untitled'),
-            })) + (isUnseen ? `, ${localize('com_ui_unseen_reply')}` : '')
+            })) + (isUnseen ? `, ${localize('com_ui_unread')}` : '')
       }
     >
       {children}

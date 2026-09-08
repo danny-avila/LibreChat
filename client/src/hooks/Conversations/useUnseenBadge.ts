@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { unseenTabBadgeAtom } from './replyNotificationSettings';
+import { getDocumentTitleRevision } from '~/utils';
 
 const FAVICON_SELECTOR = 'link[rel="icon"]';
 const FALLBACK_ICON_SIZE = 32;
@@ -60,14 +61,15 @@ const drawBadgedFavicon = (
 /**
  * Reflects the unseen count in the tab title and favicon.
  *
- * The title is kept under a `MutationObserver` because it has another writer: `titleHandler`
- * assigns `document.title` whenever the active conversation is renamed. Recomputing from the
- * current value, rather than from a remembered base, lets the two compose instead of clobbering
- * each other. Only the exact badge string this hook last wrote is stripped, so a conversation
- * legitimately titled "(3) Notes" keeps its prefix.
+ * The title has another canonical writer: `setDocumentTitle` updates it whenever
+ * the active conversation or page changes. Its revision signal lets this hook
+ * distinguish a canonical write that happens to leave the same title string,
+ * while the `MutationObserver` still preserves compatibility with direct DOM
+ * writers. Recomputing from the current value, rather than from a remembered
+ * base, lets the two compose instead of clobbering each other.
  *
- * Every declared icon is badged, not just the 32x32 one: Firefox and 1x-DPI Chrome pick the
- * 16x16 link, and a single-link badge would leave them without one.
+ * Every declared icon is badged, not just the 32x32 one: Firefox and 1x-DPI Chrome pick
+ * the 16x16 link, and a single-link badge would leave them without one.
  */
 export default function useUnseenBadge(count: number) {
   const badgeEnabled = useAtomValue(unseenTabBadgeAtom);
@@ -80,12 +82,15 @@ export default function useUnseenBadge(count: number) {
     }
 
     let writtenBadge = '';
-    /* Ownership is the exact string this hook last wrote, not a prefix match. A conversation
-       renamed to something that merely starts with the badge text, "(3) Notes" while three
-       replies are unread, would otherwise have that prefix mistaken for the badge and stripped
-       out of the user's real title on the next count change. */
     let writtenTitle = '';
+    let seenTitleRevision = getDocumentTitleRevision();
     const apply = () => {
+      const titleRevision = getDocumentTitleRevision();
+      if (titleRevision !== seenTitleRevision) {
+        writtenBadge = '';
+        seenTitleRevision = titleRevision;
+      }
+
       const badge = activeCount > 0 ? `(${activeCount}) ` : '';
       const isOurs = writtenBadge !== '' && document.title === writtenTitle;
       const base = isOurs ? document.title.slice(writtenBadge.length) : document.title;
@@ -103,7 +108,11 @@ export default function useUnseenBadge(count: number) {
 
     return () => {
       observer.disconnect();
-      if (writtenBadge !== '' && document.title === writtenTitle) {
+      if (
+        seenTitleRevision === getDocumentTitleRevision() &&
+        writtenBadge !== '' &&
+        document.title === writtenTitle
+      ) {
         document.title = document.title.slice(writtenBadge.length);
       }
     };
