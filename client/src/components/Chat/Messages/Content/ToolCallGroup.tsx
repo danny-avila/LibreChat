@@ -20,6 +20,7 @@ import {
 } from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
+import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { mapAttachments, filterAttachmentsForPart } from '~/utils/map';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
@@ -28,7 +29,6 @@ import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { isError, StackedToolIcons } from './ToolOutput';
 import { isBashProgrammaticToolCall } from './routing';
-import { ASK_USER_QUESTION } from '~/utils/approval';
 import SearchVerticals from './verticals';
 import { ROW_GLYPH_SLOT } from './rows';
 import store from '~/store';
@@ -368,10 +368,41 @@ export default function ToolCallGroup({
    *  tools: ask_user_question") with a question glyph. */
   const allAskQuestions =
     activitySummary.askQuestionCount > 0 && activitySummary.askQuestionCount === count;
+  /**
+   * An answered question is the group's completion proof. The `tool_call`
+   * part carries no output until the turn finalizes, so `allCompleted` stays
+   * false and the header read "Asking 1 question" for the rest of the turn,
+   * long after the user answered. Position cannot settle it either: a LIVE
+   * pause appends its interactive card after this group, so the group is not
+   * the message's last part precisely while the question is open.
+   *
+   * The locally-recorded answer is the same fallback the durable record card
+   * uses — the streaming handler's message copy can overwrite the optimistic
+   * output stamp mid-stream, and only this survives it.
+   */
+  const askQuestionsAnswered = useMemo(
+    () =>
+      parts.every(({ part }) => {
+        if (part.type !== ContentTypes.TOOL_CALL) {
+          return true;
+        }
+        const toolCall = part[ContentTypes.TOOL_CALL] as
+          | { name?: string; id?: string; output?: string | null }
+          | undefined;
+        if (toolCall?.name !== ASK_USER_QUESTION) {
+          return true;
+        }
+        return (
+          (toolCall.output?.length ?? 0) > 0 || getSubmittedAskAnswer(toolCall.id) !== undefined
+        );
+      }),
+    [parts],
+  );
   /** Past tense once the turn is settled — matches the Asking/Asked record
    *  card. While a multi-question turn streams, the still-open question's
    *  tool_call part has no output yet, so keep the present tense. */
-  const askQuestionsDone = allAskQuestions && (allCompleted || !isSubmitting);
+  const askQuestionsDone =
+    allAskQuestions && (allCompleted || !isSubmitting || askQuestionsAnswered);
 
   /** For a single-tool group, lead with the tool's own (capitalized) label
    *  instead of the generic "Used 1 tool: name", which reads awkwardly. */
