@@ -1382,11 +1382,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       onKeyDown={handlePanelKeyDown}
       className="relative flex h-full w-full flex-col overflow-hidden bg-surface-primary-alt text-text-primary"
     >
-      {/* The main chat header's own shape: a 52px bar that floats over the
+      {/* The main chat header's own shape: a 3.25rem bar that floats over the
           thread and fades into it, so the conversation scrolls under it and
           more of it is on screen. Gradient stops track THIS surface rather
           than the chat's, since the panel sits on its own background. */}
-      <header className="absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-surface-primary-alt via-surface-primary-alt/70 to-transparent p-2 font-semibold text-text-primary">
+      <header className="absolute top-0 z-10 flex h-[3.25rem] w-full items-center gap-2 bg-gradient-to-b from-surface-primary-alt via-surface-primary-alt/70 to-transparent p-2 font-semibold text-text-primary">
         {actorOptions.length > 1 ? (
           /* The agent builder's picker, so switching actors here reads as the
              same control as every other agent selection in the app — avatar,
@@ -1443,7 +1443,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           aria-label={localize('com_ui_close')}
           className="h-8 w-8 shrink-0"
         >
-          <X size={17} aria-hidden="true" />
+          <X className="size-[1.0625rem]" aria-hidden="true" />
         </Button>
       </header>
 
