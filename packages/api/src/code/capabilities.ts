@@ -7,7 +7,7 @@ export type CodeCapabilityConfigLoader = ReturnType<typeof createAppConfigServic
 
 const pollWorkerStatus = createCodeBridgeStatusPoller();
 
-/** Attached workers must confirm the stateful workspace needed by programmatic Bash. */
+/** Attached workers must confirm both a stateful workspace and the Bash runtime. */
 export async function supportsProgrammaticCodeExecution(
   context?: CodeExecutionContext,
   environments?: readonly CodeEnvironmentConfig[],
@@ -47,7 +47,11 @@ export async function supportsProgrammaticCodeExecution(
       workerId: context.bridgeWorkerId,
       token,
     });
-    return status.status === 'ready' && status.statefulWorkspace === true;
+    return (
+      status.status === 'ready' &&
+      status.statefulWorkspace === true &&
+      status.runtimes?.includes('bash') === true
+    );
   } catch {
     logger.warn('[codeCapabilities] Worker capabilities unavailable; programmatic Bash disabled');
     return false;

@@ -541,22 +541,29 @@ describe('classification.ts', () => {
       expect(result.additionalTools.length).toBe(0);
     });
 
-    it.each([false, true])(
-      'gates attached-worker PTC in definitionsOnly=%s',
-      async (definitionsOnly) => {
+    it.each(
+      [false, true].flatMap((definitionsOnly) => [
+        { definitionsOnly, statefulWorkspace: false, runtimes: ['bash'], supported: false },
+        { definitionsOnly, statefulWorkspace: true, runtimes: ['py'], supported: false },
+        { definitionsOnly, statefulWorkspace: true, runtimes: ['bash'], supported: true },
+      ]),
+    )(
+      'gates attached PTC: definitionsOnly=$definitionsOnly stateful=$statefulWorkspace runtimes=$runtimes',
+      async ({ definitionsOnly, statefulWorkspace, runtimes, supported }) => {
+        const workerId = `worker-${definitionsOnly}-${statefulWorkspace}-${runtimes[0]}`;
         process.env.TEST_CODE_CAPABILITY_TOKEN = 'capability-test-token';
         const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
           new Response(
             JSON.stringify({
               protocolVersion: 1,
-              workerId: `worker-${definitionsOnly}`,
+              workerId: workerId,
               online: true,
               ready: true,
               leaseExpiresInMs: 45_000,
               capabilities: {
-                statefulWorkspace: false,
+                statefulWorkspace,
                 sandboxProfile: 'native-srt',
-                runtimes: ['bash'],
+                runtimes,
               },
             }),
           ),
@@ -569,7 +576,7 @@ describe('classification.ts', () => {
             owner: 'deployment',
             baseURL: 'https://code.example',
             pairing: {
-              workerId: `worker-${definitionsOnly}`,
+              workerId: workerId,
               allowPrincipalWorkers: false,
               tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
             },
@@ -594,17 +601,19 @@ describe('classification.ts', () => {
               statefulSessions: true,
               environmentType: 'attached',
               environmentId: 'attached',
-              bridgeWorkerId: `worker-${definitionsOnly}`,
+              bridgeWorkerId: workerId,
             },
             codeEnvironments,
             getAppConfig: jest.fn().mockResolvedValue({
               endpoints: { agents: { statefulCodeSessions: { environments: codeEnvironments } } },
             }),
           });
-          expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(false);
-          expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(false);
+          expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(
+            supported,
+          );
+          expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(supported);
           expect(result.additionalTools.some((tool) => tool.name === 'run_tools_with_bash')).toBe(
-            false,
+            supported && !definitionsOnly,
           );
           expect(result.hasDeferredTools).toBe(true);
           expect(result.toolRegistry?.get('tool1')?.allowed_callers).toEqual([

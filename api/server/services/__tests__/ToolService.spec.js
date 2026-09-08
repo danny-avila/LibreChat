@@ -3057,9 +3057,13 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
-    it.each([false, true])(
-      'loads attached PTC using deployment credentials only when statefulWorkspace=%s',
-      async (statefulWorkspace) => {
+    it.each([
+      { statefulWorkspace: false, runtimes: ['bash'], supported: false },
+      { statefulWorkspace: true, runtimes: ['py'], supported: false },
+      { statefulWorkspace: true, runtimes: ['bash'], supported: true },
+    ])(
+      'loads attached PTC using deployment credentials: stateful=$statefulWorkspace runtimes=$runtimes',
+      async ({ statefulWorkspace, runtimes, supported }) => {
         const capabilities = [
           AgentCapabilities.tools,
           AgentCapabilities.programmatic_tools,
@@ -3073,9 +3077,9 @@ describe('ToolService - Action Capability Gating', () => {
           type: 'attached',
           owner: 'deployment',
           baseURL: 'https://attached.example',
-          workerId: `worker-${statefulWorkspace}`,
+          workerId: `worker-${statefulWorkspace}-${runtimes[0]}`,
           pairing: {
-            workerId: `worker-${statefulWorkspace}`,
+            workerId: `worker-${statefulWorkspace}-${runtimes[0]}`,
             tokenEnv: 'TEST_PTC_DEPLOYMENT_TOKEN',
           },
         };
@@ -3096,7 +3100,7 @@ describe('ToolService - Action Capability Gating', () => {
               online: true,
               ready: true,
               leaseExpiresInMs: 45_000,
-              capabilities: { statefulWorkspace, sandboxProfile: 'native-srt', runtimes: ['bash'] },
+              capabilities: { statefulWorkspace, sandboxProfile: 'native-srt', runtimes },
             }),
           ),
         );
@@ -3118,7 +3122,7 @@ describe('ToolService - Action Capability Gating', () => {
             result.loadedTools.some(
               (tool) => tool.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
             ),
-          ).toBe(statefulWorkspace);
+          ).toBe(supported);
           expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
           expect(fetchSpy).toHaveBeenCalledWith(
             `https://attached.example/bridge/workers/${environment.workerId}/status`,

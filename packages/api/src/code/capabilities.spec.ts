@@ -70,6 +70,59 @@ describe('supportsProgrammaticCodeExecution', () => {
     );
   });
 
+  it.each([
+    { runtimes: [], supported: false },
+    { runtimes: ['py'], supported: false },
+    { runtimes: undefined, supported: false },
+    { runtimes: ['py', 'bash'], supported: true },
+  ])('requires advertised Bash support: $runtimes', async ({ runtimes, supported }) => {
+    process.env.TEST_CODE_CAPABILITY_TOKEN = `runtimes-${JSON.stringify(runtimes)}`;
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          workerId: 'worker',
+          online: true,
+          ready: true,
+          leaseExpiresInMs: 45_000,
+          capabilities: { statefulWorkspace: true, sandboxProfile: 'native-srt', runtimes },
+        }),
+      ),
+    );
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
+      supported,
+    );
+  });
+
+  it('refreshes worker capabilities after the cached status expires', async () => {
+    process.env.TEST_CODE_CAPABILITY_TOKEN = 'capability-transition-token';
+    const startedAt = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(startedAt);
+    const status = (runtimes: string[]) =>
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          workerId: 'worker',
+          online: true,
+          ready: true,
+          leaseExpiresInMs: 45_000,
+          capabilities: { statefulWorkspace: true, sandboxProfile: 'native-srt', runtimes },
+        }),
+      );
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(status(['bash']))
+      .mockResolvedValueOnce(status(['py']));
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(true);
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(startedAt + 2_001);
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
+      false,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('disables PTC when discovery fails', async () => {
     process.env.TEST_CODE_CAPABILITY_TOKEN = 'failed-token';
     jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
@@ -79,7 +132,9 @@ describe('supportsProgrammaticCodeExecution', () => {
   });
 
   it('does not poll managed environments or environments without status credentials', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
     expect(
       await supportsProgrammaticCodeExecution({ ...context, environmentType: 'managed' }),
     ).toBe(true);
@@ -92,7 +147,9 @@ describe('supportsProgrammaticCodeExecution', () => {
 
   it('does not send credentials to a different execution route', async () => {
     process.env.TEST_CODE_CAPABILITY_TOKEN = 'route-token';
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
     expect(
       await supportsProgrammaticCodeExecution(
         { ...context, baseUrl: 'https://different.example' },
@@ -113,7 +170,9 @@ describe('supportsProgrammaticCodeExecution', () => {
         tokenEnv: 'TEST_PRIVATE_CAPABILITY_SECRET',
       },
     };
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
     expect(
       await supportsProgrammaticCodeExecution(
         {
@@ -164,7 +223,9 @@ describe('supportsProgrammaticCodeExecution', () => {
   });
 
   it('requires the control plane in effective config before reading deployment config', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
     expect(await supportsProgrammaticCodeExecution(context, [environments[0]], getAppConfig)).toBe(
       false,
     );
@@ -173,7 +234,9 @@ describe('supportsProgrammaticCodeExecution', () => {
   });
 
   it('fails closed when deployment configuration cannot be loaded', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
     expect(
       await supportsProgrammaticCodeExecution(context, environments, async () => {
         throw new Error('unavailable');
