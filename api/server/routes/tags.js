@@ -1,6 +1,6 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { generateCheckAccess, updateConversationTagsMetadata } = require('@librechat/api');
+const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   updateTagsForConversation,
@@ -31,7 +31,7 @@ router.use(checkBookmarkAccess);
  */
 router.get('/', async (req, res) => {
   try {
-    const tags = await getConversationTags(req.user.id, req.user.tenantId ?? null);
+    const tags = await getConversationTags(req.user.id);
     if (tags) {
       res.status(200).json(tags);
     } else {
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const tag = await createConversationTag(req.user.id, req.body, req.user.tenantId ?? null);
+    const tag = await createConversationTag(req.user.id, req.body);
     res.status(200).json(tag);
   } catch (error) {
     logger.error('Error creating conversation tag:', error);
@@ -68,15 +68,7 @@ router.post('/', async (req, res) => {
 router.put('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
-    if (req.body.tag && req.body.tag !== decodedTag && req.body.position !== undefined) {
-      return res.status(400).json({ error: 'Rename and position changes must be sent separately' });
-    }
-    const tag = await updateConversationTag(
-      req.user.id,
-      decodedTag,
-      req.body,
-      req.user.tenantId ?? null,
-    );
+    const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -97,7 +89,7 @@ router.put('/:tag', async (req, res) => {
 router.delete('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
-    const tag = await deleteConversationTag(req.user.id, decodedTag, req.user.tenantId ?? null);
+    const tag = await deleteConversationTag(req.user.id, decodedTag);
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -117,14 +109,10 @@ router.delete('/:tag', async (req, res) => {
  */
 router.put('/convo/:conversationId', async (req, res) => {
   try {
-    const conversationTags = await updateConversationTagsMetadata(
-      { updateTagsForConversation },
-      {
-        userId: req.user.id,
-        tenantId: req.user.tenantId,
-        conversationId: req.params.conversationId,
-        tags: req.body.tags,
-      },
+    const conversationTags = await updateTagsForConversation(
+      req.user.id,
+      req.params.conversationId,
+      req.body.tags,
     );
     res.status(200).json(conversationTags);
   } catch (error) {

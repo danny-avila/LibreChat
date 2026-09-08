@@ -55,7 +55,6 @@ export interface ConversationManagementHandlerDeps {
   listConversationResources: ConversationResourceMethods['listConversationResources'];
   listConversationMessageResources: ConversationResourceMethods['listConversationMessageResources'];
   saveConvo: ConversationMethods['saveConvo'];
-  updateTagsForConversation: ConversationTagMethods['updateTagsForConversation'];
   reconcileConversationTagCounts: ConversationTagMethods['reconcileConversationTagCounts'];
   deleteConversations: DeleteConversations;
 }

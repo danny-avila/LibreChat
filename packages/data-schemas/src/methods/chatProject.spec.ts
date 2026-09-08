@@ -6,7 +6,6 @@ import {
   updateChatProjectLastConversationForUser,
   type ChatProjectMethods,
 } from './chatProject';
-import { tenantStorage } from '~/config/tenantContext';
 import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
@@ -88,86 +87,6 @@ describe('ChatProject methods', () => {
     expect(list.projects[0].name).toBe('Customer Alpha Updated');
   });
 
-  it('uses portable project lookup stages before cursor pagination', async () => {
-    const project = await methods.createChatProject(user, { name: 'Portable' });
-    const aggregate = jest.spyOn(ChatProject, 'aggregate');
-    try {
-      await methods.getChatProject(user, String(project._id));
-      await methods.listChatProjects(user);
-      for (const [pipeline] of aggregate.mock.calls) {
-        expect(pipeline).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              $lookup: expect.objectContaining({
-                localField: 'statsProjectId',
-                foreignField: 'chatProjectId',
-              }),
-            }),
-          ]),
-        );
-        for (const stage of pipeline ?? []) {
-          expect(stage).not.toHaveProperty('$set');
-          expect(stage).not.toHaveProperty('$unset');
-          if ('$lookup' in stage) {
-            expect(stage.$lookup).not.toHaveProperty('let');
-            expect(stage.$lookup).not.toHaveProperty('pipeline');
-          }
-        }
-      }
-    } finally {
-      aggregate.mockRestore();
-    }
-  });
-
-  it.each([
-    ['name', 'asc'],
-    ['name', 'desc'],
-    ['createdAt', 'asc'],
-    ['createdAt', 'desc'],
-  ] as const)('pages before joining conversations for %s %s', async (sortBy, sortDirection) => {
-    for (let index = 0; index < 6; index++) {
-      const project = await ChatProject.create({
-        user,
-        name: `Project ${index}`,
-        createdAt: new Date(2026, 0, index + 1),
-      });
-      await Conversation.collection.insertOne({
-        user,
-        conversationId: `conversation-${index}`,
-        chatProjectId: String(project._id),
-        updatedAt: new Date(2026, 1, 6 - index),
-      });
-    }
-    const aggregate = jest.spyOn(ChatProject, 'aggregate');
-    try {
-      const names: string[] = [];
-      let cursor: string | null = null;
-      do {
-        const page = await methods.listChatProjects(user, {
-          sortBy,
-          sortDirection,
-          limit: 2,
-          cursor,
-        });
-        names.push(...page.projects.map((project) => project.name));
-        expect(page.projects.every((project) => project.conversationCount === 1)).toBe(true);
-        cursor = page.nextCursor;
-      } while (cursor);
-      const expected = Array.from({ length: 6 }, (_, index) => `Project ${index}`);
-      expect(names).toEqual(sortDirection === 'asc' ? expected : expected.reverse());
-      const pipelines = aggregate.mock.calls.map(([pipeline]) => pipeline ?? []);
-      for (const pipeline of pipelines) {
-        const lookupIndex = pipeline.findIndex((stage) => '$lookup' in stage);
-        const prefix = pipeline.slice(0, lookupIndex);
-        expect(prefix).toContainEqual({ $limit: 3 });
-        const admitted = await ChatProject.aggregate(prefix);
-        expect(admitted.length).toBeLessThanOrEqual(3);
-      }
-    } finally {
-      aggregate.mockRestore();
-    }
-  });
-
   it('filters projects by name or description search', async () => {
     await methods.createChatProject(user, {
       name: 'Customer Alpha',
@@ -188,82 +107,20 @@ describe('ChatProject methods', () => {
     expect(noMatch.projects).toHaveLength(0);
   });
 
-  it.each([undefined, 'tenant-a'])(
-    'reads committed statistics without repairing cache in tenant %s',
-    async (tenantId) => {
-      await tenantStorage.run({ tenantId }, async () => {
-        const project = await methods.createChatProject(user, { name: 'Stale cache' });
-        const projectId = String(project._id);
-        await ChatProject.updateOne(
-          { _id: project._id },
-          {
-            $set: {
-              conversationCount: 999,
-              lastConversationId: 'hidden',
-              lastConversationAt: new Date('2026-09-01'),
-            },
-          },
-        );
-        const scope = { user, ...(tenantId ? { tenantId } : {}), chatProjectId: projectId };
-        await Conversation.collection.insertMany([
-          { ...scope, conversationId: 'visible', updatedAt: new Date('2026-01-01') },
-          {
-            ...scope,
-            conversationId: 'archived',
-            isArchived: true,
-            updatedAt: new Date('2026-08-01'),
-          },
-          { ...scope, conversationId: 'temporary', isTemporary: true },
-          {
-            ...scope,
-            conversationId: 'expired',
-            isTemporary: false,
-            expiredAt: new Date('2020-01-01'),
-          },
-          { ...scope, user: otherUser, conversationId: 'foreign-owner' },
-          { ...scope, tenantId: 'foreign-tenant', conversationId: 'foreign-tenant' },
-        ]);
-        const expected = {
-          conversationCount: 1,
-          lastConversationId: 'visible',
-          lastConversationAt: new Date('2026-01-01'),
-        };
-        expect(await methods.getChatProject(user, projectId)).toMatchObject(expected);
-        expect((await methods.listChatProjects(user)).projects).toEqual([
-          expect.objectContaining(expected),
-        ]);
-        expect(await ChatProject.findById(project._id).lean()).toMatchObject({
-          conversationCount: 999,
-          lastConversationId: 'hidden',
-        });
-        await Conversation.updateOne({ conversationId: 'visible' }, { $set: { isArchived: true } });
-        expect(await methods.getChatProject(user, projectId)).toMatchObject({
-          conversationCount: 0,
-          lastConversationId: null,
-          lastConversationAt: null,
-        });
-      });
-    },
-  );
-
   it('paginates projects deterministically when latest activity is null', async () => {
     const staleProject = await methods.createChatProject(user, { name: 'Stale' });
     await methods.createChatProject(user, { name: 'Quiet A' });
     await methods.createChatProject(user, { name: 'Quiet B' });
     const recentProject = await methods.createChatProject(user, { name: 'Recent' });
 
-    await Conversation.collection.insertOne({
-      user,
-      conversationId: 'staleProject',
-      chatProjectId: String(staleProject._id),
-      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-    });
-    await Conversation.collection.insertOne({
-      user,
-      conversationId: 'recentProject',
-      chatProjectId: String(recentProject._id),
-      updatedAt: new Date('2026-02-01T00:00:00.000Z'),
-    });
+    await ChatProject.updateOne(
+      { _id: staleProject._id },
+      { $set: { lastConversationAt: new Date('2026-01-01T00:00:00.000Z') } },
+    );
+    await ChatProject.updateOne(
+      { _id: recentProject._id },
+      { $set: { lastConversationAt: new Date('2026-02-01T00:00:00.000Z') } },
+    );
 
     const firstPage = await methods.listChatProjects(user, {
       sortBy: 'lastConversationAt',
@@ -304,18 +161,14 @@ describe('ChatProject methods', () => {
     await methods.createChatProject(user, { name: 'Quiet B' });
     const recentProject = await methods.createChatProject(user, { name: 'Recent' });
 
-    await Conversation.collection.insertOne({
-      user,
-      conversationId: 'staleProject',
-      chatProjectId: String(staleProject._id),
-      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-    });
-    await Conversation.collection.insertOne({
-      user,
-      conversationId: 'recentProject',
-      chatProjectId: String(recentProject._id),
-      updatedAt: new Date('2026-02-01T00:00:00.000Z'),
-    });
+    await ChatProject.updateOne(
+      { _id: staleProject._id },
+      { $set: { lastConversationAt: new Date('2026-01-01T00:00:00.000Z') } },
+    );
+    await ChatProject.updateOne(
+      { _id: recentProject._id },
+      { $set: { lastConversationAt: new Date('2026-02-01T00:00:00.000Z') } },
+    );
 
     // limit equals the number of dated projects, so the cursor lands on a dated
     // project; the null (chat-less) projects must still appear on the next page.
@@ -635,54 +488,5 @@ describe('ChatProject methods', () => {
     expect(otherRead).toBeNull();
     expect(assignment).toBeNull();
     expect(deleteResult.deletedCount).toBe(0);
-  });
-});
-
-describe('required project lookup index', () => {
-  it('installs and uses the foreign-key index with automatic indexing disabled', async () => {
-    const isolated = new mongoose.Mongoose();
-    await isolated.connect(mongoServer.getUri('project-index'), { autoIndex: false });
-    createModels(isolated);
-    const Project = isolated.models.ChatProject;
-    const Convo = isolated.models.Conversation;
-    const localMethods = createChatProjectMethods(isolated);
-    const project = await localMethods.createChatProject('owner', { name: 'Indexed project' });
-    await Convo.collection.insertMany([
-      {
-        user: 'owner',
-        conversationId: 'member',
-        chatProjectId: String(project._id),
-        updatedAt: new Date(),
-      },
-      ...Array.from({ length: 1000 }, (_, index) => ({
-        user: 'other-owner',
-        conversationId: `other-${index}`,
-        chatProjectId: `other-project-${index}`,
-      })),
-    ]);
-    const build = jest.spyOn(Convo.collection, 'createIndex');
-    const aggregate = jest.spyOn(Project, 'aggregate');
-    try {
-      build.mockRejectedValueOnce(new Error('DDL unavailable'));
-      await expect(localMethods.getChatProject('owner', String(project._id))).rejects.toThrow(
-        'DDL unavailable',
-      );
-      expect(aggregate).not.toHaveBeenCalled();
-      expect(await localMethods.getChatProject('owner', String(project._id))).toMatchObject({
-        conversationCount: 1,
-      });
-      const pipeline = aggregate.mock.calls[0][0];
-      const explain = await Project.aggregate(pipeline).explain('executionStats');
-      const lookup = explain.stages.find((stage: Record<string, unknown>) => '$lookup' in stage);
-      expect(lookup.indexesUsed).toContain('chatProjectId_1');
-      expect(lookup.totalDocsExamined).toBeLessThan(10);
-      await localMethods.listChatProjects('owner');
-      expect(build).toHaveBeenCalledTimes(2);
-    } finally {
-      build.mockRestore();
-      aggregate.mockRestore();
-      await isolated.connection.dropDatabase();
-      await isolated.disconnect();
-    }
   });
 });

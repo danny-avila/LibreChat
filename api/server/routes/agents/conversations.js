@@ -49,7 +49,6 @@ const handlers = createConversationManagementHandlers({
   listConversationResources: db.listConversationResources,
   listConversationMessageResources: db.listConversationMessageResources,
   saveConvo: db.saveConvo,
-  updateTagsForConversation: db.updateTagsForConversation,
   reconcileConversationTagCounts: db.reconcileConversationTagCounts,
   deleteConversations,
 });

@@ -14,7 +14,6 @@ import { inspectContent } from '../protection/runtime';
 export interface ConversationMetadataDependencies {
   saveConvo: ConversationMethods['saveConvo'];
   getConversationResource: ConversationResourceMethods['getConversationResource'];
-  updateTagsForConversation: ConversationTagMethods['updateTagsForConversation'];
   reconcileConversationTagCounts: ConversationTagMethods['reconcileConversationTagCounts'];
 }
 
@@ -34,10 +33,6 @@ export interface ConversationTitleUpdate extends ConversationMetadataScope {
 
 export interface ConversationArchiveUpdate extends ConversationMetadataScope {
   isArchived: boolean;
-}
-
-export interface ConversationTagsUpdate extends ConversationMetadataScope {
-  tags: string[];
 }
 
 export interface ConversationMetadataUpdate extends ConversationMetadataScope {
@@ -116,18 +111,6 @@ export async function updateConversationArchiveMetadata(
       noUpsert: true,
       tenantId: input.tenantId ?? null,
     },
-  );
-}
-
-export async function updateConversationTagsMetadata(
-  deps: Pick<ConversationMetadataDependencies, 'updateTagsForConversation'>,
-  input: ConversationTagsUpdate,
-): ReturnType<ConversationTagMethods['updateTagsForConversation']> {
-  return deps.updateTagsForConversation(
-    input.userId,
-    input.conversationId,
-    input.tags,
-    input.tenantId ?? null,
   );
 }
 

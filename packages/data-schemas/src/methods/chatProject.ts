@@ -2,12 +2,10 @@ import {
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
 } from 'librechat-data-provider';
-import type { FilterQuery, Model, PipelineStage, SortOrder, Types } from 'mongoose';
+import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
 import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { getTenantId } from '~/config/tenantContext';
-import { buildIndexWithRetry } from '~/utils/retry';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -223,86 +221,6 @@ function projectStatsSnapshotFilter(
   };
 }
 
-/** Public statistics come from committed membership even when cache reconciliation fails. */
-function committedProjectStats(): PipelineStage[] {
-  const expiration = { $ifNull: ['$committedConversation.expiredAt', null] };
-  const temporary = { $ifNull: ['$committedConversation.isTemporary', null] };
-  return [
-    { $addFields: { statsProjectId: { $toString: '$_id' } } },
-    {
-      $lookup: {
-        from: 'conversations',
-        localField: 'statsProjectId',
-        foreignField: 'chatProjectId',
-        as: 'committedConversation',
-      },
-    },
-    { $unwind: { path: '$committedConversation', preserveNullAndEmptyArrays: true } },
-    {
-      $addFields: {
-        statsEligible: {
-          $and: [
-            { $eq: ['$committedConversation.user', '$user'] },
-            {
-              $eq: [
-                { $ifNull: ['$committedConversation.tenantId', null] },
-                { $ifNull: ['$tenantId', null] },
-              ],
-            },
-            { $ne: [{ $ifNull: ['$committedConversation.isArchived', false] }, true] },
-            {
-              $or: [
-                {
-                  $and: [
-                    { $eq: [temporary, false] },
-                    { $or: [{ $eq: [expiration, null] }, { $gt: [expiration, new Date()] }] },
-                  ],
-                },
-                { $and: [{ $eq: [temporary, null] }, { $eq: [expiration, null] }] },
-              ],
-            },
-          ],
-        },
-      },
-    },
-    {
-      $sort: {
-        statsEligible: -1,
-        'committedConversation.updatedAt': -1,
-        'committedConversation._id': -1,
-      },
-    },
-    {
-      $group: {
-        _id: '$_id',
-        project: { $first: '$$ROOT' },
-        conversationCount: { $sum: { $cond: ['$statsEligible', 1, 0] } },
-        lastConversationAt: {
-          $first: {
-            $cond: [
-              '$statsEligible',
-              { $ifNull: ['$committedConversation.updatedAt', '$committedConversation.createdAt'] },
-              null,
-            ],
-          },
-        },
-        lastConversationId: {
-          $first: { $cond: ['$statsEligible', '$committedConversation.conversationId', null] },
-        },
-      },
-    },
-    {
-      $addFields: {
-        'project.conversationCount': '$conversationCount',
-        'project.lastConversationAt': { $ifNull: ['$lastConversationAt', null] },
-        'project.lastConversationId': { $ifNull: ['$lastConversationId', null] },
-      },
-    },
-    { $replaceRoot: { newRoot: '$project' } },
-    { $project: { statsProjectId: 0, statsEligible: 0, committedConversation: 0 } },
-  ];
-}
-
 export async function refreshChatProjectStatsForUser(
   mongoose: typeof import('mongoose'),
   user: string,
@@ -419,19 +337,6 @@ export async function updateChatProjectLastConversationForUser(
 }
 
 export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
-  let lookupIndexPromise: Promise<string> | undefined;
-  function ensureProjectLookupIndex(): Promise<string> {
-    lookupIndexPromise ??= buildIndexWithRetry(
-      // eslint-disable-next-line no-restricted-syntax -- Index DDL is collection-wide; it does not read or mutate tenant records.
-      () => mongoose.models.Conversation.collection.createIndex({ chatProjectId: 1 }),
-      'createIndex(Conversation.chatProjectId)',
-    ).catch((error) => {
-      lookupIndexPromise = undefined;
-      throw error;
-    });
-    return lookupIndexPromise;
-  }
-
   async function createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -458,18 +363,10 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     }
 
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
-    await ensureProjectLookupIndex();
-    const projects = await ChatProject.aggregate<IChatProject>([
-      {
-        $match: {
-          _id: new mongoose.Types.ObjectId(projectId),
-          user,
-          ...optionalTenantFilter<IChatProjectDocument>(getTenantId() ?? null),
-        },
-      },
-      ...committedProjectStats(),
-    ]);
-    return projects[0] ?? null;
+    return await ChatProject.findOne({
+      _id: new mongoose.Types.ObjectId(projectId),
+      user,
+    }).lean<IChatProject>();
   }
 
   async function listChatProjects(
@@ -481,9 +378,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const sortBy = normalizeSortBy(options.sortBy);
     const sortDirection = normalizeSortDirection(options.sortDirection);
     const sortOrder: SortOrder = sortDirection === 'asc' ? 1 : -1;
-    const filters: FilterQuery<IChatProjectDocument>[] = [
-      { user, ...optionalTenantFilter<IChatProjectDocument>(getTenantId() ?? null) },
-    ];
+    const filters: FilterQuery<IChatProjectDocument>[] = [{ user }];
 
     if (options.search?.trim()) {
       const searchRegex = { $regex: escapeRegExp(options.search.trim()), $options: 'i' };
@@ -496,21 +391,16 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       sortBy,
       sortDirection,
     );
+    if (cursorFilter) {
+      filters.push(cursorFilter);
+    }
+
     const query =
       filters.length === 1 ? filters[0] : ({ $and: filters } as FilterQuery<IChatProjectDocument>);
-    await ensureProjectLookupIndex();
-    const sort: PipelineStage.Sort = { $sort: { [sortBy]: sortOrder, _id: sortOrder } };
-    const page: PipelineStage[] = [
-      ...(cursorFilter ? [{ $match: cursorFilter }] : []),
-      sort,
-      { $limit: limit + 1 },
-    ];
-    const projects = await ChatProject.aggregate<ProjectLean>([
-      { $match: query },
-      ...(sortBy === 'lastConversationAt'
-        ? [...committedProjectStats(), ...page]
-        : [...page, ...committedProjectStats(), sort]),
-    ]);
+    const projects = await ChatProject.find(query)
+      .sort({ [sortBy]: sortOrder, _id: sortOrder })
+      .limit(limit + 1)
+      .lean<ProjectLean[]>();
 
     let nextCursor: string | null = null;
     if (projects.length > limit) {

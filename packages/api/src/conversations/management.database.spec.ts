@@ -78,7 +78,6 @@ function createApp(
     listConversationResources: methods.listConversationResources,
     listConversationMessageResources: methods.listConversationMessageResources,
     saveConvo: overrides.saveConvo ?? methods.saveConvo,
-    updateTagsForConversation: methods.updateTagsForConversation,
     reconcileConversationTagCounts: methods.reconcileConversationTagCounts,
     getConversationResourceDeletionState:
       overrides.getConversationResourceDeletionState ??
@@ -713,7 +712,7 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(foreign.status).toBe(404);
   });
 
-  it('reads committed tag counts after reconciliation fails and the same PATCH is retried', async () => {
+  it('preserves committed metadata after a legacy count update fails and the PATCH is retried', async () => {
     await seedConversation(TENANT_A, { conversationId: 'recover-tags', user: OWNER });
     const app = createApp();
     const write = jest
@@ -728,8 +727,13 @@ describe('conversation management handlers with Mongo persistence', () => {
       .send({ tags: ['red'] });
     expect(first.status).toBe(200);
     expect(retried.status).toBe(200);
-    const tags = await asTenant(TENANT_A, () => methods.getConversationTags(OWNER));
-    expect(tags).toEqual([expect.objectContaining({ tag: 'red', count: 1, tenantId: TENANT_A })]);
+    expect(first.body.tags).toEqual(['red']);
+    expect(retried.body.tags).toEqual(['red']);
+    expect(
+      await asTenant(TENANT_A, () =>
+        Conversation.findOne({ conversationId: 'recover-tags' }).lean(),
+      ),
+    ).toMatchObject({ tags: ['red'] });
   });
 
   it('returns 500 without tag side effects when saveConvo reports its error sentinel', async () => {

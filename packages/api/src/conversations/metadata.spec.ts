@@ -46,7 +46,7 @@ describe('updateConversationMetadata', () => {
     );
   });
 
-  it('does not turn a derived tag-count failure into an ambiguous PATCH failure', async () => {
+  it('does not turn a cached tag-count failure into an ambiguous PATCH failure', async () => {
     const conversation = { conversationId: 'conversation-a', tags: ['next'] };
     const error = new Error('count update failed');
     const saveConvo = jest.fn().mockResolvedValue(conversation);
