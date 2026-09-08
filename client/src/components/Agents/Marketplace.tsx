@@ -5,9 +5,11 @@ import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
+import SortDropdown, { SORT_OPTIONS, DEFAULT_SORT_OPTION } from './SortDropdown';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { SidePanelGroup } from '~/components/SidePanel';
+import MineFilterToggle from './MineFilterToggle';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
 import AgentGrid from './AgentGrid';
@@ -34,6 +36,19 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
+
+  // Sort mode, read from the URL; falls back to 'newest' for a missing/invalid value,
+  // matching the server-side default so the URL stays clean when nothing is selected.
+  const sort = useMemo<t.AgentSortOption>(() => {
+    const value = searchParams.get('sort');
+    return SORT_OPTIONS.some((option) => option.value === value)
+      ? (value as t.AgentSortOption)
+      : DEFAULT_SORT_OPTION;
+  }, [searchParams]);
+  const mine: 0 | 1 = searchParams.get('mine') === '1' ? 1 : 0;
+  // Loaded-so-far count reported by the currently-displayed AgentGrid; the list is
+  // cursor-paginated and has no server-side total to show instead.
+  const [visibleCount, setVisibleCount] = useState(0);
 
   // Animation state
   type Direction = 'left' | 'right';
@@ -174,6 +189,54 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
     }
   };
 
+  /**
+   * Handle sort mode changes, persisted to the URL. 'newest' matches the
+   * server-side default, so it is omitted rather than written explicitly.
+   */
+  const handleSortChange = (value: t.AgentSortOption) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (value === DEFAULT_SORT_OPTION) {
+      newParams.delete('sort');
+    } else {
+      newParams.set('sort', value);
+    }
+
+    if (displayCategory === 'promoted') {
+      navigate(`/agents${newParams.toString() ? `?${newParams.toString()}` : ''}`);
+    } else {
+      navigate(
+        `/agents/${displayCategory}${newParams.toString() ? `?${newParams.toString()}` : ''}`,
+      );
+    }
+  };
+
+  /** Toggle the "only my agents" filter, persisted to the URL. */
+  const handleMineChange = (checked: boolean) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (checked) {
+      newParams.set('mine', '1');
+    } else {
+      newParams.delete('mine');
+    }
+
+    // `is_promoted` has no write path in the app, so "promoted AND authored by me" is
+    // structurally empty for ordinary users — and `/agents` lands on the promoted tab
+    // whenever that category exists, so this would be the very first thing the toggle
+    // does. Move to `all` instead of showing an empty grid. Done as a single navigate
+    // here rather than via `handleTabChange`, which closes over the render-time
+    // `searchParams` (dropping the `mine` just set), can early-return mid-transition,
+    // and would race this `setSearchParams`. No slide animation either: `displayCategory`
+    // is set directly, so `isTransitioning`/`nextCategory` stay untouched.
+    if (checked && displayCategory === 'promoted') {
+      const searchParamsStr = newParams.toString() ? `?${newParams.toString()}` : '';
+      setDisplayCategory('all');
+      navigate(`/agents/all${searchParamsStr}`);
+      return;
+    }
+
+    setSearchParams(newParams);
+  };
+
   const hasAccessToMarketplace = useHasAccess({
     permissionType: PermissionTypes.MARKETPLACE,
     permission: Permissions.USE,
@@ -202,36 +265,47 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
             ref={scrollContainerRef}
             className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
           >
-            {/* Hero Section - scrolls away */}
-            {!isSmallScreen && (
-              <div className="container mx-auto max-w-4xl">
-                <div className={cn('mb-8 text-center', 'mt-12')}>
-                  <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
+            {/* Sticky header: single row with title, live count and search; category tabs
+                render directly below it. Sort and the "my agents" filter live in the
+                category header row instead, next to the category they act on. */}
+            <div className="sticky top-0 z-10 bg-presentation">
+              {isSmallScreen ? (
+                <div className="flex items-center justify-between gap-2 px-6 pt-3">
+                  <OpenSidebar />
+                  <MarketplaceAdminSettings compact />
+                </div>
+              ) : null}
+
+              {/* The rule under this row carries the horizontal padding itself rather
+                  than inheriting it from a wrapper, so it spans the full width instead
+                  of stopping short of both edges. */}
+              <div className="flex h-[60px] w-full items-center justify-between gap-3 border-b border-border-light px-6">
+                <div className="flex min-w-0 shrink-0 items-center gap-3">
+                  <h1 className="truncate text-lg font-semibold text-text-primary">
                     {localize('com_agents_marketplace')}
                   </h1>
-                  <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
-                    {localize('com_agents_marketplace_subtitle')}
-                  </p>
+                  <span
+                    className="shrink-0 whitespace-nowrap rounded-full bg-surface-hover px-2.5 py-1 text-xs font-medium text-text-secondary"
+                    aria-live="polite"
+                  >
+                    {localize('com_agents_count', { count: visibleCount })}
+                  </span>
                 </div>
-              </div>
-            )}
-            {/* Sticky wrapper for search bar and categories */}
-            <div className="sticky top-0 z-10 mt-4 bg-presentation pb-4 md:mt-0">
-              <div className="container mx-auto max-w-4xl px-4">
-                {isSmallScreen ? (
-                  <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-2">
-                    <OpenSidebar />
-                    <MarketplaceAdminSettings compact />
-                  </div>
-                ) : null}
-                {/* Search bar */}
-                <div className="mx-auto flex max-w-2xl gap-2 pb-6">
-                  <SearchBar value={searchQuery} onSearch={handleSearch} />
+
+                <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                  <SearchBar
+                    value={searchQuery}
+                    onSearch={handleSearch}
+                    className="max-w-[420px]"
+                  />
+
                   {/* TODO: Remove this once we have a better way to handle admin settings */}
                   {!isSmallScreen && <MarketplaceAdminSettings />}
                 </div>
+              </div>
 
-                {/* Category tabs */}
+              {/* Category tabs */}
+              <div className="w-full px-6 pb-3 pt-3">
                 <CategoryTabs
                   categories={categoriesQuery.data || []}
                   activeTab={displayCategory}
@@ -241,8 +315,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               </div>
             </div>
             {/* Scrollable content area */}
-            <div className="container mx-auto max-w-4xl px-4 pb-8">
-              {/* Two-pane animated container wrapping category header + grid */}
+            <div className="w-full px-6 pb-8">
+              {/* Two-pane animated container wrapping the grid */}
               <div className="relative overflow-hidden">
                 {/* Current content pane */}
                 <div
@@ -254,10 +328,11 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                   )}
                   key={`pane-current-${displayCategory}`}
                 >
-                  {/* Category header - only show when not searching */}
-                  {!searchQuery && (
-                    <div className="mb-6 mt-6">
-                      {(() => {
+                  {/* Category header + filters. The title is hidden while searching, but the
+                      filter controls always render so they can never filter invisibly. */}
+                  <div className="mb-4 mt-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+                    {!searchQuery &&
+                      (() => {
                         // Get category data for display
                         const getCategoryData = () => {
                           if (displayCategory === 'promoted') {
@@ -299,16 +374,22 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                         const { name, description } = getCategoryData();
 
                         return (
-                          <div className="text-left">
-                            <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
+                          <div className="min-w-0 text-left">
+                            <h2 className="text-lg font-semibold text-text-primary">{name}</h2>
                             {description && (
-                              <p className="mt-2 text-text-secondary">{description}</p>
+                              <p className="mt-1 text-sm text-text-tertiary">{description}</p>
                             )}
                           </div>
                         );
                       })()}
+
+                    {/* Filter controls. `ml-auto` keeps them right-aligned even while
+                        searching, when the title is the only other child and is absent. */}
+                    <div className="ml-auto flex flex-shrink-0 items-center gap-3">
+                      <MineFilterToggle checked={mine === 1} onCheckedChange={handleMineChange} />
+                      <SortDropdown frame="current" value={sort} onChange={handleSortChange} />
                     </div>
-                  )}
+                  </div>
 
                   {/* Agent grid */}
                   <AgentGrid
@@ -317,6 +398,9 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                     searchQuery={searchQuery}
                     onSelectAgent={handleAgentSelect}
                     scrollElementRef={scrollContainerRef}
+                    sort={sort}
+                    mine={mine}
+                    onCountChange={setVisibleCount}
                   />
                 </div>
 
@@ -331,10 +415,12 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                     )}
                     key={`pane-next-${nextCategory}-${animationDirection}`}
                   >
-                    {/* Category header - only show when not searching */}
-                    {!searchQuery && (
-                      <div className="mb-6 mt-6">
-                        {(() => {
+                    {/* Category header + filters. Duplicated from the current pane on
+                        purpose: both panes are mounted together for the 300ms slide, and a
+                        header rendered in only one of them would blink out mid-transition. */}
+                    <div className="mb-4 mt-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+                      {!searchQuery &&
+                        (() => {
                           // Get category data for display
                           const getCategoryData = () => {
                             if (nextCategory === 'promoted') {
@@ -360,9 +446,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                                   ? localize(categoryData.label as TranslationKeys)
                                   : categoryData.label,
                                 description: categoryData.description?.startsWith('com_')
-                                  ? localize(
-                                      categoryData.description as Parameters<typeof localize>[0],
-                                    )
+                                  ? localize(categoryData.description as TranslationKeys)
                                   : categoryData.description || '',
                               };
                             }
@@ -379,24 +463,35 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                           const { name, description } = getCategoryData();
 
                           return (
-                            <div className="text-left">
-                              <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
+                            <div className="min-w-0 text-left">
+                              <h2 className="text-lg font-semibold text-text-primary">{name}</h2>
                               {description && (
-                                <p className="mt-2 text-text-secondary">{description}</p>
+                                <p className="mt-1 text-sm text-text-tertiary">{description}</p>
                               )}
                             </div>
                           );
                         })()}
-                      </div>
-                    )}
 
-                    {/* Agent grid */}
+                      {/* Filter controls. `ml-auto` keeps them right-aligned even while
+                          searching, when the title is the only other child and is absent. */}
+                      <div className="ml-auto flex flex-shrink-0 items-center gap-3">
+                        <MineFilterToggle checked={mine === 1} onCheckedChange={handleMineChange} />
+                        <SortDropdown frame="next" value={sort} onChange={handleSortChange} />
+                      </div>
+                    </div>
+
+                    {/* Agent grid — no onCountChange here: this pane is transient (only
+                        mounted during the 300ms tab-switch animation), and wiring the
+                        callback on both panes makes the header count flicker between
+                        two values while they cross-fade. */}
                     <AgentGrid
                       key={`grid-${nextCategory}`}
                       category={nextCategory}
                       searchQuery={searchQuery}
                       onSelectAgent={handleAgentSelect}
                       scrollElementRef={scrollContainerRef}
+                      sort={sort}
+                      mine={mine}
                     />
                   </div>
                 )}

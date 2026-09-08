@@ -46,10 +46,9 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
       <OGDialogTrigger asChild>
         <div
           className={cn(
-            'group relative flex h-32 gap-5 overflow-hidden rounded-xl',
-            'cursor-pointer select-none px-6 py-4',
+            'group relative flex h-full min-h-[150px] flex-col gap-2.5 overflow-hidden rounded-xl',
+            'cursor-pointer select-none p-4',
             'bg-surface-tertiary transition-colors duration-150 hover:bg-surface-hover',
-            'md:h-36 lg:h-40',
             '[&_*]:cursor-pointer',
             className,
           )}
@@ -69,43 +68,43 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
         >
           {/* Category badge - top right */}
           {categoryLabel && (
-            <span className="absolute right-4 top-3 rounded-md bg-surface-hover px-2 py-0.5 text-xs text-text-secondary">
+            <span className="absolute right-3.5 top-3.5 rounded-md bg-surface-hover px-1.5 py-0.5 text-xs text-text-secondary">
               {categoryLabel}
             </span>
           )}
 
-          {/* Avatar */}
-          <div className="flex-shrink-0 self-center">
-            <div className="overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-              {renderAgentAvatar(agent, { size: 'sm', showBorder: false })}
+          {/* Avatar + name, on one row so the card stays compact. `pr-14` reserves
+              room for the absolutely-positioned category badge above. */}
+          <div className="flex items-center gap-2.5 pr-14">
+            <div className="flex-shrink-0 overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+              {renderAgentAvatar(agent, { size: 'xs', showBorder: false })}
             </div>
-          </div>
-
-          {/* Content */}
-          <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
-            {/* Agent name */}
-            <Label className="line-clamp-2 text-base font-semibold text-text-primary md:text-lg">
+            {/* `w-auto` overrides Label's default `w-full`, which would otherwise
+                stretch the name across the whole row */}
+            <Label className="line-clamp-2 w-auto text-sm font-semibold leading-snug text-text-primary">
               {agent.name}
             </Label>
-
-            {/* Agent description */}
-            {agent.description && (
-              <p
-                id={`agent-${agent.id}-description`}
-                className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-5"
-                aria-label={localize('com_agents_description_card', {
-                  description: agent.description,
-                })}
-              >
-                {agent.description}
-              </p>
-            )}
-
-            <AgentContact
-              agent={agent}
-              className="mt-1 text-xs text-text-secondary [&_a]:font-normal [&_a]:text-text-secondary"
-            />
           </div>
+
+          {/* Agent description */}
+          {agent.description && (
+            <p
+              id={`agent-${agent.id}-description`}
+              className="line-clamp-3 text-xs leading-snug text-text-secondary"
+              aria-label={localize('com_agents_description_card', {
+                description: agent.description,
+              })}
+            >
+              {agent.description}
+            </p>
+          )}
+
+          <div className="flex-1" />
+
+          <AgentContact
+            agent={agent}
+            className="text-[11px] text-text-tertiary [&_a]:font-normal [&_a]:text-text-tertiary"
+          />
         </div>
       </OGDialogTrigger>
 

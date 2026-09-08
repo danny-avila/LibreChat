@@ -11,7 +11,10 @@ interface SearchBarProps {
   value: string;
   /** Callback fired when the search query changes */
   onSearch: (query: string) => void;
-  /** Additional CSS classes */
+  /**
+   * Additional CSS classes for the wrapper. The component carries no width cap of
+   * its own, so the caller owns sizing (e.g. `max-w-[420px]` in a toolbar row).
+   */
   className?: string;
 }
 
@@ -63,7 +66,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
   }, [onSearch]);
 
   return (
-    <div className={`relative w-full max-w-4xl ${className}`} role="search">
+    <div className={`relative w-full ${className}`} role="search">
       <label htmlFor="agent-search" className="sr-only">
         {localize('com_agents_search_instructions')}
       </label>
@@ -73,15 +76,15 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
         value={searchTerm}
         onChange={handleChange}
         placeholder={localize('com_agents_search_placeholder')}
-        className="h-12 rounded-xl border-border-medium bg-transparent pl-12 pr-12 text-lg text-text-primary shadow-md transition-[border-color,box-shadow] duration-200 placeholder:text-text-secondary focus:border-border-heavy focus:shadow-lg focus:ring-0"
+        className="h-[38px] rounded-[10px] border-border-light bg-surface-secondary pl-9 pr-9 text-sm text-text-primary transition-[border-color,background-color] duration-200 placeholder:text-text-tertiary focus:border-border-heavy focus:bg-surface-primary focus:ring-0"
         aria-label={localize('com_agents_search_aria')}
         aria-describedby="search-instructions search-results-count"
         autoComplete="off"
         spellCheck="false"
       />
 
-      <div className="absolute inset-y-0 left-0 flex items-center pl-4" aria-hidden="true">
-        <Search className="size-5 text-text-secondary" />
+      <div className="absolute inset-y-0 left-0 flex items-center pl-3" aria-hidden="true">
+        <Search className="size-4 text-text-tertiary" />
       </div>
       {/* Hidden instructions for screen readers */}
       <div id="search-instructions" className="sr-only">
@@ -94,12 +97,12 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
           size="icon"
           type="button"
           onClick={handleClear}
-          className="group absolute right-4 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
+          className="group absolute right-3 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
           aria-label={localize('com_agents_clear_search')}
           title={localize('com_agents_clear_search')}
         >
           <X
-            className="size-5 text-text-secondary transition-colors duration-200 group-hover:text-text-primary"
+            className="size-4 text-text-secondary transition-colors duration-200 group-hover:text-text-primary"
             strokeWidth={2.5}
             aria-hidden="true"
           />
