@@ -78,7 +78,7 @@ function createApp(
     listConversationResources: methods.listConversationResources,
     listConversationMessageResources: methods.listConversationMessageResources,
     saveConvo: overrides.saveConvo ?? methods.saveConvo,
-    reconcileConversationTagCounts: methods.reconcileConversationTagCounts,
+    updateConversationResourceTags: methods.updateConversationResourceTags,
     getConversationResourceDeletionState:
       overrides.getConversationResourceDeletionState ??
       methods.getConversationResourceDeletionState,
@@ -158,7 +158,7 @@ describe('conversation management handlers with Mongo persistence', () => {
         isArchived: initialArchived,
         tags: ['old'],
       });
-      const reconcile = jest.spyOn(methods, 'reconcileConversationTagCounts');
+      const reconcile = jest.spyOn(methods, 'updateConversationResourceTags');
       const app = createApp({
         saveConvo: async (...args) => {
           await Conversation.updateOne(
@@ -171,7 +171,7 @@ describe('conversation management handlers with Mongo persistence', () => {
       try {
         const response = await request(app)
           .patch(`/${SHARED_ID}`)
-          .send({ title: 'After', tags: ['new'], ...patch });
+          .send({ title: 'After', ...patch });
         expect(response.status).toBe(404);
         expect(reconcile).not.toHaveBeenCalled();
         expect(
@@ -683,13 +683,25 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(foreign.status).toBe(404);
   });
 
-  it('updates title, tags, and archive state through shared services and maps invalid bodies to 400', async () => {
+  it('updates tags separately from title and archive state and maps invalid bodies to 400', async () => {
     await seedConversation(TENANT_A, { conversationId: 'patchable', user: OWNER, title: 'before' });
     const app = createApp();
 
+    const mixed = await request(app)
+      .patch('/patchable')
+      .send({ title: 'rejected', tags: ['rejected'], isArchived: true });
+    expect(mixed.status).toBe(400);
+    expect(
+      await asTenant(TENANT_A, () => Conversation.findOne({ conversationId: 'patchable' }).lean()),
+    ).toMatchObject({ title: 'before', tags: [], isArchived: false });
+    expect(await mongoose.models.ConversationTag.countDocuments({ user: OWNER })).toBe(0);
+    const tagged = await request(app)
+      .patch('/patchable')
+      .send({ tags: ['red', 'red'] });
+    expect(tagged.status).toBe(200);
     const updated = await request(app)
       .patch('/patchable')
-      .send({ title: '  after  ', tags: ['red', 'red'], isArchived: true });
+      .send({ title: '  after  ', isArchived: true });
     const persisted = await asTenant(TENANT_A, () =>
       Conversation.findOne({ user: OWNER, conversationId: 'patchable' }).lean(),
     );
@@ -712,11 +724,11 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(foreign.status).toBe(404);
   });
 
-  it('preserves committed metadata after a legacy count update fails and the PATCH is retried', async () => {
+  it('leaves membership unchanged when the shared tag operation fails before commit', async () => {
     await seedConversation(TENANT_A, { conversationId: 'recover-tags', user: OWNER });
     const app = createApp();
     const write = jest
-      .spyOn(mongoose.models.ConversationTag, 'updateOne')
+      .spyOn(mongoose.models.ConversationTag, 'bulkWrite')
       .mockRejectedValueOnce(new Error('transient catalog outage'));
     const first = await request(app)
       .patch('/recover-tags')
@@ -725,9 +737,8 @@ describe('conversation management handlers with Mongo persistence', () => {
     const retried = await request(app)
       .patch('/recover-tags')
       .send({ tags: ['red'] });
-    expect(first.status).toBe(200);
+    expect(first.status).toBe(500);
     expect(retried.status).toBe(200);
-    expect(first.body.tags).toEqual(['red']);
     expect(retried.body.tags).toEqual(['red']);
     expect(
       await asTenant(TENANT_A, () =>
@@ -741,9 +752,7 @@ describe('conversation management handlers with Mongo persistence', () => {
     const saveConvo = jest.fn().mockResolvedValue({ message: 'Error saving conversation' });
     const app = createApp({ saveConvo });
 
-    const response = await request(app)
-      .patch('/failed-patch')
-      .send({ tags: ['red'] });
+    const response = await request(app).patch('/failed-patch').send({ title: 'changed' });
     const tag = await asTenant(TENANT_A, () =>
       mongoose.models.ConversationTag.findOne({ user: OWNER, tag: 'red' }).lean(),
     );

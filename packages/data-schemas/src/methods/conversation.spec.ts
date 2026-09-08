@@ -821,7 +821,7 @@ describe('Conversation Operations', () => {
           const archived = await saveConvo(
             { userId: 'user123' },
             { conversationId, isArchived: true, title: 'Requested', tags: ['requested'] },
-            { preserveUpdatedAt: true, noUpsert: true, expectedTags: ['original'] },
+            { preserveUpdatedAt: true, noUpsert: true },
           );
 
           expect(archived).toEqual({ message: 'Error saving conversation' });
@@ -1245,54 +1245,6 @@ describe('Conversation Operations', () => {
       expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
       const stored = await Conversation.findOne({ conversationId }).lean();
       expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
-    });
-  });
-
-  describe('saveConvo expectedTags', () => {
-    const ctx = { userId: 'metadata-user' };
-    const conversationId = 'metadata-conversation';
-
-    beforeEach(async () => {
-      await Conversation.deleteMany({ user: ctx.userId });
-      await saveConvo(
-        ctx,
-        { conversationId, title: 'original', tags: ['previous'] },
-        { appendMessageIds: [] },
-      );
-    });
-
-    it('applies a metadata update only to the expected committed tag state', async () => {
-      const committed = await saveConvo(
-        ctx,
-        { conversationId, title: 'committed', tags: ['next'] },
-        { noUpsert: true, appendMessageIds: [], expectedTags: ['previous'] },
-      );
-      const stale = await saveConvo(
-        ctx,
-        { conversationId, title: 'stale', tags: ['other'] },
-        { noUpsert: true, appendMessageIds: [], expectedTags: ['previous'] },
-      );
-
-      expect(committed?.tags).toEqual(['next']);
-      expect(stale).toBeNull();
-      await expect(
-        Conversation.findOne({ user: ctx.userId, conversationId }).lean(),
-      ).resolves.toMatchObject({ title: 'committed', tags: ['next'] });
-    });
-
-    it('matches an empty expected state for a legacy conversation without tags', async () => {
-      await Conversation.collection.updateOne(
-        { user: ctx.userId, conversationId },
-        { $unset: { tags: '' } },
-      );
-
-      const result = await saveConvo(
-        ctx,
-        { conversationId, tags: ['next'] },
-        { noUpsert: true, appendMessageIds: [], expectedTags: [] },
-      );
-
-      expect(result?.tags).toEqual(['next']);
     });
   });
 

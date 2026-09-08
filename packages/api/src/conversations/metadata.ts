@@ -1,8 +1,6 @@
-import { logger } from '@librechat/data-schemas';
 import type {
   AppConfig,
   ConversationMethods,
-  ConversationResourceMethods,
   ConversationTagMethods,
 } from '@librechat/data-schemas';
 import type { FiltersConfig } from 'librechat-data-provider';
@@ -13,8 +11,7 @@ import { inspectContent } from '../protection/runtime';
 
 export interface ConversationMetadataDependencies {
   saveConvo: ConversationMethods['saveConvo'];
-  getConversationResource: ConversationResourceMethods['getConversationResource'];
-  reconcileConversationTagCounts: ConversationTagMethods['reconcileConversationTagCounts'];
+  updateConversationResourceTags: ConversationTagMethods['updateConversationResourceTags'];
 }
 
 interface ConversationMetadataScope {
@@ -37,14 +34,11 @@ export interface ConversationArchiveUpdate extends ConversationMetadataScope {
 }
 
 export interface ConversationMetadataUpdate extends ConversationMetadataScope {
-  previousTags: string[];
   title?: string;
   tags?: string[];
   isArchived?: boolean;
   filters?: FiltersConfig;
 }
-
-const METADATA_UPDATE_ATTEMPTS = 4;
 
 function isSaveConvoError(
   conversation: Awaited<ReturnType<ConversationMethods['saveConvo']>>,
@@ -118,13 +112,21 @@ export async function updateConversationArchiveMetadata(
 }
 
 export async function updateConversationMetadata(
-  deps: Pick<
-    ConversationMetadataDependencies,
-    'saveConvo' | 'getConversationResource' | 'reconcileConversationTagCounts'
-  >,
+  deps: Pick<ConversationMetadataDependencies, 'saveConvo' | 'updateConversationResourceTags'>,
   input: ConversationMetadataUpdate,
 ): ReturnType<ConversationMethods['saveConvo']> {
-  const update: { title?: string; tags?: string[]; isArchived?: boolean } = {};
+  if (input.tags != null) {
+    if (input.title != null || input.isArchived != null) {
+      throw new Error('Tag changes require a separate PATCH');
+    }
+    return deps.updateConversationResourceTags(
+      input.userId,
+      input.conversationId,
+      input.tags,
+      input.tenantId ?? null,
+    );
+  }
+  const update: { title?: string; isArchived?: boolean } = {};
   if (input.title != null) {
     const title = normalizeConversationTitle(input.title);
     const finding = inspectContent(extractConversationTitleContent({ title }), {
@@ -133,50 +135,19 @@ export async function updateConversationMetadata(
     if (finding != null) throw new ContentFilterError(finding);
     update.title = title;
   }
-  if (input.tags != null) update.tags = input.tags;
   if (input.isArchived != null) update.isArchived = input.isArchived;
 
-  let previousTags = input.previousTags;
-  for (let attempt = 0; attempt < METADATA_UPDATE_ATTEMPTS; attempt++) {
-    const conversation = await saveMetadata(
-      deps.saveConvo,
-      { userId: input.userId, interfaceConfig: input.interfaceConfig },
-      { conversationId: input.conversationId, ...update },
-      {
-        context: `conversation metadata update ${input.conversationId}`,
-        preserveUpdatedAt: input.title == null && input.tags == null,
-        noUpsert: true,
-        tenantId: input.tenantId ?? null,
-        appendMessageIds: [],
-        requireVisible: true,
-        ...(input.tags == null ? {} : { expectedTags: previousTags }),
-      },
-    );
-    if (conversation != null) {
-      if (input.tags != null) {
-        try {
-          await deps.reconcileConversationTagCounts(
-            input.userId,
-            previousTags,
-            input.tags,
-            input.tenantId ?? null,
-          );
-        } catch (error) {
-          logger.error('[conversationMetadata] Failed to reconcile tag counts', error);
-        }
-      }
-      return conversation;
-    }
-    if (input.tags == null) {
-      return null;
-    }
-    const current = await deps.getConversationResource(
-      input.userId,
-      input.tenantId,
-      input.conversationId,
-    );
-    if (current == null) return null;
-    previousTags = current.tags ?? [];
-  }
-  throw new Error('Conversation metadata update conflicted too many times');
+  return saveMetadata(
+    deps.saveConvo,
+    { userId: input.userId, interfaceConfig: input.interfaceConfig },
+    { conversationId: input.conversationId, ...update },
+    {
+      context: `conversation metadata update ${input.conversationId}`,
+      preserveUpdatedAt: input.title == null,
+      noUpsert: true,
+      tenantId: input.tenantId ?? null,
+      appendMessageIds: [],
+      requireVisible: true,
+    },
+  );
 }

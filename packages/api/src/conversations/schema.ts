@@ -84,7 +84,11 @@ export const conversationUpdateSchema: z.ZodType<ConversationUpdate, z.ZodTypeDe
     isArchived: z.boolean().optional(),
   })
   .strict()
-  .refine((value) => Object.keys(value).length > 0, 'An update is required');
+  .refine((value) => Object.keys(value).length > 0, 'An update is required')
+  .refine(
+    (value) => value.tags == null || (value.title == null && value.isArchived == null),
+    'Tag changes require a separate PATCH',
+  );
 
 export type ConversationCursorKind = 'conversations' | 'messages';
 

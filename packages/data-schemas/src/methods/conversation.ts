@@ -284,7 +284,6 @@ export interface ConversationMethods {
        *  every save without this option still rebuilds the array from the database. */
       appendMessageIds?: Types.ObjectId[];
       /** Applies the update only if the stored tags still equal this snapshot. */
-      expectedTags?: string[];
       /** Require a currently visible existing conversation for a resource API write. */
       requireVisible?: boolean;
     },
@@ -2172,7 +2171,6 @@ export function createConversationMethods(
       tenantId?: string | null;
       initialAgentId?: string | null;
       appendMessageIds?: Types.ObjectId[];
-      expectedTags?: string[];
       /** Require a currently visible existing conversation for a resource API write. */
       requireVisible?: boolean;
     },
@@ -2345,19 +2343,10 @@ export function createConversationMethods(
         return operation;
       };
 
-      const expectedTags = metadata?.expectedTags;
-      let expectedTagsFilter: FilterQuery<IConversation> = {};
-      if (expectedTags != null) {
-        expectedTagsFilter =
-          expectedTags.length === 0
-            ? { $or: [{ tags: [] }, { tags: { $exists: false } }] }
-            : { tags: expectedTags };
-      }
       const baseFilter = {
         conversationId,
         user: userId,
         ...explicitTenantFilter,
-        ...expectedTagsFilter,
       };
       const resourceFilter = (filter: Record<string, unknown>): Record<string, unknown> =>
         metadata?.requireVisible

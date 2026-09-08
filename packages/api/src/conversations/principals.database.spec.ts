@@ -158,7 +158,7 @@ function createApp(
     listConversationResources: methods.listConversationResources,
     listConversationMessageResources: methods.listConversationMessageResources,
     saveConvo: methods.saveConvo,
-    reconcileConversationTagCounts: methods.reconcileConversationTagCounts,
+    updateConversationResourceTags: methods.updateConversationResourceTags,
     deleteConversations: async () => {
       throw new Error('delete service is not exercised by principal composition');
     },

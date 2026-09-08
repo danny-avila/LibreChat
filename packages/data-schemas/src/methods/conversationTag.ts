@@ -1,6 +1,7 @@
-import type { FilterQuery, Model, Types } from 'mongoose';
+import type { FilterQuery, Model } from 'mongoose';
+import type { IConversation } from '~/types/convo';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
-import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 interface IConversationTag {
@@ -168,12 +169,12 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     | null
   >;
   deleteConversationTags: (filter: Record<string, unknown>) => Promise<number>;
-  reconcileConversationTagCounts: (
+  updateConversationResourceTags: (
     user: string,
-    previousTags: string[],
-    nextTags: string[],
-    tenantId?: string | null,
-  ) => Promise<void>;
+    conversationId: string,
+    tags: string[],
+    tenantId: string | null,
+  ) => Promise<IConversation | null>;
   bulkIncrementTagCounts: (user: string, tags: string[]) => Promise<void>;
   updateTagsForConversation: (
     user: string,
@@ -418,17 +419,29 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   /**
    * Updates tags for a specific conversation.
    */
-  async function updateTagsForConversation(
+  async function updateConversationTags(
     user: string,
     conversationId: string,
     tags: string[],
-  ): Promise<string[]> {
+    scope?: { tenantId: string | null },
+  ): Promise<IConversation | null> {
     try {
       const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-      const Conversation = mongoose.models.Conversation;
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const tenantFilter = optionalTenantFilter<IConversation>(scope?.tenantId);
+      const filter = () =>
+        scope == null
+          ? { user, conversationId }
+          : {
+              $and: [
+                { user, conversationId, ...tenantFilter, subagentThread: { $exists: false } },
+                buildRetentionVisibilityFilter<IConversation>(),
+              ],
+            };
 
-      const conversation = await Conversation.findOne({ user, conversationId }).lean();
+      const conversation = await Conversation.findOne(filter()).lean();
       if (!conversation) {
+        if (scope != null) return null;
         throw new Error('Conversation not found');
       }
 
@@ -451,7 +464,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       for (const tag of addedTags) {
         bulkOps.push({
           updateOne: {
-            filter: { user, tag },
+            filter: { user, tag, ...tenantFilter },
             update: { $inc: { count: 1 } },
             upsert: true,
           },
@@ -461,7 +474,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       for (const tag of removedTags) {
         bulkOps.push({
           updateOne: {
-            filter: { user, tag },
+            filter: { user, tag, ...tenantFilter },
             update: { $inc: { count: -1 } },
           },
         });
@@ -471,90 +484,34 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         await tenantSafeBulkWrite(ConversationTag, bulkOps);
       }
 
-      const updatedConversation = (
-        await Conversation.findOneAndUpdate(
-          { user, conversationId },
-          { $set: { tags: [...newTags] } },
-          { new: true },
-        )
-      ).toObject();
-
-      return updatedConversation.tags;
+      return await Conversation.findOneAndUpdate(
+        filter(),
+        { $set: { tags: [...newTags] } },
+        { new: true },
+      ).lean<IConversation>();
     } catch (error) {
       logger.error('[updateTagsForConversation] Error updating tags', error);
       throw new Error('Error updating tags for conversation');
     }
   }
 
-  let managementTagIndexes: Promise<void> | undefined;
-
-  /** Refreshes only metadata touched by a committed management PATCH. */
-  async function reconcileConversationTagCounts(
+  async function updateTagsForConversation(
     user: string,
-    previousTags: string[],
-    nextTags: string[],
-    tenantId?: string | null,
-  ): Promise<void> {
-    const pending = new Set([...previousTags, ...nextTags]);
-    if (!pending.size) return;
-    const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-    const Conversation = mongoose.models.Conversation;
-    const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
-    managementTagIndexes ??= createIndexesWithRetry(ConversationTag).catch((error) => {
-      managementTagIndexes = undefined;
-      throw error;
-    });
-    await managementTagIndexes;
+    conversationId: string,
+    tags: string[],
+  ): Promise<string[]> {
+    const conversation = await updateConversationTags(user, conversationId, tags);
+    if (conversation == null) throw new Error('Conversation not found');
+    return conversation.tags ?? [];
+  }
 
-    for (let attempt = 0; attempt < 4 && pending.size; attempt++) {
-      const names = [...pending];
-      const snapshots = await ConversationTag.find({ ...scope, tag: { $in: names } })
-        .select('tag count __v')
-        .lean<Array<{ _id: Types.ObjectId; tag: string; count?: number; __v?: number }>>();
-      const byName = new Map(snapshots.map((tag) => [tag.tag, tag]));
-      const counts = await Conversation.aggregate<{ _id: string; count: number }>([
-        { $match: { ...scope, tags: { $in: names } } },
-        { $project: { tags: { $setUnion: ['$tags', []] } } },
-        { $unwind: '$tags' },
-        { $match: { tags: { $in: names } } },
-        { $group: { _id: '$tags', count: { $sum: 1 } } },
-      ]);
-      const byTag = new Map(counts.map((row) => [row._id, row.count]));
-      for (const tag of names) {
-        const count = byTag.get(tag) ?? 0;
-        const snapshot = byName.get(tag);
-        if (!snapshot) {
-          if (count === 0) {
-            pending.delete(tag);
-            continue;
-          }
-          try {
-            await ConversationTag.updateOne(
-              { ...scope, tag },
-              { $setOnInsert: { count: 0 } },
-              { upsert: true },
-            );
-          } catch (error) {
-            if (!(error instanceof Error) || !('code' in error) || error.code !== 11000)
-              throw error;
-          }
-          // Recount after creation: membership may have changed while this row was absent.
-          continue;
-        }
-        const updated = await ConversationTag.updateOne(
-          {
-            ...scope,
-            _id: snapshot._id,
-            tag,
-            count: snapshot.count === undefined ? { $exists: false } : snapshot.count,
-            __v: snapshot.__v === undefined ? { $exists: false } : snapshot.__v,
-          },
-          { $set: { count, __v: (snapshot.__v ?? 0) + 1 } },
-        );
-        if (updated.matchedCount) pending.delete(tag);
-      }
-    }
-    if (pending.size) throw new Error('Tag metadata changed during every refresh attempt');
+  async function updateConversationResourceTags(
+    user: string,
+    conversationId: string,
+    tags: string[],
+    tenantId: string | null,
+  ): Promise<IConversation | null> {
+    return updateConversationTags(user, conversationId, tags, { tenantId });
   }
 
   /**
@@ -612,7 +569,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     deleteConversationTags,
     bulkIncrementTagCounts,
     updateTagsForConversation,
-    reconcileConversationTagCounts,
+    updateConversationResourceTags,
   };
 }
 

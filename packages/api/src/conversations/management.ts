@@ -55,7 +55,7 @@ export interface ConversationManagementHandlerDeps {
   listConversationResources: ConversationResourceMethods['listConversationResources'];
   listConversationMessageResources: ConversationResourceMethods['listConversationMessageResources'];
   saveConvo: ConversationMethods['saveConvo'];
-  reconcileConversationTagCounts: ConversationTagMethods['reconcileConversationTagCounts'];
+  updateConversationResourceTags: ConversationTagMethods['updateConversationResourceTags'];
   deleteConversations: DeleteConversations;
 }
 
@@ -211,7 +211,6 @@ export function createConversationManagementHandlers(deps: ConversationManagemen
         userId: owner,
         tenantId: conversationTenantId,
         conversationId: id,
-        previousTags: existing.tags ?? [],
         ...input,
         filters: req.config?.filters,
         interfaceConfig: req.config?.interfaceConfig,

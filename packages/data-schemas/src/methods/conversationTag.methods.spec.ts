@@ -219,146 +219,66 @@ describe('decrementTagCounts', () => {
   });
 });
 
-describe('management metadata count integration', () => {
-  it('applies each committed transition once, including reversed reconciliation order', async () => {
-    const { reconcileConversationTagCounts } = createConversationTagMethods(mongoose);
-    await Conversation.create({
-      user: 'owner',
-      conversationId: 'committed',
-      endpoint: 'openAI',
-      tags: ['blue'],
-    });
-    await reconcileConversationTagCounts('owner', ['red'], ['blue'], null);
-    await reconcileConversationTagCounts('owner', [], ['red'], null);
-    expect(await ConversationTag.findOne({ user: 'owner', tag: 'red' }).lean()).toBeNull();
-    expect(await ConversationTag.findOne({ user: 'owner', tag: 'blue' }).lean()).toMatchObject({
-      count: 1,
-    });
-    await reconcileConversationTagCounts('owner', ['blue'], ['blue'], null);
-    expect(await ConversationTag.findOne({ user: 'owner', tag: 'blue' }).lean()).toMatchObject({
-      count: 1,
-    });
-  });
-
-  it('isolates tenantless metadata and deletion deltas from historical tenant rows', async () => {
-    const { reconcileConversationTagCounts } = createConversationTagMethods(mongoose);
-    await ConversationTag.collection.insertOne({
-      user: 'owner',
-      tenantId: 'historical',
-      tag: 'red',
-      count: 8,
-    });
-    await Conversation.create({
-      user: 'owner',
-      conversationId: 'tenantless',
-      endpoint: 'openAI',
-      tags: ['red'],
-    });
-    await reconcileConversationTagCounts('owner', [], ['red'], null);
-    await decrementTagCounts(mongoose, 'owner', ['red'], null);
-    expect(
-      await ConversationTag.findOne({ user: 'owner', tenantId: 'historical' }).lean(),
-    ).toMatchObject({ count: 8 });
-    expect(
-      await ConversationTag.findOne({ user: 'owner', tenantId: { $exists: false } }).lean(),
-    ).toMatchObject({ count: 0 });
-  });
-});
-
-describe('management count refresh ordering', () => {
-  it('does not materialize a removed imported tag with no catalog row', async () => {
-    const methods = createConversationTagMethods(mongoose);
+describe('scoped conversation tag mutations', () => {
+  it('removes imported names without manufacturing missing catalog rows', async () => {
     await Conversation.create({
       user: 'owner',
       conversationId: 'imported',
       endpoint: 'openAI',
-      tags: [],
+      tags: ['missing'],
+      title: 'Kept',
     });
-    await methods.reconcileConversationTagCounts('owner', ['imported-name'], [], null);
-    expect(await ConversationTag.find({ user: 'owner' }).lean()).toEqual([]);
-  });
-
-  it.each([false, true])(
-    'recounts after a competing removal while a catalog write is paused (existing=%s)',
-    async (existing) => {
-      const methods = createConversationTagMethods(mongoose);
-      await Conversation.create({
-        user: 'owner',
-        conversationId: 'race',
-        endpoint: 'openAI',
-        tags: ['red'],
-      });
-      if (existing) await ConversationTag.create({ user: 'owner', tag: 'red', count: 0 });
-      const original = ConversationTag.collection.updateOne.bind(ConversationTag.collection);
-      let arrive!: () => void;
-      let release!: () => void;
-      const paused = new Promise<void>((resolve) => {
-        arrive = resolve;
-      });
-      const resume = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const write = jest
-        .spyOn(ConversationTag.collection, 'updateOne')
-        .mockImplementationOnce(async (...args) => {
-          arrive();
-          await resume;
-          return original(...args);
-        });
-      try {
-        const older = methods.reconcileConversationTagCounts('owner', [], ['red'], null);
-        await paused;
-        await Conversation.updateOne(
-          { user: 'owner', conversationId: 'race' },
-          { $set: { tags: [] } },
-        );
-        await methods.reconcileConversationTagCounts('owner', ['red'], [], null);
-        release();
-        await older;
-        expect(await ConversationTag.findOne({ user: 'owner', tag: 'red' }).lean()).toMatchObject({
-          count: 0,
-        });
-      } finally {
-        release();
-        write.mockRestore();
-      }
-    },
-  );
-});
-
-it('provisions the required catalog index with automatic indexing disabled and retries failed setup', async () => {
-  const isolated = new mongoose.Mongoose();
-  createModels(isolated);
-  await isolated.connect(mongoServer.getUri('management-tag-index'), { autoIndex: false });
-  const methods = createConversationTagMethods(isolated);
-  await isolated.models.Conversation.create({
-    user: 'owner',
-    conversationId: 'indexed',
-    endpoint: 'openAI',
-    tags: ['red'],
-  });
-  const build = jest
-    .spyOn(isolated.models.ConversationTag, 'createIndexes')
-    .mockRejectedValueOnce(new Error('DDL unavailable'));
-  try {
+    const methods = createConversationTagMethods(mongoose);
     await expect(
-      methods.reconcileConversationTagCounts('owner', [], ['red'], null),
-    ).rejects.toThrow('DDL unavailable');
-    await methods.reconcileConversationTagCounts('owner', [], ['red'], null);
-    await methods.reconcileConversationTagCounts('owner', ['red'], ['red'], null);
-    expect(build).toHaveBeenCalledTimes(2);
+      methods.updateConversationResourceTags('owner', 'imported', [], null),
+    ).resolves.toMatchObject({ conversationId: 'imported', title: 'Kept', tags: [] });
+    expect(await ConversationTag.countDocuments({ user: 'owner' })).toBe(0);
+  });
+
+  it.each([
+    { user: 'other' },
+    { tenantId: 'other-tenant' },
+    { expiredAt: new Date(0) },
+    { subagentThread: 'hidden' },
+  ])('rejects excluded targets before catalog mutation: %j', async (fields) => {
+    await Conversation.collection.insertOne({
+      user: 'owner',
+      conversationId: 'excluded',
+      tags: [],
+      ...fields,
+    });
+    const methods = createConversationTagMethods(mongoose);
+    await expect(
+      methods.updateConversationResourceTags('owner', 'excluded', ['new'], null),
+    ).resolves.toBeNull();
+    expect(await ConversationTag.countDocuments({})).toBe(0);
+  });
+
+  it('keeps tenantless membership and catalog writes separate from historical tenant rows', async () => {
+    await Conversation.collection.insertMany([
+      { user: 'owner', conversationId: 'same', tags: [] },
+      { user: 'owner', conversationId: 'same', tenantId: 'old', tags: [] },
+    ]);
+    await ConversationTag.collection.insertOne({
+      user: 'owner',
+      tag: 'red',
+      tenantId: 'old',
+      count: 8,
+    });
+    const methods = createConversationTagMethods(mongoose);
+    await methods.updateConversationResourceTags('owner', 'same', ['red'], null);
     expect(
-      await isolated.models.ConversationTag.findOne({ user: 'owner', tag: 'red' }).lean(),
+      await ConversationTag.findOne({ user: 'owner', tag: 'red', tenantId: 'old' }).lean(),
+    ).toMatchObject({ count: 8 });
+    expect(
+      await ConversationTag.findOne({
+        user: 'owner',
+        tag: 'red',
+        tenantId: { $exists: false },
+      }).lean(),
     ).toMatchObject({ count: 1 });
-    const indexes = await isolated.models.ConversationTag.collection.indexes();
-    expect(indexes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: { tag: 1, user: 1, tenantId: 1 }, unique: true }),
-      ]),
-    );
-  } finally {
-    build.mockRestore();
-    await isolated.connection.dropDatabase();
-    await isolated.disconnect();
-  }
+    expect(
+      await Conversation.findOne({ user: 'owner', conversationId: 'same', tenantId: 'old' }).lean(),
+    ).toMatchObject({ tags: [] });
+  });
 });

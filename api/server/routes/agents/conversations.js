@@ -49,7 +49,7 @@ const handlers = createConversationManagementHandlers({
   listConversationResources: db.listConversationResources,
   listConversationMessageResources: db.listConversationMessageResources,
   saveConvo: db.saveConvo,
-  reconcileConversationTagCounts: db.reconcileConversationTagCounts,
+  updateConversationResourceTags: db.updateConversationResourceTags,
   deleteConversations,
 });
 const importHandler = createConversationImportHandler({
