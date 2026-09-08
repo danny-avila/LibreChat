@@ -16,6 +16,7 @@ const {
   validateConversationUpdate,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { checkBan, configMiddleware, createImportLimiters } = require('~/server/middleware');
 const { createStorage, importFileFilter } = require('~/server/routes/files/multer');
 const { importConversations } = require('~/server/utils/import');
@@ -34,10 +35,17 @@ const { canRecoverAgentConversationDeletion, deleteConversations } =
     isStopConfirmed,
     logger,
   });
+const assistantClients = {
+  [EModelEndpoint.assistants]: require('~/server/services/Endpoints/assistants'),
+  [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
+};
 const handlers = createConversationManagementHandlers({
+  initializeAssistantClient: ({ endpoint, ...options }) =>
+    assistantClients[endpoint].initializeClient(options),
   canRecoverAgentConversationDeletion,
   getConversationResourceDeletionState: db.getConversationResourceDeletionState,
   getConversationResource: db.getConversationResource,
+  getConversationProviderThreadIds: db.getConversationProviderThreadIds,
   listConversationResources: db.listConversationResources,
   listConversationMessageResources: db.listConversationMessageResources,
   saveConvo: db.saveConvo,

@@ -351,3 +351,71 @@ describe('conversation message projection', () => {
     );
   });
 });
+
+describe('nested public content', () => {
+  it('preserves recursive subagent transcripts and strips private fields at each level', () => {
+    const leaf = {
+      type: 'steer',
+      steer: 'Use this',
+      files: [{ file_id: 'file', type: 'text/plain', filename: 'notes', user: 'private' }],
+    };
+    const part = {
+      type: 'tool_call',
+      tool_call: {
+        name: 'subagent',
+        auth: 'private',
+        subagent_content: [
+          { type: 'think', think: 'Child reasoning' },
+          { type: 'tool_call', tool_call: { name: 'subagent', subagent_content: [leaf] } },
+        ],
+      },
+    };
+    expect(isValidConversationContentPart(part)).toBe(true);
+    const projected = projectConversationMessage({
+      content: [part],
+    } as ConversationMessageResource).content;
+    expect(projected).toEqual([
+      {
+        type: 'tool_call',
+        tool_call: {
+          name: 'subagent',
+          subagent_content: [
+            { type: 'think', think: 'Child reasoning' },
+            {
+              type: 'tool_call',
+              tool_call: {
+                name: 'subagent',
+                subagent_content: [
+                  {
+                    type: 'steer',
+                    steer: 'Use this',
+                    files: [{ file_id: 'file', type: 'text/plain', filename: 'notes' }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it.each([[null], ['file'], [{ type: 42 }], [{ bytes: 'large' }]])(
+    'rejects malformed steer files %j',
+    (...files) => {
+      expect(isValidConversationContentPart({ type: 'steer', steer: 'Use this', files })).toBe(
+        false,
+      );
+    },
+  );
+
+  it('bounds recursive content before parsing', () => {
+    let part: unknown = { type: 'text', text: 'leaf' };
+    for (let i = 0; i < 30; i++)
+      part = { type: 'tool_call', tool_call: { subagent_content: [part] } };
+    expect(isValidConversationContentPart(part)).toBe(false);
+    expect(
+      projectConversationMessage({ content: [part] } as ConversationMessageResource).content,
+    ).toEqual([]);
+  });
+});

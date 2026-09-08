@@ -2335,32 +2335,30 @@ export function createConversationMethods(
         user: userId,
         ...explicitTenantFilter,
         ...expectedTagsFilter,
-        ...(metadata?.requireVisible
-          ? {
-              subagentThread: { $exists: false },
-              $and: [
-                {
-                  $or: [
-                    { isTemporary: false, expiredAt: null },
-                    { isTemporary: false, $expr: { $gt: ['$expiredAt', '$$NOW'] } },
-                    { isTemporary: null, expiredAt: null },
-                  ],
-                },
-              ],
-            }
-          : {}),
       };
       const runUpdate = (
         filter: Record<string, unknown>,
         operation: Record<string, unknown>,
         upsert: boolean,
       ) =>
-        Conversation.findOneAndUpdate(filter, operation, {
-          new: true,
-          upsert,
-          includeResultMetadata: true,
-          ...timestampOptions,
-        }) as unknown as Promise<ConversationUpdateResult>;
+        Conversation.findOneAndUpdate(
+          metadata?.requireVisible
+            ? {
+                $and: [
+                  filter,
+                  { subagentThread: { $exists: false } },
+                  buildRetentionVisibilityFilter<IConversation>(),
+                ],
+              }
+            : filter,
+          operation,
+          {
+            new: true,
+            upsert,
+            includeResultMetadata: true,
+            ...timestampOptions,
+          },
+        ) as unknown as Promise<ConversationUpdateResult>;
 
       let conversationResult: ConversationUpdateResult;
       if (update.isArchived === true) {

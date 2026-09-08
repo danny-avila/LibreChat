@@ -7,6 +7,11 @@ import type {
   ConversationResource,
 } from '@librechat/data-schemas';
 
+import {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
+  CONTENT_TRAVERSAL_MAX_NODES,
+} from '~/protection/adapters/nested';
+
 const MAX_LIST_LIMIT = 100;
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_CURSOR_LENGTH = 1024;
@@ -168,6 +173,25 @@ const textValue = z.union([
     .strip(),
 ]);
 const jsonObject = z.record(z.string(), z.unknown());
+/** Exports contain partial file references as well as complete attachment records. */
+export const conversationFileSchema: z.ZodType<Record<string, unknown>> = z.object({
+  file_id: z.string().nullish(),
+  filename: z.string().nullish(),
+  filepath: z.string().nullish(),
+  type: z.string().nullish(),
+  text: z.string().nullish(),
+  preview: z.string().nullish(),
+  messageId: z.string().nullish(),
+  toolCallId: z.string().nullish(),
+  agentId: z.string().nullish(),
+  stepId: z.string().nullish(),
+  bytes: z.number().nullish(),
+  width: z.number().nullish(),
+  height: z.number().nullish(),
+  embedded: z.boolean().nullish(),
+  metadata: z.object({}).strip().nullish(),
+});
+
 const baseToolCall = z
   .object({
     id: z.string().optional(),
@@ -175,6 +199,7 @@ const baseToolCall = z
     name: z.string().optional(),
     stepId: z.string().optional(),
     mcpServerName: z.string().optional(),
+    subagent_content: z.lazy(() => z.array(contentSchema)).optional(),
     args: z.union([z.string(), jsonObject]).optional(),
     output: z.union([z.string(), jsonObject, z.array(z.unknown())]).nullish(),
     function: z
@@ -252,7 +277,7 @@ const toolCall = z.union([
   ),
 ]);
 
-const contentSchema = z.discriminatedUnion('type', [
+const contentSchema: z.ZodType<Record<string, unknown>> = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal(ContentTypes.AGENT_UPDATE),
@@ -367,6 +392,7 @@ const contentSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal(ContentTypes.STEER),
       steer: z.string(),
+      files: z.array(conversationFileSchema).optional(),
       steerId: z.string().optional(),
       clientSteerId: z.string().optional(),
       createdAt: z.number().optional(),
@@ -376,8 +402,21 @@ const contentSchema = z.discriminatedUnion('type', [
     .strip(),
 ]);
 
+function withinContentLimits(value: unknown, depth: number, budget: { nodes: number }): boolean {
+  budget.nodes++;
+  if (depth > CONTENT_TRAVERSAL_MAX_DEPTH || budget.nodes > CONTENT_TRAVERSAL_MAX_NODES)
+    return false;
+  if (value != null && typeof value === 'object') {
+    for (const key in value) {
+      if (!withinContentLimits((value as Record<string, unknown>)[key], depth + 1, budget))
+        return false;
+    }
+  }
+  return true;
+}
+
 export function isValidConversationContentPart(value: unknown): boolean {
-  return contentSchema.safeParse(value).success;
+  return withinContentLimits(value, 0, { nodes: 0 }) && contentSchema.safeParse(value).success;
 }
 
 function toTimestamp(value: Date | string | undefined): string | null {
@@ -425,7 +464,9 @@ export function projectConversation(source: ConversationResource): ConversationR
 export function projectConversationMessage(
   source: ConversationMessageResource,
 ): ConversationMessageResponse {
+  const budget = { nodes: 0 };
   const content = (source.content ?? []).flatMap((part) => {
+    if (!withinContentLimits(part, 0, budget)) return [];
     const parsed = contentSchema.safeParse(part);
     return parsed.success ? [parsed.data] : [];
   });

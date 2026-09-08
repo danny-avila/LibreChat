@@ -147,9 +147,13 @@ function createApp(
     },
   });
   const handlers = createConversationManagementHandlers({
+    initializeAssistantClient: async () => {
+      throw new Error('Provider client is not exercised');
+    },
     canRecoverAgentConversationDeletion: async () => false,
     getConversationResourceDeletionState: methods.getConversationResourceDeletionState,
     getConversationResource: methods.getConversationResource,
+    getConversationProviderThreadIds: methods.getConversationProviderThreadIds,
     listConversationResources: methods.listConversationResources,
     listConversationMessageResources: methods.listConversationMessageResources,
     saveConvo: methods.saveConvo,

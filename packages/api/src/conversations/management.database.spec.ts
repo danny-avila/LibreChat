@@ -47,6 +47,9 @@ function createApp(
     >[0]['canRecoverAgentConversationDeletion'];
     getConversationResourceDeletionState?: typeof methods.getConversationResourceDeletionState;
     saveConvo?: typeof methods.saveConvo;
+    initializeAssistantClient?: Parameters<
+      typeof createConversationManagementHandlers
+    >[0]['initializeAssistantClient'];
     deleteConversations?: Parameters<
       typeof createConversationManagementHandlers
     >[0]['deleteConversations'];
@@ -63,9 +66,15 @@ function createApp(
     });
   });
   const handlers = createConversationManagementHandlers({
+    initializeAssistantClient:
+      overrides.initializeAssistantClient ??
+      (async () => {
+        throw new Error('Provider client is not exercised');
+      }),
     canRecoverAgentConversationDeletion:
       overrides.canRecoverAgentConversationDeletion ?? (async () => false),
     getConversationResource: methods.getConversationResource,
+    getConversationProviderThreadIds: methods.getConversationProviderThreadIds,
     listConversationResources: methods.listConversationResources,
     listConversationMessageResources: methods.listConversationMessageResources,
     saveConvo: overrides.saveConvo ?? methods.saveConvo,
@@ -186,6 +195,170 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(response.status).toBe(200);
     expect(response.body.title).toBe('Committed');
   });
+
+  it.each([EModelEndpoint.assistants, EModelEndpoint.azureAssistants])(
+    'deletes stored %s threads before local cleanup using stored provider selection',
+    async (endpoint) => {
+      await seedConversation(TENANT_A, {
+        user: OWNER,
+        conversationId: SHARED_ID,
+        endpoint,
+        model: 'stored-model',
+      });
+      await seedMessage(TENANT_A, {
+        user: OWNER,
+        conversationId: SHARED_ID,
+        messageId: 'provider-message',
+        thread_id: 'owned-thread',
+      });
+      await Promise.all([
+        seedMessage(TENANT_A, {
+          user: OWNER,
+          conversationId: SHARED_ID,
+          messageId: 'second-message',
+          thread_id: 'second-thread',
+        }),
+        seedMessage(TENANT_A, {
+          user: OWNER,
+          conversationId: SHARED_ID,
+          messageId: 'duplicate-message',
+          thread_id: 'owned-thread',
+        }),
+        seedMessage(TENANT_A, {
+          user: OWNER,
+          conversationId: SHARED_ID,
+          messageId: 'imported-message',
+          thread_id: 'imported-thread',
+          isUserSubmitted: true,
+        }),
+        seedMessage(TENANT_A, {
+          user: FOREIGN,
+          conversationId: SHARED_ID,
+          messageId: 'foreign-owner-message',
+          thread_id: 'foreign-thread',
+        }),
+        seedMessage(TENANT_B, {
+          user: OWNER,
+          conversationId: SHARED_ID,
+          messageId: 'foreign-tenant-message',
+          thread_id: 'foreign-tenant-thread',
+        }),
+      ]);
+      const remoteDelete = jest.fn().mockResolvedValue({ deleted: true });
+      const initializeAssistantClient = jest
+        .fn()
+        .mockResolvedValue({ openai: { beta: { threads: { delete: remoteDelete } } } });
+      const deleteConversations = jest.fn().mockResolvedValue({ deletedCount: 1 });
+      const response = await request(createApp({ initializeAssistantClient, deleteConversations }))
+        .delete(`/${SHARED_ID}?model=other-model`)
+        .send({ thread_id: 'foreign-thread', model: 'other-model', endpoint: 'other' });
+      expect(response.status).toBe(200);
+      expect(initializeAssistantClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpoint,
+          version: 'v2',
+          req: expect.objectContaining({
+            body: { model: 'stored-model' },
+            query: {},
+            user: expect.objectContaining({ id: OWNER, tenantId: TENANT_A }),
+          }),
+        }),
+      );
+      expect(remoteDelete.mock.calls.map(([id]) => id).sort()).toEqual([
+        'owned-thread',
+        'second-thread',
+      ]);
+      expect(remoteDelete.mock.invocationCallOrder[0]).toBeLessThan(
+        deleteConversations.mock.invocationCallOrder[0],
+      );
+    },
+  );
+
+  it('keeps the local root when provider deletion fails and retries through provider 404', async () => {
+    await seedConversation(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      endpoint: EModelEndpoint.assistants,
+    });
+    await seedMessage(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      messageId: 'provider-message',
+      thread_id: 'owned-thread',
+    });
+    const remoteDelete = jest
+      .fn()
+      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 404 });
+    const initializeAssistantClient = jest
+      .fn()
+      .mockResolvedValue({ openai: { beta: { threads: { delete: remoteDelete } } } });
+    const deleteConversations = jest.fn().mockResolvedValue({ deletedCount: 1 });
+    const app = createApp({ initializeAssistantClient, deleteConversations });
+    expect((await request(app).delete(`/${SHARED_ID}`)).status).toBe(500);
+    expect(deleteConversations).not.toHaveBeenCalled();
+    expect(
+      await Conversation.exists({ user: OWNER, tenantId: TENANT_A, conversationId: SHARED_ID }),
+    ).not.toBeNull();
+    expect((await request(app).delete(`/${SHARED_ID}`)).status).toBe(200);
+    expect(deleteConversations).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries local failure after provider deletion through an already-deleted thread', async () => {
+    await seedConversation(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      endpoint: EModelEndpoint.assistants,
+    });
+    await seedMessage(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      messageId: 'provider-message',
+      thread_id: 'owned-thread',
+    });
+    const remoteDelete = jest
+      .fn()
+      .mockResolvedValueOnce({ deleted: true })
+      .mockRejectedValueOnce({ status: 404 });
+    const initializeAssistantClient = jest
+      .fn()
+      .mockResolvedValue({ openai: { beta: { threads: { delete: remoteDelete } } } });
+    const deleteConversations = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('local unavailable'))
+      .mockResolvedValueOnce({ deletedCount: 1 });
+    const app = createApp({ initializeAssistantClient, deleteConversations });
+    expect((await request(app).delete(`/${SHARED_ID}`)).status).toBe(500);
+    expect((await request(app).delete(`/${SHARED_ID}`)).status).toBe(200);
+    expect(remoteDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['foreign-owner', 'foreign-tenant', 'hidden', 'ordinary', 'without-thread'])(
+    'does not initialize a provider for %s resources',
+    async (scenario) => {
+      await seedConversation(scenario === 'foreign-tenant' ? TENANT_B : TENANT_A, {
+        user: scenario === 'foreign-owner' ? FOREIGN : OWNER,
+        conversationId: SHARED_ID,
+        endpoint: scenario === 'ordinary' ? EModelEndpoint.openAI : EModelEndpoint.assistants,
+        isTemporary: scenario === 'hidden',
+      });
+      if (scenario !== 'without-thread') {
+        await seedMessage(scenario === 'foreign-tenant' ? TENANT_B : TENANT_A, {
+          user: scenario === 'foreign-owner' ? FOREIGN : OWNER,
+          conversationId: SHARED_ID,
+          messageId: 'provider-message',
+          thread_id: 'thread',
+        });
+      }
+      const initializeAssistantClient = jest.fn();
+      const deleteConversations = jest.fn().mockResolvedValue({ deletedCount: 1 });
+      const response = await request(
+        createApp({ initializeAssistantClient, deleteConversations }),
+      ).delete(`/${SHARED_ID}`);
+      expect(response.status).toBe(['ordinary', 'without-thread'].includes(scenario) ? 200 : 404);
+      expect(initializeAssistantClient).not.toHaveBeenCalled();
+    },
+  );
 
   it('lists ordinary and saved-agent resources while excluding internal and retention-hidden records', async () => {
     const now = new Date('2026-09-06T10:00:00.000Z');

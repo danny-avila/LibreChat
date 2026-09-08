@@ -224,56 +224,81 @@ function projectStatsSnapshotFilter(
 
 /** Public statistics come from committed membership even when cache reconciliation fails. */
 function committedProjectStats(): PipelineStage[] {
+  const expiration = { $ifNull: ['$committedConversation.expiredAt', null] };
+  const temporary = { $ifNull: ['$committedConversation.isTemporary', null] };
   return [
+    { $addFields: { statsProjectId: { $toString: '$_id' } } },
     {
       $lookup: {
         from: 'conversations',
-        let: {
-          projectId: { $toString: '$_id' },
-          user: '$user',
-          tenantId: { $ifNull: ['$tenantId', null] },
-        },
-        pipeline: [
-          {
-            $match: {
-              $and: [
-                {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$chatProjectId', '$$projectId'] },
-                      { $eq: ['$user', '$$user'] },
-                      { $eq: [{ $ifNull: ['$tenantId', null] }, '$$tenantId'] },
-                    ],
-                  },
-                },
-                { isArchived: { $ne: true } },
-                buildRetentionVisibilityFilter<IConversation>(),
+        localField: 'statsProjectId',
+        foreignField: 'chatProjectId',
+        as: 'committedConversation',
+      },
+    },
+    { $unwind: { path: '$committedConversation', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        statsEligible: {
+          $and: [
+            { $eq: ['$committedConversation.user', '$user'] },
+            {
+              $eq: [
+                { $ifNull: ['$committedConversation.tenantId', null] },
+                { $ifNull: ['$tenantId', null] },
               ],
             },
-          },
-          { $sort: { updatedAt: -1, _id: -1 } },
-          {
-            $group: {
-              _id: null,
-              count: { $sum: 1 },
-              date: { $first: { $ifNull: ['$updatedAt', '$createdAt'] } },
-              conversationId: { $first: '$conversationId' },
+            { $ne: [{ $ifNull: ['$committedConversation.isArchived', false] }, true] },
+            {
+              $or: [
+                {
+                  $and: [
+                    { $eq: [temporary, false] },
+                    { $or: [{ $eq: [expiration, null] }, { $gt: [expiration, new Date()] }] },
+                  ],
+                },
+                { $and: [{ $eq: [temporary, null] }, { $eq: [expiration, null] }] },
+              ],
             },
-          },
-        ],
-        as: 'committedStats',
+          ],
+        },
       },
     },
     {
-      $set: {
-        conversationCount: { $ifNull: [{ $arrayElemAt: ['$committedStats.count', 0] }, 0] },
-        lastConversationAt: { $ifNull: [{ $arrayElemAt: ['$committedStats.date', 0] }, null] },
+      $sort: {
+        statsEligible: -1,
+        'committedConversation.updatedAt': -1,
+        'committedConversation._id': -1,
+      },
+    },
+    {
+      $group: {
+        _id: '$_id',
+        project: { $first: '$$ROOT' },
+        conversationCount: { $sum: { $cond: ['$statsEligible', 1, 0] } },
+        lastConversationAt: {
+          $first: {
+            $cond: [
+              '$statsEligible',
+              { $ifNull: ['$committedConversation.updatedAt', '$committedConversation.createdAt'] },
+              null,
+            ],
+          },
+        },
         lastConversationId: {
-          $ifNull: [{ $arrayElemAt: ['$committedStats.conversationId', 0] }, null],
+          $first: { $cond: ['$statsEligible', '$committedConversation.conversationId', null] },
         },
       },
     },
-    { $unset: 'committedStats' },
+    {
+      $addFields: {
+        'project.conversationCount': '$conversationCount',
+        'project.lastConversationAt': { $ifNull: ['$lastConversationAt', null] },
+        'project.lastConversationId': { $ifNull: ['$lastConversationId', null] },
+      },
+    },
+    { $replaceRoot: { newRoot: '$project' } },
+    { $project: { statsProjectId: 0, statsEligible: 0, committedConversation: 0 } },
   ];
 }
 

@@ -88,6 +88,37 @@ describe('ChatProject methods', () => {
     expect(list.projects[0].name).toBe('Customer Alpha Updated');
   });
 
+  it('uses portable project lookup stages before cursor pagination', async () => {
+    const project = await methods.createChatProject(user, { name: 'Portable' });
+    const aggregate = jest.spyOn(ChatProject, 'aggregate');
+    try {
+      await methods.getChatProject(user, String(project._id));
+      await methods.listChatProjects(user);
+      for (const [pipeline] of aggregate.mock.calls) {
+        expect(pipeline).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              $lookup: expect.objectContaining({
+                localField: 'statsProjectId',
+                foreignField: 'chatProjectId',
+              }),
+            }),
+          ]),
+        );
+        for (const stage of pipeline ?? []) {
+          expect(stage).not.toHaveProperty('$set');
+          expect(stage).not.toHaveProperty('$unset');
+          if ('$lookup' in stage) {
+            expect(stage.$lookup).not.toHaveProperty('let');
+            expect(stage.$lookup).not.toHaveProperty('pipeline');
+          }
+        }
+      }
+    } finally {
+      aggregate.mockRestore();
+    }
+  });
+
   it('filters projects by name or description search', async () => {
     await methods.createChatProject(user, {
       name: 'Customer Alpha',

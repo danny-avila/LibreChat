@@ -4,7 +4,15 @@ import { activeExpirationFilter, buildRetentionVisibilityFilter } from '~/utils/
 
 export type ConversationResource = Pick<
   IConversation,
-  'conversationId' | 'title' | 'createdAt' | 'updatedAt' | 'agent_id' | 'tags' | 'isArchived'
+  | 'conversationId'
+  | 'title'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'agent_id'
+  | 'tags'
+  | 'isArchived'
+  | 'endpoint'
+  | 'model'
 > & { _id: Types.ObjectId };
 
 export type ConversationMessageResource = Pick<
@@ -32,7 +40,8 @@ export type ConversationResourcePage = {
   isArchived?: boolean;
 };
 
-const conversationFields = 'conversationId title createdAt updatedAt agent_id tags isArchived';
+const conversationFields =
+  'conversationId title createdAt updatedAt agent_id tags isArchived endpoint model';
 const messageFields =
   'messageId conversationId parentMessageId text content sender isCreatedByUser createdAt updatedAt unfinished error finish_reason';
 
@@ -86,6 +95,21 @@ export function createConversationResourceMethods(mongoose: typeof import('mongo
       return descendant != null || message != null || toolCall != null || sharedLink != null
         ? 'recoverable'
         : 'missing';
+    },
+
+    async getConversationProviderThreadIds(
+      user: string,
+      tenantId: string | undefined,
+      conversationId: string,
+    ): Promise<string[]> {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      return Message.distinct('thread_id', {
+        user,
+        conversationId,
+        ...tenantBoundary<IMessage>(tenantId),
+        thread_id: { $type: 'string', $ne: '' },
+        isUserSubmitted: { $ne: true },
+      });
     },
 
     async getConversationResource(

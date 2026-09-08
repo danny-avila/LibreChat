@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type {
   ConversationMethods,
   ConversationResource,
@@ -33,6 +34,15 @@ type DeleteConversations = (
 ) => Promise<Awaited<ReturnType<ConversationMethods['deleteConvos']>>>;
 
 export interface ConversationManagementHandlerDeps {
+  initializeAssistantClient: (options: {
+    req: ServerRequest;
+    res: Response;
+    endpoint: EModelEndpoint.assistants | EModelEndpoint.azureAssistants;
+    version: string;
+  }) => Promise<{
+    openai: { beta: { threads: { delete: (threadId: string) => Promise<unknown> } } };
+  }>;
+
   canRecoverAgentConversationDeletion: (
     userId: string,
     conversationId: string,
@@ -41,6 +51,7 @@ export interface ConversationManagementHandlerDeps {
   ) => Promise<boolean>;
   getConversationResourceDeletionState: ConversationResourceMethods['getConversationResourceDeletionState'];
   getConversationResource: ConversationResourceMethods['getConversationResource'];
+  getConversationProviderThreadIds: ConversationResourceMethods['getConversationProviderThreadIds'];
   listConversationResources: ConversationResourceMethods['listConversationResources'];
   listConversationMessageResources: ConversationResourceMethods['listConversationMessageResources'];
   saveConvo: ConversationMethods['saveConvo'];
@@ -239,6 +250,43 @@ export function createConversationManagementHandlers(deps: ConversationManagemen
             )))
         ) {
           throw new ConversationManagementError('not_found');
+        }
+      }
+      if (
+        existing &&
+        (existing.endpoint === EModelEndpoint.assistants ||
+          existing.endpoint === EModelEndpoint.azureAssistants)
+      ) {
+        const threadIds = await deps.getConversationProviderThreadIds(
+          owner,
+          conversationTenantId,
+          id,
+        );
+        if (threadIds.length > 0) {
+          const providerReq = Object.create(req) as ServerRequest;
+          Object.defineProperties(providerReq, {
+            body: { value: { model: existing.model } },
+            query: { value: {} },
+          });
+          const { openai } = await deps.initializeAssistantClient({
+            req: providerReq,
+            res,
+            endpoint: existing.endpoint,
+            version: 'v2',
+          });
+          for (const threadId of threadIds) {
+            try {
+              await openai.beta.threads.delete(threadId);
+            } catch (error) {
+              if (
+                error == null ||
+                typeof error !== 'object' ||
+                !('status' in error) ||
+                error.status !== 404
+              )
+                throw error;
+            }
+          }
         }
       }
       await deps.deleteConversations(

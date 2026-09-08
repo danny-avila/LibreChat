@@ -6,6 +6,7 @@ import type { Document } from 'mongodb';
 import {
   MAX_CONVERSATION_MANAGEMENT_TITLE_LENGTH,
   conversationTagsSchema,
+  conversationFileSchema,
   isValidConversationContentPart,
 } from './schema';
 import {
@@ -64,25 +65,6 @@ const importMetadataSchema = z.object({
   endpoint: z.string().nullish(),
   title: z.string().nullish(),
   exportAt: z.string().optional(),
-});
-
-/** Exports contain partial file references as well as complete attachment records. */
-const importFileSchema = z.object({
-  file_id: z.string().nullish(),
-  filename: z.string().nullish(),
-  filepath: z.string().nullish(),
-  type: z.string().nullish(),
-  text: z.string().nullish(),
-  preview: z.string().nullish(),
-  messageId: z.string().nullish(),
-  toolCallId: z.string().nullish(),
-  agentId: z.string().nullish(),
-  stepId: z.string().nullish(),
-  bytes: z.number().nullish(),
-  width: z.number().nullish(),
-  height: z.number().nullish(),
-  embedded: z.boolean().nullish(),
-  metadata: z.object({}).passthrough().nullish(),
 });
 
 const TOP_LEVEL_FIELDS = new Set([
@@ -411,7 +393,7 @@ function assertMessage(
     const entries = value[field];
     if (!Array.isArray(entries)) continue;
     for (let index = 0; index < entries.length; index++) {
-      if (!importFileSchema.safeParse(entries[index]).success) {
+      if (!conversationFileSchema.safeParse(entries[index]).success) {
         throw new ConversationImportError(
           `Field "${location}.${field}[${index}]" is not a supported file object`,
         );

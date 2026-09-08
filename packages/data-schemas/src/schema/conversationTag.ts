@@ -49,7 +49,7 @@ conversationTag.index(
   { renameTo: 1, user: 1, tenantId: 1 },
   {
     unique: true,
-    partialFilterExpression: { renameTo: { $type: 'string' } },
+    partialFilterExpression: { renameTo: { $exists: true } },
   },
 );
 

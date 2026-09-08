@@ -581,6 +581,40 @@ describe('createConversationImportOperation', () => {
     });
   });
 
+  it.each([null, 'file', { type: 42 }])(
+    'rejects invalid nested steer attachment %j before persistence',
+    async (file) => {
+      const { deps } = createDependencies(
+        JSON.stringify({
+          ...baseExport,
+          messages: [
+            {
+              ...baseExport.messages[0],
+              content: [
+                {
+                  type: 'tool_call',
+                  tool_call: {
+                    name: 'subagent',
+                    subagent_content: [{ type: 'steer', steer: 'Use this', files: [file] }],
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      await expect(
+        createConversationImportOperation(deps)({
+          filepath: '/tmp/steer.json',
+          requestUserId: 'owner',
+          format: 'librechat',
+        }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(deps.getImporter).not.toHaveBeenCalled();
+      expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('rejects an imported title beyond the management title limit', async () => {
     const { deps } = createDependencies(JSON.stringify({ ...baseExport, title: 'x'.repeat(1025) }));
 
