@@ -66,6 +66,45 @@ describe('waitForMeiliTask', () => {
     }
   });
 
+  test('enforces the overall deadline when waitForTask never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      const client = {
+        waitForTask: jest.fn(() => new Promise<never>(() => undefined)),
+      };
+
+      const waiting = waitForMeiliTask(client, 21, 'convos indexing', () => false, {
+        timeoutMs: 2500,
+      });
+      const result = waiting.catch((error: unknown) => error);
+
+      await jest.advanceTimersByTimeAsync(2500);
+
+      await expect(result).resolves.toEqual(
+        expect.objectContaining({
+          message: 'convos indexing task 21 did not complete within 2500ms',
+        }),
+      );
+      expect(client.waitForTask).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('cancels a never-settling task wait', async () => {
+    const controller = new AbortController();
+    const client = {
+      waitForTask: jest.fn(() => new Promise<never>(() => undefined)),
+    };
+    const waiting = waitForMeiliTask(client, 22, 'messages indexing', () => false, {
+      signal: controller.signal,
+    });
+
+    controller.abort(new Error('shutdown'));
+
+    await expect(waiting).rejects.toThrow('shutdown');
+  });
+
   test('reports the operation and terminal task status', async () => {
     const client = {
       waitForTask: jest.fn().mockResolvedValue({ status: 'failed' }),

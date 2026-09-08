@@ -473,11 +473,15 @@ if (cluster.isMaster) {
 
     /** Background index sync (non-blocking) */
     if (isEnabled(process.env.SEARCH) && !isEnabled(process.env.MEILI_NO_SYNC)) {
-      startIndexSyncScheduler({
-        run: (reason) => indexSync({ quiet: reason === 'periodic' }),
+      const indexSyncScheduler = startIndexSyncScheduler({
+        run: (reason, signal) => indexSync({ quiet: reason === 'periodic', signal }),
         onError: (err) => {
           logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
         },
+      });
+      registerShutdownTask('Meilisearch index sync', () => indexSyncScheduler.stop(), {
+        phase: 'pre-drain',
+        priority: 200,
       });
     }
 

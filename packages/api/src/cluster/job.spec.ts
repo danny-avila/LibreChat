@@ -195,6 +195,62 @@ describe('runDistributedJob', () => {
     expect(onLeaseLost).toHaveBeenCalledTimes(1);
   });
 
+  test('expires ownership and stops renewing when the job deadline is reached', async () => {
+    const handlerStarted = createDeferred<void>();
+    const neverSettles = createDeferred<void>();
+    const onLeaseLost = jest.fn();
+    const running = runDistributedJob(
+      collection,
+      'deadline-job',
+      async (signal) => {
+        handlerStarted.resolve();
+        expect(signal.aborted).toBe(false);
+        await neverSettles.promise;
+      },
+      { leaseMs: 6000, refreshMs: 50, timeoutMs: 100, onLeaseLost },
+    );
+    await handlerStarted.promise;
+
+    await expect(running).rejects.toThrow(
+      'Distributed job deadline-job did not complete within 100ms',
+    );
+
+    const expiredState = await collection.findOne({ _id: 'deadline-job' });
+    expect(expiredState).toMatchObject({ status: 'failed' });
+    expect(expiredState?.owner).toBeUndefined();
+    expect(expiredState?.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
+    const expiredAt = expiredState?.expiresAt.getTime();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await collection.findOne({ _id: 'deadline-job' }))?.expiresAt.getTime()).toBe(
+      expiredAt,
+    );
+    expect(onLeaseLost).not.toHaveBeenCalled();
+  });
+
+  test('releases ownership when the caller cancels an active job', async () => {
+    const handlerStarted = createDeferred<void>();
+    const neverSettles = createDeferred<void>();
+    const controller = new AbortController();
+    const running = runDistributedJob(
+      collection,
+      'cancelled-job',
+      async () => {
+        handlerStarted.resolve();
+        await neverSettles.promise;
+      },
+      { signal: controller.signal, onLeaseLost: jest.fn() },
+    );
+    await handlerStarted.promise;
+
+    controller.abort(new Error('shutdown'));
+
+    await expect(running).rejects.toThrow('shutdown');
+    const cancelledState = await collection.findOne({ _id: 'cancelled-job' });
+    expect(cancelledState).toMatchObject({ status: 'failed' });
+    expect(cancelledState).not.toHaveProperty('owner');
+  });
+
   test('rejects timing options without a lease safety window', async () => {
     await expect(
       runDistributedJob(collection, 'invalid-timing', async () => undefined, {
