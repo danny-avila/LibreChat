@@ -1,4 +1,3 @@
-import * as agentsSdk from '@librechat/agents';
 import {
   HookRegistry,
   createToolPolicyHook,
@@ -10,19 +9,11 @@ import type { MCPToolAlias } from '~/tools/classification';
 import { isHITLEnabled, mapToolApprovalPolicy } from './policy';
 import { buildToolApprovalHooks } from './hooks';
 
-/**
- * Stable across resumes; the job epoch separates edits that reuse a response id.
- * Scope support alone is insufficient: older SDKs replay stale batch results
- * after question pauses, so only enable it with the full replay lifecycle fix.
- */
+/** Stable across resumes; the job epoch separates edits that reuse a response id. */
 export function buildToolApprovalExecutionConfig(
   responseMessageId: string,
   jobCreatedAt?: number,
-): { [TOOL_APPROVAL_EXECUTION_SCOPE_CONFIG_KEY]: string } | undefined {
-  const sdk = agentsSdk as { TOOL_APPROVAL_EXECUTION_SCOPE_CAPABLE?: boolean };
-  if (sdk.TOOL_APPROVAL_EXECUTION_SCOPE_CAPABLE !== true) {
-    return undefined;
-  }
+): { [TOOL_APPROVAL_EXECUTION_SCOPE_CONFIG_KEY]: string } {
   return {
     [TOOL_APPROVAL_EXECUTION_SCOPE_CONFIG_KEY]: JSON.stringify([
       responseMessageId,

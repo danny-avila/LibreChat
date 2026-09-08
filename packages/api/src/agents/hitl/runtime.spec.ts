@@ -4,12 +4,6 @@ import { registerToolApprovalHook, clearToolApprovalHooks } from './hooks';
 import { createAttachedCodeEnvironmentPolicyHook } from './byom';
 import { resolveToolApprovalPolicy } from './policy';
 
-jest.mock('@librechat/agents', () => ({
-  ...jest.requireActual('@librechat/agents'),
-  __esModule: true,
-  TOOL_APPROVAL_EXECUTION_SCOPE_CAPABLE: true,
-}));
-
 describe('buildHITLRunWiring', () => {
   test.each([
     ['ask', 'bash_tool', 'ask'],
@@ -222,21 +216,6 @@ describe('buildHITLRunWiring host-hook composition', () => {
 });
 
 describe('tool approval execution scope', () => {
-  test.each([undefined, false])(
-    'keeps legacy config when the SDK replay capability is %s',
-    (capable) => {
-      const sdk = jest.requireMock<{ TOOL_APPROVAL_EXECUTION_SCOPE_CAPABLE?: boolean }>(
-        '@librechat/agents',
-      );
-      sdk.TOOL_APPROVAL_EXECUTION_SCOPE_CAPABLE = capable;
-      try {
-        expect(buildToolApprovalExecutionConfig('response-1', 1000)).toBeUndefined();
-      } finally {
-        sdk.TOOL_APPROVAL_EXECUTION_SCOPE_CAPABLE = true;
-      }
-    },
-  );
-
   test('reconstructs the same scope for repeated approval resumes', () => {
     const generation = { responseMessageId: 'response-1', jobCreatedAt: 1000 };
     const original = buildToolApprovalExecutionConfig(
@@ -247,7 +226,7 @@ describe('tool approval execution scope', () => {
     expect(
       buildToolApprovalExecutionConfig(restored.responseMessageId, restored.jobCreatedAt),
     ).toEqual(original);
-    expect(original).toBeDefined();
+    expect(Object.values(original)[0]).toBeTruthy();
   });
 
   test('separates new generations even when an edit reuses the response id', () => {
