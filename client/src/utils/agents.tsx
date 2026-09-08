@@ -60,11 +60,15 @@ const LazyAgentAvatar = ({
 /**
  * Renders an agent avatar with fallback to Bot icon
  * Consistent across all agent displays
+ *
+ * `xs` fills the gap between `icon` (20px, meant to sit inline with a line of text)
+ * and `sm` (48-56px): a compact card needs an avatar that reads as a picture without
+ * dominating the row it shares with the agent name.
  */
 export const renderAgentAvatar = (
   agent: t.Agent | null | undefined,
   options: {
-    size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
+    size?: 'icon' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
     showBorder?: boolean;
   } = {},
@@ -76,6 +80,7 @@ export const renderAgentAvatar = (
   // Size mappings for responsive design
   const sizeClasses = {
     icon: 'h-5 w-5',
+    xs: 'h-8 w-8 sm:h-10 sm:w-10',
     sm: 'h-12 w-12 sm:h-14 sm:w-14',
     md: 'h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24',
     lg: 'h-20 w-20 sm:h-24 sm:w-24 md:h-28 md:w-28',
@@ -84,18 +89,11 @@ export const renderAgentAvatar = (
 
   const iconSizeClasses = {
     icon: 'h-4 w-4',
+    xs: 'h-5 w-5 sm:h-6 sm:w-6',
     sm: 'h-6 w-6 sm:h-7 sm:w-7',
     md: 'h-6 w-6 sm:h-8 sm:w-8 md:h-10 md:w-10',
     lg: 'h-8 w-8 sm:h-10 sm:w-10 md:h-12 md:w-12',
     xl: 'h-10 w-10',
-  };
-
-  const placeholderSizeClasses = {
-    icon: 'h-5 w-5',
-    sm: 'h-10 w-10 sm:h-12 sm:w-12',
-    md: 'h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20',
-    lg: 'h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24',
-    xl: 'h-20 w-20',
   };
 
   const borderClasses = showBorder ? 'border-1 border-border-medium' : '';
