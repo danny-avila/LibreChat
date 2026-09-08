@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
+const { Callback, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
   ResourceType,
@@ -13,7 +13,7 @@ const {
   createRun,
   createChunk,
   applyContextToAgent,
-  buildToolSet,
+  buildRunToolSet,
   buildInitialToolSessions,
   buildAgentScopedContext,
   buildInlineMemoryContext,
@@ -56,6 +56,7 @@ const {
   getUserFacingProviderError,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
+  createOwnedToolEndHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
   resolveAgentScopedSkillIds,
@@ -64,6 +65,7 @@ const {
   stripActivityLabelParts,
   executeAgentRun,
   waitForAgentExecutionWrites,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -488,12 +490,32 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       };
 
       const enabledCapabilities = new Set(agentsEConfig?.capabilities);
+      const codeCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.execute_code);
+      const fileSearchCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.file_search);
+      /** Started before the memory read rather than awaited on its own line, so
+       *  the role lookup overlaps that query instead of preceding it. Skipped
+       *  when the deployment has both capabilities off — both flags are false
+       *  either way, so the read would be pure load on every request. One
+       *  lookup answers both. */
+      const toolRoleGrants =
+        codeCapabilityEnabled || fileSearchCapabilityEnabled
+          ? resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName })
+          : null;
       const memoryAvailable = await resolveMemoryAvailability({
         enabledCapabilities,
         memoryConfig: appConfig?.memory,
         user: req.user,
         getRoleByName: db.getRoleByName,
       });
+      /** The deployment switch AND the role grant: `initializeAgent` rebuilds
+       *  `bash_tool`, `read_file` and the workspace file tools from this flag,
+       *  and forwards the code-environment context to their handlers. */
+      const codeEnvAvailable = codeCapabilityEnabled && (await toolRoleGrants)?.runCode === true;
+      /** The same pairing for the other gated tool, read only by the resend-file
+       *  priming: `false` skips re-hydrating prior-turn `file_search` files for
+       *  a tool the loader is about to drop. */
+      const fileSearchAvailable =
+        fileSearchCapabilityEnabled && (await toolRoleGrants)?.fileSearch === true;
       const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
       const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
       const accessibleSkillIds = skillsCapabilityEnabled
@@ -558,7 +580,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
           }),
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          codeEnvAvailable,
+          fileSearchAvailable,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -637,7 +660,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             }),
           skillStates,
           defaultActiveOnShare,
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          codeEnvAvailable,
+          fileSearchAvailable,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -811,7 +835,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       const openaiMessages = convertMessages(request.messages);
 
-      const toolSet = buildToolSet(primaryConfig);
+      const toolSet = buildRunToolSet(
+        primaryConfig,
+        handoffAgentConfigs.values(),
+        undefined,
+        openaiMessages,
+        true,
+      );
       const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
       const formattedMessages = formatted.messages;
       const initialSummary = formatted.summary;
@@ -1066,7 +1096,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         },
         on_run_step_completed: createHandler(),
         // Use proper ToolEndHandler for processing artifacts (images, file citations, code output)
-        on_tool_end: new ToolEndHandler(toolEndCallback, logger),
+        on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
         on_chain_stream: createHandler(),
         on_chain_end: createHandler(),
         on_agent_update: createHandler(),
@@ -1098,6 +1128,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         agentIds: contextAgents.map(({ id }) => id),
         attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(contextAgents),
         req,
+        endpoint: primaryConfig.endpoint,
+        endpointsByAgentId: new Map(
+          contextAgents.map((runAgent) => [runAgent.id, { endpoint: runAgent.endpoint }]),
+        ),
       });
       const mcpManager = getMCPManager();
       const configServers = await resolveConfigServers(req);
@@ -1136,7 +1170,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         signal: execution.signal,
         customHandlers: handlers,
         requestBody: mcpRequestBody,
-        user: { id: userId },
+        user: { ...createSafeUser(req.user), id: userId },
+        traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
@@ -1277,7 +1312,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       protocol: 'chat.completions',
       requestId: req.requestId ?? req.id ?? `agent-run-${nanoid()}`,
       receivedAt,
-      principal: req.user,
+      principal: req.tenantId == null ? req.user : { ...req.user, tenantId: req.tenantId },
       payload: validation.request,
     });
   } catch (error) {

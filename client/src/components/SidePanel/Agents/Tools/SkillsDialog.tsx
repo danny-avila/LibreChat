@@ -19,7 +19,6 @@ import type { AgentItem } from './items/types';
 import type { AgentForm } from '~/common';
 import { useLocalize, useHasAccess, useAuthContext, useToolFavorites } from '~/hooks';
 import { CreateSkillDialog } from '~/components/Skills/dialogs';
-import { skillsEnabledTransition } from './items/mutations';
 import { useSkillsInfiniteQuery } from '~/data-provider';
 import MarketplaceCatalog from './MarketplaceCatalog';
 import { CategoryIcon } from '~/components/Prompts';
@@ -140,15 +139,14 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
     [catalog, search, category, view, favoriteKeys],
   );
 
+  /** Only the allowlist changes here: the section's mode control owns
+   *  `skills_enabled` and `skills_scope`, and the picker is reachable only from
+   *  `selected` mode. */
   const applySkillsSelection = useCallback(
     (next: string[]) => {
       setValue('skills', next, { shouldDirty: true });
-      const flag = skillsEnabledTransition(next, getValues('skills_enabled'));
-      if (flag !== undefined) {
-        setValue('skills_enabled', flag, { shouldDirty: true });
-      }
     },
-    [getValues, setValue],
+    [setValue],
   );
 
   const handleSkillCreated = useCallback(

@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import {
   Constants,
   MCPOptionsSchema,
@@ -401,6 +402,98 @@ export function getMissingRuntimeBodyPlaceholderFields(
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
   return getMCPRequestScope(config).requestScoped;
+}
+
+/**
+ * Whether a resolved server config may be reached from the chat MCP picker.
+ *
+ * Mirrors `selectableServers` in the client's `useMCPServerManager`, which is
+ * the list the dropdown offers: `chatMenu: false` is the operator hiding a
+ * server from chat, and `consumeOnly` marks a server the user reaches only
+ * through an agent that references it, never on its own.
+ *
+ * An unresolved config is selectable. A name the registry cannot resolve is
+ * either request-tier (declared on the request body and never registered) or
+ * genuinely unknown, and both already have their own handling downstream —
+ * failing closed here would silently drop request-scoped servers instead.
+ */
+export function isChatSelectableMCPServer(
+  config?: Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | null,
+): boolean {
+  if (config == null) {
+    return true;
+  }
+  return config.chatMenu !== false && config.consumeOnly !== true;
+}
+
+/**
+ * Narrows a chat picker selection to the servers that picker is allowed to
+ * offer, so a stale client, a replayed body, or a hand-written request cannot
+ * reach a server the menu hides.
+ *
+ * Pass only the picker's own selection. Servers a model spec pins
+ * (`modelSpec.mcpServers`) are the operator's choice and stay attached even
+ * when hidden, so they must be added after this call, not through it.
+ *
+ * The accessible set comes from the registry — the same resolution that feeds
+ * the client's catalog, with its own tier precedence already applied — rather
+ * than being re-derived from the request's config overlay. A user-tier or
+ * process-backed server outranks a config entry of the same name, and this must
+ * agree with whatever the picker was actually offered.
+ *
+ * Names are deduplicated before the lookup, since the selection is
+ * request-supplied, and are matched through the same normalized-name aliasing
+ * that tool loading uses, built over the whole accessible set so an exact name
+ * always wins over another server's normalized form. A name the registry does
+ * not know is request-tier — declared on the body, never registered — and is
+ * kept, as is every name if the lookup fails: this narrows an
+ * already-authenticated selection and is not the authorization boundary.
+ *
+ * Returns the names as they were sent, so callers keep addressing servers the
+ * way the rest of the request does.
+ */
+export async function filterChatSelectableMCPServers(
+  selectedServers: string[] | null | undefined,
+  {
+    userId,
+    role,
+    getAccessibleMCPServers,
+  }: {
+    userId: string;
+    role?: string;
+    getAccessibleMCPServers?: (
+      userId: string,
+      role?: string,
+    ) => Promise<Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>>;
+  },
+): Promise<string[]> {
+  if (!Array.isArray(selectedServers) || selectedServers.length === 0) {
+    return [];
+  }
+  const uniqueServers = [...new Set(selectedServers)];
+  if (getAccessibleMCPServers == null) {
+    return uniqueServers;
+  }
+
+  let accessible: Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>;
+  try {
+    accessible = await getAccessibleMCPServers(userId, role);
+  } catch (error) {
+    logger.warn('[MCP] Could not resolve accessible servers; keeping the chat selection', error);
+    return uniqueServers;
+  }
+
+  const accessibleNames = Object.keys(accessible ?? {});
+  if (accessibleNames.length === 0) {
+    return uniqueServers;
+  }
+  const aliases = buildServerNameAliases(accessibleNames);
+
+  return uniqueServers.filter((serverName) => {
+    const resolved =
+      accessible[serverName] ?? accessible[aliases.get(normalizeServerName(serverName)) ?? ''];
+    return isChatSelectableMCPServer(resolved);
+  });
 }
 
 /**

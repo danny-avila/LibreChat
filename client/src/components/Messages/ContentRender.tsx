@@ -1,5 +1,7 @@
 import { useCallback, useMemo, memo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { Constants } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
 import {
@@ -10,6 +12,7 @@ import {
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import ToolCallLimitNotice from '~/components/Chat/Messages/Content/ToolCallLimitNotice';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
@@ -18,6 +21,7 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { showThinkingAtom } from '~/store/showThinking';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import store from '~/store';
 
@@ -104,6 +108,7 @@ const ContentRender = memo(function ContentRender({
     chatContext,
   });
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const showThinking = useAtomValue(showThinkingAtom);
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
   const isLast = useMemo(
@@ -217,9 +222,19 @@ const ContentRender = memo(function ContentRender({
         isSubmitting={isSubmitting}
         isCreatedByUser={msg.isCreatedByUser}
         createdAt={msg.createdAt ?? msg.clientTimestamp}
+        showThinking={showThinking}
         conversationId={conversation?.conversationId}
         content={msg.content as Array<TMessageContentParts | undefined>}
       />
+      {/** A turn that ran out of agent steps is incomplete, not broken. Rendered
+       *   here rather than inside `ContentParts` because it is a message-level
+       *   outcome, and `ContentParts` also serves surfaces (subagent panels,
+       *   search) that have no message row behind them. */}
+      {msg.unfinished === true &&
+        !isSubmitting &&
+        msg.finish_reason === Constants.TOOL_CALL_LIMIT_FINISH_REASON && (
+          <ToolCallLimitNotice message={msg} />
+        )}
     </MessageRow>
   );
 }, areContentRenderPropsEqual);

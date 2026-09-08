@@ -14,6 +14,7 @@ jest.mock('~/files/validation', () => ({
 jest.mock('./utils', () => ({
   getFileStream: jest.fn(),
   getConfiguredFileSizeLimit: jest.fn(),
+  isAttachmentObjectNotFoundError: jest.fn(() => false),
 }));
 
 import { validatePdf, validateBedrockDocument } from '~/files/validation';

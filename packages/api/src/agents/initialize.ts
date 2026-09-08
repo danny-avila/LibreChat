@@ -92,6 +92,7 @@ import {
 } from './errors';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
+import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
@@ -137,6 +138,7 @@ function assertResolvedSkillContentAllowed(
   const selectedFields = pii?.fields == null ? null : new Set<string>(pii.fields);
   const selected = (field: string): boolean => selectedFields == null || selectedFields.has(field);
   const traversalErrors: ContentTraversalLimitError[] = [];
+  let firstFinding: ReturnType<typeof inspectionSession.inspect> = null;
   for (const skill of skills) {
     const projected: SkillContentInput = {
       ...(selected('name') && { name: skill.name }),
@@ -168,8 +170,14 @@ function assertResolvedSkillContentAllowed(
     }
     const finding = inspectionSession.inspect(fragments);
     if (finding != null) {
-      throw new ContentFilterError(finding);
+      firstFinding ??= finding;
+      if (!inspectionSession.hasAuditRules) {
+        throw new ContentFilterError(finding);
+      }
     }
+  }
+  if (firstFinding != null) {
+    throw new ContentFilterError(firstFinding);
   }
   const protectedTraversal = traversalErrors.find((error) =>
     isContentTraversalProtected({ error, filters }),
@@ -216,6 +224,47 @@ export function readResolvedConversationFiles(
     return undefined;
   }
   return resolved.files ?? [];
+}
+
+export interface ResolveResendToolResourcesParams {
+  /** Tool names as configured on the agent. */
+  tools?: string[] | null;
+  /** `execute_code` capability AND the caller's `RUN_CODE` grant. */
+  codeEnvAvailable: boolean;
+  /**
+   * `file_search` capability AND the caller's `FILE_SEARCH` grant. `undefined`
+   * where the caller resolved neither, which leaves priming as it was.
+   */
+  fileSearchAvailable?: boolean;
+}
+
+/**
+ * Tool resources whose prior-turn files this run re-hydrates on resend.
+ *
+ * Both role-gated tools are filtered here rather than after hydration, because
+ * priming is not free: the files are read, their usage counters are bumped, and
+ * they are primed into `tool_resources` for a tool the loader is about to drop.
+ * Each flag is the deployment capability AND the role grant, so this reaches the
+ * same verdict the loader will.
+ */
+export function resolveResendToolResources({
+  tools,
+  codeEnvAvailable,
+  fileSearchAvailable,
+}: ResolveResendToolResourcesParams): Set<EToolResources> {
+  const toolResourceSet = new Set<EToolResources>();
+  for (const tool of tools ?? []) {
+    if (tool === Tools.execute_code && !codeEnvAvailable) {
+      continue;
+    }
+    if (tool === Tools.file_search && fileSearchAvailable === false) {
+      continue;
+    }
+    if (EToolResources[tool as keyof typeof EToolResources]) {
+      toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
+    }
+  }
+  return toolResourceSet;
 }
 
 function getMaxCatalogSkills(runtime: AgentExecutionContext): number | undefined {
@@ -588,6 +637,14 @@ export interface InitializeAgentParams {
   skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether `file_search` is available to this caller — the capability AND the
+   * `FILE_SEARCH` role grant. Read only when re-hydrating a conversation's
+   * prior-turn files: `false` skips priming resources for a tool the loader will
+   * drop anyway. Absent leaves priming unconditional, so a caller that has not
+   * resolved the grant keeps its current behavior.
+   */
+  fileSearchAvailable?: boolean;
   /**
    * Whether the `run_in_background` capability is enabled for this run. When
    * true, tools the agent opted in via `tool_options[name].run_in_background`
@@ -989,6 +1046,8 @@ export async function initializeAgent(
     agentId: agent.id,
     conversationId,
   });
+  const attachedWorkspaceTools =
+    effectiveCodeEnvAvailable && codeExecutionContext.environmentType === 'attached';
   const requestFileIds = [
     ...new Set(
       requestFiles
@@ -1005,12 +1064,14 @@ export async function initializeAgent(
    * on handoff agents would fail to find previously attached files.
    */
   if (conversationId != null && resendFiles) {
-    const toolResourceSet = new Set<EToolResources>();
-    for (const tool of agent.tools ?? []) {
-      if (EToolResources[tool as keyof typeof EToolResources]) {
-        toolResourceSet.add(EToolResources[tool as keyof typeof EToolResources]);
-      }
-    }
+    /** Both flags already carry their role grant, so a denied role skips the
+     *  thread walk and the hydration below rather than paying for resources the
+     *  tool loader is about to drop. */
+    const toolResourceSet = resolveResendToolResources({
+      tools: agent.tools,
+      codeEnvAvailable: effectiveCodeEnvAvailable,
+      fileSearchAvailable: params.fileSearchAvailable,
+    });
 
     const getThreadMessages = db.getMessages;
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
@@ -1142,6 +1203,17 @@ export async function initializeAgent(
 
     currentFiles = filterFilesByEndpointRuntimeConfig(appConfig, {
       files: currentFiles,
+      endpoint: agent.endpoint ?? '',
+      endpointType,
+      skipTotalSizeLimit: true,
+      preserveTextSources: true,
+    });
+    const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+    assertAgentAttachmentLimits({
+      attachments: currentFiles.filter(
+        (file) => requestUsageFileIds.has(file.file_id) && isModelBoundAttachmentFile(file),
+      ),
+      fileConfig: appConfig?.fileConfig,
       endpoint: agent.endpoint ?? '',
       endpointType,
     });
@@ -1468,6 +1540,7 @@ export async function initializeAgent(
       includeSkillFileInstructions: false,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
+      workspaceTools: attachedWorkspaceTools,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.execute_code, codeExecResult.toolNames);
@@ -1516,6 +1589,7 @@ export async function initializeAgent(
       includeBash: false,
       includeSkillFileInstructions: true,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
+      workspaceTools: attachedWorkspaceTools,
     });
     toolDefinitions = skillReadResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.skills, skillReadResult.toolNames);
@@ -1526,6 +1600,7 @@ export async function initializeAgent(
       toolRegistry,
       toolDefinitions,
       includeSkillFileInstructions: skillAuthoringAvailable,
+      workspaceTools: attachedWorkspaceTools,
     });
     toolDefinitions = fileAuthoringResult.toolDefinitions;
     /** File authoring is owned by whichever capability switched it on —
@@ -1676,6 +1751,7 @@ export async function initializeAgent(
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
+      workspaceTools: attachedWorkspaceTools,
       userId: user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,

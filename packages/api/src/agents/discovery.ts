@@ -105,6 +105,13 @@ export interface DiscoverConnectedAgentsParams {
    * code-execution tooling even though their parent had it.
    */
   codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
+  /**
+   * Sibling of `codeEnvAvailable` for the other role-gated tool — the
+   * `file_search` capability AND the caller's `FILE_SEARCH` grant. Forwarded
+   * verbatim so a handoff agent re-hydrates prior-turn search files on exactly
+   * the terms its parent did.
+   */
+  fileSearchAvailable?: InitializeAgentParams['fileSearchAvailable'];
   /** Sibling of `codeEnvAvailable` — the `stateful_code_sessions` capability flag, forwarded to every handoff `initializeAgent`. */
   statefulSessionsAvailable?: InitializeAgentParams['statefulSessionsAvailable'];
   /** Deployment policy for stateful workspace scopes, forwarded unchanged to every referenced agent. */
@@ -243,6 +250,7 @@ async function initializeReferencedAgent(
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
       codeEnvAvailable: params.codeEnvAvailable,
+      fileSearchAvailable: params.fileSearchAvailable,
       backgroundToolsAvailable: params.backgroundToolsAvailable,
       toolIntentsAvailable: params.toolIntentsAvailable,
       statefulSessionsAvailable: params.statefulSessionsAvailable,

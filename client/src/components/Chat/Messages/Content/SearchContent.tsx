@@ -18,6 +18,14 @@ import { AgentUpdate } from './Parts';
 import store from '~/store';
 import Part from './Part';
 
+/**
+ * Whether this message falls through to the unconditional `MarkdownLite`
+ * branch below, which renders markdown for either author regardless of
+ * `enableUserMsgMarkdown`. Callers that copy the message need the same answer.
+ */
+export const rendersMarkdownLite = (message: TMessage): boolean =>
+  !Array.isArray(message.content) || message.content.length === 0;
+
 const SearchContent = ({
   message,
   attachments,

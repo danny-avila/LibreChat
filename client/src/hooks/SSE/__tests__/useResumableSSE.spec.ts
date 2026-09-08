@@ -5,6 +5,7 @@ import {
   LocalStorageKeys,
   QueryKeys,
   StepEvents,
+  StepTypes,
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
@@ -277,6 +278,9 @@ const CONV_ID = 'conv-abc-123';
 
 type PartialSubmission = {
   conversation: { conversationId?: string };
+  isRegenerate?: boolean;
+  editedContent?: Record<string, unknown>;
+  editPrefixLength?: number;
   clientRequestId?: string;
   recoverySteerId?: string;
   expectedPredecessorCreatedAt?: number;
@@ -2391,6 +2395,265 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('renders a steer applied before the first run step on the live placeholder', async () => {
+    const requestFrame = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    const userMessage = {
+      messageId: 'user-1',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const submission = buildSubmission({ userMessage });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+
+    /** `created` carries only the user message; the pane renders the response
+     *  under `${userMessageId}_` until the first run step renames it. */
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({ created: true, message: { ...userMessage } }),
+      });
+    });
+    chatHelpers.getMessages.mockReturnValue([
+      userMessage,
+      { messageId: 'user-1_', conversationId: CONV_ID, isCreatedByUser: false, content: [] },
+    ] as TMessage[]);
+    chatHelpers.setMessages.mockClear();
+
+    /** An interrupt before the model has said a word: the steer is injected at
+     *  content index 0, stamped with the server's pre-allocated response id —
+     *  which no local row carries yet. */
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'server-1',
+            clientSteerId: 'client-1',
+            conversationId: CONV_ID,
+            responseMessageId: 'a1b2c3d4-preallocated',
+            index: 0,
+            part: {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'change of plan',
+              steerId: 'server-1',
+              clientSteerId: 'client-1',
+            },
+          },
+        }),
+      });
+    });
+
+    const committed = chatHelpers.setMessages.mock.calls
+      .map(([messages]) => messages as TMessage[])
+      .find((messages) => messages?.some((m) => m.messageId === 'user-1_'));
+    const placeholder = committed?.find((m) => m.messageId === 'user-1_');
+    expect(placeholder?.content?.[0]).toEqual(
+      expect.objectContaining({ type: ContentTypes.STEER, steerId: 'server-1' }),
+    );
+    /** Landed on the first pass — no frame retries burned waiting for a rename
+     *  that only the first run step can perform. */
+    expect(requestFrame).not.toHaveBeenCalled();
+    requestFrame.mockRestore();
+    unmount();
+  });
+
+  it('hands the step handler a submission whose placeholder carries the early steer', async () => {
+    /** A regenerate seeds the renamed response from `submission.initialResponse`,
+     *  not from the store tail, so the steer landed on the placeholder must also
+     *  reach the submission the first run step is handed. */
+    const requestFrame = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    const userMessage = {
+      messageId: 'user-1',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const submission = buildSubmission({
+      userMessage,
+      isRegenerate: true,
+      initialResponse: {
+        messageId: 'user-1_',
+        parentMessageId: 'user-1',
+        conversationId: CONV_ID,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({ created: true, message: { ...userMessage } }),
+      });
+    });
+    chatHelpers.getMessages.mockReturnValue([
+      userMessage,
+      { messageId: 'user-1_', conversationId: CONV_ID, isCreatedByUser: false, content: [] },
+    ] as TMessage[]);
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'server-1',
+            clientSteerId: 'client-1',
+            conversationId: CONV_ID,
+            responseMessageId: 'a1b2c3d4-preallocated',
+            index: 0,
+            part: {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'change of plan',
+              steerId: 'server-1',
+              clientSteerId: 'client-1',
+            },
+          },
+        }),
+      });
+    });
+
+    mockStepHandler.mockClear();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            runId: 'a1b2c3d4-preallocated',
+            index: 1,
+            type: 'message_creation',
+            stepDetails: { type: 'message_creation', message_creation: { message_id: 'm-1' } },
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalled();
+    const calls = mockStepHandler.mock.calls;
+    const handed = calls[calls.length - 1][1] as TSubmission;
+    expect(handed.initialResponse?.messageId).toBe('user-1_');
+    expect(handed.initialResponse?.content?.[0]).toEqual(
+      expect.objectContaining({ type: ContentTypes.STEER, steerId: 'server-1' }),
+    );
+    requestFrame.mockRestore();
+    unmount();
+  });
+
+  it('shifts an early steer past the retained prefix of an edited resubmission', async () => {
+    /** The server indexes only the NEW content of an edited resubmission and
+     *  the steer claims that same server-local space, so it lands after the
+     *  kept prefix — and the seed handed to the first run step carries it. */
+    const requestFrame = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    const userMessage = {
+      messageId: 'user-1',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const keptPrefix = [
+      { type: ContentTypes.TEXT, text: 'kept one' },
+      { type: ContentTypes.TEXT, text: 'kept two' },
+    ];
+    const submission = buildSubmission({
+      userMessage,
+      editedContent: { index: 1, type: ContentTypes.TEXT, text: 'kept two' },
+      editPrefixLength: keptPrefix.length,
+      initialResponse: {
+        messageId: 'user-1_',
+        parentMessageId: 'user-1',
+        conversationId: CONV_ID,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+        content: keptPrefix,
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+    const sse = getLastSSE();
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({ created: true, message: { ...userMessage } }),
+      });
+    });
+    chatHelpers.getMessages.mockReturnValue([
+      userMessage,
+      {
+        messageId: 'user-1_',
+        conversationId: CONV_ID,
+        isCreatedByUser: false,
+        content: keptPrefix,
+      },
+    ] as TMessage[]);
+    chatHelpers.setMessages.mockClear();
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          event: 'on_steer_applied',
+          data: {
+            steerId: 'server-1',
+            clientSteerId: 'client-1',
+            conversationId: CONV_ID,
+            responseMessageId: 'a1b2c3d4-preallocated',
+            index: 0,
+            part: {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'change of plan',
+              steerId: 'server-1',
+              clientSteerId: 'client-1',
+            },
+          },
+        }),
+      });
+    });
+
+    const committed = chatHelpers.setMessages.mock.calls
+      .map(([messages]) => messages as TMessage[])
+      .find((messages) => messages?.some((m) => m.messageId === 'user-1_'));
+    const placeholder = committed?.find((m) => m.messageId === 'user-1_');
+    expect(placeholder?.content?.[0]).toEqual(expect.objectContaining({ text: 'kept one' }));
+    expect(placeholder?.content?.[1]).toEqual(expect.objectContaining({ text: 'kept two' }));
+    expect(placeholder?.content?.[2]).toEqual(
+      expect.objectContaining({ type: ContentTypes.STEER, steerId: 'server-1' }),
+    );
+
+    mockStepHandler.mockClear();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            runId: 'a1b2c3d4-preallocated',
+            index: 1,
+            type: 'message_creation',
+            stepDetails: { type: 'message_creation', message_creation: { message_id: 'm-1' } },
+          },
+        }),
+      });
+    });
+    const calls = mockStepHandler.mock.calls;
+    const handed = calls[calls.length - 1][1] as TSubmission;
+    expect(handed.initialResponse?.content?.[2]).toEqual(
+      expect.objectContaining({ type: ContentTypes.STEER, steerId: 'server-1' }),
+    );
+    requestFrame.mockRestore();
+    unmount();
+  });
+
   it('settles every applied steer immediately and cancels all render retries at terminal', async () => {
     let nextFrameId = 0;
     const requestFrame = jest
@@ -3254,6 +3517,97 @@ describe('useResumableSSE', () => {
           messageId: 'follow-up-response',
           parentMessageId: 'follow-up-user',
         }),
+      }),
+    );
+
+    unmount();
+  });
+
+  it('hydrates a projected pending OAuth prompt once against the resumed response', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      index: 0,
+      type: StepTypes.TOOL_CALLS,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+        },
+      },
+    };
+
+    await act(async () => {
+      getLastSSE()._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+            responseMessageId: 'resumed-response',
+            userMessage: {
+              messageId: 'resumed-user',
+              conversationId: CONV_ID,
+              text: 'Use Google Workspace',
+            },
+            pendingOAuthPrompts: [
+              {
+                stepId: 'step-oauth',
+                runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+                index: 0,
+                toolCallId: 'call-oauth',
+                toolName: 'oauth_mcp_Google-Workspace',
+                authURL: 'https://auth.example.com/oauth',
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(2);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      {
+        event: StepEvents.ON_RUN_STEP,
+        data: expect.objectContaining({
+          id: 'step-oauth',
+          runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+          index: 0,
+        }),
+      },
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({ messageId: 'resumed-response' }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      {
+        event: StepEvents.ON_RUN_STEP_DELTA,
+        data: expect.objectContaining({
+          id: 'step-oauth',
+          delta: expect.objectContaining({ auth: 'https://auth.example.com/oauth' }),
+        }),
+      },
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({ messageId: 'resumed-response' }),
       }),
     );
 

@@ -155,9 +155,13 @@ const SteerPart = memo(function SteerPart({
             </div>
           </CollapsibleText>
         </div>
-        <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
+        {/* The receipt trails the timestamp so the always-visible checks sit
+         *  flush under the bubble's bottom-right corner. Leading them would
+         *  park them wherever the hover-revealed time happens to end, and that
+         *  width changes as the relative string ticks. */}
+        <div className="mt-1 flex min-h-8 items-center justify-end gap-2 text-text-secondary">
+          <MessageTimestamp value={timestamp} className="ml-0" />
           <SteerReceipt state="applied" live={isSubmitting} animateIn={animateIn} />
-          <MessageTimestamp value={timestamp} />
         </div>
       </div>
       {otherFiles.length > 0 && (

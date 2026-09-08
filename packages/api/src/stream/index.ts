@@ -4,6 +4,7 @@ export {
   type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
   type TerminalJobClaim,
+  GENERATION_RECOVERY_FAILED_ERROR,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from './GenerationJobManager';
 
@@ -25,6 +26,7 @@ export type {
 // Canonical "is this approval live?" predicate — one definition shared by the
 // stores, the approval lifecycle, and the status route / message middleware.
 export {
+  GenerationPublicationFencedError,
   JobPredecessorMismatchError,
   isPendingActionExpired,
   isPendingActionStale,

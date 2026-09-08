@@ -449,6 +449,28 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each([0, 5, 1000])('accepts a personal worker ceiling of %i', (maxPerUser) => {
+    const principalWorkers = { enabled: true, maxPerUser };
+    const result = agentsEndpointSchema.parse({
+      statefulCodeSessions: { allowedEnvironments: ['user'], principalWorkers },
+    });
+    expect(result.statefulCodeSessions?.principalWorkers).toEqual(principalWorkers);
+  });
+
+  it.each([-1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid personal worker ceiling %s',
+    (maxPerUser) => {
+      expect(
+        agentsEndpointSchema.safeParse({
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            principalWorkers: { maxPerUser },
+          },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it('accepts uniquely named execution environments with exactly one default', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: {
@@ -576,6 +598,75 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a principal-worker control plane without a singleton worker', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-code-control-plane',
+            name: 'Personal Code',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            pairing: {
+              allowPrincipalWorkers: true,
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a pairing-only control plane as the execution default', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-code-control-plane',
+            name: 'Personal Code',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              allowPrincipalWorkers: true,
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects conflicting direct and pairing worker routes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            workerId: 'direct-worker',
+            pairing: {
+              workerId: 'paired-worker',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects pairing metadata on a principal-owned environment', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: {
@@ -591,6 +682,26 @@ describe('agentsEndpointSchema', () => {
               workerId: 'vm-1',
               tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
             },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing configuration without a singleton or principal workers', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'invalid-control-plane',
+            name: 'Invalid',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: { tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN' },
           },
         ],
       },
@@ -1674,6 +1785,42 @@ describe('configSchema langfuse', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('accepts trace identity and metadata allowlists', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        trace: {
+          userIdField: 'email',
+          userMetadataFields: ['email', 'username', 'role', 'provider'],
+          conversationMetadataFields: ['conversationId', 'endpoint', 'model', 'spec'],
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects trace fields outside the allowlists', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { userIdField: 'password' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { userMetadataFields: ['totpSecret'] } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { conversationMetadataFields: ['text'] } },
+      }).success,
+    ).toBe(false);
   });
 
   it('rejects non-string Langfuse header values', () => {

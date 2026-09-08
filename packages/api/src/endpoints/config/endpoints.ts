@@ -1,5 +1,6 @@
 import {
   AuthType,
+  CODE_APPROVAL_MODES,
   EModelEndpoint,
   isAgentsEndpoint,
   orderEndpointsConfig,
@@ -72,17 +73,38 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
       const { disableBuilder, capabilities, allowedProviders, statefulCodeSessions, maxSubagents } =
         appConfig.endpoints[EModelEndpoint.agents];
+      const toolApproval = appConfig.endpoints[EModelEndpoint.agents].toolApproval;
+      /** Only advertise Accept edits when the endpoint fallback cannot force every
+       * unmatched tool back to Ask/Deny. Explicit rules and hooks remain free to
+       * tighten individual actions after the user selects the broader mode. */
+      let approvalModes = [...CODE_APPROVAL_MODES];
+      if (toolApproval?.enabled === false) {
+        approvalModes = [];
+      } else if (toolApproval?.enabled === true && toolApproval.mode !== 'bypass') {
+        approvalModes = ['ask'];
+      }
       const clientStatefulCodeSessions = statefulCodeSessions
         ? {
             allowedEnvironments: statefulCodeSessions.allowedEnvironments,
-            environments: statefulCodeSessions.environments?.map(
-              ({ id, name, type, default: isDefault }) => ({
+            approvalsEnabled: toolApproval?.enabled !== false,
+            approvalModes,
+            environments: statefulCodeSessions.environments
+              ?.filter(
+                (environment) =>
+                  !(
+                    environment.pairing?.allowPrincipalWorkers === true &&
+                    environment.pairing.workerId == null &&
+                    environment.workerId == null
+                  ),
+              )
+              .map(({ id, name, type, default: isDefault, configSchema, settings }) => ({
                 id,
                 name,
                 type,
                 default: isDefault,
-              }),
-            ),
+                configSchema,
+                settings,
+              })),
           }
         : undefined;
       mergedConfig[EModelEndpoint.agents] = {

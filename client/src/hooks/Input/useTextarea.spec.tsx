@@ -20,6 +20,10 @@ const mockShowToast = jest.fn();
 const mockOpenModal = jest.fn();
 const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
+const mockSetPendingComposerText = jest.fn();
+const mockSetValue = jest.fn();
+let mockActivePrompt: string | undefined;
+let mockPendingComposerText: string | undefined;
 
 let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
@@ -43,7 +47,11 @@ jest.mock('~/utils', () => ({
 
 jest.mock('recoil', () => ({
   useRecoilValue: jest.fn(() => true),
-  useRecoilState: jest.fn(() => [undefined, mockSetActivePrompt]),
+  useRecoilState: jest.fn((atom: { key?: string }) =>
+    atom?.key === 'pendingComposerText'
+      ? [mockPendingComposerText, mockSetPendingComposerText]
+      : [mockActivePrompt, mockSetActivePrompt],
+  ),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -57,6 +65,7 @@ jest.mock('~/store', () => ({
     saveDrafts: { key: 'saveDrafts' },
     pasteLongTextAsFile: { key: 'pasteLongTextAsFile' },
     activePromptByIndex: jest.fn(() => ({ key: 'activePrompt' })),
+    pendingComposerTextByConvoId: jest.fn(() => ({ key: 'pendingComposerText' })),
   },
 }));
 
@@ -111,6 +120,7 @@ jest.mock('~/Providers/ChatContext', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
+  useChatFormContext: jest.fn(() => ({ setValue: mockSetValue })),
   useUploadModalContext: jest.fn(() => ({ openModal: mockOpenModal })),
 }));
 
@@ -163,15 +173,72 @@ describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockActivePrompt = undefined;
+    mockPendingComposerText = undefined;
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
+    mockSetValue.mockReset();
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
       file: new File([text], 'pasted-text.txt', { type: 'text/plain' }),
       toolResource: EToolResources.context,
     }));
+  });
+
+  it('inserts a preset prompt when the textarea refuses focus', () => {
+    mockActivePrompt = 'selected prompt';
+    const textArea = document.createElement('textarea');
+    textArea.value = 'draft text';
+    textArea.setSelectionRange(6, 10);
+    const focus = jest.spyOn(textArea, 'focus').mockImplementation();
+    mockSetValue.mockImplementation((_name: string, value: string) => {
+      textArea.value = value;
+    });
+
+    renderHook(() =>
+      useTextarea({
+        textAreaRef: { current: textArea },
+        submitButtonRef: { current: null },
+        setIsScrollable: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'draft selected prompt', {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(textArea);
+    expect(textArea.selectionStart).toBe(21);
+    expect(textArea.selectionEnd).toBe(21);
+    expect(mockSetActivePrompt).toHaveBeenCalledWith(undefined);
+  });
+
+  it('dispatches an input event when handing text to the composer', () => {
+    mockPendingComposerText = 'continued text';
+    const textArea = document.createElement('textarea');
+    const inputListener = jest.fn();
+    textArea.addEventListener('input', inputListener);
+    mockSetValue.mockImplementation((_name: string, value: string) => {
+      textArea.value = value;
+    });
+
+    renderHook(() =>
+      useTextarea({
+        textAreaRef: { current: textArea },
+        submitButtonRef: { current: null },
+        setIsScrollable: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'continued text', {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(inputListener).toHaveBeenCalledTimes(1);
+    expect(mockSetPendingComposerText).toHaveBeenCalledWith(undefined);
   });
 
   it('keeps long pasted text inline while the composer is the answer box', () => {
@@ -947,5 +1014,42 @@ describe('useTextarea long-paste fallback', () => {
     await act(async () => {
       finish(false);
     });
+  });
+});
+
+describe('useTextarea composer handoff', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSetValue.mockReset();
+    mockActivePrompt = undefined;
+    mockPendingComposerText = undefined;
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
+  });
+
+  /** A surface the reader is leaving (a continued subagent thread) hands its
+   *  words to the destination conversation. It travels in memory, so it is
+   *  delivered whatever the Save Drafts preference is. */
+  it('drains text handed to this conversation into the composer exactly once', () => {
+    mockPendingComposerText = 'Take this further.';
+    mockSetValue.mockImplementation((_name: string, value: string) => {
+      expect(value).toBe('Take this further.');
+    });
+    const { textArea } = renderTextareaHook();
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'Take this further.', {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+    expect(mockSetPendingComposerText).toHaveBeenCalledWith(undefined);
+    expect(getDraft('convo-1')).toBe('');
+  });
+
+  it('leaves the composer alone when nothing was handed to this conversation', () => {
+    renderTextareaHook();
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockSetPendingComposerText).not.toHaveBeenCalled();
   });
 });

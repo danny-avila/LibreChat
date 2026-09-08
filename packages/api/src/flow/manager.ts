@@ -5,6 +5,63 @@ import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 import { registerShutdownTask } from '../app/shutdown';
 import { math } from '~/utils/math';
 
+type GuardedMutationResult = 'updated' | 'stale' | 'missing';
+
+interface KeyvRedisStore {
+  constructor: { name: string };
+  namespace?: string;
+  createKeyPrefix(key: string, namespace?: string): string;
+  client?: {
+    eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
+  };
+}
+
+const GUARDED_DELETE_FLOW = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local data = cjson.decode(raw)
+local flow = data.value
+if flow.createdAt ~= tonumber(ARGV[1]) then return -1 end
+local state = flow.metadata and flow.metadata.state or ''
+if state ~= ARGV[2] then return -1 end
+redis.call('DEL', KEYS[1])
+return 1
+`;
+
+const GUARDED_FAIL_FLOW = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local data = cjson.decode(raw)
+local flow = data.value
+if flow.createdAt ~= tonumber(ARGV[1]) then return -1 end
+local state = flow.metadata and flow.metadata.state or ''
+if state ~= ARGV[2] then return -1 end
+if flow.status == 'COMPLETED' then return -1 end
+flow.status = 'FAILED'
+flow.error = ARGV[3]
+flow.failedAt = tonumber(ARGV[4])
+data.expires = tonumber(ARGV[4]) + tonumber(ARGV[5])
+redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
+return 1
+`;
+
+const GUARDED_COMPLETE_FLOW = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local data = cjson.decode(raw)
+local flow = data.value
+if flow.createdAt ~= tonumber(ARGV[1]) then return -1 end
+local state = flow.metadata and flow.metadata.state or ''
+if state ~= ARGV[2] then return -1 end
+if flow.status ~= 'PENDING' then return -1 end
+flow.status = 'COMPLETED'
+flow.result = cjson.decode(ARGV[3])
+flow.completedAt = tonumber(ARGV[4])
+data.expires = tonumber(ARGV[4]) + tonumber(ARGV[5])
+redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
+return 1
+`;
+
 /**
  * Lifetime of a PENDING OAuth flow: how long the auth button stays valid and an
  * in-flight flow can be reused before it is replaced. Mirrors
@@ -31,12 +88,19 @@ export class FlowStateManager<T = unknown> {
   private monitorTimeout: number;
   private retainedFailureTypes: Set<string>;
   private intervals: Set<NodeJS.Timeout>;
+  private redisScriptExecutor?: FlowManagerOptions['redisScriptExecutor'];
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
       options = { ttl: 60000 * 3 };
     }
-    const { ci = false, ttl, monitorTimeout = ttl, retainedFailureTypes = [] } = options;
+    const {
+      ci = false,
+      ttl,
+      monitorTimeout = ttl,
+      retainedFailureTypes = [],
+      redisScriptExecutor,
+    } = options;
 
     if (!ci && !(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
@@ -45,6 +109,7 @@ export class FlowStateManager<T = unknown> {
     this.ttl = ttl;
     this.monitorTimeout = monitorTimeout;
     this.retainedFailureTypes = new Set(retainedFailureTypes);
+    this.redisScriptExecutor = redisScriptExecutor;
     this.keyv = store;
     this.intervals = new Set();
 
@@ -72,6 +137,224 @@ export class FlowStateManager<T = unknown> {
    */
   private getFlowKey(flowId: string, type: string): string {
     return `${type}:${flowId}`;
+  }
+
+  private getRedisKey(flowKey: string): string | null {
+    const store = this.keyv.store as KeyvRedisStore;
+    if (store?.constructor?.name !== 'KeyvRedis' || typeof store.createKeyPrefix !== 'function') {
+      return null;
+    }
+    const key = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
+    return store.createKeyPrefix(key, store.namespace);
+  }
+
+  private async evalRedisScript(script: string, key: string, args: string[]): Promise<unknown> {
+    if (this.redisScriptExecutor) {
+      return this.redisScriptExecutor(script, { keys: [key], arguments: args });
+    }
+    const store = this.keyv.store as KeyvRedisStore;
+    if (typeof store.client?.eval !== 'function') {
+      throw new Error('KeyvRedis store does not expose an atomic eval capability');
+    }
+    return store.client.eval(script, { keys: [key], arguments: args });
+  }
+
+  private static guardedResult(result: unknown): GuardedMutationResult {
+    if (result === 1) {
+      return 'updated';
+    }
+    return result === 0 ? 'missing' : 'stale';
+  }
+
+  private static isCurrentAttempt(
+    flowState: FlowState | null | undefined,
+    expectedCreatedAt: number,
+    expectedState: string,
+  ): boolean {
+    return (
+      flowState?.createdAt === expectedCreatedAt &&
+      (typeof flowState.metadata?.state === 'string' ? flowState.metadata.state : '') ===
+        expectedState
+    );
+  }
+
+  private getInMemoryEntry(flowKey: string): {
+    store: Map<string, string>;
+    key: string;
+    envelope: { value: FlowState<T>; expires?: number };
+  } | null {
+    if (!(this.keyv instanceof Keyv) || !(this.keyv.store instanceof Map)) {
+      return null;
+    }
+    const key = this.keyv.namespace ? `${this.keyv.namespace}:${flowKey}` : flowKey;
+    const raw = this.keyv.store.get(key);
+    if (typeof raw !== 'string') {
+      return null;
+    }
+    return {
+      store: this.keyv.store as Map<string, string>,
+      key,
+      envelope: JSON.parse(raw) as { value: FlowState<T>; expires?: number },
+    };
+  }
+
+  /** Deletes a flow only while it still represents the caller's observed attempt. */
+  async deleteFlowIfCurrent(
+    flowId: string,
+    type: string,
+    expectedCreatedAt: number,
+    expectedState = '',
+  ): Promise<GuardedMutationResult> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      const result = await this.evalRedisScript(GUARDED_DELETE_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+      ]);
+      return FlowStateManager.guardedResult(result);
+    }
+
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      if (
+        !FlowStateManager.isCurrentAttempt(
+          memoryEntry.envelope.value,
+          expectedCreatedAt,
+          expectedState,
+        )
+      ) {
+        return 'stale';
+      }
+      return memoryEntry.store.delete(memoryEntry.key) ? 'updated' : 'missing';
+    }
+
+    const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (!current) {
+      return 'missing';
+    }
+    if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+      return 'stale';
+    }
+    return (await this.keyv.delete(flowKey)) ? 'updated' : 'missing';
+  }
+
+  /** Fails a flow only while it still represents the caller's observed attempt. */
+  async failFlowIfCurrent(
+    flowId: string,
+    type: string,
+    expectedCreatedAt: number,
+    expectedState: string,
+    error: Error | string,
+  ): Promise<GuardedMutationResult> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const message = error instanceof Error ? error.message : error;
+    const failedAt = Date.now();
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      const result = await this.evalRedisScript(GUARDED_FAIL_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+        message,
+        String(failedAt),
+        String(this.ttl),
+      ]);
+      return FlowStateManager.guardedResult(result);
+    }
+
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      const current = memoryEntry.envelope.value;
+      if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+        return 'stale';
+      }
+      if (current.status === 'COMPLETED') {
+        return 'stale';
+      }
+      memoryEntry.envelope.value = {
+        ...current,
+        status: 'FAILED',
+        error: message,
+        failedAt,
+      };
+      memoryEntry.envelope.expires = failedAt + this.ttl;
+      memoryEntry.store.set(memoryEntry.key, JSON.stringify(memoryEntry.envelope));
+      return 'updated';
+    }
+
+    const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (!current) {
+      return 'missing';
+    }
+    if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+      return 'stale';
+    }
+    if (current.status === 'COMPLETED') {
+      return 'stale';
+    }
+    const updatedState: FlowState<T> = {
+      ...current,
+      status: 'FAILED',
+      error: message,
+      failedAt,
+    };
+    await this.keyv.set(flowKey, updatedState, this.ttl);
+    return 'updated';
+  }
+
+  /** Completes a flow only while it still represents the caller's observed attempt. */
+  async completeFlowIfCurrent(
+    flowId: string,
+    type: string,
+    expectedCreatedAt: number,
+    expectedState: string,
+    result: T,
+  ): Promise<GuardedMutationResult> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const completedAt = Date.now();
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      const guardedResult = await this.evalRedisScript(GUARDED_COMPLETE_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+        JSON.stringify(result) ?? 'null',
+        String(completedAt),
+        String(this.ttl),
+      ]);
+      return FlowStateManager.guardedResult(guardedResult);
+    }
+
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      const current = memoryEntry.envelope.value;
+      if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+        return 'stale';
+      }
+      if (current.status !== 'PENDING') {
+        return 'stale';
+      }
+      memoryEntry.envelope.value = { ...current, status: 'COMPLETED', result, completedAt };
+      memoryEntry.envelope.expires = completedAt + this.ttl;
+      memoryEntry.store.set(memoryEntry.key, JSON.stringify(memoryEntry.envelope));
+      return 'updated';
+    }
+
+    const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (!current) {
+      return 'missing';
+    }
+    if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+      return 'stale';
+    }
+    if (current.status !== 'PENDING') {
+      return 'stale';
+    }
+    await this.keyv.set(
+      flowKey,
+      { ...current, status: 'COMPLETED', result, completedAt },
+      this.ttl,
+    );
+    return 'updated';
   }
 
   private isTokenExpired(flowState: FlowState<T> | undefined): boolean {

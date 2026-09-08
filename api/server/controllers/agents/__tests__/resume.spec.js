@@ -127,6 +127,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   GenerationJobManager: mockGenerationJobManager,
+  GENERATION_RECOVERY_FAILED_ERROR: 'generation_recovery_failed',
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
@@ -281,6 +282,7 @@ function makeClient(overrides = {}) {
     pendingApproval: false,
     buildResponseMetadata: jest.fn(() => null),
     resumeCompletion: jest.fn().mockResolvedValue(undefined),
+    seedContextMeta: jest.fn(),
     ...overrides,
   };
 }
@@ -1069,6 +1071,39 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         },
       });
 
+    it('settles and prunes a scheduled occurrence terminalized by recovery validation', async () => {
+      const scheduledJob = makeScheduledJob();
+      mockGenerationJobManager.getJob.mockResolvedValueOnce(scheduledJob).mockResolvedValueOnce({
+        ...scheduledJob,
+        status: 'error',
+        error: 'generation_recovery_failed',
+      });
+      mockGenerationJobManager.getResumeState.mockRejectedValueOnce(
+        new Error('terminal cleanup read failed'),
+      );
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(500);
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'error',
+        conversationId: CONVO_ID,
+        error: 'generation_recovery_failed',
+      });
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        undefined,
+        { checkpointNamespace: '1000' },
+      );
+      expect(mockClaimScheduleResume).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    });
+
     it('stops and settles an occurrence that became inactive while awaiting approval', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
       mockIsScheduleLive.mockResolvedValue(false);
@@ -1529,7 +1564,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
 
       expect(res.status).toBe(400);
-      expect(mockGetActions).toHaveBeenCalledWith({ agent_id: { $in: [AGENT_ID] } }, false);
+      expect(mockGetActions).toHaveBeenCalledWith({ agentId: [AGENT_ID] }, false);
       expect(mockDecryptMetadata).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       expect(mockInitializeClient).not.toHaveBeenCalled();
@@ -2013,6 +2048,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.getResumeState).toHaveBeenCalledWith(
+        CONVO_ID,
+        job.createdAt,
+        { validateEarlyBufferRecovery: true },
+      );
     });
 
     it('blocks a user-authored respond decision before consuming the action', async () => {
@@ -2677,6 +2717,26 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('seeds the rebuilt client from the context meta captured at the pause', async () => {
+      const contextMeta = {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 50_000, masked: true },
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { contextMeta } }),
+      );
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
+      expect(client.seedContextMeta).toHaveBeenCalledWith(contextMeta);
+      expect(client.seedContextMeta.mock.invocationCallOrder[0]).toBeLessThan(
+        client.resumeCompletion.mock.invocationCallOrder[0],
+      );
+    });
+
     it('reuses the persisted MCP identity for edited and overridden turns', async () => {
       const persistedMCPRequestBody = {
         messageId: RESPONSE_MSG_ID,
@@ -3203,6 +3263,34 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         expect.anything(),
         expect.objectContaining({ contextMeta }),
         expect.anything(),
+      );
+    });
+
+    it('unsets the paused row context meta when the resumed run completes neutrally', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            contextMeta: {
+              calibrationRatio: 1.2,
+              encoding: 'claude',
+              fading: { v: 1, budgetTokens: 50_000, masked: true },
+            },
+          },
+        }),
+      );
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({ contextMeta: undefined }),
+        userMCPAuthMap: {},
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ contextMeta: null }),
+        expect.objectContaining({ context: expect.stringContaining('resumed response end') }),
       );
     });
 

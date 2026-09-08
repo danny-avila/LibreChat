@@ -97,6 +97,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   serverName: string;
   userId: string;
   serverUrl: string;
+  /** Identity of the effective server definition that admitted this authorization attempt. */
+  serverGeneration?: string;
   state: string;
   codeVerifier?: string;
   clientInfo?: OAuthClientInformation;

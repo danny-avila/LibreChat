@@ -12,8 +12,8 @@ import {
 } from 'librechat-data-provider';
 import type { TMessageChatContext } from '~/common/types';
 import type { TMessageProps } from '~/common';
+import { useCopyMessageToClipboard, hasCopyableText } from './useCopyToClipboard';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
@@ -122,7 +122,13 @@ export default function useMessageActions(props: TMessageActions) {
     regenerate(message, { addedConvo: getAddedConvo() });
   }, [chatContext, isCreatedByUser, message, regenerate, getAddedConvo]);
 
-  const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
+  const copyToClipboard = useCopyMessageToClipboard({
+    text,
+    content,
+    searchResults,
+    isCreatedByUser,
+    error: message?.error,
+  });
 
   const getCanCopy = useCallback(
     () => hasCopyableText({ text, content, searchResults }),

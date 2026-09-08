@@ -4,6 +4,7 @@ import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
@@ -45,6 +46,7 @@ import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
 import useSteering from '~/hooks/Chat/useSteering';
+import CodeApprovalMenu from './CodeApprovalMenu';
 import FileFormChat from './Files/FileFormChat';
 import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
@@ -70,12 +72,30 @@ interface ChatFormProps {
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   conversation: TConversation | null;
+  setConversation: SetterOrUpdater<TConversation | null>;
   isSubmitting: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
   stopGenerating: () => void;
 }
+
+/** Targets that own focus themselves: form fields and links, popup disclosures
+ * (Ariakit and Radix both emit `aria-haspopup`), and popup content, which React
+ * bubbles through portals. */
+const focusOwningTargetSelector = [
+  'a',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  '[aria-haspopup]:not([aria-haspopup="false"])',
+  '[role="combobox"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+].join(', ');
 
 const ChatForm = memo(function ChatForm({
   index,
@@ -84,6 +104,7 @@ const ChatForm = memo(function ChatForm({
   files,
   setFiles,
   conversation,
+  setConversation,
   isSubmitting,
   setFilesLoading,
   newConversation,
@@ -162,13 +183,37 @@ const ChatForm = memo(function ChatForm({
     [requiresKey, invalidAssistant],
   );
 
-  const handleContainerClick = useCallback(() => {
-    /** Check if the device is a touchscreen */
+  /** Skipped on touchscreens so a tap does not raise the keyboard. */
+  const focusTextArea = useCallback(() => {
     if (window.matchMedia?.('(pointer: coarse)').matches) {
       return;
     }
     textAreaRef.current?.focus();
   }, []);
+
+  /** The surface returns focus to the textarea after any click (send, stop, badge
+   * toggles), except when the target owns focus itself or opens a popup. Ariakit
+   * records `document.activeElement` at open time as a menu's disclosure, so
+   * refocusing the textarea behind a menu button made the textarea the disclosure
+   * and the menu could never close on textarea interaction (#15624). */
+  const handleContainerClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const owner =
+        event.target instanceof Element ? event.target.closest(focusOwningTargetSelector) : null;
+      if (owner && !owner.contains(event.currentTarget)) {
+        return;
+      }
+      focusTextArea();
+    },
+    [focusTextArea],
+  );
+
+  /** Actions that consume the composer from inside a popup (the during-run
+   * hovercard) sit in exempted popup content, so they restore focus themselves. */
+  const consumeComposer = useCallback(() => {
+    methods.reset();
+    focusTextArea();
+  }, [methods, focusTextArea]);
 
   const handleFocusOrClick = useCallback(() => {
     if (isCollapsed) {
@@ -498,7 +543,7 @@ const ChatForm = memo(function ChatForm({
           control={methods.control}
           steering={steering}
           getText={() => methods.getValues('text')}
-          onConsumed={() => methods.reset()}
+          onConsumed={consumeComposer}
           disabled={filesLoading}
         />
       );
@@ -550,7 +595,7 @@ const ChatForm = memo(function ChatForm({
           : 'sm:mb-10',
       )}
     >
-      <div className="relative flex h-full flex-1 items-stretch md:flex-col">
+      <div className="relative flex h-full min-w-0 flex-1 items-stretch md:flex-col">
         {/* Primary composer owns the selection popup so split-view doesn't double it. */}
         {index === 0 && quotesEnabled && <QuoteButton conversationId={conversationId} />}
         {/* `relative` anchors the in-flight steer overlay, which floats above
@@ -592,20 +637,31 @@ const ChatForm = memo(function ChatForm({
               agentId={conversation?.agent_id}
             />
             <div
+              data-testid="composer-surface"
               onClick={handleContainerClick}
               className={cn(
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
                 composerSurfaceClasses(),
                 isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
                 /* Temporary-chat accent is a ChatForm-only override, not part of
-                   the shared composer-surface decision. */
-                isTemporary && 'border-violet-800/60 bg-violet-950/10',
+                   the shared composer-surface decision. Semantic `series-6`, the
+                   same categorical slot the purple tool badge uses, so the accent
+                   follows the theme instead of the raw `violet-800/60` edge that
+                   composited to 1.48:1 on the high contrast dark canvas.
+                   Held at half alpha in the standard palettes, where series-6 is
+                   a saturated #7e23cd / #ab68fe and a full-strength edge reads as
+                   a warning rather than a quiet mode hint. The contrast modes take
+                   it opaque, because that is the only way it clears the 3:1
+                   non-text floor there. */
+                isTemporary && 'border-series-6/50 bg-series-6/10 high-contrast:border-series-6',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <PendingManualSkillsChips conversationId={conversationId} />
-              {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
+              {quotesEnabled && (
+                <PendingQuoteChips conversationId={conversationId} focusComposer={focusTextArea} />
+              )}
               {steering.enabled && (
                 <PendingSteerChips
                   conversationId={conversationId}
@@ -727,6 +783,12 @@ const ChatForm = memo(function ChatForm({
                     Array.isArray(conversation?.messages) && conversation.messages.length >= 1
                   }
                 />
+                <CodeApprovalMenu
+                  conversation={conversation}
+                  addedConversation={addedConvo}
+                  setConversation={setConversation}
+                  disabled={disableInputs || isSubmitting}
+                />
                 <div className="mx-auto flex" />
                 <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
                 {SpeechToText && (
@@ -744,7 +806,7 @@ const ChatForm = memo(function ChatForm({
                       <InterruptSteerButton
                         steering={steering}
                         getText={() => methods.getValues('text')}
-                        onConsumed={() => methods.reset()}
+                        onConsumed={consumeComposer}
                         disabled={filesLoading}
                       />
                     </div>
@@ -798,6 +860,7 @@ function ChatFormWrapper({
     files,
     setFiles,
     conversation,
+    setConversation,
     isSubmitting,
     setFilesLoading,
     newConversation,
@@ -823,6 +886,7 @@ function ChatFormWrapper({
       conversation?.useResponsesApi,
       conversation?.model,
       conversation?.maxContextTokens,
+      conversation?.codeApprovalMode,
       hasMessages,
     ],
   );
@@ -857,6 +921,7 @@ function ChatFormWrapper({
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}
+      setConversation={setConversation}
       isSubmitting={isSubmitting}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}

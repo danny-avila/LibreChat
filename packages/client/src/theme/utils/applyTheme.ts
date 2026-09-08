@@ -47,6 +47,21 @@ function mapColors(colors: IThemeRGB): Array<[string, string]> {
     variables.push(['--shimmer-base', colors['rgb-text-primary']]);
   }
 
+  if (colors['rgb-text-muted'] === undefined && colors['rgb-text-tertiary'] !== undefined) {
+    variables.push(['--text-muted', colors['rgb-text-tertiary']]);
+  }
+
+  if (
+    colors['rgb-chart-widget-surface'] === undefined &&
+    colors['rgb-surface-primary'] !== undefined
+  ) {
+    variables.push(['--chart-widget-surface', colors['rgb-surface-primary']]);
+  }
+
+  if (colors['rgb-chart-widget-stroke'] === undefined && colors['rgb-border-light'] !== undefined) {
+    variables.push(['--chart-widget-stroke', colors['rgb-border-light']]);
+  }
+
   return variables;
 }
 

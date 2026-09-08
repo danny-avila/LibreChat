@@ -11,8 +11,16 @@ import Error from '../Error';
 jest.mock('~/hooks', () => ({
   useLocalize:
     () =>
-    (key: string): string =>
-      (jest.requireActual('~/locales/en/translation.json') as Record<string, string>)[key] ?? key,
+    (key: string, values?: Record<string, unknown>): string => {
+      const template =
+        (jest.requireActual('~/locales/en/translation.json') as Record<string, string>)[key] ?? key;
+      if (!values) {
+        return template;
+      }
+      return template.replace(/\{\{(\w+)\}\}/g, (match, name) =>
+        values[name] != null ? String(values[name]) : match,
+      );
+    },
 }));
 
 const catalog = translation as Record<string, string>;
@@ -67,5 +75,58 @@ describe('Error — typed provider errors', () => {
     expect(
       screen.getByText(new RegExp(raw.slice(0, 30).replace(/[[\]]/g, '\\$&'))),
     ).toBeInTheDocument();
+  });
+});
+
+describe('Error: agent context budget errors', () => {
+  beforeAll(() => {
+    /** CodeBlock observes its code bar; jsdom ships no IntersectionObserver. */
+    (global as { IntersectionObserver?: unknown }).IntersectionObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
+  it('renders localized copy and the token breakdown for empty_messages', () => {
+    /** Mirrors the SDK payload as embedded by the agents controller's error prefix. */
+    const info =
+      'Message pruning removed all messages as none fit in the context window. Please increase the context window size or make your message shorter.\nToken budget breakdown:\n  maxContextTokens:    10\n  messageTokens:       32 (4 messages)\n  availableForMessages: 9';
+    const payload = `An error occurred while processing the request: ${JSON.stringify({
+      type: ErrorTypes.EMPTY_MESSAGES,
+      info,
+    })}`;
+    render(<Error text={payload} />);
+
+    expect(screen.getByText(catalog.com_error_empty_messages)).toBeInTheDocument();
+    expect(screen.getByText(/Token budget breakdown/)).toBeInTheDocument();
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+  });
+
+  it('renders localized copy with token counts for final_context_overflow', () => {
+    const payload = `An error occurred while processing the request: ${JSON.stringify({
+      type: ErrorTypes.FINAL_CONTEXT_OVERFLOW,
+      info: 'Provider message formatting exceeded the context budget and no safe synthetic-context compaction could make it fit.',
+      provider: 'openAI',
+      projectedMessageTokens: 3,
+      availableMessageTokens: 0,
+    })}`;
+    render(<Error text={payload} />);
+
+    expect(
+      screen.getByText(new RegExp(catalog.com_error_final_context_overflow.slice(0, 40))),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/need 3 tokens, but only 0 are available/)).toBeInTheDocument();
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the plain sentence when overflow token counts are absent', () => {
+    const payload = JSON.stringify({
+      type: ErrorTypes.FINAL_CONTEXT_OVERFLOW,
+      info: 'Fallback provider message formatting exceeded the context budget before invocation.',
+    });
+    render(<Error text={payload} />);
+
+    expect(screen.getByText(catalog.com_error_final_context_overflow)).toBeInTheDocument();
   });
 });

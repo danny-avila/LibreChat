@@ -10,6 +10,7 @@ const {
   sendValidationResponse,
 } = require('./messageValidation');
 const checkDomainAllowed = require('./checkDomainAllowed');
+const { markOAuthNavigation } = require('./oauthNavigation');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
 const accessResources = require('./accessResources');
@@ -41,6 +42,7 @@ module.exports = {
   uaParser,
   setHeaders,
   logHeaders,
+  markOAuthNavigation,
   moderateText,
   validateModel,
   requireJwtAuth,

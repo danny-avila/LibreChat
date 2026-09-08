@@ -24,6 +24,7 @@ const mockGenerationJobManager = {
   markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
   getResumeState: jest.fn(),
+  getJobStore: jest.fn(),
   updateMetadata: jest.fn(),
   persistAgentEventDetachedTerminalEvidence: jest.fn(),
   claimGeneration: jest.fn(),
@@ -250,6 +251,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
@@ -444,6 +446,9 @@ describe('ResumableAgentController resume metadata', () => {
       emitter: { on: jest.fn() },
     });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue(null),
+    });
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.isRedis = false;
@@ -3606,9 +3611,11 @@ describe('ResumableAgentController resume metadata', () => {
       const req = createFailedRequest({
         conversationId: undefined,
         clientRequestId: 'failed-new-conversation',
+        agent_id: 'unverified-agent',
         parentMessageId: '00000000-0000-0000-0000-000000000000',
         endpointOption: {
           endpoint: 'azureOpenAI',
+          agent_id: 'unverified-agent',
           modelOptions: { model: 'gpt-4o' },
           chatProjectId: '507f1f77bcf86cd799439011',
         },
@@ -3639,7 +3646,7 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'gpt-4o',
           chatProjectId: '507f1f77bcf86cd799439011',
         }),
-        expect.any(Object),
+        expect.objectContaining({ initialAgentId: null }),
       );
     });
   });
@@ -5481,7 +5488,7 @@ describe('ResumableAgentController resume metadata', () => {
       getHaltReason: () => 'preempt_incomplete',
     };
 
-    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle } = {}) => {
+    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle, clientOverrides } = {}) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -5500,6 +5507,7 @@ describe('ResumableAgentController resume metadata', () => {
         savedMessageIds: new Set(),
         skipSaveUserMessage: false,
         ...(run && { run }),
+        ...clientOverrides,
         sendMessage: jest.fn(async (_text, options) => {
           const userMessage = {
             messageId: 'user-msg',
@@ -5601,6 +5609,54 @@ describe('ResumableAgentController resume metadata', () => {
 
       expect(addTitle).toHaveBeenCalledTimes(1);
       expect(getTitleSignal().aborted).toBe(false);
+    });
+
+    /**
+     * The hop that makes the client notice possible: `AgentClient` swallows the
+     * graph's step-limit error and raises `stepLimitReached`, and the controller
+     * must turn that into an `unfinished` row stamped with the tool-call-limit
+     * finish reason on BOTH the durable write and the terminal SSE event.
+     */
+    const stepLimitClient = { stepLimitReached: true };
+
+    const savedResponseRow = () =>
+      mockSaveMessage.mock.calls
+        .map(([, message]) => message)
+        .find((message) => message?.messageId === 'response-msg');
+
+    it('persists a step-limited turn as unfinished with the tool-call-limit finish reason', async () => {
+      await runFirstTurn({ clientOverrides: stepLimitClient });
+
+      expect(savedResponseRow()).toEqual(
+        expect.objectContaining({
+          unfinished: true,
+          finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+        }),
+      );
+    });
+
+    it('keeps the partial content on a step-limited turn instead of replacing it with an error', async () => {
+      await runFirstTurn({ clientOverrides: stepLimitClient });
+
+      const saved = savedResponseRow();
+      expect(saved.content).toEqual([{ type: 'text', text: 'Truncated answer' }]);
+      expect(saved.error).not.toBe(true);
+    });
+
+    it('publishes the finish reason on the terminal event so the client needs no refetch', async () => {
+      await runFirstTurn({ clientOverrides: stepLimitClient });
+
+      const published = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1);
+      expect(published).toBeDefined();
+      expect(JSON.stringify(published)).toContain(Constants.TOOL_CALL_LIMIT_FINISH_REASON);
+    });
+
+    it('leaves an ordinary completed turn finished and unstamped', async () => {
+      await runFirstTurn();
+
+      const saved = savedResponseRow();
+      expect(saved.unfinished).toBe(false);
+      expect(saved.finish_reason).toBeUndefined();
     });
   });
 });
