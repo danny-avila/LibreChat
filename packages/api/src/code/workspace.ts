@@ -284,7 +284,7 @@ async function readErrorBody(
   signal.addEventListener('abort', cancel, { once: true });
   try {
     if (signal.aborted) return { body, truncated: true };
-    while (bytes < MAX_ERROR_BODY_BYTES) {
+    while (bytes <= MAX_ERROR_BODY_BYTES) {
       const { done, value } = await reader.read();
       if (done) {
         complete = !interrupted;
@@ -694,6 +694,7 @@ export async function executeWorkspaceTool({
     );
     if (!response.ok) {
       const { body, truncated } = await readErrorBody(response, requestSignal);
+      signal?.throwIfAborted();
       throw new WorkspaceToolHttpError('rejected', response.status, body, truncated);
     }
     const result = await readBoundedJson(response, requestSignal);

@@ -322,6 +322,40 @@ describe('executeWorkspaceTool', () => {
     });
   });
 
+  test.each([4095, 4096, 4097])(
+    'reports truncation correctly for a %i-byte error body',
+    async (size) => {
+      await expect(
+        executeWorkspaceTool({
+          baseURL: 'https://code.example.com',
+          authHeaders: {},
+          request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+          fetchImpl: jest.fn(async () => new Response('x'.repeat(size), { status: 503 })),
+        }),
+      ).rejects.toMatchObject({
+        upstreamStatus: 503,
+        upstreamBody: 'x'.repeat(Math.min(size, 4096)),
+        upstreamBodyTruncated: size > 4096,
+      });
+    },
+  );
+
+  test('preserves caller cancellation during a rejected response body read', async () => {
+    const controller = new AbortController();
+    const cancel = jest.fn();
+    const request = executeWorkspaceTool({
+      baseURL: 'https://code.example.com',
+      authHeaders: {},
+      signal: controller.signal,
+      request: { protocolVersion: 1, operation: 'list_files', workspaceId: 'primary' },
+      fetchImpl: jest.fn(async () => new Response(new ReadableStream({ cancel }), { status: 503 })),
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+    await expect(request).rejects.toBe(controller.signal.reason);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   test('bounds a streaming error body and cancels the unread remainder', async () => {
     const cancel = jest.fn();
     const body = new ReadableStream<Uint8Array>({
