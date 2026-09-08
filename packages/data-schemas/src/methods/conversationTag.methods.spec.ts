@@ -330,6 +330,73 @@ describe('authoritative public tag counts', () => {
     ]);
   });
 
+  it.each(['membership', 'count', 'catalog'] as const)(
+    'resumes a pending rename after %s failure',
+    async (failure) => {
+      const methods = createConversationTagMethods(mongoose);
+      await ConversationTag.create({ user, tag: 'old', description: 'Keep', position: 2 });
+      await Conversation.create({
+        user,
+        conversationId: 'rename-retry',
+        endpoint: 'openAI',
+        tags: ['old'],
+      });
+      const failures = {
+        membership: () => jest.spyOn(Conversation, 'updateMany'),
+        count: () => jest.spyOn(Conversation, 'countDocuments'),
+        catalog: () => jest.spyOn(ConversationTag, 'findOneAndUpdate'),
+      };
+      const failing = failures[failure]().mockRejectedValueOnce(new Error('unavailable'));
+      try {
+        await expect(
+          methods.updateConversationTag(user, 'old', { tag: 'new' }, null),
+        ).rejects.toThrow();
+      } finally {
+        failing.mockRestore();
+      }
+      expect(
+        await ConversationTag.findOne({ user, tag: 'old' }).select('+renameTo').lean(),
+      ).toMatchObject({ renameTo: 'new', description: 'Keep' });
+      for (const tag of await getConversationTags(user, null)) {
+        expect(tag).not.toHaveProperty('renameTo');
+      }
+      await expect(
+        methods.updateConversationTag(user, 'old', { tag: 'different' }, null),
+      ).rejects.toThrow();
+      await expect(methods.deleteConversationTag(user, 'old', null)).rejects.toThrow();
+      await expect(methods.createConversationTag(user, { tag: 'new' }, null)).rejects.toThrow();
+      await expect(
+        methods.updateConversationTag(user, 'old', { tag: 'new' }, null),
+      ).resolves.toMatchObject({ tag: 'new', count: 1, description: 'Keep', position: 2 });
+      expect(await ConversationTag.exists({ user, tag: 'old' })).toBeNull();
+      expect(
+        await ConversationTag.findOne({ user, tag: 'new' }).select('+renameTo').lean(),
+      ).not.toHaveProperty('renameTo');
+      expect((await Conversation.findOne({ user }).lean())?.tags).toEqual(['new']);
+    },
+  );
+
+  it('reserves a rename destination for only one concurrent source tag', async () => {
+    const methods = createConversationTagMethods(mongoose);
+    await ConversationTag.init();
+    await ConversationTag.create([
+      { user, tag: 'first' },
+      { user, tag: 'second' },
+    ]);
+    await Conversation.create([
+      { user, conversationId: 'first', endpoint: 'openAI', tags: ['first'] },
+      { user, conversationId: 'second', endpoint: 'openAI', tags: ['second'] },
+    ]);
+    const outcomes = await Promise.allSettled(
+      ['first', 'second'].map((tag) =>
+        methods.updateConversationTag(user, tag, { tag: 'target' }, null),
+      ),
+    );
+    expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await Conversation.countDocuments({ user, tags: 'target' })).toBe(1);
+  });
+
   it.each([null, 'tenant-a'])(
     'rejects a rename into a derived tag in tenant %s',
     async (tenantId) => {

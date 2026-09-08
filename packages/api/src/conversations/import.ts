@@ -318,16 +318,19 @@ function reserveTraversalNode(depth: number, budget: TraversalBudget): void {
   }
 }
 
-function assertNoOwnershipFields(
-  value: JsonValue,
-  location: string,
-  depth: number,
-  budget: TraversalBudget,
-): void {
+function assertImportTraversal(value: JsonValue, depth: number, budget: TraversalBudget): void {
   reserveTraversalNode(depth, budget);
   if (Array.isArray(value)) {
+    for (const nested of value) assertImportTraversal(nested, depth + 1, budget);
+  } else if (isJsonObject(value)) {
+    for (const key in value) assertImportTraversal(value[key], depth + 1, budget);
+  }
+}
+
+function assertNoOwnershipFields(value: JsonValue, location: string): void {
+  if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index++) {
-      assertNoOwnershipFields(value[index], `${location}[${index}]`, depth + 1, budget);
+      assertNoOwnershipFields(value[index], `${location}[${index}]`);
     }
     return;
   }
@@ -337,15 +340,14 @@ function assertNoOwnershipFields(
     if (key === '_id' || key === '__v' || OWNERSHIP_FIELDS.has(normalizedFieldName(key))) {
       throw new ConversationImportError(`Field "${location}.${key}" cannot be imported`);
     }
-    assertNoOwnershipFields(nested, `${location}.${key}`, depth + 1, budget);
+    assertNoOwnershipFields(nested, `${location}.${key}`);
   }
 }
 
-function stripOwnershipFields(value: JsonValue, depth: number, budget: TraversalBudget): void {
-  reserveTraversalNode(depth, budget);
+function stripOwnershipFields(value: JsonValue): void {
   if (Array.isArray(value)) {
     for (const nested of value) {
-      stripOwnershipFields(nested, depth + 1, budget);
+      stripOwnershipFields(nested);
     }
     return;
   }
@@ -356,19 +358,16 @@ function stripOwnershipFields(value: JsonValue, depth: number, budget: Traversal
       delete value[key];
       continue;
     }
-    stripOwnershipFields(nested, depth + 1, budget);
+    stripOwnershipFields(nested);
   }
 }
 
 function assertMessage(
   value: JsonValue,
   location: string,
-  depth: number,
-  budget: TraversalBudget,
   recursive: boolean,
   messageIds: Set<string>,
 ): asserts value is JsonObject {
-  reserveTraversalNode(depth, budget);
   if (!isJsonObject(value)) {
     throw new ConversationImportError(`Field "${location}" must be a message object`);
   }
@@ -435,16 +434,16 @@ function assertMessage(
   }
 
   if (value.metadata != null) {
-    assertNoOwnershipFields(value.metadata, `${location}.metadata`, depth + 1, budget);
+    assertNoOwnershipFields(value.metadata, `${location}.metadata`);
   }
   if (value.feedback != null) {
-    assertNoOwnershipFields(value.feedback, `${location}.feedback`, depth + 1, budget);
+    assertNoOwnershipFields(value.feedback, `${location}.feedback`);
   }
   if (value.files != null) {
-    stripOwnershipFields(value.files, depth + 1, budget);
+    stripOwnershipFields(value.files);
   }
   if (value.attachments != null) {
-    stripOwnershipFields(value.attachments, depth + 1, budget);
+    stripOwnershipFields(value.attachments);
   }
 
   if (value.children == null) return;
@@ -460,21 +459,13 @@ function assertMessage(
     );
   }
   for (let index = 0; index < value.children.length; index++) {
-    assertMessage(
-      value.children[index],
-      `${location}.children[${index}]`,
-      depth + 1,
-      budget,
-      recursive,
-      messageIds,
-    );
+    assertMessage(value.children[index], `${location}.children[${index}]`, recursive, messageIds);
   }
 }
 
 function assertMessages(
   value: JsonValue | undefined,
   location: string,
-  budget: TraversalBudget,
   recursive: boolean,
 ): JsonObject[] {
   if (!Array.isArray(value)) {
@@ -486,7 +477,7 @@ function assertMessages(
   const ordered: JsonObject[] = [];
   for (let index = 0; index < value.length; index++) {
     const message = value[index];
-    assertMessage(message, `${location}[${index}]`, 1, budget, recursive, messageIds);
+    assertMessage(message, `${location}[${index}]`, recursive, messageIds);
     messages.push(message);
     if (recursive) continue;
     const parentId = message.parentMessageId as string | undefined;
@@ -522,6 +513,7 @@ export function prepareLibreChatConversationImport(
   if (!isJsonObject(value)) {
     throw new ConversationImportError('The uploaded file is not a LibreChat conversation export');
   }
+  assertImportTraversal(value, 0, { nodes: 0 });
   assertAllowedFields(value, TOP_LEVEL_FIELDS, 'conversation');
   if (typeof value.conversationId !== 'string' || value.conversationId.length === 0) {
     throw new ConversationImportError('A LibreChat conversationId is required');
@@ -602,7 +594,6 @@ export function prepareLibreChatConversationImport(
   const messages = assertMessages(
     hasMessages ? value.messages : value.messagesTree,
     hasMessages ? 'conversation.messages' : 'conversation.messagesTree',
-    { nodes: 0 },
     value.recursive === true,
   );
   value[hasMessages ? 'messages' : 'messagesTree'] = messages;

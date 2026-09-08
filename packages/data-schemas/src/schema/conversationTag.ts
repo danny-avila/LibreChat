@@ -7,6 +7,7 @@ export interface IConversationTag extends Document {
   count?: number;
   position?: number;
   tenantId?: string;
+  renameTo?: string;
 }
 
 const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
@@ -32,6 +33,7 @@ const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
       default: 0,
       index: true,
     },
+    renameTo: { type: String, select: false },
     tenantId: {
       type: String,
       index: true,
@@ -42,5 +44,13 @@ const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
 
 // Create a compound index on tag and user with unique constraint.
 conversationTag.index({ tag: 1, user: 1, tenantId: 1 }, { unique: true });
+
+conversationTag.index(
+  { renameTo: 1, user: 1, tenantId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { renameTo: { $type: 'string' } },
+  },
+);
 
 export default conversationTag;

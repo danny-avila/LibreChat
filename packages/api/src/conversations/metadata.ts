@@ -162,6 +162,7 @@ export async function updateConversationMetadata(
         noUpsert: true,
         tenantId: input.tenantId ?? null,
         appendMessageIds: [],
+        requireVisible: true,
         ...(input.tags == null ? {} : { expectedTags: previousTags }),
       },
     );

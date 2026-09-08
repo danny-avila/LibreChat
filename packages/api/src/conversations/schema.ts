@@ -173,6 +173,8 @@ const baseToolCall = z
     id: z.string().optional(),
     type: z.string().optional(),
     name: z.string().optional(),
+    stepId: z.string().optional(),
+    mcpServerName: z.string().optional(),
     args: z.union([z.string(), jsonObject]).optional(),
     output: z.union([z.string(), jsonObject, z.array(z.unknown())]).nullish(),
     function: z
@@ -335,6 +337,14 @@ const contentSchema = z.discriminatedUnion('type', [
       summarizing: z.boolean().optional(),
       failed: z.boolean().optional(),
       summaryVersion: z.number().optional(),
+      tokenCount: z.number().optional(),
+      model: z.string().optional(),
+      provider: z.string().optional(),
+      initiatedBy: z.literal('user').optional(),
+      boundary: z
+        .object({ messageId: z.string(), contentIndex: z.number().int().nonnegative() })
+        .strip()
+        .optional(),
       createdAt: z.string().optional(),
       ...contentMetadata,
     })

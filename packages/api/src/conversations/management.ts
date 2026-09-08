@@ -208,9 +208,7 @@ export function createConversationManagementHandlers(deps: ConversationManagemen
       });
       if (saved == null) throw new ConversationManagementError('not_found');
 
-      const updated = await deps.getConversationResource(owner, conversationTenantId, id);
-      if (updated == null) throw new ConversationManagementError('not_found');
-      return res.status(200).json(projectConversation(updated));
+      return res.status(200).json(projectConversation({ ...existing, ...saved }));
     } catch (error) {
       return sendError(res, error);
     }

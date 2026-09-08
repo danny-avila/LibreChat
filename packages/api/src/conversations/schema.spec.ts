@@ -207,6 +207,42 @@ describe('conversation message projection', () => {
       );
   });
 
+  it('preserves complete public summary metadata and tool host identity', () => {
+    const summary = {
+      type: ContentTypes.SUMMARY,
+      content: [{ type: ContentTypes.TEXT, text: 'summary' }],
+      tokenCount: 42,
+      model: 'model',
+      provider: 'provider',
+      initiatedBy: 'user',
+      summaryVersion: 2,
+      createdAt: '2026-09-08T00:00:00Z',
+      summarizing: false,
+      failed: false,
+      boundary: { messageId: 'boundary-message', contentIndex: 3 },
+    };
+    const tool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'call',
+        name: 'lookup',
+        stepId: 'host-step',
+        mcpServerName: 'server',
+        args: '{}',
+        output: 'result',
+      },
+    };
+    const source = {
+      messageId: 'message',
+      conversationId: 'conversation',
+      content: [
+        { ...summary, boundary: { ...summary.boundary, credentials: 'private' } },
+        { ...tool, tool_call: { ...tool.tool_call, auth: 'private' } },
+      ],
+    } as ConversationMessageResource;
+    expect(projectConversationMessage(source).content).toEqual([summary, tool]);
+  });
+
   it('keeps supported visible content variants and strips stored internal fields', () => {
     const source = {
       _id: new Types.ObjectId(),

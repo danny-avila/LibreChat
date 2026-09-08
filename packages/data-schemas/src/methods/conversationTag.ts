@@ -293,6 +293,9 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const { tag, description, addToConversation, conversationId } = data;
       const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
 
+      if (await ConversationTag.exists({ ...scope, renameTo: tag })) {
+        throw new Error('Tag rename is in progress');
+      }
       const existingTag = await ConversationTag.findOne({ ...scope, tag }).lean();
       if (existingTag) {
         return withCommittedCount(existingTag);
@@ -336,7 +339,9 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
   async function findMutableTag(user: string, tag: string, tenantId: string | null) {
     const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
     const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-    const existing = await ConversationTag.findOne({ ...scope, tag }).lean();
+    const existing = await ConversationTag.findOne({ ...scope, tag })
+      .select('+renameTo')
+      .lean();
     if (existing) return existing;
     if (!(await mongoose.models.Conversation.exists({ ...scope, tags: tag }))) return null;
     return createConversationTag(user, { tag }, tenantId);
@@ -411,17 +416,35 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         return null;
       }
 
-      if (newTag && newTag !== oldTag) {
-        const [catalogTag, committedTag] = await Promise.all([
-          ConversationTag.exists({ ...scope, tag: newTag }),
-          Conversation.exists({ ...scope, tags: newTag }),
-        ]);
-        if (catalogTag || committedTag) {
-          throw new Error('Tag already exists');
+      const renaming = !!newTag && newTag !== oldTag;
+      if (existingTag.renameTo && existingTag.renameTo !== newTag) {
+        throw new Error('Tag rename is in progress');
+      }
+      if (renaming) {
+        if (!existingTag.renameTo) {
+          const [catalogTag, committedTag] = await Promise.all([
+            ConversationTag.exists({ ...scope, $or: [{ tag: newTag }, { renameTo: newTag }] }),
+            Conversation.exists({ ...scope, tags: newTag }),
+          ]);
+          if (catalogTag || committedTag) throw new Error('Tag already exists');
+          const reserved = await ConversationTag.updateOne(
+            { ...scope, _id: existingTag._id, tag: oldTag, renameTo: { $exists: false } },
+            { $set: { renameTo: newTag } },
+          );
+          if (
+            !reserved.matchedCount &&
+            !(await ConversationTag.exists({
+              ...scope,
+              _id: existingTag._id,
+              tag: oldTag,
+              renameTo: newTag,
+            }))
+          )
+            throw new Error('Tag rename conflicted');
         }
-
         await Conversation.updateMany({ ...scope, tags: oldTag }, { $set: { 'tags.$': newTag } });
       }
+      const count = await Conversation.countDocuments({ ...scope, tags: newTag || oldTag });
 
       const updateData: Record<string, unknown> = {};
       if (newTag) {
@@ -436,14 +459,16 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       }
 
       const updatedTag = await ConversationTag.findOneAndUpdate(
-        { ...scope, tag: oldTag },
-        updateData,
         {
-          new: true,
-          lean: true,
+          ...scope,
+          _id: existingTag._id,
+          tag: oldTag,
+          ...(renaming ? { renameTo: newTag } : { renameTo: { $exists: false } }),
         },
+        { $set: updateData, ...(renaming ? { $unset: { renameTo: 1 } } : {}) },
+        { new: true, lean: true },
       );
-      return updatedTag == null ? null : withCommittedCount(updatedTag);
+      return updatedTag == null ? null : { ...updatedTag, count };
     } catch (error) {
       logger.error('[updateConversationTag] Error updating conversation tag', error);
       throw new Error('Error updating conversation tag');
@@ -478,7 +503,12 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const Conversation = mongoose.models.Conversation;
       const scope = { user, ...optionalTenantFilter<IConversationTag>(tenantId) };
 
-      if (!(await findMutableTag(user, tag, tenantId))) return null;
+      if (await ConversationTag.exists({ ...scope, renameTo: tag })) {
+        throw new Error('Tag rename is in progress');
+      }
+      const existingTag = await findMutableTag(user, tag, tenantId);
+      if (!existingTag) return null;
+      if (existingTag.renameTo) throw new Error('Tag rename is in progress');
       const deletedTag = await ConversationTag.findOneAndDelete({ ...scope, tag }).lean();
       if (!deletedTag) {
         return null;

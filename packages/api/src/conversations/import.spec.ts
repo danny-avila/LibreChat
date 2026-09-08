@@ -9,7 +9,10 @@ import {
   executeConversationImportWrites,
   isConversationImportError,
 } from './import';
-import { CONTENT_TRAVERSAL_MAX_DEPTH } from '~/protection/adapters/nested';
+import {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
+  CONTENT_TRAVERSAL_MAX_NODES,
+} from '~/protection/adapters/nested';
 
 interface TestBuilder {
   owner: string;
@@ -391,6 +394,65 @@ describe('createConversationImportOperation', () => {
     ).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
     expect(deps.getImporter).not.toHaveBeenCalled();
   });
+
+  it.each(['parts', 'annotations', 'outputs', 'results'])(
+    'bounds nested %s before schema parsing',
+    async (variant) => {
+      const entries = Array.from({ length: CONTENT_TRAVERSAL_MAX_NODES + 1 }, () => ({
+        type: 'text',
+        text: 'entry',
+      }));
+      let content: unknown[];
+      if (variant === 'parts') {
+        content = entries;
+      } else if (variant === 'annotations') {
+        content = [
+          {
+            type: 'text',
+            text: {
+              value: 'text',
+              annotations: entries.map(() => ({
+                type: 'file_path',
+                text: 'file',
+                start_index: 0,
+                end_index: 1,
+                file_path: { file_id: 'file' },
+              })),
+            },
+          },
+        ];
+      } else {
+        const tool_call =
+          variant === 'outputs'
+            ? {
+                type: 'code_interpreter',
+                code_interpreter: {
+                  input: 'code',
+                  outputs: entries.map(() => ({ type: 'logs', logs: 'output' })),
+                },
+              }
+            : {
+                type: 'file_search',
+                file_search: {
+                  results: entries.map(() => ({ file_id: 'file', file_name: 'name', score: 1 })),
+                },
+              };
+        content = [{ type: 'tool_call', tool_call }];
+      }
+      const { deps } = createDependencies(
+        JSON.stringify({ ...baseExport, messages: [{ ...baseExport.messages[0], content }] }),
+      );
+      await expect(
+        createConversationImportOperation(deps)({
+          filepath: '/tmp/bounded.json',
+          requestUserId: 'owner',
+          format: 'librechat',
+        }),
+      ).rejects.toThrow('structure exceeds import limits');
+      expect(deps.getImporter).not.toHaveBeenCalled();
+      expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('strips provider file IDs from options before any importer or policy runs', async () => {
     const { deps, importer } = createDependencies(

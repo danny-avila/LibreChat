@@ -1,9 +1,11 @@
 import express from 'express';
 import request from 'supertest';
 import { Readable } from 'stream';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { ConversationImportHandlerDeps } from './http';
 import { ConversationImportError, createConversationImportOperation } from './import';
 import { createConversationImportHandler, createConversationTagAccess } from './http';
+import { generateCheckAccess } from '../middleware/access';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -43,6 +45,35 @@ async function runHandler(
 }
 
 describe('conversation management import HTTP handler', () => {
+  it('reuses the role loaded by remote authorization for the separate bookmark decision', async () => {
+    const deps = {
+      importConversations: jest.fn().mockResolvedValue(undefined),
+      cleanupUpload: jest.fn(),
+      getRoleByName: jest.fn().mockResolvedValue({
+        permissions: { REMOTE_AGENTS: { USE: true }, BOOKMARKS: { USE: true } },
+      }),
+    };
+    const access = generateCheckAccess({
+      permissionType: PermissionTypes.REMOTE_AGENTS,
+      permissions: [Permissions.USE],
+      getRoleByName: deps.getRoleByName,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use(async (req, res, next) => {
+      req.user = { id: 'owner', role: 'USER' };
+      req.file = createUpload();
+      Object.assign(req, { config: {} });
+      await access(req, res, next);
+    });
+    app.post('/', createConversationImportHandler(deps));
+    expect((await request(app).post('/').send({})).status).toBe(201);
+    expect(deps.getRoleByName).toHaveBeenCalledTimes(1);
+    expect(deps.importConversations).toHaveBeenCalledWith(
+      expect.objectContaining({ allowTags: true }),
+    );
+  });
+
   it('rejects request-level ownership and unknown controls and removes the upload', async () => {
     const deps = {
       importConversations: jest.fn().mockResolvedValue(undefined),

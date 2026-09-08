@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { NextFunction, RequestHandler, Response } from 'express';
+import type { NextFunction, RequestHandler, Request, Response } from 'express';
 import type { CheckAccessParams } from '~/middleware/access';
 import type { ConversationImportJob } from './import';
 import type { ServerRequest } from '~/types';
@@ -67,7 +67,7 @@ export function createConversationImportHandler({
   getRoleByName,
 }: ConversationImportHandlerDeps): RequestHandler {
   return async function conversationImportHandler(
-    req: ServerRequest,
+    req: ServerRequest & Pick<Request, 'params'>,
     res: Response,
   ): Promise<void> {
     if (!req.file?.path) {
@@ -89,6 +89,7 @@ export function createConversationImportHandler({
     let importStarted = false;
     try {
       const allowTags = await checkAccessWithRequestCache({
+        req,
         user: req.user!,
         permissionType: PermissionTypes.BOOKMARKS,
         permissions: [Permissions.USE],

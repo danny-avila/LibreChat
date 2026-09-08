@@ -285,6 +285,8 @@ export interface ConversationMethods {
       appendMessageIds?: Types.ObjectId[];
       /** Applies the update only if the stored tags still equal this snapshot. */
       expectedTags?: string[];
+      /** Require a currently visible existing conversation for a resource API write. */
+      requireVisible?: boolean;
     },
   ): Promise<IConversation | { message: string } | null>;
   setConvoPinned(
@@ -2171,6 +2173,8 @@ export function createConversationMethods(
       initialAgentId?: string | null;
       appendMessageIds?: Types.ObjectId[];
       expectedTags?: string[];
+      /** Require a currently visible existing conversation for a resource API write. */
+      requireVisible?: boolean;
     },
   ) {
     try {
@@ -2291,7 +2295,7 @@ export function createConversationMethods(
         timestampOptions.timestamps = false;
       }
 
-      const canUpsert = metadata?.noUpsert !== true;
+      const canUpsert = metadata?.noUpsert !== true && metadata?.requireVisible !== true;
       const initialAgentId =
         canUpsert &&
         typeof metadata?.initialAgentId === 'string' &&
@@ -2331,6 +2335,20 @@ export function createConversationMethods(
         user: userId,
         ...explicitTenantFilter,
         ...expectedTagsFilter,
+        ...(metadata?.requireVisible
+          ? {
+              subagentThread: { $exists: false },
+              $and: [
+                {
+                  $or: [
+                    { isTemporary: false, expiredAt: null },
+                    { isTemporary: false, $expr: { $gt: ['$expiredAt', '$$NOW'] } },
+                    { isTemporary: null, expiredAt: null },
+                  ],
+                },
+              ],
+            }
+          : {}),
       };
       const runUpdate = (
         filter: Record<string, unknown>,

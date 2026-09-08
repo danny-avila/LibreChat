@@ -134,6 +134,59 @@ beforeEach(async () => {
 });
 
 describe('conversation management handlers with Mongo persistence', () => {
+  it('does not write metadata or reconcile tags when retention expires after the visibility read', async () => {
+    await seedConversation(TENANT_A, {
+      conversationId: SHARED_ID,
+      user: OWNER,
+      expiredAt: new Date(Date.now() + 60000),
+      title: 'Before',
+      tags: ['old'],
+    });
+    const reconcile = jest.spyOn(methods, 'reconcileConversationTagCounts');
+    const app = createApp({
+      saveConvo: async (...args) => {
+        await Conversation.updateOne(
+          { user: OWNER, conversationId: SHARED_ID },
+          { $set: { expiredAt: new Date(0) } },
+        );
+        return methods.saveConvo(...args);
+      },
+    });
+    try {
+      const response = await request(app)
+        .patch(`/${SHARED_ID}`)
+        .send({ title: 'After', tags: ['new'] });
+      expect(response.status).toBe(404);
+      expect(reconcile).not.toHaveBeenCalled();
+      expect(
+        await Conversation.findOne({
+          user: OWNER,
+          tenantId: TENANT_A,
+          conversationId: SHARED_ID,
+        }).lean(),
+      ).toMatchObject({ title: 'Before', tags: ['old'] });
+    } finally {
+      reconcile.mockRestore();
+    }
+  });
+
+  it('returns the committed snapshot when retention expires after a successful write', async () => {
+    await seedConversation(TENANT_A, { conversationId: SHARED_ID, user: OWNER });
+    const app = createApp({
+      saveConvo: async (...args) => {
+        const saved = await methods.saveConvo(...args);
+        await Conversation.updateOne(
+          { user: OWNER, conversationId: SHARED_ID },
+          { $set: { expiredAt: new Date(0) } },
+        );
+        return saved;
+      },
+    });
+    const response = await request(app).patch(`/${SHARED_ID}`).send({ title: 'Committed' });
+    expect(response.status).toBe(200);
+    expect(response.body.title).toBe('Committed');
+  });
+
   it('lists ordinary and saved-agent resources while excluding internal and retention-hidden records', async () => {
     const now = new Date('2026-09-06T10:00:00.000Z');
     await Promise.all([
