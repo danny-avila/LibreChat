@@ -756,66 +756,50 @@ describe('userGroup methods', () => {
       expect(cache.set).toHaveBeenCalledWith('shape-ext-1', [group._id.toString()]);
     });
 
-    it('deduplicates concurrent cache builds for the same member key', async () => {
-      const user = await createTestUser({ idOnTheSource: 'dedup-ext-1' });
-      const cache = {
-        get: jest.fn(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          return undefined;
-        }),
-        set: jest.fn(async () => undefined),
-      };
-      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
-      const params = {
-        userId: user._id.toString(),
-        role: SystemRoles.USER,
-        idOnTheSource: 'dedup-ext-1',
-      };
+    it.each([false, true])(
+      'deduplicates concurrent cache builds (distributed lock: %s)',
+      async (withLock) => {
+        const user = await createTestUser({ idOnTheSource: 'dedup-ext-1' });
+        const group = await Group.create({
+          name: 'Concurrent Team',
+          source: 'entra',
+          idOnTheSource: 'dedup-group-1',
+          memberIds: ['dedup-ext-1'],
+        });
+        const lock = {
+          acquireLock: jest.fn(async () => 'lock-token'),
+          releaseLock: jest.fn(async () => undefined),
+          lockWaitMs: 5000,
+        };
+        const cache = { ...createFakeCache(), ...(withLock ? lock : {}) };
+        const cachedMethods = createCachedMethods(cache);
+        const params = {
+          userId: user._id.toString(),
+          role: SystemRoles.USER,
+          idOnTheSource: 'dedup-ext-1',
+        };
+        const findSpy = jest.spyOn(Group, 'find');
 
-      const [first, second, third] = await Promise.all([
-        cachedMethods.getUserPrincipals(params),
-        cachedMethods.getUserPrincipals(params),
-        cachedMethods.getUserPrincipals(params),
-      ]);
+        try {
+          const results = await Promise.all([
+            cachedMethods.getUserPrincipals(params),
+            cachedMethods.getUserPrincipals(params),
+            cachedMethods.getUserPrincipals(params),
+          ]);
 
-      expect(first).toEqual(second);
-      expect(second).toEqual(third);
-      expect(cache.get).toHaveBeenCalledTimes(3);
-      expect(cache.set).toHaveBeenCalledTimes(1);
-    });
-
-    it('shares one lock and DB build across concurrent same-process callers', async () => {
-      const user = await createTestUser({ idOnTheSource: 'lock-ext-1' });
-      const cache = {
-        get: jest.fn(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          return undefined;
-        }),
-        set: jest.fn(async () => undefined),
-        acquireLock: jest.fn(async () => 'lock-token'),
-        releaseLock: jest.fn(async () => undefined),
-        lockWaitMs: 5000,
-      };
-      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
-      const params = {
-        userId: user._id.toString(),
-        role: SystemRoles.USER,
-        idOnTheSource: 'lock-ext-1',
-      };
-
-      const [first, second, third] = await Promise.all([
-        cachedMethods.getUserPrincipals(params),
-        cachedMethods.getUserPrincipals(params),
-        cachedMethods.getUserPrincipals(params),
-      ]);
-
-      expect(first).toEqual(second);
-      expect(second).toEqual(third);
-      expect(cache.acquireLock).toHaveBeenCalledTimes(1);
-      expect(cache.acquireLock).toHaveBeenCalledWith('USER_PRINCIPALS_LOCK:lock-ext-1');
-      expect(cache.set).toHaveBeenCalledTimes(1);
-      expect(cache.releaseLock).toHaveBeenCalledTimes(1);
-    });
+          for (const principals of results) {
+            expect(groupPrincipalIds(principals)).toEqual([group._id.toString()]);
+          }
+          expect(findSpy).toHaveBeenCalledTimes(1);
+          if (withLock) {
+            expect(lock.acquireLock).toHaveBeenCalledTimes(1);
+            expect(lock.releaseLock).toHaveBeenCalledTimes(1);
+          }
+        } finally {
+          findSpy.mockRestore();
+        }
+      },
+    );
 
     it('waits for a locked build from another process instead of querying', async () => {
       const user = await createTestUser({ idOnTheSource: 'wait-ext-1' });
