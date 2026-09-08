@@ -650,6 +650,7 @@ export interface BackgroundTask {
     kind: 'manual' | 'wakeup';
     claimId: string;
     claimedAt: number;
+    generationId?: string;
   };
   /** The declared tool may return a process-local live artifact. A terminal
    * same-generation poll may therefore deliver from the local claim after it
@@ -1568,7 +1569,7 @@ export class BackgroundTaskRegistryClass {
     userId: string,
     conversationId: string,
     taskId: string,
-    claim: { kind: 'manual' | 'wakeup'; claimId: string },
+    claim: { kind: 'manual' | 'wakeup'; claimId: string; generationId?: string },
   ): 'acquired' | 'replay' | 'claimed' | 'not_ready' {
     const task = this.get(userId, conversationId, taskId);
     if (task == null || task.status === 'running') {
@@ -1966,6 +1967,8 @@ export async function runCheckBackgroundTask(params: {
   /** Scopes that tool-call id, whose provider ids repeat across runs and agents. */
   agentId?: string;
   runId?: string;
+  /** Stable response-message identity used to fence abandoned manual claims. */
+  generationId?: string;
   subagentTasks?: SubagentTaskConfig;
   claimBackgroundToolResult?: (params: {
     userId: string;
@@ -1975,6 +1978,8 @@ export async function runCheckBackgroundTask(params: {
     agentId?: string;
     kind: 'manual';
     claimId: string;
+    generationId?: string;
+    allowUnfinished?: boolean;
   }) => Promise<BackgroundToolResultClaim>;
   recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
 }): Promise<string> {
@@ -2016,13 +2021,19 @@ export async function runCheckBackgroundTask(params: {
             agentId: task.agentId,
             kind: 'manual' as const,
             claimId: invocationId,
+            ...(params.generationId == null ? {} : { generationId: params.generationId }),
           };
           let durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
           if (durableClaim.status === 'claimed') {
             let recovered = false;
             let recoveryUnavailable = false;
+            const existingClaim = durableClaim.claim;
+            const recoverableClaim =
+              existingClaim?.kind === 'wakeup' ||
+              (existingClaim?.kind === 'manual' && existingClaim.generationId != null);
             if (
-              durableClaim.claim?.kind === 'wakeup' &&
+              recoverableClaim &&
+              existingClaim != null &&
               params.recoverDeadBackgroundToolClaim != null
             ) {
               try {
@@ -2030,7 +2041,13 @@ export async function runCheckBackgroundTask(params: {
                   userId,
                   conversationId,
                   messageId: task.messageId,
-                  claimId: durableClaim.claim.claimId,
+                  claimId: existingClaim.claimId,
+                  ...(existingClaim.kind === 'manual'
+                    ? {
+                        kind: 'manual' as const,
+                        generationId: existingClaim.generationId,
+                      }
+                    : {}),
                 });
               } catch (error) {
                 recoveryUnavailable = true;
@@ -2123,7 +2140,11 @@ export async function runCheckBackgroundTask(params: {
                   userId,
                   conversationId,
                   taskId,
-                  { kind: 'manual', claimId: invocationId },
+                  {
+                    kind: 'manual',
+                    claimId: invocationId,
+                    ...(params.generationId == null ? {} : { generationId: params.generationId }),
+                  },
                 );
                 if (localClaim === 'claimed') {
                   return JSON.stringify({
@@ -2156,7 +2177,12 @@ export async function runCheckBackgroundTask(params: {
              * could never take over that abandoned reservation. The live-
              * artifact exception above cannot wait for its own generation. */
             if (!localClaimNeedsNoDurableConfirmation) {
-              const reconciledClaim = await params.claimBackgroundToolResult(durableClaimInput);
+              const reconciledClaim = await params.claimBackgroundToolResult({
+                ...durableClaimInput,
+                /** Retirement above makes this owner-process takeover safe;
+                 * the terminal row may still be a mid-turn partial save. */
+                allowUnfinished: true,
+              });
               if (reconciledClaim.status === 'claimed') {
                 backgroundTaskRegistry.releaseResultClaim(userId, conversationId, taskId, {
                   kind: 'manual',
@@ -2176,11 +2202,62 @@ export async function runCheckBackgroundTask(params: {
                     'The task is finished and its result is being made durable. Retry this poll shortly.',
                 });
               }
+              /** The response's final full save can overwrite a claim stamped
+               * on its unfinished partial row. Mirror only a DURABLY acquired
+               * claim so the persistence retry re-applies that ownership after
+               * finalization; never create an unanchored local reservation. */
+              const mirroredClaim = backgroundTaskRegistry.claimResult(
+                userId,
+                conversationId,
+                taskId,
+                {
+                  kind: 'manual',
+                  claimId: invocationId,
+                  ...(params.generationId == null ? {} : { generationId: params.generationId }),
+                },
+              );
+              if (mirroredClaim === 'claimed') {
+                logger.error(
+                  `[background] Durable manual claim for ${taskId} conflicts with process-local ownership.`,
+                );
+              }
             }
           }
         }
       }
       return JSON.stringify(serializeTask(task, { includeResult: true }));
+    }
+
+    const subagentTasks = params.subagentTasks;
+    let subagentPollChecked = false;
+    /** Routed subagents have their own durable/cross-replica store. Resolve
+     * them before ordinary-tool Mongo recovery so two fallback reads—or a
+     * message-store outage—cannot delay or mask a healthy subagent result. */
+    if (action === 'poll' && subagentTasks != null) {
+      subagentPollChecked = true;
+      try {
+        const routedStore = routedSubagentStore(subagentTasks.store);
+        const claim =
+          routedStore == null
+            ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
+            : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
+        const claimed = serializeSubagentClaim(
+          claim,
+          agentUsesSubagentCompletionWakeups(subagentTasks, params.agentId),
+        );
+        if (claimed != null) {
+          return JSON.stringify(claimed);
+        }
+      } catch (error) {
+        if (error instanceof SubagentTaskOwnerUnavailableError) {
+          return JSON.stringify({
+            status: 'unavailable',
+            background_task_id: taskId,
+            message: error.message,
+          });
+        }
+        throw error;
+      }
     }
 
     if (action === 'poll' && params.claimBackgroundToolResult != null) {
@@ -2191,13 +2268,18 @@ export async function runCheckBackgroundTask(params: {
         agentId: params.agentId,
         kind: 'manual' as const,
         claimId: invocationId,
+        ...(params.generationId == null ? {} : { generationId: params.generationId }),
       };
       let durableClaim: BackgroundToolResultClaim;
       try {
         durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
+        const existingClaim = durableClaim.status === 'claimed' ? durableClaim.claim : undefined;
+        const recoverableClaim =
+          existingClaim?.kind === 'wakeup' ||
+          (existingClaim?.kind === 'manual' && existingClaim.generationId != null);
         if (
-          durableClaim.status === 'claimed' &&
-          durableClaim.claim?.kind === 'wakeup' &&
+          recoverableClaim &&
+          existingClaim != null &&
           durableClaim.messageId != null &&
           params.recoverDeadBackgroundToolClaim != null
         ) {
@@ -2205,7 +2287,13 @@ export async function runCheckBackgroundTask(params: {
             userId,
             conversationId,
             messageId: durableClaim.messageId,
-            claimId: durableClaim.claim.claimId,
+            claimId: existingClaim.claimId,
+            ...(existingClaim.kind === 'manual'
+              ? {
+                  kind: 'manual' as const,
+                  generationId: existingClaim.generationId,
+                }
+              : {}),
           });
           if (recovered) {
             durableClaim = await params.claimBackgroundToolResult(durableClaimInput);
@@ -2257,11 +2345,10 @@ export async function runCheckBackgroundTask(params: {
       }
     }
 
-    const subagentTasks = params.subagentTasks;
     if (subagentTasks != null) {
       try {
         const routedStore = routedSubagentStore(subagentTasks.store);
-        if (action === 'poll') {
+        if (action === 'poll' && !subagentPollChecked) {
           const claim =
             routedStore == null
               ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)

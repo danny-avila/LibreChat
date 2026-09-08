@@ -2119,6 +2119,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
       .fn()
       .mockResolvedValueOnce({ status: 'not_ready' })
       .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'not_ready' })
       .mockResolvedValueOnce({ status: 'acquired', results: [] });
     const request = {
       userId: 'claim_user',
@@ -2126,6 +2127,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
       args: { background_task_id: created.task.id },
       agentId: 'agent_parent_1',
       runId: 'poll-run',
+      generationId: 'response-claim',
       claimBackgroundToolResult,
     };
 
@@ -2143,7 +2145,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(laterPoll).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
     expect(
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
-    ).toBeUndefined();
+    ).toMatchObject({ kind: 'manual', generationId: 'response-claim' });
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
@@ -2153,8 +2155,66 @@ describe('runCheckBackgroundTask (singleton)', () => {
         messageId: 'response-claim',
         taskId: created.task.id,
         kind: 'manual',
+        generationId: 'response-claim',
+        allowUnfinished: true,
       }),
     );
+  });
+
+  it('reclaims a dead manual delivery after its owning generation is gone', async () => {
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'claimed',
+        messageId: 'response-recovered',
+        claim: {
+          kind: 'manual',
+          claimId: 'abandoned-poll',
+          generationId: 'response-abandoned',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 'acquired',
+        messageId: 'response-recovered',
+        results: [
+          {
+            taskId: 'task-recovered-manual',
+            toolCallId: 'call-recovered-manual',
+            toolName: 'mutating_tool',
+            status: 'completed',
+            output: 'mutation already completed',
+          },
+        ],
+      });
+    const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'recovered_user',
+        conversationId: 'recovered_convo',
+        args: { background_task_id: 'task-recovered-manual' },
+        toolCallId: 'replacement-poll',
+        runId: 'replacement-run',
+        generationId: 'response-replacement',
+        claimBackgroundToolResult,
+        recoverDeadBackgroundToolClaim,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      background_task_id: 'task-recovered-manual',
+      result: 'mutation already completed',
+    });
+    expect(recoverDeadBackgroundToolClaim).toHaveBeenCalledWith({
+      userId: 'recovered_user',
+      conversationId: 'recovered_convo',
+      messageId: 'response-recovered',
+      claimId: 'abandoned-poll',
+      kind: 'manual',
+      generationId: 'response-abandoned',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
   });
 
   it('delivers a mandatory live-artifact poll without waiting for its dispatch row', async () => {
@@ -2540,7 +2600,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
   it('polls and one-shot claims a detached subagent result', async () => {
     const store = new InMemorySubagentTaskStore();
     const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
-    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_found' as const }));
+    const claimBackgroundToolResult = jest.fn(async () => {
+      throw new Error('message recovery unavailable');
+    });
     const started = store.start({
       scopeId: subagentTasks.scopeId,
       idempotencyKey: 'parent-run:parent-agent:call-1',
@@ -2587,7 +2649,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
-    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
+    expect(claimBackgroundToolResult).not.toHaveBeenCalled();
   });
 
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {

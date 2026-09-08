@@ -1125,6 +1125,7 @@ describe('Message Operations', () => {
         content: [
           {
             type: 'tool_call',
+            agentId: 'agent-a',
             tool_call: {
               id: 'call-same-generation',
               name: 'slow_tool',
@@ -1161,6 +1162,17 @@ describe('Message Operations', () => {
           kind: 'manual',
           claimId: 'manual-poll',
         }),
+      ).resolves.toEqual({ status: 'not_ready' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-same-generation',
+          kind: 'manual',
+          claimId: 'manual-poll',
+          allowUnfinished: true,
+        }),
       ).resolves.toEqual({
         status: 'acquired',
         results: [
@@ -1170,8 +1182,94 @@ describe('Message Operations', () => {
             toolName: 'slow_tool',
             status: 'completed',
             output: 'settled output',
+            agentId: 'agent-a',
           },
         ],
+      });
+    });
+
+    it('restores same-generation claim ownership after the final response save', async () => {
+      const terminalContent = [
+        {
+          type: 'tool_call',
+          tool_call: {
+            id: 'call-finalize-race',
+            name: 'mutating_tool',
+            output: 'mutation completed',
+            backgroundTask: {
+              version: 1,
+              taskId: 'task-finalize-race',
+              toolName: 'mutating_tool',
+              status: 'completed',
+              settledAt: new Date(),
+              completionWakeup: true,
+            },
+          },
+        },
+      ];
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        unfinished: true,
+        content: terminalContent,
+      });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-finalize-race',
+          kind: 'manual',
+          claimId: 'manual-owner',
+          generationId: 'response-finalize-owner',
+          allowUnfinished: true,
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+
+      /** The final in-memory response did not observe the concurrent claim and
+       * rewrites the content part without it. The detached persistence retry
+       * must restore the mirrored owner before the receipt can be replayed. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        unfinished: false,
+        content: terminalContent,
+      });
+      await updateToolCallResult({
+        userId: 'user123',
+        conversationId: mockMessageData.conversationId as string,
+        messageId: 'msg123',
+        toolCallId: 'call-finalize-race',
+        output: 'mutation completed',
+        backgroundTask: {
+          taskId: 'task-finalize-race',
+          toolName: 'mutating_tool',
+          status: 'completed',
+          settledAt: new Date(),
+          completionWakeup: true,
+          resultClaim: {
+            kind: 'manual',
+            claimId: 'manual-owner',
+            claimedAt: new Date(),
+            generationId: 'response-finalize-owner',
+          },
+        },
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-finalize-race',
+          kind: 'manual',
+          claimId: 'competing-owner',
+        }),
+      ).resolves.toEqual({
+        status: 'claimed',
+        claim: {
+          kind: 'manual',
+          claimId: 'manual-owner',
+          generationId: 'response-finalize-owner',
+        },
       });
     });
 
@@ -1220,6 +1318,7 @@ describe('Message Operations', () => {
           agentId: 'agent-a',
           kind: 'manual',
           claimId: 'recovery-poll',
+          generationId: 'response-recovery-owner',
         });
       await expect(recover()).resolves.toEqual(recovery);
       await expect(recover()).resolves.toEqual(recovery);
@@ -1235,7 +1334,11 @@ describe('Message Operations', () => {
       ).resolves.toEqual({
         status: 'claimed',
         messageId: 'msg123',
-        claim: { kind: 'manual', claimId: 'recovery-poll' },
+        claim: {
+          kind: 'manual',
+          claimId: 'recovery-poll',
+          generationId: 'response-recovery-owner',
+        },
       });
       await expect(
         claimBackgroundToolResults({
@@ -1254,6 +1357,7 @@ describe('Message Operations', () => {
         content: [
           {
             type: 'tool_call',
+            agentId: 'agent-a',
             tool_call: {
               id: 'call-lost',
               name: 'mutating_tool',
@@ -1273,10 +1377,21 @@ describe('Message Operations', () => {
           userId: 'user123',
           conversationId: mockMessageData.conversationId as string,
           taskId: 'task-lost',
+          agentId: 'agent-a',
           kind: 'manual',
           claimId: 'recovery-poll',
         }),
       ).resolves.toEqual({ status: 'outcome_unknown', toolName: 'mutating_tool' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-lost',
+          agentId: 'agent-b',
+          kind: 'manual',
+          claimId: 'wrong-agent-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
     });
 
     it('leaves a durable subagent handle to the routed subagent store', async () => {

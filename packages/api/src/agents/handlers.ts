@@ -288,6 +288,8 @@ export interface ToolExecuteOptions {
       agentId?: string;
       kind: 'manual';
       claimId: string;
+      generationId?: string;
+      allowUnfinished?: boolean;
     }) => Promise<BackgroundToolResultClaim>;
     recoverDeadClaim?: BackgroundToolDeadClaimRecovery;
   };
@@ -5516,6 +5518,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               kind: current.resultClaim.kind,
                               claimId: current.resultClaim.claimId,
                               claimedAt: new Date(current.resultClaim.claimedAt),
+                              ...(current.resultClaim.generationId == null
+                                ? {}
+                                : { generationId: current.resultClaim.generationId }),
                             },
                           }
                         : {}),
@@ -6085,6 +6090,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     toolCallId: tc.id,
                     agentId,
                     runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                    generationId: backgroundRunId,
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
