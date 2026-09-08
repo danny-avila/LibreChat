@@ -21,6 +21,7 @@ interface CatalogRow {
   tenantId?: string;
   tag: string;
   renameTo?: string;
+  position?: number;
 }
 export interface ConversationTagMigrationResult {
   scanned: number;
@@ -64,6 +65,7 @@ export async function migrateConversationTags(
   };
   const byName = new Map<string, string>();
   const byId = new Map<string, CatalogRow>();
+  const nextPositions = new Map<string, number>();
   for await (const tag of catalog.find({})) {
     if (
       !(tag._id instanceof Types.ObjectId) ||
@@ -73,6 +75,12 @@ export async function migrateConversationTags(
     ) {
       throw new Error('Tag migration requires valid catalog names and completed legacy renames');
     }
+    const position = tag.position === undefined ? 0 : tag.position;
+    if (!Number.isSafeInteger(position) || position < 0) {
+      throw new Error('Tag migration found an invalid catalog position');
+    }
+    const owner = scopeKey(tag, '');
+    nextPositions.set(owner, Math.max(nextPositions.get(owner) ?? 0, position + 1));
     const key = scopeKey(tag, tag.tag);
     if (byName.has(key))
       throw new Error('Tag migration found duplicate catalog names in one scope');
@@ -99,11 +107,18 @@ export async function migrateConversationTags(
     for (const name of names(conversation)) {
       const key = scopeKey(conversation, name);
       if (byName.has(key) || missing.has(key)) continue;
+      const owner = scopeKey(conversation, '');
+      const position = nextPositions.get(owner) ?? 0;
+      if (!Number.isSafeInteger(position)) {
+        throw new Error('Tag migration cannot allocate a safe catalog position');
+      }
+      nextPositions.set(owner, position + 1);
       missing.set(key, {
         _id: new Types.ObjectId(),
         user: conversation.user,
         ...(conversation.tenantId === undefined ? {} : { tenantId: conversation.tenantId }),
         tag: name,
+        position,
       });
     }
   }
@@ -116,7 +131,6 @@ export async function migrateConversationTags(
         $setOnInsert: {
           ...tag,
           count: 0,
-          position: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

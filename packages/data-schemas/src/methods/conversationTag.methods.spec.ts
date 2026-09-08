@@ -481,3 +481,24 @@ it('fails name resolution instead of misaligning IDs when a new label is concurr
     'Tag catalog changed',
   );
 });
+
+it('preserves tenant sidebar IDs and hydrates queried full documents in their tenant', async () => {
+  await seed('owner', 'tenant-a');
+  await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+    const ids = await resolveTagNames(mongoose, 'owner', ['sidebar label']);
+    await methods.updateTagsForConversation('owner', 'convo', ids, 'tenant-a', true);
+    const db = createMethods(mongoose);
+    const catalogRead = jest.spyOn(Catalog.collection, 'find');
+    const sidebar = await db.getConvosByCursor('owner');
+    expect(sidebar.conversations).toHaveLength(1);
+    expect(sidebar.conversations[0].tagIds).toEqual(ids);
+    expect(catalogRead).not.toHaveBeenCalled();
+    const queried = await db.getConvosQueried('owner', [{ conversationId: 'convo' }]);
+    expect(queried.conversations[0]).toMatchObject({
+      tenantId: 'tenant-a',
+      tags: ['sidebar label'],
+      tagIds: ids,
+    });
+    expect(queried.convoMap.convo).toBe(queried.conversations[0]);
+  });
+});

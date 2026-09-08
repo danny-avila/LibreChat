@@ -1188,6 +1188,70 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     }
   });
 
+  schema.post('findOneAndDelete', function (doc: DocumentWithMeiliIndex | null, next) {
+    next();
+    if (!meiliEnabled || !doc) return;
+    const key = doc[primaryKey as keyof DocumentWithMeiliIndex];
+    if (key == null) return;
+    const id = String(key);
+    runDetachedMeiliOperation(
+      getOperationKey(doc),
+      () =>
+        retryDetachedMeiliWrite(async () => {
+          const deletion = await index.deleteDocument(id);
+          const task = await client.waitForTask(deletion.taskUid, {
+            timeOutMs: meiliRequestTimeoutMs,
+            intervalMs: 100,
+          });
+          if (task.status !== 'succeeded')
+            throw new Error(`Meili deletion ended with ${task.status}`);
+        }, '[mongoMeili] Failed to remove a deleted document.'),
+      '[mongoMeili] Detached findOneAndDelete cleanup failed:',
+    );
+  });
+
+  const deletedPrimaryKeys = new WeakMap<object, string[]>();
+  if (!hasSchemaPath(schema, 'messages') && !hasSchemaPath(schema, 'messageId')) {
+    schema.pre('deleteMany', async function () {
+      if (!meiliEnabled) return;
+      const rows = await this.model.find(this.getFilter()).select(primaryKey).lean();
+      deletedPrimaryKeys.set(
+        this,
+        rows.map((row) => String(row[primaryKey])),
+      );
+    });
+    schema.post('deleteMany', function (_result, next) {
+      const ids = deletedPrimaryKeys.get(this);
+      const model = this.model;
+      deletedPrimaryKeys.delete(this);
+      next();
+      if (!ids?.length) return;
+      runDetachedMeiliOperation(
+        `${indexName}:deleteMany`,
+        () =>
+          processBatch(ids, syncOptions.batchSize, syncOptions.delayMs, (batch) =>
+            retryDetachedMeiliWrite(async () => {
+              const remaining = await model
+                .find({ [primaryKey]: { $in: batch } })
+                .select(primaryKey)
+                .lean();
+              const retained = new Set(remaining.map((row) => String(row[primaryKey])));
+              const deleted = batch.filter((id) => !retained.has(id));
+              if (!deleted.length) return;
+              const deletion = await index.deleteDocuments(deleted);
+              const task = await client.waitForTask(deletion.taskUid, {
+                timeOutMs: meiliRequestTimeoutMs,
+                intervalMs: 100,
+              });
+              if (task.status !== 'succeeded')
+                throw new Error(`Meili deletion ended with ${task.status}`);
+            }, '[mongoMeili] Failed to remove deleted documents.'),
+          ),
+        '[mongoMeili] Detached deleteMany cleanup failed:',
+      );
+    });
+  }
+
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
   schema.pre('deleteMany', async function (next) {
     if (!meiliEnabled) {

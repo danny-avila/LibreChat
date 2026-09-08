@@ -335,10 +335,8 @@ async function performSync(flowManager, flowId, flowType) {
     }
 
     const tagModel = mongoose.models.ConversationTag;
-    if (tagModel?.getSyncProgress) {
-      const progress = await tagModel.getSyncProgress();
-      if (!progress.isComplete) await tagModel.syncWithMeili();
-    }
+    // Deleted catalog rows cannot leave Mongo flags; every pass also sweeps their index entries.
+    if (tagModel?.syncWithMeili) await tagModel.syncWithMeili();
 
     if (messageSyncError) {
       throw messageSyncError;
@@ -416,6 +414,7 @@ async function indexSync() {
           }
           await Message.syncWithMeili();
           await Conversation.syncWithMeili();
+          await mongoose.models.ConversationTag?.syncWithMeili?.();
         } catch (err) {
           logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
         }
