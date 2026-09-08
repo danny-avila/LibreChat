@@ -2658,6 +2658,7 @@ export function createConversationMethods(
         }
         namesByUser.set(convo.user, names);
       }
+      // Catalog identities are shared; failed-import compensation removes content, not bookmarks.
       const importedIds = new Map<string, Map<string, string>>();
       for (const [user, names] of namesByUser) {
         const uniqueNames = [...names];

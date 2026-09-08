@@ -6,6 +6,8 @@ Browser mutations identify tags explicitly by ID. Existing name-based routes res
 
 Imports carry portable names and resolve them within the importing user's tenant. Source `tagIds` are ignored. JSON exports include names and omit database IDs.
 
+If an import fails after creating catalog entries, those entries remain as empty bookmarks. Import compensation removes its conversations and messages but does not delete shared catalog identities: another request may already be using them. Retrying the import reuses the entries. Unneeded bookmarks can be deleted explicitly.
+
 ## Controlled cutover
 
 Do not run old and new application writers concurrently. This is a coordinated upgrade, not a rolling migration with mixed-version writes.
