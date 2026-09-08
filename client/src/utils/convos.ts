@@ -778,13 +778,13 @@ export type PinnedConversationsData = {
 };
 
 /** A cached copy of a conversation together with when its query last heard from the server. */
-export type ConvoCandidate = {
-  convo: TConversation;
+export type ConvoCandidate = ConvoQueryAuthority & { convo: TConversation };
+
+export type ConvoQueryAuthority = {
   heardAt: number;
   fromServer: boolean;
+  requestOrder: number;
 };
-
-export type ConvoQueryAuthority = { heardAt: number; fromServer: boolean };
 
 const convoQueryServerFetchedAt = new WeakMap<QueryClient, WeakMap<Query, ConvoQueryAuthority>>();
 
@@ -796,12 +796,15 @@ export const trackConvoQueryAuthority = (
     return existing;
   }
   const fetchedAt = new WeakMap<Query, ConvoQueryAuthority>();
+  const requestOrders = new WeakMap<Query, number>();
+  let nextRequestOrder = 0;
   convoQueryServerFetchedAt.set(queryClient, fetchedAt);
   const cache = queryClient.getQueryCache();
   for (const query of cache.getAll()) {
     fetchedAt.set(query, {
       heardAt: query.state.dataUpdatedAt || Date.now(),
       fromServer: false,
+      requestOrder: 0,
     });
   }
   cache.subscribe((event) => {
@@ -814,12 +817,16 @@ export const trackConvoQueryAuthority = (
     ) {
       return;
     }
+    if (event.type === 'updated' && event.action.type === 'fetch') {
+      requestOrders.set(query, ++nextRequestOrder);
+    }
     const fromServer =
       event.type === 'updated' && event.action.type === 'success' && event.action.manual !== true;
     if (fromServer || !fetchedAt.has(query)) {
       fetchedAt.set(query, {
         heardAt: query.state.dataUpdatedAt || Date.now(),
         fromServer,
+        requestOrder: fromServer ? (requestOrders.get(query) ?? 0) : 0,
       });
     }
   });
@@ -842,6 +849,7 @@ export const convoQueryAuthority = (
     fetchedAt.set(query, {
       heardAt: query.state.dataUpdatedAt || Date.now(),
       fromServer: false,
+      requestOrder: 0,
     });
   }
   return fetchedAt.get(query)!;
@@ -867,8 +875,8 @@ export const isAggregateQueryAuthoritative = (queryClient: QueryClient, query: Q
  *
  * The reply stamp decides, since that one only moves forward. The catch-up cannot break the tie:
  * "mark as unread" clears it outright, so a fresh `undefined` is newer than a stale stamp and
- * comparing the values would pick the stale copy. What separates them is which query has the
- * latest server-fetch provenance; local cache writes never advance that authority.
+ * comparing the values would pick the stale copy. Server reads are ordered by when their
+ * requests started, not when they completed; a delayed older response must not win the tie.
  */
 export const freshestCandidate = (
   a: ConvoCandidate | undefined,
@@ -886,6 +894,9 @@ export const freshestCandidate = (
   }
   if (b.fromServer !== a.fromServer) {
     return b.fromServer ? b : a;
+  }
+  if (b.requestOrder !== a.requestOrder) {
+    return b.requestOrder > a.requestOrder ? b : a;
   }
   return b.heardAt > a.heardAt ? b : a;
 };

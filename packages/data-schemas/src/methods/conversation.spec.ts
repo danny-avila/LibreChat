@@ -2178,11 +2178,15 @@ describe('Conversation Operations', () => {
         updatedAt: createdAt,
       });
 
-      await stampConvoLastResponse('user123', mockConversationData.conversationId);
+      const settled = await stampConvoLastResponse('user123', mockConversationData.conversationId);
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
+      expect(settled?.lastResponseAt).toBeInstanceOf(Date);
+      expect(settled?.updatedAt).toBeInstanceOf(Date);
+      expect(settled?.lastResponseAt?.getTime()).toBe(convo?.lastResponseAt?.getTime());
+      expect(settled?.updatedAt?.getTime()).toBe(convo?.updatedAt?.getTime());
       expect(convo?.lastResponseAt).toBeInstanceOf(Date);
       expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(createdAt.getTime());
       expect(convo?.updatedAt?.getTime()).toBeGreaterThan(createdAt.getTime());
@@ -2236,11 +2240,15 @@ describe('Conversation Operations', () => {
         endpoint: EModelEndpoint.openAI,
       });
 
-      await stampConvoLastResponse('someone-else', mockConversationData.conversationId);
+      const settled = await stampConvoLastResponse(
+        'someone-else',
+        mockConversationData.conversationId,
+      );
 
       const convo = await Conversation.findOne({
         conversationId: mockConversationData.conversationId,
       }).lean<IConversation>();
+      expect(settled).toBeNull();
       expect(convo?.lastResponseAt).toBeUndefined();
     });
   });

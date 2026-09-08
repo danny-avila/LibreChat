@@ -355,6 +355,47 @@ describe('useUnseenConversations', () => {
     ]);
   });
 
+  it.each([true, false])(
+    'keeps the newer server read state when an older variant arrives last (seen: %s)',
+    async (isSeen) => {
+      const { result, queryClient } = setup();
+      const row = { conversationId: 'remote', title: 'Remote', lastResponseAt: RESPONDED_AT };
+      const seen = { ...row, lastSeenAt: SEEN_AFTER };
+      const older = isSeen ? row : seen;
+      const newer = isSeen ? seen : row;
+      let resolveOlder!: () => void;
+      const olderResponse = new Promise<void>((resolve) => {
+        resolveOlder = resolve;
+      });
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+      try {
+        const olderFetch = queryClient.fetchQuery({
+          queryKey: [QueryKeys.allConversations, { tags: ['work'] }],
+          queryFn: async () => {
+            await olderResponse;
+            return page([older]);
+          },
+        });
+        await act(async () => {
+          await queryClient.fetchQuery({
+            queryKey: listKeyActive,
+            queryFn: async () => page([newer]),
+          });
+        });
+        now.mockReturnValue(2_000);
+        await act(async () => {
+          resolveOlder();
+          await olderFetch;
+        });
+        expect(result.current?.unseen.map((convo) => convo.conversationId)).toEqual(
+          isSeen ? [] : ['remote'],
+        );
+      } finally {
+        now.mockRestore();
+      }
+    },
+  );
+
   it('reports a fresh reply to an already-unseen conversation', () => {
     const { result, queryClient } = setup();
 
