@@ -709,3 +709,49 @@ describe('catalog mutation tenant boundaries', () => {
     ]);
   });
 });
+
+describe('required tag indexes without automatic indexing', () => {
+  it.each([false, true])(
+    'provisions once and recovers from a failed build: %s',
+    async (failFirst) => {
+      const isolated = new mongoose.Mongoose();
+      await isolated.connect(mongoServer.getUri(`tag-index-${failFirst}`), { autoIndex: false });
+      createModels(isolated);
+      const Tag = isolated.models.ConversationTag;
+      const localMethods = createConversationTagMethods(isolated);
+      await Tag.init();
+      const build = jest.spyOn(Tag, 'createIndexes');
+      try {
+        if (failFirst) {
+          build.mockRejectedValueOnce(new Error('DDL unavailable'));
+          await expect(
+            localMethods.createConversationTag('owner', { tag: 'blocked' }, null),
+          ).rejects.toThrow();
+          expect(await Tag.countDocuments({})).toBe(0);
+        }
+        await Promise.all([
+          localMethods.createConversationTag('owner', { tag: 'first' }, null),
+          localMethods.createConversationTag('owner', { tag: 'second' }, null),
+        ]);
+        expect(build).toHaveBeenCalledTimes(failFirst ? 2 : 1);
+        const indexes = await Tag.collection.indexes();
+        expect(indexes).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              key: { reservedNames: 1, user: 1, tenantId: 1 },
+              unique: true,
+            }),
+          ]),
+        );
+        await expect(
+          localMethods.updateConversationTag('owner', 'first', { tag: 'second' }, null),
+        ).rejects.toThrow();
+        expect(await Tag.countDocuments({})).toBe(2);
+      } finally {
+        build.mockRestore();
+        await isolated.connection.dropDatabase();
+        await isolated.disconnect();
+      }
+    },
+  );
+});

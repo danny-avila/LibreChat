@@ -7,6 +7,7 @@ import type { IChatProject, IChatProjectDocument, IConversation } from '~/types'
 import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { getTenantId } from '~/config/tenantContext';
+import { buildIndexWithRetry } from '~/utils/retry';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -418,6 +419,19 @@ export async function updateChatProjectLastConversationForUser(
 }
 
 export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
+  let lookupIndexPromise: Promise<string> | undefined;
+  function ensureProjectLookupIndex(): Promise<string> {
+    lookupIndexPromise ??= buildIndexWithRetry(
+      // eslint-disable-next-line no-restricted-syntax -- Index DDL is collection-wide; it does not read or mutate tenant records.
+      () => mongoose.models.Conversation.collection.createIndex({ chatProjectId: 1 }),
+      'createIndex(Conversation.chatProjectId)',
+    ).catch((error) => {
+      lookupIndexPromise = undefined;
+      throw error;
+    });
+    return lookupIndexPromise;
+  }
+
   async function createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -444,6 +458,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     }
 
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+    await ensureProjectLookupIndex();
     const projects = await ChatProject.aggregate<IChatProject>([
       {
         $match: {
@@ -483,6 +498,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     );
     const query =
       filters.length === 1 ? filters[0] : ({ $and: filters } as FilterQuery<IChatProjectDocument>);
+    await ensureProjectLookupIndex();
     const projects = await ChatProject.aggregate<ProjectLean>([
       { $match: query },
       ...committedProjectStats(),

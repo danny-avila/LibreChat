@@ -588,3 +588,52 @@ describe('ChatProject methods', () => {
     expect(deleteResult.deletedCount).toBe(0);
   });
 });
+
+describe('required project lookup index', () => {
+  it('installs and uses the foreign-key index with automatic indexing disabled', async () => {
+    const isolated = new mongoose.Mongoose();
+    await isolated.connect(mongoServer.getUri('project-index'), { autoIndex: false });
+    createModels(isolated);
+    const Project = isolated.models.ChatProject;
+    const Convo = isolated.models.Conversation;
+    const localMethods = createChatProjectMethods(isolated);
+    const project = await localMethods.createChatProject('owner', { name: 'Indexed project' });
+    await Convo.collection.insertMany([
+      {
+        user: 'owner',
+        conversationId: 'member',
+        chatProjectId: String(project._id),
+        updatedAt: new Date(),
+      },
+      ...Array.from({ length: 1000 }, (_, index) => ({
+        user: 'other-owner',
+        conversationId: `other-${index}`,
+        chatProjectId: `other-project-${index}`,
+      })),
+    ]);
+    const build = jest.spyOn(Convo.collection, 'createIndex');
+    const aggregate = jest.spyOn(Project, 'aggregate');
+    try {
+      build.mockRejectedValueOnce(new Error('DDL unavailable'));
+      await expect(localMethods.getChatProject('owner', String(project._id))).rejects.toThrow(
+        'DDL unavailable',
+      );
+      expect(aggregate).not.toHaveBeenCalled();
+      expect(await localMethods.getChatProject('owner', String(project._id))).toMatchObject({
+        conversationCount: 1,
+      });
+      const pipeline = aggregate.mock.calls[0][0];
+      const explain = await Project.aggregate(pipeline).explain('executionStats');
+      const lookup = explain.stages.find((stage: Record<string, unknown>) => '$lookup' in stage);
+      expect(lookup.indexesUsed).toContain('chatProjectId_1');
+      expect(lookup.totalDocsExamined).toBeLessThan(10);
+      await localMethods.listChatProjects('owner');
+      expect(build).toHaveBeenCalledTimes(2);
+    } finally {
+      build.mockRestore();
+      aggregate.mockRestore();
+      await isolated.connection.dropDatabase();
+      await isolated.disconnect();
+    }
+  });
+});

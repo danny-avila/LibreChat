@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import type { FilterQuery, Model } from 'mongoose';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { createIndexesWithRetry } from '~/utils/retry';
 import { getTenantId } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
@@ -20,6 +21,22 @@ function optionalTenantFilter<T>(tenantId?: string | null): FilterQuery<T> {
     return { tenantId: { $exists: false } } as FilterQuery<T>;
   }
   return (tenantId === undefined ? {} : { tenantId }) as FilterQuery<T>;
+}
+
+const tagIndexBuilds = new WeakMap<object, Promise<void>>();
+
+/** Name claims are authoritative even when automatic schema indexing is disabled. */
+function ensureTagIndexes(mongoose: typeof import('mongoose')): Promise<void> {
+  const model = mongoose.models.ConversationTag;
+  let pending = tagIndexBuilds.get(model);
+  if (!pending) {
+    pending = createIndexesWithRetry(model).catch((error) => {
+      tagIndexBuilds.delete(model);
+      throw error;
+    });
+    tagIndexBuilds.set(model, pending);
+  }
+  return pending;
 }
 
 /** Maintains legacy cached deltas for existing writers. Public counts are derived
@@ -65,6 +82,7 @@ export async function decrementTagCounts(
       },
     ]);
 
+    await ensureTagIndexes(mongoose);
     await tenantSafeBulkWrite(ConversationTag, bulkOps);
   } catch (error) {
     logger.error('[decrementTagCounts] Error decrementing tag counts', error);
@@ -304,6 +322,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const maxPosition = await ConversationTag.findOne(scope).sort('-position').lean();
       const position = (maxPosition?.position || 0) + 1;
 
+      await ensureTagIndexes(mongoose);
       const newTag = await ConversationTag.findOneAndUpdate(
         { ...scope, tag },
         {
@@ -421,6 +440,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         throw new Error('Tag rename is in progress');
       }
       if (renaming) {
+        await ensureTagIndexes(mongoose);
         if (!existingTag.renameTo) {
           const [catalogTag, committedTag] = await Promise.all([
             ConversationTag.exists({ ...scope, $or: [{ tag: newTag }, { renameTo: newTag }] }),
@@ -588,6 +608,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       }
 
       if (bulkOps.length > 0) {
+        await ensureTagIndexes(mongoose);
         await tenantSafeBulkWrite(ConversationTag, bulkOps);
       }
 
@@ -648,6 +669,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       });
     }
     if (bulkOps.length > 0) {
+      await ensureTagIndexes(mongoose);
       await tenantSafeBulkWrite(ConversationTag, bulkOps);
     }
   }
@@ -678,6 +700,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         },
       }));
 
+      await ensureTagIndexes(mongoose);
       const result = await tenantSafeBulkWrite(ConversationTag, bulkOps);
       if (result && result.modifiedCount > 0) {
         logger.debug(
