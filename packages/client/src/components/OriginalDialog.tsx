@@ -44,6 +44,34 @@ export const useNestedPopoverStyle = (): React.CSSProperties | undefined => {
   return depth > 0 ? { zIndex, pointerEvents: 'auto' } : undefined;
 };
 
+/**
+ * Whether Escape belongs to something inside the dialog rather than the dialog
+ * itself: a trigger whose popover is open, focus inside a menu/listbox/combobox,
+ * or a tooltip. WCAG 2.1.1 wants those dismissable on their own, so the first
+ * Escape closes them and the dialog stays put.
+ */
+const escapeBelongsToPopup = (ownerDocument: Document): boolean => {
+  const activeElement = ownerDocument.activeElement;
+  if (activeElement?.getAttribute('aria-expanded') === 'true') {
+    return true;
+  }
+  const popovers = ownerDocument.querySelectorAll(
+    '[role="menu"], [role="listbox"], [role="combobox"]',
+  );
+  for (const popover of popovers) {
+    if (popover.contains(activeElement)) {
+      return true;
+    }
+  }
+  const tooltips = ownerDocument.querySelectorAll('.tooltip');
+  for (const tooltip of tooltips) {
+    if (tooltip.contains(activeElement)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 interface OGDialogProps extends DialogPrimitive.DialogProps {
   triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
   triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];
@@ -179,7 +207,16 @@ const DialogContent: React.ForwardRefExoticComponent<
         if (content == null || event.key !== 'Escape' || event.isComposing) {
           return;
         }
+        /** Another layer already answered this Escape — a select inside the
+         *  dialog closing its own listbox, say. Forcing the dialog shut on top
+         *  of that would take the reader's work with it. */
+        if (event.defaultPrevented) {
+          return;
+        }
         const ownerDocument = content.ownerDocument;
+        if (escapeBelongsToPopup(ownerDocument)) {
+          return;
+        }
         /** Radix Toast's own `li`. Matched whatever its `data-state`, because a
          *  toast that has begun closing keeps its dismissable layer registered
          *  until the exit animation ends — and that layer is what takes the
@@ -188,14 +225,20 @@ const DialogContent: React.ForwardRefExoticComponent<
         if (toast == null) {
           return;
         }
+        /** Read the RESOLVED z-index: dialogs outside this primitive carry
+         *  theirs in a class (`ImagePreview` is `z-[250]`), and an inline-only
+         *  reading scores those zero and mistakes the dialog underneath for the
+         *  frontmost one. Ties fall to the later element, which is the one
+         *  painted on top. */
+        const stackOrder = (element: HTMLElement): number => {
+          const zIndex = Number(ownerDocument.defaultView?.getComputedStyle(element).zIndex);
+          return Number.isNaN(zIndex) ? 0 : zIndex;
+        };
         const frontmost = Array.from(
           ownerDocument.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]'),
         ).reduce<HTMLElement | null>(
           (highest, candidate) =>
-            highest == null ||
-            Number(candidate.style.zIndex || 0) >= Number(highest.style.zIndex || 0)
-              ? candidate
-              : highest,
+            highest == null || stackOrder(candidate) >= stackOrder(highest) ? candidate : highest,
           null,
         );
         if (frontmost !== content) {
@@ -212,32 +255,9 @@ const DialogContent: React.ForwardRefExoticComponent<
     that our tooltips be dismissable with Escape key) */
     const handleEscapeKeyDown = React.useCallback(
       (event: KeyboardEvent) => {
-        const activeElement = document.activeElement;
-
-        // Check if active element is a trigger with an open popover (aria-expanded="true")
-        if (activeElement?.getAttribute('aria-expanded') === 'true') {
+        if (escapeBelongsToPopup(document)) {
           event.preventDefault();
           return;
-        }
-
-        // Check if a dropdown menu, listbox, or combobox has focus (focus is within it)
-        const popoverElements = document.querySelectorAll(
-          '[role="menu"], [role="listbox"], [role="combobox"]',
-        );
-        for (const popover of popoverElements) {
-          if (popover.contains(activeElement)) {
-            event.preventDefault();
-            return;
-          }
-        }
-
-        // Check if a tooltip has focus (focus is within it)
-        const tooltips = document.querySelectorAll('.tooltip');
-        for (const tooltip of tooltips) {
-          if (tooltip.contains(activeElement)) {
-            event.preventDefault();
-            return;
-          }
         }
 
         propsOnEscapeKeyDown?.(event);
