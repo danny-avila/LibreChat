@@ -23,15 +23,25 @@ export const usePopoverZIndex = (): number => {
 };
 
 /**
- * The same layered z-index, but only for a popover that already carries its own
- * default layer in CSS: `undefined` outside any dialog leaves that class (and
- * any consumer override of it) untouched, while inside a dialog the inline
- * value lifts the popover over the dialog it belongs to.
+ * What a body-portaled Radix popover needs to survive a modal dialog, or
+ * `undefined` outside one — so a popover's own CSS layer (and any consumer
+ * override of it) is left untouched everywhere else.
+ *
+ * Radix coordinates nested layers through module-level state, so it only
+ * coordinates layers from the *same copy* of `react-dismissable-layer`. This
+ * app has three: `react-dialog` is pinned at 1.0.2 (#11023) while `react-select`
+ * and `react-hover-card` resolve to their own newer copies. A popover therefore
+ * never learns that the dialog disabled body pointer events, and never lifts
+ * itself over the dialog — it opens behind an opaque overlay, inert.
+ *
+ * `pointer-events` mirrors what `DropdownPopup` already does for Ariakit menus
+ * in the same situation; a click inside still reaches the dialog's own
+ * "inside" check, because React portals bubble through the React tree.
  */
-export const useNestedPopoverZIndex = (): number | undefined => {
+export const useNestedPopoverStyle = (): React.CSSProperties | undefined => {
   const depth = useDialogDepth();
   const zIndex = usePopoverZIndex();
-  return depth > 0 ? zIndex : undefined;
+  return depth > 0 ? { zIndex, pointerEvents: 'auto' } : undefined;
 };
 
 interface OGDialogProps extends DialogPrimitive.DialogProps {

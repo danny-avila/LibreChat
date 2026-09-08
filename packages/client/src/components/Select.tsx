@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { CaretSortIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon } from '@radix-ui/react-icons';
-import { useNestedPopoverZIndex } from './OriginalDialog';
+import { useNestedPopoverStyle } from './OriginalDialog';
 import { cn } from '~/utils';
 
 // @ts-ignore - Radix UI type conflicts with React types
@@ -82,12 +82,12 @@ const SelectContent: React.ForwardRefExoticComponent<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
 >(({ className = '', children, position = 'popper', style, ...props }, ref) => {
-  const zIndex = useNestedPopoverZIndex();
+  const nestedStyle = useNestedPopoverStyle();
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         ref={ref}
-        style={{ zIndex, ...style }}
+        style={{ ...nestedStyle, ...style }}
         className={cn(
           'relative z-40 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-border-light bg-surface-secondary text-text-primary shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           position === 'popper'

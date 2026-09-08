@@ -11,6 +11,10 @@ import { OGDialog, OGDialogContent } from '../OriginalDialog';
  * opens *behind* both, invisible and unclickable, while the dialog around it
  * still takes clicks — the shape of the Run Code settings being unusable once
  * danny-avila/LibreChat#15722 moved them into a dialog.
+ *
+ * The modal dialog also parks `pointer-events: none` on the body, and Radix
+ * re-enables it only for layers registered in the same copy of
+ * `react-dismissable-layer` — which a popover from another copy is not.
  */
 const DIALOG_CONTENT_Z_INDEX = 140;
 
@@ -54,6 +58,7 @@ describe('portaled popovers inside a dialog', () => {
 
     const listbox = screen.getByRole('listbox');
     expect(zIndexOf(listbox)).toBeGreaterThan(DIALOG_CONTENT_Z_INDEX);
+    expect(listbox.style.pointerEvents).toBe('auto');
   });
 
   it('opens a hover card above the dialog content it belongs to', () => {
@@ -65,13 +70,15 @@ describe('portaled popovers inside a dialog', () => {
       </OGDialog>,
     );
 
-    expect(zIndexOf(screen.getByText('What stateful sessions do'))).toBeGreaterThan(
-      DIALOG_CONTENT_Z_INDEX,
-    );
+    const card = screen.getByText('What stateful sessions do');
+    expect(zIndexOf(card)).toBeGreaterThan(DIALOG_CONTENT_Z_INDEX);
+    expect(card.style.pointerEvents).toBe('auto');
   });
 
   /** Outside a dialog the CSS layer still decides, so a consumer that raises it
-   *  by class — `z-[999]` to clear the legacy `Dialog` — keeps that override. */
+   *  by class — `z-[999]` to clear the legacy `Dialog` — keeps that override.
+   *  Radix still owns `pointer-events` there: a select disables outside pointer
+   *  events for its own layer stack whether or not a dialog is involved. */
   it('leaves the CSS layer alone outside any dialog', () => {
     render(
       <>
@@ -85,6 +92,7 @@ describe('portaled popovers inside a dialog', () => {
     expect(listbox.style.zIndex).toBe('');
     expect(listbox).toHaveClass('z-40');
     expect(card.style.zIndex).toBe('');
+    expect(card.style.pointerEvents).toBe('');
     expect(card).toHaveClass('z-50');
   });
 });
