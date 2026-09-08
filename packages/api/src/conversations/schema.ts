@@ -13,7 +13,7 @@ import type {
   ConversationPageBoundary,
   ConversationResource,
 } from '@librechat/data-schemas';
-import type { TMinimalFeedback } from 'librechat-data-provider';
+import type { TMinimalFeedback, TResponseUsage, TContextUsageEvent } from 'librechat-data-provider';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
@@ -634,6 +634,53 @@ function toTimestamp(value: Date | string | undefined): string | null {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+export interface ConversationMessageMetadata {
+  usage?: TResponseUsage;
+  contextUsage?: TContextUsageEvent;
+  summaryUsedTokens?: number;
+}
+
+const finiteNumber = z.number().finite();
+const tokenAmount = finiteNumber.nonnegative();
+export const conversationMessageMetadataSchema: z.ZodType<ConversationMessageMetadata> = z.object({
+  usage: z
+    .object({
+      input: tokenAmount,
+      output: tokenAmount,
+      cacheWrite: tokenAmount,
+      cacheRead: tokenAmount,
+      cost: tokenAmount.optional(),
+    })
+    .optional(),
+  contextUsage: z
+    .object({
+      runId: z.string().optional(),
+      agentId: z.string().optional(),
+      breakdown: z.object({
+        maxContextTokens: tokenAmount,
+        instructionTokens: tokenAmount,
+        systemMessageTokens: tokenAmount,
+        dynamicInstructionTokens: tokenAmount,
+        toolSchemaTokens: tokenAmount,
+        summaryTokens: tokenAmount,
+        toolCount: tokenAmount,
+        messageCount: tokenAmount,
+        messageTokens: tokenAmount,
+        availableForMessages: finiteNumber,
+        toolTokenCounts: z.record(tokenAmount).optional(),
+        deferredToolNames: z.array(z.string()).optional(),
+      }),
+      contextBudget: finiteNumber.optional(),
+      effectiveInstructionTokens: tokenAmount.optional(),
+      prePruneContextTokens: tokenAmount.optional(),
+      remainingContextTokens: finiteNumber.optional(),
+      calibrationRatio: tokenAmount.optional(),
+      completedOutputTokens: tokenAmount.optional(),
+    })
+    .optional(),
+  summaryUsedTokens: tokenAmount.optional(),
+});
+
 export interface ConversationResponse {
   id: string;
   title: string;
@@ -669,6 +716,7 @@ export interface ConversationMessageResponse {
   iconURL: string | null;
   tokenCount: number | null;
   addedConvo: boolean;
+  metadata: ConversationMessageMetadata | null;
   feedback: (Omit<TMinimalFeedback, 'tag'> & Partial<Pick<TMinimalFeedback, 'tag'>>) | null;
 }
 
@@ -711,6 +759,9 @@ export function projectConversationMessage(
   const feedback = withinContentLimits(source.feedback, 0, budget)
     ? publicFeedback.safeParse(source.feedback)
     : undefined;
+  const metadata = withinContentLimits(source.metadata, 0, budget)
+    ? conversationMessageMetadataSchema.safeParse(source.metadata)
+    : undefined;
   const content = projectParts(source.content, contentSchema);
   const files = projectParts(source.files, conversationFileSchema);
   const attachments = projectParts(source.attachments, conversationAttachmentSchema);
@@ -743,6 +794,7 @@ export function projectConversationMessage(
         : null,
     addedConvo: source.addedConvo === true,
     feedback: feedback?.success ? feedback.data : null,
+    metadata: metadata?.success ? metadata.data : null,
   };
 }
 

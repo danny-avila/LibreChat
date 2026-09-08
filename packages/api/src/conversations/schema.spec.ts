@@ -867,3 +867,73 @@ describe('public message snapshot metadata', () => {
     ).toEqual([]);
   });
 });
+
+describe('public usage metadata', () => {
+  it('preserves the complete public usage/context contract and strips private fields', () => {
+    const metadata = {
+      usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 3, cost: 0.02 },
+      summaryUsedTokens: 50,
+      contextUsage: {
+        runId: 'run',
+        agentId: 'agent',
+        contextBudget: 100,
+        effectiveInstructionTokens: 12,
+        prePruneContextTokens: 120,
+        remainingContextTokens: -20,
+        calibrationRatio: 1.2,
+        completedOutputTokens: 4,
+        breakdown: {
+          maxContextTokens: 100,
+          instructionTokens: 12,
+          systemMessageTokens: 2,
+          dynamicInstructionTokens: 3,
+          toolSchemaTokens: 7,
+          summaryTokens: 10,
+          toolCount: 1,
+          messageCount: 2,
+          messageTokens: 108,
+          availableForMessages: -8,
+          toolTokenCounts: { search: 7 },
+          deferredToolNames: ['search'],
+        },
+      },
+    };
+    expect(
+      projectConversationMessage({
+        metadata: {
+          ...metadata,
+          thoughtSignatures: { call: 'private' },
+          unknown: 'private',
+          usage: { ...metadata.usage, private: true },
+          contextUsage: {
+            ...metadata.contextUsage,
+            private: true,
+            breakdown: { ...metadata.contextUsage.breakdown, private: true },
+          },
+        },
+      } as unknown as ConversationMessageResource).metadata,
+    ).toEqual(metadata);
+  });
+
+  it.each([
+    undefined,
+    null,
+    [],
+    { usage: { input: '10' } },
+    { summaryUsedTokens: -1 },
+    { summaryUsedTokens: Infinity },
+    { contextUsage: { breakdown: {} } },
+  ])('omits malformed metadata: %j', (metadata) => {
+    expect(
+      projectConversationMessage({ metadata } as unknown as ConversationMessageResource).metadata,
+    ).toBeNull();
+  });
+
+  it('accepts optional public metadata independently', () => {
+    expect(
+      projectConversationMessage({
+        metadata: { summaryUsedTokens: 0 },
+      } as unknown as ConversationMessageResource).metadata,
+    ).toEqual({ summaryUsedTokens: 0 });
+  });
+});

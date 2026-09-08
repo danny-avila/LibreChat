@@ -6,6 +6,7 @@ import type { Document } from 'mongodb';
 import {
   MAX_CONVERSATION_MANAGEMENT_TITLE_LENGTH,
   conversationTagsSchema,
+  conversationMessageMetadataSchema,
   conversationFileSchema,
   conversationAttachmentSchema,
   isValidConversationContentPart,
@@ -450,6 +451,11 @@ function assertMessage(
 
   if (value.metadata != null) {
     assertNoOwnershipFields(value.metadata, `${location}.metadata`);
+    const metadata = conversationMessageMetadataSchema.safeParse(value.metadata);
+    if (!metadata.success) {
+      throw new ConversationImportError(`Field "${location}.metadata" is not valid`);
+    }
+    value.metadata = metadata.data as JsonObject;
   }
   if (value.feedback != null) {
     assertNoOwnershipFields(value.feedback, `${location}.feedback`);

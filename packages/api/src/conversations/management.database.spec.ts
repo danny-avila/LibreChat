@@ -458,6 +458,11 @@ describe('conversation management handlers with Mongo persistence', () => {
       user: OWNER,
       conversationId: SHARED_ID,
       messageId: 'rated',
+      metadata: {
+        usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 3, cost: 0.02 },
+        summaryUsedTokens: 50,
+        thoughtSignatures: { call: 'private' },
+      },
       endpoint: 'assistants',
       model: 'assistant-name',
       tokenCount: 12,
@@ -475,6 +480,10 @@ describe('conversation management handlers with Mongo persistence', () => {
     const list = await request(app).get('/');
     expect(list.body.data[0]).toMatchObject({ endpoint: 'assistants', model: 'provider-model' });
     const messages = await request(app).get(`/${SHARED_ID}/messages`);
+    expect(messages.body.data[0].metadata).toEqual({
+      usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 3, cost: 0.02 },
+      summaryUsedTokens: 50,
+    });
     expect(messages.body.data[0]).toMatchObject({
       endpoint: 'assistants',
       model: 'assistant-name',

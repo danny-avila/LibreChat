@@ -457,7 +457,15 @@ describe('createConversationImportOperation', () => {
   it.each([false, true])(
     'discards imported provider thread state (recursive=%s)',
     async (recursive) => {
-      const message = { ...baseExport.messages[0], thread_id: 'source-thread' };
+      const message = {
+        ...baseExport.messages[0],
+        thread_id: 'source-thread',
+        metadata: {
+          thoughtSignatures: { call: 'private' },
+          summaryUsedTokens: 50,
+          usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 3, cost: 0.02 },
+        },
+      };
       const { messages: _messages, ...conversation } = baseExport;
       const { deps, importer } = createDependencies(
         JSON.stringify({
@@ -475,9 +483,30 @@ describe('createConversationImportOperation', () => {
       });
       const normalized = JSON.stringify(importer.mock.calls[0][0]);
       expect(normalized).not.toContain('thread_id');
+      expect(normalized).not.toContain('thoughtSignatures');
+      expect(normalized).toContain('"summaryUsedTokens":50');
+      expect(normalized).toContain('"cost":0.02');
       expect(normalized).toContain('hello');
     },
   );
+
+  it('rejects malformed public message metadata before importing', async () => {
+    const { deps, importer } = createDependencies(
+      JSON.stringify({
+        ...baseExport,
+        messages: [{ ...baseExport.messages[0], metadata: { usage: { input: 'bad' } } }],
+      }),
+    );
+    await expect(
+      createConversationImportOperation(deps)({
+        filepath: '/tmp/metadata.json',
+        requestUserId: 'owner',
+        format: 'librechat',
+      }),
+    ).rejects.toThrow('metadata" is not valid');
+    expect(importer).not.toHaveBeenCalled();
+    expect(deps.unlinkFile).toHaveBeenCalledTimes(1);
+  });
 
   it('strips provider file IDs from options before any importer or policy runs', async () => {
     const { deps, importer } = createDependencies(

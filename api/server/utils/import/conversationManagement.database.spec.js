@@ -61,6 +61,11 @@ describe('importConversations database compatibility', () => {
         sender: 'User',
         isCreatedByUser: true,
         thread_id: 'source-thread',
+        metadata: {
+          thoughtSignatures: { call: 'private' },
+          summaryUsedTokens: 50,
+          usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 3, cost: 0.02 },
+        },
       };
       await fs.writeFile(
         filepath,
@@ -78,6 +83,10 @@ describe('importConversations database compatibility', () => {
       expect(stored).toHaveLength(1);
       expect(stored[0].text).toBe('Saved transcript');
       expect(stored[0]).not.toHaveProperty('thread_id');
+      expect(stored[0].metadata).toEqual({
+        summaryUsedTokens: 50,
+        usage: { input: 10, output: 4, cacheRead: 2, cacheWrite: 3, cost: 0.02 },
+      });
     },
   );
 
