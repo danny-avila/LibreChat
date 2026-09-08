@@ -1304,12 +1304,18 @@ class BaseClient {
     }
 
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
+    const req = options?.req;
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    const resolvedRetention = hasResolvedConversation ? req.resolvedConversation : null;
     const reqCtx = {
-      userId: options?.req?.user?.id,
+      userId: req?.user?.id,
       isTemporary:
-        options?.req?._agentEventBindingRetention?.isTemporary ?? options?.req?.body?.isTemporary,
-      expiredAt: options?.req?._agentEventBindingRetention?.expiredAt,
-      interfaceConfig: options?.req?.config?.interfaceConfig,
+        req?._agentEventBindingRetention?.isTemporary ??
+        resolvedRetention?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
+      interfaceConfig: req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
       reqCtx,
@@ -1341,10 +1347,7 @@ class BaseClient {
         ? createdAtOnInsert
         : undefined;
 
-    const req = options?.req;
     const skippedExistingConvoLookup = this.fetchedConvo === true;
-    const hasResolvedConversation =
-      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
     let existingConvo = null;
     if (!skippedExistingConvoLookup && hasResolvedConversation) {
       existingConvo = req.resolvedConversation;

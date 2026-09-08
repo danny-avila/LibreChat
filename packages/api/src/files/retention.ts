@@ -146,7 +146,15 @@ async function computeRetentionExpiry(
         '[getRetentionExpiry] Error checking conversation retention:',
         err,
       );
-      if (isRetentionAll || isBooleanOrStringTrue(req?.body?.isTemporary)) {
+      if (isRetentionAll) {
+        const temporaryExpiry = createRetentionExpiry(req, dependencies, true).expiredAt;
+        const generalExpiry = createRetentionExpiry(req, dependencies, false).expiredAt;
+        if (temporaryExpiry && generalExpiry) {
+          return { expiredAt: temporaryExpiry < generalExpiry ? temporaryExpiry : generalExpiry };
+        }
+        return { expiredAt: temporaryExpiry ?? generalExpiry };
+      }
+      if (isBooleanOrStringTrue(req?.body?.isTemporary)) {
         return createRetentionExpiry(req, dependencies, true);
       }
       return {};

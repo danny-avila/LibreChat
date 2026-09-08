@@ -195,6 +195,29 @@ describe('retention helpers', () => {
     );
 
     expect(dependencies.createExpirationDate).toHaveBeenCalledWith(expect.any(Object), true);
+    expect(dependencies.createExpirationDate).toHaveBeenCalledWith(expect.any(Object), false);
+  });
+
+  it('uses the shorter configured period when an all-data lookup fails', async () => {
+    dependencies.getConvo.mockRejectedValue(new Error('offline'));
+    dependencies.createExpirationDate.mockImplementation(createChatExpirationDate);
+    const now = Date.now();
+
+    const result = await getRetentionExpiry(
+      request({
+        config: {
+          interfaceConfig: {
+            retentionMode: RetentionMode.ALL,
+            temporaryChatRetention: 8760,
+            generalChatRetention: 1,
+          },
+        },
+      }),
+      dependencies,
+    );
+
+    expect(result.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + 3600000);
+    expect(result.expiredAt?.getTime()).toBeLessThan(now + 3601000);
   });
 
   it('returns expiry when isTemporary is true', async () => {

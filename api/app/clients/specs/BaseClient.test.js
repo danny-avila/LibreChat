@@ -2017,9 +2017,11 @@ describe('BaseClient', () => {
         endpoint: 'openai',
         endpointType: 'openai',
         temperature: 0.7,
+        isTemporary: true,
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
       };
       const user = { id: 'user-id' };
-      const req = { user, resolvedConversation: existingConvo };
+      const req = { user, body: { isTemporary: false }, resolvedConversation: existingConvo };
 
       getConvo.mockClear();
       saveMessage.mockResolvedValue({ messageId: 'msg-1' });
@@ -2039,6 +2041,14 @@ describe('BaseClient', () => {
       );
 
       expect(getConvo).not.toHaveBeenCalled();
+      expect(saveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isTemporary: true,
+          expiredAt: existingConvo.expiredAt,
+        }),
+        expect.any(Object),
+        expect.any(Object),
+      );
       expect(req).not.toHaveProperty('resolvedConversation');
       expect(TestClient.fetchedConvo).toBe(true);
       expect(saveConvo).toHaveBeenCalledWith(
