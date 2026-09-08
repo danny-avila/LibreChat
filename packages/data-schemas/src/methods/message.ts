@@ -4,8 +4,8 @@ import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
+import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
-import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -272,14 +272,27 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
  */
 function buildMessageSaveUpdate(
   update: Record<string, unknown>,
-  options: { stampModelOutputOnInsert: boolean; unsetContextMeta: boolean },
+  options: {
+    stampModelOutputOnInsert: boolean;
+    unsetContextMeta: boolean;
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+  },
 ): UpdateQuery<IMessage> {
-  if (!options.stampModelOutputOnInsert && !options.unsetContextMeta) {
+  if (
+    !options.stampModelOutputOnInsert &&
+    !options.unsetContextMeta &&
+    options.retentionOnInsert == null
+  ) {
     return update;
   }
   return {
     $set: update,
-    ...(options.stampModelOutputOnInsert && { $setOnInsert: { isUserSubmitted: false } }),
+    ...((options.stampModelOutputOnInsert || options.retentionOnInsert != null) && {
+      $setOnInsert: {
+        ...(options.stampModelOutputOnInsert && { isUserSubmitted: false }),
+        ...options.retentionOnInsert,
+      },
+    }),
     ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
   };
 }
@@ -290,7 +303,12 @@ async function findOneAndMergeMessageProvenance(
   update: Record<string, unknown>,
   userSubmittedPaths: readonly string[],
   userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
-  options: { upsert: boolean; stampModelOutputOnInsert?: boolean; unsetContextMeta?: boolean },
+  options: {
+    upsert: boolean;
+    stampModelOutputOnInsert?: boolean;
+    unsetContextMeta?: boolean;
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+  },
 ) {
   const safeUpdate = { ...update };
   delete safeUpdate._id;
@@ -332,6 +350,8 @@ async function findOneAndMergeMessageProvenance(
         filter,
         {
           $set: { ...safeUpdate, ...provenance },
+          ...(current == null &&
+            options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
           ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
         },
         { upsert: options.upsert && current == null, new: true },
@@ -768,6 +788,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
+      delete update.isTemporary;
+      delete update.expiredAt;
+      let retentionOnInsert: { expiredAt: Date; isTemporary: false } | undefined;
 
       if (expiredAt instanceof Date && !Number.isNaN(expiredAt.getTime())) {
         if (typeof isTemporary === 'boolean') {
@@ -778,12 +801,31 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
-        try {
-          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
-        } catch (err) {
-          logger.error('Error creating temporary chat expiration date:', err);
-          logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-          update.expiredAt = createFallbackRetentionDate();
+        if (
+          typeof isTemporary === 'boolean' ||
+          interfaceConfig.generalChatRetention === undefined
+        ) {
+          try {
+            update.expiredAt = createChatExpirationDate(interfaceConfig, isTemporary);
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+            update.expiredAt = createFallbackRetentionDate();
+          }
+        } else {
+          try {
+            retentionOnInsert = {
+              expiredAt: createChatExpirationDate(interfaceConfig, false),
+              isTemporary: false,
+            };
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+            retentionOnInsert = {
+              expiredAt: createFallbackRetentionDate(),
+              isTemporary: false,
+            };
+          }
         }
       } else if (isTemporary === true) {
         update.isTemporary = true;
@@ -834,16 +876,42 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             update,
             userSubmittedPaths,
             userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert, unsetContextMeta },
+            { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
           )
         : await Message.findOneAndUpdate(
             { messageId: params.messageId, user: userId },
-            buildMessageSaveUpdate(update, { stampModelOutputOnInsert, unsetContextMeta }),
+            buildMessageSaveUpdate(update, {
+              stampModelOutputOnInsert,
+              unsetContextMeta,
+              retentionOnInsert,
+            }),
             { upsert: true, new: true },
           );
 
       if (message == null) {
         return message;
+      }
+
+      /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        interfaceConfig.generalChatRetention !== undefined &&
+        typeof isTemporary !== 'boolean' &&
+        message.expiredAt == null
+      ) {
+        const deadline = createChatExpirationDate(interfaceConfig, message.isTemporary === true);
+        const result = await Message.updateOne(
+          {
+            _id: message._id,
+            expiredAt: null,
+            isTemporary: message.isTemporary === true ? true : { $ne: true },
+          },
+          { $set: { expiredAt: deadline } },
+          { timestamps: false },
+        );
+        if (result.modifiedCount > 0) {
+          message.expiredAt = deadline;
+        }
       }
 
       if (

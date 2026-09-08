@@ -396,6 +396,7 @@ const processFileURL = async ({
   tenantId,
   req,
 }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
     const savedFile = await saveURL({ userId, URL, fileName, basePath, tenantId });
@@ -438,7 +439,7 @@ const processFileURL = async ({
         source: fileStrategy,
         type,
         context,
-        ...(await getRetentionExpiry(req)),
+        ...(await retentionExpiryPromise),
         tenantId,
         width: dimensions.width,
         height: dimensions.height,
@@ -464,6 +465,7 @@ const processFileURL = async ({
  * @returns {Promise<void>}
  */
 const processImageFile = async ({ req, res, metadata, returnFile = false, sseStream }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const { file } = req;
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
@@ -490,7 +492,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       context: FileContext.message_attachment,
       source,
       type: `image/${appConfig.imageOutputType}`,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
       width,
       height,
       tenantId: req.user.tenantId,
@@ -516,6 +518,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: string}>}
  */
 const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
   const { saveBuffer } = getStrategyFunctions(source);
@@ -551,7 +554,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       source,
       type,
       width,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
       height,
       tenantId: req.user.tenantId,
     },
@@ -577,6 +580,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * constructing it re-reads the user's key.
  */
 const processFileUpload = async ({ req, res, metadata, sseStream, openai: providedOpenAI }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -662,7 +666,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
       embedded,
       source,
       height,
@@ -704,6 +708,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   if (!messageAttachment && !agent_id) {
     throw new Error('No agent ID provided for agent file upload');
   }
+
+  const retentionExpiryPromise = getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
+  });
 
   const isImage = file.mimetype.startsWith('image');
   let fileInfoMetadata;
@@ -829,11 +839,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           return;
         }
       }
-      const retentionExpiry = await getAgentFileRetentionExpiry({
-        req,
-        messageAttachment,
-        tool_resource,
-      });
+      const retentionExpiry = await retentionExpiryPromise;
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -1079,11 +1085,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     });
   }
 
-  const retentionExpiry = await getAgentFileRetentionExpiry({
-    req,
-    messageAttachment,
-    tool_resource,
-  });
+  const retentionExpiry = await retentionExpiryPromise;
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,
@@ -1128,6 +1130,7 @@ const processOpenAIFile = async ({
   saveFile = false,
   updateUsage = false,
 }) => {
+  const retentionExpiryPromise = saveFile ? getRetentionExpiry(openai.req) : null;
   const _file = await openai.files.retrieve(file_id);
   const originalName = filename ?? (_file.filename ? path.basename(_file.filename) : undefined);
   const filepath = `${openai.baseURL}/files/${userId}/${file_id}${
@@ -1149,7 +1152,7 @@ const processOpenAIFile = async ({
     source,
     model: openai.req.body.model,
     filename: originalName ?? file_id,
-    ...(await getRetentionExpiry(openai.req)),
+    ...(await retentionExpiryPromise),
     tenantId: openai.req?.user?.tenantId,
   };
 
@@ -1181,6 +1184,7 @@ const processOpenAIFile = async ({
  * @returns {Promise<MongoFile>} The file metadata.
  */
 const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileExt }) => {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
   const appConfig = req.config;
@@ -1198,7 +1202,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     context: FileContext.assistants_output,
     file_id,
     filename,
-    ...(await getRetentionExpiry(req)),
+    ...(await retentionExpiryPromise),
     tenantId: req.user.tenantId,
   };
   try {
@@ -1243,6 +1247,12 @@ async function retrieveAndProcessFile({
   const fileExt = path.extname(basename);
   if (client.attachedFileIds?.has(file_id) || client.processedFileIds?.has(file_id)) {
     return processOpenAIFile({ ...processArgs, updateUsage: true });
+  }
+
+  // Prime both consumers before downloading content; each reuses its request's cached lookup.
+  void getRetentionExpiry(client.req);
+  if (openai.req !== client.req) {
+    void getRetentionExpiry(openai.req);
   }
 
   /**
@@ -1327,6 +1337,7 @@ async function saveBase64Image(
   url,
   { req, file_id: _file_id, filename: _filename, endpoint, context, resolution },
 ) {
+  const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const effectiveResolution = resolution ?? appConfig.fileConfig?.imageGeneration ?? 'high';
   const file_id = _file_id ?? v4();
@@ -1368,7 +1379,7 @@ async function saveBase64Image(
       user: req.user.id,
       bytes: image.bytes,
       width: image.width,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
       height: image.height,
       tenantId: req.user.tenantId,
     },

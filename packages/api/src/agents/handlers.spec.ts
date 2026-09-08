@@ -1459,58 +1459,92 @@ describe('createToolExecuteHandler', () => {
       }
     });
 
-    it('filters thrown foreground errors before result delivery or logging', async () => {
-      const protectedValue = 'PROTECTED-FOREGROUND-ERROR';
-      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
-        loadedTools: [
-          {
-            name: 'throwing_tool',
-            invoke: jest.fn(async () => {
-              throw new Error(protectedValue);
-            }),
-          },
-        ] as never[],
-      }));
-      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
-      try {
-        const handler = createToolExecuteHandler({ loadTools });
-        const [result] = await invokeHandlerWithConfig(
-          handler,
-          [{ id: 'call_filtered_throw', name: 'throwing_tool', args: {} }],
-          {
-            req: {
-              config: {
-                filters: {
-                  toolArguments: {
-                    pii: {
-                      fields: ['output'],
-                      starterPatterns: [],
-                      customPatterns: [
-                        {
-                          id: 'protected-output',
-                          label: 'protected output',
-                          regex: 'PROTECTED-[A-Z-]+',
-                        },
-                      ],
+    it.each(['generic', 'workspace', 'workspace-expanded'])(
+      'filters %s foreground errors before result delivery or logging',
+      async (kind) => {
+        const protectedValue = 'PROTECTED-FOREGROUND-ERROR';
+        const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+          loadedTools: [
+            {
+              name: 'throwing_tool',
+              invoke: jest.fn(async () => {
+                if (kind.startsWith('workspace')) {
+                  const body =
+                    kind === 'workspace-expanded'
+                      ? '\u0001'.repeat(2000) + protectedValue + '\u0001'.repeat(2000)
+                      : protectedValue;
+                  throw new WorkspaceToolHttpError('rejected', 503, body);
+                }
+                throw new Error(protectedValue);
+              }),
+            },
+          ] as never[],
+        }));
+        const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+        try {
+          const handler = createToolExecuteHandler({ loadTools });
+          const [result] = await invokeHandlerWithConfig(
+            handler,
+            [{ id: 'call_filtered_throw', name: 'throwing_tool', args: {} }],
+            {
+              req: {
+                config: {
+                  filters: {
+                    toolArguments: {
+                      pii: {
+                        fields: ['output'],
+                        starterPatterns: [],
+                        customPatterns: [
+                          {
+                            id: 'protected-output',
+                            label: 'protected output',
+                            regex: 'PROTECTED-[A-Z-]+',
+                          },
+                        ],
+                      },
                     },
                   },
                 },
               },
             },
-          },
-        );
+          );
 
-        expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('content_filter_block');
-        expect(result.errorMessage).not.toContain(protectedValue);
-        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
-        expect(errorSpy).toHaveBeenCalledWith(
-          '[ON_TOOL_EXECUTE] Tool throwing_tool error',
-          expect.objectContaining({ contentFiltered: true }),
-        );
-      } finally {
-        errorSpy.mockRestore();
-      }
+          expect(result.status).toBe('error');
+          expect(result.errorMessage).toContain('content_filter_block');
+          expect(result.errorMessage).not.toContain(protectedValue);
+          expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
+          expect(errorSpy).toHaveBeenCalledWith(
+            '[ON_TOOL_EXECUTE] Tool throwing_tool error',
+            expect.objectContaining({ contentFiltered: true }),
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+      },
+    );
+
+    it('surfaces workspace transport diagnostics thrown by a loaded tool', async () => {
+      const body = '{"code":"ASSIGNMENT_EXPIRED"}';
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'workspace_command',
+            invoke: jest.fn(async () => {
+              throw new WorkspaceToolHttpError('rejected', 504, body);
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const [result] = await invokeHandler(createToolExecuteHandler({ loadTools }), [
+        { id: 'call_command_error', name: 'workspace_command', args: {} },
+      ]);
+      expect(result.errorMessage).toContain('upstreamStatus: 504');
+      expect(result.errorMessage).toContain('ASSIGNMENT_EXPIRED');
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[ON_TOOL_EXECUTE] Tool workspace_command error',
+        expect.objectContaining({ upstreamStatus: 504, upstreamBody: body }),
+      );
     });
 
     it('truncates oversized tool errors in the result and log context', async () => {
@@ -5523,6 +5557,42 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('requires an attached code environment');
       expect(searchWorkspace).not.toHaveBeenCalled();
     });
+
+    it.each([400, 409, 503, 504])(
+      'surfaces workspace HTTP %i in logs and model results',
+      async (status) => {
+        const body = '{"code":"WORKER_BUSY","error":"Worker is busy"}';
+        const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+          listWorkspaceFiles: jest.fn(async () => {
+            throw new WorkspaceToolHttpError('rejected', status, body);
+          }),
+        });
+        const [result] = await invokeHandler(handler, [
+          { id: 'call_workspace_error', name: 'list_workspace_files', args: {} },
+        ]);
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain(`upstreamStatus: ${status}`);
+        expect(result.errorMessage).toContain('WORKER_BUSY');
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool list_workspace_files error',
+          expect.objectContaining({
+            name: 'WorkspaceToolHttpError',
+            upstreamStatus: status,
+            upstreamBody: body,
+            upstreamBodyTruncated: false,
+          }),
+        );
+      },
+    );
 
     it('lists files through the selected attached worker and forwards cancellation', async () => {
       const controller = new AbortController();

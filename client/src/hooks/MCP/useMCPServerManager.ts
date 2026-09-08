@@ -506,12 +506,15 @@ export function useMCPServerManager({
 
           startServerPolling(serverName, response.flowId, response.oauthTimeout);
         } else {
-          await Promise.all([
+          cleanupServerState(serverName);
+          void Promise.all([
             queryClient.invalidateQueries([QueryKeys.mcpServers]),
             queryClient.invalidateQueries([QueryKeys.mcpTools]),
             queryClient.invalidateQueries([QueryKeys.mcpAuthValues]),
             queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]),
-          ]);
+          ]).catch((error) => {
+            console.error(`[MCP Manager] Failed to refresh queries for ${serverName}:`, error);
+          });
 
           showToast({
             message: localize('com_ui_mcp_initialized_success', { 0: serverName }),
@@ -522,8 +525,6 @@ export function useMCPServerManager({
           if (!currentValues.includes(serverName)) {
             setMCPValues([...currentValues, serverName]);
           }
-
-          cleanupServerState(serverName);
         }
         return response;
       } catch (error) {

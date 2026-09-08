@@ -4,6 +4,8 @@
   "com_ui_code_approval_ask_description": "Ask before editing files or running commands",
   "com_ui_code_approval_accept_edits": "Accept edits",
   "com_ui_code_approval_accept_edits_description": "Allow file edits; continue asking before commands",
+  "com_ui_code_approval_full_access": "Full access",
+  "com_ui_code_approval_full_access_description": "Allow file edits and commands on your machine without asking. Sandbox limits and required approvals still apply.",
   "com_ui_review_action": "Review 1 action",
   "com_ui_review_actions": "Review {{0}} actions",
   "com_ui_review_run_command": "Run command",

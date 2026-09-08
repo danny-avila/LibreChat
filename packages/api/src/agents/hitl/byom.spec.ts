@@ -13,6 +13,95 @@ import { canAgentGraphPause } from './admission';
 
 const signal = new AbortController().signal;
 
+const fullAccessSettings: AttachedCodeEnvironmentPolicySettings = {
+  configSchema: {
+    permissions: {
+      fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+      commandExecution: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
+    },
+  },
+};
+
+describe('full access', () => {
+  test('allows native writes and commands while preserving mandatory skill review', async () => {
+    const settings = new Map([['attached-agent', fullAccessSettings]]);
+    const mode = resolveAttachedCodeApprovalMode('fullAccess', settings);
+    const hook = createAttachedCodeEnvironmentPolicyHook(new Set(settings.keys()), settings, mode);
+    for (const toolName of ['create_file', 'edit_file', 'bash_tool', 'execute_code']) {
+      await expect(
+        hook(
+          {
+            toolName,
+            executingAgentId: 'attached-agent',
+            toolInput: { path: 'output.txt' },
+          } as never,
+          signal,
+        ),
+      ).resolves.toEqual({ decision: 'allow' });
+    }
+    await expect(
+      hook(
+        {
+          toolName: 'create_file',
+          executingAgentId: 'attached-agent',
+          toolInput: { path: 'skills/reviewer/SKILL.md' },
+        } as never,
+        signal,
+      ),
+    ).resolves.toMatchObject({ decision: 'ask' });
+    await expect(hook({ toolName: 'bash_tool' } as never, signal)).resolves.toMatchObject({
+      decision: 'deny',
+    });
+    await expect(
+      hook({ toolName: 'mcp_example', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toEqual({});
+  });
+
+  test.each([false, true])(
+    'rejects restrictive siblings regardless of traversal order: %s',
+    (reverse) => {
+      const entries: Array<[string, AttachedCodeEnvironmentPolicySettings]> = [
+        ['permissive', fullAccessSettings],
+        [
+          'restricted',
+          { configSchema: { permissions: { fileWrite: { allowed: ['ask'], default: 'ask' } } } },
+        ],
+      ];
+      expect(() =>
+        resolveAttachedCodeApprovalMode(
+          'fullAccess',
+          new Map(reverse ? entries.reverse() : entries),
+        ),
+      ).toThrow('not permitted');
+    },
+  );
+
+  test('rechecks changed and newly discovered machine restrictions before execution', async () => {
+    const settings = new Map([['attached-agent', fullAccessSettings]]);
+    const attachedIds = new Set(settings.keys());
+    const hook = createAttachedCodeEnvironmentPolicyHook(
+      attachedIds,
+      settings,
+      resolveAttachedCodeApprovalMode('fullAccess', settings),
+    );
+    settings.set('attached-agent', {
+      ...fullAccessSettings,
+      settings: { permissions: { commandExecution: 'deny' } },
+    });
+    await expect(
+      hook({ toolName: 'bash_tool', executingAgentId: 'attached-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'deny' });
+    attachedIds.add('lazy-agent');
+    settings.set('lazy-agent', {});
+    await expect(
+      hook({ toolName: 'bash_tool', executingAgentId: 'lazy-agent' } as never, signal),
+    ).resolves.toMatchObject({ decision: 'ask' });
+    expect(() => resolveAttachedCodeApprovalMode('fullAccess', settings, false)).toThrow(
+      'not permitted',
+    );
+  });
+});
+
 test('identifies every built-in tool that can touch a stateful code target', () => {
   for (const toolName of [
     'read_file',

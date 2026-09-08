@@ -24,6 +24,7 @@ interface ConversationMetadataScope {
   interfaceConfig?: AppConfig['interfaceConfig'];
   /** Browser-only retention hint carried by the legacy mutation routes. */
   isTemporary?: boolean;
+  expiredAt?: Date;
 }
 
 export interface ConversationTitleUpdate extends ConversationMetadataScope {
@@ -83,6 +84,7 @@ export async function updateConversationTitleMetadata(
       userId: input.userId,
       interfaceConfig: input.interfaceConfig,
       isTemporary: input.isTemporary,
+      expiredAt: input.expiredAt,
     },
     { conversationId: input.conversationId, title },
     {
@@ -103,6 +105,7 @@ export async function updateConversationArchiveMetadata(
       userId: input.userId,
       interfaceConfig: input.interfaceConfig,
       isTemporary: input.isTemporary,
+      expiredAt: input.expiredAt,
     },
     { conversationId: input.conversationId, isArchived: input.isArchived },
     {

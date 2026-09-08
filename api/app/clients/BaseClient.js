@@ -1304,12 +1304,25 @@ class BaseClient {
     }
 
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
+    const req = options?.req;
+    if (
+      req?.config?.interfaceConfig?.retentionMode === 'all' &&
+      req?.config?.interfaceConfig?.generalChatRetention !== undefined &&
+      !Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
+    ) {
+      req.resolvedConversation = await db.getConvo(req.user.id, message.conversationId);
+    }
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    const resolvedRetention = hasResolvedConversation ? req.resolvedConversation : null;
     const reqCtx = {
-      userId: options?.req?.user?.id,
+      userId: req?.user?.id,
       isTemporary:
-        options?.req?._agentEventBindingRetention?.isTemporary ?? options?.req?.body?.isTemporary,
-      expiredAt: options?.req?._agentEventBindingRetention?.expiredAt,
-      interfaceConfig: options?.req?.config?.interfaceConfig,
+        req?._agentEventBindingRetention?.isTemporary ??
+        resolvedRetention?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
+      interfaceConfig: req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
       reqCtx,
@@ -1341,19 +1354,15 @@ class BaseClient {
         ? createdAtOnInsert
         : undefined;
 
-    const req = options?.req;
     const skippedExistingConvoLookup = this.fetchedConvo === true;
-    const hasResolvedConversation =
-      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
     let existingConvo = null;
     if (!skippedExistingConvoLookup && hasResolvedConversation) {
       existingConvo = req.resolvedConversation;
     } else if (!skippedExistingConvoLookup) {
       existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
     }
-    if (hasResolvedConversation) {
-      delete req.resolvedConversation;
-    }
+    // Keep the authenticated conversation available for response, abort, and retry saves.
+    // fetchedConvo already prevents repeating the conversation initialization work.
     const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
 
     const unsetFields = {};
@@ -1389,6 +1398,10 @@ class BaseClient {
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
+
+    if (req != null && conversation != null) {
+      req.resolvedConversation = conversation;
+    }
 
     return { message: savedMessage, conversation };
   }

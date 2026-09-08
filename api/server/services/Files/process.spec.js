@@ -3,7 +3,7 @@ jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
   runAsSystem: jest.fn((fn) => fn()),
-  createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
+  createChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
 }));
 
 jest.mock('@librechat/agents', () => ({
@@ -237,7 +237,10 @@ const db = require('~/models');
 const {
   processAgentFileUpload,
   processDeleteRequest,
+  processFileUpload,
   processFileURL,
+  processImageFile,
+  retrieveAndProcessFile,
   sweepExpiredFiles,
   startExpiredFileSweep,
 } = require('./process');
@@ -328,6 +331,90 @@ const setupStoredFileUpload = (result = {}) => {
   getStrategyFunctions.mockReturnValue({ handleFileUpload });
   return handleFileUpload;
 };
+
+describe('upload retention scheduling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+  });
+
+  it.each([false, true])(
+    'resolves assistant file retention only for new records (existing=%s)',
+    async (existing) => {
+      const req = makeReq({ body: { endpoint: 'assistants' } });
+      let resolveProvider;
+      const retrieve = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveProvider = resolve;
+          }),
+      );
+      const openai = { req, baseURL: 'https://example.com', files: { retrieve } };
+      const pending = retrieveAndProcessFile({
+        openai,
+        client: { req, attachedFileIds: new Set(existing ? ['file-1'] : []) },
+        file_id: 'file-1',
+        basename: 'output.txt',
+      });
+      expect(retrieve).toHaveBeenCalledTimes(1);
+      if (existing) {
+        expect(getRetentionExpiry).not.toHaveBeenCalled();
+      } else {
+        expect(getRetentionExpiry).toHaveBeenCalled();
+      }
+      resolveProvider({ filename: 'output.txt' });
+      await pending;
+      if (existing) {
+        expect(getRetentionExpiry).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    ['image', processImageFile, 'handleImageUpload'],
+    ['file', processFileUpload, 'handleFileUpload'],
+  ])(
+    'overlaps the retention lookup with %s storage',
+    async (_label, processUpload, strategyKey) => {
+      let resolveRetention;
+      let resolveStorage;
+      getRetentionExpiry.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRetention = resolve;
+        }),
+      );
+      const storage = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveStorage = resolve;
+          }),
+      );
+      getStrategyFunctions.mockReturnValue({ [strategyKey]: storage });
+      const req = makeReq({ body: { endpoint: 'openAI' } });
+      req.config.imageOutputType = 'webp';
+
+      const pending = processUpload({
+        req,
+        res: mockRes,
+        metadata: { endpoint: 'openAI', file_id: 'file-uuid-123' },
+      });
+      await Promise.resolve();
+
+      expect(getRetentionExpiry).toHaveBeenCalledWith(req, expect.any(Object));
+      expect(storage).toHaveBeenCalledTimes(1);
+      resolveStorage({
+        bytes: 42,
+        filename: 'upload.bin',
+        filepath: '/uploads/upload.bin',
+        width: 10,
+        height: 10,
+      });
+      resolveRetention({ expiredAt: new Date('2030-01-01T00:00:00.000Z') });
+      await pending;
+    },
+  );
+});
 
 describe('processAgentFileUpload', () => {
   beforeEach(() => {

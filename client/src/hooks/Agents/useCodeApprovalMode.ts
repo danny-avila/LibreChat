@@ -27,18 +27,30 @@ export default function useCodeApprovalMode(
     | TConfig['statefulCodeSessions']
     | undefined;
   const environments = statefulCodeSessions?.environments;
-  const attachedEnvironments = useMemo(
+  const reachable = useMemo(
     () =>
-      collectReachableAgents([primaryAgent, addedAgent], agentsMap)
+      collectReachableAgents([primaryAgent, addedAgent], agentsMap, [
+        conversation?.agent_id,
+        addedConversation?.agent_id,
+      ]),
+    [addedAgent, agentsMap, primaryAgent, conversation?.agent_id, addedConversation?.agent_id],
+  );
+  const codeEnvironments = useMemo(
+    () =>
+      reachable.agents
         .filter(
           (agent) =>
             agent.stateful_code_sessions === true && agent.tools?.includes(Tools.execute_code),
         )
-        .map((agent) => findExecutionEnvironment(agent, environments))
-        .filter(
-          (environment): environment is TPublicCodeEnvironment => environment?.type === 'attached',
-        ),
-    [addedAgent, agentsMap, environments, primaryAgent],
+        .map((agent) => findExecutionEnvironment(agent, environments)),
+    [environments, reachable],
+  );
+  const attachedEnvironments = useMemo(
+    () =>
+      codeEnvironments.filter(
+        (environment): environment is TPublicCodeEnvironment => environment?.type === 'attached',
+      ),
+    [codeEnvironments],
   );
   const supported =
     (conversation?.endpointType ?? conversation?.endpoint) === EModelEndpoint.agents &&
@@ -49,6 +61,10 @@ export default function useCodeApprovalMode(
   const modes = useMemo(() => {
     if (!available) return [];
     const allowed = new Set<CodeApprovalMode>(endpointModes?.includes('ask') ? ['ask'] : []);
+    let fullAccessAllowed =
+      endpointModes?.includes('fullAccess') === true &&
+      reachable.complete &&
+      codeEnvironments.every((environment) => environment != null);
     for (const environment of attachedEnvironments) {
       const environmentModes = getAllowedCodeApprovalModes({
         environment: 'attached',
@@ -59,9 +75,11 @@ export default function useCodeApprovalMode(
       if (endpointModes?.includes('acceptEdits') && environmentModes.includes('acceptEdits')) {
         allowed.add('acceptEdits');
       }
+      fullAccessAllowed &&= environmentModes.includes('fullAccess');
     }
+    if (fullAccessAllowed) allowed.add('fullAccess');
     return CODE_APPROVAL_MODES.filter((mode) => allowed.has(mode));
-  }, [attachedEnvironments, available, endpointModes]);
+  }, [attachedEnvironments, available, codeEnvironments, endpointModes, reachable.complete]);
   const requested = conversation?.codeApprovalMode ?? 'ask';
   /**
    * Fail closed while agent/environment metadata is incomplete. An affirmative
@@ -86,10 +104,17 @@ function findExecutionEnvironment(
     : environments?.find((candidate) => candidate.default === true);
 }
 
-function collectReachableAgents(roots: Array<Agent | undefined>, agentsMap?: TAgentsMap): Agent[] {
+function collectReachableAgents(
+  roots: Array<Agent | undefined>,
+  agentsMap: TAgentsMap | undefined,
+  expectedRootIds: Array<string | undefined | null>,
+): { agents: Agent[]; complete: boolean } {
   const pending = roots.filter((agent): agent is Agent => agent != null);
   const visited = new Set<string>();
   const agents: Agent[] = [];
+  let complete = expectedRootIds.every(
+    (id) => id == null || roots.some((agent) => agent?.id === id),
+  );
   while (pending.length > 0) {
     const agent = pending.pop();
     if (agent == null || visited.has(agent.id)) continue;
@@ -107,7 +132,8 @@ function collectReachableAgents(roots: Array<Agent | undefined>, agentsMap?: TAg
     for (const id of ids) {
       const candidate = agentsMap?.[id];
       if (candidate != null) pending.push(candidate);
+      else complete = false;
     }
   }
-  return agents;
+  return { agents, complete };
 }

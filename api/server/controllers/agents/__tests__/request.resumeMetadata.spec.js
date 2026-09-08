@@ -4299,6 +4299,7 @@ describe('ResumableAgentController resume metadata', () => {
         userMessage: expect.objectContaining({ messageId: 'req-event:user' }),
         agentEventDeliveryKey: 'req-event',
         agentEventBindingId: 'binding-1',
+        retentionExpiresAt: expiredAt.toISOString(),
         agentEventExpectedAction: {
           toolName: 'submit_move',
           argumentSubset: { gameId: 'game-1', expectedPly: 7 },

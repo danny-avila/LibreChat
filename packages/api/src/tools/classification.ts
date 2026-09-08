@@ -22,7 +22,9 @@ import type {
   LCTool,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
-import type { CodeExecutionContext } from '~/agents/execution';
+import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
+import type { CodeCapabilityConfigLoader } from '~/code/capabilities';
+import { supportsProgrammaticCodeExecution } from '~/code/capabilities';
 import { sanitizeGeminiSchema } from '~/mcp/zod';
 
 export type { LCTool, LCToolRegistry, AllowedCaller, JsonSchemaType };
@@ -280,6 +282,8 @@ export interface BuildToolClassificationParams {
   authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
   /** Trusted Code API route selected for the executing agent. */
   codeExecutionContext?: CodeExecutionContext;
+  codeEnvironments?: readonly CodeEnvironmentConfig[];
+  getAppConfig?: CodeCapabilityConfigLoader;
 }
 
 /** Result from building tool classification */
@@ -351,6 +355,8 @@ export async function buildToolClassification(
     codeExecutionEnabled = false,
     authHeaders,
     codeExecutionContext,
+    codeEnvironments,
+    getAppConfig,
   } = params;
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
   const additionalTools: GenericTool[] = [];
@@ -380,7 +386,10 @@ export async function buildToolClassification(
    * Only enable tool search if the agent has deferred tools AND the capability is enabled.
    */
   const hasProgrammaticTools =
-    programmaticToolsEnabled && codeExecutionEnabled && agentHasProgrammaticTools(toolRegistry);
+    programmaticToolsEnabled &&
+    codeExecutionEnabled &&
+    agentHasProgrammaticTools(toolRegistry) &&
+    (await supportsProgrammaticCodeExecution(codeExecutionContext, codeEnvironments, getAppConfig));
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 
   /** Clear defer_loading if capability disabled */

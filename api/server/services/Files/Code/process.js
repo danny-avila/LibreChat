@@ -712,6 +712,7 @@ const processCodeOutput = async ({
         }),
       };
     }
+    const retentionExpiryPromise = getRetentionExpiry(req);
     const buffer =
       preparedBuffer ??
       (await downloadCodeOutputBuffer({
@@ -905,7 +906,7 @@ const processCodeOutput = async ({
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
         metadata: codeEnvMetadata,
-        ...(await getRetentionExpiry(req)),
+        ...(await retentionExpiryPromise),
       };
       if (!(await commitCodeFile(file))) {
         return null;
@@ -1013,7 +1014,7 @@ const processCodeOutput = async ({
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
       createdAt: isUpdate ? claimed.createdAt : formattedDate,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
     };
 
     if (expectsPreview) {

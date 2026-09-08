@@ -352,7 +352,8 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
       tenantId: req.user.tenantId,
       conversationId,
       isArchived,
-      isTemporary: req.body?.isTemporary,
+      isTemporary: req.resolvedConversation?.isTemporary,
+      expiredAt: req.resolvedConversation?.expiredAt,
       interfaceConfig: req.config?.interfaceConfig,
     });
 
@@ -431,7 +432,8 @@ router.post('/update', validateConvoAccess, configMiddleware, async (req, res) =
       tenantId: req.user.tenantId,
       conversationId,
       title,
-      isTemporary: req.body?.isTemporary,
+      isTemporary: req.resolvedConversation?.isTemporary,
+      expiredAt: req.resolvedConversation?.expiredAt,
       filters: req.config?.filters,
       interfaceConfig: req.config?.interfaceConfig,
     });

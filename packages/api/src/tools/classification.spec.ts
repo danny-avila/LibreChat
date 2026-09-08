@@ -1,6 +1,7 @@
 import { Providers } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { GenericTool } from '@librechat/agents';
+import type { CodeEnvironmentConfig } from '~/agents/execution';
 import type { LCToolRegistry } from './classification';
 import {
   buildToolRegistryFromAgentOptions,
@@ -539,6 +540,93 @@ describe('classification.ts', () => {
       expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(true);
       expect(result.additionalTools.length).toBe(0);
     });
+
+    it.each(
+      [false, true].flatMap((definitionsOnly) => [
+        { definitionsOnly, statefulWorkspace: false, runtimes: ['bash'], supported: false },
+        { definitionsOnly, statefulWorkspace: true, runtimes: ['py'], supported: false },
+        { definitionsOnly, statefulWorkspace: true, runtimes: ['bash'], supported: true },
+      ]),
+    )(
+      'gates attached PTC: definitionsOnly=$definitionsOnly stateful=$statefulWorkspace runtimes=$runtimes',
+      async ({ definitionsOnly, statefulWorkspace, runtimes, supported }) => {
+        const workerId = `worker-${definitionsOnly}-${statefulWorkspace}-${runtimes[0]}`;
+        process.env.TEST_CODE_CAPABILITY_TOKEN = 'capability-test-token';
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              protocolVersion: 1,
+              workerId: workerId,
+              online: true,
+              ready: true,
+              leaseExpiresInMs: 45_000,
+              capabilities: {
+                statefulWorkspace,
+                sandboxProfile: 'native-srt',
+                runtimes,
+              },
+            }),
+          ),
+        );
+        const codeEnvironments: CodeEnvironmentConfig[] = [
+          {
+            id: 'attached',
+            name: 'Attached',
+            type: 'attached',
+            owner: 'deployment',
+            baseURL: 'https://code.example',
+            pairing: {
+              workerId: workerId,
+              allowPrincipalWorkers: false,
+              tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
+            },
+          },
+        ];
+        try {
+          const result = await buildToolClassification({
+            loadedTools: [createMCPTool('tool1')],
+            userId: 'user1',
+            agentId: 'agent1',
+            agentToolOptions: {
+              tool1: { allowed_callers: ['direct', 'code_execution'], defer_loading: true },
+            },
+            programmaticToolsEnabled: true,
+            codeExecutionEnabled: true,
+            deferredToolsEnabled: true,
+            definitionsOnly,
+            codeExecutionContext: {
+              baseUrl: 'https://code.example',
+              codeSessionKey: 'session',
+              executionProfile: 'stateful',
+              statefulSessions: true,
+              environmentType: 'attached',
+              environmentId: 'attached',
+              bridgeWorkerId: workerId,
+            },
+            codeEnvironments,
+            getAppConfig: jest.fn().mockResolvedValue({
+              endpoints: { agents: { statefulCodeSessions: { environments: codeEnvironments } } },
+            }),
+          });
+          expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(
+            supported,
+          );
+          expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(supported);
+          expect(result.additionalTools.some((tool) => tool.name === 'run_tools_with_bash')).toBe(
+            supported && !definitionsOnly,
+          );
+          expect(result.hasDeferredTools).toBe(true);
+          expect(result.toolRegistry?.get('tool1')?.allowed_callers).toEqual([
+            'direct',
+            'code_execution',
+          ]);
+          expect(fetchSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          fetchSpy.mockRestore();
+          delete process.env.TEST_CODE_CAPABILITY_TOKEN;
+        }
+      },
+    );
 
     it('should create bash PTC tool when capabilities allow programmatic tools', async () => {
       const loadedTools: GenericTool[] = [createMCPTool('tool1')];

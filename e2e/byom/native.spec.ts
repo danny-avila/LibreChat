@@ -41,7 +41,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   const cli = process.env.BYOM_CODE_CLI!;
   const workers: Worker[] = [];
   let selectedWorker: Worker;
-  let selectedApprovalMode: 'ask' | 'acceptEdits' = 'ask';
+  let selectedApprovalMode: 'ask' | 'acceptEdits' | 'fullAccess' = 'ask';
   const password = `Acceptance-${randomUUID()}`;
   const email = `native-${randomUUID()}@example.com`;
   const registered = await page.request.post('/api/auth/register', {
@@ -219,14 +219,19 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     return outputs.join('\n');
   }
 
-  async function selectApprovalMode(mode: 'Ask before changes' | 'Accept edits') {
+  async function selectApprovalMode(mode: 'Ask before changes' | 'Accept edits' | 'Full access') {
     const selector = page.getByTestId('code-approval-mode');
     await expect(selector).toBeVisible();
     await selector.click();
     await expect(selector).toHaveAttribute('aria-expanded', 'true');
     await page.getByRole('menuitemradio', { name: new RegExp(`^${mode}`) }).click();
     await expect(selector).toContainText(mode, { timeout: 10_000 });
-    selectedApprovalMode = mode === 'Accept edits' ? 'acceptEdits' : 'ask';
+    const modes = {
+      'Full access': 'fullAccess',
+      'Accept edits': 'acceptEdits',
+      'Ask before changes': 'ask',
+    } as const;
+    selectedApprovalMode = modes[mode];
   }
 
   try {
@@ -242,6 +247,13 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     expect(await turn('read')).toContain('native-edited');
     /** Accept edits does not weaken command execution approval. */
     expect(await turn('command', 'Approve')).toContain('native-command-ok');
+    await selectApprovalMode('Full access');
+    expect(await turn('command')).toContain('native-command-ok');
+    await turn('fullCreate');
+    expect(await readFile(path.join(a.root, 'unattended.txt'), 'utf8')).toBe('native-unattended');
+    await page.reload();
+    await expect(page.getByTestId('code-approval-mode')).toContainText('Full access');
+    expect(await turn('command')).toContain('native-command-ok');
     await selectApprovalMode('Ask before changes');
     expect(await turn('reject', 'Reject')).toMatch(/blocked|reject|denied|declined/i);
     expect(await readdir(a.root)).not.toContain('rejected.txt');
@@ -266,6 +278,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         physicalCreate: true,
         acceptEditsWithoutPrompt: true,
         commandsStillRequireApproval: true,
+        fullAccessCommandsWithoutPrompt: true,
+        fullAccessWritesWithoutPrompt: true,
+        fullAccessSurvivesReload: true,
         crossTurnEdit: true,
         rejectedWriteAbsent: true,
         twoWorkerIsolation: true,

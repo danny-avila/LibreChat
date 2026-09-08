@@ -2017,9 +2017,11 @@ describe('BaseClient', () => {
         endpoint: 'openai',
         endpointType: 'openai',
         temperature: 0.7,
+        isTemporary: true,
+        expiredAt: new Date('2030-01-01T00:00:00.000Z'),
       };
       const user = { id: 'user-id' };
-      const req = { user, resolvedConversation: existingConvo };
+      const req = { user, body: { isTemporary: false }, resolvedConversation: existingConvo };
 
       getConvo.mockClear();
       saveMessage.mockResolvedValue({ messageId: 'msg-1' });
@@ -2039,7 +2041,15 @@ describe('BaseClient', () => {
       );
 
       expect(getConvo).not.toHaveBeenCalled();
-      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(saveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isTemporary: true,
+          expiredAt: existingConvo.expiredAt,
+        }),
+        expect.any(Object),
+        expect.any(Object),
+      );
+      expect(req.resolvedConversation).toBe(existingConvo);
       expect(TestClient.fetchedConvo).toBe(true);
       expect(saveConvo).toHaveBeenCalledWith(
         expect.any(Object),
@@ -2048,6 +2058,19 @@ describe('BaseClient', () => {
           unsetFields: expect.objectContaining({ temperature: 1 }),
         }),
       );
+      await TestClient.saveMessageToDatabase(
+        { messageId: 'response-1', conversationId: existingConvo.conversationId, text: 'reply' },
+        { endpoint: 'openai' },
+        user,
+      );
+      for (const save of [saveMessage, saveConvo]) {
+        expect(save).toHaveBeenLastCalledWith(
+          expect.objectContaining({ isTemporary: true, expiredAt: existingConvo.expiredAt }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      }
+      expect(getConvo).not.toHaveBeenCalled();
     });
 
     test('userMessagePromise is awaited before saving response message', async () => {

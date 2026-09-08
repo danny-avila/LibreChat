@@ -8,6 +8,7 @@ const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 const mockGetToolOptions = jest.fn((): Record<string, object> | undefined => undefined);
 const mockMcpServersMap = jest.fn((): Map<string, object> => new Map());
+let mockMcpToolsLoading = false;
 const mockGetServerStatusIconProps = jest.fn((): object | null => null);
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
@@ -42,7 +43,10 @@ jest.mock('react-hook-form', () => ({
 const mockCodeInterpreterSelected = jest.fn((): boolean => false);
 
 jest.mock('~/Providers', () => ({
-  useAgentPanelContext: () => ({ mcpServersMap: mockMcpServersMap() }),
+  useAgentPanelContext: () => ({
+    mcpServersMap: mockMcpServersMap(),
+    mcpToolsLoading: mockMcpToolsLoading,
+  }),
 }));
 
 jest.mock('~/components/ui', () => ({
@@ -189,6 +193,7 @@ describe('McpSection', () => {
     mockGetToolOptions.mockReturnValue(undefined);
     mockMcpServersMap.mockReset();
     mockMcpServersMap.mockReturnValue(new Map());
+    mockMcpToolsLoading = false;
     mockGetServerStatusIconProps.mockReset();
     mockGetServerStatusIconProps.mockReturnValue(null);
     mockLocalize.mockClear();
@@ -308,75 +313,152 @@ describe('McpSection', () => {
     expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
   });
 
-  test('lets a ready request-scoped server attach its runtime tools', () => {
-    const runtimeItem: McpItem = {
+  test.each([true, false])(
+    'lets a ready server attach runtime tools (requestScoped=%s)',
+    (requestScoped) => {
+      const runtimeItem: McpItem = {
+        ...item,
+        server: {
+          ...item.server,
+          tools: [],
+          isConnected: !requestScoped,
+          isReadyForAgent: true,
+          requestScoped,
+        } as never,
+        toolCount: 0,
+      };
+
+      render(<McpSection item={runtimeItem} />);
+
+      expect(screen.getByText('com_ui_tools_mcp_runtime_tools_available')).toBeInTheDocument();
+      expect(mockSetValue).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_select_all'));
+      expect(mockSetValue).toHaveBeenCalledWith(
+        'tools',
+        ['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv'],
+        { shouldDirty: true },
+      );
+    },
+  );
+
+  test.each([true, false])(
+    'detaches runtime tools without affecting unrelated tools (requestScoped=%s)',
+    (requestScoped) => {
+      mockGetValues.mockReturnValue([
+        'sys__server__sys_mcp_srv',
+        'sys__all__sys_mcp_srv',
+        'search_mcp_srv',
+        'dalle',
+      ]);
+      const runtimeItem: McpItem = {
+        ...item,
+        server: {
+          ...item.server,
+          tools: [],
+          isConnected: true,
+          isReadyForAgent: true,
+          requestScoped,
+        } as never,
+        toolCount: 0,
+      };
+
+      render(<McpSection item={runtimeItem} />);
+
+      expect(screen.getByText('com_ui_tools_mcp_runtime_tools')).toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_deselect_all'));
+      expect(mockSetValue).toHaveBeenCalledWith('tools', ['dalle'], { shouldDirty: true });
+    },
+  );
+
+  test.each([true, false])(
+    'does not offer runtime attachment before readiness (requestScoped=%s)',
+    (requestScoped) => {
+      const disconnectedRuntimeItem: McpItem = {
+        ...item,
+        server: {
+          ...item.server,
+          tools: [],
+          isConnected: false,
+          requestScoped,
+        } as never,
+        toolCount: 0,
+      };
+
+      render(<McpSection item={disconnectedRuntimeItem} />);
+
+      expect(screen.queryByLabelText('com_ui_tools_mcp_select_all')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText('com_ui_tools_mcp_runtime_tools_available'),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
+      expect(mockSetValue).not.toHaveBeenCalled();
+    },
+  );
+
+  test('attaches after OAuth succeeds with an empty catalog, but waits for catalog loading', async () => {
+    const empty: McpItem = {
       ...item,
-      server: {
-        ...item.server,
-        tools: [],
-        isConnected: false,
-        isReadyForAgent: true,
-        requestScoped: true,
-      } as never,
+      server: { ...item.server, tools: [], isReadyForAgent: false, requestScoped: false },
       toolCount: 0,
     };
-
-    render(<McpSection item={runtimeItem} />);
-
-    expect(screen.getByText('com_ui_tools_mcp_runtime_tools_available')).toBeInTheDocument();
+    mockInitializeServer.mockResolvedValue({
+      success: true,
+      oauthRequired: true,
+      oauthUrl: 'https://oauth.example/authorize',
+    });
+    const { rerender } = render(<McpSection item={empty} />);
+    fireEvent.click(screen.getByText('com_nav_mcp_connect_server'));
+    expect(await screen.findByTestId('oauth-dialog')).toBeInTheDocument();
     expect(mockSetValue).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_select_all'));
-    expect(mockSetValue).toHaveBeenCalledWith(
-      'tools',
-      ['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv'],
-      { shouldDirty: true },
+    mockMcpServersMap.mockReturnValue(
+      new Map([
+        [
+          'srv',
+          {
+            ...empty.server,
+            isConnected: true,
+            isReadyForAgent: true,
+          },
+        ],
+      ]),
     );
-  });
-
-  test('detaches every token for a request-scoped server while preserving unrelated tools', () => {
-    mockGetValues.mockReturnValue([
-      'sys__server__sys_mcp_srv',
-      'sys__all__sys_mcp_srv',
-      'search_mcp_srv',
-      'dalle',
-    ]);
-    const runtimeItem: McpItem = {
-      ...item,
-      server: {
-        ...item.server,
-        tools: [],
-        isConnected: true,
-        isReadyForAgent: true,
-        requestScoped: true,
-      } as never,
-      toolCount: 0,
-    };
-
-    render(<McpSection item={runtimeItem} />);
-
-    expect(screen.getByText('com_ui_tools_mcp_runtime_tools')).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_deselect_all'));
-    expect(mockSetValue).toHaveBeenCalledWith('tools', ['dalle'], { shouldDirty: true });
-  });
-
-  test('does not offer runtime attachment before a request-scoped server is connected', () => {
-    const disconnectedRuntimeItem: McpItem = {
-      ...item,
-      server: {
-        ...item.server,
-        tools: [],
-        isConnected: false,
-        requestScoped: true,
-      } as never,
-      toolCount: 0,
-    };
-
-    render(<McpSection item={disconnectedRuntimeItem} />);
-
+    mockMcpToolsLoading = true;
+    rerender(<McpSection item={empty} />);
+    expect(screen.queryByTestId('oauth-dialog')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('com_ui_tools_mcp_select_all')).not.toBeInTheDocument();
-    expect(screen.queryByText('com_ui_tools_mcp_runtime_tools_available')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
+    expect(mockSetValue).not.toHaveBeenCalled();
+
+    mockMcpToolsLoading = false;
+    rerender(<McpSection item={empty} />);
+    await waitFor(() =>
+      expect(mockSetValue).toHaveBeenCalledWith(
+        'tools',
+        ['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv'],
+        { shouldDirty: true },
+      ),
+    );
+    rerender(<McpSection item={empty} />);
+    expect(mockSetValue).toHaveBeenCalledTimes(1);
+  });
+
+  test('an explicitly unready server cannot attach despite a stale connected flag', () => {
+    render(
+      <McpSection
+        item={{
+          ...item,
+          toolCount: 0,
+          server: {
+            ...item.server,
+            tools: [],
+            isConnected: true,
+            isReadyForAgent: false,
+          },
+        }}
+      />,
+    );
+    expect(screen.queryByLabelText('com_ui_tools_mcp_select_all')).not.toBeInTheDocument();
     expect(mockSetValue).not.toHaveBeenCalled();
   });
 

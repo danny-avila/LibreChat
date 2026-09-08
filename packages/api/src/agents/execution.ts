@@ -15,7 +15,10 @@ export const CODE_API_BRIDGE_WORKER_HEADER = 'X-LibreChat-Code-Worker-ID';
 export type CodeExecutionProfile = 'default' | 'stateful';
 export type CodeEnvironmentConfig = NonNullable<
   NonNullable<TAgentsEndpoint['statefulCodeSessions']>['environments']
->[number];
+>[number] & {
+  /** Server-resolved control plane for a principal-owned attached environment. */
+  controlPlaneId?: string;
+};
 
 export interface CodeExecutionContext {
   baseUrl: string;

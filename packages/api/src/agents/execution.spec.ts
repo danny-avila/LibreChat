@@ -311,6 +311,32 @@ describe('resolveCodeExecutionContext', () => {
     expect(context.baseUrl).toBe('https://bridge.example/v1');
   });
 
+  it('uses the stateful deployment when configured environments have no default', () => {
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+    const context = resolveCodeExecutionContext({
+      statefulSessions: true,
+      environments: [
+        {
+          id: 'personal-vm',
+          name: 'Personal VM',
+          type: 'attached',
+          baseURL: 'https://bridge.example/v1',
+          owner: 'principal',
+          workerId: 'personal-worker',
+        },
+      ],
+      userId: 'user-1',
+    });
+
+    expect(context).toEqual(
+      expect.objectContaining({
+        baseUrl: 'http://code-stateful.test/v1',
+        environmentId: undefined,
+        runtimeSessionHint: 'v2:user:b5729fb0e3ca12e7a61ff6857b99d98e',
+      }),
+    );
+  });
+
   it('fails closed when an agent references an unknown configured environment', () => {
     expect(() =>
       resolveCodeExecutionContext({

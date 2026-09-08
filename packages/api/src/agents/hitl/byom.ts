@@ -238,6 +238,8 @@ export function resolveAttachedCodeApprovalMode(
         settings: policy.settings,
       });
     } catch (error) {
+      /** Unattended execution requires every known target to permit the mode. */
+      if (requested === 'fullAccess') throw error;
       rejection = error as Error;
     }
   }
