@@ -31,6 +31,7 @@ export * from './mcp/catalog/store';
 export * from './mcp/catalog/recovery';
 export * from './mcp/assistants';
 export * from './mcp/request';
+export * from './mcp/images';
 export * from './mcp/icons';
 /* Utilities */
 export * from './mcp/utils';
