@@ -28,8 +28,12 @@ export default function useCodeApprovalMode(
     | undefined;
   const environments = statefulCodeSessions?.environments;
   const reachable = useMemo(
-    () => collectReachableAgents([primaryAgent, addedAgent], agentsMap),
-    [addedAgent, agentsMap, primaryAgent],
+    () =>
+      collectReachableAgents([primaryAgent, addedAgent], agentsMap, [
+        conversation?.agent_id,
+        addedConversation?.agent_id,
+      ]),
+    [addedAgent, agentsMap, primaryAgent, conversation?.agent_id, addedConversation?.agent_id],
   );
   const codeEnvironments = useMemo(
     () =>
@@ -102,12 +106,15 @@ function findExecutionEnvironment(
 
 function collectReachableAgents(
   roots: Array<Agent | undefined>,
-  agentsMap?: TAgentsMap,
+  agentsMap: TAgentsMap | undefined,
+  expectedRootIds: Array<string | undefined | null>,
 ): { agents: Agent[]; complete: boolean } {
   const pending = roots.filter((agent): agent is Agent => agent != null);
   const visited = new Set<string>();
   const agents: Agent[] = [];
-  let complete = true;
+  let complete = expectedRootIds.every(
+    (id) => id == null || roots.some((agent) => agent?.id === id),
+  );
   while (pending.length > 0) {
     const agent = pending.pop();
     if (agent == null || visited.has(agent.id)) continue;

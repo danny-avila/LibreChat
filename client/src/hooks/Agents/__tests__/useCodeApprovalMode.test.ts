@@ -120,6 +120,49 @@ describe('useCodeApprovalMode', () => {
     },
   );
 
+  test.each(['agent-1', 'agent-2'])(
+    'waits for unresolved root %s before full access',
+    (missingId) => {
+      const permissions = {
+        fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
+        commandExecution: { allowed: ['ask', 'allow'], default: 'ask' },
+      };
+      mockUseGetAgentsConfig.mockReturnValue({
+        agentsConfig: {
+          statefulCodeSessions: {
+            approvalsEnabled: true,
+            approvalModes: ['ask', 'acceptEdits', 'fullAccess'],
+            environments: [{ id: 'mac', type: 'attached', configSchema: { permissions } }],
+          },
+        },
+      });
+      let loaded = false;
+      mockUseAgentToolPermissions.mockImplementation((id?: string) => ({
+        agent:
+          id === missingId && !loaded
+            ? undefined
+            : {
+                id,
+                tools: ['execute_code'],
+                stateful_code_sessions: true,
+                code_environment_id: 'mac',
+              },
+      }));
+      const { result, rerender } = renderHook(() =>
+        useCodeApprovalMode(
+          { ...conversation, codeApprovalMode: 'fullAccess' },
+          { ...conversation, agent_id: 'agent-2' },
+        ),
+      );
+      expect(result.current.modes).not.toContain('fullAccess');
+      expect(result.current.selected).toBe('ask');
+      loaded = true;
+      rerender();
+      expect(result.current.modes).toContain('fullAccess');
+      expect(result.current.selected).toBe('fullAccess');
+    },
+  );
+
   test('falls back to ask when a saved mode is no longer permitted', () => {
     mockUseGetAgentsConfig.mockReturnValue({
       agentsConfig: {
