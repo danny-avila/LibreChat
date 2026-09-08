@@ -1,4 +1,5 @@
 import { RetentionMode } from 'librechat-data-provider';
+import { createChatExpirationDate } from '@librechat/data-schemas';
 import {
   createMinimalRetentionRequest,
   getAgentFileRetentionExpiry,
@@ -50,6 +51,60 @@ describe('retention helpers', () => {
 
     expect(result).toEqual({ expiredAt: expirationDate });
     expect(dependencies.getConvo).not.toHaveBeenCalled();
+  });
+
+  describe('independent retention periods', () => {
+    const interfaceConfig = {
+      retentionMode: RetentionMode.ALL,
+      temporaryChatRetention: 1,
+      generalChatRetention: 2160,
+    };
+
+    beforeEach(() => {
+      dependencies.createExpirationDate.mockImplementation(createChatExpirationDate);
+    });
+
+    it.each([true, 'true', false, 'false'])(
+      'uses explicit temporary intent %s without a conversation read',
+      async (isTemporary) => {
+        const now = Date.now();
+        const result = await getRetentionExpiry(
+          request({ body: { isTemporary }, config: { interfaceConfig } }),
+          dependencies,
+        );
+        const hours = isTemporary === true || isTemporary === 'true' ? 1 : 2160;
+        expect(result.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
+        expect(result.expiredAt?.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
+        expect(dependencies.getConvo).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([true, false])(
+      'uses the stored chat type %s when omitted and caches the lookup',
+      async (isTemporary) => {
+        dependencies.getConvo.mockResolvedValue({ isTemporary, expiredAt: expirationDate });
+        const req = request({ config: { interfaceConfig } });
+        const now = Date.now();
+        const result = await getRetentionExpiry(req, dependencies);
+        const hours = isTemporary ? 1 : 2160;
+        expect(result.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
+        expect(result.expiredAt?.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
+        expect(await getRetentionExpiry(req, dependencies)).toBe(result);
+        expect(dependencies.getConvo).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each([true, false])('uses the source chat type %s for shared links', async (isTemporary) => {
+      dependencies.getConvo.mockResolvedValue({ isTemporary, expiredAt: expirationDate });
+      const now = Date.now();
+      const result = await getSharedLinkExpiration(
+        { req: request({ config: { interfaceConfig } }), conversationId: 'convo-1' },
+        dependencies,
+      );
+      const hours = isTemporary ? 1 : 2160;
+      expect(result?.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
+      expect(result?.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
+    });
   });
 
   it('returns a fresh expiry when the conversation has an active expiration', async () => {

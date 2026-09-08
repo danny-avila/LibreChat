@@ -13,6 +13,7 @@ const retentionExpiryCache = new WeakMap<
 >();
 
 export type RetentionConversation = {
+  isTemporary?: boolean | null;
   expiredAt?: Date | string | number | null;
 };
 
@@ -49,7 +50,7 @@ export type RetentionDependencies = {
     userId: string,
     conversationId: string,
   ) => Promise<RetentionConversation | null | undefined>;
-  createExpirationDate: (interfaceConfig?: InterfaceConfig) => Date;
+  createExpirationDate: (interfaceConfig?: InterfaceConfig, isTemporary?: boolean) => Date;
   logger?: RetentionLogger;
 };
 
@@ -58,7 +59,7 @@ export type SharedLinkRetentionDependencies = {
     userId: string,
     conversationId: string,
   ) => Promise<RetentionConversation | null | undefined>;
-  createExpirationDate: (interfaceConfig?: InterfaceConfig) => Date;
+  createExpirationDate: (interfaceConfig?: InterfaceConfig, isTemporary?: boolean) => Date;
   logger?: RetentionLogger;
 };
 
@@ -82,9 +83,10 @@ export const isActiveExpirationDate = (expiredAt: Date, now: Date = new Date()):
 const createRetentionExpiry = (
   req: RetentionRequest | null | undefined,
   { createExpirationDate, logger }: RetentionDependencies,
+  isTemporary = isBooleanOrStringTrue(req?.body?.isTemporary),
 ): RetentionExpiry => {
   try {
-    return { expiredAt: createExpirationDate(req?.config?.interfaceConfig) };
+    return { expiredAt: createExpirationDate(req?.config?.interfaceConfig, isTemporary) };
   } catch (err) {
     logger?.error('[getRetentionExpiry] Error creating file expiration date:', err);
     return { expiredAt: createFallbackRetentionDate() };
@@ -94,6 +96,8 @@ const createRetentionExpiry = (
 const getRetentionCacheKey = (req: RetentionRequest): string =>
   [
     req.config?.interfaceConfig?.retentionMode ?? '',
+    req.config?.interfaceConfig?.temporaryChatRetention ?? '',
+    req.config?.interfaceConfig?.generalChatRetention ?? '',
     req.user?.id ?? '',
     req.body?.conversationId ?? '',
     String(req.body?.isTemporary ?? ''),
@@ -103,7 +107,12 @@ async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
-  if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+  const interfaceConfig = req?.config?.interfaceConfig;
+  const isRetentionAll = interfaceConfig?.retentionMode === RetentionMode.ALL;
+  if (
+    isRetentionAll &&
+    (interfaceConfig.generalChatRetention === undefined || req?.body?.isTemporary != null)
+  ) {
     return createRetentionExpiry(req, dependencies);
   }
 
@@ -116,8 +125,12 @@ async function computeRetentionExpiry(
       if (convo) {
         const expiredAt = getConversationExpirationDate(convo);
         if (expiredAt == null) {
-          if (isBooleanOrStringTrue(req?.body?.isTemporary)) {
-            return createRetentionExpiry(req, dependencies);
+          if (isRetentionAll || isBooleanOrStringTrue(req?.body?.isTemporary)) {
+            return createRetentionExpiry(
+              req,
+              dependencies,
+              convo.isTemporary === true || isBooleanOrStringTrue(req?.body?.isTemporary),
+            );
           }
           return {};
         }
@@ -126,21 +139,21 @@ async function computeRetentionExpiry(
           return { expiredAt };
         }
 
-        return createRetentionExpiry(req, dependencies);
+        return createRetentionExpiry(req, dependencies, convo.isTemporary !== false);
       }
     } catch (err) {
       dependencies.logger?.error(
         '[getRetentionExpiry] Error checking conversation retention:',
         err,
       );
-      if (isBooleanOrStringTrue(req?.body?.isTemporary)) {
+      if (isRetentionAll || isBooleanOrStringTrue(req?.body?.isTemporary)) {
         return createRetentionExpiry(req, dependencies);
       }
       return {};
     }
   }
 
-  if (!isBooleanOrStringTrue(req?.body?.isTemporary)) {
+  if (!isRetentionAll && !isBooleanOrStringTrue(req?.body?.isTemporary)) {
     return {};
   }
 
@@ -234,7 +247,10 @@ export async function getSharedLinkExpiration(
   }
 
   try {
-    return dependencies.createExpirationDate(req?.config?.interfaceConfig);
+    return dependencies.createExpirationDate(
+      req?.config?.interfaceConfig,
+      convo.isTemporary === true || (convo.isTemporary == null && conversationExpiredAt != null),
+    );
   } catch (err) {
     dependencies.logger?.error('[getSharedLinkExpiration] Error creating expiration date:', err);
     return null;
