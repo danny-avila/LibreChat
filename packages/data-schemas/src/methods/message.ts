@@ -653,6 +653,7 @@ export interface MessageMethods {
         kind: 'manual' | 'wakeup';
         claimId: string;
         claimedAt: Date;
+        generationId?: string;
       };
     };
   }): Promise<{ matched: boolean; unfinished: boolean }>;
