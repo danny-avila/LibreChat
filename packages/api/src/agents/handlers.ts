@@ -5974,6 +5974,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       policyError == null
                         ? filteredToolOutputResult(tc, backgroundReq, {
                             errorMessage: errorOutput,
+                            upstreamBody:
+                              toolError instanceof WorkspaceToolHttpError
+                                ? toolError.upstreamBody
+                                : undefined,
                           })
                         : null;
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
@@ -6384,6 +6388,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const { message, logContext } = getSafeToolError(toolError);
                       const filteredError = filteredToolOutputResult(tc, req, {
                         errorMessage: message,
+                        upstreamBody:
+                          toolError instanceof WorkspaceToolHttpError
+                            ? toolError.upstreamBody
+                            : undefined,
                       });
                       if (filteredError != null) {
                         logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
@@ -6792,6 +6800,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
+                      upstreamBody:
+                        toolError instanceof WorkspaceToolHttpError
+                          ? toolError.upstreamBody
+                          : undefined,
                     });
                     if (filteredError != null) {
                       logToolFailure({

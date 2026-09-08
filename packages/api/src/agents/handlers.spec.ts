@@ -1459,7 +1459,7 @@ describe('createToolExecuteHandler', () => {
       }
     });
 
-    it.each(['generic', 'workspace'])(
+    it.each(['generic', 'workspace', 'workspace-expanded'])(
       'filters %s foreground errors before result delivery or logging',
       async (kind) => {
         const protectedValue = 'PROTECTED-FOREGROUND-ERROR';
@@ -1468,8 +1468,12 @@ describe('createToolExecuteHandler', () => {
             {
               name: 'throwing_tool',
               invoke: jest.fn(async () => {
-                if (kind === 'workspace') {
-                  throw new WorkspaceToolHttpError('rejected', 503, protectedValue);
+                if (kind.startsWith('workspace')) {
+                  const body =
+                    kind === 'workspace-expanded'
+                      ? '\u0001'.repeat(2000) + protectedValue + '\u0001'.repeat(2000)
+                      : protectedValue;
+                  throw new WorkspaceToolHttpError('rejected', 503, body);
                 }
                 throw new Error(protectedValue);
               }),
