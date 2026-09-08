@@ -2,6 +2,12 @@ import { Types } from 'mongoose';
 import type { Connection } from 'mongoose';
 import { buildIndexWithRetry } from '~/utils/retry';
 
+const migrationId = 'conversation-tag-identity-v1';
+interface MigrationMarker {
+  _id: string;
+  completedAt: Date;
+}
+
 interface LegacyConversation {
   _id: Types.ObjectId;
   user: string;
@@ -148,6 +154,13 @@ export async function migrateConversationTags(
     // eslint-disable-next-line no-restricted-syntax -- quiesced offline migration preserves timestamps and spans tenants
     await conversations.bulkWrite(batch, { ordered: true });
   }
+  await completeMigration(connection);
+  return result;
+}
+
+async function completeMigration(connection: Connection): Promise<void> {
+  const conversations = connection.db!.collection('conversations');
+  const catalog = connection.db!.collection('conversationtags');
   await buildIndexWithRetry(
     () => conversations.createIndex({ user: 1, tenantId: 1, tagIds: 1 }),
     'createIndex(conversation tag membership)',
@@ -156,18 +169,31 @@ export async function migrateConversationTags(
     () => catalog.createIndex({ tag: 1, user: 1, tenantId: 1 }, { unique: true }),
     'createIndex(conversation tag catalog)',
   );
-  return result;
+  await connection
+    .db!.collection<MigrationMarker>('schema_migrations')
+    .updateOne(
+      { _id: migrationId },
+      { $setOnInsert: { completedAt: new Date() } },
+      { upsert: true },
+    );
 }
 
 export async function assertConversationTagMigration(connection: Connection): Promise<void> {
-  const row = await connection
-    .db!.collection('conversations')
-    .findOne(
-      { tagIds: { $exists: false }, 'tags.0': { $exists: true } },
-      { projection: { _id: 1 } },
-    );
-  if (row)
+  const db = connection.db!;
+  const marker = await db
+    .collection<MigrationMarker>('schema_migrations')
+    .findOne({ _id: migrationId }, { projection: { _id: 1 }, readPreference: 'primary' });
+  if (marker) return;
+
+  const options = { projection: { _id: 1 }, readPreference: 'primary' as const };
+  const [conversation, tag] = await Promise.all([
+    db.collection('conversations').findOne({}, options),
+    db.collection('conversationtags').findOne({}, options),
+  ]);
+  if (conversation || tag) {
     throw new Error(
-      'Conversation tag migration required. Stop all writers and run npm run migrate:conversation-tags before starting this version.',
+      'Conversation tag migration required. Stop all writers and run npm run migrate:conversation-tags -- --apply before starting this version.',
     );
+  }
+  await completeMigration(connection);
 }

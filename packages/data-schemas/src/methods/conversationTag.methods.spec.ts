@@ -8,6 +8,7 @@ import {
 } from '~/migrations/conversationTags';
 import { hydrateConversationTags, resolveTagNames } from '~/tags/membership';
 import { createConversationTagMethods } from './conversationTag';
+import { tenantStorage } from '~/config/tenantContext';
 import { createMethods } from '~/methods';
 import { createModels } from '~/models';
 
@@ -27,6 +28,7 @@ afterEach(async () => {
   jest.restoreAllMocks();
   await Conversations.deleteMany({});
   await Catalog.deleteMany({});
+  await mongoose.connection.db!.collection('schema_migrations').deleteMany({});
 });
 afterAll(async () => {
   await mongoose.disconnect();
@@ -262,7 +264,7 @@ it('resolves portable import labels locally and ignores source IDs', async () =>
       tagIds: [String(foreign!._id)],
     },
   ]);
-  const saved = await db.getConvo('owner', 'import');
+  const saved = await db.getConvoWithTags('owner', 'import');
   expect(saved?.tags).toEqual(['portable']);
   expect(saved?.tagIds).toHaveLength(1);
   expect(saved?.tagIds).not.toContain(String(foreign!._id));
@@ -277,7 +279,7 @@ it('preserves a local copy identity when the source label changes before persist
   const copy = { ...original, conversationId: 'local-copy' };
   delete copy._id;
   await db.bulkSaveConvos([copy], { tagSource: 'owned' });
-  expect(await db.getConvo('owner', 'local-copy')).toMatchObject({
+  expect(await db.getConvoWithTags('owner', 'local-copy')).toMatchObject({
     tags: ['renamed'],
     tagIds: [String(tag._id)],
   });
@@ -316,4 +318,166 @@ it('resumes an interrupted offline batch without allocating replacement identiti
   expect(await collection.countDocuments({ tagIds: [String(catalog!._id)] })).toBe(501);
   expect(await Catalog.countDocuments({ user: 'owner' })).toBe(1);
   expect(await collection.countDocuments({ updatedAt: new Date('2020-01-01') })).toBe(501);
+});
+
+it('keeps tagged shared reads and ordinary message saves free of catalog queries', async () => {
+  const { tag } = await seed();
+  await methods.updateTagsForConversation('owner', 'convo', [String(tag._id)], null, true);
+  const find = jest.spyOn(Catalog.collection, 'find');
+  const db = createMethods(mongoose);
+  const raw = await db.getConvo('owner', 'convo');
+  expect(raw?.tagIds).toEqual([String(tag._id)]);
+  expect(raw).not.toHaveProperty('tags');
+  const saved = await db.saveConvo(
+    { userId: 'owner' },
+    { conversationId: 'convo', title: 'next message' },
+    { appendMessageIds: [] },
+  );
+  expect(saved).toMatchObject({ tagIds: [String(tag._id)] });
+  expect(find).not.toHaveBeenCalled();
+  expect(await Conversations.findOne({ conversationId: 'convo' }).lean()).toMatchObject({
+    tagIds: [String(tag._id)],
+  });
+});
+
+it('starts public catalog projection while the owned conversation read is pending', async () => {
+  const { tag } = await seed();
+  await methods.updateTagsForConversation('owner', 'convo', [String(tag._id)], null, true);
+  const original = Conversations.collection.findOne.bind(Conversations.collection);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  jest.spyOn(Conversations.collection, 'findOne').mockImplementationOnce(async (...args) => {
+    await pending;
+    return original(...args);
+  });
+  const find = jest.spyOn(Catalog.collection, 'find');
+  const db = createMethods(mongoose);
+  const read = db.getConvoWithTags('owner', 'convo');
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(find).toHaveBeenCalledTimes(1);
+  release();
+  expect(await read).toMatchObject({ tagIds: [String(tag._id)], tags: ['old'] });
+  expect(await db.getConvoWithTags('foreign', 'convo')).toBeNull();
+});
+
+it.each(['attach', 'save', 'bulk'] as const)(
+  'cleans a deleted identity committed after its sweep through %s',
+  async (kind) => {
+    const { tag } = await seed();
+    const db = createMethods(mongoose);
+    let arrive!: () => void;
+    let release!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    if (kind === 'bulk') {
+      const original = Conversations.collection.bulkWrite.bind(Conversations.collection);
+      jest.spyOn(Conversations.collection, 'bulkWrite').mockImplementationOnce(async (...args) => {
+        arrive();
+        await resume;
+        return original(...args);
+      });
+    } else {
+      const original = Conversations.collection.findOneAndUpdate.bind(Conversations.collection);
+      jest
+        .spyOn(Conversations.collection, 'findOneAndUpdate')
+        .mockImplementationOnce(async (...args) => {
+          arrive();
+          await resume;
+          return original(...args);
+        });
+    }
+    const writes = {
+      attach: () =>
+        methods.createConversationTag('owner', {
+          tag: 'old',
+          addToConversation: true,
+          conversationId: 'convo',
+        }),
+      save: () =>
+        db.saveConvo(
+          { userId: 'owner' },
+          { conversationId: 'convo', tagIds: [String(tag._id)] },
+          { appendMessageIds: [] },
+        ),
+      bulk: () =>
+        db.bulkSaveConvos([{ user: 'owner', conversationId: 'convo', tagIds: [String(tag._id)] }], {
+          tagSource: 'owned',
+        }),
+    };
+    const write = writes[kind]();
+    await paused;
+    await methods.deleteConversationTag('owner', String(tag._id), null, true);
+    const replacement = await methods.createConversationTag('owner', { tag: 'old' });
+    release();
+    await write;
+    expect(String(replacement?._id)).not.toBe(String(tag._id));
+    expect(await Conversations.findOne({ conversationId: 'convo' }).lean()).toMatchObject({
+      tagIds: [],
+    });
+  },
+);
+
+it('resolves import names in bounded bulk operations and keeps bindings across rename', async () => {
+  const { tag } = await seed();
+  const original = Catalog.collection.bulkWrite.bind(Catalog.collection);
+  const bulk = jest
+    .spyOn(Catalog.collection, 'bulkWrite')
+    .mockImplementationOnce(async (...args) => {
+      await methods.updateConversationTag('owner', String(tag._id), { tag: 'renamed' }, null, true);
+      return original(...args);
+    });
+  const find = jest.spyOn(Catalog.collection, 'find');
+  const names = ['old', ...Array.from({ length: 600 }, (_, index) => `import-${index}`)];
+  const ids = await resolveTagNames(mongoose, 'owner', names);
+  expect(ids).toHaveLength(601);
+  expect(ids[0]).toBe(String(tag._id));
+  expect(bulk).toHaveBeenCalledTimes(2);
+  expect(find).toHaveBeenCalledTimes(4);
+  expect(await Catalog.countDocuments({ user: 'owner' })).toBe(601);
+});
+
+it('binds concurrent import upserts to one identity per name', async () => {
+  const names = Array.from({ length: 30 }, (_, index) => `shared-${index}`);
+  const [first, second] = await Promise.all([
+    resolveTagNames(mongoose, 'owner', names),
+    resolveTagNames(mongoose, 'owner', names),
+  ]);
+  expect(first).toEqual(second);
+  expect(await Catalog.countDocuments({ user: 'owner' })).toBe(names.length);
+});
+
+it('keeps batched creation and public projection inside the active tenant', async () => {
+  await seed('owner', 'tenant-a');
+  await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+    const ids = await resolveTagNames(mongoose, 'owner', ['batch-a', 'batch-b']);
+    expect(await Catalog.countDocuments({ tenantId: 'tenant-a', _id: { $in: ids } })).toBe(2);
+    await methods.updateTagsForConversation('owner', 'convo', ids, 'tenant-a', true);
+    expect(await createMethods(mongoose).getConvoWithTags('owner', 'convo')).toMatchObject({
+      tags: ['batch-a', 'batch-b'],
+      tagIds: ids,
+    });
+  });
+  await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+    expect(await createMethods(mongoose).getConvoWithTags('owner', 'convo')).toBeNull();
+    const ids = await resolveTagNames(mongoose, 'owner', ['batch-a', 'batch-b']);
+    expect(await Catalog.countDocuments({ tenantId: 'tenant-b', _id: { $in: ids } })).toBe(2);
+  });
+});
+
+it('fails name resolution instead of misaligning IDs when a new label is concurrently renamed', async () => {
+  const original = Catalog.collection.bulkWrite.bind(Catalog.collection);
+  jest.spyOn(Catalog.collection, 'bulkWrite').mockImplementationOnce(async (...args) => {
+    const result = await original(...args);
+    await Catalog.updateOne({ user: 'owner', tag: 'first' }, { $set: { tag: 'renamed' } });
+    return result;
+  });
+  await expect(resolveTagNames(mongoose, 'owner', ['first', 'second'])).rejects.toThrow(
+    'Tag catalog changed',
+  );
 });

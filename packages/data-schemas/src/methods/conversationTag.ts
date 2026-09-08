@@ -4,7 +4,7 @@ import type { IConversation } from '~/types';
 import {
   getOrCreateTag,
   ensureTagIndexes,
-  hydrateConversationTags,
+  cleanConversationTagMembership,
   ownedTagIds,
   resolveTagNames,
   tagScope,
@@ -117,9 +117,11 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       const conversation = await Conversation().findOneAndUpdate(
         { ...scope, conversationId: data.conversationId },
         { $addToSet: { tagIds: id } },
-        { new: true },
+        { new: true, lean: true },
       );
       if (!conversation) throw new Error('Conversation not found');
+      const [projected] = await cleanConversationTagMembership(mongoose, [conversation]);
+      if (!projected.tagIds?.includes(id)) return null;
     }
     return withCount(tag, tenantId);
   }
@@ -229,14 +231,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       { new: true, lean: true },
     );
     if (!conversation) throw new Error('Conversation not found');
-    const [projected] = await hydrateConversationTags(mongoose, [conversation]);
-    const dangling = tagIds.filter((id) => !projected.tagIds?.includes(id));
-    if (dangling.length)
-      await Conversation().updateOne(
-        scope,
-        { $pullAll: { tagIds: dangling } },
-        { timestamps: false },
-      );
+    const [projected] = await cleanConversationTagMembership(mongoose, [conversation]);
     return (byId ? projected.tagIds : projected.tags) ?? [];
   }
 

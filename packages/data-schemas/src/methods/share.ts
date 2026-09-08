@@ -968,9 +968,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         }
       }
 
+      let titleConversationIds: Set<string> | undefined;
+      let matchingTagIds: string[] = [];
       if (search && search.trim()) {
         try {
-          const [searchResults, matchingTagIds] = await Promise.all([
+          const [searchResults, tagIds] = await Promise.all([
             Conversation.meiliSearch(search, {
               filter: `user = "${user}"`,
               limit: MEILI_SEARCH_LIMIT,
@@ -978,31 +980,15 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             }),
             searchTagIds(mongoose, user, search),
           ]);
-          const tagConversations = matchingTagIds.length
-            ? await Conversation.find({
-                $and: [
-                  tagScope(user),
-                  { tagIds: { $in: matchingTagIds }, subagentThread: { $exists: false } },
-                  buildRetentionVisibilityFilter(),
-                ],
-              })
-                .select('conversationId')
-                .lean()
-            : [];
-
-          if (!searchResults?.hits?.length && !tagConversations.length) {
-            return {
-              links: [],
-              nextCursor: undefined,
-              hasNextPage: false,
-            };
+          matchingTagIds = tagIds;
+          titleConversationIds = new Set(
+            searchResults.hits.flatMap((hit) =>
+              typeof hit.conversationId === 'string' ? [hit.conversationId] : [],
+            ),
+          );
+          if (!matchingTagIds.length) {
+            query.conversationId = { $in: [...titleConversationIds] };
           }
-
-          const conversationIds = [
-            ...searchResults.hits.map((hit) => hit.conversationId),
-            ...tagConversations.map((conversation) => conversation.conversationId),
-          ];
-          query['conversationId'] = { $in: conversationIds };
         } catch (searchError) {
           logger.error('[getSharedLinks] Meilisearch error', {
             error: searchError instanceof Error ? searchError.message : 'Unknown error',
@@ -1020,11 +1006,54 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
       sort._id = sort[sortBy];
 
-      const sharedLinks = await SharedLink.find(query)
-        .sort(sort)
-        .limit(pageSize + 1)
-        .select('-__v -user')
-        .lean();
+      const sharedLinks: t.ISharedLink[] = [];
+      const candidates = SharedLink.find(query).sort(sort).select('-__v -user').lean();
+      if (!matchingTagIds.length) {
+        sharedLinks.push(...(await candidates.limit(pageSize + 1)));
+      } else {
+        const batchSize = 100;
+        const cursor = candidates.cursor({ batchSize });
+        try {
+          let exhausted = false;
+          while (!exhausted && sharedLinks.length <= pageSize) {
+            const batch: t.ISharedLink[] = [];
+            while (batch.length < batchSize) {
+              const link = await cursor.next();
+              if (!link) {
+                exhausted = true;
+                break;
+              }
+              batch.push(link);
+            }
+            if (!batch.length) break;
+            const tagConversations = await Conversation.find({
+              $and: [
+                tagScope(user),
+                {
+                  conversationId: { $in: batch.map((link) => link.conversationId) },
+                  tagIds: { $in: matchingTagIds },
+                  subagentThread: { $exists: false },
+                },
+                buildRetentionVisibilityFilter(),
+              ],
+            })
+              .select('conversationId')
+              .lean();
+            const matchedIds = new Set(tagConversations.map((convo) => convo.conversationId));
+            for (const link of batch) {
+              if (
+                titleConversationIds?.has(link.conversationId) ||
+                matchedIds.has(link.conversationId)
+              ) {
+                sharedLinks.push(link);
+                if (sharedLinks.length > pageSize) break;
+              }
+            }
+          }
+        } finally {
+          await cursor.close();
+        }
+      }
 
       const hasNextPage = sharedLinks.length > pageSize;
       const links = sharedLinks.slice(0, pageSize);

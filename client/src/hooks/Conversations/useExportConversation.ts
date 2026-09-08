@@ -246,9 +246,15 @@ export default function useExportConversation({
   };
 
   const exportJSON = async () => {
-    const latest = conversation?.conversationId
-      ? await dataService.getConversationById(conversation.conversationId)
-      : conversation;
+    let latest = conversation;
+    if (conversation?.conversationId) {
+      try {
+        latest =
+          (await dataService.getConversationById(conversation.conversationId)) ?? conversation;
+      } catch {
+        // Cached messages and options remain exportable when the server is unavailable.
+      }
+    }
     const data = {
       conversationId: conversation?.conversationId,
       endpoint: conversation?.endpoint,

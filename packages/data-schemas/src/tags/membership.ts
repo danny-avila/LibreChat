@@ -1,5 +1,6 @@
-import type { FilterQuery, Model, Types } from 'mongoose';
+import type { FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
 import type { IConversation } from '~/types';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { getTenantId } from '~/config/tenantContext';
 
@@ -55,13 +56,37 @@ export async function resolveTagNames(
   const Tag = mongoose.models.ConversationTag as Model<TagRecord>;
   const scope = tagScope(user, tenantId);
   if (create) await ensureTagIndexes(mongoose);
-  const existing = await Tag.find({ ...scope, tag: { $in: uniqueNames } }).lean();
-  const byName = new Map(existing.map((tag) => [tag.tag, String(tag._id)]));
-  if (create) {
-    for (const tag of uniqueNames) {
-      if (byName.has(tag)) continue;
-      const row = await getOrCreateTag(mongoose, user, { tag }, tenantId);
-      byName.set(tag, String(row._id));
+  const byName = new Map<string, string>();
+  const last = create
+    ? await Tag.findOne(scope).sort({ position: -1 }).select('position').lean()
+    : null;
+  for (let offset = 0; offset < uniqueNames.length; offset += 500) {
+    const batch = uniqueNames.slice(offset, offset + 500);
+    const existing = await Tag.find({ ...scope, tag: { $in: batch } }).lean();
+    for (const tag of existing) byName.set(tag.tag, String(tag._id));
+    const missing = create ? batch.filter((name) => !byName.has(name)) : [];
+    if (!missing.length) continue;
+    try {
+      await tenantSafeBulkWrite(
+        Tag,
+        missing.map((tag, index) => ({
+          updateOne: {
+            filter: { ...scope, tag },
+            update: {
+              $setOnInsert: { tag, user, position: (last?.position ?? -1) + offset + index + 1 },
+            },
+            upsert: true,
+          },
+        })),
+        { ordered: true },
+      );
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 11000) throw error;
+    }
+    const created = await Tag.find({ ...scope, tag: { $in: missing } }).lean();
+    for (const tag of created) byName.set(tag.tag, String(tag._id));
+    if (missing.some((name) => !byName.has(name))) {
+      throw new Error('Tag catalog changed during name resolution; retry the operation');
     }
   }
   return uniqueNames.flatMap((name) => {
@@ -143,6 +168,12 @@ export async function hydrateConversationTags<
   const ids = [...new Set(conversations.flatMap((conversation) => conversation.tagIds ?? []))];
   const Tag = mongoose.models.ConversationTag as Model<TagRecord>;
   const rows = await Tag.find({ $or: [...scopes.values()], _id: { $in: ids } }).lean();
+  return projectConversationTags(conversations, rows);
+}
+
+export function projectConversationTags<
+  T extends Pick<IConversation, 'user' | 'tenantId' | 'tags'> & { tagIds?: string[] },
+>(conversations: T[], rows: TagRecord[]): T[] {
   const byId = new Map(rows.map((row) => [String(row._id), row]));
   return conversations.map((conversation) => {
     const tags: string[] = [];
@@ -156,6 +187,36 @@ export async function hydrateConversationTags<
     }
     return { ...conversation, tags, tagIds };
   });
+}
+
+/** A delete may finish its sweep before a pending membership write commits. */
+export async function cleanConversationTagMembership<
+  T extends Pick<IConversation, 'user' | 'tenantId' | 'tags' | 'conversationId'> & {
+    tagIds?: string[];
+  },
+>(mongoose: typeof import('mongoose'), conversations: T[]): Promise<T[]> {
+  const projected = await hydrateConversationTags(mongoose, conversations);
+  const operations = conversations.flatMap((conversation, index) => {
+    if (!conversation.user) throw new Error('Conversation owner is required');
+    const valid = new Set(projected[index].tagIds);
+    const dangling = (conversation.tagIds ?? []).filter((id) => !valid.has(id));
+    return dangling.length
+      ? [
+          {
+            updateOne: {
+              filter: {
+                ...tagScope(conversation.user, conversation.tenantId ?? null),
+                conversationId: conversation.conversationId,
+              },
+              update: { $pullAll: { tagIds: dangling } } as UpdateQuery<IConversation>,
+              timestamps: false,
+            },
+          },
+        ]
+      : [];
+  });
+  if (operations.length) await tenantSafeBulkWrite(mongoose.models.Conversation, operations);
+  return projected;
 }
 
 export async function searchTagIds(

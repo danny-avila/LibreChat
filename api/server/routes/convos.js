@@ -203,7 +203,7 @@ router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandl
 
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
-  const convo = await db.getConvo(req.user.id, conversationId);
+  const convo = await db.getConvoWithTags(req.user.id, conversationId);
 
   if (convo && convo.subagentThread == null) {
     res.status(200).json(convo);

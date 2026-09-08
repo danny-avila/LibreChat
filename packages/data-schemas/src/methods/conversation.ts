@@ -25,6 +25,7 @@ import type {
   ISubagentThreadReservation,
 } from '~/types';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import type { TagRecord } from '~/tags/membership';
 import type { MessageMethods } from './message';
 import {
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
@@ -34,6 +35,15 @@ import {
   MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
 } from '~/types/convo';
 import {
+  hydrateConversationTags,
+  projectConversationTags,
+  cleanConversationTagMembership,
+  tagScope,
+  ownedTagIds,
+  resolveTagNames,
+  searchTagIds,
+} from '~/tags/membership';
+import {
   activeExpirationFilter,
   buildRetentionVisibilityFilter,
   createFallbackRetentionDate,
@@ -42,18 +52,13 @@ import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import {
-  hydrateConversationTags,
-  ownedTagIds,
-  resolveTagNames,
-  searchTagIds,
-} from '~/tags/membership';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { getTenantId } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 const ACTOR_CHECKPOINT_FIELDS = [
@@ -321,6 +326,7 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoWithTags(user: string, conversationId: string): Promise<IConversation | null>;
   getSubagentThreadForParent(input: {
     user: string;
     parentConversationId: string;
@@ -568,11 +574,24 @@ export function createConversationMethods(
         conversationId,
       }).lean<IConversation>();
       if (!conversation) return null;
-      return (await hydrateConversationTags(mongoose, [conversation]))[0];
+      delete conversation.tags;
+      return conversation;
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
     }
+  }
+
+  /** Public labels are projected without adding a serial query to the shared read path. */
+  async function getConvoWithTags(user: string, conversationId: string) {
+    const scope = tagScope(user);
+    const [conversation, catalog] = await Promise.all([
+      (mongoose.models.Conversation as Model<IConversation>)
+        .findOne({ ...scope, conversationId })
+        .lean<IConversation>(),
+      (mongoose.models.ConversationTag as Model<TagRecord>).find(scope).lean(),
+    ]);
+    return conversation ? projectConversationTags([conversation], catalog)[0] : null;
   }
 
   /** Resolves a child only through its owning parent and includes its private live lease. */
@@ -2518,13 +2537,11 @@ export function createConversationMethods(
       }
 
       const saved = conversation.toObject();
-      try {
-        return (await hydrateConversationTags(mongoose, [saved]))[0];
-      } catch (error) {
-        logger.error('[saveConvo] Unable to project optional tag labels', error);
-        delete saved.tags;
-        return saved;
+      delete saved.tags;
+      if (Array.isArray(update.tagIds) && update.tagIds.length) {
+        return (await cleanConversationTagMembership(mongoose, [saved]))[0];
       }
+      return saved;
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
       if (metadata?.context) {
@@ -2658,6 +2675,9 @@ export function createConversationMethods(
         }
       }
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
+      const memberships: Array<
+        Pick<IConversation, 'user' | 'conversationId' | 'tenantId' | 'tags' | 'tagIds'>
+      > = [];
       const bulkOps = conversations.map((convo) => {
         const localIds = importedIds.get(String(convo.user));
         const tagIds =
@@ -2665,6 +2685,13 @@ export function createConversationMethods(
           [...new Set(Array.isArray(convo.tags) ? convo.tags : [])].flatMap((name) => {
             const id = localIds?.get(String(name));
             return id ? [id] : [];
+          });
+        if (tagIds.length)
+          memberships.push({
+            user: String(convo.user),
+            conversationId: String(convo.conversationId),
+            ...(getTenantId() == null ? {} : { tenantId: getTenantId() }),
+            tagIds,
           });
         const sanitized: Record<string, unknown> = { ...convo, tagIds };
         delete sanitized.tags;
@@ -2710,6 +2737,7 @@ export function createConversationMethods(
       });
 
       const result = await tenantSafeBulkWrite(Conversation, bulkOps);
+      if (memberships.length) await cleanConversationTagMembership(mongoose, memberships);
       await Promise.all(
         [...affectedProjectStats.values()].map(({ user, projectId }) =>
           refreshChatProjectStatsForUser(mongoose, user, projectId),
@@ -3427,6 +3455,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getConvoWithTags,
     getSubagentThreadForParent,
     listSubagentThreadsForParent,
     getAgentEventBinding,

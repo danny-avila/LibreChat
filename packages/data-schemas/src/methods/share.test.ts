@@ -105,6 +105,11 @@ describe('Share Methods', () => {
         conversationId: { type: String, required: true },
         title: String,
         user: String,
+        tenantId: String,
+        tagIds: [String],
+        subagentThread: mongoose.Schema.Types.Mixed,
+        expiredAt: Date,
+        isTemporary: Boolean,
       },
       { timestamps: true },
     );
@@ -137,6 +142,10 @@ describe('Share Methods', () => {
     await Message.deleteMany({});
     await Conversation.deleteMany({});
     await File.deleteMany({});
+    await mongoose.models.ConversationTag.deleteMany({});
+    (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+      .fn()
+      .mockResolvedValue({ hits: [] });
   });
 
   describe('createSharedLink', () => {
@@ -1262,6 +1271,75 @@ describe('Share Methods', () => {
         attributesToRetrieve: ['conversationId'],
       });
     });
+
+    test.each(['asc', 'desc'])(
+      'bounds tag joins across sparse search pages (%s)',
+      async (direction) => {
+        const user = new mongoose.Types.ObjectId().toString();
+        const tag = await mongoose.models.ConversationTag.create({ user, tag: 'Matching' });
+        (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+          .fn()
+          .mockResolvedValue({ hits: [{ _id: String(tag._id) }] });
+        Conversation.meiliSearch = jest.fn().mockResolvedValue({
+          hits: [{ conversationId: 'candidate-150' }],
+        });
+        await SharedLink.insertMany(
+          Array.from({ length: 320 }, (_, index) => ({
+            user,
+            shareId: `share-${index}`,
+            conversationId: `candidate-${index}`,
+            title: String(index).padStart(3, '0'),
+          })),
+        );
+        await Conversation.insertMany(
+          [110, 120, 130, 140, 160, 210, 310].map((index) => ({
+            user: index === 140 ? 'another-user' : user,
+            conversationId: `candidate-${index}`,
+            tagIds: [String(tag._id)],
+            ...(index === 120 ? { subagentThread: { parentConversationId: 'parent' } } : {}),
+            ...(index === 130 ? { expiredAt: new Date(0) } : {}),
+            ...(index === 160 ? { tenantId: 'another-tenant' } : {}),
+          })),
+        );
+        const findSpy = jest.spyOn(Conversation.collection, 'find');
+        const cursorSpy = jest.spyOn(mongoose.Query.prototype, 'cursor');
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await shareMethods.getSharedLinks(
+            user,
+            cursor,
+            2,
+            'title',
+            direction,
+            'Matching',
+          );
+          seen.push(...page.links.map((link) => link.conversationId));
+          cursor = page.nextCursor as string | undefined;
+          expect(page.links).toHaveLength(2);
+          expect(page.hasNextPage).toBe(seen.length < 4);
+        } while (cursor);
+        const expected = [110, 150, 210, 310].map((index) => `candidate-${index}`);
+        expect(seen).toEqual(direction === 'asc' ? expected : expected.reverse());
+        expect(findSpy.mock.calls.length).toBeGreaterThan(2);
+        for (const [filter] of findSpy.mock.calls) {
+          const clauses = (filter as mongoose.FilterQuery<t.IConversation>).$and;
+          const membership = clauses?.find((clause) => clause.conversationId);
+          expect(membership?.conversationId.$in.length).toBeLessThanOrEqual(100);
+          expect(membership?.conversationId.$in.length).toBeGreaterThan(0);
+          expect(filter?.$and).toContainEqual({ user, tenantId: { $exists: false } });
+        }
+        findSpy.mockImplementationOnce(() => {
+          throw new Error('Membership lookup unavailable');
+        });
+        await expect(
+          shareMethods.getSharedLinks(user, undefined, 2, 'title', direction, 'Matching'),
+        ).rejects.toMatchObject({ code: 'SHARES_FETCH_ERROR' });
+        for (const result of cursorSpy.mock.results) {
+          expect(result.value.cursor.closed).toBe(true);
+        }
+      },
+    );
 
     test('should handle empty results', async () => {
       const userId = new mongoose.Types.ObjectId().toString();

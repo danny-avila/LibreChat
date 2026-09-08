@@ -25,7 +25,7 @@ Do not run old and new application writers concurrently. This is a coordinated u
    npm run migrate:conversation-tags -- --apply
    ```
 
-6. Run the dry-run again. `updated` and `createdTags` should both be zero. Application startup rejects nonempty legacy memberships that have not been converted.
+6. Run the dry-run again. `updated` and `createdTags` should both be zero. The apply command records completion only after membership writes and required indexes succeed. Application startup checks this completion marker; every existing database without it must run the migration, including databases with no tagged conversations. A fresh database with no conversations or tag catalog entries initializes automatically.
 7. Start only the upgraded application servers and workers. If search is enabled, allow the existing index-sync process to populate the `conversation_tags` index. The search key must permit this index as well as conversations and messages. Rebuild search indexes before making a rollback available.
 
 The migration preserves existing catalog IDs, descriptions and ordering. It creates owner/tenant-local catalog entries for names that exist only on conversations, deduplicates memberships, and preserves conversation timestamps and history. Writes are batched and retries reuse completed work. Do not resume legacy writers between migration retries.
@@ -36,4 +36,4 @@ The existing Meilisearch service indexes catalog labels separately, with `_id` a
 
 ## Rollback
 
-Before upgraded writers have run, the original `tags` arrays are still available for restoring the previous application version from the backup. After upgraded writers have changed membership or labels, those legacy arrays are stale. Stop all writers and restore the pre-upgrade backup, or explicitly regenerate legacy names from the current catalog and `tagIds` before using an old binary. Simply deploying an old binary after new writes loses tag changes. Rebuild the old version's search indexes as part of rollback.
+Stop all writers and restore the complete pre-upgrade MongoDB backup before starting the previous application version. This restores the original memberships and removes the migration-completion marker. Changes made after the backup will be lost. There is no reverse-migration script; legacy `tags` arrays become stale once upgraded writers change memberships or labels, so deploying an old binary against the upgraded database is not supported. Rebuild the old version's search indexes as part of rollback.

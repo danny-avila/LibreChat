@@ -826,17 +826,7 @@ export const useDuplicateConversationMutation = (
         queryClient.invalidateQueries([QueryKeys.project, duplicatedConversation.chatProjectId]);
       }
 
-      if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
-        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
-          if (!oldTags) return oldTags;
-          return oldTags.map((tag) => {
-            if (duplicatedConversation.tags?.includes(tag.tag)) {
-              return { ...tag, count: tag.count + 1 };
-            }
-            return tag;
-          });
-        });
-      }
+      queryClient.invalidateQueries([QueryKeys.conversationTags]);
 
       onSuccess?.(data, vars, context);
     },
@@ -876,17 +866,7 @@ export const useForkConvoMutation = (
         queryClient.invalidateQueries([QueryKeys.project, forkedConversation.chatProjectId]);
       }
 
-      if (forkedConversation.tags && forkedConversation.tags.length > 0) {
-        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
-          if (!oldTags) return oldTags;
-          return oldTags.map((tag) => {
-            if (forkedConversation.tags?.includes(tag.tag)) {
-              return { ...tag, count: tag.count + 1 };
-            }
-            return tag;
-          });
-        });
-      }
+      queryClient.invalidateQueries([QueryKeys.conversationTags]);
 
       onSuccess?.(data, vars, context);
     },
@@ -942,6 +922,7 @@ export const useUploadConversationsMutation = (
   return useMutation<t.TImportResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries([QueryKeys.conversationTags]);
       /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
       /** An imported chat can carry `pinned: true`. */
