@@ -2932,6 +2932,15 @@ export const defaultModels = {
     'gpt-3.5-turbo-instruct-0914',
     'gpt-3.5-turbo-instruct',
   ],
+  [EModelEndpoint.azureOpenAI]: [
+    ...sharedOpenAIModels,
+    'chatgpt-4o-latest',
+    'gpt-4-vision-preview',
+    'gpt-3.5-turbo-instruct-0914',
+    'gpt-3.5-turbo-instruct',
+    'sora',
+    'sora-2',
+  ],
   [EModelEndpoint.bedrock]: bedrockModels,
 };
 
@@ -2941,22 +2950,12 @@ const fitlerAssistantModels = (str: string) => {
 
 const openAIModels = defaultModels[EModelEndpoint.openAI];
 
-/**
- * The OpenAI catalog without the models only the first-party OpenAI endpoint
- * can run. Azure OpenAI shares this list, but Astra is neither routed to the
- * Responses API nor given its request constraints there, and listing it first
- * would let it become the default selection.
- */
-const nonResponsesOnlyOpenAIModels = openAIModels.filter(
-  (model) => !responsesOnlyOpenAIModels.includes(model),
-);
-
 export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
   [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
-  [EModelEndpoint.azureOpenAI]: nonResponsesOnlyOpenAIModels,
+  [EModelEndpoint.azureOpenAI]: defaultModels[EModelEndpoint.azureOpenAI],
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
   [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   [EModelEndpoint.bedrock]: defaultModels[EModelEndpoint.bedrock],

@@ -510,6 +510,13 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(expect.arrayContaining(['azure-model', 'azure-model-2']));
   });
 
+  it('returns Azure OpenAI defaults including Sora when azure flag is set', async () => {
+    delete process.env.AZURE_OPENAI_MODELS;
+    const models = await getOpenAIModels({ azure: true });
+    expect(models).toEqual(expect.arrayContaining(['sora', 'sora-2']));
+    expect(models).not.toContain('gpt-6-astra');
+  });
+
   it('returns `OPENAI_MODELS` with no flags (and fetch fails)', async () => {
     process.env.OPENAI_MODELS = 'openai-model,openai-model-2';
     const models = await getOpenAIModels({});

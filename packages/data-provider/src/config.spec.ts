@@ -3,7 +3,9 @@ import {
   allowedAddressesSchema,
   bedrockModels,
   configSchema,
+  defaultModels,
   excludedKeys,
+  initialModelsConfig,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
@@ -19,6 +21,20 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('Azure OpenAI Sora catalog', () => {
+  it('lists Sora video models on Azure OpenAI defaults, not first-party OpenAI', () => {
+    expect(defaultModels[EModelEndpoint.azureOpenAI]).toEqual(
+      expect.arrayContaining(['sora', 'sora-2']),
+    );
+    expect(initialModelsConfig[EModelEndpoint.azureOpenAI]).toEqual(
+      expect.arrayContaining(['sora', 'sora-2']),
+    );
+    expect(defaultModels[EModelEndpoint.openAI]).not.toContain('sora');
+    expect(defaultModels[EModelEndpoint.openAI]).not.toContain('sora-2');
+    expect(defaultModels[EModelEndpoint.azureAssistants]).not.toContain('sora');
+  });
+});
 
 describe('excludedKeys', () => {
   it.each([
