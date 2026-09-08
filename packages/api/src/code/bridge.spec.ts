@@ -35,6 +35,7 @@ describe('getCodeBridgeWorkerStatus', () => {
       }),
     ).resolves.toEqual({
       status: 'ready',
+      statefulWorkspace: true,
       leaseExpiresInMs: 45_000,
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],

@@ -540,6 +540,80 @@ describe('classification.ts', () => {
       expect(result.additionalTools.length).toBe(0);
     });
 
+    it.each([false, true])(
+      'gates attached-worker PTC in definitionsOnly=%s',
+      async (definitionsOnly) => {
+        process.env.TEST_CODE_CAPABILITY_TOKEN = 'capability-test-token';
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              protocolVersion: 1,
+              workerId: `worker-${definitionsOnly}`,
+              online: true,
+              ready: true,
+              leaseExpiresInMs: 45_000,
+              capabilities: {
+                statefulWorkspace: false,
+                sandboxProfile: 'native-srt',
+                runtimes: ['bash'],
+              },
+            }),
+          ),
+        );
+        try {
+          const result = await buildToolClassification({
+            loadedTools: [createMCPTool('tool1')],
+            userId: 'user1',
+            agentId: 'agent1',
+            agentToolOptions: {
+              tool1: { allowed_callers: ['direct', 'code_execution'], defer_loading: true },
+            },
+            programmaticToolsEnabled: true,
+            codeExecutionEnabled: true,
+            deferredToolsEnabled: true,
+            definitionsOnly,
+            codeExecutionContext: {
+              baseUrl: 'https://code.example',
+              codeSessionKey: 'session',
+              executionProfile: 'stateful',
+              statefulSessions: true,
+              environmentType: 'attached',
+              environmentId: 'attached',
+              bridgeWorkerId: `worker-${definitionsOnly}`,
+            },
+            codeEnvironments: [
+              {
+                id: 'attached',
+                name: 'Attached',
+                type: 'attached',
+                owner: 'deployment',
+                baseURL: 'https://code.example',
+                pairing: {
+                  workerId: `worker-${definitionsOnly}`,
+                  allowPrincipalWorkers: false,
+                  tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
+                },
+              },
+            ],
+          });
+          expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(false);
+          expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(false);
+          expect(result.additionalTools.some((tool) => tool.name === 'run_tools_with_bash')).toBe(
+            false,
+          );
+          expect(result.hasDeferredTools).toBe(true);
+          expect(result.toolRegistry?.get('tool1')?.allowed_callers).toEqual([
+            'direct',
+            'code_execution',
+          ]);
+          expect(fetchSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          fetchSpy.mockRestore();
+          delete process.env.TEST_CODE_CAPABILITY_TOKEN;
+        }
+      },
+    );
+
     it('should create bash PTC tool when capabilities allow programmatic tools', async () => {
       const loadedTools: GenericTool[] = [createMCPTool('tool1')];
 

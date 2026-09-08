@@ -18,6 +18,7 @@ const {
   buildWebSearchContext,
   buildImageToolContext,
   buildToolClassification,
+  supportsProgrammaticCodeExecution,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
@@ -1288,6 +1289,8 @@ async function loadToolDefinitionsWrapper({
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
+      codeExecutionContext: resolvedCodeExecutionContext,
+      codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
       provider: agent.provider,
       mcpServerNames,
       rawServerNames: mcpRawServerNames,
@@ -1378,6 +1381,8 @@ async function loadToolDefinitionsWrapper({
           deferredToolsEnabled,
           programmaticToolsEnabled,
           codeExecutionEnabled,
+          codeExecutionContext: resolvedCodeExecutionContext,
+          codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
           provider: agent.provider,
           mcpServerNames,
           rawServerNames: mcpRawServerNames,
@@ -1738,6 +1743,7 @@ async function loadAgentTools({
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
+      codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
       authHeaders: () =>
         codeExecutionAuthHeaders(
           (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
@@ -2133,7 +2139,14 @@ async function loadToolsForExecution({
     configurable.toolRegistry = toolRegistry;
   }
 
-  if (isPTC && toolRegistry) {
+  const canLoadPTC =
+    isPTC &&
+    toolRegistry != null &&
+    (await supportsProgrammaticCodeExecution(
+      codeExecutionContext,
+      req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
+    ));
+  if (canLoadPTC) {
     configurable.toolRegistry = toolRegistry;
     try {
       /**
@@ -2218,7 +2231,7 @@ async function loadToolsForExecution({
   ]);
 
   let ptcOrchestratedToolNames = [];
-  if (isPTC && toolRegistry) {
+  if (canLoadPTC) {
     ptcOrchestratedToolNames = Array.from(toolRegistry.values())
       .filter(
         (toolDef) =>

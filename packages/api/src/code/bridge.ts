@@ -23,6 +23,7 @@ export type CodeBridgePairing = {
 export type CodeBridgeWorkerStatus = {
   status: 'offline' | 'starting' | 'ready';
   leaseExpiresInMs?: number;
+  statefulWorkspace?: boolean;
   sandboxProfile?: string;
   runtimes?: string[];
   operations?: string[];
@@ -199,6 +200,7 @@ export async function getCodeBridgeWorkerStatus({
       ready?: unknown;
       leaseExpiresInMs?: unknown;
       capabilities?: {
+        statefulWorkspace?: unknown;
         sandboxProfile?: unknown;
         runtimes?: unknown;
         workspaceTools?: { operations?: unknown };
@@ -228,7 +230,9 @@ export async function getCodeBridgeWorkerStatus({
       !validLease ||
       !validCapabilities ||
       !validRuntimes ||
-      !validOperations
+      !validOperations ||
+      (capabilities?.statefulWorkspace != null &&
+        typeof capabilities.statefulWorkspace !== 'boolean')
     ) {
       throw new CodeBridgeStatusError('invalid');
     }
@@ -238,6 +242,9 @@ export async function getCodeBridgeWorkerStatus({
     }
     return {
       status: workerStatus,
+      ...(typeof capabilities?.statefulWorkspace === 'boolean'
+        ? { statefulWorkspace: capabilities.statefulWorkspace }
+        : {}),
       ...(typeof status.leaseExpiresInMs !== 'number'
         ? {}
         : { leaseExpiresInMs: status.leaseExpiresInMs }),

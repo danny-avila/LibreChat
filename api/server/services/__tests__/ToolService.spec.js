@@ -3013,6 +3013,48 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
+    it('does not lazily load PTC for an attached worker without confirmed stateful support', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      req.config.endpoints.agents.statefulCodeSessions = {
+        environments: [
+          {
+            id: 'personal',
+            name: 'Personal',
+            type: 'attached',
+            owner: 'deployment',
+            baseURL: 'https://attached.example',
+            workerId: 'worker',
+          },
+        ],
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveCodeExecutionContext.mockImplementationOnce(
+        jest.requireActual('@librechat/api').resolveCodeExecutionContext,
+      );
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: {
+          id: 'agent_ptc',
+          tools: [Tools.execute_code],
+          stateful_code_sessions: true,
+          code_environment_id: 'personal',
+        },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry: new Map(),
+        actionsEnabled: false,
+      });
+      expect(result.loadedTools.map((tool) => tool.name)).not.toContain(
+        Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+      );
+    });
+
     it('does not load PTC when programmatic tools capability is disabled', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
       const req = createMockReq(capabilities);

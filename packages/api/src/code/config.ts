@@ -112,6 +112,7 @@ export async function mergeAccessibleCodeEnvironments({
       return [
         {
           ...environment,
+          controlPlaneId,
           baseURL: controlPlane.baseURL,
           configSchema: effectiveControlPlanes.get(controlPlaneId)?.configSchema,
         },
