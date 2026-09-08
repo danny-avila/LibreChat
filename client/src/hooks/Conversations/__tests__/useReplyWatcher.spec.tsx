@@ -10,6 +10,7 @@ import {
   replyNotificationsAtom,
   replyNotificationSoundAtom,
 } from '../replyNotificationSettings';
+import useUnseenConversations from '../useUnseenConversations';
 import useReplyWatcher from '../useReplyWatcher';
 import { isConversationUnseen } from '~/utils';
 
@@ -60,7 +61,13 @@ function setup(toggles: Toggles = {}) {
     </QueryClientProvider>
   );
 
-  const view = renderHook(() => useReplyWatcher(), { wrapper });
+  const view = renderHook(
+    () => {
+      useReplyWatcher();
+      return useUnseenConversations();
+    },
+    { wrapper },
+  );
   const cachedConvo = () =>
     queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey)?.pages[0]
       .conversations[0];
@@ -810,36 +817,39 @@ describe('useReplyWatcher', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
   });
 
-  it('refreshes remote sidebar replies while focused with every optional alert disabled', async () => {
+  it('refreshes replies outside the focused sidebar filter with optional alerts disabled', async () => {
     (document.hasFocus as jest.Mock).mockReturnValue(true);
-    const { queryClient, cachedConvo, unmount } = setup();
+    mockListConversations.mockResolvedValue({
+      conversations: [
+        { conversationId: 'outside-filter', title: 'Remote', lastResponseAt: RESPONDED_AT },
+      ],
+      nextCursor: null,
+    });
+    const { queryClient, result, unmount } = setup();
+    const filteredKey = [QueryKeys.allConversations, { isArchived: false, tags: ['work'] }];
+    const filteredData = { pages: [{ conversations: [], nextCursor: null }], pageParams: [null] };
+    queryClient.setQueryData(filteredKey, filteredData);
     const observer = new QueryObserver(queryClient, {
-      queryKey: listKey,
+      queryKey: filteredKey,
       staleTime: Infinity,
-      queryFn: async () => ({
-        pages: [
-          {
-            conversations: [
-              { conversationId: CONVO_ID, title: 'Watched', lastResponseAt: RESPONDED_AT },
-            ],
-            nextCursor: null,
-          },
-        ],
-        pageParams: [null],
-      }),
+      queryFn: async () => filteredData,
     });
     const unsubscribe = observer.subscribe(() => {});
 
     await act(async () => {
       jest.advanceTimersByTime(60_000);
     });
-    expect(isConversationUnseen(cachedConvo())).toBe(false);
+    expect(result.current?.unseen).toEqual([]);
 
     await act(async () => {
       jest.advanceTimersByTime(4 * 60_000);
     });
-    expect(isConversationUnseen(cachedConvo())).toBe(true);
-    expect(mockListConversations).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(result.current?.unseen).toEqual([
+        expect.objectContaining({ conversationId: 'outside-filter', lastResponseAt: RESPONDED_AT }),
+      ]),
+    );
+    expect(queryClient.getQueryData(filteredKey)).toEqual(filteredData);
     unsubscribe();
     unmount();
   });

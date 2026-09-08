@@ -266,6 +266,19 @@ export default function useReplyWatcher() {
     const timer = window.setInterval(() => {
       if (document.hasFocus()) {
         void queryClient.invalidateQueries([QueryKeys.allConversations]);
+        /* The mounted sidebar may be filtered. Refresh the ordinary unfiltered cache too,
+           so replies outside that filter reach the aggregate without changing the sidebar. */
+        void queryClient
+          .fetchInfiniteQuery({
+            queryKey: [QueryKeys.allConversations, { isArchived: false }],
+            queryFn: ({ pageParam }) =>
+              dataService.listConversations({
+                isArchived: false,
+                cursor: pageParam?.toString(),
+              }),
+            getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+          })
+          .catch(() => {});
       }
     }, FOCUSED_REFRESH_MS);
     return () => window.clearInterval(timer);
