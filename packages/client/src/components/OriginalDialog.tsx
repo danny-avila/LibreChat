@@ -177,11 +177,24 @@ const DialogContent: React.ForwardRefExoticComponent<
     const composedRef = React.useCallback(
       (node: HTMLDivElement | null) => {
         contentRef.current = node;
-        if (typeof ref === 'function') {
-          ref(node);
-        } else if (ref) {
-          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        if (typeof ref !== 'function') {
+          if (ref) {
+            (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+          }
+          return undefined;
         }
+        /** React 19 lets a callback ref return a teardown, and swallowing it
+         *  here would strand a consumer's observers and listeners on a replaced
+         *  node. Only a real function is passed on: React 18 warns about any
+         *  other return value. */
+        const cleanup: unknown = ref(node);
+        if (typeof cleanup !== 'function') {
+          return undefined;
+        }
+        return () => {
+          contentRef.current = null;
+          (cleanup as () => void)();
+        };
       },
       [ref],
     );
@@ -217,13 +230,6 @@ const DialogContent: React.ForwardRefExoticComponent<
         if (escapeBelongsToPopup(ownerDocument)) {
           return;
         }
-        /** The consumer's own `onEscapeKeyDown` never ran: Radix only calls it
-         *  for the highest layer, which the toast is. Give it the say it would
-         *  have had, so a dialog that refuses to close on Escape still does. */
-        propsOnEscapeKeyDown?.(event);
-        if (event.defaultPrevented) {
-          return;
-        }
         /** Radix Toast's own `li`. Matched whatever its `data-state`, because a
          *  toast that has begun closing keeps its dismissable layer registered
          *  until the exit animation ends — and that layer is what takes the
@@ -251,6 +257,19 @@ const DialogContent: React.ForwardRefExoticComponent<
           null,
         );
         if (frontmost !== content) {
+          return;
+        }
+        /** Only now, with this dialog established as the one the Escape belongs
+         *  to. Every mounted dialog runs this listener, and calling a consumer's
+         *  handler from the ones underneath would fire their side effects for
+         *  someone else's keystroke — and a `preventDefault()` there would stop
+         *  the frontmost dialog from closing at all.
+         *
+         *  The consumer's own `onEscapeKeyDown` never ran: Radix calls it only
+         *  for the highest layer, which the toast is. Give it the say it would
+         *  have had, so a dialog that refuses to close on Escape still does. */
+        propsOnEscapeKeyDown?.(event);
+        if (event.defaultPrevented) {
           return;
         }
         escapeFallbackRef.current?.click();

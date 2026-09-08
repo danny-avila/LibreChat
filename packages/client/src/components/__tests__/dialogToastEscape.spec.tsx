@@ -125,6 +125,38 @@ describe('dialog Escape', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  /** Every mounted dialog runs the fallback listener, so one underneath must not
+   *  fire its consumer's Escape handler for a keystroke that belongs to the
+   *  dialog above it. */
+  it("does not run a lower dialog's Escape handler for the frontmost dialog", async () => {
+    const lowerEscape = jest.fn();
+    const upperOpenChange = jest.fn();
+    render(
+      <RadixToast.Provider>
+        <OGDialog open>
+          <OGDialogContent onEscapeKeyDown={lowerEscape}>
+            <button type="button">lower</button>
+          </OGDialogContent>
+        </OGDialog>
+        <OGDialog open onOpenChange={upperOpenChange}>
+          <OGDialogContent style={{ zIndex: 300 }}>
+            <button type="button">upper</button>
+          </OGDialogContent>
+        </OGDialog>
+        <RadixToast.Root open duration={Infinity} className="toast-root">
+          <RadixToast.Description>Saved</RadixToast.Description>
+        </RadixToast.Root>
+        <RadixToast.Viewport />
+      </RadixToast.Provider>,
+    );
+
+    screen.getByText('upper').focus();
+    await userEvent.keyboard('{Escape}');
+
+    expect(lowerEscape).not.toHaveBeenCalled();
+    expect(upperOpenChange).toHaveBeenCalledWith(false);
+  });
+
   /** A dialog that carries its z-index in a class — `ImagePreview` is
    *  `z-[250]` — still outranks this one, so Escape there must not close the
    *  dialog underneath it. */
