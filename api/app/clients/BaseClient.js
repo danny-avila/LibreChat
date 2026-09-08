@@ -1306,6 +1306,7 @@ class BaseClient {
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const req = options?.req;
     if (
+      req?.config?.interfaceConfig?.retentionMode === 'all' &&
       req?.config?.interfaceConfig?.generalChatRetention !== undefined &&
       !Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
     ) {
