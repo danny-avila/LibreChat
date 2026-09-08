@@ -52,7 +52,8 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   customActionsRenderer,
 }: DataTableProps<TData, TValue>): JSX.Element {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const remScale = useRemScale();
+  const isSmallScreen = useMediaQuery(`(max-width: ${768 * remScale}px)`);
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
@@ -302,7 +303,6 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     [data, getRowId],
   );
   /** Rows are laid out in rem, so the virtualizer must measure in the same units. */
-  const remScale = useRemScale();
   const scaledRowHeight = rowHeight * remScale;
   const estimateSize = useCallback(() => scaledRowHeight, [scaledRowHeight]);
 
@@ -603,6 +603,9 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           {
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain',
+            /** Inherited by memoized cells and skeletons so one scaled breakpoint
+             * controls every table column without rebuilding the row model. */
+            '--data-table-desktop-display': isSmallScreen ? 'none' : 'table-cell',
           } as React.CSSProperties
         }
         role="region"
@@ -712,7 +715,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                         canSort && 'cursor-pointer',
                         meta?.className,
                         header.column.getIsResizing() && 'bg-surface-tertiary/60',
-                        isDesktopOnly && 'hidden md:table-cell',
+                        isDesktopOnly && '[display:var(--data-table-desktop-display,table-cell)]',
                       )}
                       style={widthStyle}
                       aria-sort={ariaSort}

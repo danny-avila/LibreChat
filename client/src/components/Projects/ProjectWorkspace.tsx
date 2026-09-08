@@ -245,7 +245,8 @@ export default function ProjectWorkspace() {
               menuId={sortMenuId}
               isOpen={isSortMenuOpen}
               setIsOpen={setIsSortMenuOpen}
-              className="z-[125] min-w-44"
+              className="z-[125]"
+              minWidth="11rem"
               trigger={
                 <Ariakit.MenuButton
                   aria-label={localize('com_ui_sort_chats_by')}

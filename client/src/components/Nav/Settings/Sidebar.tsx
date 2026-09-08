@@ -29,8 +29,14 @@ export default function Sidebar({
   const tabs = TABS.filter((t) => !t.show || t.show(ctx));
 
   return (
-    <div className={cn('flex w-full flex-col gap-3', !stacked && 'w-[14.375rem]')}>
-      <div className="relative">
+    <div
+      className={cn(
+        'flex min-h-0 w-full flex-col gap-3 overflow-hidden',
+        !stacked && 'w-[14.375rem]',
+        stacked && !hideTabs && 'flex-1',
+      )}
+    >
+      <div className="relative shrink-0">
         <Search
           className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary"
           aria-hidden="true"
@@ -64,7 +70,7 @@ export default function Sidebar({
       {!hideTabs && (
         <Tabs.List
           aria-label={localize('com_nav_settings')}
-          className="flex flex-col gap-1 overflow-visible"
+          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
         >
           {tabs.map((tab) => (
             <Tabs.Trigger
@@ -72,13 +78,13 @@ export default function Sidebar({
               value={tab.id}
               onClick={() => onSelectTab(tab.id)}
               className={cn(
-                'flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary md:py-2',
+                'flex shrink-0 items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary md:py-2',
                 'radix-state-active:bg-surface-tertiary radix-state-active:text-text-primary',
               )}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex min-w-0 items-center gap-2 [&>svg]:shrink-0">
                 {tab.icon}
-                <span className="whitespace-nowrap">{localize(tab.labelKey)}</span>
+                <span className="min-w-0 break-words text-left">{localize(tab.labelKey)}</span>
               </span>
               {showChevron && (
                 <ChevronRight

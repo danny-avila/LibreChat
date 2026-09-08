@@ -91,7 +91,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
               'group-hover:bg-surface-secondary-alt group-data-[state=selected]:bg-surface-active',
               cell.column.id === 'select' && 'w-8 p-1',
               meta?.className,
-              isDesktopOnly && 'hidden md:table-cell',
+              isDesktopOnly && '[display:var(--data-table-desktop-display,table-cell)]',
             )}
             style={widthStyle}
           >
@@ -168,7 +168,7 @@ export const SkeletonRows: React.MemoExoticComponent<
                 className={cn(
                   'px-3 py-1',
                   meta?.className,
-                  meta?.desktopOnly && 'hidden md:table-cell',
+                  meta?.desktopOnly && '[display:var(--data-table-desktop-display,table-cell)]',
                 )}
               >
                 <Skeleton className="h-6 w-full" />

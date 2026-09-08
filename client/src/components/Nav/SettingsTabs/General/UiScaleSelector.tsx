@@ -24,18 +24,28 @@ export default function UiScaleSelector() {
   const applyRef = useRef(setUiScale);
   applyRef.current = setUiScale;
 
-  useEffect(
-    () => () => {
-      if (timerRef.current == null) {
-        return;
+  useEffect(() => {
+    const flushPending = () => {
+      if (timerRef.current != null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
-      clearTimeout(timerRef.current);
       if (pendingRef.current != null) {
-        applyRef.current(pendingRef.current);
+        const next = pendingRef.current;
+        pendingRef.current = null;
+        applyRef.current(next);
       }
-    },
-    [],
-  );
+    };
+    const handlePageHide = () => {
+      flushPending();
+      setPending(null);
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      flushPending();
+    };
+  }, []);
 
   const scale = clampUiScale(pending ?? uiScale);
   const percent = Math.round(scale * 100);

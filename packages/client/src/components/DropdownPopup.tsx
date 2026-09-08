@@ -15,6 +15,8 @@ interface DropdownProps {
   iconClassName?: string;
   itemClassName?: string;
   sameWidth?: boolean;
+  /** Preferred CSS minimum width, capped to the space available to the menu. */
+  minWidth?: string;
   anchor?: { x: string; y: string };
   gutter?: number;
   modal?: boolean;
@@ -69,6 +71,7 @@ const Menu: React.FC<MenuProps> = ({
   modal,
   portal,
   sameWidth,
+  minWidth,
   gutter = 8,
   finalFocus,
   unmountOnHide,
@@ -93,7 +96,15 @@ const Menu: React.FC<MenuProps> = ({
          `pointer-events: none` on body and re-enable it only on their own
          content. Without this the menu inherits `none` and its items become
          hit-transparent (danny-avila/LibreChat#14487). */
-      style={{ zIndex, pointerEvents: 'auto', ...style }}
+      style={{
+        zIndex,
+        pointerEvents: 'auto',
+        minWidth:
+          minWidth == null
+            ? undefined
+            : `min(${minWidth}, calc(100vw - 1rem), var(--popover-available-width, 100vw))`,
+        ...style,
+      }}
       className={cn('popover-ui', className)}
       {...props}
     >

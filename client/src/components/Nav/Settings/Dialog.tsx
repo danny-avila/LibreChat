@@ -110,7 +110,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 onValueChange={(v) => setActiveTab(v as SettingsTab)}
                 orientation="vertical"
                 className={cn(
-                  'flex flex-1 flex-col gap-4 overflow-hidden p-5',
+                  'flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-5',
                   !isSmallScreen && 'flex-row gap-6',
                 )}
               >

@@ -91,6 +91,16 @@ describe('UiScaleSelector', () => {
     expect(localStorage.getItem('uiScale')).toBe('1.1');
   });
 
+  it('persists a pending step when the document leaves before reflow', () => {
+    const { getByTestId } = renderSelector();
+    fireEvent.click(getByTestId('ui-scale-increase'));
+
+    act(() => window.dispatchEvent(new Event('pagehide')));
+
+    expect(localStorage.getItem('uiScale')).toBe('1.1');
+    expect(appliedScale()).toBe('1.1');
+  });
+
   it('restores a persisted scale on mount', () => {
     localStorage.setItem('uiScale', '1.25');
 

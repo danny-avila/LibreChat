@@ -75,7 +75,7 @@ function Switcher({
       isOpen={isOpen}
       setIsOpen={setIsOpen}
       items={items}
-      className="min-w-[min(15rem,90vw)]"
+      minWidth="15rem"
       iconClassName="mr-2 size-5"
       trigger={
         <Ariakit.MenuButton
