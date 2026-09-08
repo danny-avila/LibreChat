@@ -1,6 +1,7 @@
 import { Providers } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { GenericTool } from '@librechat/agents';
+import type { CodeEnvironmentConfig } from '~/agents/execution';
 import type { LCToolRegistry } from './classification';
 import {
   buildToolRegistryFromAgentOptions,
@@ -560,6 +561,20 @@ describe('classification.ts', () => {
             }),
           ),
         );
+        const codeEnvironments: CodeEnvironmentConfig[] = [
+          {
+            id: 'attached',
+            name: 'Attached',
+            type: 'attached',
+            owner: 'deployment',
+            baseURL: 'https://code.example',
+            pairing: {
+              workerId: `worker-${definitionsOnly}`,
+              allowPrincipalWorkers: false,
+              tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
+            },
+          },
+        ];
         try {
           const result = await buildToolClassification({
             loadedTools: [createMCPTool('tool1')],
@@ -581,20 +596,10 @@ describe('classification.ts', () => {
               environmentId: 'attached',
               bridgeWorkerId: `worker-${definitionsOnly}`,
             },
-            codeEnvironments: [
-              {
-                id: 'attached',
-                name: 'Attached',
-                type: 'attached',
-                owner: 'deployment',
-                baseURL: 'https://code.example',
-                pairing: {
-                  workerId: `worker-${definitionsOnly}`,
-                  allowPrincipalWorkers: false,
-                  tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
-                },
-              },
-            ],
+            codeEnvironments,
+            getAppConfig: jest.fn().mockResolvedValue({
+              endpoints: { agents: { statefulCodeSessions: { environments: codeEnvironments } } },
+            }),
           });
           expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(false);
           expect(result.toolRegistry?.has('run_tools_with_bash')).toBe(false);

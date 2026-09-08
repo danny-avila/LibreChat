@@ -91,6 +91,7 @@ const {
   domainParser,
 } = require('./ActionService');
 const {
+  getAppConfig,
   getEndpointsConfig,
   getMCPServerTools,
   getCachedTools,
@@ -1291,6 +1292,7 @@ async function loadToolDefinitionsWrapper({
       codeExecutionEnabled,
       codeExecutionContext: resolvedCodeExecutionContext,
       codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
+      getAppConfig,
       provider: agent.provider,
       mcpServerNames,
       rawServerNames: mcpRawServerNames,
@@ -1383,6 +1385,7 @@ async function loadToolDefinitionsWrapper({
           codeExecutionEnabled,
           codeExecutionContext: resolvedCodeExecutionContext,
           codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
+          getAppConfig,
           provider: agent.provider,
           mcpServerNames,
           rawServerNames: mcpRawServerNames,
@@ -1744,6 +1747,7 @@ async function loadAgentTools({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
+      getAppConfig,
       authHeaders: () =>
         codeExecutionAuthHeaders(
           (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
@@ -2145,6 +2149,7 @@ async function loadToolsForExecution({
     (await supportsProgrammaticCodeExecution(
       codeExecutionContext,
       req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
+      getAppConfig,
     ));
   if (canLoadPTC) {
     configurable.toolRegistry = toolRegistry;

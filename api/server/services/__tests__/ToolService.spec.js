@@ -16,6 +16,7 @@ const {
 } = require('librechat-data-provider');
 
 const mockGetEndpointsConfig = jest.fn();
+const mockGetAppConfig = jest.fn();
 const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
@@ -59,6 +60,7 @@ const mockPrimeSearchFiles = jest.fn().mockResolvedValue({});
 const mockPrimeCodeFiles = jest.fn().mockResolvedValue({});
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
+  getAppConfig: (...args) => mockGetAppConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
   getCachedTools: (...args) => mockGetCachedTools(...args),
 }));
@@ -3054,6 +3056,82 @@ describe('ToolService - Action Capability Gating', () => {
         Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
       );
     });
+
+    it.each([false, true])(
+      'loads attached PTC using deployment credentials only when statefulWorkspace=%s',
+      async (statefulWorkspace) => {
+        const capabilities = [
+          AgentCapabilities.tools,
+          AgentCapabilities.programmatic_tools,
+          AgentCapabilities.execute_code,
+          AgentCapabilities.stateful_code_sessions,
+        ];
+        const req = createMockReq(capabilities);
+        const environment = {
+          id: 'personal',
+          name: 'Personal',
+          type: 'attached',
+          owner: 'deployment',
+          baseURL: 'https://attached.example',
+          workerId: `worker-${statefulWorkspace}`,
+          pairing: {
+            workerId: `worker-${statefulWorkspace}`,
+            tokenEnv: 'TEST_PTC_DEPLOYMENT_TOKEN',
+          },
+        };
+        req.config.endpoints.agents.statefulCodeSessions = { environments: [environment] };
+        mockGetAppConfig.mockResolvedValueOnce({
+          endpoints: { agents: { statefulCodeSessions: { environments: [environment] } } },
+        });
+        mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+        mockResolveCodeExecutionContext.mockImplementationOnce(
+          jest.requireActual('@librechat/api').resolveCodeExecutionContext,
+        );
+        process.env.TEST_PTC_DEPLOYMENT_TOKEN = `deployment-token-${statefulWorkspace}`;
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              protocolVersion: 1,
+              workerId: environment.workerId,
+              online: true,
+              ready: true,
+              leaseExpiresInMs: 45_000,
+              capabilities: { statefulWorkspace, sandboxProfile: 'native-srt', runtimes: ['bash'] },
+            }),
+          ),
+        );
+        try {
+          const result = await loadToolsForExecution({
+            req,
+            res: {},
+            agent: {
+              id: 'agent_ptc',
+              tools: [Tools.execute_code],
+              stateful_code_sessions: true,
+              code_environment_id: 'personal',
+            },
+            toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+            toolRegistry: new Map(),
+            actionsEnabled: false,
+          });
+          expect(
+            result.loadedTools.some(
+              (tool) => tool.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+            ),
+          ).toBe(statefulWorkspace);
+          expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+          expect(fetchSpy).toHaveBeenCalledWith(
+            `https://attached.example/bridge/workers/${environment.workerId}/status`,
+            expect.objectContaining({
+              headers: { Authorization: `Bearer deployment-token-${statefulWorkspace}` },
+            }),
+          );
+        } finally {
+          fetchSpy.mockRestore();
+          delete process.env.TEST_PTC_DEPLOYMENT_TOKEN;
+        }
+      },
+    );
 
     it('does not load PTC when programmatic tools capability is disabled', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];

@@ -17,6 +17,7 @@ import {
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
+import type { CodeCapabilityConfigLoader } from '~/code/capabilities';
 import type { MCPToolAlias, ToolDefinition } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema, sanitizeGeminiSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
@@ -52,6 +53,7 @@ export interface LoadToolDefinitionsParams {
   codeExecutionEnabled?: boolean;
   codeExecutionContext?: CodeExecutionContext;
   codeEnvironments?: readonly CodeEnvironmentConfig[];
+  getAppConfig?: CodeCapabilityConfigLoader;
   /** Agent provider — Gemini/Vertex tool schemas get union-flattened for compatibility */
   provider?: Providers;
   /** Configured server names, used to resolve the tool-key boundary exactly */
@@ -132,6 +134,7 @@ export async function loadToolDefinitions(
     codeExecutionEnabled = false,
     codeExecutionContext,
     codeEnvironments,
+    getAppConfig,
     provider,
     mcpServerNames,
     rawServerNames,
@@ -370,6 +373,7 @@ export async function loadToolDefinitions(
     codeExecutionEnabled,
     codeExecutionContext,
     codeEnvironments,
+    getAppConfig,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
   });

@@ -23,6 +23,7 @@ import type {
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
+import type { CodeCapabilityConfigLoader } from '~/code/capabilities';
 import { supportsProgrammaticCodeExecution } from '~/code/capabilities';
 import { sanitizeGeminiSchema } from '~/mcp/zod';
 
@@ -282,6 +283,7 @@ export interface BuildToolClassificationParams {
   /** Trusted Code API route selected for the executing agent. */
   codeExecutionContext?: CodeExecutionContext;
   codeEnvironments?: readonly CodeEnvironmentConfig[];
+  getAppConfig?: CodeCapabilityConfigLoader;
 }
 
 /** Result from building tool classification */
@@ -354,6 +356,7 @@ export async function buildToolClassification(
     authHeaders,
     codeExecutionContext,
     codeEnvironments,
+    getAppConfig,
   } = params;
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
   const additionalTools: GenericTool[] = [];
@@ -386,7 +389,7 @@ export async function buildToolClassification(
     programmaticToolsEnabled &&
     codeExecutionEnabled &&
     agentHasProgrammaticTools(toolRegistry) &&
-    (await supportsProgrammaticCodeExecution(codeExecutionContext, codeEnvironments));
+    (await supportsProgrammaticCodeExecution(codeExecutionContext, codeEnvironments, getAppConfig));
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 
   /** Clear defer_loading if capability disabled */

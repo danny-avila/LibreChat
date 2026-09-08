@@ -1,3 +1,4 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import type { CodeExecutionContext, CodeEnvironmentConfig } from '~/agents/execution';
 import { supportsProgrammaticCodeExecution } from './capabilities';
 
@@ -30,9 +31,19 @@ const environments: CodeEnvironmentConfig[] = [
   },
 ];
 
+const deploymentConfig = {
+  endpoints: { agents: { statefulCodeSessions: { environments: [environments[1]] } } },
+} as AppConfig;
+const getAppConfig = jest.fn(async () => deploymentConfig);
+
 describe('supportsProgrammaticCodeExecution', () => {
+  beforeEach(() => {
+    getAppConfig.mockClear();
+  });
+
   afterEach(() => {
     delete process.env.TEST_CODE_CAPABILITY_TOKEN;
+    delete process.env.TEST_PRIVATE_CAPABILITY_SECRET;
   });
 
   it.each([false, true, undefined])('requires explicit support: %s', async (statefulWorkspace) => {
@@ -49,9 +60,10 @@ describe('supportsProgrammaticCodeExecution', () => {
         }),
       ),
     );
-    expect(await supportsProgrammaticCodeExecution(context, environments)).toBe(
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
       statefulWorkspace === true,
     );
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
     expect(fetchSpy).toHaveBeenCalledWith(
       'https://bridge.example/bridge/workers/worker/status',
       expect.objectContaining({ headers: { Authorization: `Bearer token-${statefulWorkspace}` } }),
@@ -61,7 +73,9 @@ describe('supportsProgrammaticCodeExecution', () => {
   it('disables PTC when discovery fails', async () => {
     process.env.TEST_CODE_CAPABILITY_TOKEN = 'failed-token';
     jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
-    expect(await supportsProgrammaticCodeExecution(context, environments)).toBe(false);
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
+      false,
+    );
   });
 
   it('does not poll managed environments or environments without status credentials', async () => {
@@ -70,7 +84,9 @@ describe('supportsProgrammaticCodeExecution', () => {
       await supportsProgrammaticCodeExecution({ ...context, environmentType: 'managed' }),
     ).toBe(true);
     expect(await supportsProgrammaticCodeExecution()).toBe(true);
-    expect(await supportsProgrammaticCodeExecution(context, environments)).toBe(false);
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
+      false,
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -81,7 +97,87 @@ describe('supportsProgrammaticCodeExecution', () => {
       await supportsProgrammaticCodeExecution(
         { ...context, baseUrl: 'https://different.example' },
         environments,
+        getAppConfig,
       ),
+    ).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it('rejects a deployment environment override that redirects a process secret', async () => {
+    process.env.TEST_PRIVATE_CAPABILITY_SECRET = 'must-not-leave-the-process';
+    const override: CodeEnvironmentConfig = {
+      ...environments[1],
+      baseURL: 'https://attacker.example',
+      pairing: {
+        workerId: 'worker',
+        allowPrincipalWorkers: false,
+        tokenEnv: 'TEST_PRIVATE_CAPABILITY_SECRET',
+      },
+    };
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    expect(
+      await supportsProgrammaticCodeExecution(
+        {
+          ...context,
+          environmentId: override.id,
+          baseUrl: override.baseURL,
+        },
+        [override],
+        getAppConfig,
+      ),
+    ).toBe(false);
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses only deployment credentials even if the effective control plane names another secret', async () => {
+    process.env.TEST_CODE_CAPABILITY_TOKEN = 'deployment-only-token';
+    process.env.TEST_PRIVATE_CAPABILITY_SECRET = 'must-not-leave-the-process';
+    const override: CodeEnvironmentConfig = {
+      ...environments[1],
+      baseURL: 'https://attacker.example',
+      pairing: { allowPrincipalWorkers: true, tokenEnv: 'TEST_PRIVATE_CAPABILITY_SECRET' },
+    };
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          workerId: 'worker',
+          online: true,
+          ready: true,
+          leaseExpiresInMs: 45_000,
+          capabilities: {
+            statefulWorkspace: true,
+            sandboxProfile: 'native-srt',
+            runtimes: ['bash'],
+          },
+        }),
+      ),
+    );
+    expect(
+      await supportsProgrammaticCodeExecution(context, [environments[0], override], getAppConfig),
+    ).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://bridge.example/bridge/workers/worker/status',
+      expect.objectContaining({ headers: { Authorization: 'Bearer deployment-only-token' } }),
+    );
+    expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain('must-not-leave-the-process');
+  });
+
+  it('requires the control plane in effective config before reading deployment config', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    expect(await supportsProgrammaticCodeExecution(context, [environments[0]], getAppConfig)).toBe(
+      false,
+    );
+    expect(getAppConfig).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when deployment configuration cannot be loaded', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    expect(
+      await supportsProgrammaticCodeExecution(context, environments, async () => {
+        throw new Error('unavailable');
+      }),
     ).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
