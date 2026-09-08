@@ -22,6 +22,18 @@ export const usePopoverZIndex = (): number => {
   return contentZIndex + 10;
 };
 
+/**
+ * The same layered z-index, but only for a popover that already carries its own
+ * default layer in CSS: `undefined` outside any dialog leaves that class (and
+ * any consumer override of it) untouched, while inside a dialog the inline
+ * value lifts the popover over the dialog it belongs to.
+ */
+export const useNestedPopoverZIndex = (): number | undefined => {
+  const depth = useDialogDepth();
+  const zIndex = usePopoverZIndex();
+  return depth > 0 ? zIndex : undefined;
+};
+
 interface OGDialogProps extends DialogPrimitive.DialogProps {
   triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
   triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];
