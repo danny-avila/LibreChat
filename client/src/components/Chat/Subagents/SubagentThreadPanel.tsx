@@ -49,7 +49,9 @@ import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext
 import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useConfiguredFooter } from '~/components/Chat/Footer';
+import { ARTIFACTS_SHEET_MAX_WIDTH } from '~/utils/breakpoints';
 import { useParentSubagents } from './ParentSubagentsProvider';
+import useScaledMaxWidth from '~/hooks/useScaledMaxWidth';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
 import { resolveSubagentAgentId } from './identity';
@@ -118,7 +120,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
-  const isMobile = useMediaQuery('(max-width: 767px)');
+  const isMobile = useScaledMaxWidth(ARTIFACTS_SHEET_MAX_WIDTH);
   /** Two reasons the send control's action list cannot be used where it hangs.
    *  Without hover, a tap on its anchor submits instead of opening it. And
    *  while the panel is a focus-trapped modal, the list is portaled outside the
