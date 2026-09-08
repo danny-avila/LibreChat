@@ -563,3 +563,209 @@ describe('public approval and skill context', () => {
     });
   });
 });
+
+describe('heterogeneous artifacts and background receipts', () => {
+  it.each(['web_search', 'file_search'])(
+    'preserves public %s citations and strips unused data',
+    (type) => {
+      const payload = {
+        turn: 1,
+        organic: [
+          {
+            link: 'https://example.com',
+            title: 'Source',
+            content: 'Excerpt',
+            highlights: ['private'],
+            sitelinks: [],
+          },
+        ],
+        topStories: [{ link: 'https://example.com/news', source: 'News' }],
+        images: [{ imageUrl: 'https://example.com/image', imageWidth: 100 }],
+        videos: [{ link: 'https://example.com/video', duration: '1:00' }],
+        references: [{ link: 'file-reference', type: 'file', title: 'Document' }],
+        answerBox: { snippet: 'Answer' },
+        news: [{ title: 'Unused' }],
+        credentials: 'private',
+      };
+      const result = projectConversationMessage({
+        attachments: [
+          { type, [type]: payload, toolCallId: 'tool', agentId: 'agent', user: 'private' },
+        ],
+      } as ConversationMessageResource);
+      expect(result.attachments).toEqual([
+        {
+          type,
+          toolCallId: 'tool',
+          agentId: 'agent',
+          [type]: {
+            turn: 1,
+            organic: [{ link: 'https://example.com', title: 'Source', content: 'Excerpt' }],
+            topStories: payload.topStories,
+            images: payload.images,
+            videos: payload.videos,
+            references: payload.references,
+            answerBox: payload.answerBox,
+          },
+        },
+      ]);
+    },
+  );
+
+  it('preserves memory, UI resources and workspace file changes', () => {
+    const attachments = [
+      {
+        type: 'memory',
+        memory: {
+          key: 'preference',
+          value: 'short',
+          type: 'update',
+          agentId: 'agent',
+          secret: 'private',
+        },
+      },
+      {
+        type: 'ui_resources',
+        ui_resources: [
+          {
+            resourceId: 'resource',
+            uri: 'ui://resource',
+            mimeType: 'text/html',
+            text: 'UI text',
+            credentials: 'private',
+          },
+        ],
+      },
+      {
+        filename: 'result.txt',
+        expiresAt: 42,
+        workspaceChange: { profile: 'stateful', operation: 'created', path: 'result.txt' },
+      },
+    ];
+    expect(
+      projectConversationMessage({ attachments } as ConversationMessageResource).attachments,
+    ).toEqual([
+      {
+        type: 'memory',
+        memory: { key: 'preference', value: 'short', type: 'update', agentId: 'agent' },
+      },
+      {
+        type: 'ui_resources',
+        ui_resources: [
+          { resourceId: 'resource', uri: 'ui://resource', mimeType: 'text/html', text: 'UI text' },
+        ],
+      },
+      attachments[2],
+    ]);
+  });
+
+  it.each(['web_search', 'file_search', 'memory', 'ui_resources'])(
+    'does not treat malformed %s as a file',
+    (type) => {
+      expect(
+        projectConversationMessage({
+          attachments: [{ type, [type]: 'invalid' }],
+        } as ConversationMessageResource).attachments,
+      ).toEqual([]);
+    },
+  );
+
+  it.each([new Date('2026-01-01T00:00:00Z'), '2026-01-01T00:00:00.000Z'])(
+    'returns only public background receipt fields for %s',
+    (settledAt) => {
+      const backgroundTask = {
+        version: 1,
+        taskId: 'task',
+        toolName: 'tool',
+        status: 'completed',
+        settledAt,
+        resultClaim: { claimId: 'private' },
+        completionWakeup: true,
+      };
+      const part = { type: 'tool_call', tool_call: { name: 'tool', backgroundTask } };
+      const response = projectConversationMessage({
+        content: [
+          part,
+          { type: 'tool_call', tool_call: { name: 'subagent', subagent_content: [part] } },
+        ],
+      } as ConversationMessageResource);
+      const expected = {
+        type: 'tool_call',
+        tool_call: {
+          name: 'tool',
+          backgroundTask: {
+            version: 1,
+            taskId: 'task',
+            toolName: 'tool',
+            status: 'completed',
+            settledAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      };
+      expect(response.content).toEqual([
+        expected,
+        { type: 'tool_call', tool_call: { name: 'subagent', subagent_content: [expected] } },
+      ]);
+    },
+  );
+});
+
+it('preserves file-search source passages and public file metadata', () => {
+  const source = {
+    fileId: 'file',
+    fileName: 'notes.pdf',
+    relevance: 0.9,
+    content: 'Passage',
+    pages: [1],
+    pageRelevance: { 1: 0.9 },
+    metadata: {
+      fileType: 'application/pdf',
+      fileBytes: 42,
+      storageType: 'local',
+      credentials: 'private',
+    },
+  };
+  expect(
+    projectConversationMessage({
+      attachments: [{ type: 'file_search', file_search: { sources: [source] } }],
+    } as ConversationMessageResource).attachments,
+  ).toEqual([
+    {
+      type: 'file_search',
+      file_search: {
+        sources: [
+          {
+            ...source,
+            metadata: { fileType: 'application/pdf', fileBytes: 42, storageType: 'local' },
+          },
+        ],
+      },
+    },
+  ]);
+});
+
+it('preserves encoded UI resource bodies without arbitrary renderer options', () => {
+  const entry = {
+    resourceId: 'resource',
+    uri: 'ui://resource',
+    mimeType: 'text/html',
+    blob: 'PGgxPkhlbGxvPC9oMT4=',
+    contentType: 'private-override',
+  };
+  expect(
+    projectConversationMessage({
+      attachments: [{ type: 'ui_resources', ui_resources: [entry] }],
+    } as ConversationMessageResource).attachments,
+  ).toEqual([
+    {
+      type: 'ui_resources',
+      ui_resources: [
+        {
+          resourceId: 'resource',
+          uri: 'ui://resource',
+          mimeType: 'text/html',
+          blob: 'PGgxPkhlbGxvPC9oMT4=',
+        },
+      ],
+    },
+  ]);
+});

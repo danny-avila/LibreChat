@@ -495,6 +495,44 @@ describe('createConversationImportOperation', () => {
     expect(importer.mock.calls[0][0]).not.toHaveProperty('options.file_ids');
   });
 
+  it.each([
+    {
+      type: 'web_search',
+      web_search: { references: [{ link: 'https://example.com', type: 'link' }] },
+    },
+    {
+      type: 'file_search',
+      file_search: { references: [{ link: 'file-reference', type: 'file' }] },
+    },
+    { type: 'memory', memory: { key: 'preference', type: 'delete' } },
+    { type: 'ui_resources', ui_resources: [{ resourceId: 'resource', uri: 'ui://resource' }] },
+  ])(
+    'accepts supported non-file attachment $type and rejects malformed variants',
+    async (attachment) => {
+      for (const valid of [true, false]) {
+        const entry = valid ? attachment : { type: attachment.type, [attachment.type]: 'invalid' };
+        const { deps, importer } = createDependencies(
+          JSON.stringify({
+            ...baseExport,
+            messages: [{ ...baseExport.messages[0], attachments: [entry] }],
+          }),
+        );
+        const operation = createConversationImportOperation(deps)({
+          filepath: '/tmp/artifact.json',
+          requestUserId: 'owner',
+          format: 'librechat',
+        });
+        if (valid) {
+          await operation;
+          expect(importer).toHaveBeenCalled();
+        } else {
+          await expect(operation).rejects.toThrow('not a supported file object');
+          expect(importer).not.toHaveBeenCalled();
+        }
+      }
+    },
+  );
+
   describe.each(['files', 'attachments'])('imported %s', (field) => {
     it.each([null, false, 1, 'file', [], { filename: {} }, { filepath: 4 }, { text: [] }])(
       'rejects malformed entry %j in flat and recursive exports',

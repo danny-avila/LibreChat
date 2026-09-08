@@ -7,6 +7,7 @@ import {
   MAX_CONVERSATION_MANAGEMENT_TITLE_LENGTH,
   conversationTagsSchema,
   conversationFileSchema,
+  conversationAttachmentSchema,
   isValidConversationContentPart,
 } from './schema';
 import {
@@ -393,7 +394,9 @@ function assertMessage(
     const entries = value[field];
     if (!Array.isArray(entries)) continue;
     for (let index = 0; index < entries.length; index++) {
-      if (!conversationFileSchema.safeParse(entries[index]).success) {
+      const schema =
+        field === 'attachments' ? conversationAttachmentSchema : conversationFileSchema;
+      if (!schema.safeParse(entries[index]).success) {
         throw new ConversationImportError(
           `Field "${location}.${field}[${index}]" is not a supported file object`,
         );

@@ -174,7 +174,7 @@ const textValue = z.union([
 ]);
 const jsonObject = z.record(z.string(), z.unknown());
 /** Exports contain partial file references as well as complete attachment records. */
-export const conversationFileSchema: z.ZodType<Record<string, unknown>> = z.object({
+const fileReference = z.object({
   file_id: z.string().nullish(),
   filename: z.string().nullish(),
   filepath: z.string().nullish(),
@@ -192,6 +192,155 @@ export const conversationFileSchema: z.ZodType<Record<string, unknown>> = z.obje
   metadata: z.object({}).strip().nullish(),
 });
 
+export const conversationFileSchema: z.ZodType<Record<string, unknown>> = fileReference;
+
+const mediaReference = z.object({
+  originalUrl: z.string(),
+  title: z.string().optional(),
+  text: z.string().optional(),
+});
+const searchSource = z.object({
+  link: z.string(),
+  title: z.string().optional(),
+  snippet: z.string().optional(),
+  date: z.string().optional(),
+  source: z.string().optional(),
+  imageUrl: z.string().optional(),
+  position: z.number().optional(),
+  content: z.string().optional(),
+  attribution: z.string().optional(),
+  processed: z.boolean().optional(),
+  references: z
+    .object({
+      links: z.array(mediaReference),
+      images: z.array(mediaReference),
+      videos: z.array(mediaReference),
+    })
+    .optional(),
+});
+const searchResults = z.object({
+  turn: z.number().optional(),
+  error: z.string().optional(),
+  organic: z.array(searchSource).optional(),
+  topStories: z.array(searchSource).optional(),
+  images: z
+    .array(
+      z.object({
+        title: z.string().optional(),
+        imageUrl: z.string().optional(),
+        imageWidth: z.number().optional(),
+        imageHeight: z.number().optional(),
+        thumbnailUrl: z.string().optional(),
+        thumbnailWidth: z.number().optional(),
+        thumbnailHeight: z.number().optional(),
+        source: z.string().optional(),
+        domain: z.string().optional(),
+        link: z.string().optional(),
+        googleUrl: z.string().optional(),
+        position: z.number().optional(),
+      }),
+    )
+    .optional(),
+  videos: z
+    .array(
+      z.object({
+        title: z.string().optional(),
+        link: z.string().optional(),
+        snippet: z.string().optional(),
+        imageUrl: z.string().optional(),
+        duration: z.string().optional(),
+        source: z.string().optional(),
+        channel: z.string().optional(),
+        date: z.string().optional(),
+        position: z.number().optional(),
+      }),
+    )
+    .optional(),
+  references: z
+    .array(
+      z.object({
+        link: z.string(),
+        type: z.enum(['link', 'image', 'video', 'file']),
+        title: z.string().optional(),
+        attribution: z.string().optional(),
+      }),
+    )
+    .optional(),
+  answerBox: z
+    .object({
+      title: z.string().optional(),
+      snippet: z.string().optional(),
+      snippetHighlighted: z.array(z.string()).optional(),
+      link: z.string().optional(),
+      date: z.string().optional(),
+    })
+    .optional(),
+});
+const attachmentBase = fileReference.extend({
+  name: z.string().optional(),
+  conversationId: z.string().optional(),
+  expiresAt: z.number().optional(),
+  workspaceChange: z
+    .object({
+      profile: z.literal('stateful'),
+      operation: z.enum(['created', 'updated']),
+      path: z.string(),
+    })
+    .optional(),
+});
+const artifactTypes = new Set(['web_search', 'file_search', 'memory', 'ui_resources']);
+export const conversationAttachmentSchema: z.ZodType<Record<string, unknown>> = z.union([
+  attachmentBase.extend({ type: z.literal('web_search'), web_search: searchResults }),
+  attachmentBase.extend({
+    type: z.literal('file_search'),
+    file_search: searchResults.extend({
+      sources: z
+        .array(
+          z.object({
+            fileId: z.string(),
+            fileName: z.string().optional(),
+            relevance: z.number().optional(),
+            content: z.string().optional(),
+            pages: z.array(z.number()).optional(),
+            pageRelevance: z.record(z.number()).optional(),
+            metadata: z
+              .object({
+                storageType: z.string().optional(),
+                fileType: z.string().optional(),
+                fileBytes: z.number().optional(),
+              })
+              .optional(),
+          }),
+        )
+        .optional(),
+    }),
+  }),
+  attachmentBase.extend({
+    type: z.literal('memory'),
+    memory: z.object({
+      key: z.string(),
+      value: z.string().optional(),
+      tokenCount: z.number().optional(),
+      type: z.enum(['update', 'delete', 'error']),
+      agentId: z.string().optional(),
+    }),
+  }),
+  attachmentBase.extend({
+    type: z.literal('ui_resources'),
+    ui_resources: z.array(
+      z.object({
+        resourceId: z.string(),
+        name: z.string().optional(),
+        blob: z.string().optional(),
+        uri: z.string(),
+        mimeType: z.string().optional(),
+        text: z.string().optional(),
+      }),
+    ),
+  }),
+  attachmentBase.refine((value) => !artifactTypes.has(value.type ?? '')),
+]);
+
 const baseToolCall = z
   .object({
     id: z.string().optional(),
@@ -200,6 +349,20 @@ const baseToolCall = z
     stepId: z.string().optional(),
     mcpServerName: z.string().optional(),
     inputValidationError: z.boolean().optional(),
+    backgroundTask: z
+      .object({
+        version: z.literal(1),
+        taskId: z.string(),
+        toolName: z.string(),
+        status: z.enum(['completed', 'error']),
+        settledAt: z
+          .union([z.date(), z.string().datetime({ offset: true })])
+          .transform((value) =>
+            (typeof value === 'string' ? new Date(value) : value).toISOString(),
+          ),
+      })
+      .strip()
+      .optional(),
     approval: z
       .object({
         actionId: z.string(),
@@ -499,7 +662,7 @@ export function projectConversationMessage(
   const alwaysAppliedSkills = projectStrings(source.alwaysAppliedSkills);
   const content = projectParts(source.content, contentSchema);
   const files = projectParts(source.files, conversationFileSchema);
-  const attachments = projectParts(source.attachments, conversationFileSchema);
+  const attachments = projectParts(source.attachments, conversationAttachmentSchema);
   return {
     id: source.messageId,
     conversationId: source.conversationId,

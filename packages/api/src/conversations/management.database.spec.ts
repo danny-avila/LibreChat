@@ -490,6 +490,67 @@ describe('conversation management handlers with Mongo persistence', () => {
     ]);
   });
 
+  it('returns persisted search citations and public detached-tool receipts', async () => {
+    await seedConversation(TENANT_A, { user: OWNER, conversationId: SHARED_ID });
+    const settledAt = new Date('2026-01-01T00:00:00Z');
+    await seedMessage(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      messageId: 'artifacts',
+      attachments: [
+        {
+          type: 'web_search',
+          web_search: {
+            organic: [{ link: 'https://example.com', title: 'Source', highlights: ['private'] }],
+            knowledgeGraph: { private: true },
+          },
+        },
+      ],
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            backgroundTask: {
+              version: 1,
+              taskId: 'task',
+              toolName: 'tool',
+              status: 'completed',
+              settledAt,
+              resultClaim: { claimId: 'private' },
+              completionWakeup: true,
+            },
+          },
+        },
+      ],
+    });
+    const response = await request(createApp()).get(`/${SHARED_ID}/messages`);
+    expect(response.status).toBe(200);
+    expect(response.body.data[0]).toMatchObject({
+      attachments: [
+        {
+          type: 'web_search',
+          web_search: { organic: [{ link: 'https://example.com', title: 'Source' }] },
+        },
+      ],
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            backgroundTask: {
+              version: 1,
+              taskId: 'task',
+              toolName: 'tool',
+              status: 'completed',
+              settledAt: settledAt.toISOString(),
+            },
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(response.body)).not.toContain('private');
+    expect(JSON.stringify(response.body)).not.toContain('completionWakeup');
+  });
+
   it('returns same 404 for foreign and cross-tenant identifiers and strips persistence metadata', async () => {
     await Promise.all([
       seedConversation(TENANT_A, { conversationId: SHARED_ID, user: OWNER, title: 'tenant a' }),
