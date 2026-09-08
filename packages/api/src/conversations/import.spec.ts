@@ -533,6 +533,41 @@ describe('createConversationImportOperation', () => {
     },
   );
 
+  it('treats imported preview bodies as plain text, including nested steer files', async () => {
+    const file = {
+      filename: 'report.docx',
+      text: '<p>Preview</p>',
+      textFormat: 'html',
+      status: 'ready',
+    };
+    const part = { type: 'steer', steer: 'Follow up', files: [file] };
+    const { deps, importer } = createDependencies(
+      JSON.stringify({
+        ...baseExport,
+        messages: [
+          {
+            ...baseExport.messages[0],
+            files: [file],
+            attachments: [file],
+            content: [
+              part,
+              { type: 'tool_call', tool_call: { name: 'subagent', subagent_content: [part] } },
+            ],
+          },
+        ],
+      }),
+    );
+    await createConversationImportOperation(deps)({
+      filepath: '/tmp/preview.json',
+      requestUserId: 'owner',
+      format: 'librechat',
+    });
+    const imported = JSON.stringify(importer.mock.calls[0][0]);
+    expect(imported).not.toContain('"textFormat":"html"');
+    expect(imported.match(/"textFormat":"text"/g)).toHaveLength(4);
+    expect(imported).toContain('<p>Preview</p>');
+  });
+
   describe.each(['files', 'attachments'])('imported %s', (field) => {
     it.each([null, false, 1, 'file', [], { filename: {} }, { filepath: 4 }, { text: [] }])(
       'rejects malformed entry %j in flat and recursive exports',

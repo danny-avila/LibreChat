@@ -447,6 +447,44 @@ describe('conversation management handlers with Mongo persistence', () => {
     expect(archived.body.data.map((row: { id: string }) => row.id)).toEqual(['archived']);
   });
 
+  it('returns provider identity and persisted public message metadata', async () => {
+    await seedConversation(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      endpoint: 'assistants',
+      model: 'provider-model',
+    });
+    await seedMessage(TENANT_A, {
+      user: OWNER,
+      conversationId: SHARED_ID,
+      messageId: 'rated',
+      endpoint: 'assistants',
+      model: 'assistant-name',
+      tokenCount: 12,
+      addedConvo: true,
+      iconURL: 'https://example.com/icon',
+      feedback: {
+        rating: 'thumbsUp',
+        tag: { key: 'accurate_reliable', label: 'Label', direction: 'thumbsUp', icon: 'Check' },
+        text: 'Helpful',
+      },
+    });
+    const app = createApp();
+    const detail = await request(app).get(`/${SHARED_ID}`);
+    expect(detail.body).toMatchObject({ endpoint: 'assistants', model: 'provider-model' });
+    const list = await request(app).get('/');
+    expect(list.body.data[0]).toMatchObject({ endpoint: 'assistants', model: 'provider-model' });
+    const messages = await request(app).get(`/${SHARED_ID}/messages`);
+    expect(messages.body.data[0]).toMatchObject({
+      endpoint: 'assistants',
+      model: 'assistant-name',
+      tokenCount: 12,
+      addedConvo: true,
+      iconURL: 'https://example.com/icon',
+      feedback: { rating: 'thumbsUp', tag: 'accurate_reliable', text: 'Helpful' },
+    });
+  });
+
   it('returns sanitized uploaded and generated references from persisted messages', async () => {
     await seedConversation(TENANT_A, { user: OWNER, conversationId: SHARED_ID });
     await seedMessage(TENANT_A, {

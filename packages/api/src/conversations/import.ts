@@ -345,6 +345,24 @@ function stripOwnershipFields(value: JsonValue): void {
   }
 }
 
+function downgradeImportedPreview(entry: JsonValue): void {
+  if (isJsonObject(entry) && entry.textFormat === 'html') entry.textFormat = 'text';
+}
+
+function downgradeContentPreviews(part: JsonValue): void {
+  if (!isJsonObject(part)) return;
+  if (part.type === 'steer' && Array.isArray(part.files)) {
+    for (const file of part.files) downgradeImportedPreview(file);
+  }
+  if (
+    part.type === 'tool_call' &&
+    isJsonObject(part.tool_call) &&
+    Array.isArray(part.tool_call.subagent_content)
+  ) {
+    for (const nested of part.tool_call.subagent_content) downgradeContentPreviews(nested);
+  }
+}
+
 function assertMessage(
   value: JsonValue,
   location: string,
@@ -388,6 +406,7 @@ function assertMessage(
           `Field "${location}.content[${index}]" is not a supported content part`,
         );
       }
+      downgradeContentPreviews(value.content[index]);
     }
   }
   for (const field of ['files', 'attachments'] as const) {
@@ -396,11 +415,13 @@ function assertMessage(
     for (let index = 0; index < entries.length; index++) {
       const schema =
         field === 'attachments' ? conversationAttachmentSchema : conversationFileSchema;
-      if (!schema.safeParse(entries[index]).success) {
+      const entry = entries[index];
+      if (!schema.safeParse(entry).success) {
         throw new ConversationImportError(
           `Field "${location}.${field}[${index}]" is not a supported file object`,
         );
       }
+      downgradeImportedPreview(entry);
     }
   }
   if (

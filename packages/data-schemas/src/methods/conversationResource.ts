@@ -34,6 +34,12 @@ export type ConversationMessageResource = Pick<
   | 'unfinished'
   | 'error'
   | 'finish_reason'
+  | 'endpoint'
+  | 'model'
+  | 'iconURL'
+  | 'tokenCount'
+  | 'addedConvo'
+  | 'feedback'
 > & { _id: Types.ObjectId };
 
 export type ConversationPageBoundary = { date: string; id: string };
@@ -48,7 +54,7 @@ export type ConversationResourcePage = {
 const conversationFields =
   'conversationId title createdAt updatedAt agent_id tags isArchived endpoint model';
 const messageFields =
-  'messageId conversationId parentMessageId text content files attachments quotes manualSkills alwaysAppliedSkills sender isCreatedByUser createdAt updatedAt unfinished error finish_reason';
+  'messageId conversationId parentMessageId text content files attachments quotes manualSkills alwaysAppliedSkills sender isCreatedByUser createdAt updatedAt unfinished error finish_reason endpoint model iconURL tokenCount addedConvo feedback';
 
 function tenantBoundary<T>(tenantId?: string): FilterQuery<T> {
   return (tenantId == null ? { tenantId: { $exists: false } } : { tenantId }) as FilterQuery<T>;

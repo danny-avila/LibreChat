@@ -302,7 +302,7 @@ describe('conversation message projection', () => {
       ],
       user: 'must-not-leak',
       tenantId: 'must-not-leak',
-      endpoint: 'must-not-leak',
+      endpoint: 'openAI',
       credentials: { token: 'must-not-leak' },
     } as unknown as ConversationMessageResource;
 
@@ -768,4 +768,102 @@ it('preserves encoded UI resource bodies without arbitrary renderer options', ()
       ],
     },
   ]);
+});
+
+describe('public message snapshot metadata', () => {
+  it.each(['pending', 'ready', 'failed'])(
+    'preserves %s preview state on files and attachments',
+    (status) => {
+      const file = {
+        file_id: 'file',
+        filename: 'report.docx',
+        status,
+        textFormat: 'html',
+        text: '<p>Preview</p>',
+        previewError: 'parser-error',
+        source: 'execute_code',
+        object: 'file',
+        usage: 1,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        expiresAt: new Date('2026-02-01T00:00:00Z'),
+        storageKey: 'private',
+      };
+      const response = projectConversationMessage({
+        files: [file],
+        attachments: [file],
+      } as ConversationMessageResource);
+      const expected = {
+        ...file,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-02-01T00:00:00.000Z',
+      };
+      const { storageKey: _storageKey, ...publicExpected } = expected;
+      expect(response.files).toEqual([publicExpected]);
+      expect(response.attachments).toEqual([publicExpected]);
+    },
+  );
+
+  it('validates preview markers and retains nullable legacy formats', () => {
+    const response = projectConversationMessage({
+      files: [
+        { file_id: 'legacy', textFormat: null },
+        { status: 'invalid' },
+        { textFormat: 'unsafe' },
+      ],
+    } as ConversationMessageResource);
+    expect(response.files).toEqual([{ file_id: 'legacy', textFormat: null }]);
+  });
+
+  it.each([
+    {
+      rating: 'thumbsUp',
+      tag: { key: 'accurate_reliable', label: 'Private label', arbitrary: 'private' },
+      text: 'Useful',
+      user: 'private',
+    },
+    { rating: 'thumbsUp', tag: 'accurate_reliable', text: 'Useful' },
+  ])('returns canonical minimal feedback from stored or serialized tags', (feedback) => {
+    expect(
+      projectConversationMessage({ feedback } as unknown as ConversationMessageResource).feedback,
+    ).toEqual({ rating: 'thumbsUp', tag: 'accurate_reliable', text: 'Useful' });
+  });
+
+  it('preserves legacy rating-only feedback and rejects invalid feedback', () => {
+    expect(
+      projectConversationMessage({
+        feedback: { rating: 'thumbsDown' },
+      } as ConversationMessageResource).feedback,
+    ).toEqual({ rating: 'thumbsDown' });
+    for (const feedback of [
+      { rating: 'invalid' },
+      { rating: 'thumbsUp', tag: 'not_helpful' },
+      { rating: 'thumbsUp', text: 1 },
+    ]) {
+      expect(
+        projectConversationMessage({ feedback } as unknown as ConversationMessageResource).feedback,
+      ).toBeNull();
+    }
+    expect(projectConversationMessage({} as ConversationMessageResource).feedback).toBeNull();
+  });
+
+  it('retains the complete reasoning-label revision domain', () => {
+    const part = {
+      type: 'think',
+      think: 'Reasoning',
+      reasoning_label: 'Checking',
+      reasoning_label_step_id: 'step',
+      reasoning_label_revision: 3,
+      reasoning_label_attempts: 4,
+      reasoning_label_submitted_chars: 80,
+      reasoning_label_status: 'streaming',
+    };
+    expect(
+      projectConversationMessage({ content: [part] } as ConversationMessageResource).content,
+    ).toEqual([part]);
+    expect(
+      projectConversationMessage({
+        content: [{ ...part, reasoning_label_revision: -1 }],
+      } as ConversationMessageResource).content,
+    ).toEqual([]);
+  });
 });

@@ -1,12 +1,19 @@
 import { z } from 'zod';
 import { createHash } from 'crypto';
-import { ContentTypes } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  FileContext,
+  FileSources,
+  feedbackRatingSchema,
+  feedbackTagKeySchema,
+  feedbackSchema,
+} from 'librechat-data-provider';
 import type {
   ConversationMessageResource,
   ConversationPageBoundary,
   ConversationResource,
 } from '@librechat/data-schemas';
-
+import type { TMinimalFeedback } from 'librechat-data-provider';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
@@ -173,6 +180,22 @@ const textValue = z.union([
     .strip(),
 ]);
 const jsonObject = z.record(z.string(), z.unknown());
+const publicTimestamp = z
+  .union([z.date(), z.string().datetime({ offset: true })])
+  .transform((value) => (typeof value === 'string' ? new Date(value) : value).toISOString());
+const publicFeedback = z
+  .object({
+    rating: feedbackRatingSchema,
+    tag: z
+      .union([
+        feedbackTagKeySchema,
+        z.object({ key: feedbackTagKeySchema }).transform((value) => value.key),
+      ])
+      .optional(),
+    text: z.string().max(1024).optional(),
+  })
+  .refine((value) => value.tag == null || feedbackSchema.safeParse(value).success);
+
 /** Exports contain partial file references as well as complete attachment records. */
 const fileReference = z.object({
   file_id: z.string().nullish(),
@@ -181,6 +204,19 @@ const fileReference = z.object({
   type: z.string().nullish(),
   text: z.string().nullish(),
   preview: z.string().nullish(),
+  status: z.enum(['pending', 'ready', 'failed']).optional(),
+  textFormat: z.enum(['html', 'text']).nullish(),
+  previewError: z.string().optional(),
+  source: z.nativeEnum(FileSources).optional(),
+  filterSource: z.nativeEnum(FileSources).optional(),
+  context: z.nativeEnum(FileContext).optional(),
+  object: z.literal('file').optional(),
+  usage: z.number().nonnegative().optional(),
+  message: z.string().optional(),
+  conversationId: z.string().optional(),
+  createdAt: publicTimestamp.optional(),
+  updatedAt: publicTimestamp.optional(),
+  expiresAt: z.union([z.number(), publicTimestamp]).optional(),
   messageId: z.string().nullish(),
   toolCallId: z.string().nullish(),
   agentId: z.string().nullish(),
@@ -278,8 +314,6 @@ const searchResults = z.object({
 });
 const attachmentBase = fileReference.extend({
   name: z.string().optional(),
-  conversationId: z.string().optional(),
-  expiresAt: z.number().optional(),
   workspaceChange: z
     .object({
       profile: z.literal('stateful'),
@@ -472,6 +506,10 @@ const contentSchema: z.ZodType<Record<string, unknown>> = z.discriminatedUnion('
       type: z.literal(ContentTypes.THINK),
       think: textValue.optional(),
       reasoning_label: z.string().optional(),
+      reasoning_label_step_id: z.string().optional(),
+      reasoning_label_revision: z.number().int().nonnegative().optional(),
+      reasoning_label_attempts: z.number().int().nonnegative().optional(),
+      reasoning_label_submitted_chars: z.number().int().nonnegative().optional(),
       reasoning_label_status: z.enum(['streaming', 'complete']).optional(),
       reasoning_unavailable: z.boolean().optional(),
       ...contentMetadata,
@@ -604,6 +642,8 @@ export interface ConversationResponse {
   agent_id: string | null;
   tags: string[];
   isArchived: boolean;
+  endpoint: string | null;
+  model: string | null;
 }
 
 export interface ConversationMessageResponse {
@@ -624,6 +664,12 @@ export interface ConversationMessageResponse {
   unfinished: boolean;
   error: boolean;
   finish_reason: string | null;
+  endpoint: string | null;
+  model: string | null;
+  iconURL: string | null;
+  tokenCount: number | null;
+  addedConvo: boolean;
+  feedback: (Omit<TMinimalFeedback, 'tag'> & Partial<Pick<TMinimalFeedback, 'tag'>>) | null;
 }
 
 export function projectConversation(source: ConversationResource): ConversationResponse {
@@ -635,6 +681,8 @@ export function projectConversation(source: ConversationResource): ConversationR
     agent_id: source.agent_id ?? null,
     tags: source.tags ?? [],
     isArchived: source.isArchived ?? false,
+    endpoint: typeof source.endpoint === 'string' ? source.endpoint : null,
+    model: typeof source.model === 'string' ? source.model : null,
   };
 }
 
@@ -660,6 +708,9 @@ export function projectConversationMessage(
   const quotes = projectStrings(source.quotes);
   const manualSkills = projectStrings(source.manualSkills);
   const alwaysAppliedSkills = projectStrings(source.alwaysAppliedSkills);
+  const feedback = withinContentLimits(source.feedback, 0, budget)
+    ? publicFeedback.safeParse(source.feedback)
+    : undefined;
   const content = projectParts(source.content, contentSchema);
   const files = projectParts(source.files, conversationFileSchema);
   const attachments = projectParts(source.attachments, conversationAttachmentSchema);
@@ -681,6 +732,17 @@ export function projectConversationMessage(
     unfinished: source.unfinished ?? false,
     error: source.error ?? false,
     finish_reason: source.finish_reason ?? null,
+    endpoint: typeof source.endpoint === 'string' ? source.endpoint : null,
+    model: typeof source.model === 'string' ? source.model : null,
+    iconURL: typeof source.iconURL === 'string' ? source.iconURL : null,
+    tokenCount:
+      typeof source.tokenCount === 'number' &&
+      Number.isFinite(source.tokenCount) &&
+      source.tokenCount >= 0
+        ? source.tokenCount
+        : null,
+    addedConvo: source.addedConvo === true,
+    feedback: feedback?.success ? feedback.data : null,
   };
 }
 
