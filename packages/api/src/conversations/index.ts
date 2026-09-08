@@ -6,3 +6,4 @@ export * from './metadata';
 export * from './import';
 export * from './http';
 export * from './schema';
+export * from './continuation';

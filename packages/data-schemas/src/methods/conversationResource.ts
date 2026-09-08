@@ -44,6 +44,11 @@ export type ConversationMessageResource = Pick<
   | 'metadata'
 > & { _id: Types.ObjectId };
 
+export type ImportedConversationMessage = ConversationMessageResource & {
+  isUserSubmitted?: boolean;
+  thread_id?: string;
+};
+
 export type ConversationPageBoundary = { date: string; id: string };
 export type ConversationResourcePage = {
   limit: number;
@@ -190,6 +195,32 @@ export function createConversationResourceMethods(mongoose: typeof import('mongo
         .sort({ updatedAt: -1, _id: -1 })
         .limit(Math.min(100, Math.max(1, options.limit)) + 1)
         .lean<ConversationResource[]>();
+    },
+
+    async getImportedAssistantMessages(
+      user: string,
+      tenantId: string | undefined,
+      conversationId: string,
+      endpoint: string,
+    ): Promise<ImportedConversationMessage[] | null> {
+      if (endpoint !== 'assistants' && endpoint !== 'azureAssistants') return null;
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const [conversation, messages] = await Promise.all([
+        Conversation.exists({ ...visible(user, tenantId), conversationId, endpoint }),
+        Message.find({
+          user,
+          conversationId,
+          ...tenantBoundary<IMessage>(tenantId),
+          ...activeExpirationFilter<IMessage>(),
+        })
+          .select(
+            'messageId conversationId parentMessageId text content isCreatedByUser isUserSubmitted thread_id',
+          )
+          .limit(4097)
+          .lean<ImportedConversationMessage[]>(),
+      ]);
+      return conversation == null ? null : messages;
     },
 
     async listConversationMessageResources(

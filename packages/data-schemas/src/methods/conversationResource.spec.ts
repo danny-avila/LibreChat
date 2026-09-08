@@ -80,6 +80,68 @@ beforeEach(async () => {
 });
 
 describe('conversation resource methods', () => {
+  it.each(['assistants', 'azureAssistants'])(
+    'loads imported history only for a visible owned %s conversation',
+    async (endpoint) => {
+      await seedConversation(TENANT_A, {
+        conversationId: SAME_CONVERSATION_ID,
+        user: OWNER,
+        endpoint,
+      });
+      await seedConversation(TENANT_B, {
+        conversationId: SAME_CONVERSATION_ID,
+        user: OWNER,
+        endpoint,
+      });
+      await seedMessage(TENANT_A, {
+        conversationId: SAME_CONVERSATION_ID,
+        messageId: 'imported',
+        user: OWNER,
+        isUserSubmitted: true,
+        text: 'Owned history',
+      });
+      await seedMessage(TENANT_B, {
+        conversationId: SAME_CONVERSATION_ID,
+        messageId: 'foreign',
+        user: OWNER,
+        isUserSubmitted: true,
+        text: 'Other tenant',
+      });
+      const history = await methods.getImportedAssistantMessages(
+        OWNER,
+        TENANT_A,
+        SAME_CONVERSATION_ID,
+        endpoint,
+      );
+      expect(history).toHaveLength(1);
+      expect(history?.[0]).toMatchObject({
+        messageId: 'imported',
+        isUserSubmitted: true,
+        text: 'Owned history',
+      });
+      expect(
+        await methods.getImportedAssistantMessages(
+          OTHER_OWNER,
+          TENANT_A,
+          SAME_CONVERSATION_ID,
+          endpoint,
+        ),
+      ).toBeNull();
+      expect(
+        await methods.getImportedAssistantMessages(OWNER, TENANT_A, SAME_CONVERSATION_ID, 'openAI'),
+      ).toBeNull();
+      await asTenant(TENANT_A, async () => {
+        await Conversation.updateOne(
+          { user: OWNER, conversationId: SAME_CONVERSATION_ID },
+          { $set: { isTemporary: true } },
+        );
+      });
+      expect(
+        await methods.getImportedAssistantMessages(OWNER, TENANT_A, SAME_CONVERSATION_ID, endpoint),
+      ).toBeNull();
+    },
+  );
+
   it('scopes identical conversation and message ids to the active tenant and owner', async () => {
     await seedConversation(TENANT_A, { conversationId: SAME_CONVERSATION_ID, user: OWNER });
     await seedConversation(TENANT_B, {

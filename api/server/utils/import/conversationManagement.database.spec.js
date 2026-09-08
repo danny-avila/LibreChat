@@ -5,10 +5,13 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createModels, tenantStorage, CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
 const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { buildImportedAssistantPrompt } = require('@librechat/api');
 
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: jest.fn().mockResolvedValue({
     openAI: { userProvide: false },
+    assistants: { userProvide: false },
+    azureAssistants: { userProvide: false },
   }),
 }));
 
@@ -47,6 +50,49 @@ describe('importConversations database compatibility', () => {
     if (mongoServer) {
       await mongoServer.stop();
     }
+  });
+
+  it.each(
+    ['assistants', 'azureAssistants'].flatMap((endpoint) =>
+      [false, true].map((recursive) => [endpoint, recursive]),
+    ),
+  )('continues a real imported %s transcript (recursive=%s)', async (endpoint, recursive) => {
+    const filepath = path.join(tempDir, 'assistant-export.json');
+    const message = {
+      messageId: 'source-message',
+      conversationId: 'source',
+      parentMessageId: Constants.NO_PARENT,
+      text: 'Imported context',
+      sender: 'Assistant',
+      isCreatedByUser: false,
+      thread_id: 'source-thread',
+    };
+    await fs.writeFile(
+      filepath,
+      JSON.stringify({
+        conversationId: 'source',
+        endpoint,
+        recursive,
+        options: { endpoint, assistant_id: 'assistant' },
+        ...(recursive ? { messagesTree: [message] } : { messages: [message] }),
+      }),
+    );
+    await importConversations({ filepath, requestUserId: 'owner', format: 'librechat' });
+    const stored = await mongoose.models.Message.findOne({ user: 'owner' }).lean();
+    expect(stored).not.toHaveProperty('thread_id');
+    const prompt = await buildImportedAssistantPrompt(
+      {
+        userId: 'owner',
+        conversationId: stored.conversationId,
+        parentMessageId: stored.messageId,
+        endpoint,
+        text: 'Continue',
+      },
+      db,
+    );
+    expect(prompt).toContain('Imported context');
+    expect(prompt).toContain('Continue');
+    expect(prompt).not.toContain('source-thread');
   });
 
   it.each([false, true])(

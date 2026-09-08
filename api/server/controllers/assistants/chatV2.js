@@ -1,8 +1,9 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   sendEvent,
+  buildImportedAssistantPrompt,
   countTokens,
   checkBalance,
   getBalanceConfig,
@@ -41,6 +42,7 @@ const { createRunBody } = require('~/server/services/createRunBody');
 const setHeaders = require('~/server/middleware/setHeaders');
 const {
   getConvo,
+  getImportedAssistantMessages,
   getMultiplier,
   getTransactions,
   findBalanceByUser,
@@ -90,6 +92,8 @@ const chatV2 = async (req, res) => {
   let openai;
   /** @type {string|undefined} - the current thread id */
   let thread_id = _thread_id;
+  const isAttachmentOnly = !text?.trim() && files.length > 0;
+  let threadText = isAttachmentOnly ? ATTACHMENT_ONLY_TEXT : text;
   /** @type {string|undefined} - the current run id */
   let run_id;
   /** @type {string|undefined} - the parent messageId */
@@ -140,11 +144,6 @@ const chatV2 = async (req, res) => {
       }
     });
 
-    if (convoId && !_thread_id) {
-      completedRun = true;
-      throw new Error('Missing thread_id for existing conversation');
-    }
-
     if (!assistant_id) {
       completedRun = true;
       throw new Error('Missing assistant_id');
@@ -169,7 +168,7 @@ const chatV2 = async (req, res) => {
       // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
       const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
       // 5 is added for labels
-      let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
+      let promptTokens = (await countTokens(threadText + (promptPrefix ?? ''))) + 5;
       promptTokens += totalPreviousTokens + promptBuffer;
       // Count tokens up to the current context window
       promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
@@ -205,6 +204,20 @@ const chatV2 = async (req, res) => {
     openai = _openai;
     await validateAuthor({ req, openai });
     try {
+      if (convoId && !_thread_id) {
+        threadText = await buildImportedAssistantPrompt(
+          {
+            userId: req.user.id,
+            tenantId: getTenantId(),
+            conversationId,
+            parentMessageId,
+            endpoint,
+            text: threadText,
+            config: req.config,
+          },
+          { getImportedAssistantMessages },
+        );
+      }
       await preflightAssistantRunContent({
         config: req.config,
         openai,
@@ -215,6 +228,7 @@ const chatV2 = async (req, res) => {
       });
     } catch (error) {
       if (!isContentFilterError(error)) {
+        completedRun = true;
         throw error;
       }
       contentRejected = true;
@@ -228,13 +242,12 @@ const chatV2 = async (req, res) => {
      * Threads rejects an empty message body, so an attachment-only turn sends
      * a minimal note instead. The persisted message keeps its empty text.
      */
-    const isAttachmentOnly = !text?.trim() && files.length > 0;
     let userMessage = {
       role: 'user',
       content: [
         {
           type: ContentTypes.TEXT,
-          text: isAttachmentOnly ? ATTACHMENT_ONLY_TEXT : text,
+          text: threadText,
         },
       ],
       metadata: {
