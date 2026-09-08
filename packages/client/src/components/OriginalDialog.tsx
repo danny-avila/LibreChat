@@ -145,6 +145,67 @@ const DialogContent: React.ForwardRefExoticComponent<
   ) => {
     const depth = React.useContext(DialogDepthContext);
     const contentZIndex = 140 + (depth - 1) * 60;
+    const contentRef = React.useRef<HTMLDivElement | null>(null);
+    const composedRef = React.useCallback(
+      (node: HTMLDivElement | null) => {
+        contentRef.current = node;
+        if (typeof ref === 'function') {
+          ref(node);
+        } else if (ref) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }
+      },
+      [ref],
+    );
+
+    /**
+     * Radix routes Escape to the highest dismissable layer only, and a toast
+     * registers one *above* whatever dialog is already open — so a status toast
+     * on screen swallows the Escape that should have closed the dialog under
+     * it, and the reader has to press it twice.
+     *
+     * A toast is transient status, not something the reader is working in, so
+     * the dialog takes Escape back while one is up. Scoped to exactly that
+     * case: with no toast on screen Radix's own arbitration is untouched, and
+     * only the frontmost dialog acts, so an inner dialog still closes alone.
+     * Closing goes through a hidden `Dialog.Close`, which drives Radix's own
+     * close path and therefore works for controlled and uncontrolled dialogs
+     * alike.
+     */
+    const escapeFallbackRef = React.useRef<HTMLButtonElement>(null);
+    React.useEffect(() => {
+      const handleKeyDown = (event: KeyboardEvent) => {
+        const content = contentRef.current;
+        if (content == null || event.key !== 'Escape' || event.isComposing) {
+          return;
+        }
+        const ownerDocument = content.ownerDocument;
+        /** Radix Toast's own `li`. Matched whatever its `data-state`, because a
+         *  toast that has begun closing keeps its dismissable layer registered
+         *  until the exit animation ends — and that layer is what takes the
+         *  Escape. */
+        const toast = ownerDocument.querySelector('li[data-radix-collection-item]');
+        if (toast == null) {
+          return;
+        }
+        const frontmost = Array.from(
+          ownerDocument.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]'),
+        ).reduce<HTMLElement | null>(
+          (highest, candidate) =>
+            highest == null ||
+            Number(candidate.style.zIndex || 0) >= Number(highest.style.zIndex || 0)
+              ? candidate
+              : highest,
+          null,
+        );
+        if (frontmost !== content) {
+          return;
+        }
+        escapeFallbackRef.current?.click();
+      };
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     /* Handle Escape key to prevent closing dialog if a tooltip or dropdown has focus
     (this is a workaround in order to achieve WCAG compliance which requires
@@ -188,7 +249,7 @@ const DialogContent: React.ForwardRefExoticComponent<
       <DialogPortal>
         <DialogOverlay className={overlayClassName} />
         <DialogPrimitive.Content
-          ref={ref}
+          ref={composedRef}
           style={{ ...style, zIndex: contentZIndex }}
           onEscapeKeyDown={handleEscapeKeyDown}
           className={cn(
@@ -200,6 +261,12 @@ const DialogContent: React.ForwardRefExoticComponent<
           {...props}
         >
           {children}
+          <DialogPrimitive.Close
+            ref={escapeFallbackRef}
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
           {showCloseButton && (
             <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-ring-primary ring-offset-surface-dialog transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-hover data-[state=open]:text-text-secondary">
               <X className="h-6 w-6" aria-hidden="true" />
