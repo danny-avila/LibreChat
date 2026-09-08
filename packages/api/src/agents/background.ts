@@ -38,10 +38,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
 import type {
-  BackgroundToolResultClaim,
-  BackgroundToolResultRecord,
-} from '@librechat/data-schemas';
-import type {
   LCTool,
   LCToolRegistry,
   JsonSchemaType,
@@ -52,6 +48,10 @@ import type {
   SubagentTaskControlResult,
   SubagentTaskStore,
 } from '@librechat/agents';
+import type {
+  BackgroundToolResultClaim,
+  BackgroundToolResultRecord,
+} from '@librechat/data-schemas';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CapabilityToolNames } from './selection';
 import {

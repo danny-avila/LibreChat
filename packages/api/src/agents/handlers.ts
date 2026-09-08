@@ -17,9 +17,9 @@ import type {
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
+import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
-import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type {
   WorkspaceEditResult,
   WorkspacePreviewEditResult,
