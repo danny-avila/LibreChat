@@ -7,6 +7,11 @@ import type { FavoritesState } from '~/store/favorites';
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
 
+/** Extracts the set of favorited agent ids from a favorites list (which also mixes in
+ * favorited models and model specs). */
+const agentIdSet = (favorites: FavoritesState | undefined) =>
+  new Set((favorites ?? []).map((f) => f.agentId).filter((id): id is string => !!id));
+
 export const useGetFavoritesQuery = (
   config?: Omit<UseQueryOptions<FavoritesState, Error>, 'queryKey' | 'queryFn'>,
 ) => {
@@ -39,6 +44,33 @@ export const useUpdateFavoritesMutation = () => {
         if (context?.previousFavorites) {
           queryClient.setQueryData([QueryKeys.favorites], context.previousFavorites);
         }
+      },
+      // Only the 'popular' marketplace sort depends on favorite/pin counts —
+      // 'newest', 'oldest', and 'author' don't change when one user pins or
+      // unpins an agent. Mark those cached pages stale without refetching:
+      // an immediate refetch would re-sort the list out from under a user
+      // who is mid-scroll.
+      onSuccess: (_data, newFavorites, context) => {
+        const previousAgentIds = agentIdSet(context?.previousFavorites);
+        const nextAgentIds = agentIdSet(newFavorites);
+        const agentFavoritesChanged =
+          previousAgentIds.size !== nextAgentIds.size ||
+          [...previousAgentIds].some((id) => !nextAgentIds.has(id));
+
+        if (!agentFavoritesChanged) {
+          return;
+        }
+
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const [key, params] = query.queryKey;
+            return (
+              key === QueryKeys.marketplaceAgents &&
+              (params as { sort?: string } | undefined)?.sort === 'popular'
+            );
+          },
+          refetchType: 'none',
+        });
       },
     },
   );

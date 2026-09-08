@@ -3,8 +3,8 @@ import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
+import { useAgentCategories, useLocalize, TranslationKeys } from '~/hooks';
 import { useInfiniteScroll } from '~/hooks/useInfiniteScroll';
-import { useAgentCategories, useLocalize } from '~/hooks';
 import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
@@ -14,6 +14,12 @@ interface AgentGridProps {
   searchQuery: string;
   onSelectAgent: (agent: t.Agent) => void;
   scrollElementRef?: React.RefObject<HTMLElement>;
+  /** Sort mode applied to the marketplace list; server defaults to 'newest' when omitted. */
+  sort?: t.AgentSortOption;
+  /** When 1, restrict the list to agents authored by the current user. */
+  mine?: 0 | 1;
+  /** Reports the number of agents currently loaded, so a parent header can show a live count. */
+  onCountChange?: (count: number) => void;
 }
 
 /**
@@ -24,6 +30,9 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   searchQuery,
   onSelectAgent,
   scrollElementRef,
+  sort,
+  mine,
+  onCountChange,
 }) => {
   const localize = useLocalize();
 
@@ -38,9 +47,11 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       search?: string;
       limit: number;
       promoted?: 0 | 1;
+      sort?: t.AgentSortOption;
+      mine?: 0 | 1;
     } = {
       requiredPermission: PermissionBits.VIEW, // View permission for marketplace viewing
-      limit: 6,
+      limit: 8,
     };
 
     // Handle search
@@ -60,8 +71,17 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       // For 'all' category, no additional filters needed
     }
 
+    // Only set sort/mine when a non-default value is given, so requests that
+    // don't use this feature keep the same cache key as before.
+    if (sort) {
+      params.sort = sort;
+    }
+    if (mine) {
+      params.mine = mine;
+    }
+
     return params;
-  }, [category, searchQuery]);
+  }, [category, searchQuery, sort, mine]);
 
   // Use infinite query for marketplace agents
   const {
@@ -75,10 +95,25 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     isFetchingNextPage,
   } = useMarketplaceAgentsInfiniteQuery(queryParams);
 
-  // Flatten all pages into a single array of agents
+  // Flatten all pages into a single array of agents, deduping by id. The
+  // 'popular' sort recomputes favoriteCount on every request, so an agent can
+  // be pinned/unpinned between two consecutive page loads and drift across
+  // the page boundary, appearing in both — the server does not guarantee
+  // adjacent pages are disjoint in that mode. Keep the first occurrence so an
+  // agent stays where it was originally seen while scrolling.
   const currentAgents = useMemo(() => {
     if (!data?.pages) return [];
-    return data.pages.flatMap((page) => page.data || []);
+    const flattened = data.pages.flatMap((page) => page.data || []);
+    const seenIds = new Set<string>();
+    const deduped: t.Agent[] = [];
+    for (const agent of flattened) {
+      if (seenIds.has(agent.id)) {
+        continue;
+      }
+      seenIds.add(agent.id);
+      deduped.push(agent);
+    }
+    return deduped;
   }, [data?.pages]);
 
   // Check if we have meaningful data to prevent unnecessary loading states
@@ -105,6 +140,11 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     }
   }, [scrollElementRef, setScrollElement]);
 
+  // Report the loaded count upward so a parent header can show a live total.
+  useEffect(() => {
+    onCountChange?.(currentAgents.length);
+  }, [currentAgents.length, onCountChange]);
+
   /**
    * Get category display name from API data or use fallback
    */
@@ -125,6 +165,25 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     // Simple capitalization for unknown categories
     return categoryValue.charAt(0).toUpperCase() + categoryValue.slice(1);
   };
+
+  /**
+   * "You haven't created any agents yet" reads better than "No agents found" once the
+   * user has explicitly filtered to their own agents — but it would be untrue on the
+   * promoted tab, which is empty of own agents by construction (`is_promoted` has no
+   * write path in the app). That pair is only reachable by direct URL or history
+   * navigation; the toggle itself moves off `promoted`. A search always wins, since
+   * "no matches for this query" is the more specific explanation.
+   */
+  const getEmptyStateHeadingKey = (): TranslationKeys => {
+    if (!mine || searchQuery) {
+      return 'com_agents_empty_state_heading';
+    }
+    if (category === 'promoted') {
+      return 'com_agents_mine_promoted_empty_state_heading';
+    }
+    return 'com_agents_mine_empty_state_heading';
+  };
+  const emptyStateHeadingKey = getEmptyStateHeadingKey();
 
   // Simple loading spinner
   const loadingSpinner = (
@@ -166,10 +225,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({
           aria-label={
             searchQuery
               ? localize('com_agents_search_empty_heading')
-              : localize('com_agents_empty_state_heading')
+              : localize(emptyStateHeadingKey)
           }
         >
-          <h3 className="mb-2 text-lg font-medium">{localize('com_agents_empty_state_heading')}</h3>
+          <h3 className="mb-2 text-lg font-medium">{localize(emptyStateHeadingKey)}</h3>
         </div>
       ) : (
         <>
@@ -181,18 +240,18 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             })}
           </div>
 
-          {/* Agent grid - 2 per row with proper semantic structure */}
+          {/* Agent grid - column count auto-adjusts to available width */}
           {currentAgents && currentAgents.length > 0 && (
             <div
-              className="mx-4 grid grid-cols-1 gap-6 md:grid-cols-2"
+              className="grid grid-cols-[repeat(auto-fill,minmax(288px,1fr))] items-stretch gap-6"
               role="grid"
               aria-label={localize('com_agents_grid_announcement', {
                 count: currentAgents.length,
                 category: getCategoryDisplayName(category),
               })}
             >
-              {currentAgents.map((agent: t.Agent, index: number) => (
-                <div key={`${agent.id}-${index}`} role="gridcell">
+              {currentAgents.map((agent: t.Agent) => (
+                <div key={agent.id} role="gridcell" className="h-full">
                   <AgentCard agent={agent} onSelect={onSelectAgent} />
                 </div>
               ))}
