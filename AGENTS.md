@@ -48,6 +48,20 @@ changed. `packages/client` excludes `*.spec.ts(x)` and `*.test.ts(x)` from typec
 `npm run sort-imports` with no arguments rewrites every source root — pass the paths you touched. See
 `CLAUDE.md` under "Typechecking" and "Formatting".
 
+## Module boundaries and configuration
+
+Database contracts belong to `packages/data-schemas`. Keep Mongoose types (`FilterQuery`,
+`Types.ObjectId`, `Document`) out of exported signatures in `packages/api`, `packages/data-provider`
+and `client`, because they make the storage engine part of that module's public API. Take and return
+plain typed objects and express the query behind a data-schemas method. The boundary already leaks
+across `packages/api`, so stop widening it rather than rewriting what exists; the client carries none
+of it and must stay that way.
+
+New levers ship configurable: a limit, timeout, toggle or capability introduced in code earns a field
+on `configSchema` (`packages/data-provider/src/config.ts`) so it can be set in `librechat.yaml`, with
+a default that reproduces today's behavior. Hard-coded constants and env-only switches need a reason.
+See `CLAUDE.md` under "Workspace Boundaries".
+
 ## Frontend theming and styling
 
 For frontend work, compose existing `@librechat/client` primitives and variants before adding
