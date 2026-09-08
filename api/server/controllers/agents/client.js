@@ -42,6 +42,7 @@ const {
   resolveRecursionLimit,
   buildPendingAction,
   toClientPendingAction,
+  captureCodeExecutionApprovalBinding,
   computeAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
@@ -55,6 +56,8 @@ const {
   collectAttachedCodeEnvironmentAgentIds,
   collectAttachedCodeEnvironmentPolicySettings,
   buildAttachedCodeEnvironmentAdmissionHooks,
+  resolveAttachedCodeApprovalMode,
+  markNativeCodeToolApprovalRequests,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
@@ -64,6 +67,10 @@ const {
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
+  checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -142,6 +149,7 @@ const {
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
+  isStatefulCodeEnvironmentToolName,
   stampMcpServerIdentities,
   getDynamicToolContexts,
   getSafeErrorMetadata,
@@ -175,6 +183,7 @@ const {
   UsageEvents,
   Permissions,
   VisionModes,
+  ErrorTypes,
   ContentTypes,
   FileSources,
   ApprovalEvents,
@@ -317,19 +326,48 @@ function captureRunContextMeta(client) {
   });
 }
 
+/** Text of a summary content part; empty for anything else. */
+function getSummaryPartText(part) {
+  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+    return '';
+  }
+  return part.content
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * A compaction turn's response is its summary. The run emits no text, so a
+ * completion without a usable summary part means the summarizer produced
+ * nothing. A run that already recorded why (an error part, e.g. a skipped
+ * compaction) persists with that explanation; one that ended with neither
+ * fails as a typed error instead of persisting an empty assistant message.
+ * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
+ */
+function markCompactionSummary(contentParts) {
+  const summary = contentParts.find(
+    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
+  );
+  if (summary != null) {
+    summary.initiatedBy = 'user';
+    return;
+  }
+  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
+    return;
+  }
+  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
+    code: 'COMPACTION_FAILED',
+  });
+}
+
 function getLatestEventActorSummary(contentParts) {
   if (!Array.isArray(contentParts)) {
     return undefined;
   }
   for (let index = contentParts.length - 1; index >= 0; index -= 1) {
     const part = contentParts[index];
-    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-      continue;
-    }
-    const text = part.content
-      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-      .join('')
-      .trim();
+    const text = getSummaryPartText(part);
     if (text.length === 0) {
       continue;
     }
@@ -348,6 +386,10 @@ function getLatestEventActorSummary(contentParts) {
  * still reaches the logs through `getSafeErrorMetadata`.
  */
 function getUserFacingRequestError(baseMessage, error, appConfig) {
+  /** Carries no model or user content, so it is safe under every filter. */
+  if (error?.name === 'ManualSummarizationSkippedError') {
+    return JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason: error.reason });
+  }
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
     appConfig?.messageFilter?.pii,
@@ -1941,6 +1983,14 @@ class AgentClient extends BaseClient {
       );
     }
 
+    const agentsEConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+    const codeApprovalMode = resolveAttachedCodeApprovalMode(
+      this.options.req.body.codeApprovalMode,
+      collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
+      agentsEConfig?.toolApproval?.enabled !== false,
+    );
+
     return removeNullishValues(
       Object.assign(
         {
@@ -1953,6 +2003,7 @@ class AgentClient extends BaseClient {
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
+          codeApprovalMode,
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -3492,8 +3543,16 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    if (this.isCompactionTurn()) {
+      markCompactionSummary(completion);
+    }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
+  }
+
+  /** A manual compaction runs the graph summarize-only: the summary is the response. */
+  isCompactionTurn() {
+    return this.options?.req?.body?.compact === true;
   }
 
   /**
@@ -4200,7 +4259,23 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...stamped);
       }
     }
-    const pendingAction = buildPendingAction(interrupt.payload, {
+    const reachableAgents = collectReachableAgents([
+      this.options.agent,
+      ...(this.agentConfigs?.values() ?? []),
+    ]);
+    const interruptPayload =
+      interrupt.payload?.type === 'tool_approval'
+        ? markNativeCodeToolApprovalRequests(interrupt.payload, reachableAgents)
+        : interrupt.payload;
+    const codeExecutionBinding =
+      interrupt.payload?.type === 'tool_approval' &&
+      interrupt.payload.action_requests.some(
+        (action) =>
+          typeof action?.name === 'string' && isStatefulCodeEnvironmentToolName(action.name),
+      )
+        ? captureCodeExecutionApprovalBinding(reachableAgents)
+        : undefined;
+    const pendingAction = buildPendingAction(interruptPayload, {
       streamId,
       conversationId: this.conversationId,
       // runId mirrors the LangGraph checkpoint namespace when the SDK provides it
@@ -4221,6 +4296,7 @@ class AgentClient extends BaseClient {
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
       resumeContext,
+      codeExecutionBinding,
     });
 
     // Job-replacement guard: streamId == conversationId is reused per conversation, so a
@@ -4303,6 +4379,11 @@ class AgentClient extends BaseClient {
         collectAttachedCodeEnvironmentAgentIds(topLevelAgents);
       const attachedCodeEnvironmentSettings =
         collectAttachedCodeEnvironmentPolicySettings(topLevelAgents);
+      const codeApprovalMode = resolveAttachedCodeApprovalMode(
+        this.options.req.body.codeApprovalMode,
+        attachedCodeEnvironmentSettings,
+        agentsEConfig?.toolApproval?.enabled !== false,
+      );
       const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
         endpoint: agentsEConfig?.toolApproval,
         attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
@@ -4320,6 +4401,7 @@ class AgentClient extends BaseClient {
         ...buildAttachedCodeEnvironmentAdmissionHooks(
           attachedCodeEnvironmentAgentIds,
           attachedCodeEnvironmentSettings,
+          codeApprovalMode,
         ),
       ];
       const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
@@ -4375,6 +4457,13 @@ class AgentClient extends BaseClient {
           // into its physical namespace while tools keep the conversation id.
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
+            (this.user ?? this.options.req.user?.id)
+              ? checkpointOwnerNamespacePrefix(
+                  this.user ?? this.options.req.user?.id,
+                  resolveRequestTenantId(this.options.req),
+                )
+              : undefined,
           ...(this.eventActorCheckpointId == null
             ? {}
             : { checkpoint_id: this.eventActorCheckpointId }),
@@ -4382,6 +4471,13 @@ class AgentClient extends BaseClient {
             ? {}
             : {
                 [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: this.eventActorInvocationId,
+                [LIBRECHAT_CHECKPOINT_OWNER_KEY]: checkpointOwnerNamespacePrefix(
+                  this.options.req.user.id,
+                  this.options.req._agentEventBindingTenantId,
+                ),
+                ...(this.eventActorCheckpointId == null
+                  ? {}
+                  : { [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: this.eventActorCheckpointId }),
                 event_actor_invocation_id: this.eventActorInvocationId,
                 event_actor_depth: 1,
               }),
@@ -4450,8 +4546,16 @@ class AgentClient extends BaseClient {
        * synthetic prefix. Names NOT primed this turn still reconstruct from
        * history, preserving sticky manual re-priming across turns.
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      /** A compaction summarizes what was already said. No user turn was
+       *  submitted, so it primes no skills into the transcript it is about
+       *  to summarize and runs no memory pass over it. */
+      const isCompactionTurn = this.isCompactionTurn();
+      const manualSkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.alwaysApplySkillPrimes;
       const freshSkillPrimeNames = collectFreshSkillPrimeNames({
         manualSkillPrimes,
         alwaysApplySkillPrimes,
@@ -4586,7 +4690,7 @@ class AgentClient extends BaseClient {
       });
 
       const memoryMessages =
-        this.processMemory && this.memoryPayload
+        this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
               stripActivityLabelParts(this.memoryPayload),
               undefined,
@@ -4645,7 +4749,7 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        if (this.processMemory) {
+        if (this.processMemory && !isCompactionTurn) {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
@@ -4766,10 +4870,12 @@ class AgentClient extends BaseClient {
            *  parent slot before the text step reaches the normal handlers. */
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
+          codeApprovalMode,
           user: createSafeUser(this.options.req?.user),
           traceContext: buildTraceContext(this.options),
           tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
+          summarizeOnly: this.isCompactionTurn(),
           appConfig,
           tokenCounter,
           /** Bills subagent child-run model calls — foreground usage joins
@@ -5139,6 +5245,13 @@ class AgentClient extends BaseClient {
           thread_id: this.conversationId,
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
+            (this.user ?? this.options.req.user?.id)
+              ? checkpointOwnerNamespacePrefix(
+                  this.user ?? this.options.req.user?.id,
+                  resolveRequestTenantId(this.options.req),
+                )
+              : undefined,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
@@ -5509,6 +5622,7 @@ class AgentClient extends BaseClient {
         // steer parts spliced in while the resumed segment streams.
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
+        codeApprovalMode: this.options.req.body.codeApprovalMode,
         user: createSafeUser(this.options.req?.user),
         traceContext: buildTraceContext(this.options),
         tenantId: resolveRequestTenantId(this.options.req ?? {}),

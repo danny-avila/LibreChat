@@ -10,6 +10,7 @@ import {
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
+import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { ALLOWED_BODY_FIELDS, isPluginSourced } from '~/utils/env';
 import { isEnabled } from '~/utils/common';
 
@@ -264,9 +265,10 @@ export function isOAuthServer(
  * which omits the OBO resolver — `usesObo` then evaluates to false in the
  * factory and the connection sends a bare request that the upstream rejects.
  */
-export function requiresOAuthMachinery(
-  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth' | 'obo'>,
-): boolean {
+export function requiresOAuthMachinery(config: ParsedServerConfig): boolean {
+  if (isDirectOpenIDBearerRecoveryEnabled(config)) {
+    return false;
+  }
   return isOAuthServer(config) || config.obo != null;
 }
 

@@ -5,6 +5,63 @@ import { resolveToolApprovalPolicy } from './policy';
 import { buildHITLRunWiring } from './runtime';
 
 describe('buildHITLRunWiring', () => {
+  test.each([
+    ['ask', 'bash_tool', 'ask'],
+    ['deny', 'bash_tool', 'deny'],
+    ['allow', 'bash_tool', 'allow'],
+    ['allow', 'mcp:github:create_issue', 'ask'],
+  ] as const)(
+    'full access preserves endpoint %s rules for %s',
+    async (rule, toolName, expected) => {
+      const settings = new Map([
+        [
+          'attached-agent',
+          {
+            configSchema: {
+              permissions: {
+                fileWrite: {
+                  allowed: ['ask', 'allow'] as Array<'ask' | 'allow'>,
+                  default: 'ask' as const,
+                },
+                commandExecution: {
+                  allowed: ['ask', 'allow'] as Array<'ask' | 'allow'>,
+                  default: 'ask' as const,
+                },
+              },
+            },
+          },
+        ],
+      ]);
+      const wiring = buildHITLRunWiring(
+        { enabled: true, mode: 'default', [rule]: ['bash_tool'] },
+        {},
+        [],
+        [
+          {
+            hook: createAttachedCodeEnvironmentPolicyHook(
+              new Set(settings.keys()),
+              settings,
+              'fullAccess',
+            ),
+          },
+        ],
+      );
+      const result = await executeHooks({
+        registry: wiring!.hooks,
+        matchQuery: toolName,
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId: 'full-access-policy',
+          toolName,
+          toolInput: {},
+          toolUseId: 'tool-code',
+          executingAgentId: 'attached-agent',
+        },
+      });
+      expect(result.decision).toBe(expected);
+    },
+  );
+
   test('returns undefined when HITL is disabled (the default)', () => {
     expect(buildHITLRunWiring(undefined)).toBeUndefined();
     expect(buildHITLRunWiring({})).toBeUndefined();

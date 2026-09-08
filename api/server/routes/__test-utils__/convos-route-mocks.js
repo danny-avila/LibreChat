@@ -1,6 +1,6 @@
 const archiveAllHandler = jest.fn();
 const generationJobManager = {
-  getJob: jest.fn().mockResolvedValue(null),
+  getCleanupJob: jest.fn().mockResolvedValue(null),
   abortJob: jest.fn().mockResolvedValue({ success: true }),
   getCleanupBlockingJobIdsForUser: jest.fn().mockResolvedValue([]),
   getCleanupBlockingJobIdsForConversations: jest.fn().mockResolvedValue([]),
@@ -13,15 +13,60 @@ const moderateText = jest.fn((req, _res, next) => {
 });
 const messageIpLimiter = jest.fn((_req, _res, next) => next());
 const messageUserLimiter = jest.fn((_req, _res, next) => next());
+const checkpointRows = [];
+const deleteAgentCheckpoints = jest.fn(async (threadIds = []) => {
+  for (let index = checkpointRows.length - 1; index >= 0; index -= 1) {
+    if (threadIds.includes(checkpointRows[index].threadId)) {
+      checkpointRows.splice(index, 1);
+    }
+  }
+});
+const ownerPrefix = (userId, tenantId) =>
+  `lcg:v2:${require('crypto')
+    .createHash('sha256')
+    .update(JSON.stringify([tenantId ?? null, userId]))
+    .digest('hex')}:`;
+const deleteOwnedAgentCheckpoints = jest.fn(async (userId, tenantId, threadIds) => {
+  for (let index = checkpointRows.length - 1; index >= 0; index -= 1) {
+    const row = checkpointRows[index];
+    if (
+      (threadIds == null || threadIds.includes(row.threadId)) &&
+      row.checkpointNamespace.startsWith(ownerPrefix(userId, tenantId))
+    ) {
+      checkpointRows.splice(index, 1);
+    }
+  }
+});
+const deletionTargets = new Map();
+const openCheckpointDeletion = jest.fn(async (userId, tenantId, root, cfg) => {
+  const key = JSON.stringify([userId, tenantId, root]);
+  const ids = deletionTargets.get(key) ?? new Set();
+  deletionTargets.set(key, ids);
+  return {
+    conversationIds: () => [...ids],
+    remember: async (targets) => targets.forEach((id) => ids.add(id)),
+    cleanup: async () =>
+      deleteOwnedAgentCheckpoints(userId, tenantId, root == null ? undefined : [...ids], cfg),
+    acknowledge: async () => deletionTargets.delete(key),
+  };
+});
+
+function resetCheckpointRows(rows = []) {
+  checkpointRows.splice(0, checkpointRows.length, ...rows);
+  deletionTargets.clear();
+}
 
 module.exports = {
   archiveAllHandler,
+  ownerPrefix,
   generationJobManager,
   subagentActivityHandlerInputs,
   moderateText,
   moderatedTexts,
   messageIpLimiter,
   messageUserLimiter,
+  checkpointRows,
+  resetCheckpointRows,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -96,6 +141,9 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ threads: [] }),
     ),
     GenerationJobManager: generationJobManager,
+    waitForGenerationPersistence: jest.requireActual(
+      '../../../../packages/api/src/stream/persistence.ts',
+    ).waitForGenerationPersistence,
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',
     ),
@@ -105,7 +153,9 @@ module.exports = {
     }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
-    deleteAgentCheckpoints: jest.fn(),
+    deleteAgentCheckpoints,
+    deleteOwnedAgentCheckpoints,
+    openCheckpointDeletion,
     isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
     ...overrides,
   }),

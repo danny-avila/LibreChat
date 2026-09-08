@@ -34,6 +34,34 @@ const BaseClient = require('~/app/clients/BaseClient');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
+describe('AgentClient code approval persistence', () => {
+  it('persists a validated mode in agent conversation options', () => {
+    const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map();
+    client.options = {
+      endpoint: EModelEndpoint.agents,
+      agent: {
+        id: 'attached-agent',
+        codeExecutionContext: {
+          environmentType: 'attached',
+          codeEnvironmentConfigSchema: {
+            permissions: {
+              fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
+              commandExecution: { allowed: ['ask'], default: 'ask' },
+            },
+          },
+        },
+      },
+      req: {
+        body: { codeApprovalMode: 'acceptEdits' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+    };
+
+    expect(client.getSaveOptions()).toMatchObject({ codeApprovalMode: 'acceptEdits' });
+  });
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise((resolvePromise) => {
@@ -919,6 +947,87 @@ describe('AgentClient - interrupt discovery persistence', () => {
       entries: client.compactionSemanticIndexSnapshot.entries,
       providedEntryCount: 1,
     });
+  });
+
+  it('binds a paused code approval to the resolved stateful target without storing raw routing data', async () => {
+    const streamId = 'conversation-code-target-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        toolDefinitions: [{ name: 'bash_tool', toolType: 'builtin' }],
+        codeExecutionContext: {
+          baseUrl: 'https://private-bridge.example/v1',
+          codeSessionKey: 'execute_code:stateful:private-route:private-session',
+          executionProfile: 'stateful',
+          executionRouteKey: 'stateful:private-route',
+          runtimeSessionHint: 'private-session',
+          statefulSessions: true,
+          environmentId: 'personal-machine',
+          environmentType: 'attached',
+          bridgeWorkerId: 'private-worker',
+        },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-code-target-pause';
+    client.jobCreatedAt = job.createdAt;
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'code-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'tool_approval',
+            action_requests: [
+              { name: 'bash_tool', arguments: { command: 'git status' }, tool_call_id: 'tc1' },
+            ],
+            review_configs: [
+              {
+                action_name: 'bash_tool',
+                tool_call_id: 'tc1',
+                allowed_decisions: ['approve', 'reject'],
+              },
+            ],
+          },
+        }),
+        getDiscoveredTools: () => ['bash_tool'],
+        getRunMessages: () => [],
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.metadata.pendingAction.codeExecutionBinding).toEqual({
+      version: 1,
+      targets: [
+        {
+          agentId: 'agent-123',
+          targetHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      ],
+    });
+    expect(paused?.metadata.pendingAction.payload.action_requests[0]).toMatchObject({
+      name: 'bash_tool',
+      source: 'librechat_code',
+    });
+    const stored = JSON.stringify(paused?.metadata.pendingAction.codeExecutionBinding);
+    expect(stored).not.toContain('private-bridge');
+    expect(stored).not.toContain('private-worker');
+    expect(stored).not.toContain('private-session');
   });
 
   it('makes the run context meta durable when the run pauses', async () => {

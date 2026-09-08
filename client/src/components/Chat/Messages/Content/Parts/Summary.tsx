@@ -12,7 +12,7 @@ import { cn } from '~/utils';
 
 type SummaryProps = Pick<
   SummaryContentPart,
-  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing' | 'failed'
+  'content' | 'model' | 'provider' | 'tokenCount' | 'summarizing' | 'failed' | 'initiatedBy'
 >;
 
 function useCopyToClipboard(content?: string) {
@@ -204,7 +204,7 @@ const FloatingSummaryBar = memo(
 );
 
 const Summary = memo(
-  ({ content, model, provider, tokenCount, summarizing, failed }: SummaryProps) => {
+  ({ content, model, provider, tokenCount, summarizing, failed, initiatedBy }: SummaryProps) => {
     const contentId = useId();
     const localize = useLocalize();
     const [isExpanded, setIsExpanded] = useState(false);
@@ -259,10 +259,13 @@ const Summary = memo(
       if (isActivelyStreaming) {
         return localize('com_ui_summarizing');
       }
-      return failed
-        ? localize('com_ui_summarize_failed')
+      if (failed) {
+        return localize('com_ui_summarize_failed');
+      }
+      return initiatedBy === 'user'
+        ? localize('com_ui_context_compacted_by_you')
         : localize('com_ui_conversation_summarized');
-    }, [isActivelyStreaming, failed, localize]);
+    }, [isActivelyStreaming, failed, initiatedBy, localize]);
 
     if (!summarizing && !text) {
       return null;

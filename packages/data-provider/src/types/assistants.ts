@@ -718,6 +718,9 @@ export type SummaryContentPart = {
    *  into this slot are kept, so the renderer needs this to avoid presenting
    *  truncated text under the "Conversation summarized" label. */
   failed?: boolean;
+  /** Set when the user compacted the context manually rather than the
+   *  automatic detour firing on context pressure. */
+  initiatedBy?: 'user';
   summaryVersion?: number;
   model?: string;
   provider?: string;

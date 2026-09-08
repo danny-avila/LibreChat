@@ -2050,6 +2050,144 @@ describe('MCPTokenStorage', () => {
       expect(storedRefresh!.token).toBe('enc:rt-2');
     });
 
+    it('rechecks single-flight ownership after the asynchronous generation read', async () => {
+      await seedRefreshableTokens('generation-yield-srv');
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+      const flowManager = {
+        getLeaseGeneration: jest.fn(async () => {
+          await new Promise((resolve) => setImmediate(resolve));
+          return 0;
+        }),
+        acquireLease: jest.fn().mockResolvedValue({
+          generation: 0,
+          release: jest.fn().mockResolvedValue(undefined),
+        }),
+      };
+      const params = {
+        ...refreshParams(refreshTokens, 'generation-yield-srv'),
+        flowManager: flowManager as never,
+      };
+
+      const [first, second] = await Promise.all([
+        MCPTokenStorage.forceRefreshTokens(params),
+        MCPTokenStorage.forceRefreshTokens(params),
+      ]);
+
+      expect(refreshTokens).toHaveBeenCalledTimes(1);
+      expect(first).toMatchObject({ access_token: 'at-2' });
+      expect(second).toMatchObject({ access_token: 'at-2' });
+    });
+
+    it('aborts and joins an in-flight refresh before teardown continues', async () => {
+      await seedRefreshableTokens('teardown-srv');
+      const refreshTokens = jest.fn(
+        (_token, _metadata, signal) =>
+          new Promise<MCPOAuthTokens>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new Error('teardown fence')), {
+              once: true,
+            });
+          }),
+      );
+
+      const refresh = MCPTokenStorage.forceRefreshTokens(
+        refreshParams(refreshTokens, 'teardown-srv'),
+      );
+      await waitFor(() => refreshTokens.mock.calls.length > 0);
+      const release = await MCPTokenStorage.beginRefreshTeardown('u1', 'teardown-srv');
+
+      await expect(refresh).resolves.toBeNull();
+      await expect(
+        MCPTokenStorage.forceRefreshTokens(refreshParams(refreshTokens, 'teardown-srv')),
+      ).resolves.toBeNull();
+      release();
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:teardown-srv:refresh',
+        }),
+      ).toMatchObject({ token: 'enc:rt-1' });
+    });
+
+    it('discards a remote refresh response after teardown advances the durable generation', async () => {
+      await seedRefreshableTokens('remote-teardown-srv');
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+      const flowManager = {
+        getLeaseGeneration: jest.fn().mockResolvedValue(7),
+        acquireLease: jest.fn().mockResolvedValue(null),
+      };
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(refreshTokens, 'remote-teardown-srv'),
+          flowManager: flowManager as never,
+        }),
+      ).resolves.toBeNull();
+
+      expect(flowManager.acquireLease).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ expectedGeneration: 7 }),
+      );
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:remote-teardown-srv:refresh',
+        }),
+      ).toMatchObject({ token: 'enc:rt-1' });
+    });
+
+    it('returns committed refresh tokens when distributed lease release fails', async () => {
+      await seedRefreshableTokens('release-failure-srv');
+      const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+      const flowManager = {
+        getLeaseGeneration: jest.fn().mockResolvedValue(3),
+        acquireLease: jest.fn().mockResolvedValue({
+          generation: 3,
+          release: jest.fn().mockRejectedValue(new Error('redis unavailable')),
+        }),
+      };
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(refreshTokens, 'release-failure-srv'),
+          flowManager: flowManager as never,
+        }),
+      ).resolves.toMatchObject({ access_token: 'at-2' });
+
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:release-failure-srv:refresh',
+        }),
+      ).toMatchObject({ token: 'enc:rt-2' });
+    });
+
+    it('does not fence a colon-prefixed sibling server', async () => {
+      await seedRefreshableTokens('foo:bar');
+      let resolveRefresh!: (tokens: MCPOAuthTokens) => void;
+      let refreshSignal: AbortSignal | undefined;
+      const refreshTokens = jest.fn(
+        (_token, _metadata, signal) =>
+          new Promise<MCPOAuthTokens>((resolve) => {
+            refreshSignal = signal;
+            resolveRefresh = resolve;
+          }),
+      );
+
+      const siblingRefresh = MCPTokenStorage.forceRefreshTokens(
+        refreshParams(refreshTokens, 'foo:bar'),
+      );
+      await waitFor(() => refreshTokens.mock.calls.length > 0);
+      const release = await MCPTokenStorage.beginRefreshTeardown('u1', 'foo');
+
+      expect(refreshSignal?.aborted).toBe(false);
+      resolveRefresh(rotatedTokens(2));
+      await expect(siblingRefresh).resolves.toMatchObject({ access_token: 'at-2' });
+      release();
+    });
+
     it('getTokens joins an in-flight refresh instead of replaying the consumed refresh token', async () => {
       // Mirrors issue #14583: a silent refresh (401-triggered) is mid-redemption
       // when an expired-token read fires its own refresh. Without single-flight,

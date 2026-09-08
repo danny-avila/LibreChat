@@ -1,7 +1,8 @@
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
-import { buildTree } from './messages';
+import { buildTree, isCompactedLeaf } from './messages';
+import { ContentTypes } from './types/runs';
 
 const msg = (messageId: string, parentMessageId: string, over: Partial<TMessage> = {}): TMessage =>
   ({
@@ -194,5 +195,28 @@ describe('buildTree', () => {
       expect(buildTree({ messages, fileMap: fileMapA })).not.toBe(treeA);
       expect(buildTree({ messages })).toBe(bare);
     });
+  });
+});
+
+describe('isCompactedLeaf', () => {
+  const summary = (overrides: Record<string, unknown> = {}) => ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+    ...overrides,
+  });
+
+  it('is true for a bare, finished summary', () => {
+    expect(isCompactedLeaf({ content: [summary()] } as TMessage)).toBe(true);
+  });
+
+  it.each([
+    ['no content', undefined],
+    ['empty content', []],
+    ['a summary next to text', [summary(), { type: ContentTypes.TEXT, text: 'reply' }]],
+    ['a summary still streaming', [summary({ summarizing: true })]],
+    ['a failed summary', [summary({ failed: true })]],
+    ['an empty summary', [summary({ content: [] })]],
+  ])('is false for %s', (_label, content) => {
+    expect(isCompactedLeaf({ content } as TMessage)).toBe(false);
   });
 });

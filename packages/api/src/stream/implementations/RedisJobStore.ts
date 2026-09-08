@@ -48,6 +48,7 @@ import {
 } from '~/stream/internal/coalescing';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 import { RecoveredSteerPayloadMismatchError } from '~/stream/SteerRecovery';
+import { createCheckpointNamespace } from '~/stream/checkpoints';
 
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 
@@ -572,8 +573,7 @@ const JOB_CREATE_LUA =
   'redis.call("HSET", KEYS[1], "__replacedCreatedAt", replacedCreatedAt, "__replacedStatus", replacedStatus) ' +
   'if replacedConversationId then redis.call("HSET", KEYS[1], "__replacedConversationId", replacedConversationId) end end ' +
   'if #replacementChain > 0 then redis.call("HSET", KEYS[1], "__replacedGenerations", cjson.encode(replacementChain)) end ' +
-  'if ARGV[10] == "2" then redis.call("HSET", KEYS[1], "checkpointNamespace", tostring(createdAt)) ' +
-  'else redis.call("HDEL", KEYS[1], "checkpointNamespace") end ' +
+  'if ARGV[10] ~= "2" then redis.call("HDEL", KEYS[1], "checkpointNamespace") end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'redis.call("SET", KEYS[7], tostring(createdAt), "EX", ttl + generationEpochGraceTtl) ' +
   'if ARGV[8] ~= "" then local claimRaw = redis.call("GET", KEYS[10]) ' +
@@ -616,6 +616,16 @@ const JOB_UPDATE_LUA =
   'if chunksTtl == 0 then redis.call("DEL", KEYS[2]) else redis.call("EXPIRE", KEYS[2], chunksTtl) end ' +
   'if runStepsTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], runStepsTtl) end ' +
   'end ' +
+  'return 1';
+
+/** Owner membership must outlive every paused job and must never shorten a peer's TTL. */
+const OWNER_MEMBERSHIP_RECONCILE_LUA =
+  'local created = redis.call("EXISTS", KEYS[1]) == 0 ' +
+  'redis.call("SADD", KEYS[1], ARGV[1]) ' +
+  'local seconds = tonumber(ARGV[2]) ' +
+  'local current = redis.call("TTL", KEYS[1]) ' +
+  'if seconds > 0 and ((created and current == -1) or (current >= 0 and current < seconds)) then ' +
+  'redis.call("EXPIRE", KEYS[1], seconds) end ' +
   'return 1';
 
 /** Single-winner recovery outcome for one generation-scoped overflow. */
@@ -1828,6 +1838,7 @@ export class RedisJobStore implements IJobStoreV2 {
 
   private redis: Redis | Cluster;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupMembershipReady?: Promise<void>;
   private ttl: typeof DEFAULT_TTL;
   /** Coalescable chunk appends awaiting their window flush, per stream */
   private pendingAppends = new Map<string, PendingChunkAppendBatch>();
@@ -1892,6 +1903,9 @@ export class RedisJobStore implements IJobStoreV2 {
       this.cleanupInterval.unref();
     }
 
+    void this.ensureCleanupMembership().catch((err) => {
+      logger.error('[RedisJobStore] Owner cleanup membership recovery failed:', err);
+    });
     logger.info('[RedisJobStore] Initialized with cleanup interval');
   }
 
@@ -2022,6 +2036,9 @@ export class RedisJobStore implements IJobStoreV2 {
       status: 'running',
       createdAt: Date.now(),
       generationProtocolVersion,
+      ...(generationProtocolVersion === 2 && {
+        checkpointNamespace: createCheckpointNamespace(userId, tenantId),
+      }),
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && {
         idempotencyClientRequestId,
@@ -2136,11 +2153,6 @@ export class RedisJobStore implements IJobStoreV2 {
         ? Number(previousOwner[2])
         : job.createdAt;
     job.createdAt = Number.isFinite(createdAt) ? createdAt : job.createdAt;
-    if (job.generationProtocolVersion === 2) {
-      job.checkpointNamespace = String(job.createdAt);
-    } else {
-      delete job.checkpointNamespace;
-    }
     const replacedCreatedAt =
       Array.isArray(previousOwner) &&
       (typeof previousOwner[4] === 'string' || typeof previousOwner[4] === 'number') &&
@@ -2525,7 +2537,9 @@ export class RedisJobStore implements IJobStoreV2 {
       left.status === right.status &&
       left.userId === right.userId &&
       left.tenantId === right.tenantId &&
-      left.providerDrained === right.providerDrained
+      left.providerDrained === right.providerDrained &&
+      left.terminalPersistencePending === right.terminalPersistencePending &&
+      left.terminalHostActionPending === right.terminalHostActionPending
     );
   }
 
@@ -2535,6 +2549,47 @@ export class RedisJobStore implements IJobStoreV2 {
     }
   }
 
+  private ownerMembershipTtl(job: SerializableJobData | null): number {
+    if (this.ttl.userJobsSet <= 0) return this.ttl.userJobsSet;
+    return Math.max(
+      this.ttl.userJobsSet,
+      job?.status === 'requires_action' ? this.pauseTtlSeconds(job.pendingAction) : 0,
+      job?.terminalHostActionPending ? Math.max(this.ttl.completed, this.ttl.requiresAction) : 0,
+      job?.terminalPersistencePending
+        ? Math.max(this.ttl.completed, TERMINAL_PERSISTENCE_RETENTION_TTL_S)
+        : 0,
+    );
+  }
+
+  private async retainCleanupOwner(job: SerializableJobData): Promise<void> {
+    await this.redis.eval(
+      OWNER_MEMBERSHIP_RECONCILE_LUA,
+      1,
+      KEYS.userJobs(job.userId, job.tenantId),
+      job.streamId,
+      String(this.ownerMembershipTtl(job)),
+    );
+  }
+
+  /** Recover retained work from older stores once; owner requests await recovery. */
+  private ensureCleanupMembership(): Promise<void> {
+    if (this.cleanupMembershipReady == null) {
+      this.cleanupMembershipReady = Promise.allSettled([
+        this.getTerminalHostActionJobs(),
+        this.getDetachedAgentEventTerminalHostActionJobs(),
+      ])
+        .then((results) => {
+          const failure = results.find((result) => result.status === 'rejected');
+          if (failure?.status === 'rejected') throw failure.reason;
+        })
+        .catch((err) => {
+          this.cleanupMembershipReady = undefined;
+          throw err;
+        });
+    }
+    return this.cleanupMembershipReady;
+  }
+
   private async applyMembershipSnapshot(
     streamId: string,
     job: SerializableJobData | null,
@@ -2542,9 +2597,14 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<SerializableJobData | null> {
     const statusKey = job ? this.statusSetKey(job.status) : null;
     const activeUserKey =
-      job && (statusKey != null || job.providerDrained === false)
+      job &&
+      (statusKey != null ||
+        job.providerDrained === false ||
+        job.terminalPersistencePending === true ||
+        job.terminalHostActionPending === true)
         ? KEYS.userJobs(job.userId, job.tenantId)
         : null;
+    const ownerMembershipTtl = this.ownerMembershipTtl(job);
     const terminalMember = job == null ? null : terminalHostActionMember(streamId, job.createdAt);
     const terminalHostActionIndex =
       job != null && isDetachedAgentEventCompletionJob(job)
@@ -2592,12 +2652,13 @@ export class RedisJobStore implements IJobStoreV2 {
       }
       if (activeUserKey) {
         operations.push(
-          (async () => {
-            await this.redis.sadd(activeUserKey, streamId);
-            if (this.ttl.userJobsSet > 0) {
-              await this.redis.expire(activeUserKey, this.ttl.userJobsSet);
-            }
-          })(),
+          this.redis.eval(
+            OWNER_MEMBERSHIP_RECONCILE_LUA,
+            1,
+            activeUserKey,
+            streamId,
+            String(ownerMembershipTtl),
+          ),
         );
       }
       await Promise.all(operations);
@@ -2632,16 +2693,22 @@ export class RedisJobStore implements IJobStoreV2 {
       }
     }
     if (activeUserKey) {
-      pipeline.sadd(activeUserKey, streamId);
-      if (this.ttl.userJobsSet > 0) {
-        pipeline.expire(activeUserKey, this.ttl.userJobsSet);
-      }
+      pipeline.eval(
+        OWNER_MEMBERSHIP_RECONCILE_LUA,
+        1,
+        activeUserKey,
+        streamId,
+        String(ownerMembershipTtl),
+      );
     }
     // Keep the verification read in this network flush. Redis executes it
     // after the membership commands, preserving the guarded loop without an
     // extra round trip on the default single-node deployment.
     pipeline.hgetall(KEYS.job(streamId));
     const results = await pipeline.exec();
+    if (results == null) throw new Error('Owner membership pipeline did not execute');
+    const failed = results.find(([err]) => err != null);
+    if (failed?.[0]) throw failed[0];
     const verification = results?.[results.length - 1];
     if (verification?.[0]) {
       throw verification[0];
@@ -2834,6 +2901,13 @@ export class RedisJobStore implements IJobStoreV2 {
         terminalHostActionIndex,
         terminalHostActionMember(streamId, terminalMemberCreatedAt),
       );
+    }
+
+    if (
+      terminalJob != null &&
+      (patch?.terminalHostActionPending === true || patch?.terminalPersistencePending === true)
+    ) {
+      await this.retainCleanupOwner({ ...terminalJob, ...patch, status: to });
     }
 
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
@@ -3144,6 +3218,7 @@ export class RedisJobStore implements IJobStoreV2 {
     const rerouteToLegacy: string[] = [];
     const rerouteToDetached: string[] = [];
     const heldByGeneration = new Map<string, SerializableJobData>();
+    const ownersToRetain: SerializableJobData[] = [];
     const readyByGeneration = new Map<string, SerializableJobData>();
     const providerLossCutoff = Date.now() - PROVIDER_DRAIN_TIMEOUT_MS;
     for (let i = 0; i < indexed.length; i++) {
@@ -3154,6 +3229,7 @@ export class RedisJobStore implements IJobStoreV2 {
         job.terminalHostActionPending === true &&
         (indexedMember.createdAt == null || indexedMember.createdAt === job.createdAt)
       ) {
+        ownersToRetain.push(job);
         const jobIsDetachedCompletion = isDetachedAgentEventCompletionJob(job);
         if (jobIsDetachedCompletion !== detachedAgentEventCompletion) {
           const generationMember = terminalHostActionMember(job.streamId, job.createdAt);
@@ -3211,6 +3287,7 @@ export class RedisJobStore implements IJobStoreV2 {
         stale.push(indexedMember.member);
       }
     }
+    await Promise.all(ownersToRetain.map((job) => this.retainCleanupOwner(job)));
     // Repair a hint written by an earlier capable build before removing it
     // from the wrong lane. In particular, this drains detached completions out
     // of the legacy set without ever returning them to a capable claimant.
@@ -3249,6 +3326,7 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
+    const previousJob = await this.getJob(streamId);
     // Identity-fenced: only clear when the hash still holds this exact generation, so a
     // replacement at the same streamId is never cleared through its predecessor. The HDEL
     // and configured evidence-TTL reset happen atomically. The global retry
@@ -3274,6 +3352,7 @@ export class RedisJobStore implements IJobStoreV2 {
     )) as number;
     if (cleared === 1 && expectedCreatedAt != null) {
       const member = terminalHostActionMember(streamId, expectedCreatedAt);
+      await this.reconcileJobMembership(streamId, { previousJob });
       await Promise.all([
         this.redis.srem(KEYS.terminalHostActionJobs, member).catch(() => undefined),
         this.redis
@@ -3552,6 +3631,24 @@ export class RedisJobStore implements IJobStoreV2 {
     return this.getJobIdsByUser(userId, tenantId, true);
   }
 
+  async getCleanupJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    await this.ensureCleanupMembership();
+    return this.getJobIdsByUser(userId, tenantId, true);
+  }
+
+  async getRetainedJobIdsByUser(userId: string, tenantId?: string): Promise<string[]> {
+    const ownerKeys = tenantId
+      ? [KEYS.userJobs(userId, tenantId), KEYS.userJobs(userId)]
+      : [KEYS.userJobs(userId)];
+    const tracked = await Promise.all(ownerKeys.map((key) => this.redis.smembers(key)));
+    const streamIds = [...new Set(tracked.flat())];
+    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    return streamIds.filter((_, index) => {
+      const job = jobs[index];
+      return job?.userId === userId && (job.tenantId == null || job.tenantId === tenantId);
+    });
+  }
+
   private async getJobIdsByUser(
     userId: string,
     tenantId: string | undefined,
@@ -3581,12 +3678,20 @@ export class RedisJobStore implements IJobStoreV2 {
         job &&
         (job.status === 'running' ||
           job.status === 'requires_action' ||
-          (includeUndrained && job.providerDrained === false))
+          (includeUndrained &&
+            (job.providerDrained === false ||
+              job.terminalPersistencePending === true ||
+              job.terminalHostActionPending === true)))
       ) {
         if (
           job.status === 'requires_action' &&
           isPendingActionStale(job) &&
-          !(includeUndrained && job.providerDrained === false)
+          !(
+            includeUndrained &&
+            (job.providerDrained === false ||
+              job.terminalPersistencePending === true ||
+              job.terminalHostActionPending === true)
+          )
         ) {
           continue;
         }
@@ -3599,6 +3704,8 @@ export class RedisJobStore implements IJobStoreV2 {
           previousJob: job,
           previousUserKeys: [userJobsKey],
         });
+        if (includeUndrained && currentJob === undefined)
+          throw new Error(`Cannot verify owner job membership: ${streamId}`);
         const currentBelongsToUser =
           currentJob?.userId === userId &&
           (currentJob.tenantId ?? undefined) === (tenantId ?? undefined);
@@ -3607,11 +3714,19 @@ export class RedisJobStore implements IJobStoreV2 {
           currentJob &&
           (currentJob.status === 'running' ||
             currentJob.status === 'requires_action' ||
-            (includeUndrained && currentJob.providerDrained === false)) &&
+            (includeUndrained &&
+              (currentJob.providerDrained === false ||
+                currentJob.terminalPersistencePending === true ||
+                currentJob.terminalHostActionPending === true))) &&
           !(
             currentJob.status === 'requires_action' &&
             isPendingActionStale(currentJob) &&
-            !(includeUndrained && currentJob.providerDrained === false)
+            !(
+              includeUndrained &&
+              (currentJob.providerDrained === false ||
+                currentJob.terminalPersistencePending === true ||
+                currentJob.terminalHostActionPending === true)
+            )
           )
         ) {
           activeIds.push(streamId);
@@ -3628,6 +3743,8 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async destroy(): Promise<void> {
+    await this.cleanupMembershipReady?.catch(() => undefined);
+    this.cleanupMembershipReady = undefined;
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;

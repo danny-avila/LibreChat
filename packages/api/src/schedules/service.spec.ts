@@ -7,6 +7,7 @@ import { createSchedulesService } from './service';
 let mockJobStore: { getJob: jest.Mock; deleteJob?: jest.Mock } | null = null;
 
 jest.mock('../agents/checkpointer', () => ({
+  checkpointStorageConfigs: jest.fn(async (_user, _tenant, cfg) => [cfg]),
   deleteAgentCheckpoint: jest.fn(async () => undefined),
   // Non-empty by default so the scoped prune has something to delete in tests.
   captureAgentCheckpointGeneration: jest.fn(async (threadId: string) => ({
@@ -15,6 +16,7 @@ jest.mock('../agents/checkpointer', () => ({
   })),
 }));
 const checkpointerModule = jest.requireMock('../agents/checkpointer') as {
+  checkpointStorageConfigs: jest.Mock;
   deleteAgentCheckpoint: jest.Mock;
   captureAgentCheckpointGeneration: jest.Mock;
 };
@@ -34,6 +36,7 @@ type ActiveRun = {
   scheduleId: string;
   scheduledFor: Date;
   conversationId?: string;
+  checkpointNamespace?: string;
   status?: string;
 };
 
@@ -373,6 +376,87 @@ describe('deleteScheduleForOwner', () => {
     methods.getScheduleById = jest.fn(async () => ({ user: 'user-1' }));
     return { service, methods };
   }
+
+  it.each([undefined, 'lcg:v2:owner:generation'])(
+    'passes the matching paused job namespace (%s) through the raw projection to capture',
+    async (checkpointNamespace) => {
+      const scheduledFor = '2026-01-01T00:00:00.000Z';
+      const { service } = makeDeleteHarness({
+        scheduleId: 's1',
+        scheduledFor: new Date(scheduledFor),
+        conversationId: 'c1',
+        status: 'requires_action',
+      });
+      mockJobStore = {
+        getJob: jest.fn(async () => ({
+          status: 'requires_action',
+          createdAt: 1,
+          scheduleId: 's1',
+          scheduledFor,
+          checkpointNamespace,
+        })),
+      } as unknown as typeof mockJobStore;
+      const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+      manager.abortJob = jest.fn(async () => ({ success: true }));
+      checkpointerModule.captureAgentCheckpointGeneration.mockClear();
+      await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
+      expect(checkpointerModule.captureAgentCheckpointGeneration).toHaveBeenCalledWith(
+        'c1',
+        undefined,
+        checkpointNamespace == null ? {} : { checkpointNamespace },
+      );
+    },
+  );
+
+  it('uses the durable paused namespace after job-store loss', async () => {
+    const namespace = 'retained-owned-namespace';
+    const { service } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      checkpointNamespace: namespace,
+      status: 'requires_action',
+    });
+    mockJobStore = { getJob: jest.fn(async () => null) } as unknown as typeof mockJobStore;
+    checkpointerModule.captureAgentCheckpointGeneration.mockClear();
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
+    expect(checkpointerModule.captureAgentCheckpointGeneration).toHaveBeenCalledWith(
+      'c1',
+      undefined,
+      { checkpointNamespace: namespace },
+    );
+  });
+
+  it('captures the retained namespace in every recorded store after job loss and a config change', async () => {
+    const namespace = 'retained-owned-namespace';
+    const stores = [
+      { type: 'mongo', checkpointCollectionName: 'old-checkpoints' },
+      { type: 'mongo', checkpointCollectionName: 'current-checkpoints' },
+    ];
+    checkpointerModule.checkpointStorageConfigs.mockResolvedValueOnce(stores);
+    const { service } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      checkpointNamespace: namespace,
+      status: 'requires_action',
+    });
+    mockJobStore = { getJob: jest.fn(async () => null) } as unknown as typeof mockJobStore;
+    checkpointerModule.captureAgentCheckpointGeneration.mockClear();
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
+    for (const storage of stores) {
+      expect(checkpointerModule.captureAgentCheckpointGeneration).toHaveBeenCalledWith(
+        'c1',
+        storage,
+        { checkpointNamespace: namespace },
+      );
+      expect(checkpointerModule.deleteAgentCheckpoint).toHaveBeenCalledWith(
+        'c1',
+        storage,
+        expect.objectContaining({ checkpointIds: ['ck-1'] }),
+      );
+    }
+  });
 
   it('settles a pause hand-off after the exact provider drain is confirmed', async () => {
     const { service, methods } = makeDeleteHarness({

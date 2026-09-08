@@ -9,7 +9,9 @@ jest.mock('react-router-dom', () => ({
 }));
 
 jest.mock('recoil', () => ({
+  atomFamily: () => () => ({}),
   useRecoilValue: () => false,
+  useRecoilCallback: () => () => undefined,
 }));
 
 jest.mock('react-hook-form', () => ({

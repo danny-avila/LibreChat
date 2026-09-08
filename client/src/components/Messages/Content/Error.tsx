@@ -65,6 +65,17 @@ type TContextOverflow = {
   availableMessageTokens?: number;
 };
 
+type TCompactionSkipped = {
+  reason?: string;
+};
+
+/** Why a manual compaction could not run, keyed by the SDK's skip reason. */
+const compactionSkippedKeys: Record<string, TranslationKeys> = {
+  disabled: 'com_error_compaction_disabled',
+  instructions_exceed_budget: 'com_error_compaction_budget',
+  nothing_to_summarize: 'com_error_compaction_nothing',
+};
+
 /**
  * SDK boilerplate already covered by the localized headline; whatever remains
  * (specific guidance and the token budget breakdown) renders as details.
@@ -118,6 +129,9 @@ const errorMessages = {
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
   [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
+  [ErrorTypes.COMPACTION_FAILED]: 'com_error_compaction_failed',
+  [ErrorTypes.COMPACTION_SKIPPED]: (json: TCompactionSkipped, localize: LocalizeFunction) =>
+    localize(compactionSkippedKeys[json.reason ?? ''] ?? 'com_error_compaction_failed'),
   [ErrorTypes.EMPTY_MESSAGES]: (json: TGenericError, localize: LocalizeFunction) => {
     const detail = emptyMessagesBoilerplate
       .reduce((info, sentence) => info.replace(sentence, ''), json.info ?? '')
