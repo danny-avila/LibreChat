@@ -65,8 +65,9 @@ describe('retention helpers', () => {
     });
 
     it.each([true, 'true', false, 'false'])(
-      'uses explicit temporary intent %s without a conversation read',
+      'uses explicit temporary intent %s when the conversation does not exist yet',
       async (isTemporary) => {
+        dependencies.getConvo.mockResolvedValue(null);
         const now = Date.now();
         const result = await getRetentionExpiry(
           request({ body: { isTemporary }, config: { interfaceConfig } }),
@@ -75,7 +76,29 @@ describe('retention helpers', () => {
         const hours = isTemporary === true || isTemporary === 'true' ? 1 : 2160;
         expect(result.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
         expect(result.expiredAt?.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
-        expect(dependencies.getConvo).not.toHaveBeenCalled();
+        expect(dependencies.getConvo).toHaveBeenCalledWith('user-1', 'convo-1');
+      },
+    );
+
+    it.each([
+      { supplied: false, stored: true, hours: 1 },
+      { supplied: true, stored: false, hours: 2160 },
+    ])(
+      'uses stored chat type $stored instead of caller-supplied type $supplied',
+      async ({ supplied, stored, hours }) => {
+        dependencies.getConvo.mockResolvedValue({
+          isTemporary: stored,
+          expiredAt: expirationDate,
+        });
+        const now = Date.now();
+        const result = await getRetentionExpiry(
+          request({ body: { isTemporary: supplied }, config: { interfaceConfig } }),
+          dependencies,
+        );
+
+        expect(result.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
+        expect(result.expiredAt?.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
+        expect(dependencies.getConvo).toHaveBeenCalledWith('user-1', 'convo-1');
       },
     );
 

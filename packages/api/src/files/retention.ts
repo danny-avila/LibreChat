@@ -109,15 +109,15 @@ async function computeRetentionExpiry(
 ): Promise<RetentionExpiry> {
   const interfaceConfig = req?.config?.interfaceConfig;
   const isRetentionAll = interfaceConfig?.retentionMode === RetentionMode.ALL;
+  const conversationId = req?.body?.conversationId;
+  const userId = req?.user?.id;
   if (
     isRetentionAll &&
-    (interfaceConfig.generalChatRetention === undefined || req?.body?.isTemporary != null)
+    (interfaceConfig.generalChatRetention === undefined ||
+      (req?.body?.isTemporary != null && !(conversationId && userId)))
   ) {
     return createRetentionExpiry(req, dependencies);
   }
-
-  const conversationId = req?.body?.conversationId;
-  const userId = req?.user?.id;
 
   if (conversationId && userId) {
     try {
