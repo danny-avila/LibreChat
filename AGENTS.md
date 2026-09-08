@@ -60,6 +60,14 @@ of it and must stay that way.
 New levers ship configurable: a limit, timeout, toggle or capability introduced in code earns a field
 on `configSchema` (`packages/data-provider/src/config.ts`) so it can be set in `librechat.yaml`, with
 a default that reproduces today's behavior. Hard-coded constants and env-only switches need a reason.
+Modules take their dependencies rather than reaching for them: code in `packages/api` receives its
+config, database methods and clients from the caller, the way `createModels(mongoose)` receives the
+app's connection, instead of importing app singletons or reading global state. Integrations (provider
+SDKs, storage backends, vector stores, OAuth servers) arrive through an interface the caller
+supplies, so a second implementation is a new argument instead of a new branch. The static singletons
+under `packages/api/src/mcp` are the shape to stop extending, not a pattern to copy. This is the
+backend half of client state ownership: pass it in, do not reach for it.
+
 See `CLAUDE.md` under "Workspace Boundaries".
 
 ## Frontend theming and styling

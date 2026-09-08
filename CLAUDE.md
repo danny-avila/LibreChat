@@ -37,6 +37,17 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
   `librechat.yaml`, with a default that reproduces today's behavior. Hard-coded constants and
   env-only switches need a reason. The schema is also what keeps one definition of the value instead
   of a constant, a fallback and a doc line that drift apart.
+- **A backend module takes its dependencies, it does not reach for them.** Code in `/packages/api`
+  should receive its config, database methods and clients from the caller the way
+  `createModels(mongoose)` receives the app's connection, rather than importing app singletons or
+  reading global state. A module the caller constructs can be tested without a running app and moved
+  to another workspace without a rewrite; one that calls `getInstance()` can do neither. This is the
+  backend half of "Client State Ownership" — pass it in, do not reach for it. The static singletons
+  under `packages/api/src/mcp` are the shape to stop extending, not a pattern to copy.
+- **Integrations arrive through an interface the caller supplies.** A provider SDK, storage backend,
+  vector store or OAuth server is injected, so a second implementation is a new argument instead of
+  a new branch in shared code, and a test can exercise the real logic against a substitute at the
+  boundary rather than mocking the module that holds it.
 
 ---
 
