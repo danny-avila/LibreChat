@@ -37,5 +37,6 @@ jobs:
           registry-password: ${{ secrets.REGISTRY_PASSWORD }}
           name: ${{ env.ACI_NAME }}
           dns-name-label: ${{ env.DNS_NAME_LABEL }}
-          environment-variables: GH_TOKEN=${{ secrets.PAT_TOKEN }} GH_OWNER=${{ env.GH_OWNER }} GH_REPOSITORY=${{ env.GH_REPOSITORY }}
+          environment-variables: GH_OWNER=${{ env.GH_OWNER }} GH_REPOSITORY=${{ env.GH_REPOSITORY }}
+          secure-environment-variables: GH_TOKEN=${{ secrets.PAT_TOKEN }}
           location: 'eastus'
