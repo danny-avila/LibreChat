@@ -217,6 +217,13 @@ const DialogContent: React.ForwardRefExoticComponent<
         if (escapeBelongsToPopup(ownerDocument)) {
           return;
         }
+        /** The consumer's own `onEscapeKeyDown` never ran: Radix only calls it
+         *  for the highest layer, which the toast is. Give it the say it would
+         *  have had, so a dialog that refuses to close on Escape still does. */
+        propsOnEscapeKeyDown?.(event);
+        if (event.defaultPrevented) {
+          return;
+        }
         /** Radix Toast's own `li`. Matched whatever its `data-state`, because a
          *  toast that has begun closing keeps its dismissable layer registered
          *  until the exit animation ends — and that layer is what takes the
@@ -235,7 +242,9 @@ const DialogContent: React.ForwardRefExoticComponent<
           return Number.isNaN(zIndex) ? 0 : zIndex;
         };
         const frontmost = Array.from(
-          ownerDocument.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]'),
+          ownerDocument.querySelectorAll<HTMLElement>(
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+          ),
         ).reduce<HTMLElement | null>(
           (highest, candidate) =>
             highest == null || stackOrder(candidate) >= stackOrder(highest) ? candidate : highest,
@@ -248,7 +257,7 @@ const DialogContent: React.ForwardRefExoticComponent<
       };
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [propsOnEscapeKeyDown]);
 
     /* Handle Escape key to prevent closing dialog if a tooltip or dropdown has focus
     (this is a workaround in order to achieve WCAG compliance which requires

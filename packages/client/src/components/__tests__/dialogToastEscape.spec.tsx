@@ -78,6 +78,53 @@ describe('dialog Escape', () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
+  it("respects a consumer's onEscapeKeyDown that cancels the close", async () => {
+    const onOpenChange = jest.fn();
+    render(
+      <RadixToast.Provider>
+        <OGDialog open onOpenChange={onOpenChange}>
+          <OGDialogContent onEscapeKeyDown={(event) => event.preventDefault()}>
+            <button type="button">inside the dialog</button>
+          </OGDialogContent>
+        </OGDialog>
+        <RadixToast.Root open duration={Infinity} className="toast-root">
+          <RadixToast.Description>Saved</RadixToast.Description>
+        </RadixToast.Root>
+        <RadixToast.Viewport />
+      </RadixToast.Provider>,
+    );
+
+    screen.getByText('inside the dialog').focus();
+    await userEvent.keyboard('{Escape}');
+
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  /** `OGDialogContent` is also used as an alert dialog — the shared-link delete
+   *  confirmation — which the frontmost ranking has to see, or its Escape is
+   *  dropped instead of closing it. */
+  it('closes an alert dialog while a toast is on screen', async () => {
+    const onOpenChange = jest.fn();
+    render(
+      <RadixToast.Provider>
+        <OGDialog open onOpenChange={onOpenChange}>
+          <OGDialogContent role="alertdialog" showCloseButton={false}>
+            <button type="button">delete it</button>
+          </OGDialogContent>
+        </OGDialog>
+        <RadixToast.Root open duration={Infinity} className="toast-root">
+          <RadixToast.Description>Link copied</RadixToast.Description>
+        </RadixToast.Root>
+        <RadixToast.Viewport />
+      </RadixToast.Provider>,
+    );
+
+    screen.getByText('delete it').focus();
+    await userEvent.keyboard('{Escape}');
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   /** A dialog that carries its z-index in a class — `ImagePreview` is
    *  `z-[250]` — still outranks this one, so Escape there must not close the
    *  dialog underneath it. */
