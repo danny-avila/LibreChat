@@ -991,6 +991,7 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
+    expect(screen.getByTestId('question-icon').parentElement).toHaveClass('animate-pulse');
   });
 
   it('uses a singular completed label for one question grouped with reasoning', () => {
@@ -1018,6 +1019,8 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+    /** The glyph reads as part of the same control, so it settles with it. */
+    expect(screen.getByTestId('question-icon').parentElement).not.toHaveClass('animate-pulse');
   });
 
   it('keeps the active label while one question of a batch is unanswered', () => {

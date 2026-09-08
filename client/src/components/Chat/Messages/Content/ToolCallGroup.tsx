@@ -401,8 +401,13 @@ export default function ToolCallGroup({
   /** Past tense once the turn is settled — matches the Asking/Asked record
    *  card. While a multi-question turn streams, the still-open question's
    *  tool_call part has no output yet, so keep the present tense. */
-  const askQuestionsDone =
-    allAskQuestions && (allCompleted || !isSubmitting || askQuestionsAnswered);
+  const groupDone = allCompleted || !isSubmitting;
+  const askQuestionsDone = allAskQuestions && (groupDone || askQuestionsAnswered);
+
+  /** One verdict for the header's tense, its glyph and its icon animation —
+   *  they read as a single control, so a group whose label already says
+   *  "Asked 1 question" must not keep pulsing beside it. */
+  const isGroupLive = allAskQuestions ? !askQuestionsDone : !groupDone;
 
   /** For a single-tool group, lead with the tool's own (capitalized) label
    *  instead of the generic "Used 1 tool: name", which reads awkwardly. */
@@ -517,7 +522,6 @@ export default function ToolCallGroup({
 
   const searchCount = activitySummary.webSearchCount + activitySummary.fileSearchCount;
   const searchesOnly = count > 0 && searchCount === count;
-  const groupDone = allCompleted || !isSubmitting;
 
   /** Outcome-first header verb. Homogeneous searches, subagents, and questions
    *  read as the activity the assistant performed. Mixed implementation-level
@@ -633,7 +637,7 @@ export default function ToolCallGroup({
             className={cn(
               ROW_GLYPH_SLOT,
               'text-text-secondary',
-              !allCompleted && isSubmitting && 'animate-pulse text-text-primary',
+              isGroupLive && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
           >
@@ -645,7 +649,7 @@ export default function ToolCallGroup({
               toolNames={iconToolNames}
               mcpIconMap={mcpIconMap}
               maxIcons={4}
-              isAnimating={!allCompleted && isSubmitting}
+              isAnimating={isGroupLive}
             />
           </div>
         )}
