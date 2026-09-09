@@ -336,6 +336,23 @@ describe('persistFileWithQuota', () => {
     ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
   });
 
+  it('does not grant replacement credit without concrete file IDs', async () => {
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 11 },
+          replacing: { user: userId },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
   /* Charging one ledger while writing to another leaves the written owner unenforced. */
   it('writes the row to the owner it charged', async () => {
     const write = jest.fn(async (row: { bytes: number; user?: string }) => row);
@@ -829,6 +846,23 @@ describe('persistSkillFileWithQuota', () => {
             relativePath: 'scripts/other.sh',
             author: userId,
           },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not grant skill replacement credit without a complete logical key', async () => {
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 11, skillId: skillRow.skillId },
+          replacing: { skillId: skillRow.skillId, author: userId },
           replacedBytes: 20,
           write: async (row) => row,
           rollback: null,

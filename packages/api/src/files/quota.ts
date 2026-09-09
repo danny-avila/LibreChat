@@ -377,6 +377,10 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
   const { replacing, ...rest } = params;
   const replacedByRequester =
     replacing != null &&
+    typeof replacing.file_id === 'string' &&
+    replacing.file_id.length > 0 &&
+    typeof rest.row.file_id === 'string' &&
+    rest.row.file_id.length > 0 &&
     replacing.file_id === rest.row.file_id &&
     idsMatch(replacing.user as string, params.scope.userId) &&
     tenantsMatch(replacing.tenantId, params.scope.tenantId);
@@ -414,9 +418,19 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   const { replacing, ...rest } = params;
+  const replacingSkillId = replacing?.skillId?.toString();
+  const rowSkillId = rest.row.skillId?.toString();
   const replacedByRequester =
     replacing != null &&
-    replacing.skillId?.toString() === rest.row.skillId?.toString() &&
+    typeof replacingSkillId === 'string' &&
+    replacingSkillId.length > 0 &&
+    typeof rowSkillId === 'string' &&
+    rowSkillId.length > 0 &&
+    typeof replacing.relativePath === 'string' &&
+    replacing.relativePath.length > 0 &&
+    typeof rest.row.relativePath === 'string' &&
+    rest.row.relativePath.length > 0 &&
+    replacingSkillId === rowSkillId &&
     replacing.relativePath === rest.row.relativePath &&
     idsMatch(replacing.author as string, params.scope.userId) &&
     tenantsMatch(replacing.tenantId, params.scope.tenantId);
