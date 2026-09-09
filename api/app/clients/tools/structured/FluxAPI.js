@@ -349,7 +349,6 @@ class FluxAPI extends Tool {
         fileName: imageName,
         basePath: 'images',
         context: FileContext.image_generation,
-        tenantId: this.tenantId,
         req: this.retentionRequest,
       });
 
@@ -581,7 +580,6 @@ class FluxAPI extends Tool {
         fileName: imageName,
         basePath: 'images',
         context: FileContext.image_generation,
-        tenantId: this.tenantId,
         req: this.retentionRequest,
       });
 

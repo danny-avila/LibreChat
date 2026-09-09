@@ -404,21 +404,11 @@ function startExpiredFileSweep(options = {}) {
  * @param {string} params.fileName - The name that will be used to save the file (including extension)
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
- * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
  * @param {ServerRequest} params.req - Authenticated request context used for quota and retention.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
-const processFileURL = async ({
-  fileStrategy,
-  userId,
-  URL,
-  fileName,
-  basePath,
-  context,
-  tenantId,
-  req,
-}) => {
+const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, context, req }) => {
   if (!req) {
     throw new Error('processFileURL requires an authenticated request');
   }
