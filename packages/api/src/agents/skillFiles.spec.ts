@@ -95,6 +95,66 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(deps.listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
   });
 
+  it('shares one retry-wait budget across historical skill uploads', async () => {
+    const skillIds = [new Types.ObjectId(), new Types.ObjectId()];
+    const skillNames = ['first-skill', 'second-skill'];
+    mockExtract.mockReturnValue(new Set(skillNames));
+    const getSkillByName = jest.fn(async (name: string) => {
+      const index = skillNames.indexOf(name);
+      return {
+        _id: skillIds[index],
+        name,
+        body: `${name} body`,
+        version: 1,
+        fileCount: 1,
+      };
+    });
+    const listSkillFiles = jest.fn(async () => [
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/style.md',
+        source: 's3',
+        bytes: 5,
+      },
+    ]);
+    const attempts = new Map<string, number>();
+    const batchUploadCodeEnvFiles = jest.fn(async ({ id }: { id: string }) => {
+      const attempt = (attempts.get(id) ?? 0) + 1;
+      attempts.set(id, attempt);
+      if (attempt === 1) {
+        const error = new Error('Request failed with status code 429') as Error & {
+          isAxiosError: boolean;
+          response: { status: number; headers: Record<string, string> };
+        };
+        error.isAxiosError = true;
+        error.response = { status: 429, headers: { 'retry-after': '0' } };
+        throw error;
+      }
+      const name = skillNames[skillIds.findIndex((skillId) => skillId.toString() === id)];
+      return {
+        storage_session_id: `session-${name}`,
+        files: [{ fileId: `file-${name}`, filename: `skills/${name}/references/style.md` }],
+      };
+    });
+    const deps = makeDeps({
+      getSkillByName,
+      listSkillFiles,
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from('style'))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+    deps.req.config = {
+      endpoints: { agents: { codeApiUploadConcurrency: 1, codeApiMaxRetryWaitMs: 1_000 } },
+    } as never;
+
+    const result = await primeInvokedSkills(deps);
+
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(3);
+    expect(result.initialSessions?.get('execute_code')?.files).toHaveLength(1);
+  });
+
   it('calls batchUploadCodeEnvFiles without an apiKey when files are returned', async () => {
     const fileRecords = [
       {

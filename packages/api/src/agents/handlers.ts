@@ -2120,6 +2120,7 @@ async function handleSandboxImageRead(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const filtered = filteredBinaryFileResult(tc, req, filePath);
   if (filtered != null) {
@@ -2154,7 +2155,7 @@ async function handleSandboxImageRead(
       session_id: ctx?.session_id,
       files: ctx?.files,
       maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
-      ...(options.runSignal ? { signal: options.runSignal } : {}),
+      ...(signal ? { signal } : {}),
       ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
@@ -2237,10 +2238,20 @@ async function handleSandboxFileFallback(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
-    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
+    return handleSandboxImageRead(
+      tc,
+      filePath,
+      ext,
+      options,
+      req,
+      codeExecutionContext,
+      onSuccess,
+      signal,
+    );
   }
   const filteredName = filteredFileNameResult(tc, req, filePath);
   if (filteredName != null) {
@@ -4368,6 +4379,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4404,6 +4416,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4431,6 +4444,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4500,6 +4514,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4546,6 +4561,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {

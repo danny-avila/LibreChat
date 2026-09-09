@@ -6914,17 +6914,23 @@ describe('createToolExecuteHandler', () => {
           accessibleSkillIds: skillsInScope(),
           readSandboxFile,
           readSandboxImage,
-          runSignal: controller.signal,
         });
 
-        const [result] = await invokeHandler(handler, [
-          {
-            id: 'call_png',
-            name: Constants.READ_FILE,
-            args: { path: '/mnt/data/simple_graph.png' },
-            codeSessionContext: { session_id: 'sess-Z', files: [] },
-          } as unknown as ToolCallRequest,
-        ]);
+        const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+          handler.handle('on_tool_execute', {
+            toolCalls: [
+              {
+                id: 'call_png',
+                name: Constants.READ_FILE,
+                args: { path: '/mnt/data/simple_graph.png' },
+                codeSessionContext: { session_id: 'sess-Z', files: [] },
+              } as unknown as ToolCallRequest,
+            ],
+            signal: controller.signal,
+            resolve,
+            reject,
+          } as ToolExecuteBatchRequest);
+        });
 
         expect(readSandboxFile).not.toHaveBeenCalled();
         expect(readSandboxImage).toHaveBeenCalledWith(

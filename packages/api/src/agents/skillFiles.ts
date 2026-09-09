@@ -22,6 +22,7 @@ import {
   createCodeApiRateLimitBudget,
   getCodeApiUploadOptions,
   getSafeErrorMetadata,
+  type CodeApiRateLimitBudget,
   withCodeApiUploadRecovery,
 } from '~/utils';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
@@ -60,6 +61,8 @@ export interface PrimeSkillFilesParams {
   };
   skillFiles: SkillFileRecord[];
   req: ServerRequest;
+  /** Optional operation-wide wait allowance shared by sibling skill primes. */
+  rateLimitBudget?: CodeApiRateLimitBudget;
   getStrategyFunctions: (source: string) => {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
@@ -353,6 +356,7 @@ async function executePrimeSkillFiles(
     checkIfActive,
     updateSkillFileCodeEnvIds,
     codeExecutionContext,
+    rateLimitBudget,
   } = params;
   const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
   const executionRouteKey = codeExecutionContext
@@ -474,7 +478,7 @@ async function executePrimeSkillFiles(
       scope: uploadOptions.scope,
       concurrency: uploadOptions.concurrency,
       label: `priming skill "${skill.name}"`,
-      budget: createCodeApiRateLimitBudget(uploadOptions.retryWaitMs),
+      budget: rateLimitBudget ?? createCodeApiRateLimitBudget(uploadOptions.retryWaitMs),
       onWait: (waitMs) =>
         logger.warn(
           `[primeSkillFiles] Rate-limited priming skill "${skill.name}"; retrying in ${waitMs}ms`,
@@ -831,6 +835,8 @@ export async function primeInvokedSkills(
       kind: 'skill';
       version: number;
     }> = [];
+    const uploadOptions = getCodeApiUploadOptions(deps.req, executionRouteKey);
+    const rateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
     const primeResults = await Promise.allSettled(
       fileListResults.map(async ({ skill, files }) => {
         const result = await primeSkillFiles({
@@ -843,6 +849,7 @@ export async function primeInvokedSkills(
           checkIfActive: deps.checkIfActive,
           updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
           codeExecutionContext: deps.codeExecutionContext,
+          rateLimitBudget,
         });
         return { skill, result };
       }),
