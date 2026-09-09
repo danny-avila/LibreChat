@@ -39,8 +39,8 @@ import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import ProjectDeleteDialog from './ProjectDeleteDialog';
 import { useLocalize, useNewConvo } from '~/hooks';
 import ProjectResources from './ProjectResources';
-import { clearMessagesCache } from '~/utils';
 import ProjectChatList from './ProjectChatList';
+import { clearMessagesCache } from '~/utils';
 import ProjectEditor from './ProjectEditor';
 import store from '~/store';
 
