@@ -3305,6 +3305,7 @@ class AgentClient extends BaseClient {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        getRoleByName: db.getRoleByName,
       },
     );
 

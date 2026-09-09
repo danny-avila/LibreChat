@@ -18,6 +18,7 @@ import { checkAccessWithRequestCache } from '../middleware/access';
 export const toolRolePermissions: Partial<Record<string, PermissionTypes>> = {
   [Tools.file_search]: PermissionTypes.FILE_SEARCH,
   [Tools.execute_code]: PermissionTypes.RUN_CODE,
+  [Tools.web_search]: PermissionTypes.WEB_SEARCH,
 };
 
 /**
@@ -252,6 +253,8 @@ export interface ToolRoleGrants {
   runCode: boolean;
   /** `FILE_SEARCH.USE` — the search tool and its uploads. */
   fileSearch: boolean;
+  /** `WEB_SEARCH.USE` — the `web_search` tool and provider-native web search. */
+  webSearch: boolean;
 }
 
 export interface ResolveToolRoleGrantsParams {
@@ -261,19 +264,19 @@ export interface ResolveToolRoleGrantsParams {
 }
 
 /**
- * Resolves both tool grants for a request, once.
+ * Resolves all three tool grants for a request, once.
  *
- * Every gate on `AgentCapabilities.execute_code` / `file_search` reads its role
- * half from here, so a boundary is authorized by pairing the capability with a
- * field of this object rather than by repeating a permission check. The two
- * lookups run together and the result is memoized on the request, so a startup
- * that consults several gates — the tool loader, the agent initializer, an
- * upload handler — pays one role read between them.
+ * Every gate on `AgentCapabilities.execute_code` / `file_search` / `web_search`
+ * reads its role half from here, so a boundary is authorized by pairing the
+ * capability with a field of this object rather than by repeating a permission
+ * check. The three lookups run together and the result is memoized on the
+ * request, so a startup that consults several gates — the tool loader, the
+ * agent initializer, an upload handler — pays one role read between them.
  *
  * Callers that want the read off their critical path can start it early without
  * awaiting; the memoized promise is what later callers join.
  *
- * Fails closed: a missing user or a check that throws denies both.
+ * Fails closed: a missing user or a check that throws denies all three.
  */
 export function resolveToolRoleGrants({
   req,
@@ -303,7 +306,14 @@ export function resolveToolRoleGrants({
       getRoleByName,
       context,
     }),
-  ]).then(([runCode, fileSearch]) => ({ runCode, fileSearch }));
+    checkToolRolePermission({
+      req,
+      user: req?.user as CheckAccessParams['user'],
+      permissionType: PermissionTypes.WEB_SEARCH,
+      getRoleByName,
+      context,
+    }),
+  ]).then(([runCode, fileSearch, webSearch]) => ({ runCode, fileSearch, webSearch }));
 
   if (cache) {
     Object.defineProperty(cache, toolRoleGrantsKey, { value: pending, enumerable: false });

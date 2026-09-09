@@ -202,13 +202,14 @@ const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { ContentFilterError, PENDING_STALE_MS } = require('@librechat/api');
 
-/** Role document shape `checkAccess` reads; both role-gated tools granted. */
+/** Role document shape `checkAccess` reads; all three role-gated tools granted. */
 function buildRole(overrides = {}) {
   return {
     name: 'USER',
     permissions: {
       [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: true },
       [PermissionTypes.RUN_CODE]: { [Permissions.USE]: true },
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
       ...overrides,
     },
   };
@@ -3873,6 +3874,7 @@ describe('ToolService - Action Capability Gating', () => {
       AgentCapabilities.tools,
       AgentCapabilities.file_search,
       AgentCapabilities.execute_code,
+      AgentCapabilities.web_search,
     ];
 
     const denyPermission = (deniedType) =>
@@ -3978,6 +3980,33 @@ describe('ToolService - Action Capability Gating', () => {
         expect.arrayContaining([Tools.file_search, Tools.execute_code]),
       );
       expect(callArgs.codeExecutionEnabled).toBe(true);
+    });
+
+    it('omits web_search from definitions when WEB_SEARCH.USE is denied', async () => {
+      denyPermission(PermissionTypes.WEB_SEARCH);
+
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.web_search, Tools.execute_code] },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).not.toContain(Tools.web_search);
+      expect(callArgs.tools).toContain(Tools.execute_code);
+    });
+
+    it('keeps web_search when the role grants it', async () => {
+      await loadAgentTools({
+        req: createMockReq(capabilities),
+        res: {},
+        agent: { id: 'agent_123', tools: [Tools.web_search] },
+        definitionsOnly: true,
+      });
+
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toContain(Tools.web_search);
     });
 
     it('fails closed when the role lookup throws', async () => {

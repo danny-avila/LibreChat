@@ -684,6 +684,7 @@ const initializeClient = async ({
       checkSessionsAlive,
       loadCodeApiKey,
       updateFile: db.updateFile,
+      getRoleByName: db.getRoleByName,
     },
   );
 
@@ -774,6 +775,7 @@ const initializeClient = async ({
         checkSessionsAlive,
         loadCodeApiKey,
         updateFile: db.updateFile,
+        getRoleByName: db.getRoleByName,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -1235,6 +1237,7 @@ const initializeClient = async ({
           checkSessionsAlive,
           loadCodeApiKey,
           updateFile: db.updateFile,
+          getRoleByName: db.getRoleByName,
         },
       ),
       context.signal,

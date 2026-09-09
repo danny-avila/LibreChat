@@ -34,11 +34,13 @@ jest.mock('@librechat/agents', () => ({
 
 import { Providers } from '@librechat/agents';
 import {
+  Tools,
   Constants,
   ErrorTypes,
+  Permissions,
   EModelEndpoint,
   EToolResources,
-  Tools,
+  PermissionTypes,
 } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
@@ -1204,6 +1206,86 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(result.tools).toEqual([{ urlContext: {} }]);
     expect(countUrlContextTools(result.tools)).toBe(1);
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+});
+
+describe('initializeAgent — model_parameters.web_search role gate', () => {
+  const buildRole = (overrides: Record<string, unknown> = {}) => ({
+    name: 'USER',
+    permissions: {
+      [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: true },
+      ...overrides,
+    },
+  });
+
+  const buildRoleGatedReq = () =>
+    ({ user: { id: 'user-1', role: 'USER' }, config: {} }) as unknown as ServerRequest;
+
+  /** `getOptions` is mocked per-call inside `createMocks`, so the only way to see
+   *  what `initializeAgent` actually handed the provider is the last recorded
+   *  `getProviderConfig` result — `result.model_parameters` instead reflects the
+   *  mocked `llmConfig`, which never carries `web_search`. */
+  function lastModelParametersSentToProvider(): Record<string, unknown> {
+    const results = mockGetProviderConfig.mock.results;
+    const { getOptions } = results[results.length - 1].value as {
+      getOptions: jest.Mock;
+    };
+    const [{ model_parameters }] = getOptions.mock.calls[0];
+    return model_parameters;
+  }
+
+  it('strips model_parameters.web_search when the role denies WEB_SEARCH', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: true },
+    });
+    db.getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } }));
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).not.toHaveProperty('web_search');
+  });
+
+  it('keeps model_parameters.web_search when the role grants WEB_SEARCH', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: true },
+    });
+    db.getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: true }),
+    );
   });
 });
 

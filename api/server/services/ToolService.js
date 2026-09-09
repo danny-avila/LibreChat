@@ -149,6 +149,7 @@ const getActiveToolResources = (toolResources, tools) => {
 const toolCapabilityGates = {
   [Tools.file_search]: AgentCapabilities.file_search,
   [Tools.execute_code]: AgentCapabilities.execute_code,
+  [Tools.web_search]: AgentCapabilities.web_search,
 };
 
 /**
@@ -857,7 +858,7 @@ async function loadToolDefinitionsWrapper({
       return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     }
     if (tool === Tools.web_search) {
-      return checkCapability(AgentCapabilities.web_search);
+      return checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1640,7 +1641,7 @@ async function loadAgentTools({
     } else if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     } else if (tool === Tools.web_search) {
-      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      includesWebSearch = checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
       return includesWebSearch;
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);

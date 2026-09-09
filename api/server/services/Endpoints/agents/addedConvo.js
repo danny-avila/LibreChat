@@ -216,6 +216,7 @@ const processAddedConvo = async ({
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        getRoleByName: db.getRoleByName,
       },
     );
 

@@ -28,7 +28,7 @@ import type {
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
-import type { Response as ServerResponse } from 'express';
+import type { Request, Response as ServerResponse } from 'express';
 import type {
   TFileUpdate,
   ProvisionState,
@@ -56,6 +56,7 @@ import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/t
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
+import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { AgentExecutionContext } from './runtime';
 import {
@@ -108,6 +109,7 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { hasActiveFileFieldPolicy } from '~/protection';
@@ -851,6 +853,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   loadCodeApiKey?: TLoadCodeApiKey;
   /** Optional: persist file metadata updates after provisioning */
   updateFile?: (data: TFileUpdate) => Promise<unknown>;
+  /** Resolves a role by name for the tool role-permission grants. Optional: when
+   *  absent the role half of the web-search gate is not applied. */
+  getRoleByName?: CheckAccessParams['getRoleByName'];
 }
 
 /**
@@ -1104,6 +1109,24 @@ export async function initializeAgent(
   const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
     _modelOptions as Record<string, unknown>,
   );
+
+  /** `model_parameters.web_search` turns on provider-native web search, bypassing
+   *  `agent.tools` entirely, so it needs its own role check here rather than
+   *  relying on the tool-loader gate. Short-circuits before the role read so a
+   *  request that never asked for web search pays nothing. */
+  if (modelOptions.web_search === true && db.getRoleByName != null) {
+    const { webSearch } = await resolveToolRoleGrants({
+      req: params.req as Request | undefined,
+      getRoleByName: db.getRoleByName,
+      context: 'initializeAgent',
+    });
+    if (!webSearch) {
+      delete modelOptions.web_search;
+      logger.warn(
+        `[initializeAgent][User: ${requestFileOwnerId}][Agent: ${agent.id}] Forbidden: role denies WEB_SEARCH; removed model_parameters.web_search`,
+      );
+    }
+  }
 
   const provider = agent.provider;
   agent.endpoint = provider;
