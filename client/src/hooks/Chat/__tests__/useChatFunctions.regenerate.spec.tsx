@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, ContentTypes, EModelEndpoint, createPayload } from 'librechat-data-provider';
 import type {
   CodeWorkspaceSelection,
   TConversation,
@@ -167,6 +167,24 @@ describe('useChatFunctions ask', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.codeApprovalMode).toBe('acceptEdits');
+  });
+
+  it('preallocates a durable Agents user id for the optimistic response anchor', () => {
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Queue safely', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    const userMessageId = submission.userMessage.messageId;
+    expect(submission.endpointOption.overrideUserMessageId).toBe(
+      `${userMessageId}${Constants.COMMON_DIVIDER}0`,
+    );
+    expect(createPayload(submission).payload.overrideUserMessageId).toBe(
+      `${userMessageId}${Constants.COMMON_DIVIDER}0`,
+    );
+    expect(submission.initialResponse?.clientQueueParentMessageId).toBe(userMessageId);
   });
 
   it('submits the latest validated workspace selection', () => {
@@ -350,6 +368,7 @@ describe('useChatFunctions regenerate', () => {
     expect(submission.userMessage.responseMessageId).toBe('assistant-1_');
     expect(submission.initialResponse?.messageId).toBe('assistant-1_');
     expect(submission.initialResponse?.parentMessageId).toBe('user-1');
+    expect(submission.initialResponse?.clientQueueParentMessageId).toBe('user-1');
     expect(submission.messages.map((message) => message.messageId)).toEqual(['user-1']);
     expect(submission.regenerateMessages?.map((message) => message.messageId)).toEqual([
       'user-1',
@@ -364,6 +383,38 @@ describe('useChatFunctions regenerate', () => {
     ).toEqual(['user-1', 'assistant-1_']);
     expect(messages.at(-1)?.messageId).toBe('assistant-1_');
   });
+
+  it.each(['assistant-1', 'assistant_1_'])(
+    'marks an edited optimistic response %s with its durable user anchor',
+    (responseMessageId) => {
+      const parent = userMessage('user-1');
+      const response = {
+        ...assistantMessage(responseMessageId, parent.messageId),
+        content: [{ type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'before' }],
+      } as TMessage;
+      const { result, setSubmission } = renderAsk([parent, response]);
+
+      act(() => {
+        result.current.ask(
+          { ...parent },
+          {
+            isRegenerate: true,
+            isEdited: true,
+            editedMessageId: responseMessageId,
+            editedContent: {
+              index: 0,
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'after',
+            },
+          },
+        );
+      });
+
+      const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+      expect(submission.initialResponse?.messageId).toBe(responseMessageId);
+      expect(submission.initialResponse?.clientQueueParentMessageId).toBe('user-1');
+    },
+  );
 });
 
 describe('useChatFunctions ask attachments', () => {

@@ -1064,6 +1064,8 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   siblingIndex?: number;
   attachments?: TAttachment[];
   clientTimestamp?: string;
+  /** Client-only durable branch anchor while this message is an optimistic response. */
+  clientQueueParentMessageId?: string;
   feedback?: TFeedback;
 };
 

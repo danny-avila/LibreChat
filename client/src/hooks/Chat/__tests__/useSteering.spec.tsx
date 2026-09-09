@@ -341,6 +341,7 @@ describe('useSteering', () => {
     it.each([
       ['new response', 'user-message_'],
       ['regenerated response', 'old-assistant_'],
+      ['edited response', 'old-assistant'],
     ])('anchors an optimistic %s through its durable user parent', async (_label, messageId) => {
       mockMessages = [
         {
@@ -365,6 +366,7 @@ describe('useSteering', () => {
           messageId,
           parentMessageId: 'user-message',
           isCreatedByUser: false,
+          clientQueueParentMessageId: 'user-message',
         } as TMessage,
       ];
       const { result } = setupServerQueue();
@@ -389,8 +391,6 @@ describe('useSteering', () => {
           messageId: 'persisted-assistant_',
           parentMessageId: 'user-message',
           isCreatedByUser: false,
-          createdAt: '2026-09-09T12:00:01.000Z',
-          updatedAt: '2026-09-09T12:00:01.000Z',
         } as TMessage,
       ];
       const { result } = setupServerQueue();

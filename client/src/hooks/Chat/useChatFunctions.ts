@@ -526,7 +526,11 @@ export default function useChatFunctions({
         endpoint,
         endpointType,
         overrideConvoId,
-        overrideUserMessageId,
+        overrideUserMessageId:
+          overrideUserMessageId ??
+          (endpoint === EModelEndpoint.agents && !regenerateShaped && !isContinued
+            ? `${intermediateId}${Constants.COMMON_DIVIDER}0`
+            : undefined),
       },
       convo,
       chatProjectId ? { chatProjectId } : {},
@@ -642,6 +646,7 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
+      clientQueueParentMessageId: regenerateShaped ? messageId : intermediateId,
       /**
        * Seed the assistant placeholder with the turn's manually-invoked
        * skill names so `ContentParts` can render interim `SkillCall` cards

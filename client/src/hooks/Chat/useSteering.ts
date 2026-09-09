@@ -146,28 +146,10 @@ interface LiveMessageState {
   parentMessageId?: string;
 }
 
-function optimisticAssistantParent(message: TMessage): string | undefined {
-  const parentMessageId = message.parentMessageId;
-  /** Hydrated message rows always receive both timestamps from the message
-   * schema. Their joint absence is the client-only proof that this suffixed
-   * assistant is the placeholder built by `useChatFunctions`. */
-  if (
-    message.isCreatedByUser === false &&
-    typeof message.messageId === 'string' &&
-    message.messageId.endsWith('_') &&
-    message.createdAt == null &&
-    message.updatedAt == null &&
-    typeof parentMessageId === 'string' &&
-    parentMessageId.length > 0
-  ) {
-    return parentMessageId;
-  }
-}
-
 function selectLiveMessageState(message: TMessage | null): LiveMessageState {
   let parentMessageId: string | undefined;
   if (message?.isCreatedByUser === false && typeof message.messageId === 'string') {
-    parentMessageId = optimisticAssistantParent(message) ?? message.messageId;
+    parentMessageId = message.clientQueueParentMessageId ?? message.messageId;
   }
   return { approval: hasLiveToolApproval(message), parentMessageId };
 }
