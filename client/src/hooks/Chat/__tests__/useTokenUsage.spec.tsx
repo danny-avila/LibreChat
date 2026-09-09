@@ -83,13 +83,14 @@ const renderTokenUsage = (
     ['a1', anchorSnapshot(196000)],
     ['a2', anchorSnapshot(195000)],
   ]),
+  overrides: { messages?: TMessage[]; snapshot?: ContextSnapshot } = {},
 ) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  queryClient.setQueryData([QueryKeys.messages, convo], messages);
+  queryClient.setQueryData([QueryKeys.messages, convo], overrides.messages ?? messages);
   const store = getDefaultStore();
-  store.set(contextSnapshotFamily(convo), tailSnapshot);
+  store.set(contextSnapshotFamily(convo), overrides.snapshot ?? tailSnapshot);
   store.set(snapshotsByAnchorFamily(convo), anchors);
 
   return renderHook(
@@ -161,5 +162,34 @@ describe('useTokenUsage — post-snapshot output', () => {
     );
 
     expect(result.current.runwayTurns).toBeUndefined();
+  });
+
+  it('leaves a summarizing turn’s summary completion out of the reclaim estimate', () => {
+    /** The tail turn compacted: its `tokenCount` carries the 700-token
+     *  summarization completion the backend folded in, while the snapshot holds
+     *  those tokens in `summaryTokens` rather than `messageTokens`. Subtracting
+     *  the whole response would understate the reclaim by that summary.
+     *  10000 messages + 2000 finalized output − (500 user + 2000 answer − 700
+     *  summary) = 10200. */
+    const summarizedMessages = messages.map((message) =>
+      (message as TMessage).messageId === 'a2'
+        ? ({ ...message, metadata: { summaryUsedTokens: 8000 } } as TMessage)
+        : message,
+    );
+
+    /** After finalize the live snapshot is re-anchored to the response id, so
+     *  the compacting turn's own snapshot still describes the viewed branch. */
+    const summarizedSnapshot = {
+      ...tailSnapshot,
+      anchorMessageId: 'a2',
+      breakdown: { ...tailSnapshot.breakdown, summaryTokens: 700 },
+    } as unknown as ContextSnapshot;
+
+    const { result } = renderTokenUsage(undefined, {
+      messages: summarizedMessages,
+      snapshot: summarizedSnapshot,
+    });
+
+    expect(result.current.compactionReclaim).toBe(10200);
   });
 });

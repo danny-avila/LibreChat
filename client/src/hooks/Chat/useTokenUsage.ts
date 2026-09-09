@@ -14,6 +14,7 @@ import {
   hydrateSnapshots,
   pendingUsageFamily,
   subagentUsageFamily,
+  pendingSubagentUsageFamily,
   branchTotalsFamily,
   contextSnapshotFamily,
   snapshotsByAnchorFamily,
@@ -111,7 +112,8 @@ export default function useTokenUsage({
   const totalUsageBase = useAtomValue(totalUsageFamily(conversationKey));
   const branchTotals = useAtomValue(branchTotalsFamily(conversationKey));
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
-  const subagentUsage = useAtomValue(subagentUsageFamily(conversationKey));
+  const committedSubagentUsage = useAtomValue(subagentUsageFamily(conversationKey));
+  const pendingSubagentUsage = useAtomValue(pendingSubagentUsageFamily(conversationKey));
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
   const setTotalUsage = useSetAtom(totalUsageFamily(conversationKey));
   const limits = useTokenLimits(conversation);
@@ -158,6 +160,13 @@ export default function useTokenUsage({
   const totalUsage = useMemo(
     () => mergeUsage(totalUsageBase, pendingAsUsage),
     [totalUsageBase, pendingAsUsage],
+  );
+  /** The subagent figure mirrors that split: what earlier runs committed plus
+   *  the in-flight run's share, which settles or is discarded with the pending
+   *  usage it sits inside. */
+  const subagentUsage = useMemo(
+    () => mergeUsage(committedSubagentUsage, pendingSubagentUsage),
+    [committedSubagentUsage, pendingSubagentUsage],
   );
   const hasUsage =
     branchUsage.input + branchUsage.output + branchUsage.cacheRead + branchUsage.cacheWrite > 0;
@@ -330,14 +339,22 @@ export default function useTokenUsage({
         runwayTurns,
         /** Both sides are measured after the tail call: `breakdown.messageTokens`
          *  is pre-invoke, so add the finalized output that `latestExchangeTokens`
-         *  already counts in the exchange a summarization would keep. While a
-         *  response streams, `completedOutput` is 0 and the in-flight tail is
-         *  excluded from both sides (it rides on `liveTokens`). */
+         *  already counts in the exchange a summarization would keep, and hand it
+         *  the summary block's size so a compacting turn's summarization output —
+         *  folded into the response's `tokenCount` but held outside
+         *  `messageTokens` — is not subtracted from a total that never carried
+         *  it. While a response streams, `completedOutput` is 0 and the in-flight
+         *  tail is excluded from both sides (it rides on `liveTokens`). */
         compactionReclaim: Math.max(
           0,
           normalizeTokenCount(breakdown.messageTokens) +
             completedOutput -
-            latestExchangeTokens(conversationKey, tailId, liveTokens > 0),
+            latestExchangeTokens(
+              conversationKey,
+              tailId,
+              liveTokens > 0,
+              normalizeTokenCount(breakdown.summaryTokens),
+            ),
         ),
         subagentUsage,
         rates: limits.rates,

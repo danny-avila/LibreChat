@@ -2,7 +2,11 @@ import { getDefaultStore } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { renderHook } from '@testing-library/react';
 import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
-import { contextSnapshotFamily, subagentUsageFamily } from '~/store/usage';
+import {
+  contextSnapshotFamily,
+  subagentUsageFamily,
+  pendingSubagentUsageFamily,
+} from '~/store/usage';
 import useUsageHandler from '~/hooks/SSE/useUsageHandler';
 
 /** Mirrors a real web-search + summarization turn: calibration pinned at 5
@@ -131,7 +135,7 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
       primaryUsage({ usage_type: 'subagent', runId: 'run-sub', seq: 11 }),
       submission,
     );
-    expect(store.get(subagentUsageFamily(newConvo)).output).toBe(3780);
+    expect(store.get(pendingSubagentUsageFamily(newConvo)).output).toBe(3780);
 
     result.current.finalizeUsage(
       {
@@ -144,5 +148,55 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     const migrated = store.get(subagentUsageFamily('convo-sub-real'));
     expect(migrated.input).toBe(53702);
     expect(migrated.output).toBe(3780);
+    expect(store.get(pendingSubagentUsageFamily('convo-sub-real')).output).toBe(0);
+  });
+
+  it('drops a failed run’s subagent share with the usage it belonged to', () => {
+    /** Terminal error with no salvageable response: the pending usage is
+     *  discarded, so the Totals row must not keep advertising tokens that no
+     *  longer appear in the branch or conversation rollups. */
+    const convo = 'convo-sub-failed';
+    const submission = {
+      userMessage: { messageId: 'u-fail', conversationId: convo },
+      conversation: { conversationId: convo },
+    };
+    const { result } = renderHook(() => useUsageHandler());
+    const store = getDefaultStore();
+
+    result.current.usageHandler(
+      primaryUsage({ usage_type: 'subagent', runId: 'run-fail', seq: 21 }),
+      submission,
+    );
+    result.current.resetLive(submission);
+
+    expect(store.get(pendingSubagentUsageFamily(convo)).output).toBe(0);
+    expect(store.get(subagentUsageFamily(convo)).output).toBe(0);
+  });
+
+  it('counts a resumed run’s subagent events once', () => {
+    /** `resetLive` forgets the folded identities so a resume can rebuild
+     *  pending; re-folding the same subagent event must not add its tokens a
+     *  second time. */
+    const convo = 'convo-sub-resume';
+    const submission = {
+      userMessage: { messageId: 'u-resume', conversationId: convo },
+      conversation: { conversationId: convo },
+    };
+    const { result } = renderHook(() => useUsageHandler());
+    const store = getDefaultStore();
+    const event = primaryUsage({ usage_type: 'subagent', runId: 'run-resume', seq: 31 });
+
+    result.current.usageHandler(event, submission);
+    result.current.resetLive(submission);
+    result.current.backfillUsage([event], submission);
+    result.current.finalizeUsage(
+      {
+        conversation: { conversationId: convo },
+        responseMessage: { messageId: 'r-resume', conversationId: convo },
+      },
+      submission,
+    );
+
+    expect(store.get(subagentUsageFamily(convo)).output).toBe(3780);
   });
 });

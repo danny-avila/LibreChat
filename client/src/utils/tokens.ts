@@ -69,15 +69,17 @@ export interface BranchTotals {
   /** Uncalibrated estimate sum for count-less branch messages (imports /
    *  pre-feature). Kept separate so known counts aren't re-estimated. */
   estTokens: number;
-  /** The tail (latest) message's own `estTokens`. When a stream is live the tail
-   *  is the in-flight response, already covered by `liveTokens`, so the estimate
-   *  path excludes this to avoid double-counting a resumed/partial response. */
+  /** The tail (latest) message's UNCOUNTED estimate — its own `estTokens` when
+   *  it has no `tokenCount`, else 0. A live tail rides on `liveTokens`, so the
+   *  estimate path drops this; a resumed partial that already carries a count
+   *  stays in `output`, so nothing may be dropped for it. */
   tailEstTokens: number;
   /** Tool-call share of the branch estimate (`estToolTokens`, clamped per
    *  message to its contribution) — the estimate path's "Tool calls" split. */
   estToolTokens: number;
-  /** The tail message's own clamped tool share, dropped alongside
-   *  `tailEstTokens` while the in-flight response streams. */
+  /** The tail's clamped tool share on the same basis as `tailEstTokens`: 0 for a
+   *  counted tail, so the split never drops tool traffic whose tokens the
+   *  message total keeps. */
   tailEstToolTokens: number;
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
@@ -407,15 +409,19 @@ export function sumBranch(
     estToolTokens: 0,
     containsAnchor: false,
   };
-  /** The in-flight response, when streaming, is the branch tail and is covered by
-   *  `liveTokens`; expose its estimate so the estimate path can drop it. */
+  /** The in-flight response, when streaming, is the branch tail and is covered
+   *  by `liveTokens`; expose its estimate so the estimate path can drop it. A
+   *  tail that already carries a `tokenCount` (a resumed partial response) is
+   *  counted in `input`/`output` instead, and its tool share is inside
+   *  `estToolTokens` clamped to that count — dropping either would leave the
+   *  message total holding tokens whose tool share had been removed, so both
+   *  tail figures are zero for a counted tail. */
   const tailEntry = index.get(tailId);
-  let tailContribution = tailEntry?.estTokens ?? 0;
-  if (tailEntry != null && tailEntry.tokenCount > 0) {
-    tailContribution = tailEntry.tokenCount;
-  }
-  const tailEstTokens = tailEntry?.estTokens ?? 0;
-  const tailEstToolTokens = Math.min(tailEntry?.estToolTokens ?? 0, tailContribution);
+  const tailCounted = tailEntry != null && tailEntry.tokenCount > 0;
+  const tailEstTokens = tailCounted ? 0 : (tailEntry?.estTokens ?? 0);
+  const tailEstToolTokens = tailCounted
+    ? 0
+    : Math.min(tailEntry?.estToolTokens ?? 0, tailEntry?.estTokens ?? 0);
   let summaryBaseline = 0;
   const usage: BranchUsage = { ...EMPTY_USAGE };
   /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
@@ -649,11 +655,18 @@ export function topBranchMessages(
  * answers) — what a summarization would KEEP. `excludeTail` skips an in-flight
  * tail (it rides on `liveTokens`), leaving the previous complete exchange.
  * The compaction preview is context tokens minus this.
+ *
+ * `summaryOutputTokens` removes an internal summarization's completion from a
+ * tail whose turn compacted: the backend folds that pass into the response's
+ * `tokenCount`, while the snapshot keeps it in `breakdown.summaryTokens` rather
+ * than `messageTokens`. Leaving it in would subtract a summary the message
+ * total never carried, understating the reclaim by the size of the summary.
  */
 export function latestExchangeTokens(
   conversationId: string,
   tailId: string | null | undefined,
   excludeTail: boolean,
+  summaryOutputTokens = 0,
 ): number {
   const index = registry.get(conversationId);
   if (!index || !tailId) {
@@ -668,7 +681,13 @@ export function latestExchangeTokens(
 
   const tailEntry = index.get(tailId);
   const parentEntry = index.get(tailEntry?.parentMessageId ?? '');
-  return (excludeTail ? 0 : contribution(tailEntry)) + contribution(parentEntry);
+  let tail = excludeTail ? 0 : contribution(tailEntry);
+  /** Only a turn that actually summarized carries that completion; the marker
+   *  persists on the response whose turn compacted. */
+  if (tail > 0 && tailEntry?.summaryUsedTokens != null && tailEntry.summaryUsedTokens > 0) {
+    tail = Math.max(0, tail - normalizeTokenCount(summaryOutputTokens));
+  }
+  return tail + contribution(parentEntry);
 }
 
 /**

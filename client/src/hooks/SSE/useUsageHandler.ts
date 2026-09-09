@@ -21,12 +21,15 @@ import {
   pendingUsageFamily,
   branchTotalsFamily,
   subagentUsageFamily,
+  pendingSubagentUsageFamily,
   EMPTY_USAGE_TOTALS,
   contextSnapshotFamily,
   snapshotsByAnchorFamily,
 } from '~/store/usage';
 import {
   sumBranch,
+  mergeUsage,
+  EMPTY_USAGE,
   setEntryUsage,
   upsertEntries,
   migrateIndex,
@@ -131,7 +134,8 @@ export default function useUsageHandler(): UsageHandlers {
     const flushPendingInto = (convoKey: string, responseId: string | null) => {
       const pendingAtom = pendingUsageFamily(convoKey);
       const pending = jotai.get(pendingAtom);
-      if (responseId != null && pending.eventCount > 0) {
+      const keep = responseId != null && pending.eventCount > 0;
+      if (keep) {
         setEntryUsage(convoKey, responseId, {
           input: pending.input,
           output: pending.output,
@@ -141,6 +145,16 @@ export default function useUsageHandler(): UsageHandlers {
           costKnown: pending.costKnown,
         });
       }
+      /** The run's subagent share settles with the usage it is a subset of:
+       *  committed to the conversation figure when the response keeps that
+       *  usage, dropped with it otherwise. */
+      const pendingSubAtom = pendingSubagentUsageFamily(convoKey);
+      const pendingSub = jotai.get(pendingSubAtom);
+      if (keep) {
+        const committedAtom = subagentUsageFamily(convoKey);
+        jotai.set(committedAtom, mergeUsage(jotai.get(committedAtom), pendingSub));
+      }
+      jotai.set(pendingSubAtom, EMPTY_USAGE);
       jotai.set(pendingAtom, EMPTY_USAGE_TOTALS);
     };
 
@@ -207,10 +221,12 @@ export default function useUsageHandler(): UsageHandlers {
         costKnown: prev.costKnown && costKnown,
       });
       /** Subagent calls are inside the rollup above (the backend's persisted
-       *  rollup includes them too) — track them separately so the Totals can
-       *  show their share. */
+       *  rollup includes them too) — track this run's share beside the pending
+       *  usage it is a subset of, so the Totals row settles with that usage
+       *  instead of surviving a discarded run or being folded twice by a
+       *  resume. */
       if (data.usage_type === 'subagent') {
-        const subAtom = subagentUsageFamily(convoKey);
+        const subAtom = pendingSubagentUsageFamily(convoKey);
         const subPrev = jotai.get(subAtom);
         jotai.set(subAtom, {
           input: subPrev.input + units.input,
@@ -313,12 +329,15 @@ export default function useUsageHandler(): UsageHandlers {
       const convoKey = getConvoKey(submission);
       setLive(convoKey, 0);
       /** Terminal path with no salvageable response (stream error / intentional
-       *  close): discard the in-flight pending usage so it can't merge into the
-       *  next response. The user-stop path uses `attributePending` to keep it on
-       *  the partial reply. Also forget the folded-event identities so a resume's
-       *  `backfillUsage` can rebuild pending — otherwise it sees them as already
-       *  folded and the response's usage stays missing until a full reload. */
+       *  close): discard the in-flight pending usage — and the subagent share
+       *  inside it — so neither can merge into the next response nor outlive the
+       *  rollups it belongs to. The user-stop path uses `attributePending` to
+       *  keep it on the partial reply. Also forget the folded-event identities
+       *  so a resume's `backfillUsage` can rebuild pending — otherwise it sees
+       *  them as already folded and the response's usage stays missing until a
+       *  full reload. */
       jotai.set(pendingUsageFamily(convoKey), EMPTY_USAGE_TOTALS);
+      jotai.set(pendingSubagentUsageFamily(convoKey), EMPTY_USAGE);
       clearUsageFolded(convoKey);
     };
 
@@ -374,6 +393,10 @@ export default function useUsageHandler(): UsageHandlers {
         jotai.set(pendingUsageFamily(realId), jotai.get(pendingUsageFamily(fromKey)));
         jotai.set(calibrationFamily(realId), jotai.get(calibrationFamily(fromKey)));
         jotai.set(subagentUsageFamily(realId), jotai.get(subagentUsageFamily(fromKey)));
+        jotai.set(
+          pendingSubagentUsageFamily(realId),
+          jotai.get(pendingSubagentUsageFamily(fromKey)),
+        );
         removeUsageAtoms(fromKey);
       }
 

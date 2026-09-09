@@ -258,6 +258,33 @@ describe('token index', () => {
     expect(totals.tailEstToolTokens).toBe(3);
   });
 
+  it('keeps a counted tail out of both tail estimates', () => {
+    /** A resumed partial response that already carries a `tokenCount` stays in
+     *  `output`, so the estimate path may drop neither its estimate nor its tool
+     *  share — dropping the share alone left the message total holding tokens
+     *  whose tool traffic had been removed from the split. */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 12),
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        tokenCount: 40,
+        content: [
+          { type: 'text', text: 't'.repeat(60) },
+          { type: 'tool_call', tool_call: { name: 'run', args: 'aa', output: 'o'.repeat(38) } },
+        ],
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    expect(totals.output).toBe(40);
+    expect(totals.estToolTokens).toBe(11);
+    expect(totals.tailEstTokens).toBe(0);
+    expect(totals.tailEstToolTokens).toBe(0);
+  });
+
   describe('prunedBranchTokens (over-window mirror of getMessagesWithinTokenLimit)', () => {
     /** u1 ← a1(huge, old) ← u2 ← a2(tail). */
     const buildChain = () =>
@@ -1010,5 +1037,28 @@ describe('per-message usage index (branch + total)', () => {
     expect(latestExchangeTokens(CONVO, 'a2', false)).toBe(59);
     /** In-flight tail rides liveTokens — only the user turn remains */
     expect(latestExchangeTokens(CONVO, 'a2', true)).toBe(9);
+  });
+
+  it('latestExchangeTokens drops a summarizing turn’s summary completion', () => {
+    /** The backend folds the summarization pass into the response's
+     *  `tokenCount`, while the snapshot holds those tokens in `summaryTokens`
+     *  instead of `messageTokens`. Subtracting the whole tail would remove a
+     *  summary the message total never carried. */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 9),
+      {
+        messageId: 'a1',
+        parentMessageId: 'u1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        tokenCount: 500,
+        text: 'answer',
+        metadata: { summaryUsedTokens: 4000 },
+      } as unknown as TMessage,
+    ]);
+
+    expect(latestExchangeTokens(CONVO, 'a1', false, 300)).toBe(209);
+    /** A turn that did not summarize keeps its whole response. */
+    expect(latestExchangeTokens(CONVO, 'a1', false)).toBe(509);
   });
 });
