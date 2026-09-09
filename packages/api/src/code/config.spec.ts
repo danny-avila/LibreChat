@@ -134,6 +134,9 @@ describe('mergeAccessibleCodeEnvironments', () => {
                   permissions: {
                     commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
                   },
+                  limits: {
+                    maxCommandTimeoutMs: 120_000,
+                  },
                 },
               },
             ],
@@ -171,6 +174,9 @@ describe('mergeAccessibleCodeEnvironments', () => {
       configSchema: {
         permissions: {
           commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
+        },
+        limits: {
+          maxCommandTimeoutMs: 120_000,
         },
       },
       settings: { permissions: { commandExecution: 'deny' } },

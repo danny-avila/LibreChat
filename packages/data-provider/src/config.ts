@@ -1116,6 +1116,11 @@ const codeEnvironmentPermissionFieldSchema = z
     }
   });
 
+/** Existing attached commands used a fixed 30-second execution budget. */
+export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_DEFAULT_MS = 30_000;
+/** Protocol-level ceiling; deployments may only lower this value. */
+export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS = 5 * 60_000;
+
 /**
  * Typed user-tunable surface for one attached code environment. Omitted fields
  * remain fixed at LibreChat's safe baseline. Isolation, networking, mounts,
@@ -1127,6 +1132,19 @@ export const codeEnvironmentUserConfigSchema = z
       .object({
         fileWrite: codeEnvironmentPermissionFieldSchema.optional(),
         commandExecution: codeEnvironmentPermissionFieldSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    limits: z
+      .object({
+        /** Maximum timeout a Bash invocation may request. Omission preserves
+         * the historical 30-second command budget. */
+        maxCommandTimeoutMs: z
+          .number()
+          .int()
+          .min(1)
+          .max(CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS)
+          .optional(),
       })
       .strict()
       .optional(),
