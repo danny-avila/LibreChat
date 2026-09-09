@@ -5520,16 +5520,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
               }
               const backgroundAbortController = new AbortController();
+              let backgroundAbortSource: 'manual' | 'timeout' | undefined;
               const created = backgroundTaskRegistry.create({
                 ...(detachedReservation?.status === 'reserved'
                   ? { taskId: detachedReservation.taskId }
                   : {}),
                 ...registration,
                 ...(capacityPermit == null ? {} : { capacityPermit }),
-                requestCancellation: () =>
+                requestCancellation: () => {
+                  if (backgroundAbortSource != null || backgroundAbortController.signal.aborted) {
+                    return false;
+                  }
+                  backgroundAbortSource = 'manual';
                   backgroundAbortController.abort(
                     new DOMException('Background task cancellation requested', 'AbortError'),
-                  ),
+                  );
+                  return true;
+                },
               });
               if ('atCapacity' in created) {
                 if (detachedReservation?.status === 'reserved') {
@@ -5752,7 +5759,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  overwrite it. */
                       dispatchedAt: task.createdAt,
                       codeExecutionContext,
-                      ...(detachedReservation?.status === 'reserved' || !completionPreregistered
+                      ...(detachedReservation?.status === 'reserved' ||
+                      (!completionPreregistered && params.status !== 'cancelled')
                         ? {}
                         : { backgroundTask, resolveBackgroundTask }),
                       output: params.output ?? localTask?.result,
@@ -5974,6 +5982,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
                 let producerRetirementTimeout: ReturnType<typeof setTimeout> | undefined;
                 const requestBackgroundAbort = (): void => {
+                  backgroundAbortSource ??= 'timeout';
                   backgroundAbortController.abort(
                     new DOMException('Background task timed out', 'AbortError'),
                   );
@@ -6111,19 +6120,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
                     const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
                     const registryError = isCodeCall ? deliveredError : neutralizedError;
-                    const manualCancellationRequested =
-                      backgroundTaskRegistry.get(
-                        backgroundUserId,
-                        backgroundConversationId,
-                        task.id,
-                      )?.cancellationRequestedAt != null;
                     /** Only an owner-authorized request is cancellation evidence.
                      * Providers and timeout controllers also use AbortError, so
                      * classifying by error shape would turn failures into a false
                      * claim that the owner cancelled the task. */
-                    const detachedTerminalStatus = manualCancellationRequested
-                      ? 'cancelled'
-                      : 'failed';
+                    const detachedTerminalStatus =
+                      backgroundAbortSource === 'manual' ? 'cancelled' : 'failed';
                     if (
                       !(await persistDetachedTerminal({
                         status: detachedTerminalStatus,

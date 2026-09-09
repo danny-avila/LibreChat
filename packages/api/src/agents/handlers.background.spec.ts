@@ -10,6 +10,7 @@ import {
 import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
+import type { ToolExecuteOptions } from './handlers';
 
 interface BatchInput {
   toolCalls: Array<{
@@ -618,6 +619,93 @@ describe('createToolExecuteHandler — background tool calls', () => {
     }
   });
 
+  it('preserves timeout provenance when cancellation is requested after the deadline', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      let rejectInvocation: ((error: unknown) => void) | undefined;
+      let invocationSignal: AbortSignal | undefined;
+      const tool = {
+        name: 'execute_code',
+        description: 'settles after acknowledging an abort',
+        schema: z.object({ lang: z.string(), code: z.string() }),
+        invoke: jest.fn(
+          (_input: unknown, config?: { signal?: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              invocationSignal = config?.signal;
+              rejectInvocation = reject;
+            }),
+        ),
+      } as unknown as StructuredToolInterface;
+      const persistBackgroundCodeResult = jest.fn(
+        async (
+          _params: Parameters<NonNullable<ToolExecuteOptions['persistBackgroundCodeResult']>>[0],
+        ) => ({ attachments: [] }),
+      );
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        ordinaryToolCancellation: true,
+        persistBackgroundCodeResult,
+        backgroundToolCompletion: {
+          preregister: async () => ({
+            renew: jest.fn(async () => true),
+            retire: jest.fn(async () => true),
+          }),
+          persist: jest.fn(async () => true),
+          claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+        },
+      });
+      const configurable = buildConfig([tool.name]);
+      const metadata = { thread_id: 'late_cancel_conversation', run_id: 'late-cancel-run' };
+      const [dispatch] = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call_late_cancel',
+            name: 'execute_code',
+            args: { lang: 'python', code: 'while True: pass', run_in_background: true },
+          },
+        ],
+        agentId: 'agent_late_cancel',
+        configurable,
+        metadata,
+      });
+      const taskId = JSON.parse(dispatch.content).background_task_id as string;
+
+      jest.advanceTimersByTime(31 * 60 * 1000);
+      await flushMicrotasks();
+      const [cancellation] = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call_late_cancel_control',
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: taskId, action: 'cancel' },
+          },
+        ],
+        agentId: 'agent_late_cancel',
+        configurable,
+        metadata,
+      });
+      expect(JSON.parse(cancellation.content)).toMatchObject({
+        status: 'unavailable',
+        background_task_id: taskId,
+      });
+
+      rejectInvocation?.(
+        invocationSignal?.reason ?? new DOMException('Background task timed out', 'AbortError'),
+      );
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      const persisted =
+        persistBackgroundCodeResult.mock.calls[persistBackgroundCodeResult.mock.calls.length - 1]?.[0];
+      expect(persisted).toEqual(
+        expect.objectContaining({ output: expect.stringContaining('Background task timed out') }),
+      );
+      expect(persisted?.backgroundTask?.cancelled).not.toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('retires the automatic wakeup after an abort-resistant invocation exceeds its grace period', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });
     try {
@@ -1115,14 +1203,6 @@ describe('createToolExecuteHandler — background tool calls', () => {
       loadTools: async () => ({ loadedTools: [bashTool] }),
       ordinaryToolCancellation: true,
       persistBackgroundCodeResult,
-      backgroundToolCompletion: {
-        preregister: async () => ({
-          renew: jest.fn(async () => true),
-          retire: jest.fn(async () => true),
-        }),
-        persist: jest.fn(async () => true),
-        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
-      },
     });
     const configurable = buildConfig(['bash_tool']);
     const metadata = { thread_id: 'cancel_bash_conversation', run_id: 'cancel-bash-run' };

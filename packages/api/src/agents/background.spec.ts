@@ -770,6 +770,25 @@ describe('BackgroundTaskRegistryClass', () => {
     });
   });
 
+  it('does not record a manual cancellation when another abort source already won', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'timeout-owner',
+      conversationId: 'timeout-conversation',
+      toolCallId: 'timeout-call',
+      toolName: 'mutation',
+      requestCancellation: () => false,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    expect(
+      registry.requestCancellation('timeout-owner', 'timeout-conversation', created.task.id),
+    ).toMatchObject({ status: 'unavailable' });
+    expect(created.task.cancellationRequestedAt).toBeUndefined();
+  });
+
   it('creates, completes, and reads a task', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({

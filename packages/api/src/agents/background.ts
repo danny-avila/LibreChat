@@ -825,7 +825,7 @@ export class BackgroundTaskRegistryClass {
   private readonly retainedUsage = new WeakMap<BackgroundTask, RetainedPayloadUsage>();
   /** Live invocation controls are intentionally process-local and are never
    * exposed through task snapshots or durable receipts. */
-  private readonly cancellationRequests = new WeakMap<BackgroundTask, () => void>();
+  private readonly cancellationRequests = new WeakMap<BackgroundTask, () => boolean | void>();
   private lastGlobalSweepAt = 0;
 
   private key(userId: string, conversationId: string): string {
@@ -1224,7 +1224,8 @@ export class BackgroundTaskRegistryClass {
     capacityPermit?: BackgroundTaskCapacityPermit;
     /** Abort the already-created invocation signal. Ownership is enforced by
      * requestCancellation before this closure can be reached. */
-    requestCancellation?: () => void;
+    /** Returns false when another abort source already won the race. */
+    requestCancellation?: () => boolean | void;
   }): { task: BackgroundTask; isNew: boolean } | BackgroundTaskCapacityRejection {
     const now = Date.now();
     this.sweep(now);
@@ -1326,9 +1327,11 @@ export class BackgroundTaskRegistryClass {
     if (request == null) {
       return { status: 'unavailable', task };
     }
+    if (request() === false) {
+      return { status: 'unavailable', task };
+    }
     task.cancellationRequestedAt = Date.now();
     task.updatedAt = task.cancellationRequestedAt;
-    request();
     return { status: 'requested', task };
   }
 

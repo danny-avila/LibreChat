@@ -466,6 +466,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       const allowedProviders = new Set(agentsEConfig?.allowedProviders);
+      const ordinaryToolCancellationEnabled =
+        agentsEConfig?.backgroundTasks?.ordinaryToolCancellation === true;
 
       // Create tool loader
       const loadTools = createToolLoader({ req, res, signal: execution.signal });
@@ -801,6 +803,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
       const toolExecuteOptions = {
+        ordinaryToolCancellation: ordinaryToolCancellationEnabled,
         provisionFiles: createProvisionFilesCallback({
           req,
           agentToolContexts,

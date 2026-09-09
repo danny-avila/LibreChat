@@ -413,7 +413,9 @@ const Part = memo(function Part({
             isLast={isLast}
             hideAttachments={hideAttachments}
             onExpand={onToolExpand}
-            runStepStatus={toolCall.runStepStatus}
+            runStepStatus={
+              toolCall.backgroundTask?.cancelled === true ? 'cancelled' : toolCall.runStepStatus
+            }
             runStepDurationMs={toolCall.runStepDurationMs}
           />
         );
