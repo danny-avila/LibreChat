@@ -73,7 +73,7 @@ describe('CategoryTabs', () => {
     expect(screen.queryByText('No categories available')).not.toBeInTheDocument();
   });
 
-  it('highlights the active tab', () => {
+  it('marks the active tab as selected', () => {
     render(
       <CategoryTabs
         categories={mockCategories}
@@ -84,10 +84,7 @@ describe('CategoryTabs', () => {
     );
 
     const generalTab = screen.getByText('General').closest('button');
-    // Active tabs are filled pills, not underlined labels
-    expect(generalTab).toHaveClass('bg-surface-active-alt');
-    expect(generalTab).toHaveClass('text-text-primary');
-    expect(generalTab).toHaveClass('rounded-full');
+    expect(generalTab).toHaveAttribute('aria-selected', 'true');
   });
 
   it('calls onChange when a tab is clicked', async () => {
@@ -138,23 +135,7 @@ describe('CategoryTabs', () => {
     expect(mockOnChange).toHaveBeenCalledWith('all');
   });
 
-  it('shows inactive state for non-selected tabs', () => {
-    render(
-      <CategoryTabs
-        categories={mockCategories}
-        activeTab="promoted"
-        isLoading={false}
-        onChange={mockOnChange}
-      />,
-    );
-
-    const generalTab = screen.getByText('General').closest('button');
-    expect(generalTab).toHaveClass('bg-surface-secondary');
-    expect(generalTab).toHaveClass('text-text-secondary');
-    expect(generalTab).not.toHaveClass('bg-surface-active-alt');
-  });
-
-  it('renders with proper accessibility', () => {
+  it('marks the selected tab and leaves other tabs unselected', () => {
     render(
       <CategoryTabs
         categories={mockCategories}
@@ -165,10 +146,25 @@ describe('CategoryTabs', () => {
     );
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.length).toBe(5);
-    // Verify all tabs are properly clickable buttons
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs[2]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('renders accessible tabs connected to category panels', () => {
+    render(
+      <CategoryTabs
+        categories={mockCategories}
+        activeTab="promoted"
+        isLoading={false}
+        onChange={mockOnChange}
+      />,
+    );
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(5);
     tabs.forEach((tab) => {
       expect(tab.tagName).toBe('BUTTON');
+      expect(tab.getAttribute('aria-controls')).toMatch(/^category-panel-/);
     });
   });
 

@@ -1,21 +1,26 @@
 import React from 'react';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { dataService, EModelEndpoint } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import type t from 'librechat-data-provider';
 import Marketplace from '../Marketplace';
 
-/**
- * Props recorded from every `AgentGrid` mount, in mount order. The marketplace renders
- * the grid twice during the 300ms category animation, so "which pane got which prop" is
- * what most of these tests are actually about.
- */
-const gridProps: Array<Record<string, unknown>> = [];
+const mockCategories = [
+  { value: 'promoted', label: 'com_agents_top_picks' },
+  { value: 'all', label: 'com_agents_all' },
+  { value: 'productivity', label: 'Productivity', description: 'Get things done' },
+];
 
-const mockLocalize = jest.fn((key: string) => {
+const mockLocalize = jest.fn((key: string, options?: { count?: number; category?: string }) => {
   const translations: Record<string, string> = {
+    com_ui_back: 'Back',
+    com_ui_forward: 'Forward',
+    com_nav_toggle_nav: 'Open sidebar',
     com_agents_marketplace: 'Agent Marketplace',
     com_agents_filter_mine: 'Only Agents I created',
+    com_agents_my_agents: 'My agents',
     com_agents_sort_label: 'Sort by',
     com_agents_sort_newest: 'Newest first',
     com_agents_sort_oldest: 'Oldest first',
@@ -24,8 +29,20 @@ const mockLocalize = jest.fn((key: string) => {
     com_agents_top_picks: 'Top Picks',
     com_agents_recommended: 'Our recommended agents',
     com_agents_all: 'All Agents',
+    com_agents_all_category: 'All',
     com_agents_all_description: 'Browse all shared agents across all categories',
-    com_agents_count: 'agents',
+    com_agents_category_empty: `No agents found in the ${options?.category ?? ''} category`,
+    com_agents_empty_state_heading: 'No agents found',
+    com_agents_mine_empty_state_heading: "You haven't created any Agents yet",
+    com_agents_search_empty_heading: 'No search results',
+    com_agents_grid_announcement: `Showing ${options?.count ?? 0} agents in ${options?.category ?? ''} category`,
+    com_agents_category_tabs_label: 'Agent Categories',
+    com_agents_category_tab_label: `${options?.category ?? ''} category`,
+    com_agents_loading: 'Loading...',
+    com_agents_no_more_results: "You've reached the end of the results",
+    com_agents_search_aria: 'Search agents',
+    com_agents_search_instructions: 'Type to search agents by name or description',
+    com_agents_clear_search: 'Clear search',
   };
   return translations[key] || key;
 });
@@ -36,19 +53,22 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => mockLocalize,
   useDocumentTitle: jest.fn(),
   useHasAccess: jest.fn(() => mockHasAccess),
+  useAgentCategories: jest.fn(() => ({ categories: mockCategories })),
+  useDebounce: (value: string) => value,
 }));
 
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: jest.fn(() => ({ data: {} })),
-  useGetAgentCategoriesQuery: jest.fn(() => ({
-    data: [
-      { value: 'promoted', label: 'com_agents_top_picks' },
-      { value: 'all', label: 'com_agents_all' },
-      { value: 'productivity', label: 'Productivity', description: 'Get things done' },
-    ],
-    isLoading: false,
-  })),
+  useGetAgentCategoriesQuery: jest.fn(() => ({ data: mockCategories, isLoading: false })),
 }));
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: { ...actual.dataService, getMarketplaceAgents: jest.fn() },
+  };
+});
 
 jest.mock('~/components/SidePanel', () => ({
   SidePanelGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -56,7 +76,7 @@ jest.mock('~/components/SidePanel', () => ({
 
 jest.mock('~/components/Chat/Menus/OpenSidebar', () => ({
   __esModule: true,
-  default: () => <div data-testid="open-sidebar" />,
+  default: () => <button type="button">{mockLocalize('com_nav_toggle_nav')}</button>,
 }));
 
 jest.mock('../MarketplaceAdminSettings', () => ({
@@ -64,55 +84,66 @@ jest.mock('../MarketplaceAdminSettings', () => ({
   default: () => <div data-testid="admin-settings" />,
 }));
 
-jest.mock('../SearchBar', () => ({
+jest.mock('../AgentCard', () => ({
   __esModule: true,
-  default: ({ value, onSearch }: { value: string; onSearch: (q: string) => void }) => (
-    <input
-      data-testid="search-bar"
-      value={value}
-      onChange={(event) => onSearch(event.target.value)}
-    />
+  default: ({ agent }: { agent: t.Agent }) => (
+    <button type="button" data-testid={`agent-card-${agent.id}`}>
+      {agent.name}
+    </button>
   ),
 }));
 
-jest.mock('../CategoryTabs', () => ({
-  __esModule: true,
-  default: ({
-    categories,
-    onChange,
-  }: {
-    categories: Array<{ value: string; label: string }>;
-    onChange: (value: string) => void;
-  }) => (
-    <div>
-      {categories.map((category) => (
-        <button
-          key={category.value}
-          data-testid={`tab-${category.value}`}
-          onClick={() => onChange(category.value)}
-        >
-          {category.value}
-        </button>
-      ))}
-    </div>
-  ),
-}));
+const marketplace = jest.mocked(dataService.getMarketplaceAgents);
+const queryClients = new Set<QueryClient>();
 
-jest.mock('../AgentGrid', () => ({
-  __esModule: true,
-  default: (props: Record<string, unknown>) => {
-    gridProps.push(props);
-    return <div data-testid={`agent-grid-${props.category as string}`} />;
+const response = (agents: t.Agent[]): t.AgentListResponse => ({
+  object: 'list',
+  data: agents,
+  first_id: agents[0]?.id ?? '',
+  last_id: agents.at(-1)?.id ?? '',
+  has_more: false,
+});
+
+const agent = (id: string, name = id): t.Agent => ({
+  id,
+  name,
+  description: '',
+  category: 'productivity',
+  created_at: 0,
+  avatar: null,
+  provider: EModelEndpoint.openAI,
+  model: 'gpt-4o-mini',
+  model_parameters: {
+    temperature: null,
+    maxContextTokens: null,
+    max_context_tokens: null,
+    max_output_tokens: null,
+    top_p: null,
+    frequency_penalty: null,
+    presence_penalty: null,
   },
-}));
+});
 
 const LocationDisplay = () => {
   const location = useLocation();
-  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+  const navigate = useNavigate();
+  return (
+    <>
+      <div data-testid="location">{`${location.pathname}${location.search}`}</div>
+      <button onClick={() => navigate(-1)}>{mockLocalize('com_ui_back')}</button>
+      <button onClick={() => navigate(1)}>{mockLocalize('com_ui_forward')}</button>
+    </>
+  );
 };
 
-const renderMarketplace = (initialEntry = '/agents') => {
+const renderMarketplace = (
+  initialEntry = '/agents/productivity',
+  agents: t.Agent[] = [agent('one')],
+) => {
+  marketplace.mockResolvedValue(response(agents));
+
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClients.add(queryClient);
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
@@ -128,299 +159,141 @@ const renderMarketplace = (initialEntry = '/agents') => {
 
 const currentUrl = () => screen.getByTestId('location').textContent;
 
-/**
- * The "default to promoted on a bare /agents" effect reads `window.location.pathname`,
- * which MemoryRouter does not drive — so jsdom's real location has to be moved for the
- * promoted landing tab to be reachable in tests. Call before `renderMarketplace`.
- */
-const landOnBareAgentsPath = () => window.history.replaceState({}, '', '/agents');
-
-describe('Marketplace controls', () => {
+describe('Marketplace controls and agent results', () => {
   beforeEach(() => {
-    gridProps.length = 0;
     mockHasAccess = true;
-    // `landOnBareAgentsPath` mutates the shared jsdom location; keep it test-scoped
-    window.history.replaceState({}, '', '/');
+    marketplace.mockReset();
   });
 
-  describe('"Only Agents I created" toggle', () => {
-    it('renders unchecked by default and passes mine=0 to the grid', () => {
-      renderMarketplace();
+  afterEach(() => {
+    for (const queryClient of queryClients) {
+      queryClient.clear();
+    }
+    queryClients.clear();
+  });
 
-      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-      expect(gridProps[0].mine).toBe(0);
+  it('shows the newly sorted results after changing the sort control', async () => {
+    const first = agent('one', 'Alpha');
+    const second = agent('two', 'Beta');
+    renderMarketplace('/agents/productivity?mine=1', [first, second]);
+    await screen.findByRole('list');
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'Alpha',
+      'Beta',
+    ]);
+
+    marketplace.mockResolvedValue(response([second, first]));
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Popular' }));
+
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+        'Beta',
+        'Alpha',
+      ]),
+    );
+  });
+
+  it('preserves the selected route when changing sort', async () => {
+    renderMarketplace('/agents/all?q=invoice');
+
+    fireEvent.click(screen.getByTestId('agent-sort-dropdown'));
+    fireEvent.click(await screen.findByText('Popular'));
+
+    await waitFor(() => {
+      expect(currentUrl()).toBe('/agents/all?q=invoice&sort=popular');
     });
+  });
+  it('applies rapid category changes immediately without locking the filters', async () => {
+    renderMarketplace('/agents/all');
+    await screen.findByRole('list');
+    fireEvent.click(screen.getByRole('tab', { name: /Productivity/ }));
+    expect(screen.getByRole('tab', { name: /Productivity/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /^All category/ }));
+    expect(currentUrl()).toBe('/agents/all');
+    expect(screen.getByRole('tab', { name: /^All category/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await screen.findAllByRole('tabpanel')).toHaveLength(1);
+  });
 
-    it('exposes the localized label as the switch accessible name', () => {
-      renderMarketplace();
+  it('preserves search and mine filters while switching categories', async () => {
+    renderMarketplace('/agents/all?q=invoice&mine=1');
 
-      expect(screen.getByRole('switch', { name: 'Only Agents I created' })).toBeInTheDocument();
-    });
+    fireEvent.click(screen.getByRole('tab', { name: /Productivity/ }));
 
-    it('associates the label programmatically rather than by proximity', () => {
-      renderMarketplace();
-
-      const labelId = screen.getByRole('switch').getAttribute('aria-labelledby');
-      expect(labelId).toBeTruthy();
-      expect(document.getElementById(labelId as string)?.textContent).toBe('Only Agents I created');
-    });
-
-    it('turns the filter on and passes it to the grid', () => {
-      renderMarketplace('/agents/productivity');
-
-      fireEvent.click(screen.getByRole('switch'));
-
-      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-      expect(gridProps.at(-1)?.mine).toBe(1);
-      expect(currentUrl()).toContain('mine=1');
-    });
-
-    it('turns the filter back off and drops it from the URL', () => {
-      renderMarketplace('/agents/productivity?mine=1');
-
-      fireEvent.click(screen.getByRole('switch'));
-
-      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-      expect(gridProps.at(-1)?.mine).toBe(0);
-      expect(currentUrl()).not.toContain('mine');
-    });
-
-    it('initialises from ?mine=1', () => {
-      renderMarketplace('/agents/productivity?mine=1');
-
-      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-      expect(gridProps[0].mine).toBe(1);
-    });
-
-    it('ignores a mine value other than 1', () => {
-      renderMarketplace('/agents/productivity?mine=0');
-
-      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-      expect(gridProps[0].mine).toBe(0);
-    });
-
-    it('preserves an existing ?q= when toggling on and off', () => {
-      renderMarketplace('/agents/productivity?q=invoice');
-
-      fireEvent.click(screen.getByRole('switch'));
-      expect(currentUrl()).toContain('q=invoice');
-      expect(currentUrl()).toContain('mine=1');
-
-      fireEvent.click(screen.getByRole('switch'));
-      expect(currentUrl()).toContain('q=invoice');
-      expect(currentUrl()).not.toContain('mine');
+    await waitFor(() => {
+      expect(currentUrl()).toBe('/agents/productivity?q=invoice&mine=1');
     });
   });
 
-  /**
-   * `is_promoted` has no write path in the app, so "promoted AND authored by me" is
-   * structurally empty for ordinary users — and a bare `/agents` lands on the promoted
-   * tab, so this would be the very first thing the toggle does.
-   */
-  describe('mine + promoted', () => {
-    it('leaves the promoted tab for all when switched on, without dropping mine', () => {
-      landOnBareAgentsPath();
-      renderMarketplace();
-      expect(gridProps.at(-1)?.category).toBe('promoted');
-      gridProps.length = 0;
+  it('uses the category empty state for mine results outside all', async () => {
+    renderMarketplace('/agents/productivity?mine=1', []);
 
-      fireEvent.click(screen.getByRole('switch'));
+    expect(
+      await screen.findByRole('status', { name: 'No agents found in the Productivity category' }),
+    ).toBeInTheDocument();
+  });
 
-      expect(gridProps.at(-1)?.category).toBe('all');
-      expect(gridProps.at(-1)?.mine).toBe(1);
-      expect(currentUrl()).toContain('/agents/all');
-      expect(currentUrl()).toContain('mine=1');
-    });
+  it('uses the account-wide mine empty state only on all', async () => {
+    renderMarketplace('/agents/all?mine=1', []);
 
-    it('makes the jump without running the slide animation', () => {
-      landOnBareAgentsPath();
-      renderMarketplace();
-      gridProps.length = 0;
+    expect(
+      await screen.findByRole('status', { name: "You haven't created any Agents yet" }),
+    ).toBeInTheDocument();
+  });
 
-      fireEvent.click(screen.getByRole('switch'));
+  it('filters the rendered results when the mine button is toggled', async () => {
+    const owned = agent('owned', 'Owned Agent');
+    renderMarketplace('/agents/productivity', [owned, agent('other', 'Other Agent')]);
+    await screen.findByText('Other Agent');
+    marketplace.mockResolvedValue(response([owned]));
 
-      // A slide would mount a second, transient grid for the outgoing category.
-      expect(screen.queryByTestId('agent-grid-promoted')).not.toBeInTheDocument();
-      expect(screen.getAllByRole('switch')).toHaveLength(1);
-    });
-
-    it('stays on the current tab when switched on outside promoted', () => {
-      renderMarketplace('/agents/productivity');
-
-      fireEvent.click(screen.getByRole('switch'));
-
-      expect(gridProps.at(-1)?.category).toBe('productivity');
-      expect(currentUrl()).toContain('/agents/productivity');
-    });
-
-    it('never changes tab when the toggle is switched off', () => {
-      landOnBareAgentsPath();
-      renderMarketplace('/agents?mine=1');
-
-      fireEvent.click(screen.getByRole('switch'));
-
-      expect(gridProps.at(-1)?.category).toBe('promoted');
-      expect(currentUrl()).not.toContain('/agents/all');
+    fireEvent.click(screen.getByRole('button', { name: 'My agents' }));
+    expect(screen.getByRole('button', { name: 'My agents' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(currentUrl()).toBe('/agents/productivity?mine=1');
+    await waitFor(() => {
+      expect(screen.queryByText('Other Agent')).not.toBeInTheDocument();
+      expect(screen.getByText('Owned Agent')).toBeInTheDocument();
     });
   });
 
-  describe('sort dropdown', () => {
-    it('defaults to newest and omits sort from the URL', () => {
-      renderMarketplace('/agents/productivity');
-
-      expect(gridProps[0].sort).toBe('newest');
-      expect(currentUrl()).not.toContain('sort');
-    });
-
-    it('reads a valid sort from the URL', () => {
-      renderMarketplace('/agents/productivity?sort=popular');
-
-      expect(gridProps[0].sort).toBe('popular');
-    });
-
-    it('falls back to newest for an unknown sort value', () => {
-      renderMarketplace('/agents/productivity?sort=bogus');
-
-      expect(gridProps[0].sort).toBe('newest');
-    });
-
-    it('labels the control and gives it a stable, pane-specific test id', () => {
-      renderMarketplace('/agents/productivity');
-
-      const dropdown = screen.getByTestId('agent-sort-dropdown-current');
-      const labelId = dropdown.getAttribute('aria-labelledby')?.split(' ')[0];
-      expect(labelId).toBeTruthy();
-      expect(document.getElementById(labelId as string)?.textContent).toBe('Sort by');
-    });
+  it('announces search emptiness instead of claiming no owned agents', async () => {
+    renderMarketplace('/agents/productivity?q=invoice&mine=1', []);
+    const status = await screen.findByRole('status', { name: 'No search results' });
+    expect(status).toHaveAccessibleName(status.textContent ?? '');
+    expect(screen.queryByText("You haven't created any Agents yet")).not.toBeInTheDocument();
   });
 
-  /**
-   * The highest-risk part of this layout: the category header and the grid are both
-   * rendered twice during the 300ms tab animation. Threading the controls into only one
-   * pane makes them flicker or reset mid-animation.
-   */
-  describe('both animation panes', () => {
-    beforeEach(() => {
-      jest.useFakeTimers();
-    });
+  it('restores sort and mine state through browser history without dropping search', async () => {
+    renderMarketplace('/agents/all?q=invoice');
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Popular' }));
+    fireEvent.click(screen.getByRole('button', { name: 'My agents' }));
+    expect(currentUrl()).toBe('/agents/all?q=invoice&sort=popular&mine=1');
 
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
-    const startCategoryTransition = (tab: string) => {
-      act(() => {
-        fireEvent.click(screen.getByTestId(`tab-${tab}`));
-      });
-    };
-
-    const finishTransition = () => {
-      act(() => {
-        jest.advanceTimersByTime(300);
-      });
-    };
-
-    it('passes mine and sort to both grids during a category transition', () => {
-      renderMarketplace('/agents/all?mine=1&sort=popular');
-      gridProps.length = 0;
-
-      startCategoryTransition('productivity');
-
-      expect(gridProps.length).toBeGreaterThan(1);
-      expect(gridProps.map((props) => props.category)).toContain('productivity');
-      expect(gridProps.every((props) => props.mine === 1)).toBe(true);
-      expect(gridProps.every((props) => props.sort === 'popular')).toBe(true);
-
-      finishTransition();
-    });
-
-    it('renders both controls in both panes during a category transition', () => {
-      renderMarketplace('/agents/all?mine=1');
-
-      startCategoryTransition('productivity');
-
-      const toggles = screen.getAllByRole('switch');
-      expect(toggles).toHaveLength(2);
-      expect(toggles.every((toggle) => toggle.getAttribute('aria-checked') === 'true')).toBe(true);
-      expect(screen.getByTestId('agent-sort-dropdown-current')).toBeInTheDocument();
-      expect(screen.getByTestId('agent-sort-dropdown-next')).toBeInTheDocument();
-
-      finishTransition();
-    });
-
-    it('gives the two simultaneous toggles distinct label ids', () => {
-      renderMarketplace('/agents/all');
-
-      startCategoryTransition('productivity');
-
-      const labelIds = screen
-        .getAllByRole('switch')
-        .map((toggle) => toggle.getAttribute('aria-labelledby'));
-
-      expect(labelIds).toHaveLength(2);
-      expect(new Set(labelIds).size).toBe(2);
-      labelIds.forEach((id) => {
-        expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
-      });
-
-      finishTransition();
-    });
-
-    it('passes onCountChange to the current pane only', () => {
-      renderMarketplace('/agents/all');
-      gridProps.length = 0;
-
-      startCategoryTransition('productivity');
-
-      // The transition pane is the one showing the incoming category; the header count
-      // would flicker between two values if both panes reported it.
-      const incoming = gridProps.filter((props) => props.category === 'productivity');
-      const outgoing = gridProps.filter((props) => props.category === 'all');
-      expect(incoming.length).toBeGreaterThan(0);
-      expect(outgoing.length).toBeGreaterThan(0);
-      expect(incoming.every((props) => props.onCountChange === undefined)).toBe(true);
-      expect(outgoing.every((props) => props.onCountChange !== undefined)).toBe(true);
-
-      finishTransition();
-    });
-
-    it('keeps the toggle on across a completed category change', () => {
-      renderMarketplace('/agents/all?mine=1');
-
-      startCategoryTransition('productivity');
-      finishTransition();
-
-      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-      expect(gridProps.at(-1)?.mine).toBe(1);
-      expect(currentUrl()).toContain('mine=1');
-    });
-  });
-
-  /** The controls row always renders, so a filter can never be applied invisibly. */
-  describe('while searching', () => {
-    it('shows the category title and description when not searching', () => {
-      renderMarketplace('/agents/productivity');
-
-      expect(screen.getByRole('heading', { level: 2, name: 'Productivity' })).toBeInTheDocument();
-      expect(screen.getByText('Get things done')).toBeInTheDocument();
-    });
-
-    it('hides the category title and description but keeps the controls', () => {
-      renderMarketplace('/agents/productivity?q=invoice');
-
-      expect(
-        screen.queryByRole('heading', { level: 2, name: 'Productivity' }),
-      ).not.toBeInTheDocument();
-      expect(screen.queryByText('Get things done')).not.toBeInTheDocument();
-      expect(screen.getByRole('switch', { name: 'Only Agents I created' })).toBeInTheDocument();
-      expect(screen.getByTestId('agent-sort-dropdown-current')).toBeInTheDocument();
-    });
-
-    it('applies mine and the search query together', () => {
-      renderMarketplace('/agents/productivity?q=invoice&mine=1');
-
-      expect(gridProps[0].mine).toBe(1);
-      expect(gridProps[0].searchQuery).toBe('invoice');
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('button', { name: 'My agents' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('combobox')).toHaveTextContent('Popular');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('combobox')).toHaveTextContent('Newest first');
+    fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
+    expect(screen.getByRole('button', { name: 'My agents' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('combobox')).toHaveTextContent('Popular');
+    expect(screen.getByRole('textbox', { name: 'Search agents' })).toHaveValue('invoice');
   });
 });

@@ -13,6 +13,19 @@ module.exports = {
         'theme-normal': 'var(--theme-space-normal, 0.75rem)',
         'theme-control': 'var(--theme-control-height, 2.25rem)',
       },
+      keyframes: {
+        /** Discord-style "connecting" dots: each dot lifts and brightens in
+         *  turn, so a stalled request still shows motion. Lives in the preset
+         *  because `LoadingDots` ships from this package and the app's own
+         *  config extends it. */
+        'loading-dot': {
+          '0%, 70%, 100%': { opacity: '0.35', transform: 'translateY(0)' },
+          '35%': { opacity: '1', transform: 'translateY(-2px)' },
+        },
+      },
+      animation: {
+        'loading-dot': 'loading-dot 1.2s ease-in-out infinite',
+      },
       borderRadius: {
         'theme-control': 'var(--theme-control-radius, 0.75rem)',
         'theme-control-round': 'var(--theme-round-control-radius, 9999px)',

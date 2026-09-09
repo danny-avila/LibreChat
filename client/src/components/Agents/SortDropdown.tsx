@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { Dropdown } from '@librechat/client';
+import { ArrowDownWideNarrow } from 'lucide-react';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys } from '~/hooks';
 
@@ -22,49 +23,32 @@ export const DEFAULT_SORT_OPTION: t.AgentSortOption = 'newest';
 interface SortDropdownProps {
   value: t.AgentSortOption;
   onChange: (value: t.AgentSortOption) => void;
-  /**
-   * Which of the two panes rendered by `Marketplace.tsx`'s category-switch transition
-   * this instance belongs to. Required (no default) precisely so it can drive a STABLE
-   * `testId`: a `useId()`-derived one produces `:r1:`-style values that shift with the
-   * render tree, leaving end-to-end tests without a dependable selector. `useId()` is
-   * still used below, but only for the accessibility label, where a shifting id is
-   * harmless.
-   */
-  frame: 'current' | 'next';
 }
 
 /**
  * Sort control for the agent marketplace.
- *
- * Thin wrapper around `@librechat/client`'s `Dropdown`. Re-picking the already-active
- * option is deliberately left as a no-op — the underlying Ariakit `Select` store fires
- * no `onChange` in that case, which is exactly the behaviour wanted here.
  */
-const SortDropdown: React.FC<SortDropdownProps> = ({ value, onChange, frame }) => {
+const SortDropdown: React.FC<SortDropdownProps> = ({ value, onChange }) => {
   const localize = useLocalize();
   const options = SORT_OPTIONS.map((option) => ({
     value: option.value,
     label: localize(option.labelKey),
   }));
-
-  // `Dropdown` has no built-in visible label (its `label` prop only prefixes text inside
-  // the trigger), so pair it with a sibling <span> via `aria-labelledby`, the same way
-  // the theme/language selectors do. `useId` rather than a static id because two
-  // SortDropdowns are mounted at once during the category-switch pane transition, and a
-  // duplicated DOM id would make the accessible name ambiguous.
   const labelId = useId();
 
   return (
-    <span className="flex items-center gap-2">
-      <span id={labelId} className="whitespace-nowrap text-sm text-text-secondary">
+    <span className="flex shrink-0 items-center">
+      <span id={labelId} className="sr-only">
         {localize('com_agents_sort_label')}
       </span>
       <Dropdown
         value={value}
         onChange={(v) => onChange(v as t.AgentSortOption)}
         options={options}
-        sizeClasses="w-[160px]"
-        testId={`agent-sort-dropdown-${frame}`}
+        sizeClasses="w-40"
+        icon={<ArrowDownWideNarrow className="size-3.5 shrink-0" aria-hidden="true" />}
+        triggerClassName="h-8 w-40 rounded-lg px-2.5 py-0 text-xs transition-none"
+        testId="agent-sort-dropdown"
         aria-labelledby={labelId}
       />
     </span>
