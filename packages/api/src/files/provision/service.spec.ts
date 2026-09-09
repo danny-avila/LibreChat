@@ -103,7 +103,7 @@ describe('createProvisionService', () => {
         service.provisionToCodeEnv({
           req,
           file: makeFile(),
-          rateLimitBudget: { remainingMs: 2_000 },
+          rateLimitBudget: { deadlineAt: Date.now() + 2_000 },
         }),
       ).resolves.toMatchObject({ referenceSet: { codeEnvRef: { file_id: 'remote-1' } } });
 

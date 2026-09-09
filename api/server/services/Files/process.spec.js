@@ -37,16 +37,16 @@ jest.mock('@librechat/api', () => {
   const actualDataProvider = jest.requireActual('librechat-data-provider');
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
-  const createCodeApiRateLimitBudget = jest.fn(() => ({ remainingMs: 20_000 }));
-  const withCodeApiUploadSlot = jest.fn((task) => task());
-  const withCodeApiRateLimit = jest.fn(async ({ attempt }) => {
+  const createCodeApiRateLimitBudget = jest.fn(() => ({ deadlineAt: Date.now() + 20_000 }));
+  const getCodeApiUploadOptions = jest.fn(() => ({ scope: 'default:user-1', concurrency: 3 }));
+  const withCodeApiUploadRecovery = jest.fn(async ({ openSource, upload }) => {
     try {
-      return await attempt();
+      return await upload(await openSource());
     } catch (error) {
       if (error?.response?.status !== 429) {
         throw error;
       }
-      return attempt();
+      return upload(await openSource());
     }
   });
   const UPLOAD_EXTRACTED_TEXT_PLANS = {
@@ -144,8 +144,8 @@ jest.mock('@librechat/api', () => {
     getStorageMetadata: jest.fn(() => ({})),
     getRetentionExpiry,
     createCodeApiRateLimitBudget,
-    withCodeApiRateLimit,
-    withCodeApiUploadSlot,
+    getCodeApiUploadOptions,
+    withCodeApiUploadRecovery,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
       if (
@@ -275,8 +275,8 @@ const {
   assertExtractedTextInspectable,
   contentFilterBlockResponse,
   createCodeApiRateLimitBudget,
-  withCodeApiRateLimit,
-  withCodeApiUploadSlot,
+  getCodeApiUploadOptions,
+  withCodeApiUploadRecovery,
 } = require('@librechat/api');
 
 const PDF_MIME = 'application/pdf';
@@ -1386,8 +1386,8 @@ describe('processAgentFileUpload', () => {
         },
       }).catch(() => {});
 
-      expect(withCodeApiUploadSlot).toHaveBeenCalledTimes(1);
-      expect(withCodeApiRateLimit).toHaveBeenCalledTimes(1);
+      expect(getCodeApiUploadOptions).toHaveBeenCalledTimes(1);
+      expect(withCodeApiUploadRecovery).toHaveBeenCalledTimes(1);
       expect(createCodeApiRateLimitBudget).toHaveBeenCalledTimes(1);
       expect(codeEnvUpload).toHaveBeenCalledTimes(2);
       expect(codeEnvUpload.mock.calls[0][0].stream).not.toBe(codeEnvUpload.mock.calls[1][0].stream);

@@ -441,6 +441,15 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('defaults Code API upload concurrency to three and validates overrides', () => {
+    expect(agentsEndpointSchema.parse({}).codeApiUploadConcurrency).toBe(3);
+    expect(
+      agentsEndpointSchema.parse({ codeApiUploadConcurrency: 8 }).codeApiUploadConcurrency,
+    ).toBe(8);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 101 }).success).toBe(false);
+  });
+
   it('accepts a non-empty stateful code environment allowlist', () => {
     const result = agentsEndpointSchema.safeParse({
       statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },

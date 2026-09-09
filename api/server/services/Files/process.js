@@ -46,8 +46,8 @@ const {
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
   resolveToolRoleGrants,
   createCodeApiRateLimitBudget,
-  withCodeApiRateLimit,
-  withCodeApiUploadSlot,
+  getCodeApiUploadOptions,
+  withCodeApiUploadRecovery,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -1229,30 +1229,27 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const sandboxFilename = resolveSandboxFilename(sanitizeFilename(file.originalname), storedType);
     let uploaded;
     try {
-      uploaded = await withCodeApiUploadSlot(() =>
-        withCodeApiRateLimit({
-          label: `uploading "${sandboxFilename}" to the code environment`,
-          budget: createCodeApiRateLimitBudget(),
-          onWait: (waitMs) =>
-            logger.warn(
-              `[processAgentFileUpload] Rate-limited Code API upload; retrying in ${waitMs}ms`,
-            ),
-          /* Multipart requests consume their source even when Code API rejects
-           * them. Re-open the persisted bytes for every retry. */
-          attempt: async () => {
-            const stream = getDownloadStream
-              ? await getDownloadStream(req, downloadPath)
-              : fs.createReadStream(file.path);
-            return uploadCodeEnvFile({
-              req,
-              stream,
-              filename: sandboxFilename,
-              kind: codeKind,
-              id: codeId,
-            });
-          },
-        }),
-      );
+      uploaded = await withCodeApiUploadRecovery({
+        ...getCodeApiUploadOptions(req, 'default'),
+        label: `uploading "${sandboxFilename}" to the code environment`,
+        budget: createCodeApiRateLimitBudget(),
+        onWait: (waitMs) =>
+          logger.warn(
+            `[processAgentFileUpload] Rate-limited Code API upload; retrying in ${waitMs}ms`,
+          ),
+        openSource: () =>
+          getDownloadStream
+            ? getDownloadStream(req, downloadPath)
+            : Promise.resolve(fs.createReadStream(file.path)),
+        upload: (stream) =>
+          uploadCodeEnvFile({
+            req,
+            stream,
+            filename: sandboxFilename,
+            kind: codeKind,
+            id: codeId,
+          }),
+      });
     } catch (error) {
       const { deleteFile } = getStrategyFunctions(source);
       if (deleteFile) {

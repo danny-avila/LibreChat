@@ -95,7 +95,8 @@ jest.mock('@librechat/api', () => {
      * `utils/code.spec.ts`). These stand-ins are deliberately inert
      * passthroughs — they assert nothing about that behavior, so the
      * transport tests below cover only what this file still owns. */
-    createCodeApiRateLimitBudget: jest.fn(() => ({ remainingMs: 20_000 })),
+    createCodeApiRateLimitBudget: jest.fn(() => ({ deadlineAt: Date.now() + 20_000 })),
+    getCodeApiUploadOptions: jest.fn(() => ({ scope: 'default:user-123', concurrency: 3 })),
     withCodeApiRateLimit: jest.fn(async ({ attempt }) => {
       try {
         return await attempt();
@@ -106,7 +107,16 @@ jest.mock('@librechat/api', () => {
         return attempt();
       }
     }),
-    withCodeApiUploadSlot: jest.fn((task) => task()),
+    withCodeApiUploadRecovery: jest.fn(async ({ openSource, upload }) => {
+      try {
+        return await upload(await openSource());
+      } catch (error) {
+        if (error?.response?.status !== 429) {
+          throw error;
+        }
+        return upload(await openSource());
+      }
+    }),
     buildSandboxImageReaderCode: jest.fn(
       ({ filePath, limit, offset, chunkBytes }) =>
         `read ${filePath} ${limit} ${offset} ${chunkBytes}`,
@@ -3085,6 +3095,7 @@ describe('Code Process', () => {
       ],
       ['Azure BlobNotFound', { code: 'BlobNotFound', statusCode: 404 }, 'missing_backing_object'],
       ['storage access denied', { code: 'AccessDenied', status: 403 }, 'resource_access_denied'],
+      ['Code API throttling', { code: 'CODE_API_RATE_LIMITED', status: 429 }, 'rate_limited'],
     ])(
       'fails with a typed recovery error for %s',
       async (_errorShape, downloadError, expectedCategory) => {

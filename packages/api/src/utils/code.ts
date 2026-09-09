@@ -1,8 +1,9 @@
 import http from 'http';
 import https from 'https';
 import { isAxiosError } from 'axios';
+import { getTenantId } from '@librechat/data-schemas';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createConcurrencyLimiter } from './promise';
+import type { ServerRequest } from '~/types';
 
 /**
  * Dedicated agents for code-server requests, preventing socket pool contamination.
@@ -43,28 +44,161 @@ export function getCodeApiRetryAfterMs(error: unknown): number | null {
 }
 
 /** Total time one operation may spend waiting out Code API rate limits.
- *  Sized to cover a single limiter window without stalling a chat turn. */
+ *  Keeps recovery bounded inside a live chat turn. */
 export const MAX_CODE_API_RATE_LIMIT_WAIT_MS = 20_000;
+export const CODE_API_UPLOAD_CONCURRENCY_DEFAULT = 3;
 
-/** Code API's upload limiter is shared by skill priming, eager recovery,
- *  and lazy attachment provisioning. Bound all three through one process-
- *  wide queue so one path cannot stampede the others into 429 responses. */
-const CODE_API_UPLOAD_CONCURRENCY = 3;
-const codeApiUploadSlots = createConcurrencyLimiter(CODE_API_UPLOAD_CONCURRENCY);
-
-export function withCodeApiUploadSlot<T>(task: () => Promise<T>): Promise<T> {
-  return codeApiUploadSlots(task);
+export function createCodeApiUploadScope(params: {
+  route: string;
+  principalId: string;
+  tenantId?: string;
+}): string {
+  return JSON.stringify([params.route, params.tenantId ?? 'legacy', params.principalId]);
 }
 
-/** Remaining wait allowance, shared by every request of one operation. */
+export function getCodeApiUploadOptions(
+  req: ServerRequest,
+  route: string,
+): { scope: string; concurrency: number } {
+  const user = req.user as typeof req.user & {
+    _id?: { toString(): string } | string;
+    tenantId?: unknown;
+    orgId?: unknown;
+  };
+  const principalId = user?.id ?? user?._id?.toString();
+  if (!principalId) {
+    throw new Error('Code API upload recovery requires an authenticated principal');
+  }
+  return {
+    scope: createCodeApiUploadScope({
+      route,
+      principalId,
+      tenantId:
+        user.tenantId == null && user.orgId == null
+          ? (getTenantId() ?? undefined)
+          : String(user.tenantId ?? user.orgId),
+    }),
+    concurrency:
+      req.config?.endpoints?.agents?.codeApiUploadConcurrency ??
+      CODE_API_UPLOAD_CONCURRENCY_DEFAULT,
+  };
+}
+
+interface QueuedUpload {
+  run: () => void;
+  reject: (error: unknown) => void;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+}
+
+interface UploadScopeState {
+  active: number;
+  concurrency: number;
+  queue: QueuedUpload[];
+}
+
+const codeApiUploadScopes = new Map<string, UploadScopeState>();
+
+function abortReason(signal: AbortSignal): unknown {
+  try {
+    signal.throwIfAborted();
+  } catch (error) {
+    return error;
+  }
+  return new Error('The operation was aborted');
+}
+
+function drainCodeApiUploadScope(scope: string, state: UploadScopeState): void {
+  while (state.active < state.concurrency && state.queue.length > 0) {
+    const queued = state.queue.shift();
+    if (!queued) {
+      break;
+    }
+    queued.signal?.removeEventListener('abort', queued.onAbort!);
+    if (queued.signal?.aborted) {
+      queued.reject(abortReason(queued.signal));
+      continue;
+    }
+    queued.run();
+  }
+  if (state.active === 0 && state.queue.length === 0) {
+    codeApiUploadScopes.delete(scope);
+  }
+}
+
+/** Limits uploads within one Code API route and principal. A throttled bucket
+ * holds only its own slots, and canceled callers leave the queue immediately. */
+export function withCodeApiUploadSlot<T>(params: {
+  task: () => Promise<T>;
+  scope: string;
+  concurrency?: number;
+  signal?: AbortSignal;
+}): Promise<T> {
+  const { task, scope, concurrency = CODE_API_UPLOAD_CONCURRENCY_DEFAULT, signal } = params;
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(`Code API upload concurrency must be a positive integer (got ${concurrency})`);
+  }
+  signal?.throwIfAborted();
+  let state = codeApiUploadScopes.get(scope);
+  if (!state) {
+    state = { active: 0, concurrency, queue: [] };
+    codeApiUploadScopes.set(scope, state);
+  } else {
+    state.concurrency = concurrency;
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const run = (): void => {
+      state.active++;
+      Promise.resolve()
+        .then(task)
+        .then(resolve, reject)
+        .finally(() => {
+          state.active--;
+          drainCodeApiUploadScope(scope, state);
+        });
+    };
+    if (state.active < state.concurrency) {
+      run();
+      return;
+    }
+    const queued: QueuedUpload = { run, reject, signal };
+    queued.onAbort = () => {
+      const index = state.queue.indexOf(queued);
+      if (index >= 0) {
+        state.queue.splice(index, 1);
+        reject(abortReason(signal!));
+        drainCodeApiUploadScope(scope, state);
+      }
+    };
+    signal?.addEventListener('abort', queued.onAbort, { once: true });
+    state.queue.push(queued);
+  });
+}
+
+/** Wall-clock deadline shared by every request of one operation. */
 export interface CodeApiRateLimitBudget {
-  remainingMs: number;
+  deadlineAt: number;
 }
 
 export function createCodeApiRateLimitBudget(
   totalMs: number = MAX_CODE_API_RATE_LIMIT_WAIT_MS,
 ): CodeApiRateLimitBudget {
-  return { remainingMs: totalMs };
+  return { deadlineAt: Date.now() + totalMs };
+}
+
+function codeApiRateLimitError(label: string, cause: unknown, retryAfterMs?: number): Error {
+  const retrySuffix = retryAfterMs == null ? '' : ` (retry in ${Math.ceil(retryAfterMs / 1000)}s)`;
+  return Object.assign(
+    new Error(`Code API rate limit reached while ${label}${retrySuffix}.`, { cause }),
+    {
+      name: 'CodeApiRateLimitError',
+      code: 'CODE_API_RATE_LIMITED',
+      status: 429,
+      statusCode: 429,
+      ...(retryAfterMs == null ? {} : { retryAfterMs }),
+    },
+  );
 }
 
 /**
@@ -94,19 +228,44 @@ export async function withCodeApiRateLimit<T>(params: {
       }
       const retryAfterMs = getCodeApiRetryAfterMs(error);
       if (retryAfterMs == null) {
-        throw new Error(`Code API rate limit reached while ${label}.`);
+        throw codeApiRateLimitError(label, error);
       }
       /* A zero delay would spin; charge at least a second so the budget
        * always drains and the loop terminates. */
       const waitMs = Math.max(retryAfterMs, 1000);
-      if (budget == null || waitMs > budget.remainingMs) {
-        throw new Error(
-          `Code API rate limit reached while ${label} (retry in ${Math.ceil(waitMs / 1000)}s).`,
-        );
+      if (budget == null || Date.now() + waitMs > budget.deadlineAt) {
+        throw codeApiRateLimitError(label, error, waitMs);
       }
-      budget.remainingMs -= waitMs;
       onWait?.(waitMs);
       await delay(waitMs, undefined, signal ? { signal } : undefined);
     }
   }
+}
+
+/** Owns upload admission, retry waiting, and source reopening for every Code API
+ * upload producer. Callers supply storage and transport adapters only. */
+export function withCodeApiUploadRecovery<S, T>(params: {
+  scope: string;
+  concurrency?: number;
+  budget?: CodeApiRateLimitBudget;
+  signal?: AbortSignal;
+  label: string;
+  onWait?: (waitMs: number) => void;
+  openSource: () => Promise<S>;
+  upload: (source: S) => Promise<T>;
+}): Promise<T> {
+  const { scope, concurrency, budget, signal, label, onWait, openSource, upload } = params;
+  return withCodeApiUploadSlot({
+    scope,
+    concurrency,
+    signal,
+    task: () =>
+      withCodeApiRateLimit({
+        budget,
+        signal,
+        label,
+        onWait,
+        attempt: async () => upload(await openSource()),
+      }),
+  });
 }

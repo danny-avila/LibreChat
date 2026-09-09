@@ -20,9 +20,9 @@ import {
 } from '~/protection';
 import {
   createCodeApiRateLimitBudget,
+  getCodeApiUploadOptions,
   getSafeErrorMetadata,
-  withCodeApiRateLimit,
-  withCodeApiUploadSlot,
+  withCodeApiUploadRecovery,
 } from '~/utils';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
@@ -313,8 +313,8 @@ async function bufferSkillFileStream(stream: NodeJS.ReadableStream): Promise<Buf
  * documents for future freshness checks.
  *
  * Rate-limit resilience: concurrent primes of the same (skill, version)
- * share one flight, all Code API uploads are bounded process-wide, and
- * 429 responses retry within a capped wait budget.
+ * share one flight, uploads are bounded per Code API route and principal,
+ * and 429 responses retry within a capped wait budget.
  */
 export async function primeSkillFiles(
   params: PrimeSkillFilesParams,
@@ -468,48 +468,44 @@ async function executePrimeSkillFiles(
 
   const entityId = skill._id.toString();
   try {
-    /* Streams open inside the slot (not while queued) and inside the retry
-     * closure (a failed attempt consumes them). The slot bounds concurrent
-     * uploads process-wide across both prime call sites. */
-    const uploaded = await withCodeApiUploadSlot(() =>
-      withCodeApiRateLimit({
-        label: `priming skill "${skill.name}"`,
-        budget: createCodeApiRateLimitBudget(),
-        onWait: (waitMs) =>
-          logger.warn(
-            `[primeSkillFiles] Rate-limited priming skill "${skill.name}"; retrying in ${waitMs}ms`,
-          ),
-        attempt: async () => {
-          const filesToUpload = await collectSkillUploadFiles(params, inspectedBuffers);
-          if (filesToUpload.length === 0) {
-            return null;
-          }
-          const result = await batchUploadCodeEnvFiles({
-            req,
-            files: filesToUpload,
-            /* Resource identity for codeapi's sessionKey: skill files share
-             * cross-user-within-tenant under `<tenant>:skill:<id>:v:<version>`.
-             * Bumping `skill.version` on edit naturally invalidates the prior
-             * cache entry under the new version's sessionKey. */
-            kind: 'skill',
-            id: entityId,
-            version: skill.version,
-            /* Skill files are infrastructure: SKILL.md + bundled scripts/schemas/
-             * docs that the agent reads but should never edit. Tag the upload as
-             * read-only so codeapi seals the inputs (chmod 444 in-sandbox) and
-             * walker echoes the original refs as `inherited: true` even if some
-             * sandboxed code path mutates bytes on disk. Without this, modified
-             * skill files surface as ghost generated artifacts the user has no
-             * authority to download. */
-            read_only: true,
-            codeApiBaseUrl: codeExecutionContext?.baseUrl,
-            executionProfile: codeExecutionContext?.executionProfile,
-            bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
-          });
-          return { filesToUpload, result };
-        },
-      }),
-    );
+    const uploaded = await withCodeApiUploadRecovery({
+      ...getCodeApiUploadOptions(req, executionRouteKey),
+      label: `priming skill "${skill.name}"`,
+      budget: createCodeApiRateLimitBudget(),
+      onWait: (waitMs) =>
+        logger.warn(
+          `[primeSkillFiles] Rate-limited priming skill "${skill.name}"; retrying in ${waitMs}ms`,
+        ),
+      openSource: () => collectSkillUploadFiles(params, inspectedBuffers),
+      upload: async (filesToUpload) => {
+        if (filesToUpload.length === 0) {
+          return null;
+        }
+        const result = await batchUploadCodeEnvFiles({
+          req,
+          files: filesToUpload,
+          /* Resource identity for codeapi's sessionKey: skill files share
+           * cross-user-within-tenant under `<tenant>:skill:<id>:v:<version>`.
+           * Bumping `skill.version` on edit naturally invalidates the prior
+           * cache entry under the new version's sessionKey. */
+          kind: 'skill',
+          id: entityId,
+          version: skill.version,
+          /* Skill files are infrastructure: SKILL.md + bundled scripts/schemas/
+           * docs that the agent reads but should never edit. Tag the upload as
+           * read-only so codeapi seals the inputs (chmod 444 in-sandbox) and
+           * walker echoes the original refs as `inherited: true` even if some
+           * sandboxed code path mutates bytes on disk. Without this, modified
+           * skill files surface as ghost generated artifacts the user has no
+           * authority to download. */
+          read_only: true,
+          codeApiBaseUrl: codeExecutionContext?.baseUrl,
+          executionProfile: codeExecutionContext?.executionProfile,
+          bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
+        });
+        return { filesToUpload, result };
+      },
+    });
     if (uploaded == null) {
       return null;
     }

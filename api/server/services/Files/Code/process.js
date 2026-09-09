@@ -11,8 +11,9 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
+  getCodeApiUploadOptions,
   withCodeApiRateLimit,
-  withCodeApiUploadSlot,
+  withCodeApiUploadRecovery,
   classifyCodeArtifact,
   isMissingSandboxPathError,
   parseSandboxImageChunk,
@@ -1276,6 +1277,9 @@ const getReuploadFailureCategory = (error) => {
   ) {
     return 'resource_access_denied';
   }
+  if (status === 429 || code === 'CODE_API_RATE_LIMITED') {
+    return 'rate_limited';
+  }
   return 'reupload_failed';
 };
 
@@ -1450,33 +1454,29 @@ const primeFiles = async (options) => {
          * (skill stays skill, user stays user). Without this, a
          * skill-cache-miss reupload would land in the user bucket
          * and never re-shareable cross-user. */
-        const uploaded = await withCodeApiUploadSlot(() =>
-          withCodeApiRateLimit({
-            label: `re-uploading file ${file.file_id} to the code environment`,
-            budget: uploadRateLimitBudget,
-            onWait: (waitMs) =>
-              logger.warn(
-                `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
-                  `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
-              ),
-            /** Re-open the source for each attempt because multipart upload
-             *  consumes the stream even when Code API rejects the request. */
-            attempt: async () => {
-              const stream = await getDownloadStream(options.req, resolveDownloadPath(file));
-              return uploadCodeEnvFile({
-                req: options.req,
-                stream,
-                filename: getDestination(),
-                kind: sourceRef.kind,
-                id: sourceRef.id,
-                ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
-                codeApiBaseUrl,
-                executionProfile,
-                bridgeWorkerId,
-              });
-            },
-          }),
-        );
+        const uploaded = await withCodeApiUploadRecovery({
+          ...getCodeApiUploadOptions(req, executionRouteKey),
+          label: `re-uploading file ${file.file_id} to the code environment`,
+          budget: uploadRateLimitBudget,
+          onWait: (waitMs) =>
+            logger.warn(
+              `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
+                `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
+            ),
+          openSource: () => getDownloadStream(options.req, resolveDownloadPath(file)),
+          upload: (stream) =>
+            uploadCodeEnvFile({
+              req: options.req,
+              stream,
+              filename: getDestination(),
+              kind: sourceRef.kind,
+              id: sourceRef.id,
+              ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
+              codeApiBaseUrl,
+              executionProfile,
+              bridgeWorkerId,
+            }),
+        });
 
         /**
          * Use the FRESH `(storage_session_id, file_id)` from the
