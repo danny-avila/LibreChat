@@ -18,7 +18,7 @@ export const THEME_VERSION = 1 as const;
  * hand-maintained token maps, so a slot added to one and missed in another
  * fails the build rather than surfacing as a broken theme downstream.
  */
-type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type Assert<Declared extends true> = Declared;
 type DeclaredIn<Keys extends PropertyKey, Tokens> = [Keys] extends [keyof Tokens] ? true : false;
 

@@ -264,7 +264,7 @@ describe.each([
  *  checked capability badges sit on `surface-chat`; dialog option toggles sit
  *  on `surface-dialog`. All have to clear the 3:1 mark-contrast floor. */
 const seriesTokens = Array.from(
-  { length: 7 },
+  { length: 8 },
   (_, index) => `rgb-series-${index + 1}` as keyof IThemeRGB,
 );
 const seriesSurfaces: Array<keyof IThemeRGB> = [

@@ -228,6 +228,7 @@ html {
   --series-4: 182 123 5;
   --series-5: 216 90 142;
   --series-6: 126 35 205;
+  --series-8: 63 81 181;
   --series-7: 1 131 1;
 
   /* Code syntax highlighting */
@@ -347,6 +348,7 @@ html {
   --series-5: 213 82 130;
   --series-6: 171 104 254;
   --series-7: 80 167 49;
+  --series-8: 140 152 230;
 
   /* Code syntax highlighting. Comment and meta are the flattened equivalents of
      the 50% and 60% alpha whites this palette used before it was tokenized. */

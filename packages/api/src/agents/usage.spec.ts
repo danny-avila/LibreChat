@@ -1935,13 +1935,13 @@ describe('buildPersistedContextUsage', () => {
     contextBudget: 7800,
   };
 
-  it('trims zero-valued per-tool counts', () => {
+  it('persists positive per-tool schema counts', () => {
     const result = buildPersistedContextUsage(baseSnapshot);
     expect(result.breakdown.toolTokenCounts).toEqual({ add: 15 });
     expect(result.contextBudget).toBe(7800);
   });
 
-  it('drops the tool counts object entirely when all are zero', () => {
+  it('omits a schema-count record with no positive counts', () => {
     const result = buildPersistedContextUsage({
       ...baseSnapshot,
       breakdown: { ...baseSnapshot.breakdown, toolTokenCounts: { add: 0 } },
@@ -1954,6 +1954,88 @@ describe('buildPersistedContextUsage', () => {
     const result = buildPersistedContextUsage({ ...baseSnapshot, breakdown });
     expect(result.breakdown.toolTokenCounts).toBeUndefined();
     expect(result.breakdown.messageTokens).toBe(500);
+  });
+
+  it('passes a non-zero toolMessageTokens split through to the blob', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: { ...baseSnapshot.breakdown, toolMessageTokens: 220 },
+    });
+    expect(result.breakdown.toolMessageTokens).toBe(220);
+    expect(result.breakdown.messageTokens).toBe(500);
+  });
+
+  it('keeps invocation-inclusive totals separate from per-tool result shares', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: {
+        ...baseSnapshot.breakdown,
+        toolMessageTokens: 10,
+        toolMessageTokenCounts: { search: 4 },
+      },
+    });
+    expect(result.breakdown.toolMessageTokens).toBe(10);
+    expect(result.breakdown.toolMessageTokenCounts).toEqual({ search: 4 });
+    expect(
+      Object.values(result.breakdown.toolMessageTokenCounts ?? {}).reduce(
+        (total, count) => total + count,
+        0,
+      ),
+    ).toBeLessThan(result.breakdown.toolMessageTokens ?? 0);
+  });
+
+  it('trims zero-valued result-message entries and clamps their sum', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: {
+        ...baseSnapshot.breakdown,
+        toolMessageTokens: 2,
+        toolMessageTokenCounts: { grep: 180, read_file: 0 },
+      },
+    });
+    expect(result.breakdown.toolMessageTokenCounts).toEqual({ grep: 2 });
+    expect(
+      Object.values(result.breakdown.toolMessageTokenCounts ?? {}).reduce(
+        (total, count) => total + count,
+        0,
+      ),
+    ).toBeLessThanOrEqual(result.breakdown.toolMessageTokens ?? 0);
+  });
+
+  it('preserves a known-zero tool-message total', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: { ...baseSnapshot.breakdown, toolMessageTokens: 0 },
+    });
+    expect(result.breakdown.toolMessageTokens).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(result.breakdown, 'toolMessageTokens')).toBe(true);
+  });
+  it('safely persists prototype-sensitive names and ignores malformed counts', () => {
+    const counts = JSON.parse('{"__proto__":3,"constructor":3,"invalid":"4"}') as Record<
+      string,
+      number
+    >;
+    const sdkExtension = {
+      nested: { source: 'retained-sdk-field', flags: ['opaque'] },
+      invocation: { estimated: 4, providerOnly: true },
+    };
+    const snapshot = {
+      ...baseSnapshot,
+      breakdown: {
+        ...baseSnapshot.breakdown,
+        toolMessageTokens: 5,
+        toolMessageTokenCounts: counts,
+        sdkExtension,
+      },
+    };
+    const result = buildPersistedContextUsage(snapshot);
+    const persistedCounts = result.breakdown.toolMessageTokenCounts;
+    expect(persistedCounts?.['__proto__']).toBe(3);
+    expect(persistedCounts?.constructor).toBe(2);
+    expect(persistedCounts?.invalid).toBeUndefined();
+    expect(Object.keys(persistedCounts ?? {})).toEqual(['__proto__', 'constructor']);
+    expect(result.breakdown).toMatchObject({ sdkExtension });
+    expect(snapshot.breakdown.toolMessageTokenCounts).toBe(counts);
   });
 
   it('records the final primary call output as completedOutputTokens', () => {

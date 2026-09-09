@@ -112,7 +112,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-syntax-attr': '223 48 121', // #df3079
   'rgb-syntax-title': '242 44 61', // #f22c3d
 
-  /** Categorical series scale — the same seven hues stepped for the #212121
+  /** Categorical series scale — the same eight hues stepped for the #212121
    *  surface: worst adjacent CVD ΔE 13.0, normal-vision ΔE 19.0, all ≥ 3:1. */
   'rgb-series-1': '9 140 238', // #098cee (cerulean)
   'rgb-series-2': '217 87 35', // #d95723 (orange)
@@ -121,6 +121,7 @@ export const darkTheme: IThemeRGB = {
   'rgb-series-5': '213 82 130', // #d55282 (magenta)
   'rgb-series-6': '171 104 254', // #ab68fe (violet)
   'rgb-series-7': '80 167 49', // #50a731 (green)
+  'rgb-series-8': '140 152 230', // #8c98e6 (indigo)
 
   /** Unchecked switch track. 3.38:1 against the page and the `surface-primary`
    *  thumb, 5.74:1 against the checked `surface-inverted` track. */

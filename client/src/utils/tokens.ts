@@ -24,6 +24,17 @@ export const EMPTY_USAGE: BranchUsage = {
   cost: 0,
   costKnown: true,
 };
+/** Token counts come from persisted/provider payloads. Keep malformed values
+ * out of every aggregate so one bad event cannot turn the meter into NaN. */
+export function normalizeTokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.min(Math.floor(value), Number.MAX_SAFE_INTEGER)
+    : 0;
+}
+
+function hasKnownCost(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
 
 export interface TokenEntry {
   tokenCount: number;
@@ -32,6 +43,10 @@ export interface TokenEntry {
    *  text+quotes, since the send path ignores their stored count). Includes
    *  tool-call name/args/output. Mutually exclusive with a counted `tokenCount`. */
   estTokens: number;
+  /** Char/4 estimate of the tool-call share of the body (tool_call parts'
+   *  name/args/output), for the estimate path's "Tool calls" split. Raw — sum
+   *  sites clamp it to the entry's actual contribution. */
+  estToolTokens: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
   /** Per-response provider usage from `metadata.usage` (response messages only) */
@@ -58,6 +73,12 @@ export interface BranchTotals {
    *  is the in-flight response, already covered by `liveTokens`, so the estimate
    *  path excludes this to avoid double-counting a resumed/partial response. */
   tailEstTokens: number;
+  /** Tool-call share of the branch estimate (`estToolTokens`, clamped per
+   *  message to its contribution) — the estimate path's "Tool calls" split. */
+  estToolTokens: number;
+  /** The tail message's own clamped tool share, dropped alongside
+   *  `tailEstTokens` while the in-flight response streams. */
+  tailEstToolTokens: number;
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
   containsAnchor: boolean;
@@ -77,6 +98,8 @@ export const EMPTY_BRANCH: BranchTotals = {
   total: 0,
   estTokens: 0,
   tailEstTokens: 0,
+  estToolTokens: 0,
+  tailEstToolTokens: 0,
   tailId: null,
   containsAnchor: false,
   usage: EMPTY_USAGE,
@@ -112,13 +135,14 @@ function readPersistedUsage(message: Partial<TMessage>): BranchUsage | undefined
   }
   const persisted = usage as TResponseUsage;
   return {
-    input: persisted.input ?? 0,
-    output: persisted.output ?? 0,
-    cacheWrite: persisted.cacheWrite ?? 0,
-    cacheRead: persisted.cacheRead ?? 0,
-    cost: persisted.cost ?? 0,
-    /** Cost is omitted when saved with `contextCost` off — don't render $0.00 */
-    costKnown: typeof persisted.cost === 'number',
+    input: normalizeTokenCount(persisted.input),
+    output: normalizeTokenCount(persisted.output),
+    cacheWrite: normalizeTokenCount(persisted.cacheWrite),
+    cacheRead: normalizeTokenCount(persisted.cacheRead),
+    cost: hasKnownCost(persisted.cost) ? persisted.cost : 0,
+    /** Cost is omitted (or malformed) when saved with `contextCost` off — don't
+     * render a misleading $0.00. */
+    costKnown: hasKnownCost(persisted.cost),
   };
 }
 
@@ -152,8 +176,8 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
 }
 
 /** Chars of a content part's text, handling both the string and `{ value }` forms.
- *  Reasoning (`think`) and error parts are excluded — the send path strips them
- *  before counting, so they aren't part of the next call's context. */
+ * Reasoning (`think`) and error parts are excluded — the send path strips them
+ * before counting, so they aren't part of the next call's context. */
 function partTextChars(part: unknown): number {
   if (part == null || typeof part !== 'object') {
     return 0;
@@ -172,7 +196,10 @@ function partTextChars(part: unknown): number {
     if (typeof call.args === 'string') {
       chars += call.args.length;
     } else if (call.args != null) {
-      chars += JSON.stringify(call.args).length;
+      const serialized = JSON.stringify(call.args);
+      if (typeof serialized === 'string') {
+        chars += serialized.length;
+      }
     }
     if (typeof call.output === 'string') {
       chars += call.output.length;
@@ -191,6 +218,44 @@ function partTextChars(part: unknown): number {
     return (text as { value: string }).value.length;
   }
   return 0;
+}
+
+/** Char length of a message's tool-call payload — tool_call parts' name, args
+ *  and output — the estimate path's split of message body into conversation vs
+ *  tool-call usage. Zero for plain-text bodies. */
+function messageToolChars(message: Partial<TMessage>): number {
+  if (!Array.isArray(message.content)) {
+    return 0;
+  }
+  let chars = 0;
+  for (const part of message.content) {
+    if (part == null || typeof part !== 'object') {
+      continue;
+    }
+    if ('type' in part && part.type === 'tool_call' && 'tool_call' in part) {
+      const call = part.tool_call;
+      if (call == null || typeof call !== 'object') {
+        continue;
+      }
+      if ('name' in call && typeof call.name === 'string') {
+        chars += call.name.length;
+      }
+      if ('args' in call) {
+        if (typeof call.args === 'string') {
+          chars += call.args.length;
+        } else {
+          const serialized = JSON.stringify(call.args ?? null);
+          if (typeof serialized === 'string') {
+            chars += serialized.length;
+          }
+        }
+      }
+      if ('output' in call && typeof call.output === 'string') {
+        chars += call.output.length;
+      }
+    }
+  }
+  return chars;
 }
 
 /** Char length of a message's rendered text, for estimating count-less messages.
@@ -226,8 +291,8 @@ function quoteChars(message: Partial<TMessage>): number {
 }
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
-  const summaryUsedTokens = message.metadata?.summaryUsedTokens;
-  const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
+  const summaryUsedTokens = normalizeTokenCount(message.metadata?.summaryUsedTokens);
+  const tokenCount = normalizeTokenCount(message.tokenCount);
   const isCreatedByUser = message.isCreatedByUser === true;
   const quoted = isCreatedByUser && Array.isArray(message.quotes) && message.quotes.length > 0;
   /** A quoted user turn's stored `tokenCount` is unreliable: a text-only Save edit
@@ -245,13 +310,11 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
   return {
     tokenCount: quoted ? 0 : tokenCount,
     estTokens,
+    estToolTokens: Math.round(messageToolChars(message) / 4),
     isCreatedByUser,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
-    summaryUsedTokens:
-      typeof summaryUsedTokens === 'number' && summaryUsedTokens > 0
-        ? summaryUsedTokens
-        : undefined,
+    summaryUsedTokens: summaryUsedTokens > 0 ? summaryUsedTokens : undefined,
   };
 }
 
@@ -335,12 +398,26 @@ export function sumBranch(
     return EMPTY_BRANCH;
   }
 
-  const totals = { input: 0, output: 0, counted: 0, total: 0, estTokens: 0, containsAnchor: false };
+  const totals = {
+    input: 0,
+    output: 0,
+    counted: 0,
+    total: 0,
+    estTokens: 0,
+    estToolTokens: 0,
+    containsAnchor: false,
+  };
   /** The in-flight response, when streaming, is the branch tail and is covered by
    *  `liveTokens`; expose its estimate so the estimate path can drop it. */
-  const tailEstTokens = index.get(tailId)?.estTokens ?? 0;
-  const usage: BranchUsage = { ...EMPTY_USAGE };
+  const tailEntry = index.get(tailId);
+  let tailContribution = tailEntry?.estTokens ?? 0;
+  if (tailEntry != null && tailEntry.tokenCount > 0) {
+    tailContribution = tailEntry.tokenCount;
+  }
+  const tailEstTokens = tailEntry?.estTokens ?? 0;
+  const tailEstToolTokens = Math.min(tailEntry?.estToolTokens ?? 0, tailContribution);
   let summaryBaseline = 0;
+  const usage: BranchUsage = { ...EMPTY_USAGE };
   /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
    *  (subsumed by the baseline) — but their provider spend still happened, so the
    *  usage/cost walk continues to the root while context counting stops. */
@@ -372,6 +449,12 @@ export function sumBranch(
     } else if (!contextCapped && entry.estTokens > 0) {
       totals.estTokens += entry.estTokens;
     }
+    /** Tool-call share of this entry's contribution — a subset of the
+     *  input/output/estimated rows, so it never adds to the gauge. */
+    if (!contextCapped) {
+      const contribution = entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
+      totals.estToolTokens += Math.min(entry.estToolTokens, contribution);
+    }
     /** Cost/usage is cumulative spend — never truncated at the summary boundary. */
     addUsage(usage, entry.usage);
     /** This response's turn compacted the history: its own output is counted
@@ -384,7 +467,7 @@ export function sumBranch(
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailEstTokens, tailId, usage, summaryBaseline };
+  return { ...totals, tailEstTokens, tailEstToolTokens, tailId, usage, summaryBaseline };
 }
 
 /**
@@ -398,20 +481,22 @@ export function sumBranch(
  * `budget` is the message window (max minus the always-sent summary baseline);
  * when `excludeTail`, the in-flight tail response is skipped (it rides on
  * `liveTokens`). Per-message contribution matches `sumBranch`: stored `tokenCount`
- * when counted, else the char-based `estTokens`.
+ * when counted, else the char-based `estTokens`. Returns the kept total plus the
+ * tool-call share of what was kept, so the estimate can split the Messages row.
  */
 export function prunedBranchTokens(
   conversationId: string,
   tailId: string | null | undefined,
   budget: number,
   excludeTail: boolean,
-): number {
+): { tokens: number; toolTokens: number } {
   const index = registry.get(conversationId);
   if (!index || !tailId || budget <= 0) {
-    return 0;
+    return { tokens: 0, toolTokens: 0 };
   }
 
   let total = 0;
+  let toolTotal = 0;
   let currentId: string | null = tailId;
   let guard = index.size;
   let isTail = true;
@@ -429,6 +514,7 @@ export function prunedBranchTokens(
         break;
       }
       total += contribution;
+      toolTotal += Math.min(entry.estToolTokens, contribution);
     }
     /** Pre-summary turns are subsumed by the baseline the caller already reserved,
      *  so stop after counting the summarizing turn — mirrors `sumBranch`. */
@@ -437,7 +523,122 @@ export function prunedBranchTokens(
     }
     currentId = entry.parentMessageId;
   }
-  return total;
+  return { tokens: total, toolTokens: toolTotal };
+}
+
+/**
+ * Used-token readings for every persisted snapshot on the viewed branch, oldest
+ * → newest (the walk is tail→root, so results are reversed). Drives the growth
+ * sparkline and the runway projection in the breakdown. Stops after a summarized
+ * response — older snapshots describe discarded history, mirroring `sumBranch`.
+ */
+export function collectAnchorSeries(
+  conversationId: string,
+  tailId: string | null | undefined,
+  anchors: ReadonlyMap<string, unknown>,
+): Array<{ used: number }> {
+  const index = registry.get(conversationId);
+  if (!index || !tailId || anchors.size === 0) {
+    return [];
+  }
+
+  const series: Array<{ used: number }> = [];
+  let currentId: string | null = tailId;
+  let guard = index.size;
+
+  while (currentId && currentId !== Constants.NO_PARENT && guard-- > 0) {
+    const entry: TokenEntry | undefined = index.get(currentId);
+    if (!entry) {
+      break;
+    }
+    const snapshot = anchors.get(currentId) as
+      | {
+          contextBudget?: number;
+          remainingContextTokens?: number;
+          breakdown?: { maxContextTokens?: number };
+        }
+      | undefined;
+    if (snapshot != null) {
+      const budget = normalizeTokenCount(
+        snapshot.contextBudget ?? snapshot.breakdown?.maxContextTokens,
+      );
+      const remaining = normalizeTokenCount(snapshot.remainingContextTokens);
+      if (budget > 0) {
+        series.push({ used: Math.max(0, budget - remaining) });
+      }
+    }
+    if (entry.summaryUsedTokens != null && entry.summaryUsedTokens > 0) {
+      break;
+    }
+    currentId = entry.parentMessageId;
+  }
+  return series.reverse();
+}
+
+/**
+ * The branch's largest messages (context contributions), largest first — the
+ * "what is eating my window" list. Same contribution rule as `sumBranch`:
+ * stored `tokenCount` when counted, else the char-based `estTokens`.
+ */
+export function topBranchMessages(
+  conversationId: string,
+  tailId: string | null | undefined,
+  limit = 3,
+): Array<{ role: 'user' | 'assistant'; tokens: number }> {
+  const index = registry.get(conversationId);
+  if (!index || !tailId) {
+    return [];
+  }
+
+  const items: Array<{ role: 'user' | 'assistant'; tokens: number }> = [];
+  let currentId: string | null = tailId;
+  let guard = index.size;
+  let contextCapped = false;
+
+  while (currentId && currentId !== Constants.NO_PARENT && guard-- > 0) {
+    const entry: TokenEntry | undefined = index.get(currentId);
+    if (!entry) {
+      break;
+    }
+    if (!contextCapped) {
+      const contribution = entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
+      if (contribution > 0) {
+        items.push({ role: entry.isCreatedByUser ? 'user' : 'assistant', tokens: contribution });
+      }
+    }
+    if (!contextCapped && entry.summaryUsedTokens != null && entry.summaryUsedTokens > 0) {
+      contextCapped = true;
+    }
+    currentId = entry.parentMessageId;
+  }
+  return items.sort((a, b) => b.tokens - a.tokens).slice(0, limit);
+}
+
+/**
+ * Tokens of the most recent exchange (the tail response plus the user turn it
+ * answers) — what a summarization would KEEP. `excludeTail` skips an in-flight
+ * tail (it rides on `liveTokens`), leaving the previous complete exchange.
+ * The compaction preview is context tokens minus this.
+ */
+export function latestExchangeTokens(
+  conversationId: string,
+  tailId: string | null | undefined,
+  excludeTail: boolean,
+): number {
+  const index = registry.get(conversationId);
+  if (!index || !tailId) {
+    return 0;
+  }
+  const contribution = (entry: TokenEntry | undefined): number => {
+    if (entry == null) {
+      return 0;
+    }
+    return entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
+  };
+
+  const tailEntry = index.get(tailId);
+  const parentEntry = index.get(tailEntry?.parentMessageId ?? '');
+  return (excludeTail ? 0 : contribution(tailEntry)) + contribution(parentEntry);
 }
 
 /**
@@ -465,6 +666,19 @@ export function sumTotalUsage(conversationId: string): BranchUsage {
  * that, including a sibling transiently dropped from the cache on regenerate).
  */
 export function setEntryUsage(conversationId: string, messageId: string, usage: BranchUsage): void {
+  const costKnown =
+    usage.costKnown === true &&
+    typeof usage.cost === 'number' &&
+    Number.isFinite(usage.cost) &&
+    usage.cost >= 0;
+  const safeUsage: BranchUsage = {
+    input: normalizeTokenCount(usage.input),
+    output: normalizeTokenCount(usage.output),
+    cacheWrite: normalizeTokenCount(usage.cacheWrite),
+    cacheRead: normalizeTokenCount(usage.cacheRead),
+    cost: costKnown ? usage.cost : 0,
+    costKnown,
+  };
   /** Remember it durably first so a later rebuild — or a transient cache drop
    *  during regenerate — can restore it even when the entry isn't present yet. */
   let history = usageHistory.get(conversationId);
@@ -472,10 +686,10 @@ export function setEntryUsage(conversationId: string, messageId: string, usage: 
     history = new Map<string, BranchUsage>();
     usageHistory.set(conversationId, history);
   }
-  history.set(messageId, usage);
+  history.set(messageId, safeUsage);
   const entry = registry.get(conversationId)?.get(messageId);
   if (entry) {
-    entry.usage = usage;
+    entry.usage = safeUsage;
   }
 }
 
@@ -550,8 +764,9 @@ export function groupToolTokens(
   }
   const deferred = new Set(deferredToolNames ?? []);
   const groups = { ...EMPTY_TOOL_GROUPS };
-  for (const [name, tokens] of Object.entries(toolTokenCounts)) {
-    if (tokens <= 0) {
+  for (const [name, rawTokens] of Object.entries(toolTokenCounts)) {
+    const tokens = normalizeTokenCount(rawTokens);
+    if (tokens === 0) {
       continue;
     }
     if (name === Tools.skill) {
@@ -614,11 +829,14 @@ export function countTrailingOutputChars(content?: unknown[] | null): number {
 
 /** Rough live estimate for streaming text, calibrated by the last known provider ratio */
 export function estimateTokens(charCount: number, calibrationRatio = 1): number {
-  if (charCount <= 0) {
-    return 0;
-  }
-  const ratio = calibrationRatio > 0 ? calibrationRatio : 1;
-  return Math.round((charCount / 4) * ratio);
+  const chars = normalizeTokenCount(charCount);
+  const ratio =
+    typeof calibrationRatio === 'number' &&
+    Number.isFinite(calibrationRatio) &&
+    calibrationRatio > 0
+      ? calibrationRatio
+      : 1;
+  return normalizeTokenCount(Math.round((chars / 4) * ratio));
 }
 
 /** Billable token quantities of one or more model calls, normalized for pricing */
@@ -633,20 +851,20 @@ export interface CostUnits {
  * Normalizes one call's usage into billable units, mirroring the backend's
  * authoritative `splitUsage`/`resolveCompletionTokens`
  * (packages/api/src/agents/usage.ts):
- *   - cache classification is by provider, not magnitude — Anthropic/Bedrock
- *     keep cache additive (input is uncached-only); subset providers fold
- *     cache into `input_tokens`. Falls back to a magnitude heuristic only when
+ *   - cache classification is by provider, not magnitude — Bedrock keeps cache
+ *     additive (input is uncached-only); Anthropic and OpenAI fold cache into
+ *     `input_tokens`. Falls back to a magnitude heuristic only when
  *     the provider is unknown.
  *   - completion is repaired for providers (e.g. Vertex) that under-report
  *     `output_tokens` but carry the gap in `total_tokens`.
  * Applied per event so units stay correct when summed across calls.
  */
 export function normalizeUsageUnits(usage: TTokenUsageEvent): CostUnits {
-  const rawInput = usage.input_tokens ?? 0;
-  const rawOutput = usage.output_tokens ?? 0;
-  const total = usage.total_tokens ?? 0;
-  const cacheWrite = usage.input_token_details?.cache_creation ?? 0;
-  const cacheRead = usage.input_token_details?.cache_read ?? 0;
+  const rawInput = normalizeTokenCount(usage.input_tokens);
+  const rawOutput = normalizeTokenCount(usage.output_tokens);
+  const total = normalizeTokenCount(usage.total_tokens);
+  const cacheWrite = normalizeTokenCount(usage.input_token_details?.cache_creation);
+  const cacheRead = normalizeTokenCount(usage.input_token_details?.cache_read);
 
   const includesCache =
     usage.provider != null
@@ -665,11 +883,13 @@ export function normalizeUsageUnits(usage: TTokenUsageEvent): CostUnits {
   };
 }
 
+const tokenFormatter = new Intl.NumberFormat(undefined, {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
 export function formatTokens(count: number): string {
-  const formatted = new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(count);
+  const formatted = tokenFormatter.format(normalizeTokenCount(count));
   return formatted.replace(/\.0(?=[A-Za-z]|$)/, '');
 }
 
@@ -753,7 +973,7 @@ export function formatCost(usd: number, currency: CurrencyConfig = DEFAULT_CURRE
   }
   const base = maxFractionDigits(code);
 
-  const amount = usd * rate;
+  const amount = (Number.isFinite(usd) && usd > 0 ? usd : 0) * rate;
   /** The currency's own minor unit — USD/EUR→0.01, JPY→1, KWD→0.001. */
   const smallest = Math.pow(10, -base);
 

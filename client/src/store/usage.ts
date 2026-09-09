@@ -17,6 +17,10 @@ export interface ContextSnapshot extends TContextUsageEvent {
   anchorMessageId: string | null;
   /** Output tokens finalized after this pre-call snapshot (the last call's response) */
   completedOutputTokens?: number;
+  /** Cache share of the reconciling call's prompt (`input_token_details`), stamped
+   *  client-side at reconcile time; live-path only — persisted blobs predate it. */
+  cacheRead?: number;
+  cacheWrite?: number;
 }
 
 /**
@@ -85,6 +89,16 @@ export const totalUsageFamily = atomFamily((_conversationId: string) =>
 
 /** Throttled in-flight output token estimate for the current model call */
 export const liveTokensFamily = atomFamily((_conversationId: string) => atom<number>(0));
+
+/**
+ * Subagent model calls, accumulated live from `usage_type: 'subagent'` events.
+ * Deliberately excluded from branch/total provider usage (they bill separately
+ * and would double-count a turn), so they surface as their own Totals row.
+ * Session-scoped: not persisted, cleared on convo switch.
+ */
+export const subagentUsageFamily = atomFamily((_conversationId: string) =>
+  atom<BranchUsage>(EMPTY_USAGE),
+);
 
 /** Last known provider-vs-estimate calibration ratio for the conversation */
 export const calibrationFamily = atomFamily((_conversationId: string) => atom<number>(1));
@@ -180,6 +194,7 @@ export function removeUsageAtoms(conversationId: string): void {
   pendingUsageFamily.remove(conversationId);
   totalUsageFamily.remove(conversationId);
   liveTokensFamily.remove(conversationId);
+  subagentUsageFamily.remove(conversationId);
   calibrationFamily.remove(conversationId);
   foldedUsageKeys.delete(conversationId);
 }

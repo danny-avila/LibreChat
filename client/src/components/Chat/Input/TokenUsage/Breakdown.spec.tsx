@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/extend-expect';
 import { Provider } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { Constants, Tools } from 'librechat-data-provider';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
 import Breakdown from './Breakdown';
 
@@ -23,6 +23,8 @@ const view = {
     total: 1,
     estTokens: 0,
     tailEstTokens: 0,
+    estToolTokens: 0,
+    tailEstToolTokens: 0,
     containsAnchor: false,
     summaryBaseline: 0,
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, costKnown: true },
@@ -76,6 +78,14 @@ const snapshotView = {
     },
   },
 } as unknown as TokenUsageView;
+
+/** Same snapshot with a reported tool-call split present: 150 of the 550
+ *  message tokens are tool exchanges, so Messages shows 400 and a Tool calls
+ *  row appears. */
+const toolSplitView = JSON.parse(JSON.stringify(snapshotView)) as unknown as TokenUsageView;
+toolSplitView.snapshot!.breakdown.toolMessageTokens = 150;
+toolSplitView.snapshot!.breakdown.toolMessageTokenCounts = { read_file: 100 };
+toolSplitView.toolMessageTokenCounts = toolSplitView.snapshot!.breakdown.toolMessageTokenCounts;
 
 const renderBreakdown = (props: Partial<React.ComponentProps<typeof Breakdown>> = {}) =>
   render(
@@ -139,14 +149,14 @@ describe('TokenUsage Breakdown', () => {
         ),
       ).toEqual([
         'bg-series-1', // messages
-        'bg-series-2', // system prompt
-        'bg-series-3', // system tools
-        'bg-series-3', // system tools, deferred
-        'bg-series-4', // mcp tools
-        'bg-series-4', // mcp tools, deferred
-        'bg-series-5', // skills
-        'bg-series-6', // subagents
-        'bg-series-7', // summary
+        'bg-series-3', // system prompt
+        'bg-series-4', // system tools
+        'bg-series-4', // system tools, deferred
+        'bg-series-5', // mcp tools
+        'bg-series-5', // mcp tools, deferred
+        'bg-series-6', // skills
+        'bg-series-7', // subagents
+        'bg-series-8', // summary
       ]);
     });
 
@@ -157,7 +167,7 @@ describe('TokenUsage Breakdown', () => {
       renderBreakdown({ view: noSkills });
 
       expect(screen.getByRole('progressbar').children).toHaveLength(8);
-      expect(screen.getByRole('progressbar').querySelector('.bg-series-5')).toBeNull();
+      expect(screen.getByRole('progressbar').querySelector('.bg-series-6')).toBeNull();
     });
 
     it('gives the deferred rows their family slot and a hatch', async () => {
@@ -172,9 +182,8 @@ describe('TokenUsage Breakdown', () => {
       const deferred = rowFor('com_ui_context_tools_system_deferred')
         .firstElementChild as HTMLElement;
 
-      expect(system).toHaveClass('bg-series-3');
-      expect(deferred).toHaveClass('bg-series-3');
-      expect(system.getAttribute('style') ?? '').not.toContain('repeating-linear-gradient');
+      expect(system).toHaveClass('bg-series-4');
+      expect(deferred).toHaveClass('bg-series-4');
       expect(deferred.getAttribute('style')).toContain('repeating-linear-gradient');
     });
 
@@ -270,6 +279,153 @@ describe('TokenUsage Breakdown', () => {
 
       expect(estimate).toBeInTheDocument();
       expect(estimate.querySelector('[class*="bg-series-"]')).toBeNull();
+    });
+    it('splits tool-call usage out of the messages row when reported', async () => {
+      renderBreakdown({ view: toolSplitView });
+      await userEvent.click(toggle());
+
+      const breakdown = screen.getByTestId('context-breakdown');
+      const rowFor = (label: string) =>
+        within(breakdown).getByText(label).parentElement?.parentElement as HTMLElement;
+
+      /** 1000 used − 400 instructions − 50 summary − 150 tool calls = 400 */
+      expect(rowFor('com_ui_context_messages').textContent).toContain('400');
+      expect(rowFor('com_ui_context_tool_calls').textContent).toContain('150');
+    });
+    it('shows every named tool result, including known zeroes, in the disclosure', async () => {
+      const manyTools = JSON.parse(JSON.stringify(toolSplitView)) as TokenUsageView;
+      manyTools.snapshot!.breakdown.toolMessageTokenCounts = {
+        alpha: 30,
+        beta: 20,
+        gamma: 10,
+        delta: 8,
+        epsilon: 7,
+        zeta: 5,
+        eta: 3,
+        zero_tool: 0,
+      };
+      manyTools.toolMessageTokenCounts = manyTools.snapshot!.breakdown.toolMessageTokenCounts;
+
+      renderBreakdown({ view: manyTools });
+      await userEvent.click(toggle());
+      await userEvent.click(screen.getByRole('button', { name: /com_ui_context_tool_calls/ }));
+
+      const details = screen.getByText('com_ui_context_tool_breakdown')
+        .parentElement as HTMLElement;
+      for (const name of [
+        'alpha',
+        'beta',
+        'gamma',
+        'delta',
+        'epsilon',
+        'zeta',
+        'eta',
+        'zero_tool',
+      ]) {
+        expect(within(details).getByText(name)).toBeInTheDocument();
+      }
+      expect(
+        within(details).getByText('zero_tool').parentElement?.parentElement?.textContent,
+      ).toContain('0');
+    });
+
+    it('renders a reported zero tool-call share instead of treating it as unavailable', async () => {
+      const knownZero = JSON.parse(JSON.stringify(snapshotView)) as TokenUsageView;
+      knownZero.snapshot!.breakdown.toolMessageTokens = 0;
+
+      renderBreakdown({ view: knownZero });
+      await userEvent.click(toggle());
+      const breakdown = screen.getByTestId('context-breakdown');
+      expect(within(breakdown).getByText('com_ui_context_tool_calls')).toBeInTheDocument();
+      expect(
+        within(breakdown).getByText('com_ui_context_tool_calls').parentElement?.parentElement
+          ?.textContent,
+      ).toContain('0');
+    });
+
+    it('uses a native disclosure button for the expandable tool list', async () => {
+      renderBreakdown({ view: toolSplitView });
+      await userEvent.click(toggle());
+
+      const toolButton = screen.getByRole('button', { name: /com_ui_context_tool_calls/ });
+      expect(toolButton).toHaveAttribute('aria-expanded', 'false');
+
+      toolButton.focus();
+      await userEvent.keyboard('{Enter}');
+
+      expect(toolButton).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByText('com_ui_context_tool_breakdown')).toBeInTheDocument();
+      expect(document.getElementById(toolButton.getAttribute('aria-controls')!)).toContainElement(
+        screen.getByText('com_ui_context_tool_breakdown'),
+      );
+      await userEvent.keyboard(' ');
+      expect(toolButton).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('keeps the messages row unsplit when the snapshot lacks the tool split', async () => {
+      renderBreakdown({ view: snapshotView });
+      await userEvent.click(toggle());
+
+      const breakdown = screen.getByTestId('context-breakdown');
+      expect(within(breakdown).queryByText('com_ui_context_tool_calls')).toBeNull();
+      expect(
+        within(breakdown).getByText('com_ui_context_messages').parentElement?.parentElement
+          ?.textContent,
+      ).toContain('550');
+    });
+
+    it('shows cached prompt shares without adding them to the meter total', async () => {
+      const cached = {
+        ...snapshotView,
+        cacheRead: 30,
+        cacheWrite: 10,
+      } as TokenUsageView;
+      renderBreakdown({ view: cached });
+      await userEvent.click(toggle());
+
+      const breakdown = screen.getByTestId('context-breakdown');
+      expect(within(breakdown).getByText('com_ui_context_cached')).toBeInTheDocument();
+      expect(within(breakdown).getByText('com_ui_context_cache_write')).toBeInTheDocument();
+      expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+    });
+
+    it('warns under pressure inline, with insights behind the ⓘ button', async () => {
+      const pressured = JSON.parse(JSON.stringify(toolSplitView)) as TokenUsageView;
+      pressured.percent = 85;
+      pressured.snapshot!.breakdown.toolMessageTokenCounts = {
+        grep: 1500,
+        read_file: 500,
+      };
+      pressured.toolMessageTokenCounts = pressured.snapshot!.breakdown.toolMessageTokenCounts;
+      pressured.runwayTurns = 2;
+      pressured.compactionReclaim = 90000;
+
+      renderBreakdown({ view: pressured });
+      await userEvent.click(toggle());
+
+      /** Pressure warns inline; insights stay hidden until the ⓘ is hovered */
+      expect(screen.getByText('com_ui_context_pressure_warn')).toBeInTheDocument();
+      expect(screen.queryByTestId('context-hints')).toBeNull();
+
+      const info = screen.getByTestId('context-insights-toggle');
+      await userEvent.click(info);
+      const hints = await screen.findByTestId('context-hints');
+      expect(hints.textContent).toContain('com_ui_context_largest_tool');
+      expect(hints.textContent).toContain('com_ui_context_runway');
+      expect(hints.textContent).toContain('com_ui_context_compaction');
+
+      await userEvent.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByTestId('context-hints')).toBeNull());
+    });
+
+    it('shows the danger tint at the hard threshold', async () => {
+      const critical = JSON.parse(JSON.stringify(toolSplitView)) as TokenUsageView;
+      critical.percent = 96;
+
+      renderBreakdown({ view: critical });
+      await userEvent.click(toggle());
+
+      expect(screen.getByText('com_ui_context_pressure_danger')).toBeInTheDocument();
     });
   });
 

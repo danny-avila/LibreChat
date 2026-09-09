@@ -11,6 +11,7 @@ import type { ContextSnapshot } from '~/store/usage';
 import {
   overheadKey,
   markUsageFolded,
+  migrateUsageFolded,
   liveTokensFamily,
   totalUsageFamily,
   removeUsageAtoms,
@@ -19,7 +20,7 @@ import {
   calibrationFamily,
   pendingUsageFamily,
   branchTotalsFamily,
-  migrateUsageFolded,
+  subagentUsageFamily,
   EMPTY_USAGE_TOTALS,
   contextSnapshotFamily,
   snapshotsByAnchorFamily,
@@ -187,6 +188,9 @@ export default function useUsageHandler(): UsageHandlers {
       /** Displayed counts use the same normalized units billing does: input is
        *  the uncached portion, output includes repaired completion tokens */
       const units = normalizeUsageUnits(data);
+      const rawCost = data.cost;
+      const costKnown = typeof rawCost === 'number' && Number.isFinite(rawCost) && rawCost >= 0;
+      const cost = costKnown ? rawCost : 0;
 
       const pendingAtom = pendingUsageFamily(convoKey);
       const prev = jotai.get(pendingAtom);
@@ -198,10 +202,25 @@ export default function useUsageHandler(): UsageHandlers {
         eventCount: prev.eventCount + 1,
         /** Authoritative per-event cost from the backend (premium tiers, cache
          *  rates); absent when contextCost is disabled — sums to 0 then */
-        costUSD: prev.costUSD + (data.cost ?? 0),
+        costUSD: prev.costUSD + cost,
         /** Coverage is complete only if EVERY folded event carried a cost */
-        costKnown: prev.costKnown && data.cost != null,
+        costKnown: prev.costKnown && costKnown,
       });
+      /** Subagent calls are inside the rollup above (the backend's persisted
+       *  rollup includes them too) — track them separately so the Totals can
+       *  show their share. */
+      if (data.usage_type === 'subagent') {
+        const subAtom = subagentUsageFamily(convoKey);
+        const subPrev = jotai.get(subAtom);
+        jotai.set(subAtom, {
+          input: subPrev.input + units.input,
+          output: subPrev.output + units.output,
+          cacheWrite: subPrev.cacheWrite + units.cacheWrite,
+          cacheRead: subPrev.cacheRead + units.cacheRead,
+          cost: subPrev.cost + cost,
+          costKnown: subPrev.costKnown && costKnown,
+        });
+      }
       return true;
     };
 
@@ -223,7 +242,15 @@ export default function useUsageHandler(): UsageHandlers {
         return;
       }
       const reconciled = reconcileContextUsage(snapshot, promptTokensFromUsage(data));
-      jotai.set(snapshotAtom, { ...reconciled, anchorMessageId: snapshot.anchorMessageId });
+      /** Stamp the reconciling call's cache split so the breakdown can show the
+       *  cached share of the window (live-path only; persisted blobs predate it). */
+      const units = normalizeUsageUnits(data);
+      jotai.set(snapshotAtom, {
+        ...reconciled,
+        anchorMessageId: snapshot.anchorMessageId,
+        cacheRead: units.cacheRead,
+        cacheWrite: units.cacheWrite,
+      });
     };
 
     const usageHandler: UsageHandlers['usageHandler'] = (data, submission) => {
