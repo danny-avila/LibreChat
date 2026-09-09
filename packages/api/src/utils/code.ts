@@ -230,8 +230,8 @@ export async function withCodeApiRateLimit<T>(params: {
       if (retryAfterMs == null) {
         throw codeApiRateLimitError(label, error);
       }
-      /* A zero delay would spin; charge at least a second so the budget
-       * always drains and the loop terminates. */
+      /* A zero delay would spin. Wait at least a second; the wall-clock
+       * deadline still guarantees that repeated zero hints terminate. */
       const waitMs = Math.max(retryAfterMs, 1000);
       if (budget == null || Date.now() + waitMs > budget.deadlineAt) {
         throw codeApiRateLimitError(label, error, waitMs);

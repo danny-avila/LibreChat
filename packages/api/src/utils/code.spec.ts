@@ -137,7 +137,7 @@ describe('withCodeApiRateLimit', () => {
     });
   });
 
-  it('charges at least a second so a zero delay cannot spin', async () => {
+  it('waits at least a second so a zero delay cannot spin', async () => {
     const budget = createCodeApiRateLimitBudget(2_500);
     const waits: number[] = [];
     let attempts = 0;
