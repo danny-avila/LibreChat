@@ -225,6 +225,9 @@ export default function QuestionnaireModal() {
 
   const questionnaire = data?.questionnaire ?? null;
   const completed = data?.completed ?? false;
+  const dismissible = questionnaire?.dismissible !== false;
+  const showConfetti = questionnaire?.showConfetti !== false;
+  const permanentDismiss = questionnaire?.repromptIntervalHours == null;
 
   const pages = useMemo(
     () => (questionnaire ? buildPages(questionnaire.questions) : []),
@@ -238,8 +241,11 @@ export default function QuestionnaireModal() {
     if (!data?.dismissedAt) {
       return true;
     }
+    if (questionnaire.repromptIntervalHours == null) {
+      return false;
+    }
     const repromptMs =
-      (questionnaire.repromptIntervalHours ?? REPROMPT_FALLBACK_HOURS) * 60 * 60 * 1000;
+      (questionnaire.repromptIntervalHours || REPROMPT_FALLBACK_HOURS) * 60 * 60 * 1000;
     return Date.now() - new Date(data.dismissedAt).getTime() >= repromptMs;
   }, [questionnaire, completed, data?.dismissedAt]);
 
@@ -253,7 +259,6 @@ export default function QuestionnaireModal() {
     }
   }, [shouldShow]);
 
-  /* Each page starts at the top rather than inheriting the previous page's scroll position. */
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [pageIndex]);
@@ -261,11 +266,13 @@ export default function QuestionnaireModal() {
   const submitMutation = useSubmitQuestionnaireResponseMutation({
     onSuccess: () => {
       setSubmitted(true);
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-      });
+      if (showConfetti) {
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6 },
+        });
+      }
     },
     onError: () => {
       showToast({ message: localize('com_ui_questionnaire_submit_error'), status: 'error' });
@@ -278,9 +285,9 @@ export default function QuestionnaireModal() {
     return null;
   }
 
-  const repromptLabel = formatReprompt(
-    questionnaire.repromptIntervalHours ?? REPROMPT_FALLBACK_HOURS,
-  );
+  const repromptLabel = permanentDismiss
+    ? null
+    : formatReprompt(questionnaire.repromptIntervalHours ?? REPROMPT_FALLBACK_HOURS);
   const currentPage = pages[Math.min(pageIndex, pages.length - 1)];
   const isLastPage = pageIndex >= pages.length - 1;
   const requiredCount = questionnaire.questions.filter((question) => question.required).length;
@@ -290,12 +297,31 @@ export default function QuestionnaireModal() {
   const progress = requiredCount > 0 ? answeredRequired / requiredCount : pageIndex / pages.length;
 
   const handleDismiss = () => {
+    if (!dismissible) {
+      return;
+    }
     setOpen(false);
     dismissMutation.mutate({ questionnaireId: questionnaire.questionnaireId });
     showToast({
-      message: localize('com_ui_questionnaire_dismissed_toast', { 0: repromptLabel }),
+      message: permanentDismiss
+        ? localize('com_ui_questionnaire_dismissed_permanent_toast')
+        : localize('com_ui_questionnaire_dismissed_toast', { 0: repromptLabel ?? '' }),
       status: 'info',
     });
+  };
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (isOpen) {
+      setOpen(true);
+      return;
+    }
+    if (submitted) {
+      setOpen(false);
+      return;
+    }
+    if (dismissible) {
+      handleDismiss();
+    }
   };
 
   const handleChange = (questionId: string, value: AnswerValue) => {
@@ -335,7 +361,7 @@ export default function QuestionnaireModal() {
     'inline-flex h-10 items-center justify-center rounded-lg border border-border-medium bg-surface-secondary px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary';
 
   return (
-    <OGDialog open={open} onOpenChange={(isOpen) => !isOpen && handleDismiss()}>
+    <OGDialog open={open} onOpenChange={handleOpenChange}>
       <DialogTemplate
         title={questionnaire.title}
         className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3"
@@ -345,7 +371,7 @@ export default function QuestionnaireModal() {
         main={
           submitted ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <div className="text-4xl">🎉</div>
+              {showConfetti && <div className="text-4xl">🎉</div>}
               <p className="text-base font-medium text-text-primary">
                 {questionnaire.thankYouMessage ||
                   localize('com_ui_questionnaire_thank_you_default')}
@@ -452,12 +478,18 @@ export default function QuestionnaireModal() {
                 })}
               </div>
 
-              <div className="flex flex-col gap-1.5 border-t border-border-light pt-3 text-xs text-text-secondary">
-                <span className="flex items-center gap-1.5">
-                  <Clock className="size-3.5 shrink-0" aria-hidden="true" />
-                  {localize('com_ui_questionnaire_remind_later', { 0: repromptLabel })}
-                </span>
-              </div>
+              {dismissible && (
+                <div className="flex flex-col gap-1.5 border-t border-border-light pt-3 text-xs text-text-secondary">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="size-3.5 shrink-0" aria-hidden="true" />
+                    {permanentDismiss
+                      ? localize('com_ui_questionnaire_remind_later_permanent')
+                      : localize('com_ui_questionnaire_remind_later', {
+                          0: repromptLabel ?? '',
+                        })}
+                  </span>
+                </div>
+              )}
             </div>
           )
         }
@@ -468,9 +500,11 @@ export default function QuestionnaireModal() {
             </button>
           ) : (
             <>
-              <button onClick={handleDismiss} className={secondaryButtonClasses}>
-                {localize('com_ui_questionnaire_dismiss')}
-              </button>
+              {dismissible && (
+                <button onClick={handleDismiss} className={secondaryButtonClasses}>
+                  {localize('com_ui_questionnaire_dismiss')}
+                </button>
+              )}
               {pageIndex > 0 && (
                 <button
                   onClick={() => {

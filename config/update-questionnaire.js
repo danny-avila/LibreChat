@@ -67,7 +67,11 @@ function argValue(name) {
   console.purple(`questions: ${result.questions.length}`);
   console.purple(`from: ${result.displayFrom}`);
   console.purple(`to: ${result.displayTo || 'not specified'}`);
-  console.purple(`repromptIntervalHours: ${result.repromptIntervalHours}`);
+  console.purple(`dismissible: ${result.dismissible !== false}`);
+  console.purple(
+    `repromptIntervalHours: ${result.repromptIntervalHours == null ? 'null (permanent dismiss)' : result.repromptIntervalHours}`,
+  );
+  console.purple(`showConfetti: ${result.showConfetti !== false}`);
 
   const all = await listQuestionnaires();
   console.purple(`\nAll rounds (${all.length}):`);

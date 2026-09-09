@@ -37,7 +37,9 @@ function inputFrom(body: unknown): QuestionnaireInput {
     questions: source.questions as QuestionnaireInput['questions'],
     displayFrom: source.displayFrom as string | undefined,
     displayTo: source.displayTo as string | null | undefined,
-    repromptIntervalHours: source.repromptIntervalHours as number | undefined,
+    dismissible: source.dismissible as boolean | undefined,
+    repromptIntervalHours: source.repromptIntervalHours as number | null | undefined,
+    showConfetti: source.showConfetti as boolean | undefined,
   };
 }
 

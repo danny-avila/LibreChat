@@ -41,7 +41,6 @@ const questionnaireResponseSchema: Schema<IQuestionnaireResponse> =
     { timestamps: true },
   );
 
-// A user may only answer a given questionnaire once.
 questionnaireResponseSchema.index({ questionnaireId: 1, user: 1, tenantId: 1 }, { unique: true });
 
 export default questionnaireResponseSchema;

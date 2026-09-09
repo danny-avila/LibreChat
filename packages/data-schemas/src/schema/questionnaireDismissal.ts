@@ -28,7 +28,6 @@ const questionnaireDismissalSchema: Schema<IQuestionnaireDismissal> =
     { timestamps: true },
   );
 
-// One dismissal record per user per questionnaire; re-dismissing updates dismissedAt.
 questionnaireDismissalSchema.index({ questionnaireId: 1, user: 1, tenantId: 1 }, { unique: true });
 
 export default questionnaireDismissalSchema;

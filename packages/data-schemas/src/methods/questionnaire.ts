@@ -226,13 +226,27 @@ export function createQuestionnaireMethods(mongoose: typeof import('mongoose')):
       throw new QuestionnaireValidationError('"displayTo" must be after "displayFrom"');
     }
 
-    const repromptIntervalHours = input.repromptIntervalHours ?? 24;
-    if (!Number.isFinite(repromptIntervalHours) || repromptIntervalHours < 1) {
-      throw new QuestionnaireValidationError('"repromptIntervalHours" must be a positive number');
+    let repromptIntervalHours: number | null;
+    if (input.repromptIntervalHours === null) {
+      repromptIntervalHours = null;
+    } else {
+      repromptIntervalHours = input.repromptIntervalHours ?? 24;
+      if (!Number.isFinite(repromptIntervalHours) || repromptIntervalHours < 1) {
+        throw new QuestionnaireValidationError(
+          '"repromptIntervalHours" must be a positive number, or null for permanent dismiss',
+        );
+      }
     }
 
     if (input.status && !STATUSES.includes(input.status)) {
       throw new QuestionnaireValidationError(`"status" must be one of: ${STATUSES.join(', ')}`);
+    }
+
+    const dismissible = input.dismissible !== false;
+    const showConfetti = input.showConfetti !== false;
+
+    if (!dismissible && repromptIntervalHours === null) {
+      repromptIntervalHours = 24;
     }
 
     const year = displayFrom.getFullYear();
@@ -246,7 +260,9 @@ export function createQuestionnaireMethods(mongoose: typeof import('mongoose')):
       questions,
       displayFrom,
       displayTo,
+      dismissible,
       repromptIntervalHours,
+      showConfetti,
       year,
       quarter,
     };
@@ -288,7 +304,9 @@ export function createQuestionnaireMethods(mongoose: typeof import('mongoose')):
         questionCount: questionnaire.questions?.length ?? 0,
         displayFrom: questionnaire.displayFrom,
         displayTo: questionnaire.displayTo ?? null,
-        repromptIntervalHours: questionnaire.repromptIntervalHours,
+        dismissible: questionnaire.dismissible !== false,
+        repromptIntervalHours: questionnaire.repromptIntervalHours ?? null,
+        showConfetti: questionnaire.showConfetti !== false,
         responseCount: responseCounts.get(questionnaire.questionnaireId) ?? 0,
         dismissalCount: dismissalCounts.get(questionnaire.questionnaireId) ?? 0,
         createdAt: (questionnaire as { createdAt?: Date }).createdAt,
@@ -387,7 +405,9 @@ export function createQuestionnaireMethods(mongoose: typeof import('mongoose')):
       questions: source.questions,
       displayFrom,
       displayTo,
-      repromptIntervalHours: source.repromptIntervalHours,
+      dismissible: source.dismissible !== false,
+      repromptIntervalHours: source.repromptIntervalHours ?? 24,
+      showConfetti: source.showConfetti !== false,
     });
 
     return created.toObject() as IQuestionnaire;

@@ -5,7 +5,9 @@
   "thankYouMessage": "Thanks for the feedback!",
   "displayFrom": "2026-07-01T00:00:00Z",
   "displayTo": null,
+  "dismissible": true,
   "repromptIntervalHours": 24,
+  "showConfetti": true,
   "questions": [
     {
       "id": "satisfaction",

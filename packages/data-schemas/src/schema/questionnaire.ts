@@ -71,10 +71,17 @@ const questionnaireSchema: Schema<IQuestionnaire> = new Schema<IQuestionnaire>(
     displayTo: {
       type: Date,
     },
+    dismissible: {
+      type: Boolean,
+      default: true,
+    },
     repromptIntervalHours: {
       type: Number,
-      required: true,
       default: 24,
+    },
+    showConfetti: {
+      type: Boolean,
+      default: true,
     },
     tenantId: {
       type: String,

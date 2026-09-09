@@ -31,6 +31,9 @@ router.post('/dismiss', requireJwtAuth, async (req, res) => {
     if (!questionnaire || questionnaire.questionnaireId !== questionnaireId) {
       return res.status(409).json({ message: 'This questionnaire is no longer active' });
     }
+    if (questionnaire.dismissible === false) {
+      return res.status(403).json({ message: 'This questionnaire cannot be dismissed' });
+    }
 
     const dismissal = await dismissQuestionnaire(req.user.id, questionnaireId);
     res.status(200).json({ success: true, dismissedAt: dismissal.dismissedAt });

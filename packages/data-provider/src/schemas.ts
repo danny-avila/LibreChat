@@ -1746,7 +1746,9 @@ export const tQuestionnaireSchema = z.object({
   questions: z.array(tQuestionnaireQuestionSchema),
   displayFrom: z.string(),
   displayTo: z.string().nullable().optional(),
-  repromptIntervalHours: z.number(),
+  dismissible: z.boolean().default(true),
+  repromptIntervalHours: z.number().nullable(),
+  showConfetti: z.boolean().default(true),
 });
 export type TQuestionnaire = z.infer<typeof tQuestionnaireSchema>;
 

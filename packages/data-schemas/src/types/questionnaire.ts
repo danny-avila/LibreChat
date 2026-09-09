@@ -13,26 +13,21 @@ export interface IQuestionnaireQuestion {
   title: string;
   description?: string;
   required?: boolean;
-  /** Consecutive questions sharing a section are grouped onto the same page. */
   section?: string;
-  /** scale/numeric */
   min?: number;
   max?: number;
   minLabel?: string;
   maxLabel?: string;
-  /** single_choice/multiple_choice */
   options?: string[];
   maxSelections?: number;
 }
 
-/** Only 'active' questionnaires are served to users. */
 export type QuestionnaireStatus = 'draft' | 'active' | 'closed';
 
 export interface IQuestionnaire extends Document {
   questionnaireId: string;
   label?: string;
   status: QuestionnaireStatus;
-  /** Derived from displayFrom on save. */
   year?: number;
   quarter?: number;
   title: string;
@@ -41,11 +36,12 @@ export interface IQuestionnaire extends Document {
   questions: IQuestionnaireQuestion[];
   displayFrom: Date;
   displayTo?: Date;
-  repromptIntervalHours: number;
+  dismissible: boolean;
+  repromptIntervalHours: number | null;
+  showConfetti: boolean;
   tenantId?: string;
 }
 
-/** `questionnaireId`/`year`/`quarter` are derived on save. */
 export interface QuestionnaireInput {
   label?: string;
   status?: QuestionnaireStatus;
@@ -55,7 +51,9 @@ export interface QuestionnaireInput {
   questions: IQuestionnaireQuestion[];
   displayFrom?: Date | string | null;
   displayTo?: Date | string | null;
-  repromptIntervalHours?: number;
+  dismissible?: boolean;
+  repromptIntervalHours?: number | null;
+  showConfetti?: boolean;
 }
 
 export interface QuestionnaireSummary {
@@ -68,7 +66,9 @@ export interface QuestionnaireSummary {
   questionCount: number;
   displayFrom: Date;
   displayTo?: Date | null;
-  repromptIntervalHours: number;
+  dismissible: boolean;
+  repromptIntervalHours: number | null;
+  showConfetti: boolean;
   responseCount: number;
   dismissalCount: number;
   createdAt?: Date;
