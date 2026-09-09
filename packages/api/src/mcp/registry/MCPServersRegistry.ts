@@ -460,7 +460,9 @@ export class MCPServersRegistry {
     /** Tenant-scoped (also covering the single-flight map): the DB read behind
      *  a miss is filtered by the active tenant, so entries and in-flight
      *  builds must partition the same way. */
-    const cacheKey = scopedCacheKey(userId ?? '__no_user__');
+    // DB visibility depends on both user and role. Keep the role in the cache and
+    // single-flight identity so a role change cannot reuse the previous ACL result.
+    const cacheKey = scopedCacheKey(`${userId ?? '__no_user__'}::role:${role ?? '__no_role__'}`);
 
     const cached = await this.readThroughCacheAll.get(cacheKey);
     if (cached.hit) {
@@ -795,17 +797,20 @@ export class MCPServersRegistry {
     const yamlSnapshot = await this.cacheConfigsRepo.getAll();
 
     const settled = await Promise.allSettled(
-      Object.entries(resolvedMcpConfig).map(([serverName, rawConfig]) =>
-        limit(async () => {
-          if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
-            return;
-          }
-          const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
-          if (parsed) {
-            result[serverName] = parsed;
-          }
-        }),
-      ),
+      Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
+        if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+          return;
+        }
+        const parsed = await this.ensureSingleConfigServer(
+          serverName,
+          rawConfig,
+          allowlists,
+          limit,
+        );
+        if (parsed) {
+          result[serverName] = parsed;
+        }
+      }),
     );
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {
@@ -851,6 +856,7 @@ export class MCPServersRegistry {
     serverName: string,
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
+    limit: <T>(task: () => Promise<T>) => Promise<T>,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
@@ -869,7 +875,12 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists);
+    // Only the caller that owns the cold initialization consumes shared capacity.
+    // Joiners await the single-flight promise directly instead of filling every
+    // slot while the same inspection runs once.
+    const initPromise = limit(() =>
+      this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists),
+    );
     this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {

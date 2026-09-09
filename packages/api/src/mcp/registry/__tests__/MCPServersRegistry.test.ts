@@ -136,6 +136,26 @@ describe('MCPServersRegistry', () => {
       expect(dbGetAll).toHaveBeenCalledTimes(2);
     });
 
+    it('partitions role-filtered server maps when a user role changes', async () => {
+      const dbGetAll = jest.spyOn(registry['dbConfigsRepo'], 'getAll');
+      dbGetAll.mockResolvedValueOnce({ admin_server: testParsedConfig });
+      dbGetAll.mockResolvedValueOnce({ user_server: testParsedConfig });
+
+      await expect(registry.getAllServerConfigs('user-1', {}, 'ADMIN')).resolves.toEqual({
+        admin_server: testParsedConfig,
+      });
+      await expect(registry.getAllServerConfigs('user-1', {}, 'USER')).resolves.toEqual({
+        user_server: testParsedConfig,
+      });
+      await expect(registry.getAllServerConfigs('user-1', {}, 'USER')).resolves.toEqual({
+        user_server: testParsedConfig,
+      });
+
+      expect(dbGetAll).toHaveBeenNthCalledWith(1, 'user-1', 'ADMIN');
+      expect(dbGetAll).toHaveBeenNthCalledWith(2, 'user-1', 'USER');
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+    });
+
     it('does not join or erase a single-flight fetch from another generation', async () => {
       let resolveOld!: (value: Record<string, t.ParsedServerConfig>) => void;
       let resolveFresh!: (value: Record<string, t.ParsedServerConfig>) => void;
@@ -925,6 +945,40 @@ describe('MCPServersRegistry', () => {
         'https://example.com/config-only-icon.svg',
       );
       expect(result['config-only-server'].source).toBe('config');
+    });
+
+    it('lets duplicate cold initializations share one pending owner slot', async () => {
+      let releaseInspection!: () => void;
+      const inspectionGate = new Promise<void>((resolve) => {
+        releaseInspection = resolve;
+      });
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+      inspectSpy.mockImplementationOnce(async (_serverName, rawConfig) => {
+        await inspectionGate;
+        return { ...testParsedConfig, ...rawConfig } as t.ParsedServerConfig;
+      });
+      const limitCalls = jest.fn();
+      const limit = <T>(task: () => Promise<T>): Promise<T> => {
+        limitCalls();
+        return task();
+      };
+      const config = {
+        shared: {
+          type: 'streamable-http' as const,
+          url: 'https://shared.example.com/mcp',
+        },
+      };
+
+      const first = registry.ensureConfigServers(config, limit);
+      const second = registry.ensureConfigServers(config, limit);
+      await Promise.resolve();
+      await Promise.resolve();
+      releaseInspection();
+
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      expect(limitCalls).toHaveBeenCalledTimes(1);
     });
 
     it('preserves YAML base entry when config-tier override reports inspectionFailed', async () => {

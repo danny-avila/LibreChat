@@ -195,11 +195,12 @@ export type TScheduleRunNowResponse = {
 
 /** Only structured schedule preflight failures may request immediate suspension. */
 export function getScheduleMCPDisabledReason(
-  error?: string,
+  outcomes?: ScheduleMCPOutcome[],
 ): 'mcp_reauth_required' | 'mcp_configuration_missing' | 'mcp_permission_denied' | undefined {
-  if (error?.startsWith('mcp_reauth_required: [')) return 'mcp_reauth_required';
-  if (error?.startsWith('mcp_configuration_missing: [')) return 'mcp_configuration_missing';
-  if (error?.startsWith('mcp_permission_denied: [')) return 'mcp_permission_denied';
+  const statuses = new Set(outcomes?.map((outcome) => outcome.status));
+  if (statuses.has('mcp_reauth_required')) return 'mcp_reauth_required';
+  if (statuses.has('mcp_configuration_missing')) return 'mcp_configuration_missing';
+  if (statuses.has('mcp_permission_denied')) return 'mcp_permission_denied';
   return undefined;
 }
 

@@ -15,6 +15,8 @@ export interface ScheduleLimits {
   maxPerUser: number;
   minIntervalMinutes: number;
   autoDisableAfterFailures: number;
+  /** Maximum claimed occurrences concurrently passing readiness admission per replica. */
+  admissionConcurrency: number;
   fireConcurrency: number;
   /** Maximum MCP readiness probes active during one schedule admission. */
   mcpPreflightConcurrency: number;
@@ -34,6 +36,7 @@ export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
   maxPerUser: 10,
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
+  admissionConcurrency: 20,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
   mcpPreflightTimeoutMs: 5 * 60_000,

@@ -423,12 +423,11 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
     // still honored. The base config only supplies the per-tick claim budget.
     const limits = await deps.getLimits();
     let fired = 0;
-    // Cap on ACTIVE scheduled runs, not just per-tick starts: the loopback chat
-    // endpoint returns as soon as the generation starts and scheduled fires
-    // bypass the interactive limiter, so without this the in-flight count would
-    // grow by fireConcurrency every tick. Only claim up to the free headroom.
-    const active = await runAsSystem(() => deps.methods.countActiveRuns());
-    const budget = Math.max(0, limits.fireConcurrency - active);
+    // Admission has its own bounded pool. MCP readiness runs before a generation
+    // slot is reserved, so slow external servers cannot make generation occupancy
+    // suppress later healthy claims. The durable capacity allocator in fireSchedule
+    // remains the cross-replica authority for actual generations.
+    const budget = limits.admissionConcurrency;
     const fires: Promise<unknown>[] = [];
     for (let i = 0; i < budget; i++) {
       // Claim + the fire's pre-owner-context bookkeeping (disable/advance,

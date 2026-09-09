@@ -431,8 +431,17 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
 
     const effectiveConfig = await loadAppConfig();
     const rawConfig = effectiveConfig?.mcpConfig ?? {};
-    const candidateNames = Array.from(new Set([...serverHints, ...Object.keys(rawConfig)]));
-    const aliases = buildServerNameAliases(candidateNames);
+    const configNames = Object.keys(rawConfig);
+    const candidateNames = Array.from(new Set([...configNames, ...serverHints]));
+    // Authoritative config names claim normalized aliases before persisted hints.
+    // A hint is often already normalized (for example `Sales_Force` for the real
+    // config name `Sales Force`) and must not shadow that registry identity.
+    const aliases = buildServerNameAliases(configNames);
+    for (const hint of serverHints) {
+      if (!aliases.has(hint)) aliases.set(hint, hint);
+      const normalized = normalizeServerName(hint);
+      if (!aliases.has(normalized)) aliases.set(normalized, hint);
+    }
     const candidates = [...candidateNames, ...aliases.keys()];
     const selected = new Map<string, string[]>();
     const serverAgentIds = new Map<string, Set<string>>();
@@ -440,7 +449,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     for (const { name: tool, agentId: toolAgentId } of selectedTools) {
       const [, name] = splitMCPToolKey(tool, candidates);
       if (!name) continue;
-      const server = candidateNames.includes(name) ? name : (aliases.get(name) ?? name);
+      const server = configNames.includes(name) ? name : (aliases.get(name) ?? name);
       const owners = serverAgentIds.get(server) ?? new Set<string>();
       owners.add(toolAgentId);
       serverAgentIds.set(server, owners);
@@ -456,19 +465,29 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       }
       selected.set(server, required);
     }
-    const outcome = (
+    const outcomesForOwners = (
       server: string,
       status: ScheduleMCPStatus,
       preferredOwners?: Set<string>,
-    ): ScheduleMCPOutcome => {
+    ): ScheduleMCPOutcome[] => {
       const owners = preferredOwners ?? serverAgentIds.get(server);
-      const outcomeAgentId = owners?.has(agentId) ? undefined : owners?.values().next().value;
-      return { server, status, ...(outcomeAgentId ? { agentId: outcomeAgentId } : {}) };
+      if (!owners || owners.size === 0) return [{ server, status }];
+      if (status === 'ready') {
+        const ownerId = owners.has(agentId) ? agentId : owners.values().next().value;
+        return [{ server, status, ...(ownerId !== agentId ? { agentId: ownerId } : {}) }];
+      }
+      return [...owners].map((ownerId) => ({
+        server,
+        status,
+        ...(ownerId !== agentId ? { agentId: ownerId } : {}),
+      }));
     };
     const capabilities = effectiveConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
     if (!capabilities.includes(AgentCapabilities.tools)) {
       throw new ScheduleMCPError(
-        [...selected.keys()].map((server) => outcome(server, 'mcp_configuration_missing')),
+        [...selected.keys()].flatMap((server) =>
+          outcomesForOwners(server, 'mcp_configuration_missing'),
+        ),
       );
     }
     if (
@@ -480,14 +499,11 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       }))
     ) {
       throw new ScheduleMCPError(
-        [...selected.keys()].map((server) => outcome(server, 'mcp_permission_denied')),
+        [...selected.keys()].flatMap((server) =>
+          outcomesForOwners(server, 'mcp_permission_denied'),
+        ),
       );
     }
-    const rawServerNames = [
-      ...Object.keys(rawConfig),
-      ...[...serverHints].filter((name) => !(name in rawConfig)),
-    ];
-    const shadowed = findShadowedServerNames(rawServerNames);
     const selectedRawConfig = Object.fromEntries(
       Object.entries(rawConfig).filter(([serverName]) => selected.has(serverName)),
     );
@@ -502,6 +518,9 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       }),
     );
     const servers = await deps.getServerConfigs(user.id, config, user.role);
+    const shadowed = findShadowedServerNames(
+      Array.from(new Set([...configNames, ...Object.keys(servers)])),
+    );
     throwIfAborted();
     const auth = await getPluginAuthMap({
       userId: user.id,
@@ -517,79 +536,90 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     };
     let outcomes: ScheduleMCPOutcome[];
     try {
-      outcomes = await Promise.all(
-        [...selected].map(([server, required]) =>
-          requestProbeLimit(() =>
-            sharedProbeLimit(async (): Promise<ScheduleMCPOutcome> => {
-              throwIfAborted();
-              const serverConfig = servers[server];
-              const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
-              if (
-                !serverConfig ||
-                shadowed.has(server) ||
-                getMissingCustomUserVars(serverConfig, customUserVars).length > 0
-              ) {
-                return outcome(server, 'mcp_configuration_missing');
-              }
-              let reauth = false;
-              try {
-                const connection = await deps.connect({
-                  user,
-                  serverName: server,
-                  serverConfig,
-                  customUserVars,
-                  requestBody,
-                  requestScopedConnections: context,
-                  ephemeralConnection: true,
-                  returnOnOAuth: true,
-                  oauthStart: async () => {
-                    reauth = true;
-                  },
-                  signal,
-                });
-                const snapshot = await connection.fetchToolsSnapshot(options.deadlineMs, signal);
-                if (snapshot.authenticationError) throw snapshot.authenticationError;
-                const available = new Set(
-                  Object.keys(formatMCPServerTools(server, snapshot.tools)),
-                );
-                for (const tool of snapshot.tools) {
-                  available.add(
-                    `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(server)}`,
+      outcomes = (
+        await Promise.all(
+          [...selected].map(([server, required]) =>
+            requestProbeLimit(() =>
+              sharedProbeLimit(async (): Promise<ScheduleMCPOutcome[]> => {
+                throwIfAborted();
+                const serverConfig = servers[server];
+                const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
+                if (
+                  !serverConfig ||
+                  shadowed.has(server) ||
+                  getMissingCustomUserVars(serverConfig, customUserVars).length > 0
+                ) {
+                  return outcomesForOwners(server, 'mcp_configuration_missing');
+                }
+                let reauth = false;
+                try {
+                  const connection = await deps.connect({
+                    user,
+                    serverName: server,
+                    serverConfig,
+                    customUserVars,
+                    requestBody,
+                    requestScopedConnections: context,
+                    ephemeralConnection: true,
+                    returnOnOAuth: true,
+                    oauthStart: async () => {
+                      reauth = true;
+                    },
+                    signal,
+                  });
+                  const snapshot = await connection.fetchToolsSnapshot(options.deadlineMs, signal);
+                  if (snapshot.authenticationError) throw snapshot.authenticationError;
+                  const available = new Set(
+                    Object.keys(formatMCPServerTools(server, snapshot.tools)),
+                  );
+                  for (const tool of snapshot.tools) {
+                    available.add(
+                      `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(server)}`,
+                    );
+                  }
+                  let status: ScheduleMCPStatus = 'ready';
+                  if (reauth) {
+                    status = 'mcp_reauth_required';
+                  } else if (!snapshot.complete) {
+                    status = 'mcp_unavailable';
+                  } else if (
+                    available.size === 0 ||
+                    !required.every((tool) => available.has(tool))
+                  ) {
+                    status = 'mcp_configuration_missing';
+                  }
+                  const missingTools =
+                    status === 'mcp_configuration_missing'
+                      ? required.filter((tool) => !available.has(tool))
+                      : [];
+                  const missingOwners = new Set<string>();
+                  for (const missingTool of missingTools) {
+                    for (const ownerId of toolAgentIds.get(server)?.get(missingTool) ?? []) {
+                      missingOwners.add(ownerId);
+                    }
+                  }
+                  return outcomesForOwners(
+                    server,
+                    status,
+                    missingOwners.size > 0 ? missingOwners : undefined,
+                  );
+                } catch (error) {
+                  return outcomesForOwners(
+                    server,
+                    reauth ||
+                      error instanceof MCPAuthenticationRejectedError ||
+                      error instanceof OpenIDReauthRequiredError ||
+                      error instanceof MCPOAuthSecretReentryRequiredError ||
+                      isOAuthAuthenticationError(error)
+                      ? 'mcp_reauth_required'
+                      : 'mcp_unavailable',
                   );
                 }
-                let status: ScheduleMCPStatus = 'ready';
-                if (reauth) {
-                  status = 'mcp_reauth_required';
-                } else if (!snapshot.complete) {
-                  status = 'mcp_unavailable';
-                } else if (available.size === 0 || !required.every((tool) => available.has(tool))) {
-                  status = 'mcp_configuration_missing';
-                }
-                const missingTool =
-                  status === 'mcp_configuration_missing'
-                    ? required.find((tool) => !available.has(tool))
-                    : undefined;
-                return outcome(
-                  server,
-                  status,
-                  missingTool ? toolAgentIds.get(server)?.get(missingTool) : undefined,
-                );
-              } catch (error) {
-                return outcome(
-                  server,
-                  reauth ||
-                    error instanceof MCPAuthenticationRejectedError ||
-                    error instanceof OpenIDReauthRequiredError ||
-                    error instanceof MCPOAuthSecretReentryRequiredError ||
-                    isOAuthAuthenticationError(error)
-                    ? 'mcp_reauth_required'
-                    : 'mcp_unavailable',
-                );
-              }
-            }),
+              }),
+            ),
           ),
-        ),
-      );
+        )
+      ).flat();
     } finally {
       await cleanupMCPRequestContext(context);
     }

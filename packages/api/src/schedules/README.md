@@ -7,10 +7,13 @@ user connections that are disposed afterwards. It does not borrow a browser sess
 or replace a live interactive connection. Graph agents are loaded in breadth-first
 batches, and private children are skipped with the same VIEW rule as a live run.
 Enabled spawn-agent members are included when the endpoint grants that capability.
-The effective endpoint must grant the tools capability. Tool discovery runs at most
-three server probes concurrently, must complete, and must contain all explicitly
-selected tools; wildcard selections require a nonempty catalog. Request disconnects
+The effective endpoint must grant the tools capability. Tool discovery uses the configured
+per-admission concurrency (one to ten, default three), must complete, and must contain all
+explicitly selected tools; wildcard selections require a nonempty catalog. Request disconnects
 and scheduler shutdown cancel connection setup and discovery without advancing the occurrence.
+Readiness admissions use a separate bounded pool and complete before a durable generation
+slot is reserved, so slow MCP servers cannot consume generation capacity or block later
+healthy occurrences from being considered.
 
 Supported authentication is determined by a successful unattended connection:
 

@@ -705,7 +705,11 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       await respondToReplay(replayed);
       return;
     }
-    if (!(await validateMCP(parsed.data.agent_id, req, res, mcpSignal, limits))) return;
+    if (
+      parsed.data.enabled &&
+      !(await validateMCP(parsed.data.agent_id, req, res, mcpSignal, limits))
+    )
+      return;
     // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
     // replay lookup above. A committed create whose response was lost must still be
     // recoverable by an identical retry: applying today's policy first let a raised
@@ -967,7 +971,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     if (
-      (enabled || parsed.data.agent_id != null) &&
+      enabled &&
       !(await validateMCP(parsed.data.agent_id ?? existing.agent_id, req, res, mcpSignal, limits))
     )
       return;

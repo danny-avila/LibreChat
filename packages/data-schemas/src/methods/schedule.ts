@@ -1258,7 +1258,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // reconciler's replay still disables. Reads current state after the count.
     if (isFailure) {
       const schedule = await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>();
-      const mcpReason = getScheduleMCPDisabledReason(params.error);
+      const mcpReason = getScheduleMCPDisabledReason(params.mcp);
       const threshold = mcpReason ? 1 : params.autoDisableAfterFailures;
       if (schedule?.enabled && schedule.failureCount >= threshold) {
         // Carry the COUNT this decision was made on, not just the revision. The read

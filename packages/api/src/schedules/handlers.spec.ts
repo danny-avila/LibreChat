@@ -7,7 +7,7 @@ import { createSchedulesHandlers, toWireSchedule, computeCreateDigest } from './
 import { ScheduleMCPError } from './mcp';
 
 /** A lean schedule doc carrying both public fields and internal bookkeeping. */
-function fullScheduleDoc(): ISchedule {
+function fullScheduleDoc(overrides: Partial<ISchedule> = {}): ISchedule {
   return {
     _id: 'mongo-id',
     __v: 0,
@@ -38,6 +38,7 @@ function fullScheduleDoc(): ISchedule {
     bookkept: true,
     createdAt: new Date('2026-07-01T00:00:00Z'),
     updatedAt: new Date('2026-07-10T00:00:00Z'),
+    ...overrides,
   } as unknown as ISchedule;
 }
 
@@ -179,6 +180,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
       maxPerUser: 10,
       minIntervalMinutes: 60,
       autoDisableAfterFailures: 5,
+      admissionConcurrency: 20,
       fireConcurrency: 5,
       mcpPreflightConcurrency: 3,
       mcpPreflightTimeoutMs: 300_000,
@@ -445,6 +447,7 @@ describe('create with a cron cadence', () => {
         // clears the floor it was admitted under.
         minIntervalMinutes: 100_000,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
         mcpPreflightTimeoutMs: 300_000,
@@ -469,6 +472,7 @@ describe('create with a cron cadence', () => {
         maxPerUser: 10,
         minIntervalMinutes: 100_000,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
         mcpPreflightTimeoutMs: 300_000,
@@ -496,6 +500,7 @@ describe('create with a cron cadence', () => {
         maxPerUser: 10,
         minIntervalMinutes: 100_000,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
         mcpPreflightTimeoutMs: 300_000,
@@ -1050,6 +1055,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         maxPerUser: 10,
         minIntervalMinutes: 700,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
         mcpPreflightTimeoutMs: 300_000,
@@ -1076,6 +1082,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         maxPerUser: 10,
         minIntervalMinutes: 700,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
         mcpPreflightTimeoutMs: 300_000,
@@ -1110,6 +1117,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         maxPerUser: 10,
         minIntervalMinutes: 700,
         autoDisableAfterFailures: 5,
+        admissionConcurrency: 20,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
         mcpPreflightTimeoutMs: 300_000,
@@ -1259,6 +1267,7 @@ describe('unattended MCP admission', () => {
     await createSchedulesHandlers(deps).createSchedule(req, res);
 
     expect(captured.status).toBe(201);
+    expect(deps.preflightMCP).not.toHaveBeenCalled();
     expect(deps.methods.createScheduleWithSlot).toHaveBeenCalledTimes(1);
   });
 
@@ -1446,6 +1455,26 @@ it('allows pausing even when MCP preflight would fail', async () => {
   Object.assign(req, { body: { enabled: false } });
   const { res } = makeRes();
   await createSchedulesHandlers(deps).updateSchedule(req, res);
+  expect(preflightMCP).not.toHaveBeenCalled();
+  expect(deps.methods.updateScheduleById).toHaveBeenCalled();
+});
+
+it('allows repointing a disabled schedule without MCP preflight', async () => {
+  const preflightMCP = jest.fn(async () => {
+    throw new Error('unavailable');
+  });
+  const deps = makeCreateDeps({ isUserDeleting: async () => false, preflightMCP });
+  jest
+    .mocked(deps.methods.getScheduleById)
+    .mockResolvedValue(fullScheduleDoc({ enabled: false, nextRunAt: undefined }));
+  const req = makeCreateReq();
+  req.params = { id: 'sched-1' };
+  Object.assign(req, { body: { agent_id: 'replacement' } });
+  const { res, captured } = makeRes();
+
+  await createSchedulesHandlers(deps).updateSchedule(req, res);
+
+  expect(captured.status ?? 200).toBe(200);
   expect(preflightMCP).not.toHaveBeenCalled();
   expect(deps.methods.updateScheduleById).toHaveBeenCalled();
 });

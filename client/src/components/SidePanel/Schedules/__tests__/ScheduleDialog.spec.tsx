@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '@librechat/client';
 import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -79,7 +80,7 @@ const renderDialog = (schedule?: Partial<TSchedule>) => {
     return createElement(
       QueryClientProvider,
       { client: queryClient },
-      createElement(ToastProvider, null, children),
+      createElement(MemoryRouter, null, createElement(ToastProvider, null, children)),
     );
   }
   return render(

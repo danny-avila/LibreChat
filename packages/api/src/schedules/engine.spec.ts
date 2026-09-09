@@ -9,6 +9,7 @@ const LIMITS: ScheduleLimits = {
   maxPerUser: 10,
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
+  admissionConcurrency: 20,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
   mcpPreflightTimeoutMs: 300_000,
@@ -178,6 +179,32 @@ describe('runTick misfire skip-forward', () => {
 });
 
 describe('runTick error handling', () => {
+  it('uses readiness admission capacity independently of generation capacity', async () => {
+    const schedules = Array.from({ length: 6 }, (_, index) =>
+      makeClaimedSchedule({
+        id: `sched-${index}`,
+        user: `user-${index}` as never,
+        claimToken: `ct-${index}`,
+        leaseBy: `inst-${index}`,
+      }),
+    );
+    const methods = makeMethods(schedules[0]);
+    const claims: Array<FireableSchedule | null> = [...schedules, null];
+    methods.claimDueSchedule.mockImplementation(async () => claims.shift() ?? null);
+    methods.countActiveRuns.mockResolvedValue(5);
+    const getUserContext = jest.fn(async () => null);
+
+    await tickOnce(
+      makeDeps(methods, {
+        getLimits: async () => ({ ...LIMITS, admissionConcurrency: 6, fireConcurrency: 1 }),
+        getUserContext,
+      }),
+    );
+
+    expect(getUserContext).toHaveBeenCalledTimes(6);
+    expect(methods.countActiveRuns).not.toHaveBeenCalled();
+  });
+
   it('starts later admissions while an earlier schedule is still in preflight', async () => {
     const first = makeClaimedSchedule();
     const second = makeClaimedSchedule({

@@ -13,6 +13,7 @@ const LIMITS: ScheduleLimits = {
   maxPerUser: 10,
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
+  admissionConcurrency: 20,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
   mcpPreflightTimeoutMs: 300_000,
@@ -500,6 +501,27 @@ describe('fireSchedule', () => {
     expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
   });
 
+  it('completes readiness before requesting generation capacity', async () => {
+    const { methods } = makeMethods();
+    const order: string[] = [];
+    const deps = makeDeps(methods, {
+      preflightMCP: async () => {
+        order.push('readiness');
+        return [];
+      },
+      withGlobalCapacitySlot: async (_cap, claim) => {
+        order.push('generation-capacity');
+        const attempt = await claim(0);
+        return attempt === 'slot-taken' ? 'capacity' : attempt;
+      },
+    });
+    mockFetch(async () => okResponse());
+
+    await fireSchedule(deps, makeSchedule(), LIMITS, dueAt());
+
+    expect(order).toEqual(['readiness', 'generation-capacity']);
+  });
+
   it('does not let a principal override widen the global capacity cap', async () => {
     const { methods, runs } = makeMethods();
     // The single deployment-wide slot is already occupied.
@@ -831,8 +853,10 @@ it('settles an unavailable MCP occurrence without dispatching a generation', asy
       throw failure;
     },
   });
+  const capacitySpy = jest.spyOn(deps, 'withGlobalCapacitySlot');
   const result = await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'));
   expect(result).toMatchObject({ fired: false, mcp: failure.outcomes });
+  expect(capacitySpy).not.toHaveBeenCalled();
   expect(deps.enqueueTrigger).not.toHaveBeenCalled();
   expect(methods.recordRunOutcome).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -928,7 +952,7 @@ it('bounds MCP preflight by the stricter owner and deployment timeout', async ()
   expect(deadlineMs).toBeLessThanOrEqual(Date.now() + 12_000);
 });
 
-it('rolls back without recording a failure when MCP preflight is cancelled', async () => {
+it('cancels MCP preflight before reserving or recording a run', async () => {
   const { methods } = makeMethods();
   const controller = new AbortController();
   const deps = makeDeps(methods, {
@@ -948,7 +972,9 @@ it('rolls back without recording a failure when MCP preflight is cancelled', asy
   );
 
   expect(result).toMatchObject({ fired: false, skipped: 'superseded' });
-  expect(methods.deleteScheduleRun).toHaveBeenCalled();
+  // Readiness now runs before generation reservation, so cancellation has no
+  // started row or capacity slot to roll back.
+  expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
   expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   expect(methods.advanceSchedule).not.toHaveBeenCalled();
 });

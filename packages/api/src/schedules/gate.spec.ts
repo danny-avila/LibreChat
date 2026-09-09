@@ -47,6 +47,7 @@ const limits = {
   maxPerUser: 10,
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
+  admissionConcurrency: 20,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
   mcpPreflightTimeoutMs: 300_000,
@@ -125,11 +126,14 @@ describe('v1 experimental gate, asserted at real entry points', () => {
       true,
     );
     const tuned = makeService({
-      interfaceConfig: { schedules: { maxPerUser: 3, mcpPreflightConcurrency: 2 } },
+      interfaceConfig: {
+        schedules: { maxPerUser: 3, admissionConcurrency: 12, mcpPreflightConcurrency: 2 },
+      },
     });
     const resolved = await tuned.getLimits();
     expect(resolved.enabled).toBe(true);
     expect(resolved.maxPerUser).toBe(3);
+    expect(resolved.admissionConcurrency).toBe(12);
     expect(resolved.mcpPreflightConcurrency).toBe(2);
   });
 

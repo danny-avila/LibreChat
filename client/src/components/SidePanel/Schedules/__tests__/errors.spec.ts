@@ -1,6 +1,7 @@
 import { readScheduleMCPOutcomes } from 'librechat-data-provider';
 import {
   scheduleMCPErrorMessage,
+  scheduleMCPErrorOutcomes,
   scheduleMCPRecoveryOutcomes,
   scheduleMCPNeedsAgentRecovery,
 } from '../errors';
@@ -17,6 +18,34 @@ it('shows localized recovery reasons and exact server names', () => {
     },
   });
   expect(scheduleMCPErrorMessage(error, (key) => key)).toBe('Notion: com_ui_schedule_mcp_reauth');
+  expect(scheduleMCPErrorOutcomes(error)).toEqual([
+    { server: 'Notion', status: 'mcp_reauth_required' },
+    { server: 'ClickHouse', status: 'ready' },
+  ]);
+});
+
+it('preserves descendant owners from immediate admission errors', () => {
+  const error = Object.assign(new Error('missing tool'), {
+    response: {
+      data: {
+        mcp: [
+          {
+            server: 'Notion',
+            agentId: 'research-agent',
+            status: 'mcp_configuration_missing',
+          },
+        ],
+      },
+    },
+  });
+
+  expect(scheduleMCPErrorOutcomes(error)).toEqual([
+    {
+      server: 'Notion',
+      agentId: 'research-agent',
+      status: 'mcp_configuration_missing',
+    },
+  ]);
 });
 
 it('ignores unrelated and malformed server errors', () => {

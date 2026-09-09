@@ -223,6 +223,8 @@ interface:
   #   maxPerUser: 10
   #   minIntervalMinutes: 60
   #   autoDisableAfterFailures: 5
+  #   # Maximum occurrences concurrently passing readiness admission per replica (1-100).
+  #   admissionConcurrency: 20
   #   fireConcurrency: 5
   #   # Maximum MCP readiness connections opened at once by one schedule admission (1-10).
   #   mcpPreflightConcurrency: 3

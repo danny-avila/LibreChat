@@ -23,12 +23,12 @@ import {
   useRunScheduleNowMutation,
 } from '~/data-provider';
 import {
-  MCP_STATUS_LABELS,
   scheduleMCPErrorMessage,
+  scheduleMCPErrorOutcomes,
   scheduleMCPRecoveryOutcomes,
-  scheduleMCPNeedsAgentRecovery,
 } from './errors';
 import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
+import ScheduleMCPRecovery from './ScheduleMCPRecovery';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
 import ScheduleDialog from './ScheduleDialog';
@@ -54,9 +54,9 @@ const STATUS_CHIPS: Record<ScheduleRunStatus, { label: TranslationKeys; tone: St
 };
 
 const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = {
-  mcp_reauth_required: 'com_ui_schedule_mcp_reauth',
-  mcp_configuration_missing: 'com_ui_schedule_mcp_configuration',
-  mcp_permission_denied: 'com_ui_schedule_mcp_permission',
+  mcp_reauth_required: 'com_ui_schedule_disabled_mcp_reauth',
+  mcp_configuration_missing: 'com_ui_schedule_disabled_mcp_configuration',
+  mcp_permission_denied: 'com_ui_schedule_disabled_mcp_permission',
   too_many_failures: 'com_ui_schedule_disabled_too_many_failures',
   agent_deleted: 'com_ui_schedule_disabled_agent_deleted',
   invalid_schedule: 'com_ui_schedule_disabled_invalid',
@@ -69,7 +69,11 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
 export default function ScheduleCard({ schedule, projectName }: ScheduleCardProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const mcpOutcomes = scheduleMCPRecoveryOutcomes(schedule);
+  const persistedMCPOutcomes = scheduleMCPRecoveryOutcomes(schedule);
+  const [immediateMCPOutcomes, setImmediateMCPOutcomes] = useState<
+    ReturnType<typeof scheduleMCPErrorOutcomes>
+  >([]);
+  const mcpOutcomes = immediateMCPOutcomes.length > 0 ? immediateMCPOutcomes : persistedMCPOutcomes;
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
@@ -100,6 +104,7 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
      *  leave the owner flipping a switch that keeps flipping back; point them at the
      *  dialog, which is where the fixable settings are. */
     onError: (error, variables) => {
+      setImmediateMCPOutcomes(scheduleMCPErrorOutcomes(error));
       const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
       const blockedEnable = status === 400 && variables.payload.enabled === true;
       showToast({
@@ -115,18 +120,21 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
 
   const handleToggle = useCallback(
     (checked: boolean) => {
+      setImmediateMCPOutcomes([]);
       updateSchedule.mutate({ id: schedule.id, payload: { enabled: checked } });
     },
     [schedule.id, updateSchedule],
   );
 
   const handleRunNow = useCallback(() => {
+    setImmediateMCPOutcomes([]);
     runSchedule.mutate(schedule.id, {
       onSuccess: () => {
         showToast({ message: localize('com_ui_schedule_run_now_started'), status: 'success' });
         setMenuOpen(false);
       },
       onError: (error) => {
+        setImmediateMCPOutcomes(scheduleMCPErrorOutcomes(error));
         showToast({
           message: scheduleMCPErrorMessage(error, localize) ?? localize('com_ui_error'),
           status: 'error',
@@ -279,32 +287,13 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
           )}
         </div>
       )}
-      {mcpOutcomes
-        .filter((item) => item.status !== 'ready')
-        .map((item) => (
-          <div
-            key={`${item.server}:${item.agentId ?? schedule.agent_id}`}
-            className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-text-secondary"
-          >
-            <p>
-              {item.server}: {localize(MCP_STATUS_LABELS[item.status])}
-            </p>
-            {scheduleMCPNeedsAgentRecovery([item]) && (
-              <button
-                type="button"
-                className="text-text-primary underline"
-                aria-label={`${item.server}: ${localize('com_ui_schedule_mcp_open_agent')}`}
-                onClick={() =>
-                  navigate(
-                    `/c/new?agent_id=${encodeURIComponent(item.agentId ?? schedule.agent_id)}`,
-                  )
-                }
-              >
-                {localize('com_ui_schedule_mcp_open_agent')}
-              </button>
-            )}
-          </div>
-        ))}
+      <div className="mt-1">
+        <ScheduleMCPRecovery
+          outcomes={mcpOutcomes}
+          fallbackAgentId={schedule.agent_id}
+          onOpenAgent={(ownerId) => navigate(`/c/new?agent_id=${encodeURIComponent(ownerId)}`)}
+        />
+      </div>
       {editOpen && (
         <ScheduleDialog
           open={editOpen}

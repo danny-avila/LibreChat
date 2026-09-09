@@ -15,6 +15,7 @@ const BASE_LIMITS: ScheduleLimits = {
   maxPerUser: 10,
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
+  admissionConcurrency: 20,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
   mcpPreflightTimeoutMs: 300_000,

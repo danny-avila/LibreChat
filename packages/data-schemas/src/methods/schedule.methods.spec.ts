@@ -3045,6 +3045,25 @@ describe('scheduled MCP failure policy', () => {
       status: reason,
     });
   });
+
+  it('does not infer MCP disablement from an ordinary provider error prefix', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-09-09T12:30:00Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: 'mcp_configuration_missing: provider returned this text',
+      autoDisableAfterFailures: 5,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.failureCount).toBe(1);
+    expect(updated.enabled).toBe(true);
+    expect(updated.disabledReason).toBeUndefined();
+  });
 });
 
 it('does not apply a late MCP disable after a newer successful occurrence', async () => {

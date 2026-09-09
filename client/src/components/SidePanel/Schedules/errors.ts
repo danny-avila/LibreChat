@@ -34,20 +34,25 @@ export function scheduleMCPErrorMessage(
   error: Error,
   localize: ReturnType<typeof useLocalize>,
 ): string | undefined {
+  const failures = scheduleMCPErrorOutcomes(error).filter((item) => item.status !== 'ready');
+  if (failures.length > 0) {
+    return failures
+      .map((item) => `${item.server}: ${localize(MCP_STATUS_LABELS[item.status])}`)
+      .join('; ');
+  }
   const response = (
     error as Error & { response?: { status?: number; data?: { code?: string; mcp?: object } } }
   ).response;
-  const payload = response?.data?.mcp;
-  const parsed = scheduleMCPOutcomeSchema.array().safeParse(payload);
-  if (!parsed.success) {
-    return response?.data?.code === 'mcp_unavailable'
-      ? localize(MCP_STATUS_LABELS.mcp_unavailable)
-      : undefined;
-  }
-  const failures = parsed.data.filter((item) => item.status !== 'ready');
-  return failures.length > 0
-    ? failures
-        .map((item) => `${item.server}: ${localize(MCP_STATUS_LABELS[item.status])}`)
-        .join('; ')
+  return response?.data?.code === 'mcp_unavailable'
+    ? localize(MCP_STATUS_LABELS.mcp_unavailable)
     : undefined;
+}
+
+/** Preserves the structured recovery projection for immediate create, update, and
+ * Run Now failures. The message formatter and every recovery surface consume the
+ * same parsed outcome rather than independently interpreting the response. */
+export function scheduleMCPErrorOutcomes(error: Error): ScheduleMCPOutcome[] {
+  const payload = (error as Error & { response?: { data?: { mcp?: object } } }).response?.data?.mcp;
+  const parsed = scheduleMCPOutcomeSchema.array().safeParse(payload);
+  return parsed.success ? parsed.data : [];
 }

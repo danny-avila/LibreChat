@@ -837,6 +837,35 @@ it('initializes only config servers selected by the runnable graph', async () =>
   );
 });
 
+it('lets authoritative config names claim normalized aliases before stored hints', async () => {
+  const { check, deps } = setup(['search_mcp_Sales_Force']);
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      graphNode(id, { tools: ['search_mcp_Sales_Force'], mcpServerNames: ['Sales_Force'] }),
+    ),
+  );
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        mcpConfig: {
+          'Sales Force': { type: 'streamable-http', url: 'https://sales.example.test/mcp' },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getServerConfigs = async () => ({ 'Sales Force': server });
+
+  await expect(check('agent', principal)).resolves.toEqual([
+    { server: 'Sales Force', status: 'ready' },
+  ]);
+  expect(deps.ensureConfigServers).toHaveBeenCalledWith(
+    {
+      'Sales Force': { type: 'streamable-http', url: 'https://sales.example.test/mcp' },
+    },
+    expect.any(Function),
+  );
+});
+
 it('rejects a selected server shadowed by an unselected config server', async () => {
   const { check, deps } = setup(['search_mcp_Sales Force']);
   deps.getAppConfig = jest.fn(
@@ -894,6 +923,38 @@ it('attributes a missing shared-server tool to the agent that selected it', asyn
   await expect(check('root', principal)).rejects.toMatchObject({
     code: 'mcp_configuration_missing',
     outcomes: [{ server: 'docs', status: 'mcp_configuration_missing', agentId: 'child' }],
+  });
+});
+
+it('preserves every owner with a missing tool on a shared server', async () => {
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? graphNode(id, {
+            tools: ['search_mcp_docs'],
+            subagents: { enabled: true, agent_ids: ['researcher', 'writer'] } as never,
+          })
+        : graphNode(id, {
+            tools: [id === 'researcher' ? 'deleted_search_mcp_docs' : 'deleted_write_mcp_docs'],
+          }),
+    ),
+  );
+
+  await expect(check('root', principal)).rejects.toMatchObject({
+    code: 'mcp_configuration_missing',
+    outcomes: [
+      { server: 'docs', status: 'mcp_configuration_missing', agentId: 'researcher' },
+      { server: 'docs', status: 'mcp_configuration_missing', agentId: 'writer' },
+    ],
   });
 });
 

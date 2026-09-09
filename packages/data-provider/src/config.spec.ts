@@ -21,6 +21,21 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('scheduled MCP preflight config', () => {
+  it('bounds the separate readiness admission pool', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, admissionConcurrency: 100 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, admissionConcurrency: 101 } },
+      }).success,
+    ).toBe(false);
+  });
+
   it('caps per-admission connection concurrency', () => {
     expect(
       configSchema.safeParse({
