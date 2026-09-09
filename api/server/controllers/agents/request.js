@@ -1907,7 +1907,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       signal: job.abortController.signal,
       jobCreatedAt,
       checkpointNamespace: job.metadata?.checkpointNamespace,
-      foregroundRunId: job.metadata.responseMessageId,
+      foregroundRunId: mcpRequestBody.messageId,
       requestBody: mcpRequestBody,
     });
     startupTelemetry?.mark('client_initialized');
