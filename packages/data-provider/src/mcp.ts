@@ -195,6 +195,15 @@ const BaseOptionsSchema = z.object({
    */
   chatMenu: z.boolean().optional(),
   /**
+   * When true, hide this server from the chat dropdown and the agent builder for users whose
+   * loaded tool catalog for it is empty (e.g. every tool is filtered out per-user by an MCP
+   * gateway enforcing authorization). While the catalog is still loading, a flagged server is
+   * kept out of the pickers (it appears once the catalog proves it non-empty); if the catalog
+   * request fails, nothing is hidden. Do NOT set this on OAuth-gated servers: their catalog
+   * cannot load before the user authenticates, so the auth flow would be unreachable.
+   */
+  hideWhenEmpty: z.boolean().optional(),
+  /**
    * Controls server instruction behavior:
    * - undefined/not set: No instructions included (default)
    * - true: Use server-provided instructions
@@ -435,6 +444,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     sseReadTimeout: true,
     initTimeout: true,
     chatMenu: true,
+    hideWhenEmpty: true,
     serverInstructions: true,
     requiresOAuth: true,
     customUserVars: true,
