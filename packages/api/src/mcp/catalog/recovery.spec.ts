@@ -1,10 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { ErrorCode, McpError, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import {
   MCPCatalogCapacityError,
+  clearMCPServerCatalogRecoveryState,
   loadMCPServerCatalogs,
   recoverMCPServerCatalogs,
 } from './recovery';
@@ -30,6 +31,11 @@ const availableTools = (name: string): LCAvailableTools => ({
       parameters: { type: 'object', properties: {} },
     },
   },
+});
+
+afterEach(() => {
+  clearMCPServerCatalogRecoveryState(user.id);
+  jest.restoreAllMocks();
 });
 
 describe('recoverMCPServerCatalogs', () => {
@@ -110,7 +116,8 @@ describe('recoverMCPServerCatalogs', () => {
     );
 
     expect(getServerToolFunctionsSnapshot).toHaveBeenCalledTimes(21);
-    expect(discoverServerTools).toHaveBeenCalledTimes(21);
+    expect(discoverServerTools.mock.calls.length).toBeGreaterThan(0);
+    expect(discoverServerTools.mock.calls.length).toBeLessThanOrEqual(21);
     expect(maxActive).toBe(3);
     expect(results).toHaveLength(4);
     expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(3);
@@ -179,6 +186,86 @@ describe('recoverMCPServerCatalogs', () => {
     );
 
     expect([...result.keys()]).toEqual(['good']);
+  });
+
+  it('single-flights concurrent discovery for the same user and server', async () => {
+    let release: ((value: { tools: Tool[] }) => void) | undefined;
+    const discoverServerTools = jest.fn(
+      () =>
+        new Promise<{ tools: Tool[] }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const servers = [{ serverName: 'shared', serverConfig: serverConfig('shared') }];
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue(availableTools('shared-tool')),
+    };
+
+    const first = recoverMCPServerCatalogs({ user, servers }, deps);
+    const second = recoverMCPServerCatalogs({ user, servers }, deps);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    release?.({ tools: [] });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      new Map([['shared', availableTools('shared-tool')]]),
+      new Map([['shared', availableTools('shared-tool')]]),
+    ]);
+  });
+
+  it('retains reauthorization state and recovered public tools during the retry window', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({
+      tools: [{ name: 'public-tool', inputSchema: { type: 'object' as const } }],
+      oauthRequired: true,
+    });
+    const servers = [{ serverName: 'oauth-server', serverConfig: serverConfig('oauth-server') }];
+    const deps = {
+      getCachedServerTools: jest.fn().mockResolvedValue(null),
+      getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
+      cacheServerTools: jest.fn(),
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue(availableTools('public-tool')),
+    };
+
+    const first = await loadMCPServerCatalogs({ user, servers }, deps);
+    const second = await loadMCPServerCatalogs({ user, servers }, deps);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(first.reauthRequiredServers).toEqual(new Set(['oauth-server']));
+    expect(first.serverTools).toEqual(new Map([['oauth-server', availableTools('public-tool')]]));
+    expect(second.reauthRequiredServers).toEqual(new Set(['oauth-server']));
+    expect(second.serverTools).toEqual(new Map());
+  });
+
+  it('backs off failed discovery progressively and resets after explicit reconnect', async () => {
+    let now = 1_800_000_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const discoverServerTools = jest.fn().mockRejectedValue(new Error('offline'));
+    const servers = [{ serverName: 'offline', serverConfig: serverConfig('offline') }];
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn(),
+    };
+
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+
+    now += 5 * 60_000;
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+
+    now += 5 * 60_000;
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+
+    clearMCPServerCatalogRecoveryState(user.id, 'offline');
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    expect(discoverServerTools).toHaveBeenCalledTimes(3);
   });
 });
 

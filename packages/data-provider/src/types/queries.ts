@@ -140,6 +140,8 @@ export type MCPServer = {
   name: string;
   icon: string;
   authenticated: boolean;
+  /** Passive discovery found that stored OAuth authorization must be renewed. */
+  authorizationState?: 'reauth_required';
   authConfig: s.TPluginAuthConfig[];
   tools: MCPTool[];
 };

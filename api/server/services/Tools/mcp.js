@@ -4,6 +4,7 @@ const {
   getUserMCPAuthMap,
   getMissingCustomUserVars,
   loadMCPServerCatalogs: loadCatalogs,
+  clearMCPServerCatalogRecoveryState,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
   MCPAuthenticationRejectedError,
@@ -127,6 +128,7 @@ async function reinitMCPServer({
   oboIdentityContext,
   oauthEnd,
 }) {
+  clearMCPServerCatalogRecoveryState(user.id, serverName);
   /** @type {MCPConnection | null} */
   let connection = null;
   let serverConfig = providedConfig;
