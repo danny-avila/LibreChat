@@ -38,13 +38,31 @@ const OWNER_ACL_PERMISSION_BITS =
   PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 
 /**
+ * The aggregation-expression shapes the predicate helpers below build: a field path
+ * (`'$$e.grantedAt'`), a literal, or a nested operator. Narrow on purpose — the
+ * fragments these helpers hand to `$filter`/`$switch`/`$cond` are only correct in
+ * these forms, and a wider `Record<string, unknown>` would let a misspelled operator
+ * or a wrong-arity operand list through to the production pipeline.
+ */
+type AggregationOperand = string | number | null | AggregationExpression;
+
+type AggregationExpression =
+  | { $and: AggregationExpression[] }
+  | { $or: AggregationExpression[] }
+  | { $eq: [AggregationOperand, AggregationOperand] }
+  | { $ne: [AggregationOperand, AggregationOperand] }
+  | { $lt: [AggregationOperand, AggregationOperand] }
+  | { $cond: [AggregationExpression, AggregationOperand, AggregationOperand] }
+  | { $indexOfCP: [AggregationOperand, AggregationOperand] };
+
+/**
  * Picks the earlier of two ACL entry sub-documents by (`grantedAt`, `createdAt`, `_id`) —
  * the same tie-break `getFirstOwnerIdsByResource` applies via its `$sort`+`$group` pipeline
  * (`api/server/services/Agents/ownerContact.js`). Written as a manual `$lt`/`$eq` cascade,
  * not `$sortArray`+`$first`, because DocumentDB (this project's CI gate,
  * `documentdb.spec.ts`) rejects `$sortArray` outright.
  */
-function earlierAclEntry(a: string, b: string): Record<string, unknown> {
+function earlierAclEntry(a: string, b: string): AggregationExpression {
   return {
     $or: [
       { $lt: [`${a}.grantedAt`, `${b}.grantedAt`] },
@@ -80,7 +98,7 @@ function earlierAclEntry(a: string, b: string): Record<string, unknown> {
  * found"), which is moot anyway since the `$ne: [varRef, null]` branch already fails the
  * `$and` in that case.
  */
-function isValidDisplayName(varRef: string): Record<string, unknown> {
+function isValidDisplayName(varRef: string): AggregationExpression {
   return {
     $and: [
       { $ne: [varRef, null] },
