@@ -10,6 +10,7 @@ const LIMITS: ScheduleLimits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  mcpPreflightConcurrency: 3,
   requireProject: false,
 };
 

@@ -381,6 +381,8 @@ export function createSchedulesService(
       autoDisableAfterFailures:
         config.autoDisableAfterFailures ?? DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
       fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
+      mcpPreflightConcurrency:
+        config.mcpPreflightConcurrency ?? DEFAULT_SCHEDULE_LIMITS.mcpPreflightConcurrency,
       requireProject: config.requireProject === true || projectId != null,
       ...(projectId != null && { projectId }),
     };

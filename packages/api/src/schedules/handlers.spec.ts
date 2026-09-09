@@ -180,6 +180,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
       minIntervalMinutes: 60,
       autoDisableAfterFailures: 5,
       fireConcurrency: 5,
+      mcpPreflightConcurrency: 3,
       requireProject: false,
     }),
     preflightMCP: jest.fn().mockResolvedValue([]),
@@ -444,6 +445,7 @@ describe('create with a cron cadence', () => {
         minIntervalMinutes: 100_000,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     });
@@ -466,6 +468,7 @@ describe('create with a cron cadence', () => {
         minIntervalMinutes: 100_000,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     });
@@ -491,6 +494,7 @@ describe('create with a cron cadence', () => {
         minIntervalMinutes: 100_000,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     });
@@ -1043,6 +1047,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         minIntervalMinutes: 700,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     });
@@ -1067,6 +1072,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         minIntervalMinutes: 700,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     });
@@ -1099,6 +1105,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         minIntervalMinutes: 700,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     });
@@ -1275,6 +1282,30 @@ describe('unattended MCP admission', () => {
     expect(captured.body).toBeUndefined();
     expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
   });
+
+  it('observes a disconnect that occurs during the first awaited admission read', async () => {
+    let release: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const preflightMCP = jest.fn(async () => []);
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => {
+        await blocked;
+        return false;
+      },
+      preflightMCP,
+    });
+    const { res, captured } = makeRes();
+    const pending = createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    (res as unknown as { emit: (event: string) => void }).emit('close');
+    release();
+    await pending;
+
+    expect(captured.body).toBeUndefined();
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
 });
 
 describe('Run Now MCP failures', () => {
@@ -1323,7 +1354,10 @@ describe('Run Now MCP failures', () => {
     await createSchedulesHandlers(deps).runScheduleNow(req, res);
 
     expect(captured.status).toBe(503);
-    expect(captured.body).toMatchObject({ error: 'MCP preflight unavailable' });
+    expect(captured.body).toMatchObject({
+      code: 'mcp_unavailable',
+      error: 'MCP preflight unavailable',
+    });
   });
 });
 

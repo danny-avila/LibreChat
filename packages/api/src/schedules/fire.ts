@@ -572,7 +572,14 @@ export async function fireSchedule(
 
     let mcp: Awaited<ReturnType<ScheduleEngineDeps['preflightMCP']>>;
     try {
-      mcp = await deps.preflightMCP(schedule.agent_id, user, { signal: options?.signal });
+      mcp = await deps.preflightMCP(schedule.agent_id, user, {
+        signal: options?.signal,
+        concurrency: Math.min(
+          ownerLimits.mcpPreflightConcurrency,
+          deploymentLimits.mcpPreflightConcurrency,
+        ),
+        ...(schedule.leaseUntil != null ? { deadlineMs: schedule.leaseUntil.getTime() } : {}),
+      });
     } catch (error) {
       if (options?.signal?.aborted) {
         await rollbackReservation(conversationId);

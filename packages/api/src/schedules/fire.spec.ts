@@ -14,6 +14,7 @@ const LIMITS: ScheduleLimits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  mcpPreflightConcurrency: 3,
   requireProject: false,
 };
 
@@ -867,6 +868,30 @@ it('does not invent a server outcome for infrastructure preflight failures', asy
   expect(result.mcp).toBeUndefined();
   expect(methods.recordRunOutcome).toHaveBeenCalledWith(
     expect.objectContaining({ error: 'MCP preflight unavailable' }),
+  );
+});
+
+it('bounds MCP preflight by the claim lease and the stricter concurrency config', async () => {
+  const { methods } = makeMethods();
+  const leaseUntil = new Date(Date.now() + 240_000);
+  const failure = new ScheduleMCPError([{ server: 'Notion', status: 'mcp_unavailable' }]);
+  const preflightMCP = jest.fn(async () => {
+    throw failure;
+  });
+  const deps = makeDeps(methods, {
+    preflightMCP,
+    getLimits: async (user) => ({
+      ...LIMITS,
+      mcpPreflightConcurrency: user == null ? 2 : 5,
+    }),
+  });
+
+  await fireSchedule(deps, makeSchedule({ leaseUntil }), LIMITS, new Date('2026-09-09T12:00:00Z'));
+
+  expect(preflightMCP).toHaveBeenCalledWith(
+    'agent-1',
+    OWNER,
+    expect.objectContaining({ concurrency: 2, deadlineMs: leaseUntil.getTime() }),
   );
 });
 

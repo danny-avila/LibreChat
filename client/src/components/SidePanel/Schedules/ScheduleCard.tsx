@@ -22,7 +22,12 @@ import {
   useUpdateScheduleMutation,
   useRunScheduleNowMutation,
 } from '~/data-provider';
-import { MCP_STATUS_LABELS, scheduleMCPErrorMessage, scheduleMCPRecoveryOutcomes } from './errors';
+import {
+  MCP_STATUS_LABELS,
+  scheduleMCPErrorMessage,
+  scheduleMCPRecoveryOutcomes,
+  scheduleMCPNeedsAgentRecovery,
+} from './errors';
 import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
@@ -65,6 +70,7 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
   const localize = useLocalize();
   const navigate = useNavigate();
   const mcpOutcomes = scheduleMCPRecoveryOutcomes(schedule);
+  const canReconnectMCP = scheduleMCPNeedsAgentRecovery(mcpOutcomes);
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
@@ -281,7 +287,7 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
             {item.server}: {localize(MCP_STATUS_LABELS[item.status])}
           </p>
         ))}
-      {mcpOutcomes.length > 0 && (
+      {canReconnectMCP && (
         <button
           type="button"
           className="mt-2 text-sm text-text-primary underline"

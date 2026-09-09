@@ -16,6 +16,8 @@ export interface ScheduleLimits {
   minIntervalMinutes: number;
   autoDisableAfterFailures: number;
   fireConcurrency: number;
+  /** Maximum MCP readiness probes active during one schedule admission. */
+  mcpPreflightConcurrency: number;
   /** Every schedule must be filed under a chat project. A pinned `projectId`
    *  implies this, so callers only ever have to read one flag. */
   requireProject: boolean;
@@ -31,6 +33,7 @@ export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  mcpPreflightConcurrency: 3,
   requireProject: false,
 };
 
@@ -320,5 +323,5 @@ export type FireableSchedule = ISchedule;
 export type ScheduleMCPPreflight = (
   agentId: string,
   user: ScheduleUserContext,
-  options?: { signal?: AbortSignal },
+  options: { concurrency: number; signal?: AbortSignal; deadlineMs?: number },
 ) => Promise<ScheduleMCPOutcome[]>;

@@ -10,10 +10,7 @@ const methods = require('~/models');
 
 module.exports = createScheduleMCPPreflight({
   getRoleByName: methods.getRoleByName,
-  getAgents: (ids) =>
-    methods.getAgents({ id: { $in: ids } }, '_id id tools agent_ids edges subagents'),
-  getUserPrincipals: methods.getUserPrincipals,
-  findAccessibleResources: methods.findAccessibleResources,
+  getAgentGraphNodes: methods.getAgentGraphNodes,
   getUser: (id) => methods.findUser({ _id: id }),
   getAppConfig,
   ensureConfigServers: (config) => getMCPServersRegistry().ensureConfigServers(config),

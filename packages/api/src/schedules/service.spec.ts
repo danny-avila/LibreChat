@@ -137,6 +137,7 @@ describe('manual Run Now lease cleanup', () => {
         minIntervalMinutes: 60,
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
+        mcpPreflightConcurrency: 3,
         requireProject: false,
       }),
     ).rejects.toThrow('user lookup failed');
@@ -1519,6 +1520,7 @@ describe('scheduled resume capacity', () => {
             minIntervalMinutes: 60,
             autoDisableAfterFailures: 5,
             fireConcurrency: 1,
+            mcpPreflightConcurrency: 3,
             ...(over.projectConfig ?? {}),
           },
         },
@@ -1670,10 +1672,18 @@ describe('deployment-wide limits', () => {
   it('resolves a principal-less getLimits from the BASE config only', async () => {
     const getAppConfig = jest.fn(async (options?: { baseOnly?: boolean }) =>
       options?.baseOnly === true
-        ? { interfaceConfig: { schedules: { use: true, fireConcurrency: 1 } } }
+        ? {
+            interfaceConfig: {
+              schedules: { use: true, fireConcurrency: 1, mcpPreflightConcurrency: 3 },
+            },
+          }
         : // The principal/tenant-merged view. A bare getAppConfig() resolves THIS,
           // including whatever tenant the ALS context happens to carry.
-          { interfaceConfig: { schedules: { use: true, fireConcurrency: 5 } } },
+          {
+            interfaceConfig: {
+              schedules: { use: true, fireConcurrency: 5, mcpPreflightConcurrency: 3 },
+            },
+          },
     ) as unknown as SchedulesServiceDeps['getAppConfig'];
     const service = makeService(noRuns(), getAppConfig);
     const limits = await service.getLimits();

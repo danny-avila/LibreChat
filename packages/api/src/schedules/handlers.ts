@@ -367,12 +367,17 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     return false;
   }
 
-  function responseAbortSignal(res: Response): AbortSignal {
+  function responseAbortSignal(req: ServerRequest, res: Response): AbortSignal {
     const controller = new AbortController();
     const abort = () => controller.abort(new Error('Schedule request closed'));
-    const detach = () => res.off?.('close', abort);
+    const detach = () => {
+      req.off?.('aborted', abort);
+      res.off?.('close', abort);
+    };
+    req.once?.('aborted', abort);
     res.once?.('close', abort);
     res.once?.('finish', detach);
+    if (req.aborted === true || req.destroyed === true || res.destroyed === true) abort();
     return controller.signal;
   }
 
@@ -381,9 +386,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     req: ServerRequest,
     res: Response,
     signal: AbortSignal,
+    limits: ScheduleLimits,
   ): Promise<boolean> {
     try {
-      await deps.preflightMCP(agentId, requestUser(req), { signal });
+      await deps.preflightMCP(agentId, requestUser(req), {
+        signal,
+        concurrency: limits.mcpPreflightConcurrency,
+      });
       return true;
     } catch (error) {
       if (signal.aborted) return false;
@@ -605,6 +614,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function createSchedule(req: ServerRequest, res: Response): Promise<void> {
+    const mcpSignal = responseAbortSignal(req, res);
+    if (mcpSignal.aborted) return;
     const parsed = createSchedulePayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
@@ -688,12 +699,12 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       user.id,
       parsed.data.clientRequestId,
     );
+    if (mcpSignal.aborted) return;
     if (replayed != null) {
       await respondToReplay(replayed);
       return;
     }
-    const mcpSignal = responseAbortSignal(res);
-    if (!(await validateMCP(parsed.data.agent_id, req, res, mcpSignal))) return;
+    if (!(await validateMCP(parsed.data.agent_id, req, res, mcpSignal, limits))) return;
     // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
     // replay lookup above. A committed create whose response was lost must still be
     // recoverable by an identical retry: applying today's policy first let a raised
@@ -875,6 +886,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function updateSchedule(req: ServerRequest, res: Response): Promise<void> {
+    const mcpSignal = responseAbortSignal(req, res);
+    if (mcpSignal.aborted) return;
     const parsed = updateSchedulePayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
@@ -899,6 +912,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const existing = await deps.methods.getScheduleById(id, user.id);
+    if (mcpSignal.aborted) return;
     if (existing == null) {
       res.status(404).json({ error: 'Schedule not found' });
       return;
@@ -951,10 +965,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Agent not found or not accessible' });
       return;
     }
-    const mcpSignal = responseAbortSignal(res);
     if (
       (enabled || parsed.data.agent_id != null) &&
-      !(await validateMCP(parsed.data.agent_id ?? existing.agent_id, req, res, mcpSignal))
+      !(await validateMCP(parsed.data.agent_id ?? existing.agent_id, req, res, mcpSignal, limits))
     )
       return;
     // The destination is re-resolved on every edit that leaves the schedule ENABLED,
@@ -1121,6 +1134,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   async function runScheduleNow(req: ServerRequest, res: Response): Promise<void> {
+    const signal = responseAbortSignal(req, res);
+    if (signal.aborted) return;
     const { id } = req.params as { id: string };
     if (await rejectIfUserDeleting(deps, requestUser(req).id, res)) {
       return;
@@ -1131,7 +1146,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const limits = await deps.getLimits(requestUser(req));
-    const signal = responseAbortSignal(res);
+    if (signal.aborted) return;
     const result = await deps.fireNow(schedule, limits, { signal });
     if (signal.aborted) return;
     if (result == null) {
@@ -1169,11 +1184,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         result.skipped === 'rate_limited'
           ? 'Too many messages. Try running this schedule again shortly.'
           : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`);
+      const responseCode =
+        mcpStatus ?? (result.mcpPreflightUnavailable === true ? 'mcp_unavailable' : undefined);
       res.status(status).json({
         error,
         skipped: result.skipped,
         mcp: result.mcp,
-        ...(mcpStatus != null ? { code: mcpStatus } : {}),
+        ...(responseCode != null ? { code: responseCode } : {}),
       });
       return;
     }

@@ -48,6 +48,7 @@ const limits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  mcpPreflightConcurrency: 3,
   requireProject: false,
 };
 
@@ -122,10 +123,13 @@ describe('v1 experimental gate, asserted at real entry points', () => {
     expect((await makeService({ interfaceConfig: { schedules: true } }).getLimits()).enabled).toBe(
       true,
     );
-    const tuned = makeService({ interfaceConfig: { schedules: { maxPerUser: 3 } } });
+    const tuned = makeService({
+      interfaceConfig: { schedules: { maxPerUser: 3, mcpPreflightConcurrency: 2 } },
+    });
     const resolved = await tuned.getLimits();
     expect(resolved.enabled).toBe(true);
     expect(resolved.maxPerUser).toBe(3);
+    expect(resolved.mcpPreflightConcurrency).toBe(2);
   });
 
   it('REFUSES a manual run-now while the global kill switch is on', async () => {
