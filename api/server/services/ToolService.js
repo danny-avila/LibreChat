@@ -47,6 +47,7 @@ const {
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
   createAttachedWorkspaceBashTool,
+  resolveAttachedWorkspaceCommandTimeoutMax,
   createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
@@ -2234,6 +2235,9 @@ async function loadToolsForExecution({
               baseUrl: codeExecutionContext.baseUrl,
               workspaceId: codeExecutionContext.codeWorkspace.workspaceId,
               gitIdentity: agent?.git_identity,
+              maxTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
+                codeExecutionContext.codeEnvironmentConfigSchema,
+              ),
             })
           : createBashExecutionTool({
               authHeaders,

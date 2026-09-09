@@ -1014,6 +1014,7 @@ describe('ToolService - Action Capability Gating', () => {
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'worker-abc',
+        codeEnvironmentConfigSchema: { limits: { maxCommandTimeoutMs: 120000 } },
       });
     });
 
@@ -2775,6 +2776,7 @@ describe('ToolService - Action Capability Gating', () => {
         baseUrl: 'http://attached-code.test/v1',
         workspaceId: 'project-a',
         gitIdentity: { name: 'LibreChat Agent', email: 'agent@example.com' },
+        maxTimeoutMs: 120000,
       });
       expect(mockResolveCodeExecutionWorkspaceContext).toHaveBeenCalledWith(
         expect.objectContaining({ requestedSelections: req.body.codeWorkspaces }),

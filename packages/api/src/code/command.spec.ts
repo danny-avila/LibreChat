@@ -4,8 +4,10 @@ import type { AddressInfo } from 'node:net';
 import type { CodeBridgeFetch } from './bridge';
 import {
   ATTACHED_WORKSPACE_BASH_SCHEMA,
+  buildAttachedWorkspaceBashSchema,
   createAttachedWorkspaceBashTool,
   createGitIdentityProgrammaticBashTool,
+  resolveAttachedWorkspaceCommandTimeoutMax,
 } from './command';
 
 describe('programmatic Bash Git identity', () => {
@@ -98,6 +100,7 @@ describe('createAttachedWorkspaceBashTool', () => {
       workspaceId: 'project-a',
       command: 'pwd',
       cwd: 'packages/api',
+      timeoutMs: 30_000,
       maxOutputBytes: 256 * 1024,
     });
   });
@@ -108,6 +111,7 @@ describe('createAttachedWorkspaceBashTool', () => {
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
       workspaceId: 'project-a',
+      maxTimeoutMs: 300_000,
       fetchImpl,
     });
 
@@ -115,6 +119,58 @@ describe('createAttachedWorkspaceBashTool', () => {
 
     const request = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
     expect(request).toMatchObject({ command: 'npm test', timeoutMs: 300_000 });
+  });
+
+  test('preserves the historical 30-second ceiling unless an administrator raises it', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+
+    await expect(
+      bashTool.func({ command: 'npm test', timeoutMs: 30_001 }, undefined, {}),
+    ).rejects.toThrow('deployment limit of 30000 milliseconds');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('resolves and advertises an administrator-configured timeout ceiling', () => {
+    const maxTimeoutMs = resolveAttachedWorkspaceCommandTimeoutMax({
+      limits: { maxCommandTimeoutMs: 120_000 },
+    });
+    const schema = buildAttachedWorkspaceBashSchema(maxTimeoutMs);
+
+    expect(maxTimeoutMs).toBe(120_000);
+    expect(schema).toMatchObject({
+      properties: { timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 } },
+    });
+    expect(resolveAttachedWorkspaceCommandTimeoutMax()).toBe(30_000);
+  });
+
+  test('lowers the omitted timeout when the deployment ceiling is below 30 seconds', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      maxTimeoutMs: 5_000,
+      fetchImpl,
+    });
+
+    await bashTool.invoke({ command: 'npm test' });
+
+    const request = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    expect(request).toMatchObject({ timeoutMs: 5_000 });
+    expect(buildAttachedWorkspaceBashSchema(5_000)).toMatchObject({
+      properties: {
+        timeoutMs: expect.objectContaining({
+          maximum: 5_000,
+          description: expect.stringContaining('Defaults to 5000'),
+        }),
+      },
+    });
   });
 
   test.each([0, 300_001, 1.5])('rejects an invalid execution timeout of %p', async (timeoutMs) => {

@@ -630,6 +630,10 @@ endpoints:
   #         owner: deployment
   #         # Optionally expose only these bounded preferences to environment owners.
   #         configSchema:
+  #           limits:
+  #             # Maximum Bash execution budget the model may request per call.
+  #             # Omit to preserve the historical 30-second limit. Hard cap: 300000.
+  #             maxCommandTimeoutMs: 120000
   #           permissions:
   #             fileWrite:
   #               allowed: [allow, ask, deny]

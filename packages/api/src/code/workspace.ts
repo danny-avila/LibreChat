@@ -11,6 +11,7 @@ const MAX_LIST_RESULTS = 500;
 export const WORKSPACE_WRITE_MAX_BYTES: number = 1024 * 1024;
 export const WORKSPACE_EDIT_MAX_COUNT: number = 100;
 const MAX_COMMAND_BYTES = 32 * 1024;
+/** Keep aligned with data-provider's deployment schema defaults and hard cap. */
 export const WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS: number = 30_000;
 export const WORKSPACE_COMMAND_MAX_TIMEOUT_MS: number = 5 * 60_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;

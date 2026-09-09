@@ -434,6 +434,8 @@ export interface InjectSkillCatalogParams {
   workspaceTools?: boolean;
   /** Live operation ceiling for the selected attached workspace. */
   workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
+  /** Deployment ceiling advertised on attached Bash tool definitions. */
+  workspaceCommandTimeoutMaxMs?: number;
   /** Current user ID — used to determine skill ownership for active-state resolution. */
   userId?: string;
   /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
@@ -662,6 +664,7 @@ export async function injectSkillCatalog(
     statefulSessions,
     workspaceTools,
     workspaceOperations,
+    workspaceCommandTimeoutMaxMs,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -821,6 +824,7 @@ export async function injectSkillCatalog(
     statefulSessions: statefulSessions === true,
     workspaceTools: workspaceTools === true,
     workspaceOperations,
+    workspaceCommandTimeoutMaxMs,
   });
   workingDefs = codeExecResult.toolDefinitions;
 

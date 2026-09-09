@@ -103,6 +103,7 @@ import {
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
 import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
+import { resolveAttachedWorkspaceCommandTimeoutMax } from '~/code/command';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
@@ -1670,6 +1671,12 @@ export async function initializeAgent(
     trustedCodeExecutionContext.environmentType === 'attached'
       ? new Set(trustedCodeExecutionContext.codeWorkspace?.operations ?? [])
       : undefined;
+  const attachedWorkspaceCommandTimeoutMaxMs =
+    trustedCodeExecutionContext.environmentType === 'attached'
+      ? resolveAttachedWorkspaceCommandTimeoutMax(
+          trustedCodeExecutionContext.codeEnvironmentConfigSchema,
+        )
+      : undefined;
   if (
     attachedWorkspaceOperations &&
     !attachedWorkspaceOperations.has('preview_edit') &&
@@ -1805,6 +1812,7 @@ export async function initializeAgent(
       statefulSessions: effectiveStatefulSessions,
       workspaceTools: attachedWorkspaceTools,
       workspaceOperations: attachedWorkspaceOperations,
+      workspaceCommandTimeoutMaxMs: attachedWorkspaceCommandTimeoutMaxMs,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.execute_code, codeExecResult.toolNames);
@@ -1855,6 +1863,7 @@ export async function initializeAgent(
       enableToolOutputReferences: effectiveCodeEnvAvailable,
       workspaceTools: attachedWorkspaceTools,
       workspaceOperations: attachedWorkspaceOperations,
+      workspaceCommandTimeoutMaxMs: attachedWorkspaceCommandTimeoutMaxMs,
     });
     toolDefinitions = skillReadResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.skills, skillReadResult.toolNames);
