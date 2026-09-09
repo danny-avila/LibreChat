@@ -367,6 +367,57 @@ describe('persistFileWithQuota', () => {
     expect(assertHeld).toHaveBeenCalledTimes(2);
   });
 
+  it('aborts before metadata persistence when the pre-write fence is lost', async () => {
+    const getUserStorageUsage = usageOf(0);
+    getUserStorageUsage.withLock = async (_params, operation) =>
+      operation(async () => {
+        throw new Error('lease lost');
+      });
+    const write = jest.fn(async (row) => row);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'file-1' },
+          write,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow('lease lost');
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('preserves a committed row when only the post-write fence is lost', async () => {
+    const getUserStorageUsage = usageOf(0);
+    const leaseError = new Error('lease lost after commit');
+    let assertion = 0;
+    getUserStorageUsage.withLock = async (_params, operation) =>
+      operation(async () => {
+        assertion += 1;
+        if (assertion === 2) {
+          throw leaseError;
+        }
+      });
+    const onCleanupError = jest.fn();
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'file-1' },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        onCleanupError,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ file_id: 'file-1' }));
+    expect(onCleanupError).toHaveBeenCalledWith(leaseError);
+  });
+
   it('does not credit a replaced file outside the charged ledger', async () => {
     const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
 
