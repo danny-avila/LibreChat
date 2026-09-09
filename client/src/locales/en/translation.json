@@ -90,6 +90,8 @@
   "com_agents_error_network_title": "Connection Problem",
   "com_agents_error_not_found_message": "The requested content could not be found.",
   "com_agents_error_not_found_title": "Not Found",
+  "com_agents_error_rate_limit_suggestion": "Too many requests were sent at once. Retrying shortly.",
+  "com_agents_error_rate_limit_title": "Slow Down",
   "com_agents_error_retry": "Try Again",
   "com_agents_error_retry_countdown": "Retrying automatically in {{seconds}}s",
   "com_agents_error_retrying": "Retrying",

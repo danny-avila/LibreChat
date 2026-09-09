@@ -1,6 +1,6 @@
 import React from 'react';
 import { RetryableError } from '@librechat/client';
-import { SearchX, ServerCrash, Timer, TriangleAlert, WifiOff } from 'lucide-react';
+import { Hourglass, SearchX, ServerCrash, Timer, TriangleAlert, WifiOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 
@@ -36,7 +36,14 @@ interface ErrorDisplayProps {
 }
 
 /** Which failure this is: drives the icon, the tone, and whether retrying can help. */
-type ErrorKind = 'network' | 'timeout' | 'server' | 'not_found' | 'bad_request' | 'generic';
+type ErrorKind =
+  | 'network'
+  | 'timeout'
+  | 'rate_limit'
+  | 'server'
+  | 'not_found'
+  | 'bad_request'
+  | 'generic';
 
 /**
  * One heading plus one line. The old three-tier title/message/suggestion stack
@@ -55,7 +62,10 @@ interface ErrorInfo {
  * an automatic retry: a 404 here is an empty result and a 400 is a malformed
  * request, and repeating either just burns requests behind an unchanging state.
  * `not_found` is also the marketplace's "nothing matched" state, so it stays
- * neutral rather than painting an empty search red.
+ * neutral rather than painting an empty search red. A 408 and a 429 are
+ * backpressure rather than answers, and the marketplace query
+ * (`~/data-provider/Agents/queries.ts`) already retries both, so the card has to
+ * keep recovering once those short attempts are spent.
  */
 const ERROR_KINDS: Record<
   ErrorKind,
@@ -63,6 +73,7 @@ const ERROR_KINDS: Record<
 > = {
   network: { icon: WifiOff, transient: true, tone: 'error' },
   timeout: { icon: Timer, transient: true, tone: 'error' },
+  rate_limit: { icon: Hourglass, transient: true, tone: 'error' },
   server: { icon: ServerCrash, transient: true, tone: 'error' },
   not_found: { icon: SearchX, transient: false, tone: 'neutral' },
   bad_request: { icon: TriangleAlert, transient: false, tone: 'error' },
@@ -163,6 +174,23 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
           kind: 'bad_request',
           title: localize('com_agents_error_invalid_request'),
           detail: payload.userMessage || localize('com_agents_error_bad_request_suggestion'),
+        };
+      }
+
+      // A server-side request timeout, which the `timeout` copy already describes.
+      if (status === 408) {
+        return {
+          kind: 'timeout',
+          title: localize('com_agents_error_timeout_title'),
+          detail: localize('com_agents_error_timeout_suggestion'),
+        };
+      }
+
+      if (status === 429) {
+        return {
+          kind: 'rate_limit',
+          title: localize('com_agents_error_rate_limit_title'),
+          detail: localize('com_agents_error_rate_limit_suggestion'),
         };
       }
 

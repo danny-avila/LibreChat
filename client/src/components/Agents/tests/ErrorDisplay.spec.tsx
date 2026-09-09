@@ -34,6 +34,9 @@ const mockLocalize = jest.fn((key: string, options?: any) => {
     com_agents_error_category_title: 'Category Error',
     com_agents_error_timeout_title: 'Connection Timeout',
     com_agents_error_timeout_suggestion: 'Please check your internet connection and try again.',
+    com_agents_error_rate_limit_title: 'Slow Down',
+    com_agents_error_rate_limit_suggestion:
+      'Too many requests were sent at once. Retrying shortly.',
     com_agents_search_no_results: `No agents found for "${options?.query}"`,
     com_agents_category_empty: `No agents found in the ${options?.category} category`,
     com_agents_error_retry: 'Try Again',
@@ -272,6 +275,38 @@ describe('ErrorDisplay', () => {
 
       expect(screen.getByText('Server Error')).toBeInTheDocument();
       expect(screen.getByText('Retrying automatically in 2s')).toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+
+    /** The marketplace query retries a 408 and a 429 twice and then hands the failure
+     *  to this card, so classifying either as final would strand the recovery. */
+    it('keeps recovering from a request timeout', () => {
+      const mockRetry = jest.fn();
+      const error = { response: { status: 408, data: {} } };
+
+      render(<ErrorDisplay error={error} onRetry={mockRetry} />);
+
+      expect(screen.getByText('Connection Timeout')).toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps recovering from a throttled request', () => {
+      const mockRetry = jest.fn();
+      const error = { response: { status: 429, data: {} } };
+
+      render(<ErrorDisplay error={error} onRetry={mockRetry} />);
+
+      expect(screen.getByText('Slow Down')).toBeInTheDocument();
 
       act(() => {
         jest.advanceTimersByTime(2000);
