@@ -106,6 +106,7 @@ function makeRes() {
   const captured: { status?: number; body?: unknown; headers: Record<string, string> } = {
     headers: {},
   };
+  const listeners = new Map<string, () => void>();
   const res = {
     status(code: number) {
       captured.status = code;
@@ -118,6 +119,19 @@ function makeRes() {
     set(name: string, value: string) {
       captured.headers[name] = value;
       return this;
+    },
+    once(event: string, listener: () => void) {
+      listeners.set(event, listener);
+      return this;
+    },
+    off(event: string, listener: () => void) {
+      if (listeners.get(event) === listener) listeners.delete(event);
+      return this;
+    },
+    emit(event: string) {
+      const listener = listeners.get(event);
+      listeners.delete(event);
+      listener?.();
     },
   };
   return { res: res as unknown as Response, captured };
@@ -1219,21 +1233,48 @@ describe('late-create compensation with a live manual run', () => {
 });
 
 describe('unattended MCP admission', () => {
-  it.each(['mcp_reauth_required', 'mcp_configuration_missing', 'mcp_unavailable'] as const)(
-    'refuses create before persisting when preflight reports %s',
-    async (status) => {
-      const deps = makeCreateDeps({
-        preflightMCP: async () => {
-          throw new ScheduleMCPError([{ server: 'Notion', status }]);
-        },
-      });
-      const { res, captured } = makeRes();
-      await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
-      expect(captured.status).toBe(status === 'mcp_unavailable' ? 503 : 400);
-      expect(captured.body).toMatchObject({ code: status, mcp: [{ server: 'Notion', status }] });
-      expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'mcp_reauth_required',
+    'mcp_configuration_missing',
+    'mcp_permission_denied',
+    'mcp_unavailable',
+  ] as const)('refuses create before persisting when preflight reports %s', async (status) => {
+    const deps = makeCreateDeps({
+      preflightMCP: async () => {
+        throw new ScheduleMCPError([{ server: 'Notion', status }]);
+      },
+    });
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+    expect(captured.status).toBe(status === 'mcp_unavailable' ? 503 : 400);
+    expect(captured.body).toMatchObject({ code: status, mcp: [{ server: 'Notion', status }] });
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
+
+  it('cancels MCP preflight and does not persist after the request closes', async () => {
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const deps = makeCreateDeps({
+      preflightMCP: async (_agentId, _user, options) =>
+        new Promise((_resolve, reject) => {
+          markStarted();
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+            once: true,
+          });
+        }),
+    });
+    const { res, captured } = makeRes();
+    const pending = createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+    await started;
+
+    (res as unknown as { emit: (event: string) => void }).emit('close');
+    await pending;
+
+    expect(captured.body).toBeUndefined();
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
 });
 
 describe('Run Now MCP failures', () => {
@@ -1241,6 +1282,7 @@ describe('Run Now MCP failures', () => {
     ['mcp_unavailable', 503],
     ['mcp_reauth_required', 400],
     ['mcp_configuration_missing', 400],
+    ['mcp_permission_denied', 400],
   ] as const)('returns the correct status for %s', async (mcpStatus, expectedStatus) => {
     const deps = makeCreateDeps({
       isUserDeleting: async () => false,

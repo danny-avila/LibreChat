@@ -869,3 +869,28 @@ it('does not invent a server outcome for infrastructure preflight failures', asy
     expect.objectContaining({ error: 'MCP preflight unavailable' }),
   );
 });
+
+it('rolls back without recording a failure when MCP preflight is cancelled', async () => {
+  const { methods } = makeMethods();
+  const controller = new AbortController();
+  const deps = makeDeps(methods, {
+    preflightMCP: async (_agentId, _user, options) => {
+      expect(options?.signal).toBe(controller.signal);
+      controller.abort(new Error('schedule engine stopped'));
+      throw controller.signal.reason;
+    },
+  });
+
+  const result = await fireSchedule(
+    deps,
+    makeSchedule(),
+    LIMITS,
+    new Date('2026-09-09T12:00:00Z'),
+    { signal: controller.signal },
+  );
+
+  expect(result).toMatchObject({ fired: false, skipped: 'superseded' });
+  expect(methods.deleteScheduleRun).toHaveBeenCalled();
+  expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  expect(methods.advanceSchedule).not.toHaveBeenCalled();
+});

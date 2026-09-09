@@ -7,8 +7,10 @@ user connections that are disposed afterwards. It does not borrow a browser sess
 or replace a live interactive connection. Graph agents are loaded in breadth-first
 batches, and private children are skipped with the same VIEW rule as a live run.
 Enabled spawn-agent members are included when the endpoint grants that capability.
-Tool discovery must complete and contain
-all explicitly selected tools; wildcard selections require a nonempty catalog.
+The effective endpoint must grant the tools capability. Tool discovery runs at most
+three server probes concurrently, must complete, and must contain all explicitly
+selected tools; wildcard selections require a nonempty catalog. Request disconnects
+and scheduler shutdown cancel connection setup and discovery without advancing the occurrence.
 
 Supported authentication is determined by a successful unattended connection:
 
@@ -22,10 +24,11 @@ Reconnect or configure the server in an interactive agent chat, or remove it fro
 agent, then enable the schedule. A browser connection alone does not prove readiness;
 enabling always reruns the unattended check.
 
-`mcp_reauth_required` and `mcp_configuration_missing` stop a scheduled occurrence and
-disable the schedule immediately. `mcp_unavailable` counts toward the existing
-configured consecutive-failure threshold. Credential-store and configuration-store
-outages are transient; they must never be treated as proof of missing credentials.
+`mcp_reauth_required`, `mcp_configuration_missing`, and `mcp_permission_denied` stop a
+scheduled occurrence and disable the schedule immediately. The permission status tells
+the owner that an administrator must restore MCP use access. `mcp_unavailable` counts
+toward the existing configured consecutive-failure threshold. Credential-store and
+configuration-store outages are transient; they must never be treated as proof of missing credentials.
 Failure records contain only server names and resolution statuses, never exception
 messages or OAuth URLs. Successful dispatch records also retain the server outcomes.
 

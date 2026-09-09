@@ -117,6 +117,7 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       enum: [
         'mcp_reauth_required',
         'mcp_configuration_missing',
+        'mcp_permission_denied',
         'too_many_failures',
         'agent_deleted',
         'invalid_schedule',

@@ -1,4 +1,4 @@
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import { AgentCapabilities, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { IUser, IRole, AppConfig } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '../mcp/types';
 import { createScheduleMCPPreflight, ScheduleMCPError } from './mcp';
@@ -10,6 +10,7 @@ function setup(tools = ['search_mcp_docs']) {
   const disconnect = jest.fn();
   const deps: Parameters<typeof createScheduleMCPPreflight>[0] = {
     getAgents: jest.fn(async (ids) => ids.map((id) => ({ _id: id as never, id, tools }))),
+    getUserPrincipals: jest.fn(async () => []),
     findAccessibleResources: jest.fn(async () => ['root', 'agent', 'child', 'spawned']),
     getRoleByName: jest.fn(
       async () =>
@@ -18,7 +19,12 @@ function setup(tools = ['search_mcp_docs']) {
     getUser: jest.fn(
       async () => ({ id: 'owner', role: 'USER', email: 'owner@example.test' }) as IUser,
     ),
-    getAppConfig: jest.fn(async () => undefined),
+    getAppConfig: jest.fn(
+      async () =>
+        ({
+          endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        }) as AppConfig,
+    ),
     ensureConfigServers: jest.fn(async () => ({})),
     getServerConfigs: jest.fn(async () => ({ docs: server })),
     findPluginAuthsByKeys: jest.fn(async () => []),
@@ -139,6 +145,12 @@ it('loads each graph frontier in one batch', async () => {
   expect(deps.getAgents).toHaveBeenNthCalledWith(2, childIds);
   expect(deps.getAgents).toHaveBeenCalledTimes(2);
   expect(deps.findAccessibleResources).toHaveBeenCalledTimes(1);
+  expect(deps.findAccessibleResources).toHaveBeenCalledWith(
+    expect.any(Array),
+    'agent',
+    expect.any(Number),
+    childIds,
+  );
 });
 
 it('does not count the root or legacy handoff nodes against the spawn graph budget', async () => {
@@ -148,7 +160,12 @@ it('does not count the root or legacy handoff nodes against the spawn graph budg
   const { check, deps } = setup();
   deps.findAccessibleResources = jest.fn(async () => allIds);
   deps.getAppConfig = jest.fn(
-    async () => ({ endpoints: { agents: { capabilities: ['subagents'] } } }) as AppConfig,
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as AppConfig,
   );
   deps.getAgents = jest.fn(async (ids) =>
     ids.map((id) =>
@@ -190,7 +207,9 @@ it('includes enabled spawn-graph members when the capability is available', asyn
   deps.getAppConfig = jest.fn(
     async () =>
       ({
-        endpoints: { agents: { capabilities: ['subagents'] } },
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
       }) as AppConfig,
   );
   deps.getAgents = jest.fn(async (ids) =>
@@ -288,6 +307,18 @@ it('does not connect when the owner loses MCP permission', async () => {
   const { check, deps } = setup();
   deps.getRoleByName = async () => null;
   await expect(check('agent', principal)).rejects.toMatchObject({
+    code: 'mcp_permission_denied',
+  });
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
+it('rejects selected MCP tools when the effective tools capability is disabled', async () => {
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () => ({ endpoints: { agents: { capabilities: [] } } }) as unknown as AppConfig,
+  );
+
+  await expect(check('agent', principal)).rejects.toMatchObject({
     code: 'mcp_configuration_missing',
   });
   expect(deps.connect).not.toHaveBeenCalled();
@@ -325,4 +356,55 @@ it('starts independent server probes together instead of serializing their timeo
     { server: 'docs', status: 'ready' },
     { server: 'private', status: 'ready' },
   ]);
+});
+
+it('bounds simultaneous MCP connection probes', async () => {
+  const serverNames = ['one', 'two', 'three', 'four', 'five'];
+  const { check, deps } = setup(serverNames.map((name) => `search_mcp_${name}`));
+  deps.getServerConfigs = async () => Object.fromEntries(serverNames.map((name) => [name, server]));
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const connect = deps.connect;
+  deps.connect = jest.fn(async (options) => {
+    await gate;
+    return connect(options);
+  });
+
+  const result = check('agent', principal);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  try {
+    expect(deps.connect).toHaveBeenCalledTimes(3);
+  } finally {
+    release();
+  }
+  await expect(result).resolves.toHaveLength(5);
+  expect(deps.connect).toHaveBeenCalledTimes(5);
+});
+
+it('passes cancellation to connection setup and tool discovery', async () => {
+  const { check, deps } = setup();
+  const controller = new AbortController();
+  const fetchToolsSnapshot = jest.fn(
+    async (
+      _deadline?: number,
+      signal?: AbortSignal,
+    ): Promise<import('../mcp/connection').MCPToolsSnapshot> => {
+      expect(signal).toBe(controller.signal);
+      return {
+        tools: [{ name: 'search', inputSchema: { type: 'object' as const } }],
+        complete: true,
+      };
+    },
+  );
+  deps.connect = jest.fn(async (options) => {
+    expect(options.signal).toBe(controller.signal);
+    return { fetchToolsSnapshot };
+  });
+
+  await expect(check('agent', principal, { signal: controller.signal })).resolves.toEqual([
+    { server: 'docs', status: 'ready' },
+  ]);
+  expect(fetchToolsSnapshot).toHaveBeenCalledWith(undefined, controller.signal);
 });

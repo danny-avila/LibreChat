@@ -17,6 +17,7 @@ export type ScheduleTarget = (typeof scheduleTargets)[number];
 export type ScheduleDisabledReason =
   | 'mcp_reauth_required'
   | 'mcp_configuration_missing'
+  | 'mcp_permission_denied'
   | 'too_many_failures'
   | 'agent_deleted'
   | 'invalid_schedule'
@@ -194,21 +195,31 @@ export type TScheduleRunNowResponse = {
 /** Only structured schedule preflight failures may request immediate suspension. */
 export function getScheduleMCPDisabledReason(
   error?: string,
-): 'mcp_reauth_required' | 'mcp_configuration_missing' | undefined {
+): 'mcp_reauth_required' | 'mcp_configuration_missing' | 'mcp_permission_denied' | undefined {
   if (error?.startsWith('mcp_reauth_required: [')) return 'mcp_reauth_required';
   if (error?.startsWith('mcp_configuration_missing: [')) return 'mcp_configuration_missing';
+  if (error?.startsWith('mcp_permission_denied: [')) return 'mcp_permission_denied';
   return undefined;
 }
 
 export const scheduleMCPOutcomeSchema = z.object({
   server: z.string(),
-  status: z.enum(['ready', 'mcp_reauth_required', 'mcp_configuration_missing', 'mcp_unavailable']),
+  status: z.enum([
+    'ready',
+    'mcp_reauth_required',
+    'mcp_configuration_missing',
+    'mcp_permission_denied',
+    'mcp_unavailable',
+  ]),
 });
 export type ScheduleMCPOutcome = z.infer<typeof scheduleMCPOutcomeSchema>;
 export type ScheduleMCPStatus = ScheduleMCPOutcome['status'];
 
 export function readScheduleMCPOutcomes(error?: string): ScheduleMCPOutcome[] {
-  if (!error || !/^mcp_(reauth_required|configuration_missing|unavailable): \[/.test(error))
+  if (
+    !error ||
+    !/^mcp_(reauth_required|configuration_missing|permission_denied|unavailable): \[/.test(error)
+  )
     return [];
   try {
     const result = scheduleMCPOutcomeSchema

@@ -42,6 +42,7 @@ export type ScheduleEngine = {
 
 export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
   let stopped = false;
+  const stopController = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   let ticks = 0;
   const instanceId = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -512,6 +513,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             scheduledFor,
             {
               dbNow: new Date(dbNow),
+              signal: stopController.signal,
             },
           );
           if (result.fired) {
@@ -597,6 +599,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
   const engine: ScheduleEngine = {
     stop: () => {
       stopped = true;
+      stopController.abort(new Error('Schedule engine stopped'));
       if (timer) {
         clearTimeout(timer);
         timer = undefined;

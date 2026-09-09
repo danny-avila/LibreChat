@@ -2,6 +2,7 @@
   "com_ui_schedule_mcp_ready": "Ready for scheduled chats",
   "com_ui_schedule_mcp_reauth": "Reconnect this MCP server before enabling the schedule.",
   "com_ui_schedule_mcp_configuration": "Configure or remove this MCP server before enabling the schedule.",
+  "com_ui_schedule_mcp_permission": "An administrator must restore your MCP server permission.",
   "com_ui_schedule_mcp_unavailable": "MCP server unavailable. Try again later.",
   "com_ui_schedule_mcp_open_agent": "Open agent to reconnect MCPs",
   "com_ui_code_approval_mode": "Code approval mode",

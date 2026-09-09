@@ -42,7 +42,11 @@ export interface SchedulesHandlersDeps {
    *  hold lapse instead of retaining the upload forever. Throws when any file is gone. */
   markFilesUsed: (fileIds: string[], userId: string) => Promise<void>;
   /** Serialized manual fire (acquires the schedule lease); null if already leased. */
-  fireNow: (schedule: FireableSchedule, limits: ScheduleLimits) => Promise<FireResult | null>;
+  fireNow: (
+    schedule: FireableSchedule,
+    limits: ScheduleLimits,
+    options?: { signal?: AbortSignal },
+  ) => Promise<FireResult | null>;
   /**
    * Soft-deletes a schedule with quiescing: stops new claims, aborts in-flight
    * runs, and erases once drained. See ScheduleDeleteResult for the honest states.
@@ -363,11 +367,26 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     return false;
   }
 
-  async function validateMCP(agentId: string, req: ServerRequest, res: Response): Promise<boolean> {
+  function responseAbortSignal(res: Response): AbortSignal {
+    const controller = new AbortController();
+    const abort = () => controller.abort(new Error('Schedule request closed'));
+    const detach = () => res.off?.('close', abort);
+    res.once?.('close', abort);
+    res.once?.('finish', detach);
+    return controller.signal;
+  }
+
+  async function validateMCP(
+    agentId: string,
+    req: ServerRequest,
+    res: Response,
+    signal: AbortSignal,
+  ): Promise<boolean> {
     try {
-      await deps.preflightMCP(agentId, requestUser(req));
+      await deps.preflightMCP(agentId, requestUser(req), { signal });
       return true;
     } catch (error) {
+      if (signal.aborted) return false;
       if (error instanceof ScheduleMCPError) {
         res.status(error.code === 'mcp_unavailable' ? 503 : 400).json({
           code: error.code,
@@ -673,7 +692,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       await respondToReplay(replayed);
       return;
     }
-    if (!(await validateMCP(parsed.data.agent_id, req, res))) return;
+    const mcpSignal = responseAbortSignal(res);
+    if (!(await validateMCP(parsed.data.agent_id, req, res, mcpSignal))) return;
     // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
     // replay lookup above. A committed create whose response was lost must still be
     // recoverable by an identical retry: applying today's policy first let a raised
@@ -733,6 +753,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(500).json({ error: 'Failed to retain schedule attachments' });
       return;
     }
+    if (mcpSignal.aborted) return;
     // Atomic cap: createScheduleWithSlot claims a free per-user slot via the
     // {user, slot} partial unique index, so concurrent creates can never exceed
     // maxPerUser. 'limit' means a concurrent racer took the last slot after the
@@ -930,9 +951,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Agent not found or not accessible' });
       return;
     }
+    const mcpSignal = responseAbortSignal(res);
     if (
       (enabled || parsed.data.agent_id != null) &&
-      !(await validateMCP(parsed.data.agent_id ?? existing.agent_id, req, res))
+      !(await validateMCP(parsed.data.agent_id ?? existing.agent_id, req, res, mcpSignal))
     )
       return;
     // The destination is re-resolved on every edit that leaves the schedule ENABLED,
@@ -1045,6 +1067,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         return;
       }
     }
+    if (mcpSignal.aborted) return;
     // FENCED on the revision this edit was computed from. `nextRunAt` above is derived
     // from (cadence, timezone) resolved against the row read at the top of this handler,
     // so two overlapping edits — one changing cadence, one changing timezone — would
@@ -1108,7 +1131,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const limits = await deps.getLimits(requestUser(req));
-    const result = await deps.fireNow(schedule, limits);
+    const signal = responseAbortSignal(res);
+    const result = await deps.fireNow(schedule, limits, { signal });
+    if (signal.aborted) return;
     if (result == null) {
       res.status(409).json({ error: 'A run for this schedule is already in progress' });
       return;
@@ -1120,12 +1145,15 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       let mcpStatus:
         | 'mcp_reauth_required'
         | 'mcp_configuration_missing'
+        | 'mcp_permission_denied'
         | 'mcp_unavailable'
         | undefined;
       if (failedMCP.some((outcome) => outcome.status === 'mcp_reauth_required')) {
         mcpStatus = 'mcp_reauth_required';
       } else if (failedMCP.some((outcome) => outcome.status === 'mcp_configuration_missing')) {
         mcpStatus = 'mcp_configuration_missing';
+      } else if (failedMCP.some((outcome) => outcome.status === 'mcp_permission_denied')) {
+        mcpStatus = 'mcp_permission_denied';
       } else if (
         failedMCP.length > 0 &&
         failedMCP.every((outcome) => outcome.status === 'mcp_unavailable')

@@ -128,7 +128,7 @@ export async function fireSchedule(
   schedule: FireableSchedule,
   limits: ScheduleLimits,
   scheduledFor: Date,
-  options?: { manual?: boolean; dbNow?: Date },
+  options?: { manual?: boolean; dbNow?: Date; signal?: AbortSignal },
 ): Promise<FireResult> {
   const { methods } = deps;
   // Compute the NEXT occurrence relative to the CLAIM's clock (the engine passes
@@ -572,8 +572,12 @@ export async function fireSchedule(
 
     let mcp: Awaited<ReturnType<ScheduleEngineDeps['preflightMCP']>>;
     try {
-      mcp = await deps.preflightMCP(schedule.agent_id, user);
+      mcp = await deps.preflightMCP(schedule.agent_id, user, { signal: options?.signal });
     } catch (error) {
+      if (options?.signal?.aborted) {
+        await rollbackReservation(conversationId);
+        return stepAsideSuperseded();
+      }
       if (
         claimToken != null &&
         !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
@@ -597,6 +601,11 @@ export async function fireSchedule(
         error: message,
         ...(failure ? { mcp: failure.outcomes } : { mcpPreflightUnavailable: true }),
       };
+    }
+
+    if (options?.signal?.aborted) {
+      await rollbackReservation(conversationId);
+      return stepAsideSuperseded();
     }
 
     // Last check before the point of no return: re-verify this fire still holds an

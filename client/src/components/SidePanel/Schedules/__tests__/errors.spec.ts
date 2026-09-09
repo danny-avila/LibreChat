@@ -22,6 +22,25 @@ it('ignores unrelated and malformed server errors', () => {
   expect(readScheduleMCPOutcomes('mcp_reauth_required: [malformed')).toEqual([]);
 });
 
+it('explains transient MCP infrastructure failures without server outcomes', () => {
+  const error = Object.assign(new Error('private infrastructure details'), {
+    response: { status: 503, data: { code: 'mcp_unavailable' } },
+  });
+  expect(scheduleMCPErrorMessage(error, (key) => key)).toBe('com_ui_schedule_mcp_unavailable');
+});
+
+it('explains administrator-revoked MCP permission', () => {
+  const error = Object.assign(new Error('permission denied'), {
+    response: {
+      status: 400,
+      data: { mcp: [{ server: 'Notion', status: 'mcp_permission_denied' }] },
+    },
+  });
+  expect(scheduleMCPErrorMessage(error, (key) => key)).toBe(
+    'Notion: com_ui_schedule_mcp_permission',
+  );
+});
+
 it('restores saved per-server failure outcomes on the schedule card', () => {
   const outcomes = [{ server: 'Notion', status: 'mcp_reauth_required' }];
   const lastRun = {
