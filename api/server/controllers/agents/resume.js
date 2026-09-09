@@ -50,6 +50,7 @@ const {
   resolveChatProjectContext,
   getChatProjectContextKey,
   restoreScheduledTokenContext,
+  CHAT_PROJECT_CONTEXT_UNAVAILABLE,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -229,7 +230,7 @@ async function resolveResumeProjectContext(req, conversationId, { fresh = false 
       req.resolvedConversation = refreshedConversation ?? null;
     }
   } catch (error) {
-    if (error?.message !== 'Project context unavailable') {
+    if (error?.message !== CHAT_PROJECT_CONTEXT_UNAVAILABLE) {
       throw error;
     }
     context = null;

@@ -90,6 +90,32 @@ describe('ChatProject resource hydration', () => {
     expect(getChatProjectContextKey(after)).toBe(getChatProjectContextKey(before));
   });
 
+  it('preserves Project compatibility when a referenced image is reused', async () => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    const methods = createMethods(mongoose);
+    const fileId = 'reused-image';
+    await File.create(
+      file(fileId, owner, { type: 'image/png', filename: 'reference.png', source: 'local' }),
+    );
+    await File.updateOne(
+      { file_id: fileId },
+      { $set: { updatedAt: new Date('2020-01-01') } },
+      { timestamps: false },
+    );
+    const project = await methods.createChatProject(owner, { name: 'Reused image' });
+    const projectId = project._id!.toString();
+    await methods.addChatProjectFile(owner, projectId, fileId);
+    const input = { userId: owner, requestedProjectId: projectId };
+    const before = await resolveChatProjectContext(input, methods);
+
+    /* `prepareImageURL` promotes the upload with nothing but the id on every reuse. */
+    await methods.updateFile({ file_id: fileId });
+    const after = await resolveChatProjectContext(input, methods);
+
+    expect(after?.resources).toEqual([expect.objectContaining({ availability: 'ready' })]);
+    expect(getChatProjectContextKey(after)).toBe(getChatProjectContextKey(before));
+  });
+
   it('only marks canonical unscoped message attachments ready', () => {
     expect(
       getChatProjectFileAvailability(
