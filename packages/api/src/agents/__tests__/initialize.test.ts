@@ -1287,6 +1287,63 @@ describe('initializeAgent — model_parameters.web_search role gate', () => {
       expect.objectContaining({ web_search: true }),
     );
   });
+
+  /** The embedder surface in `agents/openai/service.ts` reaches `initializeAgent`
+   *  through a closure that hides `db`, so `webSearchAvailable` is the only gate
+   *  available to it. */
+  it('strips model_parameters.web_search when webSearchAvailable is false without a db grant', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: true },
+    });
+    db.getRoleByName = undefined;
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        webSearchAvailable: false,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).not.toHaveProperty('web_search');
+  });
+
+  it('keeps model_parameters.web_search when webSearchAvailable is true', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: true },
+    });
+    db.getRoleByName = undefined;
+
+    await initializeAgent(
+      {
+        req: buildRoleGatedReq(),
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        webSearchAvailable: true,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: true }),
+    );
+  });
 });
 
 describe('initializeAgent — stable and dynamic instruction fields', () => {

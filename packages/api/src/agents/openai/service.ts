@@ -212,6 +212,13 @@ interface InitializeAgentParams {
    */
   fileSearchAvailable?: boolean;
   /**
+   * Whether `web_search` is available to this caller — the capability AND, when
+   * the embedder wires `getRoleByName`, the `WEB_SEARCH` grant. `initializeAgent`
+   * strips `model_parameters.web_search` when this is `false`; absent /
+   * `undefined` leaves provider-native web search ungated on this route.
+   */
+  webSearchAvailable?: boolean;
+  /**
    * Whether the admin-level `stateful_code_sessions` capability is enabled.
    * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
    * OpenAI-compatible route resolves stateful sessions identically to the
@@ -711,6 +718,15 @@ export async function createAgentChatCompletion(
       capabilityAllowsFileSearch === true && deps.getRoleByName != null
         ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).fileSearch
         : capabilityAllowsFileSearch;
+    const capabilityAllowsWebSearch = capabilityEnabled(AgentCapabilities.web_search);
+    /** The same pairing for the third gated tool. `initializeAgent` strips
+     *  `model_parameters.web_search` from this flag: provider-native web search
+     *  never passes through the agent tool loader, so this call path has no
+     *  other gate on it. */
+    const webSearchAvailable =
+      capabilityAllowsWebSearch === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).webSearch
+        : capabilityAllowsWebSearch;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
@@ -760,6 +776,7 @@ export async function createAgentChatCompletion(
       isInitialAgent: true,
       codeEnvAvailable,
       fileSearchAvailable,
+      webSearchAvailable,
       statefulSessionsAvailable,
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,

@@ -717,6 +717,15 @@ export interface InitializeAgentParams {
    */
   fileSearchAvailable?: boolean;
   /**
+   * Whether `web_search` is available to this caller — the capability AND the
+   * `WEB_SEARCH` role grant. For callers that reach `initializeAgent` without a
+   * `db` (the embedder surface in `agents/openai/service.ts`), this is the only
+   * way to gate provider-native web search, since `model_parameters.web_search`
+   * never passes through the agent tool loader. `false` strips the parameter;
+   * absent falls back to the grant resolved from `db.getRoleByName`.
+   */
+  webSearchAvailable?: boolean;
+  /**
    * Whether the `run_in_background` capability is enabled for this run. When
    * true, tools the agent opted in via `tool_options[name].run_in_background`
    * (plus the background-native code pair, unless explicitly opted out) get a
@@ -1114,13 +1123,18 @@ export async function initializeAgent(
    *  `agent.tools` entirely, so it needs its own role check here rather than
    *  relying on the tool-loader gate. Short-circuits before the role read so a
    *  request that never asked for web search pays nothing. */
-  if (modelOptions.web_search === true && db.getRoleByName != null) {
-    const { webSearch } = await resolveToolRoleGrants({
-      req: params.req as Request | undefined,
-      getRoleByName: db.getRoleByName,
-      context: 'initializeAgent',
-    });
-    if (!webSearch) {
+  if (modelOptions.web_search === true) {
+    const denied =
+      params.webSearchAvailable === false ||
+      (db.getRoleByName != null &&
+        !(
+          await resolveToolRoleGrants({
+            req: params.req as Request | undefined,
+            getRoleByName: db.getRoleByName,
+            context: 'initializeAgent',
+          })
+        ).webSearch);
+    if (denied) {
       delete modelOptions.web_search;
       logger.warn(
         `[initializeAgent][User: ${requestFileOwnerId}][Agent: ${agent.id}] Forbidden: role denies WEB_SEARCH; removed model_parameters.web_search`,
