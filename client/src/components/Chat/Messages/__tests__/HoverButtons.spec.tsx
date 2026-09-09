@@ -229,11 +229,31 @@ describe('HoverButtons edit affordance', () => {
 
   /** A compaction turn parents onto the leaf it summarized, so every rerun shape
    *  would replay a model turn in the user slot: the submission mints a user
-   *  message under an existing response's id and runs on empty text. */
+   *  message under an existing response's id and runs on empty text. Its editor
+   *  has nothing to show either — neither a summary nor the error part a skipped
+   *  or failed compaction persists is an editable part type. */
   it.each([
-    ['a finished compaction', { summarizing: false }],
-    ['a failed compaction', { failed: true }],
-  ])('withholds rerun controls on %s', (_label, state) => {
+    [
+      'a finished compaction',
+      [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    ],
+    [
+      'a failed compaction',
+      [
+        {
+          type: ContentTypes.SUMMARY,
+          failed: true,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    ],
+    ['a compaction that persisted an error part', [{ type: ContentTypes.ERROR, error: 'failed' }]],
+  ])('withholds rerun controls on %s', (_label, content) => {
     const summarizedLeaf = {
       ...userMessage,
       messageId: 'assistant-1',
@@ -248,13 +268,7 @@ describe('HoverButtons edit affordance', () => {
       isCreatedByUser: false,
       text: '',
       finish_reason: 'length',
-      content: [
-        {
-          type: ContentTypes.SUMMARY,
-          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
-          ...state,
-        },
-      ],
+      content,
     } as TMessage;
 
     const container = renderHoverButtons({
@@ -305,9 +319,10 @@ describe('HoverButtons edit affordance', () => {
   });
 
   /** An imported or restored conversation can chain one model turn onto another
-   *  without a user message between them. Those replies carry ordinary content,
-   *  stay editable, and keep the controls they had. */
-  it('keeps rerun controls on a model turn chained onto another model turn', () => {
+   *  without a user message between them. That reply has no user turn to replay,
+   *  so the rerun shapes go, but its stored content is saved directly by the
+   *  editor and stays editable. */
+  it('keeps the editor, not the rerun shapes, on a model turn chained onto another', () => {
     const firstReply = {
       ...userMessage,
       messageId: 'assistant-1',
@@ -333,8 +348,32 @@ describe('HoverButtons edit affordance', () => {
     });
 
     expect(container.querySelector(`#edit-${chainedReply.messageId}`)).not.toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** A response whose parts the editor cannot show a field for still opens the
+   *  editor when there is a user turn behind it: its Rerun is the point. */
+  it('keeps the editor on an uneditable response that still has a user turn behind it', () => {
+    const toolOnlyReply = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      content: [{ type: ContentTypes.ERROR, error: 'failed' }],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: toolOnlyReply,
+      isLast: true,
+      latestMessageId: toolOnlyReply.messageId,
+      thread: [userMessage, toolOnlyReply],
+    });
+
+    expect(container.querySelector(`#edit-${toolOnlyReply.messageId}`)).not.toBeNull();
     expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
-    expect(screen.getByTestId('continue-generation-button')).toBeEnabled();
   });
 
   /** A row rendered outside the messages view cannot resolve its parent. Withholding

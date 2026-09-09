@@ -1,7 +1,7 @@
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
-import { buildTree, isCompactedLeaf, isSummaryOnlyContent } from './messages';
+import { buildTree, findMessageById, isCompactedLeaf } from './messages';
 import { ContentTypes } from './types/runs';
 
 const msg = (messageId: string, parentMessageId: string, over: Partial<TMessage> = {}): TMessage =>
@@ -221,29 +221,31 @@ describe('isCompactedLeaf', () => {
   });
 });
 
-describe('isSummaryOnlyContent', () => {
-  const summary = (overrides: Record<string, unknown> = {}) => ({
-    type: ContentTypes.SUMMARY,
-    content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
-    ...overrides,
+describe('findMessageById', () => {
+  const thread = () => [
+    msg('u1', '00000000-0000-0000-0000-000000000000', { isCreatedByUser: true }),
+    msg('a1', 'u1'),
+  ];
+
+  it('resolves a message by id and reports a missing one', () => {
+    const messages = thread();
+    expect(findMessageById(messages, 'a1')).toBe(messages[1]);
+    expect(findMessageById(messages, 'absent')).toBeUndefined();
+    expect(findMessageById(messages, null)).toBeUndefined();
+    expect(findMessageById(null, 'a1')).toBeUndefined();
   });
 
-  /** The states `isCompactedLeaf` rejects still carry the compaction content
-   *  shape, so a rerun shape must not be offered on them either. */
-  it.each([
-    ['a finished summary', [summary()]],
-    ['a summary still streaming', [summary({ summarizing: true })]],
-    ['a failed summary', [summary({ failed: true })]],
-    ['an empty summary', [summary({ content: [] })]],
-  ])('is true for %s', (_label, content) => {
-    expect(isSummaryOnlyContent({ content } as TMessage)).toBe(true);
-  });
+  /** The index is memoized per array identity, and a cache write replaces the
+   *  array. Answering a later lookup from the previous array's rows would hand
+   *  the caller a message the thread no longer holds. */
+  it('answers from the array it was given, not from a previous one', () => {
+    const before = thread();
+    expect(findMessageById(before, 'a1')).toBe(before[1]);
 
-  it.each([
-    ['no content', undefined],
-    ['empty content', []],
-    ['a summary next to text', [summary(), { type: ContentTypes.TEXT, text: 'reply' }]],
-  ])('is false for %s', (_label, content) => {
-    expect(isSummaryOnlyContent({ content } as TMessage)).toBe(false);
+    const edited = { ...before[1], text: 'edited' };
+    const after = [before[0], edited];
+
+    expect(findMessageById(after, 'a1')).toBe(edited);
+    expect(findMessageById(before, 'a1')).toBe(before[1]);
   });
 });

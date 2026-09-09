@@ -10,15 +10,12 @@ type TUseGenerations = {
   finish_reason?: string;
   latestMessageId?: string;
   isCreatedByUser?: boolean;
-  /** Every content part of this message is a summary. Half of the manual
-   *  compaction shape; on its own it also matches a turn that auto-summarized and
-   *  was cancelled before its first answer token. */
-  isSummaryOnlyContent?: boolean;
+  /** The editor would show at least one field for this message. A turn made only
+   *  of a summary, an error or tool calls offers none. */
+  hasEditablePart?: boolean;
   /** For a model turn: whether the message it hangs off is the user turn a rerun
    *  would replay. `undefined` when the thread is unavailable (a search or share
-   *  row) or the parent was not resolved, which withholds nothing. A manual
-   *  compaction parents onto the leaf it summarized, so it is the one model turn
-   *  with no user turn behind it. */
+   *  row) or the parent was not resolved, which withholds nothing. */
   parentIsUserMessage?: boolean;
 };
 
@@ -32,7 +29,7 @@ export default function useGenerationsByLatest({
   finish_reason = '',
   latestMessageId,
   isCreatedByUser = false,
-  isSummaryOnlyContent = false,
+  hasEditablePart = true,
   parentIsUserMessage,
 }: TUseGenerations) {
   const isEditableEndpoint = Boolean(
@@ -48,16 +45,13 @@ export default function useGenerationsByLatest({
   );
 
   /** Every rerun shape replays the message's parent as the turn's user message, so
-   *  a manual compaction has nothing to replay: it parents onto the leaf it
-   *  summarized, and the submission would mint a user message under an existing
-   *  response's id. Both halves are required — a model turn hanging off another
-   *  model turn is otherwise an ordinary imported or restored chain whose stored
-   *  content stays editable, and summary-only content alone is also what a
-   *  cancelled auto-summarized turn persists. A compaction's redo path is the
-   *  context indicator's Compact action. An unknown parent withholds nothing, and
-   *  the rerun paths refuse it on their own. */
-  const isManualCompaction =
-    !isCreatedByUser && isSummaryOnlyContent && parentIsUserMessage === false;
+   *  a model turn hanging off another model turn has none: the submission would
+   *  mint a user message under an existing response's id and run on empty text.
+   *  A manual compaction is that shape by construction — it parents onto the leaf
+   *  it summarized — and an imported or restored thread reaches it whenever a
+   *  reply is chained onto a reply. An unknown parent withholds nothing, and the
+   *  rerun paths refuse it on their own. */
+  const hasNoUserTurnToReplay = !isCreatedByUser && parentIsUserMessage === false;
 
   /** The tool-call-limit notice already offers Keep going / Answer now. The hover
    *  Continue would re-submit the parent user turn with `isContinued`, a different
@@ -70,7 +64,7 @@ export default function useGenerationsByLatest({
     !isEditing &&
     !isSubmitting &&
     !searchResult &&
-    !isManualCompaction &&
+    !hasNoUserTurnToReplay &&
     isEditableEndpoint;
 
   const branchingSupported = Boolean(
@@ -90,17 +84,22 @@ export default function useGenerationsByLatest({
     !searchResult &&
     !isEditing &&
     !isSubmitting &&
-    !isManualCompaction &&
+    !hasNoUserTurnToReplay &&
     branchingSupported;
 
   const isActiveStreamingMessage =
     isSubmitting && (latestMessageId == null || messageId === latestMessageId);
 
+  /** The editor stays available on a model turn with no user turn behind it as
+   *  long as it has a part to edit — an imported chain's reply is still saved
+   *  directly, which needs no rerun. A turn with neither, the manual compaction
+   *  shape whether it finished or persisted an error part, would open an editor
+   *  with no field and one inert Rerun. */
   const hideEditButton =
     isActiveStreamingMessage ||
     error ||
     searchResult ||
-    isManualCompaction ||
+    (hasNoUserTurnToReplay && !hasEditablePart) ||
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 

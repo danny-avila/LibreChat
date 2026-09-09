@@ -157,20 +157,33 @@ export function buildTree({
 }
 
 /**
- * True when every content part of a message is a summary, whatever state each
- * part is in. That content shape is what a compaction turn persists, and it is
- * the cheap half of identifying one: the other half is that its parent is the
- * leaf it summarized rather than a user message, which only the thread can say.
- * A turn that auto-summarized and was cancelled before its first answer token
- * persists the same shape while still hanging off a user message.
- * Whether a compaction finished is the narrower {@link isCompactedLeaf}.
+ * Memoizes a messages array's id index. Every row that needs to look another
+ * message up (the hover controls resolving the turn a rerun would replay) would
+ * otherwise scan the whole array, which is quadratic in the conversation. A
+ * cache write replaces the array, so the index dies with the array it indexes
+ * and can never answer from stale rows.
  */
-export function isSummaryOnlyContent(message?: Pick<TMessage, 'content'> | null): boolean {
-  const content = message?.content;
-  if (!Array.isArray(content) || content.length === 0) {
-    return false;
+const indexCache = new WeakMap<(TMessage | undefined)[], Map<string, TMessage>>();
+
+/** The message with this id, resolved through the array's memoized index. */
+export function findMessageById(
+  messages: (TMessage | undefined)[] | null | undefined,
+  messageId?: string | null,
+): TMessage | undefined {
+  if (messages == null || messageId == null) {
+    return undefined;
   }
-  return content.every((part) => part?.type === ContentTypes.SUMMARY);
+  let index = indexCache.get(messages);
+  if (index == null) {
+    index = new Map<string, TMessage>();
+    for (const message of messages) {
+      if (message?.messageId != null && !index.has(message.messageId)) {
+        index.set(message.messageId, message);
+      }
+    }
+    indexCache.set(messages, index);
+  }
+  return index.get(messageId);
 }
 
 /**

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, memo } from 'react';
 import { Copy, Check } from 'lucide';
 import { useRecoilState } from 'recoil';
-import { isSummaryOnlyContent } from 'librechat-data-provider';
+import { findMessageById } from 'librechat-data-provider';
 import {
   Button,
   EditIcon,
@@ -15,9 +15,9 @@ import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
+import { cn, hasEditablePart } from '~/utils';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
-import { cn } from '~/utils';
 import store from '~/store';
 
 type THoverButtons = {
@@ -146,21 +146,19 @@ const HoverButtons = ({
     return conversation.endpointType ?? conversation.endpoint;
   }, [conversation]);
 
-  /** Only a summary-only model turn can be the manual compaction whose parent is
-   *  another model turn, so only that row resolves the turn a rerun would replay;
-   *  every ordinary row answers from its own content and never scans the thread.
-   *  The lookup is keyed on the parent id so a streaming row does not rescan:
-   *  `getMessages` is a cache read, not a subscription, and a parent's authorship
-   *  never changes. Outside the messages view (a search row) the thread is
-   *  unavailable and the answer stays unknown. */
-  const isSummaryOnly = isSummaryOnlyContent(message);
+  /** Which turn a rerun would replay, resolved for a model turn only. The lookup
+   *  goes through the messages array's memoized id index, so a conversation is
+   *  indexed once for all its rows rather than scanned once per row, and the memo
+   *  is keyed on the parent id: `getMessages` is a cache read, not a subscription,
+   *  and a parent's authorship never changes. Outside the messages view (a search
+   *  row) the thread is unavailable and the answer stays unknown. */
   const parentIsUserMessage = useMemo(() => {
-    if (!isSummaryOnly || message.isCreatedByUser === true || message.parentMessageId == null) {
+    if (message.isCreatedByUser === true || message.parentMessageId == null) {
       return undefined;
     }
-    const parent = getMessages()?.find((item) => item.messageId === message.parentMessageId);
+    const parent = findMessageById(getMessages(), message.parentMessageId);
     return parent == null ? undefined : parent.isCreatedByUser === true;
-  }, [isSummaryOnly, getMessages, message.isCreatedByUser, message.parentMessageId]);
+  }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
 
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
@@ -171,7 +169,7 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
-    isSummaryOnlyContent: isSummaryOnly,
+    hasEditablePart: hasEditablePart(message),
     parentIsUserMessage,
     latestMessageId: latestMessageId,
   });
