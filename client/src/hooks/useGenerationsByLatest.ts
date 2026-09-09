@@ -17,6 +17,11 @@ type TUseGenerations = {
    *  would replay. `undefined` when the thread is unavailable (a search or share
    *  row) or the parent was not resolved, which withholds nothing. */
   parentIsUserMessage?: boolean;
+  /** The turn carries the server's manual-compaction marker. Compact runs on
+   *  whatever leaf the branch ends with, so such a turn can hang off a user
+   *  message; replaying that message would answer it again instead of redoing the
+   *  compaction, which is the context indicator's Compact action. */
+  isUserInitiatedCompaction?: boolean;
 };
 
 export default function useGenerationsByLatest({
@@ -31,6 +36,7 @@ export default function useGenerationsByLatest({
   isCreatedByUser = false,
   hasEditablePart = true,
   parentIsUserMessage,
+  isUserInitiatedCompaction = false,
 }: TUseGenerations) {
   const isEditableEndpoint = Boolean(
     [
@@ -47,11 +53,12 @@ export default function useGenerationsByLatest({
   /** Every rerun shape replays the message's parent as the turn's user message, so
    *  a model turn hanging off another model turn has none: the submission would
    *  mint a user message under an existing response's id and run on empty text.
-   *  A manual compaction is that shape by construction — it parents onto the leaf
-   *  it summarized — and an imported or restored thread reaches it whenever a
-   *  reply is chained onto a reply. An unknown parent withholds nothing, and the
-   *  rerun paths refuse it on their own. */
-  const hasNoUserTurnToReplay = !isCreatedByUser && parentIsUserMessage === false;
+   *  An imported or restored thread reaches that shape whenever a reply is chained
+   *  onto a reply, and a manual compaction reaches it whenever it summarized an
+   *  answer. A marked compaction is excluded whatever it hangs off. An unknown
+   *  parent withholds nothing, and the rerun paths refuse it on their own. */
+  const hasNoTurnToReplay =
+    !isCreatedByUser && (parentIsUserMessage === false || isUserInitiatedCompaction);
 
   /** The tool-call-limit notice already offers Keep going / Answer now. The hover
    *  Continue would re-submit the parent user turn with `isContinued`, a different
@@ -64,7 +71,7 @@ export default function useGenerationsByLatest({
     !isEditing &&
     !isSubmitting &&
     !searchResult &&
-    !hasNoUserTurnToReplay &&
+    !hasNoTurnToReplay &&
     isEditableEndpoint;
 
   const branchingSupported = Boolean(
@@ -84,22 +91,22 @@ export default function useGenerationsByLatest({
     !searchResult &&
     !isEditing &&
     !isSubmitting &&
-    !hasNoUserTurnToReplay &&
+    !hasNoTurnToReplay &&
     branchingSupported;
 
   const isActiveStreamingMessage =
     isSubmitting && (latestMessageId == null || messageId === latestMessageId);
 
-  /** The editor stays available on a model turn with no user turn behind it as
-   *  long as it has a part to edit — an imported chain's reply is still saved
-   *  directly, which needs no rerun. A turn with neither, the manual compaction
-   *  shape whether it finished or persisted an error part, would open an editor
-   *  with no field and one inert Rerun. */
+  /** The editor stays available on a model turn with nothing to replay as long as
+   *  it has a part to edit — an imported chain's reply is still saved directly,
+   *  which needs no rerun. A turn with neither, the compaction shape whether it
+   *  finished or persisted an error part instead, would open an editor with no
+   *  field and one inert Rerun. */
   const hideEditButton =
     isActiveStreamingMessage ||
     error ||
     searchResult ||
-    (hasNoUserTurnToReplay && !hasEditablePart) ||
+    (hasNoTurnToReplay && !hasEditablePart) ||
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 

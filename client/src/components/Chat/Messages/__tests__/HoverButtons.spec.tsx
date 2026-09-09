@@ -286,6 +286,41 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
 
+  /** Compact runs on whatever leaf the branch ends with, so its summary can hang
+   *  off a user message. Replaying that message would answer it again instead of
+   *  redoing the compaction, so the server's marker withholds the rerun shapes
+   *  there too. */
+  it('withholds rerun controls on a marked compaction hanging off a user message', () => {
+    const compactionMessage = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          initiatedBy: 'user',
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: compactionMessage,
+      isLast: true,
+      latestMessageId: compactionMessage.messageId,
+      thread: [userMessage, compactionMessage],
+    });
+
+    expect(screen.getByTestId('copy-response-button')).not.toBeNull();
+    expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
   /** An ordinary turn that auto-summarized and was cancelled before its first
    *  answer token persists the same summary-only content, but it hangs off the
    *  user's message and is exactly the turn a user needs to rerun. */

@@ -1,7 +1,7 @@
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
-import { buildTree, findMessageById, isCompactedLeaf } from './messages';
+import { buildTree, findMessageById, isCompactedLeaf, isUserInitiatedCompaction } from './messages';
 import { ContentTypes } from './types/runs';
 
 const msg = (messageId: string, parentMessageId: string, over: Partial<TMessage> = {}): TMessage =>
@@ -247,5 +247,29 @@ describe('findMessageById', () => {
 
     expect(findMessageById(after, 'a1')).toBe(edited);
     expect(findMessageById(before, 'a1')).toBe(before[1]);
+  });
+});
+
+describe('isUserInitiatedCompaction', () => {
+  const summary = (overrides: Record<string, unknown> = {}) => ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+    ...overrides,
+  });
+
+  it('is true for the summary a Compact action produced', () => {
+    expect(
+      isUserInitiatedCompaction({ content: [summary({ initiatedBy: 'user' })] } as TMessage),
+    ).toBe(true);
+  });
+
+  /** An automatic summary detour carries no marker: that turn answers a user
+   *  message and stays rerunnable. */
+  it.each([
+    ['an unmarked summary', [summary()]],
+    ['a plain answer', [{ type: ContentTypes.TEXT, text: 'reply' }]],
+    ['no content', undefined],
+  ])('is false for %s', (_label, content) => {
+    expect(isUserInitiatedCompaction({ content } as TMessage)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, memo } from 'react';
 import { Copy, Check } from 'lucide';
 import { useRecoilState } from 'recoil';
-import { findMessageById } from 'librechat-data-provider';
+import { findMessageById, isUserInitiatedCompaction } from 'librechat-data-provider';
 import {
   Button,
   EditIcon,
@@ -171,6 +171,7 @@ const HoverButtons = ({
     isCreatedByUser: message.isCreatedByUser,
     hasEditablePart: hasEditablePart(message),
     parentIsUserMessage,
+    isUserInitiatedCompaction: isUserInitiatedCompaction(message),
     latestMessageId: latestMessageId,
   });
 

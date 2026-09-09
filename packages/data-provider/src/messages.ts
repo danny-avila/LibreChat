@@ -187,6 +187,23 @@ export function findMessageById(
 }
 
 /**
+ * True when a turn carries the marker the server stamps on a manual compaction:
+ * `markCompactionSummary` sets `initiatedBy: 'user'` on the summary a Compact
+ * action produced, and nothing else writes it, so an automatic summary detour is
+ * not one. This is the compaction's own identity, independent of where it hangs:
+ * Compact runs on whatever leaf the branch ends with, so its response can parent
+ * onto a user message as easily as onto the answer it summarized. Redoing one is
+ * the context indicator's Compact action, never a rerun of the turn behind it.
+ */
+export function isUserInitiatedCompaction(message?: Pick<TMessage, 'content'> | null): boolean {
+  const content = message?.content;
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((part) => part?.type === ContentTypes.SUMMARY && part.initiatedBy === 'user');
+}
+
+/**
  * True when a message is a finished manual compaction: every content part is a
  * summary and at least one of them carries text. A part that is still streaming
  * or that failed contributes no text of its own, so an interrupted compaction
