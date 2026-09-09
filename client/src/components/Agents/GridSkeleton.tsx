@@ -92,7 +92,7 @@ export default function GridSkeleton({ scrollElementRef, label }: GridSkeletonPr
         {Array.from({ length: count }, (_, index) => (
           <div
             key={index}
-            className="flex min-h-[17.5rem] min-w-0 flex-col rounded-2xl border border-border-light bg-surface-secondary p-5"
+            className="flex min-h-[17.5rem] min-w-0 flex-col rounded-theme-surface border border-border-light bg-surface-secondary p-5"
           >
             {card}
           </div>
