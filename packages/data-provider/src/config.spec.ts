@@ -20,6 +20,23 @@ const endpointsConfig: TEndpointsConfig = {
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
+describe('scheduled MCP preflight config', () => {
+  it('caps per-admission connection concurrency', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightConcurrency: 10 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightConcurrency: 11 } },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe('excludedKeys', () => {
   it.each([
     '_id',

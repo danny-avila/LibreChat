@@ -631,6 +631,11 @@ export async function fireSchedule(
       return stepAsideSuperseded();
     }
 
+    if (options?.signal?.aborted) {
+      await rollbackReservation(conversationId);
+      return stepAsideSuperseded();
+    }
+
     // SHUTDOWN recheck immediately before dispatch: the gate before the reservation
     // is not the last dispatch-boundary operation — the deployment-limit read,
     // capacity allocation, and claim revalidation all run after it and can overlap

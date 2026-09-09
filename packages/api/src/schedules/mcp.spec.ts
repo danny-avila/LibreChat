@@ -1,15 +1,23 @@
 import { AgentCapabilities, Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { IUser, IRole, AppConfig } from '@librechat/data-schemas';
+import type { IUser, IRole, AppConfig, AgentGraphNode } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '../mcp/types';
 import { createScheduleMCPPreflight, ScheduleMCPError } from './mcp';
 
 const principal = { id: 'owner', role: 'USER' };
 const server: ParsedServerConfig = { type: 'streamable-http', url: 'https://mcp.example.test/mcp' };
 
+function graphNode(id: string, fields: Partial<AgentGraphNode> = {}): AgentGraphNode {
+  return { id, provider: 'openAI', model: 'gpt-test', ...fields };
+}
+
 function setup(tools = ['search_mcp_docs']) {
   const disconnect = jest.fn();
   const deps: Parameters<typeof createScheduleMCPPreflight>[0] = {
-    getAgentGraphNodes: jest.fn(async (ids) => ids.map((id) => ({ id, tools }))),
+    resolveAgentGraphAccess: jest.fn(async () => ({}) as never),
+    getAgentGraphNodes: jest.fn(async (ids) =>
+      ids.map((id) => ({ id, provider: 'openAI', model: 'gpt-test', tools })),
+    ),
+    getModelsConfig: jest.fn(async () => ({ openAI: ['gpt-test'] })),
     getRoleByName: jest.fn(
       async () =>
         ({ permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } } }) as IRole,
@@ -127,8 +135,8 @@ it('checks graph agents once even when edges cycle', async () => {
   deps.getAgentGraphNodes = jest.fn(async (ids) =>
     ids.map((id) =>
       id === 'root'
-        ? { id, tools: [], edges: [{ from: 'root', to: 'child' }] }
-        : { id, tools: ['search_mcp_docs'], agent_ids: ['root'] },
+        ? graphNode(id, { tools: [], edges: [{ from: 'root', to: 'child' }] })
+        : graphNode(id, { tools: ['search_mcp_docs'], agent_ids: ['root'] }),
     ),
   );
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
@@ -139,17 +147,18 @@ it('loads each graph frontier in one batch', async () => {
   const childIds = Array.from({ length: 20 }, (_, index) => `child-${index}`);
   const { check, deps } = setup();
   deps.getAgentGraphNodes = jest.fn(async (ids) =>
-    ids.map((id) => ({
-      id,
-      tools: id === childIds[0] ? ['search_mcp_docs'] : [],
-      edges: id === 'root' ? childIds.map((childId) => ({ from: 'root', to: childId })) : undefined,
-    })),
+    ids.map((id) =>
+      graphNode(id, {
+        tools: id === childIds[0] ? ['search_mcp_docs'] : [],
+        edges:
+          id === 'root' ? childIds.map((childId) => ({ from: 'root', to: childId })) : undefined,
+      }),
+    ),
   );
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
   expect(deps.getAgentGraphNodes).toHaveBeenNthCalledWith(1, ['root']);
-  expect(deps.getAgentGraphNodes).toHaveBeenNthCalledWith(
-    2,
-    childIds,
+  expect(deps.getAgentGraphNodes).toHaveBeenNthCalledWith(2, childIds, expect.any(Object));
+  expect(deps.resolveAgentGraphAccess).toHaveBeenCalledWith(
     expect.objectContaining({ userId: 'owner', role: 'USER' }),
   );
   expect(deps.getAgentGraphNodes).toHaveBeenCalledTimes(2);
@@ -170,16 +179,14 @@ it('does not count the root or legacy handoff nodes against the spawn graph budg
   deps.getAgentGraphNodes = jest.fn(async (ids) =>
     ids.map((id) =>
       id === 'root'
-        ? {
-            id,
+        ? graphNode(id, {
             tools: [],
             agent_ids: legacyIds,
             subagents: { enabled: true, agent_ids: spawnIds } as never,
-          }
-        : {
-            id,
+          })
+        : graphNode(id, {
             tools: id === spawnIds[0] ? ['search_mcp_docs'] : [],
-          },
+          }),
     ),
   );
 
@@ -191,11 +198,74 @@ it('skips MCP tools on graph agents the owner cannot view', async () => {
   deps.getAgentGraphNodes = jest.fn(async (ids, access) =>
     ids.flatMap((id) => {
       if (id === 'root') {
-        return [{ id, tools: [], edges: [{ from: 'root', to: 'private' }] }];
+        return [graphNode(id, { tools: [], edges: [{ from: 'root', to: 'private' }] })];
       }
-      return access == null ? [{ id, tools: ['search_mcp_docs'] }] : [];
+      return access == null ? [graphNode(id, { tools: ['search_mcp_docs'] })] : [];
     }),
   );
+  await expect(check('root', principal)).resolves.toEqual([]);
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
+it('reuses one resolved access context across deep graph frontiers', async () => {
+  const { check, deps } = setup();
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, { tools: [], edges: [{ from: 'root', to: 'middle' }] });
+      }
+      if (id === 'middle') {
+        return graphNode(id, { tools: [], edges: [{ from: 'middle', to: 'leaf' }] });
+      }
+      return graphNode(id, { tools: ['search_mcp_docs'] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledTimes(3);
+  expect(deps.resolveAgentGraphAccess).toHaveBeenCalledTimes(1);
+});
+
+it('ignores accessible descendants whose provider model is unavailable at runtime', async () => {
+  const { check, deps } = setup();
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? graphNode(id, { tools: [], edges: [{ from: 'root', to: 'retired' }] })
+        : graphNode(id, {
+            provider: 'anthropic',
+            model: 'retired-model',
+            tools: ['search_mcp_docs'],
+          }),
+    ),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([]);
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
+it('prunes viewable descendants stranded behind an inaccessible edge node', async () => {
+  const { check, deps } = setup();
+  deps.getAgentGraphNodes = jest.fn(async (ids, access) =>
+    ids.flatMap((id) => {
+      if (id === 'root') {
+        return [
+          graphNode(id, {
+            tools: [],
+            edges: [
+              { from: 'root', to: 'private' },
+              { from: 'private', to: 'visible' },
+            ],
+          }),
+        ];
+      }
+      if (id === 'visible' && access != null) {
+        return [graphNode(id, { tools: ['search_mcp_docs'] })];
+      }
+      return [];
+    }),
+  );
+
   await expect(check('root', principal)).resolves.toEqual([]);
   expect(deps.connect).not.toHaveBeenCalled();
 });
@@ -213,15 +283,14 @@ it('includes enabled spawn-graph members when the capability is available', asyn
   deps.getAgentGraphNodes = jest.fn(async (ids) =>
     ids.map((id) =>
       id === 'root'
-        ? {
-            id,
+        ? graphNode(id, {
             tools: [],
             subagents: {
               enabled: true,
               graphs: [{ name: 'research', type: 'single_agent', agent_ids: ['spawned'] }],
             } as never,
-          }
-        : { id, tools: ['search_mcp_docs'] },
+          })
+        : graphNode(id, { tools: ['search_mcp_docs'] }),
     ),
   );
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
@@ -241,8 +310,7 @@ it('skips every member of an incomplete spawn graph', async () => {
     ids.flatMap((id) => {
       if (id === 'root') {
         return [
-          {
-            id,
+          graphNode(id, {
             tools: [],
             subagents: {
               enabled: true,
@@ -254,11 +322,11 @@ it('skips every member of an incomplete spawn graph', async () => {
                 },
               ],
             } as never,
-          },
+          }),
         ];
       }
       if (id === 'visible' && access != null) {
-        return [{ id, tools: ['search_mcp_docs'] }];
+        return [graphNode(id, { tools: ['search_mcp_docs'] })];
       }
       return [];
     }),

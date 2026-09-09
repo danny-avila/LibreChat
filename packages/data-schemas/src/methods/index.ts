@@ -154,6 +154,7 @@ import {
   type AgentDeps,
   type AgentGraphNode,
   type AgentGraphAccess,
+  type AgentGraphAccessContext,
 } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
@@ -557,6 +558,7 @@ export type {
   AgentMethods,
   AgentGraphNode,
   AgentGraphAccess,
+  AgentGraphAccessContext,
   ConfigMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,

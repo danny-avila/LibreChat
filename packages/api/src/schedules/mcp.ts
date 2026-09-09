@@ -10,9 +10,16 @@ import {
   buildServerNameAliases,
   normalizeMCPToolKey,
   normalizeServerName,
+  resolveModelCatalogKey,
 } from 'librechat-data-provider';
-import type { IUser, AppConfig, PluginAuthMethods, AgentGraphNode } from '@librechat/data-schemas';
-import type { ScheduleMCPStatus, ScheduleMCPOutcome } from 'librechat-data-provider';
+import type {
+  IUser,
+  AppConfig,
+  PluginAuthMethods,
+  AgentGraphNode,
+  AgentGraphAccessContext,
+} from '@librechat/data-schemas';
+import type { TModelsConfig, ScheduleMCPStatus, ScheduleMCPOutcome } from 'librechat-data-provider';
 import type { ParsedServerConfig, UserMCPConnectionOptions } from '../mcp/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
@@ -33,6 +40,7 @@ import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/reques
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
+import { resolveReachableGraph } from '../agents/edges';
 import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
 import { getPluginAuthMap } from '../agents/auth';
@@ -54,10 +62,16 @@ export class ScheduleMCPError extends Error {
 }
 
 interface ScheduleMCPDeps {
+  resolveAgentGraphAccess: (access: {
+    userId: string;
+    role?: string | null;
+    idOnTheSource?: string | null;
+  }) => Promise<AgentGraphAccessContext>;
   getAgentGraphNodes: (
     ids: string[],
-    access?: { userId: string; role?: string | null; idOnTheSource?: string | null },
+    access?: AgentGraphAccessContext,
   ) => Promise<AgentGraphNode[]>;
+  getModelsConfig: (user: IUser) => Promise<TModelsConfig>;
   getRoleByName: CheckAccessParams['getRoleByName'];
   getUser: (id: string) => Promise<IUser | null>;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
@@ -98,17 +112,21 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     };
     const tools: string[] = [];
     const serverHints = new Set<string>();
+    const graphEdges: NonNullable<AgentGraphNode['edges']> = [];
+    const explicitSeeds = new Set<string>([agentId]);
     const attempted = new Set<string>();
     const expanded = new Set<string>();
     const accessibleById = new Map<string, AgentGraphNode>();
     const spawned = new Set<string>();
-    const access = {
+    const accessIdentity = {
       userId: user.id,
       role: user.role,
       idOnTheSource: user.idOnTheSource,
     };
-    type PendingGroup = { ids: string[]; requireAll: boolean };
-    let pending: PendingGroup[] = [{ ids: [agentId], requireAll: true }];
+    let accessContext: AgentGraphAccessContext | undefined;
+    let modelsConfig: TModelsConfig | undefined;
+    type PendingGroup = { ids: string[]; requireAll: boolean; explicitSeed: boolean };
+    let pending: PendingGroup[] = [{ ids: [agentId], requireAll: true, explicitSeed: true }];
     while (pending.length > 0) {
       const groups = pending;
       pending = [];
@@ -128,13 +146,36 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const descendants = frontier.filter((id) => id !== agentId);
         loaded = [
           ...root,
-          ...(descendants.length > 0 ? await deps.getAgentGraphNodes(descendants, access) : []),
+          ...(descendants.length > 0
+            ? await deps.getAgentGraphNodes(
+                descendants,
+                (accessContext ??= await deps.resolveAgentGraphAccess(accessIdentity)),
+              )
+            : []),
         ];
       } else if (frontier.length > 0) {
-        loaded = await deps.getAgentGraphNodes(frontier, access);
+        loaded = await deps.getAgentGraphNodes(
+          frontier,
+          (accessContext ??= await deps.resolveAgentGraphAccess(accessIdentity)),
+        );
       }
       throwIfAborted();
-      for (const agent of loaded) accessibleById.set(agent.id, agent);
+      const descendants = loaded.filter((agent) => agent.id !== agentId);
+      if (descendants.length > 0) {
+        modelsConfig ??= await deps.getModelsConfig(user);
+      }
+      for (const agent of loaded) {
+        const availableModels =
+          agent.id === agentId
+            ? undefined
+            : modelsConfig?.[resolveModelCatalogKey(agent.provider, modelsConfig)];
+        if (
+          agent.id === agentId ||
+          (agent.model.length > 0 && availableModels?.includes(agent.model) === true)
+        ) {
+          accessibleById.set(agent.id, agent);
+        }
+      }
       const runnableIds = new Set<string>();
       for (const group of groups) {
         const memberIds = group.ids.filter(
@@ -142,7 +183,9 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         );
         if (group.requireAll && memberIds.some((id) => !accessibleById.has(id))) continue;
         for (const id of memberIds) {
-          if (accessibleById.has(id)) runnableIds.add(id);
+          if (!accessibleById.has(id)) continue;
+          runnableIds.add(id);
+          if (group.explicitSeed) explicitSeeds.add(id);
         }
       }
       for (const id of runnableIds) {
@@ -150,14 +193,13 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         expanded.add(id);
         const agent = accessibleById.get(id);
         if (!agent) continue;
-        tools.push(...(agent.tools ?? []).filter((tool) => !isActionTool(tool)));
-        for (const name of agent.mcpServerNames ?? []) serverHints.add(name);
+        graphEdges.push(...(agent.edges ?? []));
         for (const childId of agent.agent_ids ?? []) {
-          pending.push({ ids: [childId], requireAll: false });
+          pending.push({ ids: [childId], requireAll: false, explicitSeed: true });
         }
         for (const edge of agent.edges ?? []) {
           for (const childId of [edge.from, edge.to].flat()) {
-            pending.push({ ids: [childId], requireAll: false });
+            pending.push({ ids: [childId], requireAll: false, explicitSeed: false });
           }
         }
         if (!agent.subagents?.enabled) continue;
@@ -168,15 +210,35 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const graphGroups = (agent.subagents.graphs ?? []).map((graph) => ({
           ids: (graph.agent_ids ?? []).filter((memberId) => memberId !== agentId),
           requireAll: true,
+          explicitSeed: true,
         }));
         const spawnTargets = [...directTargets, ...graphGroups.flatMap((group) => group.ids)];
         for (const id of spawnTargets) spawned.add(id);
         if (spawned.size > MAX_SUBAGENT_GRAPH_NODES) throw new ScheduleMCPError([]);
         pending.push(
-          ...directTargets.map((childId) => ({ ids: [childId], requireAll: false })),
+          ...directTargets.map((childId) => ({
+            ids: [childId],
+            requireAll: false,
+            explicitSeed: true,
+          })),
           ...graphGroups,
         );
       }
+    }
+    const skippedAgentIds = new Set(
+      [...attempted].filter((id) => id !== agentId && !accessibleById.has(id)),
+    );
+    const { reachable } = resolveReachableGraph(
+      explicitSeeds,
+      expanded,
+      graphEdges,
+      skippedAgentIds,
+    );
+    for (const id of reachable) {
+      const agent = accessibleById.get(id);
+      if (!agent || !expanded.has(id)) continue;
+      tools.push(...(agent.tools ?? []).filter((tool) => !isActionTool(tool)));
+      for (const name of agent.mcpServerNames ?? []) serverHints.add(name);
     }
     const selectedTools = tools.filter(
       (tool) =>

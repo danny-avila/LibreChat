@@ -919,3 +919,40 @@ it('rolls back without recording a failure when MCP preflight is cancelled', asy
   expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   expect(methods.advanceSchedule).not.toHaveBeenCalled();
 });
+
+it('does not enqueue when Run Now is cancelled during final claim validation', async () => {
+  const { methods } = makeMethods();
+  const controller = new AbortController();
+  let releaseValidation: () => void = () => undefined;
+  let markValidationStarted: () => void = () => undefined;
+  const validationStarted = new Promise<void>((resolve) => {
+    markValidationStarted = resolve;
+  });
+  const validationGate = new Promise<void>((resolve) => {
+    releaseValidation = resolve;
+  });
+  let validations = 0;
+  (methods.revalidateClaim as jest.Mock).mockImplementation(async () => {
+    validations += 1;
+    if (validations === 2) {
+      markValidationStarted();
+      await validationGate;
+    }
+    return true;
+  });
+  const deps = makeDeps(methods);
+
+  const pending = fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'), {
+    manual: true,
+    signal: controller.signal,
+  });
+  await validationStarted;
+  controller.abort(new Error('Run Now request closed'));
+  releaseValidation();
+  const result = await pending;
+
+  expect(result).toMatchObject({ fired: false, skipped: 'superseded' });
+  expect(methods.deleteScheduleRun).toHaveBeenCalled();
+  expect(deps.enqueueTrigger).not.toHaveBeenCalled();
+  expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+});

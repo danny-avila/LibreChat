@@ -591,9 +591,10 @@ describe('Agent Methods', () => {
         grantedBy: authorId,
       });
 
-      const nodes = await methods.getAgentGraphNodes([visible.id, privateAgent.id], {
+      const access = await methods.resolveAgentGraphAccess({
         userId: authorId.toString(),
       });
+      const nodes = await methods.getAgentGraphNodes([visible.id, privateAgent.id], access);
 
       expect(nodes).toEqual([
         expect.objectContaining({ id: visible.id, mcpServerNames: ['docs'] }),
