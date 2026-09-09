@@ -436,9 +436,12 @@ export function createProvisionFilesCallback({
       if (codeFailureReasons.length > 0 && codeFailureReasons.every(isCodeApiRateLimitError)) {
         throw codeFailureReasons[0];
       }
-      throw new AggregateError(
-        codeFailureReasons,
-        `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
+      throw Object.assign(
+        new Error(
+          `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
+          codeFailureReasons[0] !== undefined ? { cause: codeFailureReasons[0] } : undefined,
+        ),
+        { errors: codeFailureReasons },
       );
     }
     if (failedVectorFiles.length > 0) {

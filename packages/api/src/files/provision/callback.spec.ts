@@ -406,6 +406,30 @@ describe('createProvisionFilesCallback', () => {
     await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).rejects.toBe(rateLimit);
   });
 
+  it('retains every failure when lazy code provisioning has mixed causes', async () => {
+    const first = new Error('storage unavailable');
+    const second = new Error('code api unavailable');
+    const { provisionFiles } = buildHarness({
+      contexts: [
+        [
+          'agent-a',
+          {
+            provisionState: state(
+              [makeFile({ file_id: 'first' }), makeFile({ file_id: 'second' })],
+              [],
+            ),
+          },
+        ],
+      ],
+      codeImpl: jest.fn().mockRejectedValueOnce(first).mockRejectedValueOnce(second),
+    });
+
+    await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).rejects.toMatchObject({
+      cause: first,
+      errors: [first, second],
+    });
+  });
+
   it('shares embedding work across agents queueing the same search file', async () => {
     const shared = makeFile();
     const { provisionFiles, provisionToVectorDB, addEmbeddedEntity } = buildHarness({
