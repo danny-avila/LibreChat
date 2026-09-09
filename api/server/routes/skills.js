@@ -9,6 +9,7 @@ const {
   getStorageMetadata,
   resolveRequestTenantId,
   restoreTenantContextFromReq,
+  isFileStorageLimitError,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -259,6 +260,9 @@ async function uploadFileHandler(req, res) {
 
     return res.status(200).json(result);
   } catch (error) {
+    if (isFileStorageLimitError(error)) {
+      return res.status(413).json({ error: error.message, code: error.code });
+    }
     if (error.code === 'SKILL_FILE_VALIDATION_FAILED') {
       return res.status(400).json({ error: error.message });
     }

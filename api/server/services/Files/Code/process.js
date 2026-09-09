@@ -39,6 +39,9 @@ const {
   sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
   resolveDownloadPath,
+  resolveStorageScope,
+  createFileQuotaCommitter,
+  isFilePersistenceNotCommittedError,
 } = require('@librechat/api');
 const {
   Tools,
@@ -59,13 +62,26 @@ const {
   resolveSandboxFilename,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
+const {
+  getFiles,
+  updateFile,
+  claimCodeFile,
+  getUserStorageUsage,
+  deleteFileByFilter,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
+
+const persistCodeFile = createFileQuotaCommitter({
+  resolveScope: resolveStorageScope,
+  getUserStorageUsage,
+  onCleanupError: (error) =>
+    logger.error('[processCodeOutput] Failed to clean up rejected output:', error),
+});
 
 /** Request-scoped references to buffers already fetched by artifact preflight.
  * The request object is the ownership boundary, and WeakMap keeps completed
@@ -781,7 +797,7 @@ const processCodeOutput = async ({
      * a single record instead of creating duplicates (TOCTOU race fix).
      *
      * Claim by `safeName` (not raw `name`) so the claim and the eventual
-     * `createFile` agree on the filename column — otherwise weird inputs
+     * claim agree on the filename column — otherwise weird inputs
      * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
      * then write under the sanitized one, leaving the claim row orphaned.
      */
@@ -794,6 +810,8 @@ const processCodeOutput = async ({
      * content write lands.
      */
     const sourceDispatchedAt = freshClaimAfter ?? Date.now();
+    const outputClaimRevision = freshClaimAfter == null ? v4() : undefined;
+    const storageScope = resolveStorageScope(req);
 
     const newFileId = v4();
     const claimed = await claimCodeFile({
@@ -801,8 +819,9 @@ const processCodeOutput = async ({
       conversationId,
       file_id: newFileId,
       user: req.user.id,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
       sourceDispatchedAt,
+      outputClaimRevision,
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
@@ -839,27 +858,79 @@ const processCodeOutput = async ({
      * the update's filter, so check and write are one atomic operation — a
      * stale harvest's commit simply misses and its attachment is skipped.
      * The row always exists here (the claim inserted it), so the non-upsert
-     * `updateFile` matches `createFile(data, true)` semantics ($set + TTL
-     * unset). Bytes a loser may have already uploaded to the shared storage
+     * `updateFile` applies the completed row and removes its TTL. Bytes a
+     * loser may have already uploaded to the shared storage
      * key are a narrow residual that per-file locking would be needed to
-     * close. Foreground writes keep the unconditional `createFile` path.
+     * close. Foreground writes use a per-claim revision as their CAS token.
      */
     const commitCodeFile = async (fileData) => {
-      if (freshClaimAfter == null) {
-        await createFile(fileData, true);
-        return true;
-      }
-      const committed = await updateFile(fileData, {
-        $or: [
-          { 'metadata.sourceDispatchedAt': { $exists: false } },
-          { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
-        ],
-      });
-      if (!committed) {
+      const { deleteFile: deleteNewFile } = getStrategyFunctions(fileData.source);
+      const cleanupNewBlob = deleteNewFile ? () => deleteNewFile(req, fileData) : null;
+      let replaced;
+      try {
+        replaced = await persistCodeFile(
+          req,
+          fileData,
+          (scopedRow) =>
+            updateFile(
+              scopedRow,
+              freshClaimAfter == null
+                ? { 'metadata.outputClaimRevision': outputClaimRevision }
+                : {
+                    $or: [
+                      { 'metadata.sourceDispatchedAt': { $exists: false } },
+                      { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
+                    ],
+                  },
+              { returnPrevious: true },
+            ),
+          null,
+          isUpdate ? claimed.bytes : 0,
+          isUpdate ? claimed : null,
+        );
+      } catch (error) {
+        if (cleanupNewBlob) {
+          await cleanupNewBlob().catch((cleanupError) =>
+            logger.error(
+              '[processCodeOutput] Failed to clean up uncommitted output:',
+              cleanupError,
+            ),
+          );
+        }
+        if (!isUpdate) {
+          const claimFilter = outputClaimRevision
+            ? {
+                file_id,
+                'metadata.outputClaimRevision': outputClaimRevision,
+                filepath: { $exists: false },
+              }
+            : {
+                file_id,
+                'metadata.sourceDispatchedAt': sourceDispatchedAt,
+                filepath: { $exists: false },
+              };
+          await deleteFileByFilter(claimFilter).catch((cleanupError) =>
+            logger.error(
+              '[processCodeOutput] Failed to remove rejected output claim:',
+              cleanupError,
+            ),
+          );
+        }
+        if (!isFilePersistenceNotCommittedError(error)) {
+          throw error;
+        }
         logger.warn(
           `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
         );
         return false;
+      }
+      if (isUpdate && replaced.filepath && replaced.filepath !== fileData.filepath) {
+        const { deleteFile: deleteReplacedFile } = getStrategyFunctions(replaced.source);
+        if (deleteReplacedFile) {
+          await deleteReplacedFile(req, replaced).catch((error) =>
+            logger.error('[processCodeOutput] Failed to clean up replaced output:', error),
+          );
+        }
       }
       return true;
     };
@@ -882,9 +953,15 @@ const processCodeOutput = async ({
       sourceDispatchedAt,
     };
 
+    const storageRevision = v4();
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
-      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const _file = await convertImage(
+        req,
+        buffer,
+        'high',
+        `${file_id}-${storageRevision}${fileExt}`,
+      );
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
       const storageMetadata = getStorageMetadata({
         filepath: _file.filepath,
@@ -903,7 +980,7 @@ const processCodeOutput = async ({
         conversationId,
         executionProfile,
         user: req.user.id,
-        tenantId: req.user.tenantId,
+        tenantId: storageScope.tenantId,
         type: `image/${appConfig.imageOutputType}`,
         createdAt: isUpdate ? claimed.createdAt : formattedDate,
         updatedAt: formattedDate,
@@ -964,14 +1041,17 @@ const processCodeOutput = async ({
      * the conservative cross-platform NAME_MAX (Linux ext4, NTFS, APFS).
      */
     const NAME_MAX = 255;
-    const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
-    const fileName = `${file_id}__${flatName}`;
+    const flatName = flattenArtifactPath(
+      safeName,
+      NAME_MAX - file_id.length - storageRevision.length - 3,
+    );
+    const fileName = `${file_id}-${storageRevision}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,
       fileName,
       basePath: 'uploads',
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     });
     const storageMetadata = getStorageMetadata({
       filepath,
@@ -1010,7 +1090,7 @@ const processCodeOutput = async ({
       type: mimeType,
       conversationId,
       user: req.user.id,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
       metadata: codeEnvMetadata,
@@ -1070,7 +1150,7 @@ const processCodeOutput = async ({
     const file = {
       ...baseFile,
       // Always set explicitly so an update which produces a binary or
-      // oversized artifact clears any previously cached text — createFile
+      // oversized artifact clears any previously cached text — updateFile
       // uses findOneAndUpdate with $set semantics.
       text: text ?? null,
       textFormat: textFormat ?? null,

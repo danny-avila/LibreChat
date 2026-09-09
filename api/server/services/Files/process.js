@@ -198,6 +198,16 @@ const getDeleteMethod = ({ source, deletionMethods }) => {
 const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
   return async (req, file, openai) => {
     const secondaryDeleteMethods = [];
+    const secondaryStorageSource = file.metadata?.secondaryStorageSource;
+    if (secondaryStorageSource && secondaryStorageSource !== source) {
+      const deleteSecondaryStorage = getDeleteMethod({
+        source: secondaryStorageSource,
+        deletionMethods,
+      });
+      secondaryDeleteMethods.push((req, file) =>
+        deleteSecondaryStorage(req, { ...file, source: secondaryStorageSource }),
+      );
+    }
     if (file.embedded === true && source !== FileSources.vectordb) {
       secondaryDeleteMethods.push(
         getDeleteMethod({ source: FileSources.vectordb, deletionMethods }),
@@ -643,6 +653,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  */
 const processFileUpload = async ({ req, res, metadata, sseStream, openai: providedOpenAI }) => {
   const retentionExpiryPromise = getRetentionExpiry(req);
+  const storageScope = resolveStorageScope(req);
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -678,6 +689,29 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   });
   let bytes = providerBytes;
 
+  const rollbackAssistantProviderUpload = async () => {
+    const cleanup = [];
+    if (!metadata.message_file && !metadata.tool_resource) {
+      cleanup.push(openai.beta.assistants.files.del(metadata.assistant_id, id));
+    } else if (!metadata.message_file) {
+      cleanup.push(
+        deleteResourceFileId({
+          req,
+          openai,
+          file_id: id,
+          assistant_id: metadata.assistant_id,
+          tool_resource: metadata.tool_resource,
+        }),
+      );
+    }
+    cleanup.push(openai.files.del(id));
+    const results = await Promise.allSettled(cleanup);
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) {
+      throw failed.reason;
+    }
+  };
+
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     /** Authorized at the route before any bytes are sent — see
      *  `assertLegacyAssistantUploadAllowed` in `~/server/routes/files/files`. */
@@ -696,6 +730,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
   let secondaryStoredFile;
+  let secondaryStorageSource;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -712,6 +747,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     secondaryStoredFile = result;
     bytes = providerBytes + (result.bytes ?? 0);
     filepath = result.filepath;
+    secondaryStorageSource = result.source;
     storageMetadata = getStorageMetadata({
       filepath,
       source: result.source,
@@ -742,14 +778,24 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       ...(await retentionExpiryPromise),
       embedded,
       source,
+      metadata: secondaryStorageSource ? { secondaryStorageSource } : undefined,
       height,
       width,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     },
-    /* The converted image is a distinct app-storage object. The provider-side
-     * cleanup is completed by the final enforcement PR, while this scoped write
-     * owns and removes the converted copy when admission rejects it. */
-    rollbackStoredFile,
+    isAssistantUpload
+      ? async () => {
+          const cleanup = [rollbackAssistantProviderUpload()];
+          if (secondaryStoredFile) {
+            cleanup.push(deleteStoredBlob(req, secondaryStoredFile));
+          }
+          const results = await Promise.allSettled(cleanup);
+          const failed = results.find((item) => item.status === 'rejected');
+          if (failed) {
+            throw failed.reason;
+          }
+        }
+      : rollbackStoredFile,
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -1398,15 +1444,40 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       source: storedSource,
       height,
       width,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
       llmDeliveryPath,
     }),
     ...retentionExpiry,
   };
 
-  const result = await persistFile(req, fileInfo, () =>
-    deleteStoredBlob(req, { source: storedSource, filepath, ...storageMetadata }),
-  );
+  const result = await persistFile(req, fileInfo, async () => {
+    const cleanup = [deleteStoredBlob(req, fileInfo)];
+    if (hasCodeEnvRef(fileInfo)) {
+      const { deleteFile: deleteCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+      if (deleteCodeEnvFile) {
+        cleanup.push(deleteCodeEnvFile(req, fileInfo));
+      }
+    }
+    if (fileInfo.embedded) {
+      const { deleteFile: deleteVectorFile } = getStrategyFunctions(FileSources.vectordb);
+      if (deleteVectorFile) {
+        cleanup.push(deleteVectorFile(req, fileInfo));
+      }
+    }
+    if (!messageAttachment && effectiveToolResource) {
+      cleanup.push(
+        db.removeAgentResourceFiles({
+          agent_id,
+          files: [{ file_id, tool_resource: effectiveToolResource }],
+        }),
+      );
+    }
+    const results = await Promise.allSettled(cleanup);
+    const failed = results.find((item) => item.status === 'rejected');
+    if (failed) {
+      throw failed.reason;
+    }
+  });
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };

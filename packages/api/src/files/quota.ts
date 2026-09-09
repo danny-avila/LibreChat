@@ -35,6 +35,19 @@ export function isFileStorageLimitError(error: unknown): error is FileStorageLim
   );
 }
 
+export class FilePersistenceNotCommittedError extends Error {
+  constructor() {
+    super('Quota-bearing persistence callback completed without committing a row');
+    this.name = 'FilePersistenceNotCommittedError';
+  }
+}
+
+export function isFilePersistenceNotCommittedError(
+  error: unknown,
+): error is FilePersistenceNotCommittedError {
+  return error instanceof Error && error.name === 'FilePersistenceNotCommittedError';
+}
+
 declare const storageScopeBrand: unique symbol;
 
 /**
@@ -377,7 +390,7 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
       try {
         const result = await write(scopedRow);
         if (result == null) {
-          throw new Error('Quota-bearing persistence callback completed without committing a row');
+          throw new FilePersistenceNotCommittedError();
         }
         try {
           await assertHeld();
@@ -473,6 +486,43 @@ export type FileQuotaPersistence<TRequest, TResult> = {
     },
   ) => Promise<TResult>;
 };
+
+export type FileQuotaCommitter<TRequest> = <TRow extends FileRow, TResult>(
+  req: TRequest,
+  row: TRow,
+  write: (row: TRow) => Promise<TResult>,
+  rollback: StorageRollback,
+  replacedBytes?: number | null,
+  replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null,
+) => Promise<TResult>;
+
+/** Creates a dependency-wired quota committer for nonstandard File write paths. */
+export function createFileQuotaCommitter<TRequest>(dependencies: {
+  resolveScope: (req: TRequest) => StorageScope;
+  getUserStorageUsage: GetUserStorageUsage;
+  onCleanupError: (error: unknown) => void;
+}): FileQuotaCommitter<TRequest> {
+  return <TRow extends FileRow, TResult>(
+    req: TRequest,
+    row: TRow,
+    write: (row: TRow) => Promise<TResult>,
+    rollback: StorageRollback,
+    replacedBytes?: number | null,
+    replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null,
+  ): Promise<TResult> =>
+    persistFileWithQuota(
+      {
+        scope: dependencies.resolveScope(req),
+        row,
+        write,
+        rollback,
+        replacedBytes,
+        replacing,
+        getUserStorageUsage: dependencies.getUserStorageUsage,
+      },
+      dependencies.onCleanupError,
+    );
+}
 
 /**
  * Builds the application-facing File persistence boundary. The legacy service only

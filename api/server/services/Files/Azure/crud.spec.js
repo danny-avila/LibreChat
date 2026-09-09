@@ -1,12 +1,13 @@
 const mockDownload = jest.fn();
-const mockGetBlockBlobClient = jest.fn(() => ({ download: mockDownload }));
+const mockDelete = jest.fn();
+const mockGetBlockBlobClient = jest.fn(() => ({ download: mockDownload, delete: mockDelete }));
 const mockGetAzureContainerClient = jest.fn(async () => ({
   url: 'https://account.blob.core.windows.net/files',
   getBlockBlobClient: mockGetBlockBlobClient,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn() },
+  logger: { debug: jest.fn(), error: jest.fn() },
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -18,7 +19,7 @@ jest.mock('@librechat/api', () => ({
   assertRemoteFileContentLength: jest.fn(),
 }));
 
-const { getAzureFileStream } = require('./crud');
+const { deleteFileFromAzure, getAzureFileStream } = require('./crud');
 
 describe('getAzureFileStream', () => {
   it('downloads private blobs through the authenticated Azure client', async () => {
@@ -53,5 +54,21 @@ describe('getAzureFileStream', () => {
 
     expect(mockGetAzureContainerClient).toHaveBeenCalledWith();
     expect(mockGetBlockBlobClient).toHaveBeenCalledWith('uploads/user/report one.pdf');
+  });
+});
+
+describe('deleteFileFromAzure', () => {
+  it('removes cache-busting query parameters from the blob key', async () => {
+    mockDelete.mockResolvedValue(undefined);
+
+    await deleteFileFromAzure(
+      { user: { id: 'user-1' } },
+      {
+        filepath: 'https://account.blob.core.windows.net/files/uploads/user-1/generated.webp?v=123',
+      },
+    );
+
+    expect(mockGetBlockBlobClient).toHaveBeenCalledWith('uploads/user-1/generated.webp');
+    expect(mockDelete).toHaveBeenCalled();
   });
 });

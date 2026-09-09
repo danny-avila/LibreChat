@@ -66,6 +66,24 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    resolveStorageScope: (req) => ({
+      userId: req.user.id,
+      tenantId: req.tenantId ?? req.user.tenantId,
+    }),
+    createFileQuotaCommitter:
+      ({ resolveScope }) =>
+      async (req, row, write) => {
+        const scope = resolveScope(req);
+        const result = await write({ ...row, user: scope.userId, tenantId: scope.tenantId });
+        if (result == null) {
+          const error = new Error('not committed');
+          error.name = 'FilePersistenceNotCommittedError';
+          throw error;
+        }
+        return result;
+      },
+    isFilePersistenceNotCommittedError: (error) =>
+      error?.name === 'FilePersistenceNotCommittedError',
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     /* Behaviourally identical to the real predicate in
@@ -238,11 +256,13 @@ jest.mock('@librechat/agents', () => ({
 // Mock models
 const mockClaimCodeFile = jest.fn();
 const mockUpdateFile = jest.fn();
+const mockDeleteFileByFilter = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
+  deleteFileByFilter: (...args) => mockDeleteFileByFilter(...args),
 }));
 
 // Mock permissions (must be before process.js import)
@@ -271,7 +291,7 @@ jest.mock('~/server/utils', () => ({
 
 const http = require('http');
 const https = require('https');
-const { createFile, getFiles } = require('~/models');
+const { getFiles } = require('~/models');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -329,8 +349,9 @@ describe('Code Process', () => {
       file_id: 'mock-uuid-1234',
       user: 'user-123',
     });
+    mockDeleteFileByFilter.mockResolvedValue(undefined);
+    mockUpdateFile.mockResolvedValue({});
     getFiles.mockResolvedValue(null);
-    createFile.mockResolvedValue({});
     getStrategyFunctions.mockReturnValue({
       saveBuffer: jest.fn().mockResolvedValue('/uploads/mock-file-path.txt'),
     });
@@ -362,7 +383,7 @@ describe('Code Process', () => {
         },
       });
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockUpdateFile).not.toHaveBeenCalled();
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
@@ -373,7 +394,7 @@ describe('Code Process', () => {
 
       expect(mockAxios).not.toHaveBeenCalled();
       expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
-      expect(createFile).toHaveBeenCalledTimes(1);
+      expect(mockUpdateFile).toHaveBeenCalledTimes(1);
     });
 
     it('enforces a caller-provided aggregate inspection budget while downloading', async () => {
@@ -393,7 +414,7 @@ describe('Code Process', () => {
         }),
       );
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockUpdateFile).not.toHaveBeenCalled();
     });
 
     it('extracts text bytes even when the generated filename spoofs an image extension', async () => {
@@ -433,7 +454,7 @@ describe('Code Process', () => {
       });
       expect(mockAxios).not.toHaveBeenCalled();
       expect(mockClaimCodeFile).not.toHaveBeenCalled();
-      expect(createFile).not.toHaveBeenCalled();
+      expect(mockUpdateFile).not.toHaveBeenCalled();
     });
   });
 
@@ -456,7 +477,9 @@ describe('Code Process', () => {
         conversationId: 'conv-123',
         file_id: 'mock-uuid-1234',
         user: 'user-123',
+        tenantId: undefined,
         sourceDispatchedAt: expect.any(Number),
+        outputClaimRevision: expect.any(String),
       });
 
       expect(result.file_id).toBe('existing-file-id');
@@ -547,6 +570,11 @@ describe('Code Process', () => {
       });
       mockUpdateFile.mockResolvedValueOnce(null);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn().mockResolvedValue('/uploads/rejected-file.txt'),
+        deleteFile: deleteStoredFile,
+      });
 
       const result = await processCodeOutput({
         ...baseParams,
@@ -566,6 +594,100 @@ describe('Code Process', () => {
             },
           ],
         },
+        { returnPrevious: true },
+      );
+      expect(deleteStoredFile).toHaveBeenCalledWith(
+        mockReq,
+        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
+      );
+      expect(mockDeleteFileByFilter).toHaveBeenCalledWith({
+        file_id: 'mock-uuid-1234',
+        'metadata.sourceDispatchedAt': new Date('2024-01-01T00:00:00.000Z').getTime(),
+        filepath: { $exists: false },
+      });
+    });
+
+    it('does not let an overtaken foreground claimant commit or delete the winning claim', async () => {
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'mock-uuid-1234',
+        user: 'user-123',
+      });
+      mockUpdateFile.mockResolvedValueOnce(null);
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn().mockResolvedValue('/uploads/overtaken-file.txt'),
+        deleteFile: deleteStoredFile,
+      });
+
+      const result = await processCodeOutput(baseParams);
+
+      expect(result).toBeNull();
+      expect(mockUpdateFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
+        { 'metadata.outputClaimRevision': 'mock-uuid-1234' },
+        { returnPrevious: true },
+      );
+      expect(deleteStoredFile).toHaveBeenCalled();
+      expect(mockDeleteFileByFilter).toHaveBeenCalledWith({
+        file_id: 'mock-uuid-1234',
+        'metadata.outputClaimRevision': 'mock-uuid-1234',
+        filepath: { $exists: false },
+      });
+    });
+
+    it('cleans the new revision and inserted claim when the database write fails', async () => {
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn().mockResolvedValue('/uploads/uncommitted-file.txt'),
+        deleteFile: deleteStoredFile,
+      });
+      mockUpdateFile.mockRejectedValueOnce(new Error('database unavailable'));
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      await processCodeOutput(baseParams);
+
+      expect(deleteStoredFile).toHaveBeenCalledWith(
+        mockReq,
+        expect.objectContaining({
+          file_id: 'mock-uuid-1234',
+          filepath: '/uploads/uncommitted-file.txt',
+        }),
+      );
+      expect(mockDeleteFileByFilter).toHaveBeenCalledWith({
+        file_id: 'mock-uuid-1234',
+        'metadata.outputClaimRevision': expect.any(String),
+        filepath: { $exists: false },
+      });
+    });
+
+    it('deletes a replaced blob through the storage strategy that originally owned it', async () => {
+      const deleteOldFile = jest.fn().mockResolvedValue(undefined);
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        filepath: '/old/object.txt',
+        source: 's3',
+        bytes: 50,
+      });
+      mockUpdateFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filepath: '/old/object.txt',
+        source: 's3',
+        bytes: 50,
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      getStrategyFunctions.mockImplementation((source) =>
+        source === 's3'
+          ? { deleteFile: deleteOldFile }
+          : { saveBuffer: jest.fn().mockResolvedValue('/uploads/new-object.txt') },
+      );
+
+      await processCodeOutput(baseParams);
+
+      expect(deleteOldFile).toHaveBeenCalledWith(
+        mockReq,
+        expect.objectContaining({ source: 's3', filepath: '/old/object.txt' }),
       );
     });
 
@@ -650,7 +772,7 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'mock-uuid-1234.png',
+          'mock-uuid-1234-mock-uuid-1234.png',
         );
         expect(result.type).toBe('image/webp');
         expect(result.context).toBe(FileContext.execute_code);
@@ -658,7 +780,11 @@ describe('Code Process', () => {
       });
 
       it('persists tenantId on image code output records when present', async () => {
-        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const tenantReq = {
+          ...mockReq,
+          tenantId: 'tenantA',
+          user: { ...mockReq.user, tenantId: 'staleTenant' },
+        };
         const imageBuffer = Buffer.alloc(500);
         mockAxios.mockResolvedValue({ data: imageBuffer });
         convertImage.mockResolvedValue({
@@ -674,9 +800,10 @@ describe('Code Process', () => {
         expect(mockClaimCodeFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
         );
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
-          true,
+          expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -698,7 +825,7 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'existing-img-id.png',
+          'existing-img-id-mock-uuid-1234.png',
         );
         expect(result.file_id).toBe('existing-img-id');
         expect(result.usage).toBe(2);
@@ -723,8 +850,9 @@ describe('Code Process', () => {
         expect(mockSaveBuffer).toHaveBeenCalledWith({
           userId: 'user-123',
           buffer: smallBuffer,
-          fileName: 'mock-uuid-1234__test-file.txt',
+          fileName: 'mock-uuid-1234-mock-uuid-1234__test-file.txt',
           basePath: 'uploads',
+          tenantId: undefined,
         });
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
@@ -781,7 +909,7 @@ describe('Code Process', () => {
           storageRegion: 'us-east-2',
           status: 'pending',
         });
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({
             file_id: 'mock-uuid-1234',
             user: 'user-123',
@@ -790,13 +918,18 @@ describe('Code Process', () => {
             storageKey,
             storageRegion: 'us-east-2',
           }),
-          true,
+          expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
         expect(typeof finalize).toBe('function');
       });
 
       it('passes and persists tenantId for non-image code output records', async () => {
-        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const tenantReq = {
+          ...mockReq,
+          tenantId: 'tenantA',
+          user: { ...mockReq.user, tenantId: 'staleTenant' },
+        };
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
 
@@ -816,9 +949,10 @@ describe('Code Process', () => {
         expect(mockSaveBuffer).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
         );
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
-          true,
+          expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -845,7 +979,7 @@ describe('Code Process', () => {
         // accidentally create real subdirectories under uploads/.
         expect(mockSaveBuffer).toHaveBeenCalledWith(
           expect.objectContaining({
-            fileName: 'mock-uuid-1234__test_folder__test_file.txt',
+            fileName: 'mock-uuid-1234-mock-uuid-1234__test_folder__test_file.txt',
           }),
         );
         // DB row keeps the nested path verbatim — that's what primeFiles
@@ -879,9 +1013,9 @@ describe('Code Process', () => {
 
         // The handler should call flattenArtifactPath with both the
         // safeName AND a budget = NAME_MAX (255) minus the prefix
-        // (`${file_id}__`). file_id mock is `mock-uuid-1234` (14 chars),
-        // so the budget should be 255 - 14 - 2 = 239.
-        expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 239);
+        // (`${file_id}-${revision}__`). Both mocked UUIDs are 14 chars, so the
+        // budget is 255 - 14 - 14 - 3 = 224.
+        expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 224);
       });
 
       it('passes the basename (not the full nested path) to classifyCodeArtifact and extractCodeArtifactText', async () => {
@@ -950,9 +1084,10 @@ describe('Code Process', () => {
           'utf8-text',
         );
         expect(result.text).toBe('hello world\n');
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ text: 'hello world\n' }),
-          true,
+          expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -966,7 +1101,7 @@ describe('Code Process', () => {
         const { file: result } = await processCodeOutput({ ...baseParams, name: 'archive.zip' });
 
         expect(result.text).toBeNull();
-        const createCall = createFile.mock.calls[0][0];
+        const createCall = mockUpdateFile.mock.calls[0][0];
         expect(createCall.text).toBeNull();
       });
 
@@ -988,7 +1123,7 @@ describe('Code Process', () => {
         await processCodeOutput({ ...baseParams, name: 'output.bin' });
 
         // null (not omitted) so $set clears any prior `text` value.
-        const createCall = createFile.mock.calls[0][0];
+        const createCall = mockUpdateFile.mock.calls[0][0];
         expect(createCall).toHaveProperty('text', null);
       });
 
@@ -1022,7 +1157,7 @@ describe('Code Process', () => {
 
         await processCodeOutput({ ...baseParams, name: 'output.txt' });
 
-        const createCall = createFile.mock.calls[0][0];
+        const createCall = mockUpdateFile.mock.calls[0][0];
         expect(createCall).toHaveProperty('status', null);
         expect(createCall).toHaveProperty('previewError', null);
         expect(createCall).toHaveProperty('previewRevision', null);
@@ -1043,7 +1178,7 @@ describe('Code Process', () => {
           }),
         );
         expect(mockClaimCodeFile).toHaveBeenCalledTimes(1);
-        expect(createFile).toHaveBeenCalledTimes(1);
+        expect(mockUpdateFile).toHaveBeenCalledTimes(1);
       });
 
       it('should fallback to download URL when file exceeds size limit', async () => {
@@ -1064,8 +1199,8 @@ describe('Code Process', () => {
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('exceeds size limit'));
         expect(result.filepath).toContain('/api/files/code/download/session-123/file-id-123');
         expect(result.expiresAt).toBeDefined();
-        // Should not call createFile for oversized files (fallback path)
-        expect(createFile).not.toHaveBeenCalled();
+        // Oversized files take the fallback path without a database write.
+        expect(mockUpdateFile).not.toHaveBeenCalled();
 
         // Reset to default for other tests
         fileSizeLimitConfig.value = 20 * 1024 * 1024;
@@ -1082,7 +1217,7 @@ describe('Code Process', () => {
           expect.stringContaining('Generated file exceeds size limit'),
         );
         expect(mockClaimCodeFile).not.toHaveBeenCalled();
-        expect(createFile).not.toHaveBeenCalled();
+        expect(mockUpdateFile).not.toHaveBeenCalled();
 
         fileSizeLimitConfig.value = 20 * 1024 * 1024;
       });
@@ -1295,18 +1430,19 @@ describe('Code Process', () => {
         expect(result.messageId).toBe('msg-123');
       });
 
-      it('should call createFile with upsert enabled', async () => {
+      it('commits through the claimed foreground revision', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
 
         await processCodeOutput(baseParams);
 
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({
             file_id: 'mock-uuid-1234',
             context: FileContext.execute_code,
           }),
-          true, // upsert flag
+          { 'metadata.outputClaimRevision': expect.any(String) },
+          { returnPrevious: true },
         );
       });
     });
@@ -1334,16 +1470,16 @@ describe('Code Process', () => {
        */
 
       /**
-       * `processCodeOutput` mutates the file object after `createFile` returns
+       * `processCodeOutput` mutates the file object after `updateFile` returns
        * (`Object.assign(file, { messageId, toolCallId })`) so the runtime
        * caller sees the live messageId on the response. Reading
-       * `createFile.mock.calls[0][0]` directly would therefore reflect the
+       * `updateFile.mock.calls[0][0]` directly would therefore reflect the
        * post-mutation state because JS captures by reference. To assert
        * what was actually PERSISTED, snapshot the args at call time.
        */
-      function snapshotCreateFileArgs() {
+      function snapshotPersistedFileArgs() {
         const snapshots = [];
-        createFile.mockImplementation(async (file) => {
+        mockUpdateFile.mockImplementation(async (file) => {
           snapshots.push({ ...file });
           return {};
         });
@@ -1358,7 +1494,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           messageId: 'turn-1-original-msg',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotPersistedFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1381,7 +1517,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           // messageId intentionally absent
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotPersistedFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1400,7 +1536,7 @@ describe('Code Process', () => {
           file_id: 'mock-uuid-1234',
           user: 'user-123',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotPersistedFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1424,7 +1560,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           messageId: 'turn-1-original-msg',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotPersistedFileArgs();
 
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -1451,7 +1587,7 @@ describe('Code Process', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           messageId: 'turn-1-image-msg',
         });
-        const persisted = snapshotCreateFileArgs();
+        const persisted = snapshotPersistedFileArgs();
 
         const imageBuffer = Buffer.alloc(500);
         mockAxios.mockResolvedValue({ data: imageBuffer });
@@ -1632,9 +1768,10 @@ describe('Code Process', () => {
         // Extractor MUST NOT have been called yet — that's deferred preview work.
         expect(mockExtractCodeArtifactText).not.toHaveBeenCalled();
         // Persisted record with the pending status.
-        expect(createFile).toHaveBeenCalledWith(
+        expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ status: 'pending', text: null, textFormat: null }),
-          true,
+          expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -1727,7 +1864,9 @@ describe('Code Process', () => {
         });
         mockExtractCodeArtifactText.mockResolvedValueOnce('<table></table>');
         mockGetExtractedTextFormat.mockReturnValueOnce('html');
-        updateFile.mockRejectedValueOnce(new Error('mongo down'));
+        updateFile
+          .mockResolvedValueOnce({ file_id: 'mock-uuid-1234', status: 'pending' })
+          .mockRejectedValueOnce(new Error('mongo down'));
 
         const { finalize } = await processCodeOutput({ ...baseParams, name: 'data.xlsx' });
         await expect(finalize()).resolves.toBeNull();

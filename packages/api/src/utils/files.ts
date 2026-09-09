@@ -95,13 +95,17 @@ export function appendLeafSuffix(leaf: string, suffix: string, maxBytes: number)
  * without exposing provider, filesystem, filename, or submitted-content details.
  */
 export function resolveUploadErrorMessage(
-  error: { message?: string } | null | undefined,
+  error: { code?: string; message?: string } | null | undefined,
   defaultMessage = 'Error processing file',
   redactDetails = false,
 ): string {
   const errorMessage = error?.message;
   if (!errorMessage) {
     return defaultMessage;
+  }
+
+  if (error.code === 'FILE_STORAGE_LIMIT_EXCEEDED') {
+    return errorMessage;
   }
 
   if (errorMessage.includes('file_ids')) {

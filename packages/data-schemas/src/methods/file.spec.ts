@@ -116,11 +116,13 @@ describe('File Methods', () => {
         metadata: {
           codeEnvRef: defaultRef,
           codeEnvRefs: { default: defaultRef, stateful: statefulRef },
+          secondaryStorageSource: 's3',
         },
       });
 
       expect(file?.metadata?.codeEnvRefs?.default?.file_id).toBe('default-file');
       expect(file?.metadata?.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
+      expect(file?.metadata?.secondaryStorageSource).toBe('s3');
     });
   });
 
@@ -213,6 +215,41 @@ describe('File Methods', () => {
       expect(
         (reclaimed.metadata as { sourceDispatchedAt?: number } | undefined)?.sourceDispatchedAt,
       ).toBe(111);
+    });
+
+    it('rotates foreground claim ownership without changing the content timestamp', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const File = mongoose.models.File;
+      await fileMethods.claimCodeFile({
+        filename: 'foreground.csv',
+        conversationId: 'conversation-foreground-claim',
+        file_id: 'foreground-file',
+        user: userId,
+        sourceDispatchedAt: 111,
+        outputClaimRevision: 'claim-a',
+      });
+      const written = new Date('2024-01-01T00:00:00.000Z');
+      await File.updateOne(
+        { file_id: 'foreground-file' },
+        { $set: { updatedAt: written } },
+        { timestamps: false },
+      );
+
+      const reclaimed = await fileMethods.claimCodeFile({
+        filename: 'foreground.csv',
+        conversationId: 'conversation-foreground-claim',
+        file_id: 'unused-file-id',
+        user: userId,
+        sourceDispatchedAt: 222,
+        outputClaimRevision: 'claim-b',
+      });
+
+      expect(reclaimed.file_id).toBe('foreground-file');
+      expect((reclaimed.metadata as { outputClaimRevision?: string }).outputClaimRevision).toBe(
+        'claim-b',
+      );
+      expect((reclaimed.metadata as { sourceDispatchedAt?: number }).sourceDispatchedAt).toBe(222);
+      expect(new Date(reclaimed.updatedAt as unknown as string).getTime()).toBe(written.getTime());
     });
 
     it('keeps non-tenant code output claims in the legacy namespace', async () => {
@@ -1726,6 +1763,28 @@ describe('File Methods', () => {
       expect(updated?.filename).toBe('updated.txt');
       expect(updated?.bytes).toBe(200);
       expect(updated?.expiresAt).toBeUndefined();
+    });
+
+    it('can return the immediately replaced revision for storage cleanup', async () => {
+      const fileId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'output.txt',
+        filepath: '/uploads/revision-a.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      const replaced = await fileMethods.updateFile(
+        { file_id: fileId, filepath: '/uploads/revision-b.txt', bytes: 200 },
+        undefined,
+        { returnPrevious: true },
+      );
+
+      expect(replaced?.filepath).toBe('/uploads/revision-a.txt');
+      expect((await fileMethods.findFileById(fileId))?.filepath).toBe('/uploads/revision-b.txt');
     });
 
     /* The optional `extraFilter` enables conditional updates — used by

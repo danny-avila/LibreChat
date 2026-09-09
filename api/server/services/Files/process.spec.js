@@ -511,6 +511,7 @@ describe('upload retention scheduling', () => {
         : { handleImageUpload: imageUpload, deleteFile: deleteImage },
     );
     const req = makeReq({ mimetype: 'image/png', body: { endpoint: 'assistants' } });
+    req.config.imageOutputType = 'webp';
     const openai = {
       baseURL: 'https://api.openai.test',
       files: { del: jest.fn() },
@@ -545,6 +546,55 @@ describe('upload retention scheduling', () => {
     expect(deleteImage).toHaveBeenCalledWith(
       req,
       expect.objectContaining({ filepath: '/images/user-123/upload.webp' }),
+    );
+  });
+
+  it('preserves provider ownership when an assistant image also creates an app-storage copy', async () => {
+    const providerUpload = jest.fn().mockResolvedValue({
+      id: 'provider-file-id',
+      bytes: 42,
+      filename: 'upload.png',
+      filepath: 'https://api.openai.test/files/provider-file-id',
+    });
+    const imageUpload = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/upload.webp',
+      source: FileSources.local,
+      bytes: 40,
+      width: 10,
+      height: 10,
+    });
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.openai
+        ? { handleFileUpload: providerUpload }
+        : { handleImageUpload: imageUpload },
+    );
+    const req = makeReq({ mimetype: 'image/png', body: { endpoint: 'assistants' } });
+    req.config.imageOutputType = 'webp';
+    const openai = {
+      baseURL: 'https://api.openai.test',
+      files: { del: jest.fn() },
+      beta: { assistants: { files: { create: jest.fn() } } },
+    };
+
+    await processFileUpload({
+      req,
+      res: mockRes,
+      metadata: {
+        endpoint: 'assistants',
+        assistant_id: 'assistant-1',
+        file_id: 'temp-file-id',
+      },
+      openai,
+    });
+
+    expect(db.createFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        file_id: 'provider-file-id',
+        source: FileSources.openai,
+        filepath: '/images/user-123/upload.webp',
+        metadata: { secondaryStorageSource: FileSources.local },
+      }),
+      true,
     );
   });
 });
@@ -1872,7 +1922,6 @@ describe('processAgentFileUpload', () => {
         },
       });
       const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
-
       await processAgentFileUpload({
         req,
         res: mockRes,
@@ -2194,6 +2243,8 @@ describe('processAgentFileUpload', () => {
         makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
       );
       const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.tenantId = 'request-tenant';
+      req.user.tenantId = 'stale-user-tenant';
 
       try {
         await expect(
@@ -2205,7 +2256,10 @@ describe('processAgentFileUpload', () => {
 
       expect(deleteFile).toHaveBeenCalledWith(
         req,
-        expect.objectContaining({ filepath: '/uploads/user-123/upload.bin' }),
+        expect.objectContaining({
+          filepath: '/uploads/user-123/upload.bin',
+          tenantId: 'request-tenant',
+        }),
       );
       expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
         agent_id: 'agent-abc',
@@ -2800,6 +2854,35 @@ describe('processDeleteRequest', () => {
     expect(vectorDelete).toHaveBeenCalledWith(req, file);
     expect(db.deleteFiles).toHaveBeenCalledWith(['embedded-file']);
     expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
+  });
+
+  it('deletes both provider storage and the secondary image copy', async () => {
+    const { LB_QueueAsyncCall } = require('~/server/utils/queue');
+    LB_QueueAsyncCall.mockImplementation((operation, args, callback) => {
+      operation(...args).then((result) => callback(null, result), callback);
+    });
+    const providerDelete = jest.fn().mockResolvedValue(undefined);
+    const imageDelete = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockImplementation((source) => ({
+      deleteFile: source === FileSources.openai ? providerDelete : imageDelete,
+    }));
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const req = {
+      body: {},
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'provider-file-id',
+      filepath: '/images/user-123/upload.webp',
+      source: FileSources.openai,
+      metadata: { secondaryStorageSource: FileSources.local },
+    };
+    const result = await processDeleteRequest({ req, files: [file] });
+
+    expect(providerDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(imageDelete).toHaveBeenCalledWith(req, { ...file, source: FileSources.local });
+    expect(result).toEqual({ deletedFileIds: ['provider-file-id'], failedFileIds: [] });
   });
 
   it('keeps embedded file metadata when vector deletion fails', async () => {
