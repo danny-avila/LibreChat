@@ -1978,6 +1978,11 @@ describe('defaultLLMDeliveryPath config merging', () => {
 });
 
 describe('agent attachment context limits', () => {
+  it('validates and merges the per-user storage limit in MB', () => {
+    expect(fileConfigSchema.safeParse({ storageLimit: 64 }).success).toBe(true);
+    expect(mergeFileConfig({ storageLimit: 64 }).storageLimit).toBe(64 * 1024 * 1024);
+  });
+
   it('keeps the turn-memory ceiling separate from agent upload storage', () => {
     expect(baseFileConfig.fileContextSizeLimit).toBe(128 * 1024 * 1024);
     expect(baseFileConfig.endpoints[EModelEndpoint.agents].totalSizeLimit).toBe(512 * 1024 * 1024);

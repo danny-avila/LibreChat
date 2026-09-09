@@ -468,7 +468,7 @@ export type FileQuotaPersistence<TRequest, TResult> = {
     options?: {
       disableTTL?: boolean;
       replacedBytes?: number | null;
-      replacing?: { user?: unknown; tenantId?: string | null } | null;
+      replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null;
     },
   ) => Promise<TResult>;
 };
@@ -501,7 +501,7 @@ export function createFileQuotaPersistence<TRequest, TResult>(
     options: {
       disableTTL?: boolean;
       replacedBytes?: number | null;
-      replacing?: { user?: unknown; tenantId?: string | null } | null;
+      replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null;
     } = {},
   ): Promise<TResult> =>
     persistFileWithQuota(
