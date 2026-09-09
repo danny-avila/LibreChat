@@ -165,6 +165,7 @@ function createToolLoader(
  * @param {Object} params.endpointOption
  * @param {number} [params.jobCreatedAt]
  * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
+ * @param {string} [params.foregroundRunId] Canonical response identity for foreground execution
  * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
  */
 const initializeClient = async ({
@@ -174,6 +175,7 @@ const initializeClient = async ({
   endpointOption,
   jobCreatedAt,
   checkpointNamespace,
+  foregroundRunId,
   requestBody,
 }) => {
   if (!endpointOption) {
@@ -409,7 +411,7 @@ const initializeClient = async ({
     // SDK rebuilds a graph for approval resume. The SDK event's breaker signal
     // is composed with this authoritative job signal by the handler.
     runSignal: signal,
-    foregroundRunId: runtimeRequestBody?.messageId,
+    foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
     loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
