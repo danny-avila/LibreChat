@@ -7,7 +7,7 @@ import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './s
 import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
 import { claimCodeDestination, createCodeDestinationSet } from '~/files/code/destinations';
-import { createCodeApiRateLimitBudget } from '~/utils';
+import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
 import { isCodeFileToolName } from '~/agents/tools';
 
 /** Deferred database write produced by a successful provisioning call. */
@@ -239,6 +239,7 @@ export function createProvisionFilesCallback({
     /** Files whose provisioning rejected this turn; kept queued so a transient
      *  outage can retry next turn instead of being silently dropped. */
     const failedCodeFiles: TFile[] = [];
+    const codeFailureReasons: unknown[] = [];
     const failedVectorFiles: TFile[] = [];
     /* The graph seeded each tool call's code-session context from the sessions that
      * existed at run start, which predate this upload. Returning the refs lets the
@@ -349,6 +350,7 @@ export function createProvisionFilesCallback({
         if (result.status === 'rejected') {
           logger.error('[provisionFiles] Code env provisioning failed', result.reason);
           failedCodeFiles.push(queuedCodeFiles[index]);
+          codeFailureReasons.push(result.reason);
         }
       });
       provisionState.codeEnvFiles = failedCodeFiles;
@@ -431,7 +433,11 @@ export function createProvisionFilesCallback({
     /* Provisioning failed outright, so the sandbox or vector store does not have the
      * attachment; running the tool anyway would answer from missing input. */
     if (failedCodeFiles.length > 0) {
-      throw new Error(
+      if (codeFailureReasons.length > 0 && codeFailureReasons.every(isCodeApiRateLimitError)) {
+        throw codeFailureReasons[0];
+      }
+      throw new AggregateError(
+        codeFailureReasons,
         `Failed to provision ${failedCodeFiles.length} file(s) to the code environment; aborting tool execution rather than running without them`,
       );
     }

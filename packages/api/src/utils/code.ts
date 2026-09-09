@@ -277,14 +277,23 @@ export async function withCodeApiRateLimit<T>(params: {
   budget?: CodeApiRateLimitBudget;
   onWait?: (waitMs: number) => void;
   signal?: AbortSignal;
+  /** Narrows retry classification when an attempt also performs non-CodeAPI work. */
+  isRateLimit?: (error: unknown) => boolean;
 }): Promise<T> {
-  const { attempt, label, budget, onWait, signal } = params;
+  const {
+    attempt,
+    label,
+    budget,
+    onWait,
+    signal,
+    isRateLimit = (error) => isAxiosError(error) && error.response?.status === 429,
+  } = params;
   for (;;) {
     signal?.throwIfAborted();
     try {
       return await attempt();
     } catch (error) {
-      if (!isAxiosError(error) || error.response?.status !== 429) {
+      if (!isRateLimit(error)) {
         throw error;
       }
       const retryAfterMs = getCodeApiRetryAfterMs(error);
@@ -332,13 +341,69 @@ export function withCodeApiUploadRecovery<S, T>(params: {
     scope,
     concurrency,
     signal,
-    task: () =>
-      withCodeApiRateLimit({
+    task: () => {
+      let uploadStarted = false;
+      return withCodeApiRateLimit({
         budget,
         signal,
         label,
         onWait,
-        attempt: async () => upload(await openSource()),
-      }),
+        /* Storage backends can also answer 429. Only the CodeAPI transport owns this
+         * retry policy and its operator-facing error identity. */
+        isRateLimit: (error) =>
+          uploadStarted && isAxiosError(error) && error.response?.status === 429,
+        attempt: async () => {
+          uploadStarted = false;
+          let source: S | undefined;
+          try {
+            source = await openSource();
+            signal?.throwIfAborted();
+            uploadStarted = true;
+            return await upload(source);
+          } catch (error) {
+            if (source !== undefined) {
+              disposeCodeApiUploadSource(source);
+            }
+            throw error;
+          }
+        },
+      });
+    },
   });
+}
+
+/** Best-effort disposal for the stream shapes accepted by upload adapters: a
+ * single readable or a batch of `{ stream }` entries. */
+function disposeCodeApiUploadSource(source: unknown): void {
+  try {
+    if (Array.isArray(source)) {
+      source.forEach(disposeCodeApiUploadSource);
+      return;
+    }
+    if (source == null || typeof source !== 'object') {
+      return;
+    }
+    if ('stream' in source) {
+      disposeCodeApiUploadSource((source as { stream?: unknown }).stream);
+      return;
+    }
+    const destroy = (source as { destroy?: unknown }).destroy;
+    if (typeof destroy === 'function') {
+      destroy.call(source);
+    }
+  } catch {
+    /* Cleanup must not replace the upload or cancellation error being propagated. */
+  }
+}
+
+export function isCodeApiRateLimitError(error: unknown): error is Error & {
+  code: 'CODE_API_RATE_LIMITED';
+  status: 429;
+} {
+  return (
+    error != null &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === 'CODE_API_RATE_LIMITED' &&
+    (error as { status?: unknown }).status === 429
+  );
 }

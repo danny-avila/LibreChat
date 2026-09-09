@@ -390,6 +390,22 @@ describe('createProvisionFilesCallback', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('preserves a homogeneous Code API rate-limit failure from lazy provisioning', async () => {
+    const rateLimit = Object.assign(new Error('rate limited'), {
+      name: 'CodeApiRateLimitError',
+      code: 'CODE_API_RATE_LIMITED',
+      status: 429,
+      statusCode: 429,
+      retryAfterMs: 30_000,
+    });
+    const { provisionFiles } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([makeFile()], []) }]],
+      codeImpl: jest.fn().mockRejectedValue(rateLimit),
+    });
+
+    await expect(provisionFiles([Constants.EXECUTE_CODE], 'agent-a')).rejects.toBe(rateLimit);
+  });
+
   it('shares embedding work across agents queueing the same search file', async () => {
     const shared = makeFile();
     const { provisionFiles, provisionToVectorDB, addEmbeddedEntity } = buildHarness({

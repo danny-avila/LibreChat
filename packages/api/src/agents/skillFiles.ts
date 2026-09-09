@@ -105,6 +105,7 @@ export interface PrimeSkillFilesParams {
       executionProfile?: CodeExecutionContext['executionProfile'];
       bridgeWorkerId?: string;
     },
+    signal?: AbortSignal,
   ) => Promise<string | null>;
   /** Trusted Code API route selected for the executing agent. */
   codeExecutionContext?: Pick<
@@ -169,6 +170,19 @@ function isCurrentSkillRef(
   return ref?.kind === 'skill' && ref.version === skillVersion;
 }
 
+function destroySkillUploadStream(stream: NodeJS.ReadableStream): void {
+  try {
+    if (
+      'destroy' in stream &&
+      typeof (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy === 'function'
+    ) {
+      (stream as NodeJS.ReadableStream & { destroy: () => void }).destroy();
+    }
+  } catch {
+    /* Preserve the run cancellation even if a provider stream rejects cleanup. */
+  }
+}
+
 /** Opens SKILL.md and bundled-file streams for one upload attempt. Called
  *  per attempt — a failed upload consumes the streams, so a retry must
  *  re-acquire them. */
@@ -206,14 +220,27 @@ async function collectSkillUploadFiles(
         return null;
       }
       const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file), { signal });
-      signal?.throwIfAborted();
+      if (signal?.aborted) {
+        destroySkillUploadStream(stream);
+        signal.throwIfAborted();
+      }
       return { stream, filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}` };
     }),
   );
   /* Do not let allSettled turn foreground cancellation into a skipped bundle
    * member. A partial skill upload can look successful while leaving required
    * files unavailable to the sandbox. */
-  signal?.throwIfAborted();
+  if (signal?.aborted) {
+    for (const file of filesToUpload) {
+      destroySkillUploadStream(file.stream);
+    }
+    for (const result of streamResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        destroySkillUploadStream(result.value.stream);
+      }
+    }
+    signal.throwIfAborted();
+  }
   for (const result of streamResults) {
     if (result.status === 'fulfilled' && result.value) {
       filesToUpload.push(result.value);
@@ -474,7 +501,7 @@ async function executePrimeSkillFiles(
       try {
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
-            const lastModified = await getSessionInfo(ref, req, codeExecutionContext);
+            const lastModified = await getSessionInfo(ref, req, codeExecutionContext, signal);
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
@@ -829,6 +856,7 @@ export async function primeInvokedSkills(
                 ref,
                 deps.req,
                 deps.codeExecutionContext,
+                deps.signal,
               );
               deps.signal?.throwIfAborted();
               return !!(lastModified && deps.checkIfActive?.(lastModified));

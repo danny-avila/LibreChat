@@ -592,6 +592,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
       },
       deps.req,
       undefined,
+      undefined,
     );
     const codeSession = result.initialSessions?.get('execute_code');
     expect(codeSession?.files).toEqual([
@@ -1005,10 +1006,15 @@ describe('primeSkillFiles — resource identity propagation', () => {
     const result = await primeSkillFiles(deps);
 
     expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
-    expect(deps.getSessionInfo).toHaveBeenCalledWith(cachedRef, deps.req, {
-      baseUrl: 'https://stateful-code.example.com',
-      executionProfile: 'stateful',
-    });
+    expect(deps.getSessionInfo).toHaveBeenCalledWith(
+      cachedRef,
+      deps.req,
+      {
+        baseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      },
+      undefined,
+    );
     expect(result?.files).toEqual([
       {
         id: 'file-cached',
@@ -1829,9 +1835,11 @@ describe('primeSkillFiles — upload rate-limit resilience', () => {
   it('does not upload a partial skill bundle when stream acquisition is canceled', async () => {
     const controller = new AbortController();
     const batchUploadCodeEnvFiles = jest.fn();
+    const acquiredStream = Readable.from(Buffer.from('style'));
+    const destroy = jest.spyOn(acquiredStream, 'destroy');
     const getDownloadStream = jest.fn(async () => {
       controller.abort();
-      return Readable.from(Buffer.from('style'));
+      return acquiredStream;
     });
 
     await expect(
@@ -1847,6 +1855,7 @@ describe('primeSkillFiles — upload rate-limit resilience', () => {
     expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
       signal: controller.signal,
     });
+    expect(destroy).toHaveBeenCalled();
     expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
   });
 
@@ -1879,6 +1888,12 @@ describe('primeSkillFiles — upload rate-limit resilience', () => {
         }),
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(getSessionInfo).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      undefined,
+      controller.signal,
+    );
     expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
   });
 

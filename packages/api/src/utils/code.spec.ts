@@ -3,6 +3,7 @@ import {
   getCodeApiRetryAfterMs,
   getCodeApiUploadOptions,
   withCodeApiRateLimit,
+  withCodeApiUploadRecovery,
   withCodeApiUploadSlot,
   createCodeApiRateLimitBudget,
   createCodeApiUploadRegistry,
@@ -297,6 +298,102 @@ describe('withCodeApiUploadSlot', () => {
     expect(independent).toHaveBeenCalledTimes(1);
     release();
     await first;
+  });
+});
+
+describe('withCodeApiUploadRecovery', () => {
+  it('disposes a failed source before opening the retry source', async () => {
+    jest.useFakeTimers();
+    try {
+      const first = { destroy: jest.fn() };
+      const second = { destroy: jest.fn() };
+      const openSource = jest
+        .fn<Promise<typeof first>, []>()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+      const upload = jest
+        .fn<Promise<string>, [typeof first]>()
+        .mockRejectedValueOnce(rateLimited({ headers: { 'retry-after': '0' } }))
+        .mockResolvedValueOnce('ok');
+
+      const pending = withCodeApiUploadRecovery({
+        registry: createCodeApiUploadRegistry(),
+        scope: 'route:user',
+        budget: createCodeApiRateLimitBudget(2_000),
+        label: 'uploading',
+        openSource,
+        upload,
+      });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(pending).resolves.toBe('ok');
+      expect(first.destroy).toHaveBeenCalledTimes(1);
+      expect(second.destroy).not.toHaveBeenCalled();
+      expect(upload.mock.calls.map(([source]) => source)).toEqual([first, second]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('disposes every stream in a failed batch source', async () => {
+    const first = { stream: { destroy: jest.fn() } };
+    const second = { stream: { destroy: jest.fn() } };
+
+    await expect(
+      withCodeApiUploadRecovery({
+        registry: createCodeApiUploadRegistry(),
+        scope: 'route:user',
+        budget: createCodeApiRateLimitBudget(0),
+        label: 'uploading',
+        openSource: async () => [first, second],
+        upload: async () => {
+          throw rateLimited({ headers: { 'retry-after': '30' } });
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'CODE_API_RATE_LIMITED' });
+    expect(first.stream.destroy).toHaveBeenCalledTimes(1);
+    expect(second.stream.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not classify a backing-storage 429 as Code API throttling', async () => {
+    const storageRateLimit = rateLimited({ headers: { 'retry-after': '1' } });
+    const upload = jest.fn();
+
+    await expect(
+      withCodeApiUploadRecovery({
+        registry: createCodeApiUploadRegistry(),
+        scope: 'route:user',
+        budget: createCodeApiRateLimitBudget(2_000),
+        label: 'uploading',
+        openSource: async () => {
+          throw storageRateLimit;
+        },
+        upload,
+      }),
+    ).rejects.toBe(storageRateLimit);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('disposes a source acquired as cancellation arrives', async () => {
+    const controller = new AbortController();
+    const source = { destroy: jest.fn() };
+    const upload = jest.fn();
+
+    await expect(
+      withCodeApiUploadRecovery({
+        registry: createCodeApiUploadRegistry(),
+        scope: 'route:user',
+        signal: controller.signal,
+        label: 'uploading',
+        openSource: async () => {
+          controller.abort();
+          return source;
+        },
+        upload,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(source.destroy).toHaveBeenCalledTimes(1);
+    expect(upload).not.toHaveBeenCalled();
   });
 });
 

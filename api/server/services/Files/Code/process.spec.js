@@ -90,6 +90,8 @@ jest.mock('@librechat/api', () => {
         : undefined,
     executeWorkspaceTool: (...args) => mockExecuteWorkspaceTool(...args),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    isAbortError: (error) =>
+      error?.name === 'AbortError' || error?.code === 'ABORT_ERR' || error?.code === 'ERR_CANCELED',
     /* Windowing, sizing and rate-limit policy are real code in
      * `packages/api` with their own tests (`files/code/image.spec.ts`,
      * `utils/code.spec.ts`). These stand-ins are deliberately inert
@@ -1503,6 +1505,33 @@ describe('Code Process', () => {
         expect(callConfig.httpsAgent.keepAlive).toBe(false);
       });
 
+      it('forwards cancellation to the freshness request and preserves its error', async () => {
+        const controller = new AbortController();
+        const canceled = Object.assign(new Error('canceled'), {
+          name: 'CanceledError',
+          code: 'ERR_CANCELED',
+        });
+        mockAxios.mockImplementationOnce(async (config) => {
+          expect(config.signal).toBe(controller.signal);
+          controller.abort();
+          throw canceled;
+        });
+
+        await expect(
+          getSessionInfo(
+            {
+              kind: 'user',
+              id: 'user-1',
+              storage_session_id: 'sess',
+              file_id: 'fid',
+            },
+            mockReq,
+            {},
+            controller.signal,
+          ),
+        ).rejects.toBe(canceled);
+      });
+
       it('forwards Code API auth headers when checking session object freshness', async () => {
         getCodeApiAuthHeaders.mockResolvedValueOnce({ Authorization: 'Bearer freshness-token' });
         mockAxios.mockResolvedValue({
@@ -2845,6 +2874,7 @@ describe('Code Process', () => {
       expect(getDownloadStream).toHaveBeenCalledWith(
         { user: { id: 'user-123', role: 'USER' } },
         '/uploads/trusted.txt',
+        { signal: undefined },
       );
       expect(handleFileUpload).toHaveBeenCalledTimes(1);
     });

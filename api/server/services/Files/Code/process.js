@@ -11,6 +11,7 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
+  isAbortError,
   getCodeApiUploadOptions,
   withCodeApiRateLimit,
   withCodeApiUploadRecovery,
@@ -1140,15 +1141,18 @@ function checkIfActive(dateString) {
  * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
  * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
  *   Trusted host-selected Code API route.
+ * @param {AbortSignal} [signal] - Effective run cancellation signal.
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(ref, req, route = {}) {
+async function getSessionInfo(ref, req, route = {}, signal) {
   try {
+    signal?.throwIfAborted();
     const baseURL = route.baseUrl ?? getCodeBaseURL();
     const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
+    signal?.throwIfAborted();
     /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
      * middleware (post-Phase C). The middleware reconstructs the
      * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
@@ -1176,10 +1180,15 @@ async function getSessionInfo(ref, req, route = {}) {
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
       timeout: 5000,
+      signal,
     });
+    signal?.throwIfAborted();
 
     return response.data?.lastModified;
-  } catch (_error) {
+  } catch (error) {
+    if (signal?.aborted && isAbortError(error)) {
+      throw error;
+    }
     logger.debug('[getSessionInfo] session lookup failed (treating as cache miss)');
     return null;
   }
@@ -1471,11 +1480,7 @@ const primeFiles = async (options) => {
             ),
           openSource: async () => {
             signal?.throwIfAborted();
-            const stream = signal
-              ? await getDownloadStream(options.req, resolveDownloadPath(file), { signal })
-              : await getDownloadStream(options.req, resolveDownloadPath(file));
-            signal?.throwIfAborted();
-            return stream;
+            return getDownloadStream(options.req, resolveDownloadPath(file), { signal });
           },
           upload: (stream) =>
             uploadCodeEnvFile({
@@ -1558,7 +1563,7 @@ const primeFiles = async (options) => {
       pushFile();
       continue;
     }
-    const uploadTime = await getSessionInfo(ref, req, codeApiRoute);
+    const uploadTime = await getSessionInfo(ref, req, codeApiRoute, signal);
     signal?.throwIfAborted();
     if (!uploadTime) {
       logger.debug(
