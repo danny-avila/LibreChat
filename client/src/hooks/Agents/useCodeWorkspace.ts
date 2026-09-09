@@ -70,12 +70,7 @@ function resolveEnvironmentSelection({
   stored?: CodeWorkspaceSelection;
   hasStoredSelections: boolean;
 }): CodeWorkspaceSelection | undefined {
-  if (
-    status?.status !== 'ready' ||
-    status.statefulWorkspace !== true ||
-    status.environmentId !== environment.id
-  )
-    return undefined;
+  if (status?.status !== 'ready' || status.environmentId !== environment.id) return undefined;
   if (stored != null && workspaces.some(({ id }) => id === stored.workspaceId)) {
     return { environmentId: environment.id, workspaceId: stored.workspaceId };
   }
@@ -160,7 +155,6 @@ export default function useCodeWorkspace(
     else if (
       status.isError ||
       status.data?.status !== 'ready' ||
-      status.data.statefulWorkspace !== true ||
       status.data.environmentId !== environment.id
     ) {
       state = 'unavailable';

@@ -283,7 +283,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     delete process.env.TEST_CODE_CAPABILITY_TOKEN;
   });
 
-  function workspaceStatus(workspaces: unknown[]): Response {
+  function workspaceStatus(workspaces: unknown[], statefulWorkspace: boolean = true): Response {
     return new Response(
       JSON.stringify({
         protocolVersion: 1,
@@ -292,7 +292,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
         ready: true,
         leaseExpiresInMs: 45_000,
         capabilities: {
-          statefulWorkspace: true,
+          statefulWorkspace,
           sandboxProfile: 'native-srt',
           runtimes: ['bash'],
           workspaceTools: {
@@ -332,6 +332,55 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
       },
     });
   });
+
+  it('admits native workspace tools without enabling programmatic runtime execution', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(workspaceStatus([{ id: 'docs', operations: ['read_file'] }], false));
+    const resolved = await resolveCodeExecutionWorkspaceContext({
+      context,
+      requestedSelections: [{ environmentId: 'personal', workspaceId: 'docs' }],
+      environments,
+      getAppConfig,
+    });
+    expect(resolved.codeWorkspace).toEqual({
+      environmentId: 'personal',
+      workspaceId: 'docs',
+      operations: ['read_file'],
+    });
+    expect(await supportsProgrammaticCodeExecution(context, environments, getAppConfig)).toBe(
+      false,
+    );
+    expect(await supportsProgrammaticCodeExecution(resolved, environments, getAppConfig)).toBe(
+      false,
+    );
+  });
+
+  it.each([false, true])(
+    'fails closed without native workspace capabilities (ready: %s)',
+    async (ready) => {
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            workerId: 'worker',
+            online: true,
+            ready,
+            leaseExpiresInMs: 45_000,
+            capabilities: { statefulWorkspace: false, sandboxProfile: 'native-srt', runtimes: [] },
+          }),
+        ),
+      );
+      await expect(
+        resolveCodeExecutionWorkspaceContext({
+          context,
+          requestedSelections: [{ environmentId: 'personal', workspaceId: 'docs' }],
+          environments,
+          getAppConfig,
+        }),
+      ).rejects.toMatchObject({ reason: ready ? 'unsupported' : 'worker_unavailable' });
+    },
+  );
 
   it.each(['worker', 'replacement', undefined])(
     'pins deployment worker identity: %s',

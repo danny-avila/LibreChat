@@ -138,7 +138,8 @@ export async function resolveCodeExecutionWorkspaceContext({
     );
     throw new CodeWorkspaceSelectionError('worker_unavailable');
   }
-  if (status.status !== 'ready' || status.statefulWorkspace !== true) {
+  /** Named workspace tools enforce their roots independently of runtime sessions. */
+  if (status.status !== 'ready') {
     throw new CodeWorkspaceSelectionError('worker_unavailable');
   }
   if (!status.workspaces || !status.operations) {

@@ -119,14 +119,40 @@ describe('useCodeWorkspace', () => {
     expect(result.current.state).toBe('unavailable');
   });
 
-  it.each([false, undefined])('rejects non-stateful worker support: %s', (statefulWorkspace) => {
-    const statuses = mockStatus();
-    statuses[0].data.statefulWorkspace = statefulWorkspace;
-    const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
-    const { result } = renderHook(() => useCodeWorkspace(conversation([selection])));
+  it.each([false, undefined])(
+    'selects native roots without runtime sessions: %s',
+    (statefulWorkspace) => {
+      const statuses = mockStatus();
+      statuses[0].data.statefulWorkspace = statefulWorkspace;
+      const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+      const { result } = renderHook(() => useCodeWorkspace(conversation([selection])));
+      expect(result.current.state).toBe('ready');
+      expect(result.current.selections).toEqual([selection]);
+      expect(result.current.resolveSelections([selection])).toEqual([selection]);
+    },
+  );
+
+  it('automatically selects a sole native root without runtime sessions', () => {
+    mockStatus()[0].data.statefulWorkspace = false;
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+    expect(result.current.state).toBe('ready');
+    expect(result.current.selections).toEqual([
+      { environmentId: 'personal-vm', workspaceId: 'project-a' },
+    ]);
+  });
+
+  it.each(['offline', 'starting'])('rejects a native worker that is %s', (status) => {
+    Object.assign(mockStatus()[0].data, { status, statefulWorkspace: false });
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
     expect(result.current.state).toBe('unavailable');
     expect(result.current.selections).toBeUndefined();
-    expect(result.current.resolveSelections([selection])).toBeUndefined();
+  });
+
+  it('rejects a ready native worker without advertised roots', () => {
+    Object.assign(mockStatus()[0].data, { statefulWorkspace: false, workspaces: undefined });
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+    expect(result.current.state).toBe('unsupported');
+    expect(result.current.selections).toBeUndefined();
   });
 
   it('requires an explicit choice when several workspaces are advertised', () => {
