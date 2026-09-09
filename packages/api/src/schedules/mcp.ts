@@ -50,16 +50,22 @@ export class ScheduleMCPError extends Error {
   readonly code: Exclude<ScheduleMCPStatus, 'ready'>;
 
   constructor(readonly outcomes: ScheduleMCPOutcome[]) {
-    let code: Exclude<ScheduleMCPStatus, 'ready'> = 'mcp_unavailable';
-    if (outcomes.some((item) => item.status === 'mcp_reauth_required'))
-      code = 'mcp_reauth_required';
-    if (outcomes.some((item) => item.status === 'mcp_configuration_missing'))
-      code = 'mcp_configuration_missing';
-    if (outcomes.some((item) => item.status === 'mcp_permission_denied'))
-      code = 'mcp_permission_denied';
+    const code = getScheduleMCPFailureCode(outcomes);
     super(`${code}: ${JSON.stringify(outcomes)}`);
     this.code = code;
   }
+}
+
+/** One response discriminator for every schedule admission surface. */
+export function getScheduleMCPFailureCode(
+  outcomes: ScheduleMCPOutcome[],
+): Exclude<ScheduleMCPStatus, 'ready'> {
+  if (outcomes.some((item) => item.status === 'mcp_permission_denied'))
+    return 'mcp_permission_denied';
+  if (outcomes.some((item) => item.status === 'mcp_configuration_missing'))
+    return 'mcp_configuration_missing';
+  if (outcomes.some((item) => item.status === 'mcp_reauth_required')) return 'mcp_reauth_required';
+  return 'mcp_unavailable';
 }
 
 interface ScheduleMCPDeps {
@@ -117,7 +123,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const attempted = new Set<string>();
     const expanded = new Set<string>();
     const accessibleById = new Map<string, AgentGraphNode>();
-    const spawned = new Set<string>();
+    const attemptedGraphMemberIds = new Set<string>();
     const accessIdentity = {
       userId: user.id,
       role: user.role,
@@ -213,14 +219,16 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const capabilities = config?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
         if (!capabilities.includes(AgentCapabilities.subagents)) continue;
         const directTargets = (agent.subagents.agent_ids ?? []).filter((id) => id !== agentId);
-        const graphGroups = (agent.subagents.graphs ?? []).map((graph) => ({
-          ids: (graph.agent_ids ?? []).filter((memberId) => memberId !== agentId),
-          requireAll: true,
-          explicitSeed: true,
-        }));
-        const spawnTargets = [...directTargets, ...graphGroups.flatMap((group) => group.ids)];
-        for (const id of spawnTargets) spawned.add(id);
-        if (spawned.size > MAX_SUBAGENT_GRAPH_NODES) throw new ScheduleMCPError([]);
+        const graphGroups: PendingGroup[] = [];
+        for (const graph of agent.subagents.graphs ?? []) {
+          const ids = [...new Set(graph.agent_ids)].filter((memberId) => memberId !== agentId);
+          const newMemberIds = ids.filter((memberId) => !attemptedGraphMemberIds.has(memberId));
+          if (attemptedGraphMemberIds.size + newMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
+            continue;
+          }
+          newMemberIds.forEach((memberId) => attemptedGraphMemberIds.add(memberId));
+          graphGroups.push({ ids, requireAll: true, explicitSeed: true });
+        }
         pending.push(
           ...directTargets.map((childId) => ({
             ids: [childId],

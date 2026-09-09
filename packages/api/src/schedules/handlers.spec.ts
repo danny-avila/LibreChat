@@ -1359,6 +1359,38 @@ describe('Run Now MCP failures', () => {
     expect(captured.body).toMatchObject({ code: mcpStatus });
   });
 
+  it.each([
+    [
+      [
+        { server: 'OAuth', status: 'mcp_reauth_required' as const },
+        { server: 'Config', status: 'mcp_configuration_missing' as const },
+      ],
+      'mcp_configuration_missing',
+    ],
+    [
+      [
+        { server: 'OAuth', status: 'mcp_reauth_required' as const },
+        { server: 'Config', status: 'mcp_configuration_missing' as const },
+        { server: 'Policy', status: 'mcp_permission_denied' as const },
+      ],
+      'mcp_permission_denied',
+    ],
+  ])('uses shared failure precedence for mixed outcomes: %j', async (mcp, expectedCode) => {
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => false,
+      fireNow: async () => ({ fired: false, error: 'MCP preflight failed', mcp }),
+    });
+    jest.mocked(deps.methods.getScheduleById).mockResolvedValue(fullScheduleDoc());
+    const req = makeCreateReq();
+    req.params = { id: 'sched-1' };
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).runScheduleNow(req, res);
+
+    expect(captured.status).toBe(400);
+    expect(captured.body).toMatchObject({ code: expectedCode });
+  });
+
   it('returns service unavailable when MCP infrastructure preflight fails', async () => {
     const deps = makeCreateDeps({
       isUserDeleting: async () => false,

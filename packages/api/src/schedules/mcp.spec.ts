@@ -193,6 +193,39 @@ it('does not count the root or legacy handoff nodes against the spawn graph budg
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
 });
 
+it('skips only a subagent graph definition that exceeds the runtime member budget', async () => {
+  const acceptedIds = Array.from({ length: 50 }, (_, index) => `accepted-${index}`);
+  const { check, deps } = setup([]);
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          subagents: {
+            enabled: true,
+            graphs: [{ agent_ids: acceptedIds }, { agent_ids: ['overflow'] }],
+          } as never,
+        });
+      }
+      return graphNode(id, { tools: id === acceptedIds[0] ? ['search_mcp_docs'] : [] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledTimes(2);
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
+    expect.arrayContaining(['overflow']),
+    expect.anything(),
+  );
+});
+
 it('skips MCP tools on graph agents the owner cannot view', async () => {
   const { check, deps } = setup();
   deps.getAgentGraphNodes = jest.fn(async (ids, access) =>

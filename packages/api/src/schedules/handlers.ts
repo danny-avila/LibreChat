@@ -23,8 +23,8 @@ import {
   computeNextRunAt,
   isValidTimezone,
 } from './cadence';
+import { ScheduleMCPError, getScheduleMCPFailureCode } from './mcp';
 import { resolveScheduleProjectId } from './types';
-import { ScheduleMCPError } from './mcp';
 
 export interface SchedulesHandlersDeps {
   preflightMCP: ScheduleMCPPreflight;
@@ -1158,24 +1158,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       // A limiter refusal is the caller's own quota, not a conflicting schedule state,
       // so answer 429 rather than burying it in the generic 409.
       const failedMCP = result.mcp?.filter((outcome) => outcome.status !== 'ready') ?? [];
-      let mcpStatus:
-        | 'mcp_reauth_required'
-        | 'mcp_configuration_missing'
-        | 'mcp_permission_denied'
-        | 'mcp_unavailable'
-        | undefined;
-      if (failedMCP.some((outcome) => outcome.status === 'mcp_reauth_required')) {
-        mcpStatus = 'mcp_reauth_required';
-      } else if (failedMCP.some((outcome) => outcome.status === 'mcp_configuration_missing')) {
-        mcpStatus = 'mcp_configuration_missing';
-      } else if (failedMCP.some((outcome) => outcome.status === 'mcp_permission_denied')) {
-        mcpStatus = 'mcp_permission_denied';
-      } else if (
-        failedMCP.length > 0 &&
-        failedMCP.every((outcome) => outcome.status === 'mcp_unavailable')
-      ) {
-        mcpStatus = 'mcp_unavailable';
-      }
+      const mcpStatus = failedMCP.length > 0 ? getScheduleMCPFailureCode(failedMCP) : undefined;
       let status = 409;
       if (result.skipped === 'rate_limited') status = 429;
       else if (mcpStatus === 'mcp_unavailable' || result.mcpPreflightUnavailable === true)
