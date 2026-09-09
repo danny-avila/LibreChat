@@ -246,7 +246,7 @@
       "dompurify": "3.4.14"
     },
     "test-exclude": "^8.0.0",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^4.3.2",
     "ws": "^8.21.0",
     "@opentelemetry/core": "^2.9.0",
     "@opentelemetry/propagator-jaeger": "^2.10.0",
