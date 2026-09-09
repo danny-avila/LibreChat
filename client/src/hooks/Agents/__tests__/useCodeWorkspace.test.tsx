@@ -26,7 +26,7 @@ const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConver
   ({
     conversationId: 'conversation-1',
     endpoint: EModelEndpoint.agents,
-    agent_id: 'agent-1',
+    agent_id: 'agent_primary',
     codeWorkspaces,
   }) as TConversation;
 
@@ -36,7 +36,7 @@ describe('useCodeWorkspace', () => {
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
       agent: {
-        id: 'agent-1',
+        id: 'agent_primary',
         stateful_code_sessions: true,
         code_environment_id: 'personal-vm',
         tools: [Tools.execute_code],
@@ -93,6 +93,7 @@ describe('useCodeWorkspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 
     expect(result.current.state).toBe('ready');
+    expect(result.current.canSubmit).toBe(true);
     expect(result.current.selections).toEqual([
       { environmentId: 'personal-vm', workspaceId: 'project-a' },
     ]);
@@ -162,7 +163,7 @@ describe('useCodeWorkspace', () => {
           environmentId: 'personal-vm',
           status: 'ready',
           statefulWorkspace: true,
-          workspaces: [{ id: 'project-a' }, { id: 'project-b' }],
+          workspaces: [{ id: 'primary' }, { id: 'canary-a' }, { id: 'canary-b' }],
         },
         isLoading: false,
         isError: false,
@@ -172,7 +173,54 @@ describe('useCodeWorkspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 
     expect(result.current.state).toBe('choose');
+    expect(result.current.canSubmit).toBe(false);
     expect(result.current.selections).toBeUndefined();
+    expect(result.current.resolveSubmission()).toBeUndefined();
+  });
+
+  it('submits an explicit selection from several advertised workspaces', () => {
+    const selection = { environmentId: 'personal-vm', workspaceId: 'canary-a' };
+    mockStatus.mockReturnValue([
+      {
+        data: {
+          environmentId: 'personal-vm',
+          status: 'ready',
+          workspaces: [{ id: 'primary' }, { id: 'canary-a' }, { id: 'canary-b' }],
+        },
+        isLoading: false,
+        isError: false,
+      },
+    ]);
+
+    const { result } = renderHook(() => useCodeWorkspace(conversation([selection])));
+
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission([selection])).toEqual({
+      codeWorkspaces: [selection],
+    });
+  });
+
+  it('blocks submission while the required worker status is loading', () => {
+    mockStatus.mockReturnValue([{ data: undefined, isLoading: true, isError: false }]);
+
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+
+    expect(result.current.required).toBe(true);
+    expect(result.current.state).toBe('loading');
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.resolveSubmission()).toBeUndefined();
+  });
+
+  it('blocks submission while endpoint capabilities are loading', () => {
+    mockAgentsConfig.mockReturnValue({ agentsConfig: null, endpointsConfig: undefined });
+
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+
+    expect(result.current.required).toBe(true);
+    expect(result.current.state).toBe('loading');
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.resolveSubmission()).toBeUndefined();
+    expect(mockStatus).toHaveBeenLastCalledWith([], false);
   });
 
   it('does not replace a saved workspace that disappeared', () => {
@@ -180,6 +228,7 @@ describe('useCodeWorkspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation([saved])));
 
     expect(result.current.state).toBe('missing');
+    expect(result.current.canSubmit).toBe(false);
     expect(result.current.selections).toBeUndefined();
     expect(result.current.resolveSelections([saved])).toBeUndefined();
   });
@@ -189,7 +238,57 @@ describe('useCodeWorkspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation([saved])));
 
     expect(result.current.state).toBe('choose');
+    expect(result.current.canSubmit).toBe(false);
     expect(result.current.selections).toBeUndefined();
+  });
+
+  it('invalidates readiness when current agent metadata changes environments', () => {
+    let environmentId = 'personal-vm';
+    mockAgentPermissions.mockImplementation((agentId?: string) =>
+      agentId == null
+        ? {}
+        : {
+            tools: [Tools.execute_code],
+            agent: {
+              id: agentId,
+              stateful_code_sessions: true,
+              code_environment_id: environmentId,
+              tools: [Tools.execute_code],
+            },
+          },
+    );
+    mockAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        capabilities: ['execute_code', 'stateful_code_sessions'],
+        statefulCodeSessions: {
+          environments: [
+            { id: 'personal-vm', type: 'attached' },
+            { id: 'team-vm', type: 'attached' },
+          ],
+        },
+      },
+    });
+    mockStatus.mockImplementation((ids: string[]) =>
+      ids.map((id) => ({
+        data: {
+          environmentId: id,
+          status: 'ready',
+          workspaces: [{ id: id === 'personal-vm' ? 'project-a' : 'project-b' }],
+        },
+        isLoading: false,
+        isError: false,
+      })),
+    );
+    const saved = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+    const { result, rerender } = renderHook(() => useCodeWorkspace(conversation([saved])));
+    expect(result.current.canSubmit).toBe(true);
+
+    environmentId = 'team-vm';
+    rerender();
+
+    expect(result.current.state).toBe('choose');
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.resolveSubmission([saved])).toBeUndefined();
   });
 
   it('rejects a status response for a different environment', () => {
@@ -228,9 +327,20 @@ describe('useCodeWorkspace', () => {
     expect(mockStatus).toHaveBeenCalledWith([], false);
   });
 
+  it('does not gate a non-agent conversation', () => {
+    const { result } = renderHook(() =>
+      useCodeWorkspace({ ...conversation(), endpoint: EModelEndpoint.openAI }),
+    );
+
+    expect(result.current.required).toBe(false);
+    expect(result.current.state).toBe('not_required');
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission()).toEqual({});
+  });
+
   it.each(['subagent', 'handoff'])('collects every attached environment through %s', (kind) => {
     const primary = {
-      id: 'agent-1',
+      id: 'agent_primary',
       stateful_code_sessions: true,
       code_environment_id: 'personal-vm',
       tools: [Tools.execute_code],
@@ -238,13 +348,13 @@ describe('useCodeWorkspace', () => {
       ...(kind === 'handoff'
         ? {
             subagents: { enabled: false, agent_ids: [] },
-            edges: [{ from: 'agent-1', to: 'child', edgeType: 'handoff' }],
+            edges: [{ from: 'agent_primary', to: 'child', edgeType: 'handoff' }],
           }
         : {}),
     };
     mockAgentPermissions.mockImplementation((id?: string) => ({
-      agent: id === 'agent-1' ? primary : undefined,
-      tools: id === 'agent-1' ? primary.tools : undefined,
+      agent: id === 'agent_primary' ? primary : undefined,
+      tools: id === 'agent_primary' ? primary.tools : undefined,
     }));
     mockAgentsMap.mockReturnValue({
       child: {

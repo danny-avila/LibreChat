@@ -843,7 +843,7 @@ const ChatForm = memo(function ChatForm({
                           disabled={
                             filesLoading ||
                             disableInputs ||
-                            (codeWorkspace.required && codeWorkspace.state !== 'ready') ||
+                            !codeWorkspace.canSubmit ||
                             isNotAppendable ||
                             answerMode.composerLocked ||
                             (isSubmitting && !answerMode.composerAnswers)

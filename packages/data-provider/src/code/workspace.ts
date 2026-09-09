@@ -10,8 +10,17 @@ export const CODE_WORKSPACE_OPERATIONS = [
   'edit_file',
   'execute_command',
 ] as const;
+export const CODE_WORKSPACE_SELECTION_ERROR_REASONS = [
+  'required',
+  'invalid',
+  'worker_unavailable',
+  'unsupported',
+  'missing',
+] as const;
 
 export type CodeWorkspaceOperation = (typeof CODE_WORKSPACE_OPERATIONS)[number];
+export type CodeWorkspaceSelectionErrorReason =
+  (typeof CODE_WORKSPACE_SELECTION_ERROR_REASONS)[number];
 
 /** Public, path-free description of one root registered by an attached worker. */
 export interface CodeWorkspaceDescriptor {
@@ -25,6 +34,12 @@ export interface CodeWorkspaceDescriptor {
 export interface CodeWorkspaceSelection {
   environmentId: string;
   workspaceId: string;
+}
+
+export function isCodeWorkspaceSelectionErrorReason(
+  value: unknown,
+): value is CodeWorkspaceSelectionErrorReason {
+  return CODE_WORKSPACE_SELECTION_ERROR_REASONS.some((reason) => reason === value);
 }
 
 export function isCodeWorkspaceSelection(value: unknown): value is CodeWorkspaceSelection {

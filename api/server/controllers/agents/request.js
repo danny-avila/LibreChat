@@ -41,6 +41,7 @@ const {
   agentRequestsAskUserQuestion,
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
+  getCodeWorkspaceSelectionErrorDetails,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -110,6 +111,7 @@ function getInitializationFailure(error) {
   return {
     status: candidateStatus,
     ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+    ...getCodeWorkspaceSelectionErrorDetails(error),
     error: error?.message || 'Failed to start generation',
   };
 }

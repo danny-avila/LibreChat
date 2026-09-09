@@ -40,6 +40,7 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
   return {
     required: true,
     state: 'ready',
+    canSubmit: true,
     environments: [
       {
         environment,
@@ -50,6 +51,7 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
     ],
     selections: [selected],
     resolveSelections: () => [selected],
+    resolveSubmission: () => ({ codeWorkspaces: [selected] }),
     ...overrides,
   };
 }

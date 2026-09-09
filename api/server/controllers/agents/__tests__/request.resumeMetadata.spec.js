@@ -273,6 +273,8 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
+  getCodeWorkspaceSelectionErrorDetails:
+    jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -2661,6 +2663,45 @@ describe('ResumableAgentController resume metadata', () => {
         status: 409,
         code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
         error: 'Attached resources could not be restored',
+      }),
+      1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+    );
+  });
+
+  it.each([
+    ['required', 'required'],
+    ['future_reason', undefined],
+  ])('serializes only allowlisted workspace reason %s', async (reason, expectedReason) => {
+    const workspaceError = Object.assign(new Error('Choose an attached workspace'), {
+      code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+      reason,
+      status: 409,
+      statusCode: 409,
+    });
+    const initializeClient = jest.fn().mockRejectedValue(workspaceError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Edit the project.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 409,
+        code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+        ...(expectedReason == null ? {} : { reason: expectedReason }),
+        error: 'Choose an attached workspace',
       }),
       1000,
       expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
