@@ -259,6 +259,16 @@ const updateUserPluginsController = async (req, res) => {
     let authService;
     const mcpCredentialMutationResults = [];
     let mcpTeardown = false;
+    const mcpScope = pluginKey.startsWith(Constants.mcp_prefix)
+      ? {
+          userId: user.id,
+          serverName: pluginKey.replace(Constants.mcp_prefix, ''),
+        }
+      : null;
+    /** Write durable fence intent before the first credential write. A crash or retry-marker
+     * outage therefore cannot commit credentials that other replicas continue to authorize. */
+    const publicationRetryVersion =
+      mcpScope == null ? undefined : await persistMCPAuthorizationFenceRetry(mcpScope);
 
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
@@ -321,15 +331,14 @@ const updateUserPluginsController = async (req, res) => {
 
     // Every committed MCP credential write advances the fence, including a partial batch whose
     // later field failed. Otherwise another worker can retain a stale authorization decision.
-    if (pluginKey.startsWith(Constants.mcp_prefix)) {
+    if (mcpScope != null) {
       try {
         const mcpManager = getMCPManager();
-        // Extract server name from pluginKey (format: "mcp_<serverName>")
-        const serverName = pluginKey.replace(Constants.mcp_prefix, '');
         await finalizeMCPAuthorizationMutation(
           {
-            scope: { userId: user.id, serverName },
+            scope: mcpScope,
             mutationResults: mcpCredentialMutationResults,
+            publicationRetryVersion,
             teardown: mcpTeardown,
           },
           {

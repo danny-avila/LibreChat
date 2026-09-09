@@ -3,6 +3,10 @@ import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
 } from './openidRefreshFlight';
+export {
+  createMCPAuthorizationFenceRetryStorage,
+  type MCPAuthorizationFenceRetryStorage,
+} from './mcpAuthorizationFenceRetry';
 import {
   createRefreshTokenBridgeMethods,
   type RefreshTokenBridgeMethods,

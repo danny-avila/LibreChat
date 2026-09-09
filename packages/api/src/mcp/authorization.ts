@@ -4,6 +4,8 @@ import { publishMCPAuthorizationMutation } from './catalog/recovery';
 export interface FinalizeMCPAuthorizationMutationParams {
   scope: MCPRecoveryGenerationScope;
   mutationResults: readonly unknown[];
+  /** Durable intent written before the first credential mutation. */
+  publicationRetryVersion?: string;
   /** Teardown also fences when the credential delete itself was a no-op or failed. */
   teardown?: boolean;
 }
@@ -84,6 +86,7 @@ export async function completeMCPAuthorizationWithTokenWaiters<TTokens>(
         }
       } catch (error) {
         deps.onTokenFlowError?.('prepare', error);
+        throw error;
       }
     }
   }
@@ -170,16 +173,23 @@ export async function finalizeMCPAuthorizationMutation(
 ): Promise<boolean> {
   const committed = params.mutationResults.some((result) => !(result instanceof Error));
   if (!committed && params.teardown !== true) {
+    if (params.publicationRetryVersion != null) {
+      await deps.clearPublicationRetry?.(params.scope, params.publicationRetryVersion);
+    }
     return false;
   }
 
   let publicationError: unknown;
   let publicationFailed = false;
+  const preparedPublicationRetryVersion = params.publicationRetryVersion;
   try {
     await publishMCPAuthorizationMutation(params.scope, {
       invalidateRecoveryGeneration: deps.invalidateRecoveryGeneration,
       clearLocalRecovery: deps.clearLocalRecovery,
-      persistPublicationRetry: deps.persistPublicationRetry,
+      persistPublicationRetry:
+        preparedPublicationRetryVersion != null
+          ? async () => preparedPublicationRetryVersion
+          : deps.persistPublicationRetry,
       clearPublicationRetry: deps.clearPublicationRetry,
       retryDelaysMs: deps.retryDelaysMs,
       attemptTimeoutMs: deps.attemptTimeoutMs,

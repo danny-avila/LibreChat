@@ -2700,6 +2700,12 @@ export const configSchema = z.object({
             .min(1)
             .max(8)
             .default([5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000]),
+          discoveryTimeoutMs: z
+            .number()
+            .int()
+            .positive()
+            .max(5 * 60_000)
+            .default(3_000),
           reauthRetryMs: z
             .number()
             .int()

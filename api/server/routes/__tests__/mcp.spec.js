@@ -2899,7 +2899,10 @@ describe('MCP Routes', () => {
         },
       });
 
-      expect(getMCPSetupData).toHaveBeenCalledWith('test-user-id', expect.any(Object));
+      expect(getMCPSetupData).toHaveBeenCalledWith(
+        'test-user-id',
+        expect.objectContaining({ appConfig: mockRequestConfig }),
+      );
       expect(getServerConnectionStatus).toHaveBeenCalledTimes(2);
     });
 

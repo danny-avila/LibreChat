@@ -1048,7 +1048,7 @@ router.get('/connection/status', requireJwtAuth, configMiddleware, async (req, r
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
-      { role: user.role, tenantId: getTenantId() },
+      { role: user.role, tenantId: getTenantId(), appConfig: req.config },
     );
     const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, Object.keys(mcpConfig));
     const connectionStatus = Object.fromEntries(
@@ -1120,7 +1120,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, configMiddleware, a
 
     const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
       user.id,
-      { role: user.role, tenantId: getTenantId() },
+      { role: user.role, tenantId: getTenantId(), appConfig: req.config },
     );
 
     if (!mcpConfig[serverName]) {

@@ -19,9 +19,9 @@ let activeCatalogWork = 0;
  * long regardless of where the server stalls. Recovery targets a server that is reachable and
  * authorized but whose catalog cache expired, and such a server answers well inside this window.
  */
-const RECOVERY_BUDGET_MS = 3000;
 const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   discoveryBackoffMs: [5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000],
+  discoveryTimeoutMs: 3_000,
   reauthRetryMs: 30 * 60_000,
   maxStateEntries: 10_000,
   generationReadTimeoutMs: 500,
@@ -128,6 +128,7 @@ export async function publishMCPAuthorizationMutation(
 
 export interface MCPServerCatalogRecoveryPolicy {
   discoveryBackoffMs: readonly number[];
+  discoveryTimeoutMs: number;
   reauthRetryMs: number;
   maxStateEntries: number;
   generationReadTimeoutMs: number;
@@ -278,13 +279,16 @@ export async function readMCPRecoveryGenerationAround<T>(
   };
 }
 
-/** Bounds one server's discovery, honouring a shorter operator `initTimeout`. */
-function resolveBudget(serverConfig: ParsedServerConfig): number {
+/** Bounds one server's discovery, honouring the shorter configured limit. */
+function resolveBudget(
+  serverConfig: ParsedServerConfig,
+  policy: MCPServerCatalogRecoveryPolicy,
+): number {
   const { initTimeout } = serverConfig;
   if (typeof initTimeout === 'number') {
-    return Math.min(initTimeout, RECOVERY_BUDGET_MS);
+    return Math.min(initTimeout, policy.discoveryTimeoutMs);
   }
-  return RECOVERY_BUDGET_MS;
+  return policy.discoveryTimeoutMs;
 }
 
 function getRecoveryKey(userId: string, serverName: string): string {
@@ -417,6 +421,7 @@ async function discoverCandidate(
   user: IUser,
   { serverName, serverConfig, customUserVars }: RecoveryCandidate,
   deps: MCPServerCatalogRecoveryDeps,
+  policy: MCPServerCatalogRecoveryPolicy,
   signal?: AbortSignal,
 ): Promise<RecoveryOutcome> {
   try {
@@ -425,7 +430,7 @@ async function discoverCandidate(
       serverName,
       configServers: { [serverName]: serverConfig },
       customUserVars,
-      deadlineMs: Date.now() + resolveBudget(serverConfig),
+      deadlineMs: Date.now() + resolveBudget(serverConfig, policy),
       signal,
     });
     const tools = result.tools == null ? null : deps.formatServerTools(serverName, result.tools);
@@ -636,7 +641,7 @@ async function recoverMCPServerCatalogsWithState(
         candidate.serverConfig.obo != null ||
         usesDirectOpenIDBearerRecovery(candidate.serverConfig);
       if (usesRequestCredential) {
-        results[index] = await discoverCandidate(user, candidate, deps, signal);
+        results[index] = await discoverCandidate(user, candidate, deps, policy, signal);
         return;
       }
       const observedGeneration = await readMCPRecoveryGeneration(
@@ -658,7 +663,7 @@ async function recoverMCPServerCatalogsWithState(
       }
       const recoveryGeneration = observedGeneration ?? snapshotGeneration;
       const outcome = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
-        discoverCandidate(user, candidate, deps),
+        discoverCandidate(user, candidate, deps, policy),
       );
       const finalGeneration = await readMCPRecoveryGeneration(
         { userId: user.id, serverName: candidate.serverName },

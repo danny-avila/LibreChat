@@ -144,6 +144,7 @@ describe('publishMCPAuthorizationMutation', () => {
 describe('MCPServerCatalogRecoveryTracker capacity', () => {
   const policy = {
     discoveryBackoffMs: [60_000],
+    discoveryTimeoutMs: 3_000,
     reauthRetryMs: 60_000,
     maxStateEntries: 2,
     generationReadTimeoutMs: 500,
@@ -854,6 +855,24 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     const [options] = discoverServerTools.mock.calls[0];
     expect(options.deadlineMs).toBeGreaterThanOrEqual(before + 900);
     expect(options.deadlineMs).toBeLessThanOrEqual(Date.now() + 900);
+  });
+
+  it('honors a larger configured passive discovery budget', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const before = Date.now();
+
+    await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [{ serverName: 'remote', serverConfig: serverConfig('remote') }],
+        recoveryPolicy: { discoveryTimeoutMs: 12_000 },
+      },
+      recoveryDeps(discoverServerTools),
+    );
+
+    const [options] = discoverServerTools.mock.calls[0];
+    expect(options.deadlineMs).toBeGreaterThanOrEqual(before + 12_000);
+    expect(options.deadlineMs).toBeLessThanOrEqual(Date.now() + 12_000);
   });
 
   it('leaves a server the config tier marked unreachable to that tier’s retry window', async () => {

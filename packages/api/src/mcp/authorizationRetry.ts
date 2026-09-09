@@ -139,14 +139,17 @@ export function createMCPAuthorizationFenceRetryService(
       const retries = await deps.storage.list(retryBatchSize);
       for (const retry of retries) {
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let timedOut = false;
+        const key = attemptKey(retry);
+        const attempt = getOrStartAttempt(retry);
         try {
           const result = await Promise.race([
-            getOrStartAttempt(retry),
+            attempt,
             new Promise<never>((_, reject) => {
-              timeoutId = setTimeout(
-                () => reject(new Error('MCP authorization generation replay timed out')),
-                attemptTimeoutMs,
-              );
+              timeoutId = setTimeout(() => {
+                timedOut = true;
+                reject(new Error('MCP authorization generation replay timed out'));
+              }, attemptTimeoutMs);
             }),
           ]);
           if (!result.succeeded) {
@@ -157,6 +160,12 @@ export function createMCPAuthorizationFenceRetryService(
             `[MCP authorization] Durable generation retry failed for ${retry.serverName}`,
             error,
           );
+          /** The underlying cache call may ignore cancellation. Retire it from deduplication so a
+           * recovered dependency gets a fresh attempt; its exact-version delete remains safe if
+           * the old promise eventually succeeds. */
+          if (timedOut && activeAttempts.get(key) === attempt) {
+            activeAttempts.delete(key);
+          }
           try {
             await deps.storage.deferVersion({
               scope: { userId: retry.userId, serverName: retry.serverName },

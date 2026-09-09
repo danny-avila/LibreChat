@@ -1,14 +1,12 @@
 import { useEffect } from 'react';
 import TagManager from 'react-gtm-module';
-import { useRecoilState, useRecoilValue } from 'recoil';
+import { useRecoilState } from 'recoil';
 import { installCloudFrontImageRetry } from '@librechat/client';
 import {
   getTokenHeader,
   LocalStorageKeys,
   PermissionTypes,
   Permissions,
-  isAgentsEndpoint,
-  isEphemeralAgentId,
   resolveModelSpecEndpoint,
 } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
@@ -21,16 +19,13 @@ import store from '~/store';
 export default function useAppStartup({
   startupConfig,
   user,
+  mcpWarmupAllowed,
 }: {
   startupConfig?: TStartupConfig;
   user?: TUser;
+  mcpWarmupAllowed: boolean;
 }) {
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
-  const activeConversation = useRecoilValue(store.conversationByIndex(0));
-  const conversationHydrated = activeConversation != null;
-  const isEphemeralAgentActive =
-    isAgentsEndpoint(activeConversation?.endpoint) &&
-    isEphemeralAgentId(activeConversation?.agent_id);
   const canUseMcp = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
@@ -52,8 +47,7 @@ export default function useAppStartup({
       !serversLoading &&
       !!loadedServers &&
       Object.keys(loadedServers).length > 0 &&
-      conversationHydrated &&
-      !isEphemeralAgentActive &&
+      mcpWarmupAllowed &&
       !!user,
   });
 

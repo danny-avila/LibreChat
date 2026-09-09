@@ -134,7 +134,8 @@ describe('MCP authorization fence retry service', () => {
 
     expect(invalidate).toHaveBeenNthCalledWith(1, { userId: 'user-1', serverName: 'first' });
     expect(invalidate).toHaveBeenNthCalledWith(2, { userId: 'user-1', serverName: 'second' });
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenNthCalledWith(3, { userId: 'user-1', serverName: 'first' });
+    expect(invalidate).toHaveBeenCalledTimes(3);
     expect(storage.deferVersion).toHaveBeenCalledWith(
       expect.objectContaining({
         scope: { userId: 'user-1', serverName: 'first' },

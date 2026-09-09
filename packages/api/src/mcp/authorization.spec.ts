@@ -61,6 +61,27 @@ describe('completeMCPAuthorizationWithTokenWaiters', () => {
 
     expect(flowManager.settleFlowIfCurrent).not.toHaveBeenCalled();
   });
+
+  it('does not commit authorization when stale token-flow cleanup is unavailable', async () => {
+    const error = new Error('flow store unavailable');
+    const completeAuthorization = jest.fn();
+    const onTokenFlowError = jest.fn();
+    const flowManager = {
+      getFlowState: jest.fn().mockRejectedValue(error),
+      deleteFlow: jest.fn(),
+      settleFlowIfCurrent: jest.fn(),
+    };
+
+    await expect(
+      completeMCPAuthorizationWithTokenWaiters(
+        { flowIds: ['token-flow'], tokens: { access_token: 'fresh' }, completeAuthorization },
+        { flowManager, onTokenFlowError },
+      ),
+    ).rejects.toBe(error);
+
+    expect(onTokenFlowError).toHaveBeenCalledWith('prepare', error);
+    expect(completeAuthorization).not.toHaveBeenCalled();
+  });
 });
 
 describe('persistMCPAuthorizationTransaction', () => {
@@ -110,14 +131,22 @@ describe('persistMCPAuthorizationTransaction', () => {
 describe('finalizeMCPAuthorizationMutation', () => {
   it('publishes and disconnects after any write in a partial batch commits', async () => {
     const invalidateRecoveryGeneration = jest.fn().mockResolvedValue(undefined);
+    const persistPublicationRetry = jest.fn();
+    const clearPublicationRetry = jest.fn().mockResolvedValue(undefined);
     const clearLocalRecovery = jest.fn();
     const disconnectUserConnection = jest.fn().mockResolvedValue(undefined);
 
     await expect(
       finalizeMCPAuthorizationMutation(
-        { scope, mutationResults: [{ id: 'saved' }, new Error('later field failed')] },
+        {
+          scope,
+          mutationResults: [{ id: 'saved' }, new Error('later field failed')],
+          publicationRetryVersion: 'prepared-v1',
+        },
         {
           invalidateRecoveryGeneration,
+          persistPublicationRetry,
+          clearPublicationRetry,
           clearLocalRecovery,
           disconnectUserConnection,
           retryDelaysMs: [0],
@@ -126,6 +155,8 @@ describe('finalizeMCPAuthorizationMutation', () => {
     ).resolves.toBe(true);
 
     expect(invalidateRecoveryGeneration).toHaveBeenCalledWith(scope);
+    expect(persistPublicationRetry).not.toHaveBeenCalled();
+    expect(clearPublicationRetry).toHaveBeenCalledWith(scope, 'prepared-v1');
     expect(clearLocalRecovery).toHaveBeenCalledWith(scope.userId, scope.serverName);
     expect(disconnectUserConnection).toHaveBeenCalledWith(scope.userId, scope.serverName);
   });
@@ -156,15 +187,21 @@ describe('finalizeMCPAuthorizationMutation', () => {
   it('does nothing when every ordinary credential mutation failed', async () => {
     const invalidateRecoveryGeneration = jest.fn();
     const disconnectUserConnection = jest.fn();
+    const clearPublicationRetry = jest.fn().mockResolvedValue(undefined);
 
     await expect(
       finalizeMCPAuthorizationMutation(
-        { scope, mutationResults: [new Error('failed')] },
-        { invalidateRecoveryGeneration, disconnectUserConnection },
+        {
+          scope,
+          mutationResults: [new Error('failed')],
+          publicationRetryVersion: 'prepared-v1',
+        },
+        { invalidateRecoveryGeneration, disconnectUserConnection, clearPublicationRetry },
       ),
     ).resolves.toBe(false);
 
     expect(invalidateRecoveryGeneration).not.toHaveBeenCalled();
     expect(disconnectUserConnection).not.toHaveBeenCalled();
+    expect(clearPublicationRetry).toHaveBeenCalledWith(scope, 'prepared-v1');
   });
 });

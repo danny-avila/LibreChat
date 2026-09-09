@@ -1,19 +1,11 @@
-const mockUpdateOne = jest.fn();
-const mockDeleteOne = jest.fn();
-const mockToArray = jest.fn();
-const mockLimit = jest.fn(() => ({ toArray: mockToArray }));
-const mockSort = jest.fn(() => ({ limit: mockLimit }));
-const mockFind = jest.fn(() => ({ sort: mockSort }));
-const mockCreateIndex = jest.fn();
-const mockCollection = {
-  updateOne: mockUpdateOne,
-  deleteOne: mockDeleteOne,
-  find: mockFind,
-  createIndex: mockCreateIndex,
+const mockStorage = {
+  upsert: jest.fn(),
+  deleteVersion: jest.fn(),
+  deferVersion: jest.fn(),
+  list: jest.fn(),
 };
 const mockGetTenantId = jest.fn();
 const mockTenantRun = jest.fn((_context, fn) => fn());
-const mockRunAsSystem = jest.fn((fn) => fn());
 const mockRetryService = {
   clear: jest.fn(),
   drain: jest.fn(),
@@ -22,12 +14,10 @@ const mockRetryService = {
 };
 let capturedDeps;
 
-jest.mock('mongoose', () => ({
-  connection: { collection: jest.fn(() => mockCollection) },
-}));
+jest.mock('mongoose', () => ({}));
 jest.mock('@librechat/data-schemas', () => ({
+  createMCPAuthorizationFenceRetryStorage: jest.fn(() => mockStorage),
   getTenantId: (...args) => mockGetTenantId(...args),
-  runAsSystem: (...args) => mockRunAsSystem(...args),
   tenantStorage: { run: (...args) => mockTenantRun(...args) },
 }));
 jest.mock('@librechat/api', () => ({
@@ -42,79 +32,29 @@ const retryAdapter = require('./MCPAuthorizationFenceRetry');
 describe('MCPAuthorizationFenceRetry adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUpdateOne.mockResolvedValue({ acknowledged: true });
-    mockDeleteOne.mockResolvedValue({ deletedCount: 1 });
-    mockToArray.mockResolvedValue([]);
-    mockCreateIndex.mockResolvedValue('updatedAt_1');
   });
 
   it('exports the package-owned retry lifecycle', () => {
-    expect(retryAdapter).toEqual({
-      clearMCPAuthorizationFenceRetry: mockRetryService.clear,
-      drainMCPAuthorizationFenceRetries: mockRetryService.drain,
-      persistMCPAuthorizationFenceRetry: mockRetryService.persist,
-      startMCPAuthorizationFenceRetryWorker: mockRetryService.start,
-    });
+    expect(Object.keys(retryAdapter).sort()).toEqual([
+      'clearMCPAuthorizationFenceRetry',
+      'drainMCPAuthorizationFenceRetries',
+      'persistMCPAuthorizationFenceRetry',
+      'startMCPAuthorizationFenceRetryWorker',
+    ]);
   });
 
-  it('maps versioned retry storage to MongoDB', async () => {
-    const now = new Date();
-    const scope = { userId: 'user-1', serverName: 'github' };
-
-    await capturedDeps.storage.upsert({ scope, tenantId: 'tenant-a', version: 'v2', now });
-    await capturedDeps.storage.deleteVersion({
-      scope,
-      tenantId: 'tenant-a',
-      version: 'v1',
-    });
-    const deferredAt = new Date(now.getTime() + 1);
-    await capturedDeps.storage.deferVersion({
-      scope,
-      tenantId: 'tenant-a',
-      version: 'v2',
-      updatedAt: deferredAt,
-    });
-
-    expect(mockUpdateOne).toHaveBeenCalledWith(
-      { _id: JSON.stringify(['tenant-a', 'user-1', 'github']) },
-      {
-        $set: {
-          userId: 'user-1',
-          serverName: 'github',
-          tenantId: 'tenant-a',
-          version: 'v2',
-          updatedAt: now,
-        },
-        $setOnInsert: { createdAt: now },
-      },
-      { upsert: true },
-    );
-    expect(mockDeleteOne).toHaveBeenCalledWith({
-      _id: JSON.stringify(['tenant-a', 'user-1', 'github']),
-      version: 'v1',
-    });
-    expect(mockUpdateOne).toHaveBeenLastCalledWith(
-      { _id: JSON.stringify(['tenant-a', 'user-1', 'github']), version: 'v2' },
-      { $set: { updatedAt: deferredAt } },
-    );
-  });
-
-  it('reads retry batches globally and restores tenant context for replay', async () => {
+  it('restores tenant context for replay', async () => {
     const retry = {
       tenantId: 'tenant-a',
       userId: 'user-1',
       serverName: 'github',
       version: 'v1',
     };
-    mockToArray.mockResolvedValue([retry]);
-
-    await expect(capturedDeps.storage.list(7)).resolves.toEqual([retry]);
+    retryAdapter.startMCPAuthorizationFenceRetryWorker();
+    expect(capturedDeps.storage).toBe(mockStorage);
     const operation = jest.fn().mockResolvedValue(undefined);
     await capturedDeps.runInRetryScope(retry, operation);
 
-    expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
-    expect(mockCreateIndex).toHaveBeenCalledWith({ updatedAt: 1 });
-    expect(mockLimit).toHaveBeenCalledWith(7);
     expect(mockTenantRun).toHaveBeenCalledWith(
       { tenantId: 'tenant-a', userId: 'user-1' },
       operation,
