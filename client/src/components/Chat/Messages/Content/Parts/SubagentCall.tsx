@@ -187,12 +187,8 @@ export default function SubagentCall({
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
-  /** Avatar lookup for the header icon. We use the child's agent id when
-   *  present (explicit subagents); self-spawn falls back to the agents
-   *  map being unavailable → the Users SVG. The tool UI has a similar
-   *  icon-left-of-label pattern; this reuses `MessageIcon` so the agent's
-   *  configured avatar lands here without a separate image pipeline. */
-  const subagentAgentId = progress?.subagentAgentId;
+  /** Explicit subagent types are agent IDs and remain in the saved tool arguments. */
+  const subagentAgentId = progress?.subagentAgentId ?? (isSelfSpawn ? undefined : subagentType);
   const subagentAgent = subagentAgentId ? agentsMap?.[subagentAgentId] : undefined;
   /**
    * Tri-state status resolution, aligned with `ToolCall.tsx`:

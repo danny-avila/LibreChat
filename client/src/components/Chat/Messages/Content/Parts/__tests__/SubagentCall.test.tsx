@@ -61,8 +61,17 @@ jest.mock('lucide-react', () => ({
   Users: () => <span>users</span>,
 }));
 
-jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
-jest.mock('~/components/Share/MessageIcon', () => ({ __esModule: true, default: () => null }));
+jest.mock('~/Providers', () => ({
+  useAgentsMapContext: () => ({
+    'agent-1': { id: 'agent-1', name: 'Analyst One', avatar: { filepath: '/analyst.png' } },
+  }),
+}));
+jest.mock('~/components/Share/MessageIcon', () => ({
+  __esModule: true,
+  default: ({ agent }: { agent: { name: string; avatar: { filepath: string } } }) => (
+    <img alt={agent.name} src={agent.avatar.filepath} />
+  ),
+}));
 jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => mockMCPServerNames }));
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/toolLabels'),
@@ -174,6 +183,39 @@ const event = (
 });
 
 describe('SubagentCall', () => {
+  it('keeps the configured name and avatar after live progress is cleared', () => {
+    const { setProgress } = renderWithState({
+      toolCallId: 'identity',
+      initialProgress: 1,
+      toolArgs: { subagent_type: 'agent-1' },
+      progress: progressFromEvents({
+        subagentRunId: 'child-run',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        status: 'stop',
+        events: [],
+      }),
+    });
+    expect(screen.getByText('Analyst One')).toBeInTheDocument();
+    expect(screen.getByRole('img', { hidden: true })).toHaveAttribute('src', '/analyst.png');
+    setProgress(null);
+    expect(screen.getByText('Analyst One')).toBeInTheDocument();
+    expect(screen.getByRole('img', { hidden: true })).toHaveAttribute('src', '/analyst.png');
+  });
+
+  it.each(['agent-1', 'missing-agent', 'self'])(
+    'renders saved identity %s without streaming state',
+    (agentId) => {
+      renderWithState({
+        toolCallId: 'saved-identity',
+        initialProgress: 1,
+        toolArgs: { subagent_type: agentId },
+      });
+      expect(screen.queryByText('Analyst One') != null).toBe(agentId === 'agent-1');
+      expect(screen.queryByText('users') != null).toBe(agentId !== 'agent-1');
+    },
+  );
+
   it.each([
     ['Running agent', 0.3, true, 'run_step'],
     ['Ran agent', 1, false, undefined],

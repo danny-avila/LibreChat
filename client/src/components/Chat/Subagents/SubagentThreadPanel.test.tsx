@@ -106,13 +106,14 @@ jest.mock('~/hooks', () => ({
    *  runs before the panel's own React handler. Stubbing it made the panel's
    *  Escape assertions pass in both directions. */
   useFocusTrap: jest.requireActual('~/hooks/useFocusTrap').default,
-  useLocalize: () => (key: string) => key,
+  useLocalize: () => (key: string, values?: { 0: string }) =>
+    values == null ? key : `${key}: ${values[0]}`,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
 }));
 
 jest.mock('~/Providers', () => ({
   useAgentsMapContext: () => ({
-    'agent-1': { id: 'agent-1', name: 'Analyst One' },
+    'agent-1': { id: 'agent-1', name: 'Analyst One', avatar: { filepath: '/analyst.png' } },
     'agent-2': { id: 'agent-2', name: 'Analyst Two' },
   }),
 }));
@@ -467,6 +468,27 @@ describe('SubagentThreadPanel', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
+
+  it.each(['agent-1', 'missing-agent', 'self'])(
+    'resolves the saved foreground identity %s in the panel',
+    (subagentType) => {
+      mockUseSubagentThreadQuery.mockReturnValue({ isLoading: false, isError: false });
+      const foregroundSelection = { ...selection, durable: undefined, subagentType };
+      render(
+        <Root>
+          <SubagentThreadPanel selection={foregroundSelection} />
+        </Root>,
+      );
+      const title =
+        subagentType === 'self'
+          ? 'com_ui_subagent_dialog_title_self'
+          : `com_ui_subagent_dialog_title: ${subagentType === 'agent-1' ? 'Analyst One' : subagentType}`;
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
+      if (subagentType === 'agent-1') {
+        expect(screen.getByAltText('Analyst One avatar')).toHaveAttribute('src', '/analyst.png');
+      }
+    },
+  );
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
     mockUseSubagentThreadQuery.mockReturnValue({
