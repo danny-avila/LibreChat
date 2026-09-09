@@ -371,7 +371,6 @@ export default function QuestionnaireModal() {
         main={
           submitted ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              {showConfetti && <div className="text-4xl">🎉</div>}
               <p className="text-base font-medium text-text-primary">
                 {questionnaire.thankYouMessage ||
                   localize('com_ui_questionnaire_thank_you_default')}
