@@ -9,6 +9,7 @@ const {
   MCPAuthenticationRejectedError,
   MCPAuthenticationRefreshError,
   OpenIDReauthRequiredError,
+  publishMCPAuthorizationMutation,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
@@ -27,6 +28,7 @@ const {
   cacheMCPServerTools,
   getMCPToolsCacheGeneration,
   updateMCPServerTools,
+  invalidateCachedTools,
 } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
@@ -62,6 +64,12 @@ async function loadMCPServerCatalogs({
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
+  const onOAuthCredentialsChanged = (scope) =>
+    publishMCPAuthorizationMutation(scope, {
+      invalidateRecoveryGeneration: invalidateCachedTools,
+      clearLocalRecovery: (userId, serverName) =>
+        mcpManager.clearCatalogRecoveryState?.(userId, serverName),
+    });
   return loadCatalogs(
     { user, servers, signal, recoveryPolicy },
     {
@@ -81,9 +89,11 @@ async function loadMCPServerCatalogs({
           oboTrustChecker: createOboTrustChecker(),
           upstreamTokenProvider,
           oboIdentityContext,
+          onOAuthCredentialsChanged,
         }),
       formatServerTools: formatMCPServerTools,
       recoveryTracker: mcpManager.getCatalogRecoveryTracker?.(),
+      getRecoveryGeneration: getMCPToolsCacheGeneration,
       getCachedServerTools: getMCPServerTools,
       getServerToolFunctionsSnapshot: (userId, serverName, serverConfig, options) =>
         mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig, options),
@@ -235,6 +245,12 @@ async function reinitMCPServer({
 
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
+    const onOAuthCredentialsChanged = (scope) =>
+      publishMCPAuthorizationMutation(scope, {
+        invalidateRecoveryGeneration: invalidateCachedTools,
+        clearLocalRecovery: (userId, changedServerName) =>
+          mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
+      });
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
 
     if (!ephemeralServer) {
@@ -267,6 +283,7 @@ async function reinitMCPServer({
         serverName,
         flowManager,
         tokenMethods,
+        onOAuthCredentialsChanged,
         returnOnOAuth,
         oauthEnd,
         customUserVars,
@@ -309,6 +326,7 @@ async function reinitMCPServer({
             serverName,
             flowManager,
             tokenMethods,
+            onOAuthCredentialsChanged,
             oauthStart,
             customUserVars,
             requestBody,

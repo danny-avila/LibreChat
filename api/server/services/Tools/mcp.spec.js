@@ -88,6 +88,7 @@ describe('loadMCPServerCatalogs', () => {
       await deps.getServerToolFunctionsSnapshot(user.id, 'config-only', servers[0].serverConfig, {
         deadlineMs: 123,
       });
+      await deps.getRecoveryGeneration({ userId: user.id, serverName: 'config-only' });
       await deps.cacheServerTools({ serverName: 'config-only' });
       return { serverTools: new Map([['config-only', {}]]), serversWithoutTools: [] };
     });
@@ -102,6 +103,10 @@ describe('loadMCPServerCatalogs', () => {
     });
 
     expect(mockGetUserMCPAuthMap).toHaveBeenCalledTimes(1);
+    expect(mockGetMCPToolsCacheGeneration).toHaveBeenCalledWith({
+      userId: user.id,
+      serverName: 'config-only',
+    });
     expect(mockGetUserMCPAuthMap).toHaveBeenCalledWith({
       userId: user.id,
       servers: ['config-only', 'user-server'],

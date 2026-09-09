@@ -870,6 +870,7 @@ describe('allowedAddressesSchema', () => {
         discoveryBackoffMs: [300_000, 600_000, 1_200_000, 1_800_000],
         reauthRetryMs: 1_800_000,
         maxStateEntries: 10_000,
+        generationReadTimeoutMs: 500,
       });
 
       expect(

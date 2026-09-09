@@ -1818,11 +1818,13 @@ describe('MCPConnectionFactory', () => {
         serverConfig: sseConfig,
       };
 
+      const onOAuthCredentialsChanged = jest.fn().mockResolvedValue(undefined);
       const oauthOptions = {
         useOAuth: true as const,
         user: mockUser,
         flowManager: mockFlowManager,
         oauthStart: jest.fn(),
+        onOAuthCredentialsChanged,
         tokenMethods: {
           findToken: jest.fn(),
           createToken: jest.fn(),
@@ -1903,6 +1905,10 @@ describe('MCPConnectionFactory', () => {
       // The connection receives the FRESHLY refreshed tokens, NOT the stale
       // cached ones — that's the whole point of the fix.
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(freshlyRefreshedTokens);
+      expect(onOAuthCredentialsChanged).toHaveBeenCalledWith({
+        userId: mockUser!.id,
+        serverName: 'test-server',
+      });
       expect(mockConnectionInstance.setOAuthTokens).not.toHaveBeenCalledWith(staleCachedTokens);
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
       // The cached `mcp_get_tokens` flow state is dropped so the next

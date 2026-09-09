@@ -67,6 +67,35 @@ describe('applyMCPDiscoveryAuthorizationState', () => {
 
     expect(result).toBe(currentStatus);
   });
+
+  it.each([
+    ['missing discovery generation', undefined, 'generation-2'],
+    ['missing status generation', 'generation-1', undefined],
+  ])('keeps authorized status with %s', (_label, discoveryGeneration, statusGeneration) => {
+    const currentStatus = {
+      oauth: {
+        requiresOAuth: true,
+        connectionState: 'connected' as const,
+        authorizationState: 'authorized' as const,
+        authorizationGeneration: statusGeneration,
+      },
+    };
+    const result = applyMCPDiscoveryAuthorizationState(currentStatus, {
+      servers: {
+        oauth: {
+          name: 'oauth',
+          icon: '',
+          authenticated: false,
+          authorizationState: 'reauth_required',
+          authorizationGeneration: discoveryGeneration,
+          authConfig: [],
+          tools: [],
+        },
+      },
+    });
+
+    expect(result).toBe(currentStatus);
+  });
 });
 
 describe('getMCPOAuthTimeout', () => {

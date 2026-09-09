@@ -4,7 +4,6 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
-import { getMCPToolsChangedGeneration } from '../toolsChanged';
 import { usesDirectOpenIDBearerRecovery } from '../openid';
 import { getServerCustomUserVars } from '../auth';
 import { mcpConfig } from '../mcpConfig';
@@ -25,6 +24,7 @@ const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   discoveryBackoffMs: [5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000],
   reauthRetryMs: 30 * 60_000,
   maxStateEntries: 10_000,
+  generationReadTimeoutMs: 500,
 };
 
 export interface MCPServerCatalogRecoveryInput {
@@ -44,13 +44,53 @@ export interface MCPServerCatalogRecoveryDeps {
   }>;
   formatServerTools: (serverName: string, tools: Tool[]) => LCAvailableTools;
   recoveryTracker?: MCPServerCatalogRecoveryTracker;
-  getRecoveryGeneration?: (userId: string, serverName: string) => Promise<string | undefined>;
+  getRecoveryGeneration?: MCPRecoveryGenerationReader;
+}
+
+export interface MCPRecoveryGenerationScope {
+  userId: string;
+  serverName: string;
+}
+
+export type MCPRecoveryGenerationReader = (
+  scope: MCPRecoveryGenerationScope,
+) => Promise<string | undefined>;
+
+const AUTHORIZATION_FENCE_RETRY_DELAYS_MS = [0, 50, 200] as const;
+
+export async function publishMCPAuthorizationMutation(
+  scope: MCPRecoveryGenerationScope,
+  deps: {
+    invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
+    clearLocalRecovery?: (userId: string, serverName: string) => void;
+    retryDelaysMs?: readonly number[];
+  },
+): Promise<void> {
+  let lastError: unknown;
+  for (const delayMs of deps.retryDelaysMs ?? AUTHORIZATION_FENCE_RETRY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    try {
+      await deps.invalidateRecoveryGeneration(scope);
+      deps.clearLocalRecovery?.(scope.userId, scope.serverName);
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.warn(
+        `[MCP authorization] Failed to publish credential generation for ${scope.serverName}; retrying`,
+        error,
+      );
+    }
+  }
+  throw lastError;
 }
 
 export interface MCPServerCatalogRecoveryPolicy {
   discoveryBackoffMs: readonly number[];
   reauthRetryMs: number;
   maxStateEntries: number;
+  generationReadTimeoutMs: number;
 }
 
 export interface MCPServerCatalogSnapshot {
@@ -113,6 +153,7 @@ type RecoveryOutcome = {
 
 interface RecoveryStateEntry {
   configFingerprint: string;
+  recoveryGeneration?: string;
   failureCount: number;
   nextRetryAt: number;
   lastTouchedAt: number;
@@ -138,20 +179,43 @@ export class MCPCatalogCapacityError extends Error {
   }
 }
 
-/** Reads the cross-replica credential/catalog fence without making status or recovery depend on
- * shared-cache availability. Process-local suppression remains bounded as a fallback. */
-export async function getMCPAuthorizationGeneration(
-  userId: string,
-  serverName: string,
+/** Reads the cross-replica credential fence without making status or recovery depend on shared
+ * cache availability. The application supplies the cache implementation at its wiring boundary. */
+export async function readMCPRecoveryGeneration(
+  scope: MCPRecoveryGenerationScope,
+  reader?: MCPRecoveryGenerationReader,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<string | undefined> {
+  if (reader == null || options?.signal?.aborted) {
+    return undefined;
+  }
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_RECOVERY_POLICY.generationReadTimeoutMs;
+  let timeoutId: number | undefined;
+  let onAbort: (() => void) | undefined;
   try {
-    return await getMCPToolsChangedGeneration({ userId, serverName });
+    return await Promise.race([
+      reader(scope),
+      new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(resolve, timeoutMs);
+        if (options?.signal != null) {
+          onAbort = () => resolve(undefined);
+          options.signal.addEventListener('abort', onAbort, { once: true });
+        }
+      }),
+    ]);
   } catch (error) {
     logger.debug(
-      `[MCP catalog recovery] Could not read shared generation for ${serverName}; using process-local state`,
+      `[MCP catalog recovery] Could not read shared generation for ${scope.serverName}; using process-local state`,
       error,
     );
     return undefined;
+  } finally {
+    if (timeoutId != null) {
+      clearTimeout(timeoutId);
+    }
+    if (onAbort != null) {
+      options?.signal?.removeEventListener('abort', onAbort);
+    }
   }
 }
 
@@ -171,9 +235,8 @@ function getRecoveryKey(userId: string, serverName: string): string {
 function getRecoveryFingerprint(
   serverConfig: ParsedServerConfig,
   policy: MCPServerCatalogRecoveryPolicy,
-  recoveryGeneration?: string,
 ): string {
-  return JSON.stringify([serverConfig, policy, recoveryGeneration]);
+  return JSON.stringify([serverConfig, policy]);
 }
 
 export class MCPServerCatalogRecoveryTracker {
@@ -201,14 +264,13 @@ export class MCPServerCatalogRecoveryTracker {
     discover: () => Promise<RecoveryOutcome>,
   ): Promise<RecoveryOutcome> {
     const key = getRecoveryKey(user.id, candidate.serverName);
-    const configFingerprint = getRecoveryFingerprint(
-      candidate.serverConfig,
-      policy,
-      recoveryGeneration,
-    );
+    const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
     const now = Date.now();
     const existing = this.states.get(key);
-    if (existing?.configFingerprint === configFingerprint) {
+    const sameObservedState =
+      existing?.configFingerprint === configFingerprint &&
+      (recoveryGeneration == null || existing.recoveryGeneration === recoveryGeneration);
+    if (sameObservedState) {
       existing.lastTouchedAt = now;
       if (existing.inFlight != null) {
         return existing.inFlight;
@@ -220,18 +282,19 @@ export class MCPServerCatalogRecoveryTracker {
 
     const entry: RecoveryStateEntry = {
       configFingerprint,
-      failureCount: existing?.configFingerprint === configFingerprint ? existing.failureCount : 0,
+      recoveryGeneration,
+      failureCount: sameObservedState ? existing.failureCount : 0,
       nextRetryAt: 0,
       lastTouchedAt: now,
     };
     const flight = discover()
       .then((outcome) => {
         if (this.states.get(key) !== entry) {
-          return outcome;
+          return { serverName: candidate.serverName, tools: null };
         }
         entry.lastTouchedAt = Date.now();
         if (outcome.state === 'reauth_required') {
-          outcome.recoveryGeneration = recoveryGeneration;
+          outcome.recoveryGeneration = entry.recoveryGeneration;
           entry.failureCount = 0;
           entry.nextRetryAt = entry.lastTouchedAt + policy.reauthRetryMs;
           /** Keep the authorization decision, but never promote an unfenced discovery catalog
@@ -443,6 +506,23 @@ async function recoverMCPServerCatalogsWithState(
     };
   }
 
+  const generationSnapshots = new Map<string, string | undefined>();
+  await Promise.all(
+    recoverable.map(async ({ serverName, serverConfig }) => {
+      if (serverConfig.obo != null || usesDirectOpenIDBearerRecovery(serverConfig)) {
+        return;
+      }
+      generationSnapshots.set(
+        serverName,
+        await readMCPRecoveryGeneration(
+          { userId: user.id, serverName },
+          deps.getRecoveryGeneration,
+          { timeoutMs: policy.generationReadTimeoutMs, signal },
+        ),
+      );
+    }),
+  );
+
   /** Only credential-bearing servers can consume the auth map, so a list without any avoids
    *  the plugin-auth round trip entirely. */
   const credentialServers = recoverable.filter(({ serverConfig }) =>
@@ -489,12 +569,40 @@ async function recoverMCPServerCatalogsWithState(
         results[index] = await discoverCandidate(user, candidate, deps, signal);
         return;
       }
-      const recoveryGeneration = await (
-        deps.getRecoveryGeneration ?? getMCPAuthorizationGeneration
-      )(user.id, candidate.serverName);
-      results[index] = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
+      const observedGeneration = await readMCPRecoveryGeneration(
+        { userId: user.id, serverName: candidate.serverName },
+        deps.getRecoveryGeneration,
+        { timeoutMs: policy.generationReadTimeoutMs, signal },
+      );
+      const snapshotGeneration = generationSnapshots.get(candidate.serverName);
+      if (
+        snapshotGeneration != null &&
+        observedGeneration != null &&
+        snapshotGeneration !== observedGeneration
+      ) {
+        tracker.clear(user.id, candidate.serverName);
+        results[index] = { serverName: candidate.serverName, tools: null };
+        return;
+      }
+      const recoveryGeneration = observedGeneration ?? snapshotGeneration;
+      const outcome = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
         discoverCandidate(user, candidate, deps),
       );
+      const finalGeneration = await readMCPRecoveryGeneration(
+        { userId: user.id, serverName: candidate.serverName },
+        deps.getRecoveryGeneration,
+        { timeoutMs: policy.generationReadTimeoutMs, signal },
+      );
+      if (
+        recoveryGeneration != null &&
+        finalGeneration != null &&
+        recoveryGeneration !== finalGeneration
+      ) {
+        tracker.clear(user.id, candidate.serverName);
+        results[index] = { serverName: candidate.serverName, tools: null };
+        return;
+      }
+      results[index] = outcome;
     }),
     signal,
   );

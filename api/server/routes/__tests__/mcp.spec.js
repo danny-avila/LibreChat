@@ -71,7 +71,6 @@ jest.mock('@librechat/api', () => {
     getMCPServerGeneration: jest.fn((config) =>
       config.dbId ? `db:${config.dbId}` : `config:${JSON.stringify(config)}`,
     ),
-    getMCPAuthorizationGeneration: jest.fn().mockResolvedValue(undefined),
     MCPConnection: {
       clearCooldown: jest.fn(),
     },
@@ -1914,6 +1913,50 @@ describe('MCP Routes', () => {
       expect(mockMcpManager.withUserConnectionLease).not.toHaveBeenCalled();
     });
 
+    it('rolls back stored callback tokens when their shared generation cannot advance', async () => {
+      const flowId = 'test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
+        completeFlow: jest.fn().mockResolvedValue(),
+        deleteFlow: jest.fn().mockResolvedValue(true),
+      };
+      const storedTokens = {
+        access_token: 'stored-access-token',
+        credential_set_id: 'credential-set-new',
+      };
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        serverUrl: 'https://mcp.example.com/mcp',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      });
+      mockOAuthCompletion(storedTokens);
+      MCPTokenStorage.storeTokens.mockResolvedValue(storedTokens);
+      MCPTokenStorage.deleteUserTokens.mockResolvedValue(undefined);
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        url: 'https://mcp.example.com/mcp',
+      });
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/server/services/Config').invalidateCachedTools.mockRejectedValue(
+        new Error('generation unavailable'),
+      );
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${generateTestCsrfToken(flowId)}`])
+        .query({ code: 'test-auth-code', state: flowId });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toContain('/oauth/error?error=callback_failed');
+      expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'test-user-id', serverName: 'test-server' }),
+      );
+      expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
+    });
+
     it('should use original flow state credentials when storing tokens', async () => {
       // mockRegistryInstance is defined at the top of the file
       const mockFlowManager = {
@@ -2800,11 +2843,13 @@ describe('MCP Routes', () => {
             connectionState: 'connected',
             requiresOAuth: false,
             authorizationState: 'not_required',
+            authorizationGeneration: 'test-generation',
           },
           server2: {
             connectionState: 'disconnected',
             requiresOAuth: true,
             authorizationState: 'needs_authorization',
+            authorizationGeneration: 'test-generation',
           },
         },
       });
@@ -2992,7 +3037,9 @@ describe('MCP Routes', () => {
         requiresOAuth: true,
         authorizationState: 'needs_authorization',
       });
-      require('@librechat/api').getMCPAuthorizationGeneration.mockResolvedValueOnce('generation-2');
+      require('~/server/services/Config').getMCPToolsCacheGeneration.mockResolvedValueOnce(
+        'generation-2',
+      );
 
       const response = await request(app).get('/api/mcp/connection/status/oauth-server');
 
@@ -3004,6 +3051,34 @@ describe('MCP Routes', () => {
         requiresOAuth: true,
         authorizationState: 'needs_authorization',
         authorizationGeneration: 'generation-2',
+      });
+    });
+
+    it('keeps connection status available when the shared generation cache is unavailable', async () => {
+      getMCPSetupData.mockResolvedValue({
+        mcpConfig: { 'oauth-server': { endpoint: 'http://oauth-server.com' } },
+        appConnections: {},
+        userConnections: {},
+        oauthServers: new Set(['oauth-server']),
+      });
+      getServerConnectionStatus.mockResolvedValue({
+        connectionState: 'requires_auth',
+        requiresOAuth: true,
+        authorizationState: 'needs_authorization',
+      });
+      require('~/server/services/Config').getMCPToolsCacheGeneration.mockRejectedValueOnce(
+        new Error('cache unavailable'),
+      );
+
+      const response = await request(app).get('/api/mcp/connection/status/oauth-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: true,
+        serverName: 'oauth-server',
+        connectionStatus: 'requires_auth',
+        requiresOAuth: true,
+        authorizationState: 'needs_authorization',
       });
     });
 

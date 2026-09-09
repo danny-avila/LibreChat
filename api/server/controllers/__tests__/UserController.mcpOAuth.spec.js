@@ -195,6 +195,28 @@ beforeEach(() => {
 });
 
 describe('updateUserPluginsController MCP OAuth cleanup', () => {
+  it('advances the fence after a partial MCP credential batch commits', async () => {
+    setupMCPMocks();
+    const { updateUserPluginAuth } = require('~/server/services/PluginService');
+    const laterFailure = Object.assign(new Error('second field failed'), { status: 400 });
+    updateUserPluginAuth.mockResolvedValueOnce({}).mockResolvedValueOnce(laterFailure);
+    const req = createRequest();
+    req.body = {
+      pluginKey: 'mcp_test-server',
+      action: 'install',
+      auth: { API_KEY: 'new-key', ACCOUNT: 'new-account' },
+    };
+
+    const res = createResponse();
+    await updateUserPluginsController(req, res);
+
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'test-server',
+    });
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
   it('invalidates the shared tool generation even when local disconnect fails', async () => {
     const { mcpManager } = setupMCPMocks();
     mcpManager.disconnectUserConnection.mockRejectedValue(new Error('local dispose failed'));

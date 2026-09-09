@@ -13,6 +13,7 @@ const {
   waitForGenerationPersistence,
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
+  publishMCPAuthorizationMutation,
 } = require('@librechat/api');
 const { Tools, Constants, FileSources, ResourceType } = require('librechat-data-provider');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
@@ -252,6 +253,7 @@ const updateUserPluginsController = async (req, res) => {
     let message;
     /** @type {IPluginAuth | Error} */
     let authService;
+    let mcpCredentialMutationCommitted = false;
 
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
@@ -274,6 +276,8 @@ const updateUserPluginsController = async (req, res) => {
           if (pluginKey === Tools.web_search) {
             break;
           }
+        } else if (isMCPTool) {
+          mcpCredentialMutationCommitted = true;
         }
       }
     } else if (action === 'uninstall') {
@@ -288,10 +292,19 @@ const updateUserPluginsController = async (req, res) => {
             authService,
           );
           ({ status, message } = normalizeHttpError(authService));
+        } else {
+          mcpCredentialMutationCommitted = true;
         }
         const serverName = pluginKey.replace(Constants.mcp_prefix, '');
         try {
-          await invalidateCachedTools({ userId: user.id, serverName });
+          await publishMCPAuthorizationMutation(
+            { userId: user.id, serverName },
+            {
+              invalidateRecoveryGeneration: invalidateCachedTools,
+              clearLocalRecovery: (changedUserId, changedServerName) =>
+                getMCPManager()?.clearCatalogRecoveryState?.(changedUserId, changedServerName),
+            },
+          );
         } catch (error) {
           logger.error(
             `[updateUserPluginsController] Error fencing MCP connection before OAuth teardown for user ${user.id}:`,
@@ -327,49 +340,59 @@ const updateUserPluginsController = async (req, res) => {
           if (authService instanceof Error) {
             logger.error('[authService] Error deleting specific auth key:', authService);
             ({ status, message } = normalizeHttpError(authService));
+          } else if (isMCPTool) {
+            mcpCredentialMutationCommitted = true;
           }
         }
       }
     }
 
-    if (status === 200) {
-      // If auth was updated successfully, disconnect MCP sessions as they might use these credentials
-      if (pluginKey.startsWith(Constants.mcp_prefix)) {
-        try {
-          const mcpManager = getMCPManager();
-          // Extract server name from pluginKey (format: "mcp_<serverName>")
-          const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-          if (mcpManager) {
-            logger.info(
-              `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
-            );
-          }
-          let invalidationError;
-          try {
-            await invalidateCachedTools({ userId: user.id, serverName });
-          } catch (error) {
-            invalidationError = error;
-          }
-          try {
-            await mcpManager?.disconnectUserConnection(user.id, serverName);
-          } catch (error) {
-            logger.error(
-              `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
-              error,
-            );
-          }
-          if (invalidationError) {
-            throw invalidationError;
-          }
-        } catch (disconnectError) {
-          logger.error(
-            `[updateUserPluginsController] Error fencing MCP connection for user ${user.id} after plugin auth update:`,
-            disconnectError,
+    // Every committed MCP credential write advances the fence, including a partial batch whose
+    // later field failed. Otherwise another worker can retain a stale authorization decision.
+    if (mcpCredentialMutationCommitted && pluginKey.startsWith(Constants.mcp_prefix)) {
+      try {
+        const mcpManager = getMCPManager();
+        // Extract server name from pluginKey (format: "mcp_<serverName>")
+        const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+        if (mcpManager) {
+          logger.info(
+            `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
           );
-          // A credential mutation is not safely published until the shared generation fence moves.
-          throw disconnectError;
         }
+        let invalidationError;
+        try {
+          await publishMCPAuthorizationMutation(
+            { userId: user.id, serverName },
+            {
+              invalidateRecoveryGeneration: invalidateCachedTools,
+              clearLocalRecovery: (changedUserId, changedServerName) =>
+                mcpManager?.clearCatalogRecoveryState?.(changedUserId, changedServerName),
+            },
+          );
+        } catch (error) {
+          invalidationError = error;
+        }
+        try {
+          await mcpManager?.disconnectUserConnection(user.id, serverName);
+        } catch (error) {
+          logger.error(
+            `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+            error,
+          );
+        }
+        if (invalidationError) {
+          throw invalidationError;
+        }
+      } catch (disconnectError) {
+        logger.error(
+          `[updateUserPluginsController] Error fencing MCP connection for user ${user.id} after plugin auth update:`,
+          disconnectError,
+        );
+        // A credential mutation is not safely published until the shared generation fence moves.
+        throw disconnectError;
       }
+    }
+    if (status === 200) {
       return res.status(status).send();
     }
 

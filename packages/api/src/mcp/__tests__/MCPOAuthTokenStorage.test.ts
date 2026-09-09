@@ -2561,6 +2561,30 @@ describe('MCPTokenStorage', () => {
       expect(callbackTokens.credential_set_id).not.toBe(credentialSetId);
     });
 
+    it('removes refreshed credentials when their authorization fence cannot be published', async () => {
+      await seedRefreshableTokens('unfenced-srv');
+      const onRefreshSuccess = jest.fn().mockRejectedValue(new Error('generation unavailable'));
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          ...refreshParams(jest.fn().mockResolvedValue(rotatedTokens(2)), 'unfenced-srv'),
+          onRefreshSuccess,
+        }),
+      ).resolves.toBeNull();
+
+      expect(onRefreshSuccess).toHaveBeenCalledTimes(1);
+      const rejectedCredentialSetId = onRefreshSuccess.mock.calls[0][0].credential_set_id;
+      expect(
+        store.getAll().some((token) => {
+          const storedId =
+            token.metadata instanceof Map
+              ? token.metadata.get('credential_set_id')
+              : token.metadata?.credential_set_id;
+          return storedId === rejectedCredentialSetId;
+        }),
+      ).toBe(false);
+    });
+
     it("an initiator's abort resolves only its own wait, not the shared redemption", async () => {
       await seedRefreshableTokens('abort-srv');
 

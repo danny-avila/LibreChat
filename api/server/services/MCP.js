@@ -45,6 +45,7 @@ const {
   OpenIDReauthRequiredError,
   MCPAuthenticationRefreshError,
   MCPAuthenticationRejectedError,
+  publishMCPAuthorizationMutation,
 } = require('@librechat/api');
 const {
   Time,
@@ -72,6 +73,7 @@ const {
   getCachedTools,
   getMCPServerTools,
   cacheMCPServerTools,
+  invalidateCachedTools,
 } = require('./Config');
 const { getLogStores } = require('~/cache');
 
@@ -1303,6 +1305,12 @@ function createToolInstance({
           updateToken,
           deleteTokens,
         },
+        onOAuthCredentialsChanged: (scope) =>
+          publishMCPAuthorizationMutation(scope, {
+            invalidateRecoveryGeneration: invalidateCachedTools,
+            clearLocalRecovery: (userId, changedServerName) =>
+              mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
+          }),
         oauthStart,
         oauthEnd,
         graphTokenResolver: getGraphApiToken,

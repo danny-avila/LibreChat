@@ -7,6 +7,8 @@ import {
   MCPCatalogCapacityError,
   MCPServerCatalogRecoveryTracker,
   loadMCPServerCatalogs,
+  publishMCPAuthorizationMutation,
+  readMCPRecoveryGeneration,
   recoverMCPServerCatalogs,
 } from './recovery';
 
@@ -39,7 +41,127 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+describe('readMCPRecoveryGeneration', () => {
+  it('keeps recovery available when the injected shared cache is unavailable', async () => {
+    const reader = jest.fn().mockRejectedValue(new Error('cache unavailable'));
+
+    await expect(
+      readMCPRecoveryGeneration({ userId: user.id, serverName: 'oauth-server' }, reader),
+    ).resolves.toBeUndefined();
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('oauth-server'),
+      expect.any(Error),
+    );
+  });
+
+  it('returns unknown instead of waiting indefinitely for the shared cache', async () => {
+    const reader = jest.fn(() => new Promise<string>(() => undefined));
+
+    await expect(
+      readMCPRecoveryGeneration({ userId: user.id, serverName: 'slow-cache' }, reader, {
+        timeoutMs: 5,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('publishMCPAuthorizationMutation', () => {
+  it('retries the shared fence and clears local suppression only after it advances', async () => {
+    const invalidateRecoveryGeneration = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('cache unavailable'))
+      .mockResolvedValue(undefined);
+    const clearLocalRecovery = jest.fn();
+
+    await publishMCPAuthorizationMutation(
+      { userId: user.id, serverName: 'oauth' },
+      { invalidateRecoveryGeneration, clearLocalRecovery, retryDelaysMs: [0, 0] },
+    );
+
+    expect(invalidateRecoveryGeneration).toHaveBeenCalledTimes(2);
+    expect(clearLocalRecovery).toHaveBeenCalledWith(user.id, 'oauth');
+  });
+});
+
 describe('recoverMCPServerCatalogs', () => {
+  it('does not discover with a credential snapshot superseded while auth was loading', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const getRecoveryGeneration = jest
+      .fn()
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-2');
+
+    const result = await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [
+          {
+            serverName: 'guarded',
+            serverConfig: withUserVars(serverConfig('guarded')),
+          },
+        ],
+      },
+      {
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({
+          [`${Constants.mcp_prefix}guarded`]: { API_KEY: 'old-value' },
+        }),
+        discoverServerTools,
+        formatServerTools: jest.fn().mockReturnValue({}),
+        getRecoveryGeneration,
+        recoveryTracker,
+      },
+    );
+
+    expect(result.size).toBe(0);
+    expect(discoverServerTools).not.toHaveBeenCalled();
+  });
+
+  it('discards discovery completed after its authorization generation was superseded', async () => {
+    const getRecoveryGeneration = jest
+      .fn()
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-2');
+
+    const result = await recoverMCPServerCatalogs(
+      { user, servers: [{ serverName: 'oauth', serverConfig: serverConfig('oauth') }] },
+      {
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+        discoverServerTools: jest.fn().mockResolvedValue({
+          tools: [{ name: 'stale', inputSchema: { type: 'object' } }],
+        }),
+        formatServerTools: jest.fn().mockReturnValue(availableTools('stale')),
+        getRecoveryGeneration,
+        recoveryTracker,
+      },
+    );
+
+    expect(result.size).toBe(0);
+  });
+
+  it('preserves backoff when generation reads intermittently fail', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: null });
+    const getRecoveryGeneration = jest
+      .fn()
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-1')
+      .mockRejectedValue(new Error('cache unavailable'));
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue({}),
+      getRecoveryGeneration,
+      recoveryTracker,
+    };
+    const servers = [{ serverName: 'offline', serverConfig: serverConfig('offline') }];
+
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+    await recoverMCPServerCatalogs({ user, servers }, deps);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+  });
+
   it('loads user auth once and preserves config-only lookup context for each server', async () => {
     const servers = [
       { serverName: 'alpha', serverConfig: withUserVars(serverConfig('alpha')) },

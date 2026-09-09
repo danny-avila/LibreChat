@@ -1143,6 +1143,19 @@ export class MCPTokenStorage {
           await onRefreshSuccess(storedTokens);
         } catch (hookError) {
           logger.warn(`${logPrefix} onRefreshSuccess callback failed`, hookError);
+          if (deleteTokens != null) {
+            await this.deleteUserTokens({
+              userId,
+              serverName,
+              deleteToken: async (filter) => {
+                await deleteTokens({
+                  ...filter,
+                  metadataCredentialSetId: storedTokens.credential_set_id,
+                });
+              },
+            });
+          }
+          throw hookError;
         }
       }
 
@@ -1209,6 +1222,7 @@ export class MCPTokenStorage {
     refreshTokens,
     singleFlightScope,
     flowManager,
+    onRefreshSuccess,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1258,6 +1272,7 @@ export class MCPTokenStorage {
           refreshTokens,
           singleFlightScope,
           flowManager,
+          onRefreshSuccess,
           existingAccessToken: accessTokenData,
         });
       }

@@ -2707,6 +2707,7 @@ export const configSchema = z.object({
             .max(24 * 60 * 60_000)
             .default(30 * 60_000),
           maxStateEntries: z.number().int().positive().max(1_000_000).default(10_000),
+          generationReadTimeoutMs: z.number().int().positive().max(10_000).default(500),
         })
         .default({}),
     })

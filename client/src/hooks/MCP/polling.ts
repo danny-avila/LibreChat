@@ -20,7 +20,13 @@ export function applyMCPDiscoveryAuthorizationState(
   let changed = false;
   for (const serverName of reauthRequired) {
     const discoveryGeneration = discoveredTools?.servers[serverName]?.authorizationGeneration;
-    const statusGeneration = nextStatus?.[serverName]?.authorizationGeneration;
+    const current = nextStatus?.[serverName];
+    const statusGeneration = current?.authorizationGeneration;
+    const statusAuthorizes =
+      current?.connectionState === 'connected' || current?.authorizationState === 'authorized';
+    if (statusAuthorizes && (discoveryGeneration == null || statusGeneration == null)) {
+      continue;
+    }
     if (
       discoveryGeneration != null &&
       statusGeneration != null &&
@@ -30,7 +36,7 @@ export function applyMCPDiscoveryAuthorizationState(
     }
     changed = true;
     nextStatus[serverName] = {
-      ...nextStatus[serverName],
+      ...current,
       requiresOAuth: true,
       connectionState: 'disconnected',
       authorizationState: 'needs_authorization',
