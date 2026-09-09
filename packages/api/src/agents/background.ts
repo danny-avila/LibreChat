@@ -52,8 +52,8 @@ import type {
   BackgroundToolResultClaim,
   BackgroundToolResultRecord,
 } from '@librechat/data-schemas';
-import type { BackgroundToolResultState } from './harvest';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { BackgroundToolResultState } from './harvest';
 import type { CapabilityToolNames } from './selection';
 import {
   BACKGROUND_TASK_TIMEOUT_MS,
