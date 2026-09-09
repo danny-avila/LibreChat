@@ -17,7 +17,18 @@ export function applyMCPDiscoveryAuthorizationState(
   }
 
   const nextStatus = { ...(connectionStatus ?? {}) };
+  let changed = false;
   for (const serverName of reauthRequired) {
+    const discoveryGeneration = discoveredTools?.servers[serverName]?.authorizationGeneration;
+    const statusGeneration = nextStatus?.[serverName]?.authorizationGeneration;
+    if (
+      discoveryGeneration != null &&
+      statusGeneration != null &&
+      discoveryGeneration !== statusGeneration
+    ) {
+      continue;
+    }
+    changed = true;
     nextStatus[serverName] = {
       ...nextStatus[serverName],
       requiresOAuth: true,
@@ -25,7 +36,7 @@ export function applyMCPDiscoveryAuthorizationState(
       authorizationState: 'needs_authorization',
     };
   }
-  return nextStatus;
+  return changed ? nextStatus : connectionStatus;
 }
 
 export type MCPOAuthPollingOutcome = 'pending' | 'completed' | 'failed';

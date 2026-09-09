@@ -218,6 +218,7 @@ describe('recoverMCPServerCatalogs', () => {
   });
 
   it('retains reauthorization state and recovered public tools during the retry window', async () => {
+    let recoveryGeneration = 'generation-1';
     const discoverServerTools = jest.fn().mockResolvedValue({
       tools: [{ name: 'public-tool', inputSchema: { type: 'object' as const } }],
       oauthRequired: true,
@@ -232,6 +233,7 @@ describe('recoverMCPServerCatalogs', () => {
       discoverServerTools,
       formatServerTools: jest.fn().mockReturnValue(availableTools('public-tool')),
       recoveryTracker,
+      getRecoveryGeneration: jest.fn(async () => recoveryGeneration),
     };
 
     const first = await loadMCPServerCatalogs({ user, servers }, deps);
@@ -239,9 +241,17 @@ describe('recoverMCPServerCatalogs', () => {
 
     expect(discoverServerTools).toHaveBeenCalledTimes(1);
     expect(first.reauthRequiredServers).toEqual(new Set(['oauth-server']));
+    expect(first.reauthRequiredGenerations).toEqual(new Map([['oauth-server', 'generation-1']]));
     expect(first.serverTools).toEqual(new Map([['oauth-server', availableTools('public-tool')]]));
     expect(second.reauthRequiredServers).toEqual(new Set(['oauth-server']));
     expect(second.serverTools).toEqual(new Map());
+
+    recoveryGeneration = 'generation-2';
+    const afterCredentialMutation = await loadMCPServerCatalogs({ user, servers }, deps);
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+    expect(afterCredentialMutation.reauthRequiredGenerations).toEqual(
+      new Map([['oauth-server', 'generation-2']]),
+    );
   });
 
   it('backs off non-OAuth authorization failures instead of requesting reauthorization', async () => {

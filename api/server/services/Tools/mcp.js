@@ -63,7 +63,7 @@ async function loadMCPServerCatalogs({
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
   return loadCatalogs(
-    { user, servers, signal, ...(recoveryPolicy && { recoveryPolicy }) },
+    { user, servers, signal, recoveryPolicy },
     {
       loadUserMCPAuthMap: (userId, serverNames) =>
         getUserMCPAuthMap({

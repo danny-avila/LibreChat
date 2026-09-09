@@ -16,6 +16,7 @@ describe('applyMCPDiscoveryAuthorizationState', () => {
           requiresOAuth: true,
           connectionState: 'connected',
           authorizationState: 'authorized',
+          authorizationGeneration: 'generation-1',
         },
       },
       {
@@ -25,6 +26,7 @@ describe('applyMCPDiscoveryAuthorizationState', () => {
             icon: '',
             authenticated: false,
             authorizationState: 'reauth_required',
+            authorizationGeneration: 'generation-1',
             authConfig: [],
             tools: [],
           },
@@ -36,7 +38,34 @@ describe('applyMCPDiscoveryAuthorizationState', () => {
       requiresOAuth: true,
       connectionState: 'disconnected',
       authorizationState: 'needs_authorization',
+      authorizationGeneration: 'generation-1',
     });
+  });
+
+  it('keeps status from a newer shared authorization generation', () => {
+    const currentStatus = {
+      oauth: {
+        requiresOAuth: true,
+        connectionState: 'connected' as const,
+        authorizationState: 'authorized' as const,
+        authorizationGeneration: 'generation-2',
+      },
+    };
+    const result = applyMCPDiscoveryAuthorizationState(currentStatus, {
+      servers: {
+        oauth: {
+          name: 'oauth',
+          icon: '',
+          authenticated: false,
+          authorizationState: 'reauth_required',
+          authorizationGeneration: 'generation-1',
+          authConfig: [],
+          tools: [],
+        },
+      },
+    });
+
+    expect(result).toBe(currentStatus);
   });
 });
 

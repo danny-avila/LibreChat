@@ -4,6 +4,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { LCAvailableTools, ParsedServerConfig, ToolDiscoveryOptions } from '../types';
 import { hasCustomUserVars, getMissingCustomUserVars } from '../utils';
+import { getMCPToolsChangedGeneration } from '../toolsChanged';
 import { usesDirectOpenIDBearerRecovery } from '../openid';
 import { getServerCustomUserVars } from '../auth';
 import { mcpConfig } from '../mcpConfig';
@@ -43,6 +44,7 @@ export interface MCPServerCatalogRecoveryDeps {
   }>;
   formatServerTools: (serverName: string, tools: Tool[]) => LCAvailableTools;
   recoveryTracker?: MCPServerCatalogRecoveryTracker;
+  getRecoveryGeneration?: (userId: string, serverName: string) => Promise<string | undefined>;
 }
 
 export interface MCPServerCatalogRecoveryPolicy {
@@ -83,11 +85,13 @@ export interface MCPServerCatalogLoaderResult {
   serverTools: Map<string, LCAvailableTools>;
   serversWithoutTools: string[];
   reauthRequiredServers: Set<string>;
+  reauthRequiredGenerations: Map<string, string | undefined>;
 }
 
 interface MCPServerCatalogRecoveryResult {
   serverTools: Map<string, LCAvailableTools>;
   reauthRequiredServers: Set<string>;
+  reauthRequiredGenerations: Map<string, string | undefined>;
 }
 
 interface MCPServerCatalogEntry extends MCPServerCatalogSnapshot {
@@ -104,6 +108,7 @@ type RecoveryOutcome = {
   serverName: string;
   tools: LCAvailableTools | null;
   state?: 'reauth_required' | 'backoff';
+  recoveryGeneration?: string;
 };
 
 interface RecoveryStateEntry {
@@ -133,6 +138,23 @@ export class MCPCatalogCapacityError extends Error {
   }
 }
 
+/** Reads the cross-replica credential/catalog fence without making status or recovery depend on
+ * shared-cache availability. Process-local suppression remains bounded as a fallback. */
+export async function getMCPAuthorizationGeneration(
+  userId: string,
+  serverName: string,
+): Promise<string | undefined> {
+  try {
+    return await getMCPToolsChangedGeneration({ userId, serverName });
+  } catch (error) {
+    logger.debug(
+      `[MCP catalog recovery] Could not read shared generation for ${serverName}; using process-local state`,
+      error,
+    );
+    return undefined;
+  }
+}
+
 /** Bounds one server's discovery, honouring a shorter operator `initTimeout`. */
 function resolveBudget(serverConfig: ParsedServerConfig): number {
   const { initTimeout } = serverConfig;
@@ -149,8 +171,9 @@ function getRecoveryKey(userId: string, serverName: string): string {
 function getRecoveryFingerprint(
   serverConfig: ParsedServerConfig,
   policy: MCPServerCatalogRecoveryPolicy,
+  recoveryGeneration?: string,
 ): string {
-  return JSON.stringify([serverConfig, policy]);
+  return JSON.stringify([serverConfig, policy, recoveryGeneration]);
 }
 
 export class MCPServerCatalogRecoveryTracker {
@@ -174,10 +197,15 @@ export class MCPServerCatalogRecoveryTracker {
     user: IUser,
     candidate: RecoveryCandidate,
     policy: MCPServerCatalogRecoveryPolicy,
+    recoveryGeneration: string | undefined,
     discover: () => Promise<RecoveryOutcome>,
   ): Promise<RecoveryOutcome> {
     const key = getRecoveryKey(user.id, candidate.serverName);
-    const configFingerprint = getRecoveryFingerprint(candidate.serverConfig, policy);
+    const configFingerprint = getRecoveryFingerprint(
+      candidate.serverConfig,
+      policy,
+      recoveryGeneration,
+    );
     const now = Date.now();
     const existing = this.states.get(key);
     if (existing?.configFingerprint === configFingerprint) {
@@ -203,6 +231,7 @@ export class MCPServerCatalogRecoveryTracker {
         }
         entry.lastTouchedAt = Date.now();
         if (outcome.state === 'reauth_required') {
+          outcome.recoveryGeneration = recoveryGeneration;
           entry.failureCount = 0;
           entry.nextRetryAt = entry.lastTouchedAt + policy.reauthRetryMs;
           /** Keep the authorization decision, but never promote an unfenced discovery catalog
@@ -407,7 +436,11 @@ async function recoverMCPServerCatalogsWithState(
     return false;
   });
   if (recoverable.length === 0) {
-    return { serverTools: new Map(), reauthRequiredServers: new Set() };
+    return {
+      serverTools: new Map(),
+      reauthRequiredServers: new Set(),
+      reauthRequiredGenerations: new Map(),
+    };
   }
 
   /** Only credential-bearing servers can consume the auth map, so a list without any avoids
@@ -437,7 +470,11 @@ async function recoverMCPServerCatalogsWithState(
     authorized.push({ ...candidate, customUserVars });
   }
   if (authorized.length === 0) {
-    return { serverTools: new Map(), reauthRequiredServers: new Set() };
+    return {
+      serverTools: new Map(),
+      reauthRequiredServers: new Set(),
+      reauthRequiredGenerations: new Map(),
+    };
   }
 
   const results: Array<RecoveryOutcome | undefined> = [];
@@ -448,11 +485,16 @@ async function recoverMCPServerCatalogsWithState(
       const usesRequestCredential =
         candidate.serverConfig.obo != null ||
         usesDirectOpenIDBearerRecovery(candidate.serverConfig);
-      results[index] = usesRequestCredential
-        ? await discoverCandidate(user, candidate, deps, signal)
-        : await tracker.run(user, candidate, policy, () =>
-            discoverCandidate(user, candidate, deps),
-          );
+      if (usesRequestCredential) {
+        results[index] = await discoverCandidate(user, candidate, deps, signal);
+        return;
+      }
+      const recoveryGeneration = await (
+        deps.getRecoveryGeneration ?? getMCPAuthorizationGeneration
+      )(user.id, candidate.serverName);
+      results[index] = await tracker.run(user, candidate, policy, recoveryGeneration, () =>
+        discoverCandidate(user, candidate, deps),
+      );
     }),
     signal,
   );
@@ -462,15 +504,17 @@ async function recoverMCPServerCatalogsWithState(
 
   const serverTools = new Map<string, LCAvailableTools>();
   const reauthRequiredServers = new Set<string>();
+  const reauthRequiredGenerations = new Map<string, string | undefined>();
   for (const result of results) {
     if (result?.tools != null) {
       serverTools.set(result.serverName, result.tools);
     }
     if (result?.state === 'reauth_required') {
       reauthRequiredServers.add(result.serverName);
+      reauthRequiredGenerations.set(result.serverName, result.recoveryGeneration);
     }
   }
-  return { serverTools, reauthRequiredServers };
+  return { serverTools, reauthRequiredServers, reauthRequiredGenerations };
 }
 
 /** Preserves the public recovery helper's Map contract for existing package consumers. */
@@ -546,6 +590,7 @@ export async function loadMCPServerCatalogs(
   let recovered: MCPServerCatalogRecoveryResult = {
     serverTools: new Map(),
     reauthRequiredServers: new Set(),
+    reauthRequiredGenerations: new Map(),
   };
   if (coldServers.length > 0) {
     try {
@@ -598,5 +643,6 @@ export async function loadMCPServerCatalogs(
     serverTools,
     serversWithoutTools,
     reauthRequiredServers: recovered.reauthRequiredServers,
+    reauthRequiredGenerations: recovered.reauthRequiredGenerations,
   };
 }

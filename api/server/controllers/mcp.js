@@ -230,15 +230,14 @@ const getMCPTools = async (req, res) => {
         }),
         oboIdentityContext,
         signal: catalogAbortController.signal,
-        ...(req.config?.mcpSettings?.catalogRecovery && {
-          recoveryPolicy: req.config.mcpSettings.catalogRecovery,
-        }),
+        recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
       });
     } finally {
       res.off('close', abortCatalogLoad);
     }
     const { serverTools: serverToolsMap, serversWithoutTools } = catalogResult;
     const reauthRequiredServers = catalogResult.reauthRequiredServers ?? new Set();
+    const reauthRequiredGenerations = catalogResult.reauthRequiredGenerations ?? new Map();
     if (serversWithoutTools.length > 0) {
       logger.debug(
         `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
@@ -258,6 +257,7 @@ const getMCPTools = async (req, res) => {
           authenticated: !reauthRequiredServers.has(serverName),
           ...(reauthRequiredServers.has(serverName) && {
             authorizationState: 'reauth_required',
+            authorizationGeneration: reauthRequiredGenerations.get(serverName),
           }),
           authConfig: [],
           tools: [],

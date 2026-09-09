@@ -30,6 +30,7 @@ const {
   MCPAuthenticationRejectedError,
   MCPAuthenticationRefreshError,
   OpenIDReauthRequiredError,
+  getMCPAuthorizationGeneration,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -533,6 +534,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               await rollbackStoredTokens(storedTokens);
               throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
             }
+            await invalidateCachedTools({ userId: flowState.userId, serverName });
             getMCPManager()?.clearCatalogRecoveryState?.(flowState.userId, serverName);
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
@@ -1034,16 +1036,19 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       await Promise.all(
         Object.entries(mcpConfig).map(async ([serverName, config]) => {
           try {
-            const status = await getServerConnectionStatus(
-              user.id,
-              serverName,
-              config,
-              appConnections,
-              userConnections,
-              oauthServers,
-              runtimeContext,
-            );
-            return [serverName, status];
+            const [status, authorizationGeneration] = await Promise.all([
+              getServerConnectionStatus(
+                user.id,
+                serverName,
+                config,
+                appConnections,
+                userConnections,
+                oauthServers,
+                runtimeContext,
+              ),
+              getMCPAuthorizationGeneration(user.id, serverName),
+            ]);
+            return [serverName, { ...status, authorizationGeneration }];
           } catch (error) {
             const message = `Failed to get status for server "${serverName}"`;
             logger.error(`[MCP Connection Status] ${message},`, error);
@@ -1101,15 +1106,18 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
 
     const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, [serverName]);
 
-    const serverStatus = await getServerConnectionStatus(
-      user.id,
-      serverName,
-      mcpConfig[serverName],
-      appConnections,
-      userConnections,
-      oauthServers,
-      runtimeContext,
-    );
+    const [serverStatus, authorizationGeneration] = await Promise.all([
+      getServerConnectionStatus(
+        user.id,
+        serverName,
+        mcpConfig[serverName],
+        appConnections,
+        userConnections,
+        oauthServers,
+        runtimeContext,
+      ),
+      getMCPAuthorizationGeneration(user.id, serverName),
+    ]);
 
     res.json({
       success: true,
@@ -1119,6 +1127,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       requestScoped: serverStatus.requestScoped,
       configurationState: serverStatus.configurationState,
       authorizationState: serverStatus.authorizationState,
+      authorizationGeneration,
     });
   } catch (error) {
     logger.error(

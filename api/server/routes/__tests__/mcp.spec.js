@@ -71,6 +71,7 @@ jest.mock('@librechat/api', () => {
     getMCPServerGeneration: jest.fn((config) =>
       config.dbId ? `db:${config.dbId}` : `config:${JSON.stringify(config)}`,
     ),
+    getMCPAuthorizationGeneration: jest.fn().mockResolvedValue(undefined),
     MCPConnection: {
       clearCooldown: jest.fn(),
     },
@@ -982,6 +983,10 @@ describe('MCP Routes', () => {
           'test-user-id',
           'test-server',
         );
+        expect(require('~/server/services/Config').invalidateCachedTools).toHaveBeenCalledWith({
+          userId: 'test-user-id',
+          serverName: 'test-server',
+        });
       });
 
       it('should use the merged server config to defer request-scoped post-OAuth reconnect', async () => {
@@ -2987,6 +2992,7 @@ describe('MCP Routes', () => {
         requiresOAuth: true,
         authorizationState: 'needs_authorization',
       });
+      require('@librechat/api').getMCPAuthorizationGeneration.mockResolvedValueOnce('generation-2');
 
       const response = await request(app).get('/api/mcp/connection/status/oauth-server');
 
@@ -2997,6 +3003,7 @@ describe('MCP Routes', () => {
         connectionStatus: 'requires_auth',
         requiresOAuth: true,
         authorizationState: 'needs_authorization',
+        authorizationGeneration: 'generation-2',
       });
     });
 
