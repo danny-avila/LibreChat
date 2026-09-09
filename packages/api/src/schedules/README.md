@@ -1,10 +1,13 @@
 # Unattended MCP support
 
-Scheduled chats validate the selected agent and its graph agents before creation,
+Scheduled chats validate the selected agent and its accessible graph agents before creation,
 when enabling or changing the agent, and before each automatic or manual dispatch.
 The check uses the persisted user document and plugin credentials, with temporary
 user connections that are disposed afterwards. It does not borrow a browser session
-or replace a live interactive connection. Tool discovery must complete and contain
+or replace a live interactive connection. Graph agents are loaded in breadth-first
+batches, and private children are skipped with the same VIEW rule as a live run.
+Enabled spawn-agent members are included when the endpoint grants that capability.
+Tool discovery must complete and contain
 all explicitly selected tools; wildcard selections require a nonempty catalog.
 
 Supported authentication is determined by a successful unattended connection:

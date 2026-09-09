@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import {
+  AgentCapabilities,
   Constants,
+  EModelEndpoint,
+  MAX_SUBAGENT_GRAPH_NODES,
   Permissions,
   PermissionTypes,
   isActionTool,
@@ -43,7 +46,10 @@ export class ScheduleMCPError extends Error {
 }
 
 interface ScheduleMCPDeps {
-  getAgent: (id: string) => Promise<Pick<IAgent, 'tools' | 'agent_ids' | 'edges'> | null>;
+  getAgents: (
+    ids: string[],
+  ) => Promise<Array<Pick<IAgent, '_id' | 'id' | 'tools' | 'agent_ids' | 'edges' | 'subagents'>>>;
+  canViewAgent: (agent: Pick<IAgent, '_id'>, user: IUser) => Promise<boolean>;
   getRoleByName: CheckAccessParams['getRoleByName'];
   getUser: (id: string) => Promise<IUser | null>;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
@@ -64,29 +70,55 @@ interface ScheduleMCPDeps {
 /** Probes only persisted identity and credentials, with isolated user connections and no OAuth wait. */
 export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPreflight {
   return async (agentId, principal) => {
+    const user = await deps.getUser(principal.id);
+    if (!user) throw new ScheduleMCPError([]);
+    user.id = principal.id;
+    let appConfig: AppConfig | undefined;
+    const loadAppConfig = async (): Promise<AppConfig | undefined> => {
+      appConfig ??= await deps.getAppConfig({
+        ...getAppConfigOptionsFromUser(principal),
+        failClosed: true,
+      });
+      return appConfig;
+    };
     const tools: string[] = [];
     const visited = new Set<string>();
-    const pending = [agentId];
+    let pending = [agentId];
     while (pending.length > 0) {
-      const id = pending.pop()!;
-      if (visited.has(id) || id === '__start__' || id === '__end__') continue;
-      visited.add(id);
-      const agent = await deps.getAgent(id);
-      if (!agent) throw new ScheduleMCPError([{ server: id, status: 'mcp_configuration_missing' }]);
-      tools.push(...(agent.tools ?? []).filter((tool) => !isActionTool(tool)));
-      pending.push(...(agent.agent_ids ?? []));
-      for (const edge of agent.edges ?? []) {
-        pending.push(...[edge.from, edge.to].flat());
+      const frontier = Array.from(
+        new Set(pending.filter((id) => !visited.has(id) && id !== '__start__' && id !== '__end__')),
+      );
+      pending = [];
+      if (frontier.length === 0) break;
+      if (visited.size + frontier.length > MAX_SUBAGENT_GRAPH_NODES) {
+        throw new ScheduleMCPError([]);
+      }
+      frontier.forEach((id) => visited.add(id));
+      const loaded = await deps.getAgents(frontier);
+      const byId = new Map(loaded.map((agent) => [agent.id, agent]));
+      const accessible = await Promise.all(
+        frontier.map(async (id) => {
+          const agent = byId.get(id);
+          if (!agent || (id !== agentId && !(await deps.canViewAgent(agent, user)))) return null;
+          return agent;
+        }),
+      );
+      for (const agent of accessible) {
+        if (!agent) continue;
+        tools.push(...(agent.tools ?? []).filter((tool) => !isActionTool(tool)));
+        pending.push(...(agent.agent_ids ?? []));
+        for (const edge of agent.edges ?? []) pending.push(...[edge.from, edge.to].flat());
+        if (!agent.subagents?.enabled) continue;
+        const config = await loadAppConfig();
+        const capabilities = config?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
+        if (!capabilities.includes(AgentCapabilities.subagents)) continue;
+        pending.push(...(agent.subagents.agent_ids ?? []));
+        pending.push(...(agent.subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? []));
       }
     }
     if (!tools.some((tool) => tool.includes(Constants.mcp_delimiter))) return [];
 
-    const user = await deps.getUser(principal.id);
-    if (!user)
-      throw new ScheduleMCPError([{ server: agentId, status: 'mcp_configuration_missing' }]);
-    user.id = principal.id;
-    const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(principal));
-    const config = await deps.ensureConfigServers(appConfig?.mcpConfig ?? {});
+    const config = await deps.ensureConfigServers((await loadAppConfig())?.mcpConfig ?? {});
     const servers = await deps.getServerConfigs(principal.id, config, principal.role);
     const aliases = buildServerNameAliases(Object.keys(servers));
     const shadowed = findShadowedServerNames(Object.keys(servers));

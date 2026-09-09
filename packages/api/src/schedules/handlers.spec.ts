@@ -419,6 +419,9 @@ describe('create with a cron cadence', () => {
     } as unknown as ISchedule;
     const deps = makeCreateDeps({
       isUserDeleting: jest.fn(async () => false),
+      preflightMCP: jest.fn(async () => {
+        throw new Error('MCP became unavailable after the first create');
+      }),
       getLimits: async () => ({
         enabled: true,
         maxPerUser: 10,
@@ -436,6 +439,7 @@ describe('create with a cron cadence', () => {
     await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
 
     expect(captured.status).not.toBe(400);
+    expect(deps.preflightMCP).not.toHaveBeenCalled();
     expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
   });
 

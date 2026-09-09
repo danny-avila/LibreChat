@@ -1,5 +1,5 @@
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { IUser, IRole } from '@librechat/data-schemas';
+import type { IUser, IRole, AppConfig } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '../mcp/types';
 import { createScheduleMCPPreflight, ScheduleMCPError } from './mcp';
 
@@ -9,7 +9,8 @@ const server: ParsedServerConfig = { type: 'streamable-http', url: 'https://mcp.
 function setup(tools = ['search_mcp_docs']) {
   const disconnect = jest.fn();
   const deps: Parameters<typeof createScheduleMCPPreflight>[0] = {
-    getAgent: jest.fn(async () => ({ tools })),
+    getAgents: jest.fn(async (ids) => ids.map((id) => ({ _id: id as never, id, tools }))),
+    canViewAgent: jest.fn(async () => true),
     getRoleByName: jest.fn(
       async () =>
         ({ permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } } }) as IRole,
@@ -37,7 +38,6 @@ function setup(tools = ['search_mcp_docs']) {
 it('leaves agents without MCP tools independent of MCP config and credentials', async () => {
   const { check, deps } = setup(['web_search']);
   await expect(check('agent', principal)).resolves.toEqual([]);
-  expect(deps.getUser).not.toHaveBeenCalled();
   expect(deps.connect).not.toHaveBeenCalled();
 });
 
@@ -111,13 +111,81 @@ it('classifies a transport outage as retryable', async () => {
 
 it('checks graph agents once even when edges cycle', async () => {
   const { check, deps } = setup();
-  deps.getAgent = jest.fn(async (id) =>
-    id === 'root'
-      ? { tools: [], edges: [{ from: 'root', to: 'child' }] }
-      : { tools: ['search_mcp_docs'], agent_ids: ['root'] },
+  deps.getAgents = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? { _id: id as never, id, tools: [], edges: [{ from: 'root', to: 'child' }] }
+        : { _id: id as never, id, tools: ['search_mcp_docs'], agent_ids: ['root'] },
+    ),
   );
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
-  expect(deps.getAgent).toHaveBeenCalledTimes(2);
+  expect(deps.getAgents).toHaveBeenCalledTimes(2);
+});
+
+it('loads each graph frontier in one batch', async () => {
+  const childIds = Array.from({ length: 20 }, (_, index) => `child-${index}`);
+  const { check, deps } = setup();
+  deps.getAgents = jest.fn(async (ids) =>
+    ids.map((id) => ({
+      _id: id as never,
+      id,
+      tools: id === childIds[0] ? ['search_mcp_docs'] : [],
+      edges: id === 'root' ? childIds.map((childId) => ({ from: 'root', to: childId })) : undefined,
+    })),
+  );
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgents).toHaveBeenNthCalledWith(1, ['root']);
+  expect(deps.getAgents).toHaveBeenNthCalledWith(2, childIds);
+  expect(deps.getAgents).toHaveBeenCalledTimes(2);
+});
+
+it('skips MCP tools on graph agents the owner cannot view', async () => {
+  const { check, deps } = setup();
+  deps.getAgents = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? { _id: id as never, id, tools: [], edges: [{ from: 'root', to: 'private' }] }
+        : { _id: id as never, id, tools: ['search_mcp_docs'] },
+    ),
+  );
+  deps.canViewAgent = async () => false;
+  await expect(check('root', principal)).resolves.toEqual([]);
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
+it('includes enabled spawn-graph members when the capability is available', async () => {
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: ['subagents'] } },
+      }) as AppConfig,
+  );
+  deps.getAgents = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? {
+            _id: id as never,
+            id,
+            tools: [],
+            subagents: {
+              enabled: true,
+              graphs: [{ name: 'research', type: 'single_agent', agent_ids: ['spawned'] }],
+            } as never,
+          }
+        : { _id: id as never, id, tools: ['search_mcp_docs'] },
+    ),
+  );
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+});
+
+it('propagates principal-config outages instead of reporting missing configuration', async () => {
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(async (options) => {
+    expect(options).toMatchObject({ failClosed: true });
+    throw new Error('principal config unavailable');
+  });
+  await expect(check('agent', principal)).rejects.not.toBeInstanceOf(ScheduleMCPError);
 });
 
 it('rejects an explicitly selected tool removed from an otherwise healthy server', async () => {

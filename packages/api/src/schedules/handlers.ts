@@ -603,7 +603,6 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
-    if (!(await validateMCP(parsed.data.agent_id, req, res))) return;
     // Digested from the CLIENT's payload, never from the policy-resolved destination:
     // the digest records one create INTENT, and today's policy is not part of that
     // intent. Resolving first made an operator's pin change (or a deleted project)
@@ -674,6 +673,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       await respondToReplay(replayed);
       return;
     }
+    if (!(await validateMCP(parsed.data.agent_id, req, res))) return;
     // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
     // replay lookup above. A committed create whose response was lost must still be
     // recoverable by an identical retry: applying today's policy first let a raised

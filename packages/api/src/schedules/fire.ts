@@ -574,20 +574,25 @@ export async function fireSchedule(
     try {
       mcp = await deps.preflightMCP(schedule.agent_id, user);
     } catch (error) {
-      const failure =
-        error instanceof ScheduleMCPError
-          ? error
-          : new ScheduleMCPError([{ server: schedule.agent_id, status: 'mcp_unavailable' }]);
+      if (
+        claimToken != null &&
+        !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
+      ) {
+        await rollbackReservation(conversationId);
+        return stepAsideSuperseded();
+      }
+      const failure = error instanceof ScheduleMCPError ? error : null;
+      const message = failure?.message ?? 'MCP preflight unavailable';
       await methods.recordRunOutcome({
         scheduleId: schedule.id,
         scheduledFor,
         status: 'error',
-        error: failure.message,
+        error: message,
         autoDisableAfterFailures: ownerLimits.autoDisableAfterFailures,
         clearConversationId: true,
       });
       await advance();
-      return { fired: false, error: failure.message, mcp: failure.outcomes };
+      return { fired: false, error: message, ...(failure ? { mcp: failure.outcomes } : {}) };
     }
 
     // Last check before the point of no return: re-verify this fire still holds an

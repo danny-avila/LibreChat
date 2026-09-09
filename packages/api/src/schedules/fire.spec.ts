@@ -836,3 +836,32 @@ it('settles an unavailable MCP occurrence without dispatching a generation', asy
     expect.objectContaining({ error: failure.message, status: 'error', clearConversationId: true }),
   );
 });
+
+it('does not settle or disable from a failed MCP preflight after losing its claim', async () => {
+  const { methods } = makeMethods();
+  (methods.revalidateClaim as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
+  const deps = makeDeps(methods, {
+    preflightMCP: async () => {
+      throw new ScheduleMCPError([{ server: 'Notion', status: 'mcp_reauth_required' }]);
+    },
+  });
+  const result = await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'));
+  expect(result.skipped).toBe('superseded');
+  expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  expect(methods.advanceSchedule).not.toHaveBeenCalled();
+});
+
+it('does not invent a server outcome for infrastructure preflight failures', async () => {
+  const { methods } = makeMethods();
+  const deps = makeDeps(methods, {
+    preflightMCP: async () => {
+      throw new Error('role database unavailable with private details');
+    },
+  });
+  const result = await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'));
+  expect(result).toMatchObject({ fired: false, error: 'MCP preflight unavailable' });
+  expect(result.mcp).toBeUndefined();
+  expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+    expect.objectContaining({ error: 'MCP preflight unavailable' }),
+  );
+});
