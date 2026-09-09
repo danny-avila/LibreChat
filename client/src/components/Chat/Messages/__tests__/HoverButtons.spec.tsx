@@ -387,6 +387,43 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
 
+  /** An artifact keeps its own read-only renderer, so a chained reply made only of
+   *  one has no field to type in and no turn to replay: its editor would be dead. */
+  it('withholds the editor on a chained model turn whose only content is an artifact', () => {
+    const firstReply = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: 'Here it comes',
+    } as TMessage;
+    const artifactReply = {
+      ...userMessage,
+      messageId: 'assistant-2',
+      parentMessageId: firstReply.messageId,
+      isCreatedByUser: false,
+      text: '',
+      content: [
+        {
+          type: ContentTypes.TEXT,
+          text: ':::artifact{identifier="demo" type="text/html" title="Demo"}\n<div />\n:::',
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: artifactReply,
+      isLast: true,
+      latestMessageId: artifactReply.messageId,
+      thread: [userMessage, firstReply, artifactReply],
+    });
+
+    expect(screen.getByTestId('copy-response-button')).not.toBeNull();
+    expect(container.querySelector(`#edit-${artifactReply.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+  });
+
   /** A response whose parts the editor cannot show a field for still opens the
    *  editor when there is a user turn behind it: its Rerun is the point. */
   it('keeps the editor on an uneditable response that still has a user turn behind it', () => {

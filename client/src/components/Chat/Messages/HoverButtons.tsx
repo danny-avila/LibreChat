@@ -1,4 +1,4 @@
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { Copy, Check } from 'lucide';
 import { useRecoilState } from 'recoil';
 import { findMessageById, isUserInitiatedCompaction } from 'librechat-data-provider';
@@ -13,11 +13,12 @@ import {
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { useOptionalMessagesOperations } from '~/Providers';
+import { hasEditablePart } from './Content/editableParts';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
-import { cn, hasEditablePart } from '~/utils';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
+import { cn } from '~/utils';
 import store from '~/store';
 
 type THoverButtons = {
@@ -160,6 +161,10 @@ const HoverButtons = ({
     return parent == null ? undefined : parent.isCreatedByUser === true;
   }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
 
+  /** Resolved only if the row has nothing to replay, because the artifact check
+   *  inside parses markdown. */
+  const getHasEditablePart = useCallback(() => hasEditablePart(message), [message]);
+
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
     isSubmitting,
@@ -169,7 +174,7 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
-    hasEditablePart: hasEditablePart(message),
+    getHasEditablePart,
     parentIsUserMessage,
     isUserInitiatedCompaction: isUserInitiatedCompaction(message),
     latestMessageId: latestMessageId,

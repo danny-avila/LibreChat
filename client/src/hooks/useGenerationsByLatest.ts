@@ -10,9 +10,10 @@ type TUseGenerations = {
   finish_reason?: string;
   latestMessageId?: string;
   isCreatedByUser?: boolean;
-  /** The editor would show at least one field for this message. A turn made only
-   *  of a summary, an error or tool calls offers none. */
-  hasEditablePart?: boolean;
+  /** Whether the editor would show a field for this message, resolved lazily: it
+   *  parses markdown to spot a read-only artifact, and only a turn with nothing to
+   *  replay needs the answer. */
+  getHasEditablePart?: () => boolean;
   /** For a model turn: whether the message it hangs off is the user turn a rerun
    *  would replay. `undefined` when the thread is unavailable (a search or share
    *  row) or the parent was not resolved, which withholds nothing. */
@@ -34,7 +35,7 @@ export default function useGenerationsByLatest({
   finish_reason = '',
   latestMessageId,
   isCreatedByUser = false,
-  hasEditablePart = true,
+  getHasEditablePart,
   parentIsUserMessage,
   isUserInitiatedCompaction = false,
 }: TUseGenerations) {
@@ -106,7 +107,7 @@ export default function useGenerationsByLatest({
     isActiveStreamingMessage ||
     error ||
     searchResult ||
-    (hasNoTurnToReplay && !hasEditablePart) ||
+    (hasNoTurnToReplay && getHasEditablePart?.() === false) ||
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 

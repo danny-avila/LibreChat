@@ -399,25 +399,6 @@ export const getPartKeyIndex = (part: TMessageContentParts | undefined, idx: num
 export const isSubmittableMessage = (text?: string | null, fileCount = 0): boolean =>
   (text ?? '').trim() !== '' || fileCount > 0;
 
-/**
- * Whether the editor would give this message a field to type in. A message with
- * no content array is edited as plain text, so it always has one; a content
- * array offers one per text or reasoning part, which is what `EditContentParts`
- * renders. A turn made only of a summary, an error or tool calls — a manual
- * compaction, finished or failed — offers none, so its editor is empty.
- */
-export const hasEditablePart = (message?: Pick<TMessage, 'content'> | null): boolean => {
-  const content = message?.content;
-  if (!Array.isArray(content)) {
-    return true;
-  }
-  return content.some(
-    (part) =>
-      (part?.type === ContentTypes.TEXT && part.tool_call_ids == null) ||
-      part?.type === ContentTypes.THINK,
-  );
-};
-
 export const hasStreamStartFailed = (message?: Pick<TMessage, 'metadata'> | null): boolean =>
   message?.metadata?.[STREAM_START_FAILED_METADATA_KEY] === true;
 

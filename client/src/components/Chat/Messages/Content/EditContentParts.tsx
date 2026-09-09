@@ -3,10 +3,10 @@ import { useRecoilValue } from 'recoil';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { ContentTypes, stripReasoningLabelMetadata } from 'librechat-data-provider';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
-import type { TMessageContentParts, TextData } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useMessagesConversation, useMessagesOperations } from '~/Providers';
-import { splitMarkdownIntoBlocks } from './splitMarkdown';
+import { getPartText, isEditablePart, withPartText } from './editableParts';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -30,41 +30,6 @@ type EditContentPartsProps = {
   siblingIdx: number | null;
   setSiblingIdx: (value: number) => void;
   renderReadOnlyPart: (part: TMessageContentParts, index: number, isLastPart: boolean) => ReactNode;
-};
-
-/** An editable part holds either a bare string or a `{ value, annotations }` object,
- *  which is how the Assistants thread sync stores a response that carries file
- *  citations. Both the read and the write below go through this, so an edit lands in
- *  the same shape it was read from. */
-const getPartValue = (part: TMessageContentParts): string | TextData => {
-  if (part.type === ContentTypes.TEXT) {
-    return part.text;
-  }
-  if (part.type === ContentTypes.THINK) {
-    return part.think;
-  }
-  return undefined;
-};
-
-const getPartText = (part: TMessageContentParts): string | undefined => {
-  const value = getPartValue(part);
-  return typeof value === 'string' ? value : value?.value;
-};
-
-const withPartText = (part: TMessageContentParts, text: string): string | TextData => {
-  const value = getPartValue(part);
-  return value != null && typeof value === 'object' ? { ...value, value: text } : text;
-};
-
-const containsArtifact = (text: string): boolean => {
-  if (!text.includes('artifact')) {
-    return false;
-  }
-  try {
-    return splitMarkdownIntoBlocks(text).some((block) => block.artifactCount > 0);
-  } catch {
-    return false;
-  }
 };
 
 export default function EditContentParts({
@@ -92,20 +57,17 @@ export default function EditContentParts({
   const editableParts = useMemo<EditablePart[]>(() => {
     const result: EditablePart[] = [];
     content.forEach((part, localIndex) => {
-      if (!part || (part.type !== ContentTypes.TEXT && part.type !== ContentTypes.THINK)) {
-        return;
-      }
-      if (part.type === ContentTypes.TEXT && part.tool_call_ids != null) {
+      if (!part || !isEditablePart(part)) {
         return;
       }
       const original = getPartText(part);
-      if (original == null || containsArtifact(original)) {
+      if (original == null) {
         return;
       }
       result.push({
         index: localIndex + contentIndexOffset,
         localIndex,
-        type: part.type,
+        type: part.type as EditableType,
         original,
       });
     });

@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { LocalizeFunction, TMessageProps } from '~/common';
@@ -15,7 +15,6 @@ import {
   areMessageRowPropsEqual,
   isSubmittableMessage,
   createDualMessageContent,
-  hasEditablePart,
 } from '../messages';
 
 const translations: Record<string, string> = {
@@ -489,45 +488,5 @@ describe('createDualMessageContent', () => {
       asConvo({ endpoint: 'agents', agent_id: 'agent_abc123' }),
     );
     expect(agentIds(parts)).toEqual(['agent_abc123', 'agent_abc123____1']);
-  });
-});
-
-describe('hasEditablePart', () => {
-  it.each([
-    ['a message with no content array', undefined],
-    ['a text part', [{ type: ContentTypes.TEXT, text: 'an answer' }]],
-    ['a reasoning part', [{ type: ContentTypes.THINK, think: 'thinking out loud' }]],
-    [
-      'a text part beside a tool call',
-      [
-        { type: ContentTypes.TOOL_CALL, tool_call: {} },
-        { type: ContentTypes.TEXT, text: 'an answer' },
-      ],
-    ],
-  ])('is true for %s', (_label, content) => {
-    expect(hasEditablePart({ content } as TMessage)).toBe(true);
-  });
-
-  /** These are the turns whose editor would open with no field at all: a manual
-   *  compaction that finished, one that persisted an error part instead, and a
-   *  response whose only text belongs to a tool call. */
-  it.each([
-    ['an empty content array', []],
-    [
-      'a summary-only turn',
-      [
-        {
-          type: ContentTypes.SUMMARY,
-          content: [{ type: ContentTypes.TEXT, text: 'compacted' }],
-        },
-      ],
-    ],
-    ['an error-only turn', [{ type: ContentTypes.ERROR, error: 'failed' }]],
-    [
-      'text that belongs to a tool call',
-      [{ type: ContentTypes.TEXT, text: 'tool output', tool_call_ids: ['call-1'] }],
-    ],
-  ])('is false for %s', (_label, content) => {
-    expect(hasEditablePart({ content } as TMessage)).toBe(false);
   });
 });
