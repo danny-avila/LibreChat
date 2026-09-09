@@ -1,8 +1,9 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { renderHook } from '@testing-library/react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { TUser } from 'librechat-data-provider';
+import { EModelEndpoint, PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { TConversation, TUser } from 'librechat-data-provider';
+import store from '~/store';
 
 type CloudFrontRetryOptions = { getAuthorizationHeader: () => string | undefined };
 
@@ -124,6 +125,34 @@ describe('useAppStartup: MCP permission gating', () => {
 
     expect(mockUseMCPServersQuery).toHaveBeenCalledWith({ enabled: true });
     expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it('suppresses background tool discovery for an ephemeral agent conversation', () => {
+    mockUseHasAccess.mockReturnValue(true);
+    mockUseMCPServersQuery.mockReturnValue({
+      data: { 'test-server': { url: 'http://test' } },
+      isLoading: false,
+    });
+    const ephemeralWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+      <RecoilRoot
+        initializeState={({ set }) =>
+          set(store.conversationByIndex(0), {
+            conversationId: 'new',
+            endpoint: EModelEndpoint.agents,
+            agent_id: 'ephemeral',
+          } as TConversation)
+        }
+      >
+        {children}
+      </RecoilRoot>
+    );
+
+    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), {
+      wrapper: ephemeralWrapper,
+    });
+
+    expect(mockUseMCPServersQuery).toHaveBeenCalledWith({ enabled: true });
+    expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('suppresses tools query when permission granted but user prop is undefined', () => {
