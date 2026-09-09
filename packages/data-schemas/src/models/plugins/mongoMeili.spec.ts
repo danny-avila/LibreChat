@@ -2403,9 +2403,10 @@ describe('Meilisearch Mongoose plugin', () => {
       // Newer-stamped projection is left alone, not re-indexed nor downgraded.
       expect(futureDoc?._meiliIndexSchemaVersion).toBe(MEILI_CONVERSATION_INDEX_SCHEMA_VERSION + 1);
       expect(futureDoc?._meiliIndex).toBe(true);
-      expect(mockAddDocumentsInBatches).not.toHaveBeenCalledWith(
-        expect.arrayContaining([expect.objectContaining({ conversationId: futureId })]),
+      const reindexedIds = mockAddDocumentsInBatches.mock.calls.flatMap((call) =>
+        (call[0] as Array<Record<string, unknown>>).map((doc) => String(doc.conversationId)),
       );
+      expect(reindexedIds).not.toContain(String(futureId));
 
       // Strictly older projection is re-indexed and stamped forward to the local version.
       expect(staleDoc?._meiliIndexSchemaVersion).toBe(MEILI_CONVERSATION_INDEX_SCHEMA_VERSION);
@@ -2613,7 +2614,40 @@ describe('Meilisearch Mongoose plugin', () => {
     });
 
     test('deleteMany hook deletes documents using toMeiliConversationKey', async () => {
-      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
+      // The pre-deleteMany hook is gated on `meiliEnabled`, which this suite leaves
+      // false at plugin-module load. Re-require the plugin with SEARCH enabled so the
+      // hook actually runs, and attach it to a dedicated model.
+      const previousSearch = process.env.SEARCH;
+      process.env.SEARCH = 'true';
+      let isolatedPlugin: typeof import('~/models/plugins/mongoMeili').default | undefined;
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        isolatedPlugin = require('~/models/plugins/mongoMeili').default;
+      });
+      process.env.SEARCH = previousSearch;
+
+      const hookSchema = new mongoose.Schema(
+        {
+          conversationId: { type: String, required: true },
+          user: { type: String },
+          title: { type: String },
+          endpoint: { type: String },
+          messages: [{ type: mongoose.Schema.Types.ObjectId }],
+        },
+        { timestamps: true },
+      );
+      hookSchema.plugin(isolatedPlugin!, {
+        mongoose,
+        host: 'foo',
+        apiKey: 'bar',
+        indexName: 'convos',
+        primaryKey: 'conversationId',
+      });
+      const hookModel = mongoose.model('ConversationHookTest', hookSchema);
+
+      const conversationModel = createConversationModel(
+        mongoose,
+      ) as unknown as SchemaWithMeiliMethods;
       await conversationModel.create({
         conversationId: 'batch|del|pipe',
         user: new mongoose.Types.ObjectId(),
@@ -2622,9 +2656,14 @@ describe('Meilisearch Mongoose plugin', () => {
       });
       mockDeleteDocument.mockClear();
 
-      await conversationModel.deleteMany({ conversationId: 'batch|del|pipe' });
+      // The hook looks the documents up through the shared Conversation model, so a
+      // deleteMany on the hook model surfaces the encoded-key deletion.
+      await hookModel.deleteMany({ conversationId: 'batch|del|pipe' });
 
       expect(mockDeleteDocument).toHaveBeenCalledWith('batch--del--pipe');
+
+      mongoose.deleteModel('ConversationHookTest');
+      await conversationModel.deleteMany({ conversationId: 'batch|del|pipe' });
     });
 
     test('normalizes search hits back to originalConversationId', async () => {
