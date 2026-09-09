@@ -5047,6 +5047,9 @@ async function handleSkillToolCall(
         };
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isContentFilterError(error)) {
         return error instanceof ContentFilterError
           ? errorResult(tc, modelBoundContentFilterErrorMessage(error.body))

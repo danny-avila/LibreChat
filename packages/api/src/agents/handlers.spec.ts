@@ -2299,6 +2299,37 @@ describe('createToolExecuteHandler', () => {
       expect(results.filter((result) => result.artifact != null)).toHaveLength(1);
     });
 
+    it('returns cancellation instead of a successful skill when upload recovery is aborted', async () => {
+      const controller = new AbortController();
+      const batchUploadCodeEnvFiles = jest.fn(
+        ({ signal }: { signal?: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      );
+      const handler = createPrimingSkillHandler('cancelled-skill', batchUploadCodeEnvFiles);
+      const resultPromise = new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_cancelled_skill',
+              name: Constants.SKILL_TOOL,
+              args: { skillName: 'cancelled-skill' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+      setTimeout(() => controller.abort(), 10);
+
+      const [result] = await resultPromise;
+
+      expect(result.status).toBe('error');
+      expect(result.content).not.toContain('Skill "cancelled-skill" loaded');
+    });
+
     it("read_file pins lookup to the primed skill's _id when manually invoked this turn (no shadowing on collision)", async () => {
       /* Same-name collision corner: the resolver primed a specific doc
          (its `_id` is in `skillPrimedIdsByName`). If read_file used
