@@ -37,6 +37,14 @@ export class MCPTokenStorageUnavailableError extends Error {
   }
 }
 
+/** The refresh credential may still be usable, but its provider could not complete this attempt. */
+export class MCPTokenRefreshUnavailableError extends Error {
+  constructor(serverName: string, cause: unknown) {
+    super(`OAuth token refresh is temporarily unavailable for "${serverName}"`, { cause });
+    this.name = 'MCPTokenRefreshUnavailableError';
+  }
+}
+
 interface StoreTokensParams {
   userId: string;
   serverName: string;
@@ -1161,14 +1169,24 @@ export class MCPTokenStorage {
       if (refreshError instanceof ReauthenticationRequiredError) {
         throw refreshError;
       }
+      if (signal.aborted) {
+        return null;
+      }
       // Check if it's an unauthorized_client error (refresh not supported)
       const errorMessage =
         refreshError instanceof Error ? refreshError.message : String(refreshError);
-      if (errorMessage.toLowerCase().includes('unauthorized_client')) {
+      const normalizedErrorMessage = errorMessage.toLowerCase();
+      if (normalizedErrorMessage.includes('unauthorized_client')) {
         logger.info(
           `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
         );
-      } else if (isInvalidClientMessage(errorMessage)) {
+        return null;
+      }
+      if (normalizedErrorMessage.includes('invalid_grant')) {
+        logger.info(`${logPrefix} Refresh grant is no longer valid. New authentication required.`);
+        return null;
+      }
+      if (isInvalidClientMessage(errorMessage)) {
         if (deleteTokens) {
           logger.info(
             `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
@@ -1199,8 +1217,9 @@ export class MCPTokenStorage {
         logger.warn(
           `${logPrefix} Client registration rejected during token refresh but deleteTokens not available — stale registration cannot be cleared`,
         );
+        return null;
       }
-      return null;
+      throw new MCPTokenRefreshUnavailableError(serverName, refreshError);
     }
   }
 
@@ -1319,7 +1338,10 @@ export class MCPTokenStorage {
       logger.debug(`${logPrefix} Loaded existing OAuth tokens from storage`);
       return tokens;
     } catch (error) {
-      if (error instanceof ReauthenticationRequiredError) {
+      if (
+        error instanceof ReauthenticationRequiredError ||
+        error instanceof MCPTokenRefreshUnavailableError
+      ) {
         throw error;
       }
       logger.error(`${logPrefix} Failed to retrieve tokens`, error);

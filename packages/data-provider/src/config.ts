@@ -2714,6 +2714,13 @@ export const configSchema = z.object({
             .max(8)
             .default([0, 50, 200]),
           authorizationFenceTimeoutMs: z.number().int().positive().max(30_000).default(1_000),
+          authorizationFenceRetryIntervalMs: z
+            .number()
+            .int()
+            .positive()
+            .max(60 * 60_000)
+            .default(30_000),
+          authorizationFenceRetryBatchSize: z.number().int().positive().max(10_000).default(100),
         })
         .default({}),
     })

@@ -276,6 +276,23 @@ describe('FlowStateManager', () => {
       expect(result).toBe('fresh-result');
     });
 
+    it('should re-read completion that wins after its guarded failure write', async () => {
+      const flowId = 'post-failure-race-flow';
+      const type = 'test-type';
+      const originalFail = flowManager.failFlowIfCurrent.bind(flowManager);
+      jest.spyOn(flowManager, 'failFlowIfCurrent').mockImplementation(async (...args) => {
+        const failureResult = await originalFail(...args);
+        await flowManager.settleFlowIfCurrent(flowId, type, args[2], args[3], 'fresh-result');
+        return failureResult;
+      });
+
+      const result = await flowManager.createFlowWithHandler(flowId, type, async () => {
+        throw new Error('stale failure');
+      });
+
+      expect(result).toBe('fresh-result');
+    });
+
     it('should handle flow timeout correctly', async () => {
       const flowId = 'timeout-flow';
       const type = 'test-type';

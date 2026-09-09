@@ -17,6 +17,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import {
   MCPTokenStorage,
+  MCPTokenRefreshUnavailableError,
   MCPTokenStorageUnavailableError,
   MCPOAuthHandler,
   getMCPServerGeneration,
@@ -943,7 +944,10 @@ export class MCPConnectionFactory {
       }
       if (
         error instanceof MCPTokenStorageUnavailableError ||
-        (error instanceof Error && error.name === 'MCPTokenStorageUnavailableError')
+        error instanceof MCPTokenRefreshUnavailableError ||
+        (error instanceof Error &&
+          (error.name === 'MCPTokenStorageUnavailableError' ||
+            error.name === 'MCPTokenRefreshUnavailableError'))
       ) {
         logger.warn(`${this.logPrefix} OAuth token loading failed; deferring connection recovery`);
         throw error;

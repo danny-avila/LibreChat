@@ -117,7 +117,10 @@ async function initializeMCPs() {
     const mcpManager = await createMCPManager(mcpServers || {}, {
       catalogRecoveryMaxStateEntries: appConfig?.mcpSettings?.catalogRecovery?.maxStateEntries,
     });
-    startMCPAuthorizationFenceRetryWorker(invalidateCachedTools);
+    startMCPAuthorizationFenceRetryWorker(invalidateCachedTools, {
+      intervalMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryIntervalMs,
+      batchSize: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryBatchSize,
+    });
     setMCPToolsChangedHandler(refreshChangedServerTools);
     setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
     setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);

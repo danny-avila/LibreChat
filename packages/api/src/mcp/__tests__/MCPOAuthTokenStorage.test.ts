@@ -9,6 +9,7 @@ import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import {
   MCPTokenStorage,
+  MCPTokenRefreshUnavailableError,
   MCPTokenStorageUnavailableError,
   ReauthenticationRequiredError,
 } from '~/mcp/oauth';
@@ -1152,7 +1153,7 @@ describe('MCPTokenStorage', () => {
       );
     });
 
-    it('should return null when refresh fails', async () => {
+    it('reports transient refresh failures separately from reauthentication', async () => {
       await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth',
@@ -1170,16 +1171,18 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('refresh failed'));
 
-      const result = await MCPTokenStorage.getTokens({
-        userId: 'u1',
-        serverName: 'srv1',
-        findToken: store.findToken,
-        createToken: store.createToken,
-        updateToken: store.updateToken,
-        refreshTokens,
-      });
-
-      expect(result).toBeNull();
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          updateToken: store.updateToken,
+          refreshTokens,
+        }),
+      ).rejects.toMatchObject({
+        name: 'MCPTokenRefreshUnavailableError',
+      } satisfies Partial<MCPTokenRefreshUnavailableError>);
     });
 
     it('should return null when no refreshTokens callback provided', async () => {
@@ -1912,7 +1915,7 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).not.toHaveBeenCalled();
     });
 
-    it('should return null when refresh callback throws non-client-rejection error', async () => {
+    it('should throw a retryable error when refresh callback fails transiently', async () => {
       await createBoundToken(store, {
         userId: 'u1',
         type: 'mcp_oauth_refresh',
@@ -1923,15 +1926,17 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('network blew up'));
 
-      const result = await MCPTokenStorage.forceRefreshTokens({
-        userId: 'u1',
-        serverName: 'srv1',
-        findToken: store.findToken,
-        createToken: store.createToken,
-        refreshTokens,
-      });
-
-      expect(result).toBeNull();
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          refreshTokens,
+        }),
+      ).rejects.toMatchObject({
+        name: 'MCPTokenRefreshUnavailableError',
+      } satisfies Partial<MCPTokenRefreshUnavailableError>);
     });
 
     it('should throw ReauthenticationRequiredError when refresh fails with invalid_client', async () => {
@@ -2459,8 +2464,8 @@ describe('MCPTokenStorage', () => {
       await waitFor(() => refreshTokens.mock.calls.length === 1);
       rejectRefresh(new Error('network blew up'));
 
-      await expect(first).resolves.toBeNull();
-      await expect(second).resolves.toBeNull();
+      await expect(first).rejects.toThrow(MCPTokenRefreshUnavailableError);
+      await expect(second).rejects.toThrow(MCPTokenRefreshUnavailableError);
 
       refreshTokens.mockResolvedValueOnce(rotatedTokens(2));
       const third = await MCPTokenStorage.forceRefreshTokens(params);
@@ -2589,7 +2594,7 @@ describe('MCPTokenStorage', () => {
           ...refreshParams(jest.fn().mockResolvedValue(rotatedTokens(2)), 'unfenced-srv'),
           onRefreshSuccess,
         }),
-      ).resolves.toBeNull();
+      ).rejects.toThrow(MCPTokenRefreshUnavailableError);
 
       expect(onRefreshSuccess).toHaveBeenCalledTimes(1);
       const rejectedCredentialSetId = onRefreshSuccess.mock.calls[0][0].credential_set_id;

@@ -11,79 +11,98 @@ const mockCollection = {
 };
 const mockGetTenantId = jest.fn();
 const mockTenantRun = jest.fn((_context, fn) => fn());
-const mockRegisterShutdownTask = jest.fn();
+const mockRunAsSystem = jest.fn((fn) => fn());
+const mockRetryService = {
+  clear: jest.fn(),
+  drain: jest.fn(),
+  persist: jest.fn(),
+  start: jest.fn(),
+};
+let capturedDeps;
 
 jest.mock('mongoose', () => ({
   connection: { collection: jest.fn(() => mockCollection) },
 }));
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { warn: jest.fn() },
   getTenantId: (...args) => mockGetTenantId(...args),
-  runAsSystem: (fn) => fn(),
+  runAsSystem: (...args) => mockRunAsSystem(...args),
   tenantStorage: { run: (...args) => mockTenantRun(...args) },
 }));
 jest.mock('@librechat/api', () => ({
-  registerShutdownTask: (...args) => mockRegisterShutdownTask(...args),
+  createMCPAuthorizationFenceRetryService: (deps) => {
+    capturedDeps = deps;
+    return mockRetryService;
+  },
 }));
 
-const {
-  drainMCPAuthorizationFenceRetries,
-  persistMCPAuthorizationFenceRetry,
-  startMCPAuthorizationFenceRetryWorker,
-} = require('./MCPAuthorizationFenceRetry');
+const retryAdapter = require('./MCPAuthorizationFenceRetry');
 
-describe('MCPAuthorizationFenceRetry', () => {
-  beforeAll(() => jest.useFakeTimers());
-  afterAll(() => jest.useRealTimers());
-
+describe('MCPAuthorizationFenceRetry adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUpdateOne.mockResolvedValue({ acknowledged: true });
     mockDeleteOne.mockResolvedValue({ deletedCount: 1 });
     mockToArray.mockResolvedValue([]);
-    mockGetTenantId.mockReturnValue('tenant-a');
   });
 
-  it('persists latest-wins retry intent in MongoDB', async () => {
-    await persistMCPAuthorizationFenceRetry({ userId: 'user-1', serverName: 'github' });
+  it('exports the package-owned retry lifecycle', () => {
+    expect(retryAdapter).toEqual({
+      clearMCPAuthorizationFenceRetry: mockRetryService.clear,
+      drainMCPAuthorizationFenceRetries: mockRetryService.drain,
+      persistMCPAuthorizationFenceRetry: mockRetryService.persist,
+      startMCPAuthorizationFenceRetryWorker: mockRetryService.start,
+    });
+  });
+
+  it('maps versioned retry storage to MongoDB', async () => {
+    const now = new Date();
+    const scope = { userId: 'user-1', serverName: 'github' };
+
+    await capturedDeps.storage.upsert({ scope, tenantId: 'tenant-a', version: 'v2', now });
+    await capturedDeps.storage.deleteVersion({
+      scope,
+      tenantId: 'tenant-a',
+      version: 'v1',
+    });
 
     expect(mockUpdateOne).toHaveBeenCalledWith(
       { _id: JSON.stringify(['tenant-a', 'user-1', 'github']) },
-      expect.objectContaining({
-        $set: expect.objectContaining({
+      {
+        $set: {
           userId: 'user-1',
           serverName: 'github',
           tenantId: 'tenant-a',
-          version: expect.any(String),
-        }),
-      }),
+          version: 'v2',
+          updatedAt: now,
+        },
+        $setOnInsert: { createdAt: now },
+      },
       { upsert: true },
     );
+    expect(mockDeleteOne).toHaveBeenCalledWith({
+      _id: JSON.stringify(['tenant-a', 'user-1', 'github']),
+      version: 'v1',
+    });
   });
 
-  it('replays persisted fences in their tenant and deletes only the published version', async () => {
+  it('reads retry batches globally and restores tenant context for replay', async () => {
     const retry = {
-      _id: 'retry-1',
-      version: 'version-1',
       tenantId: 'tenant-a',
       userId: 'user-1',
       serverName: 'github',
+      version: 'v1',
     };
     mockToArray.mockResolvedValue([retry]);
-    const invalidate = jest.fn().mockResolvedValue(undefined);
 
-    startMCPAuthorizationFenceRetryWorker(invalidate);
-    await drainMCPAuthorizationFenceRetries();
+    await expect(capturedDeps.storage.list(7)).resolves.toEqual([retry]);
+    const operation = jest.fn().mockResolvedValue(undefined);
+    await capturedDeps.runInRetryScope(retry, operation);
 
+    expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
+    expect(mockLimit).toHaveBeenCalledWith(7);
     expect(mockTenantRun).toHaveBeenCalledWith(
       { tenantId: 'tenant-a', userId: 'user-1' },
-      expect.any(Function),
-    );
-    expect(invalidate).toHaveBeenCalledWith({ userId: 'user-1', serverName: 'github' });
-    expect(mockDeleteOne).toHaveBeenCalledWith({ _id: 'retry-1', version: 'version-1' });
-    expect(mockRegisterShutdownTask).toHaveBeenCalledWith(
-      'MCP authorization fence retry worker',
-      expect.any(Function),
+      operation,
     );
   });
 });

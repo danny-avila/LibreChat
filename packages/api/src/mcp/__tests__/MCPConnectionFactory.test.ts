@@ -886,6 +886,34 @@ describe('MCPConnectionFactory', () => {
         '[MCP][User: user123] OAuth token loading failed; deferring connection recovery',
       );
     });
+
+    it('does not misclassify transient refresh failures as missing authorization', async () => {
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+      };
+      const oauthOptions = {
+        useOAuth: true as const,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        tokenMethods: {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        },
+      };
+      const refreshError = new Error(
+        'OAuth token refresh is temporarily unavailable for "test-server"',
+      );
+      refreshError.name = 'MCPTokenRefreshUnavailableError';
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(refreshError);
+
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow(
+        'OAuth token refresh is temporarily unavailable',
+      );
+      expect(mockMCPConnection).not.toHaveBeenCalled();
+    });
   });
 
   describe('OAuth event handling', () => {

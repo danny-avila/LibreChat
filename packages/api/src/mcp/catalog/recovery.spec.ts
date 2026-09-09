@@ -12,6 +12,7 @@ import {
   readMCPRecoveryGenerationAround,
   recoverMCPServerCatalogs,
 } from './recovery';
+import { MCPTokenRefreshUnavailableError } from '../oauth';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -91,7 +92,7 @@ describe('publishMCPAuthorizationMutation', () => {
       .mockRejectedValueOnce(new Error('cache unavailable'))
       .mockResolvedValue(undefined);
     const clearLocalRecovery = jest.fn();
-    const persistPublicationRetry = jest.fn().mockResolvedValue(undefined);
+    const persistPublicationRetry = jest.fn().mockResolvedValue('retry-v1');
     const clearPublicationRetry = jest.fn().mockResolvedValue(undefined);
 
     await publishMCPAuthorizationMutation(
@@ -109,13 +110,16 @@ describe('publishMCPAuthorizationMutation', () => {
     expect(persistPublicationRetry.mock.invocationCallOrder[0]).toBeLessThan(
       invalidateRecoveryGeneration.mock.invocationCallOrder[0],
     );
-    expect(clearPublicationRetry).toHaveBeenCalledWith({ userId: user.id, serverName: 'oauth' });
+    expect(clearPublicationRetry).toHaveBeenCalledWith(
+      { userId: user.id, serverName: 'oauth' },
+      'retry-v1',
+    );
     expect(clearLocalRecovery).toHaveBeenCalledWith(user.id, 'oauth');
   });
 
   it('bounds each shared fence attempt', async () => {
     const invalidateRecoveryGeneration = jest.fn(() => new Promise(() => undefined));
-    const persistPublicationRetry = jest.fn().mockResolvedValue(undefined);
+    const persistPublicationRetry = jest.fn().mockResolvedValue('retry-v1');
     const clearPublicationRetry = jest.fn();
 
     await expect(
@@ -145,6 +149,8 @@ describe('MCPServerCatalogRecoveryTracker capacity', () => {
     generationReadTimeoutMs: 500,
     authorizationFenceRetryMs: [0],
     authorizationFenceTimeoutMs: 1_000,
+    authorizationFenceRetryIntervalMs: 30_000,
+    authorizationFenceRetryBatchSize: 100,
   };
 
   const candidate = (serverName: string) => ({
@@ -557,6 +563,31 @@ describe('recoverMCPServerCatalogs', () => {
       authenticationKind: 'server' as const,
     });
     const servers = [{ serverName: 'server-auth', serverConfig: serverConfig('server-auth') }];
+    const deps = {
+      getCachedServerTools: jest.fn().mockResolvedValue(null),
+      getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),
+      cacheServerTools: jest.fn(),
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn(),
+      recoveryTracker,
+    };
+
+    const first = await loadMCPServerCatalogs({ user, servers }, deps);
+    const second = await loadMCPServerCatalogs({ user, servers }, deps);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(1);
+    expect(first.reauthRequiredServers).toEqual(new Set());
+    expect(second.reauthRequiredServers).toEqual(new Set());
+  });
+
+  it('backs off transient OAuth refresh failures instead of requesting reauthorization', async () => {
+    const discoverServerTools = jest
+      .fn()
+      .mockRejectedValue(
+        new MCPTokenRefreshUnavailableError('oauth-server', new Error('provider unavailable')),
+      );
+    const servers = [{ serverName: 'oauth-server', serverConfig: serverConfig('oauth-server') }];
     const deps = {
       getCachedServerTools: jest.fn().mockResolvedValue(null),
       getServerToolFunctionsSnapshot: jest.fn().mockResolvedValue({ tools: null }),

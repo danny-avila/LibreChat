@@ -260,7 +260,13 @@ describe('initializeMCPs', () => {
     it('sets process-wide recovery capacity from the base config', async () => {
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: {},
-        mcpSettings: { catalogRecovery: { maxStateEntries: 2500 } },
+        mcpSettings: {
+          catalogRecovery: {
+            maxStateEntries: 2500,
+            authorizationFenceRetryIntervalMs: 15_000,
+            authorizationFenceRetryBatchSize: 250,
+          },
+        },
       });
 
       await initializeMCPs();
@@ -270,6 +276,10 @@ describe('initializeMCPs', () => {
         {
           catalogRecoveryMaxStateEntries: 2500,
         },
+      );
+      expect(mockStartMCPAuthorizationFenceRetryWorker).toHaveBeenCalledWith(
+        mockInvalidateCachedTools,
+        { intervalMs: 15_000, batchSize: 250 },
       );
     });
 

@@ -27,6 +27,8 @@ const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   generationReadTimeoutMs: 500,
   authorizationFenceRetryMs: [0, 50, 200],
   authorizationFenceTimeoutMs: 1_000,
+  authorizationFenceRetryIntervalMs: 30_000,
+  authorizationFenceRetryBatchSize: 100,
 };
 
 export interface MCPServerCatalogRecoveryInput {
@@ -65,8 +67,11 @@ export async function publishMCPAuthorizationMutation(
   deps: {
     invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
     clearLocalRecovery?: (userId: string, serverName: string) => void;
-    persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
-    clearPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
+    persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
+    clearPublicationRetry?: (
+      scope: MCPRecoveryGenerationScope,
+      publicationRetryVersion: string,
+    ) => Promise<void>;
     retryDelaysMs?: readonly number[];
     attemptTimeoutMs?: number;
   },
@@ -74,7 +79,7 @@ export async function publishMCPAuthorizationMutation(
   /** Persist retry intent before touching the shared cache. A credential writer can keep this
    * inside its rollback boundary, so a cache outage never leaves a committed mutation with no
    * durable path to fence other replicas. */
-  await deps.persistPublicationRetry?.(scope);
+  const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
   let lastError: unknown;
   for (const delayMs of deps.retryDelaysMs ?? AUTHORIZATION_FENCE_RETRY_DELAYS_MS) {
     if (delayMs > 0) {
@@ -98,7 +103,9 @@ export async function publishMCPAuthorizationMutation(
         if (timeoutId != null) clearTimeout(timeoutId);
       }
       try {
-        await deps.clearPublicationRetry?.(scope);
+        if (publicationRetryVersion != null) {
+          await deps.clearPublicationRetry?.(scope, publicationRetryVersion);
+        }
       } catch (error) {
         /** A leftover retry only advances the opaque generation again and is therefore safe. */
         logger.warn(
@@ -126,6 +133,8 @@ export interface MCPServerCatalogRecoveryPolicy {
   generationReadTimeoutMs: number;
   authorizationFenceRetryMs: readonly number[];
   authorizationFenceTimeoutMs: number;
+  authorizationFenceRetryIntervalMs: number;
+  authorizationFenceRetryBatchSize: number;
 }
 
 export interface MCPServerCatalogSnapshot {

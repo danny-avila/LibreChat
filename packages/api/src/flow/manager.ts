@@ -971,22 +971,20 @@ export class FlowStateManager<T = unknown> {
       }
       return result;
     } catch (error) {
-      const failureResult = await this.failFlowIfCurrent(
+      await this.failFlowIfCurrent(
         flowId,
         type,
         initialState.createdAt,
         '',
         error instanceof Error ? error : new Error(String(error)),
       );
-      if (failureResult === 'stale') {
-        const settledState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
-        if (
-          settledState?.status === 'COMPLETED' &&
-          settledState.result !== undefined &&
-          FlowStateManager.isCurrentAttempt(settledState, initialState.createdAt, '')
-        ) {
-          return settledState.result;
-        }
+      const settledState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+      if (
+        settledState?.status === 'COMPLETED' &&
+        settledState.result !== undefined &&
+        FlowStateManager.isCurrentAttempt(settledState, initialState.createdAt, '')
+      ) {
+        return settledState.result;
       }
       throw error;
     }

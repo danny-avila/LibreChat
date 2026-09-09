@@ -11,8 +11,8 @@ export interface FinalizeMCPAuthorizationMutationParams {
 export interface FinalizeMCPAuthorizationMutationDeps {
   invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
   clearLocalRecovery?: (userId: string, serverName: string) => void;
-  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
-  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
+  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
+  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
   disconnectUserConnection: (userId: string, serverName: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
   attemptTimeoutMs?: number;
@@ -125,8 +125,8 @@ export interface PersistMCPAuthorizationTransactionDeps<TTokens>
   inactiveServerError: () => Error;
   invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
   clearLocalRecovery?: (userId: string, serverName: string) => void;
-  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
-  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
+  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
+  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
   attemptTimeoutMs?: number;
 }

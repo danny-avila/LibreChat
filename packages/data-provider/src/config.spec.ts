@@ -873,6 +873,8 @@ describe('allowedAddressesSchema', () => {
         generationReadTimeoutMs: 500,
         authorizationFenceRetryMs: [0, 50, 200],
         authorizationFenceTimeoutMs: 1_000,
+        authorizationFenceRetryIntervalMs: 30_000,
+        authorizationFenceRetryBatchSize: 100,
       });
 
       expect(
@@ -891,6 +893,18 @@ describe('allowedAddressesSchema', () => {
         configSchema.safeParse({
           version: '1.0',
           mcpSettings: { catalogRecovery: { authorizationFenceTimeoutMs: 0 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceRetryIntervalMs: 0 } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceRetryBatchSize: 0 } },
         }).success,
       ).toBe(false);
     });
