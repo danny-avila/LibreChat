@@ -1014,7 +1014,6 @@ describe('ToolService - Action Capability Gating', () => {
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'worker-abc',
-        codeEnvironmentConfigSchema: { limits: { maxCommandTimeoutMs: 120000 } },
       });
     });
 
@@ -2751,6 +2750,7 @@ describe('ToolService - Action Capability Gating', () => {
         environmentType: 'attached',
         environmentId: 'personal-machine',
         bridgeWorkerId: 'worker-abc',
+        codeEnvironmentConfigSchema: { limits: { maxCommandTimeoutMs: 120000 } },
       });
       const toolRegistry = new Map([
         [AgentConstants.BASH_TOOL, { name: AgentConstants.BASH_TOOL }],
