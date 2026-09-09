@@ -112,8 +112,12 @@ jest.mock('lucide-react', () => ({
   TriangleAlert: () => <span>{'warning'}</span>,
 }));
 
+const mockSubmittedAskAnswers = new Map<string, string>();
+
 jest.mock('~/utils/approval', () => ({
   ASK_USER_QUESTION: 'ask_user_question',
+  getSubmittedAskAnswer: (toolCallId?: string) =>
+    toolCallId != null ? mockSubmittedAskAnswers.get(toolCallId) : undefined,
 }));
 
 jest.mock('~/utils', () => ({
@@ -271,6 +275,7 @@ describe('ToolCallGroup image hoisting', () => {
   beforeEach(() => {
     mockScheduleMessageContentLayoutReconcile.mockClear();
     mockMCPServerNames.length = 0;
+    mockSubmittedAskAnswers.clear();
   });
 
   it('renders an AttachmentGroup outside the collapsible container with all attachments', () => {
@@ -986,6 +991,7 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
+    expect(screen.getByTestId('question-icon').parentElement).toHaveClass('animate-pulse');
   });
 
   it('uses a singular completed label for one question grouped with reasoning', () => {
@@ -996,6 +1002,39 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+  });
+
+  /** The `tool_call` part carries no output until the turn finalizes, so a group
+   *  the user already answered kept reading "Asking 1 question" for the rest of
+   *  the turn. Position cannot settle it: a live pause appends its interactive
+   *  card AFTER this group, so the group is not the last part exactly while the
+   *  question is open. */
+  it('settles the question label once the answer is recorded locally', () => {
+    mockSubmittedAskAnswers.set('q1', 'Option A');
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [{ part: makePart('q1', '', 'ask_user_question'), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+    /** The glyph reads as part of the same control, so it settles with it. */
+    expect(screen.getByTestId('question-icon').parentElement).not.toHaveClass('animate-pulse');
+  });
+
+  it('keeps the active label while one question of a batch is unanswered', () => {
+    mockSubmittedAskAnswers.set('q1', 'Option A');
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [
+        { part: makePart('q1', '', 'ask_user_question'), idx: 0 },
+        { part: makePart('q2', '', 'ask_user_question'), idx: 1 },
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
   });
 
   it('uses a singular active label for one question grouped with reasoning', () => {

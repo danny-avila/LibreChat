@@ -42,9 +42,9 @@ import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
+import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
-import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
@@ -486,7 +486,7 @@ export interface ConversationMethods {
   getConvoRetention(
     user: string,
     conversationId: string,
-  ): Promise<Pick<IConversation, 'expiredAt'> | null>;
+  ): Promise<Pick<IConversation, 'expiredAt' | 'isTemporary'> | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
   deleteConvos(
     user: string,
@@ -2069,11 +2069,11 @@ export function createConversationMethods(
   async function getConvoRetention(
     user: string,
     conversationId: string,
-  ): Promise<Pick<IConversation, 'expiredAt'> | null> {
+  ): Promise<Pick<IConversation, 'expiredAt' | 'isTemporary'> | null> {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }, 'expiredAt').lean<
-        Pick<IConversation, 'expiredAt'>
+      return await Conversation.findOne({ user, conversationId }, 'expiredAt isTemporary').lean<
+        Pick<IConversation, 'expiredAt' | 'isTemporary'>
       >();
     } catch (error) {
       logger.error('[getConvoRetention] Error getting conversation retention fields', error);
@@ -2172,6 +2172,8 @@ export function createConversationMethods(
 
       const appendMessageIds = metadata?.appendMessageIds;
       const update: Record<string, unknown> = { ...convo, user: userId };
+      delete update.isTemporary;
+      delete update.expiredAt;
       delete update.initial_agent_id;
       stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
@@ -2218,6 +2220,7 @@ export function createConversationMethods(
         update.conversationId = newConversationId;
       }
 
+      let retentionOnInsert: { expiredAt: Date; isTemporary: false } | undefined;
       if (expiredAt instanceof Date && !Number.isNaN(expiredAt.getTime())) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
@@ -2227,12 +2230,31 @@ export function createConversationMethods(
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
-        try {
-          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
-        } catch (err) {
-          logger.error('Error creating temporary chat expiration date:', err);
-          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
-          update.expiredAt = createFallbackRetentionDate();
+        if (
+          typeof isTemporary === 'boolean' ||
+          interfaceConfig.generalChatRetention === undefined
+        ) {
+          try {
+            update.expiredAt = createChatExpirationDate(interfaceConfig, isTemporary);
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+            update.expiredAt = createFallbackRetentionDate();
+          }
+        } else {
+          try {
+            retentionOnInsert = {
+              expiredAt: createChatExpirationDate(interfaceConfig, false),
+              isTemporary: false,
+            };
+          } catch (err) {
+            logger.error('Error creating chat expiration date:', err);
+            logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+            retentionOnInsert = {
+              expiredAt: createFallbackRetentionDate(),
+              isTemporary: false,
+            };
+          }
         }
       } else if (isTemporary === true) {
         update.isTemporary = true;
@@ -2290,6 +2312,7 @@ export function createConversationMethods(
           : createdAtOnInsert;
         operation.$setOnInsert = {
           initial_agent_id: initialAgentId,
+          ...retentionOnInsert,
           ...(createdAtForInsert ? { createdAt: createdAtForInsert } : {}),
         };
         return operation;
@@ -2374,6 +2397,31 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        interfaceConfig.generalChatRetention !== undefined &&
+        typeof isTemporary !== 'boolean' &&
+        conversation.expiredAt == null
+      ) {
+        const deadline = createChatExpirationDate(
+          interfaceConfig,
+          conversation.isTemporary === true,
+        );
+        const result = await Conversation.updateOne(
+          {
+            _id: conversation._id,
+            expiredAt: null,
+            isTemporary: conversation.isTemporary === true ? true : { $ne: true },
+          },
+          { $set: { expiredAt: deadline } },
+          { timestamps: false },
+        );
+        if (result.modifiedCount > 0) {
+          conversation.expiredAt = deadline;
+        }
       }
 
       if (

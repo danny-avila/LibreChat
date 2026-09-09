@@ -41,6 +41,7 @@ export interface BackgroundToolResultState {
     kind: 'manual' | 'wakeup';
     claimId: string;
     claimedAt: Date;
+    generationId?: string;
   };
 }
 

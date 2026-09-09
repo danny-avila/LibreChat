@@ -2760,6 +2760,42 @@ describe('Code Process', () => {
       ]);
     });
 
+    it('reuploads a recovered converted image under its advertised sandbox name', async () => {
+      getFiles.mockResolvedValue([
+        {
+          file_id: 'converted-image',
+          filename: 'photo.png',
+          filepath: '/uploads/photo.webp',
+          type: 'image/webp',
+          source: 'local',
+          context: 'execute_code',
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'OLD_SESSION',
+              file_id: 'OLD_ID',
+            },
+          },
+        },
+      ]);
+      const { handleFileUpload } = setupReuploadMocks({
+        storage_session_id: 'NEW_SESSION',
+        file_id: 'NEW_ID',
+      });
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['converted-image'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: 'photo.webp' }),
+      );
+      expect(result.files?.[0]?.name).toBe('photo.webp');
+    });
+
     /* Phase C / option α (codeapi #1455): reupload preserves the
      * resource identity from the existing ref so codeapi re-buckets
      * under the same sessionKey shape. Without this, a skill-cache-miss
@@ -3110,6 +3146,28 @@ describe('Code Process', () => {
           kind: 'user',
         },
       ]);
+    });
+
+    it('mounts a converted image under the name the sandbox actually holds', async () => {
+      /* Image uploads are converted to the configured output type while the record keeps
+       * the original filename. Provisioning uploaded the converted name, so rebuilding
+       * the mount path from the record advertises a file the sandbox does not have. */
+      setupSessionInfoOk();
+      getFiles.mockResolvedValue([
+        makeFile({
+          file_id: 'fid-ready',
+          filename: 'photo.png',
+          type: 'image/webp',
+        }),
+      ]);
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['fid-ready'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(result.files?.[0]?.name).toBe('photo.webp');
     });
 
     it('annotates a pending file with "(preview not yet generated)"', async () => {

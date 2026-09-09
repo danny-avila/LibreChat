@@ -113,6 +113,7 @@ describe('GenerationJobManager startup telemetry', () => {
         model: 'test-model',
         agent_id: 'agent-1',
         isTemporary: false,
+        retentionExpiresAt: '2030-01-01T00:00:00.000Z',
         promptTokens: 0,
         discoveredTools: [],
         pendingAction: {
@@ -149,6 +150,7 @@ describe('GenerationJobManager startup telemetry', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      retentionExpiresAt: '2030-01-01T00:00:00.000Z',
       promptTokens: 0,
       discoveredTools: [],
       providerExecutionId: expect.any(String),

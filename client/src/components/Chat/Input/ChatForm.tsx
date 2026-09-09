@@ -16,6 +16,7 @@ import {
   useQueryParams,
   useSubmitMessage,
   useFocusChatEffect,
+  useCodeWorkspace,
 } from '~/hooks';
 import {
   cn,
@@ -49,6 +50,7 @@ import { mainTextareaId, BadgeItem } from '~/common';
 import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
 import AttachFileChat from './Files/AttachFileChat';
+import CodeWorkspaceMenu from './CodeWorkspaceMenu';
 import useSteering from '~/hooks/Chat/useSteering';
 import CodeApprovalMenu from './CodeApprovalMenu';
 import FileFormChat from './Files/FileFormChat';
@@ -282,6 +284,7 @@ const ChatForm = memo(function ChatForm({
   );
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
+  const codeWorkspace = useCodeWorkspace(conversation, addedConvo);
 
   /** Queued/steered sends carry their FULL submission context: explicit
    *  (possibly empty) overrides stop `ask` from vacuuming quotes or skill
@@ -796,6 +799,12 @@ const ChatForm = memo(function ChatForm({
                   setConversation={setConversation}
                   disabled={disableInputs || isSubmitting}
                 />
+                <CodeWorkspaceMenu
+                  conversation={conversation}
+                  setConversation={setConversation}
+                  workspace={codeWorkspace}
+                  disabled={disableInputs || isSubmitting}
+                />
                 {index === 0 && conversationId != null && (
                   <PendingToolApprovalButton conversationId={conversationId} />
                 )}
@@ -834,6 +843,7 @@ const ChatForm = memo(function ChatForm({
                           disabled={
                             filesLoading ||
                             disableInputs ||
+                            (codeWorkspace.required && codeWorkspace.state !== 'ready') ||
                             isNotAppendable ||
                             answerMode.composerLocked ||
                             (isSubmitting && !answerMode.composerAnswers)
@@ -897,6 +907,7 @@ function ChatFormWrapper({
       conversation?.model,
       conversation?.maxContextTokens,
       conversation?.codeApprovalMode,
+      conversation?.codeWorkspaces,
       hasMessages,
     ],
   );

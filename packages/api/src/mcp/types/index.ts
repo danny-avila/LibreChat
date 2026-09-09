@@ -28,7 +28,7 @@ import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
 export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
-  Pick<RequestBody, 'parentMessageId'>;
+  Pick<RequestBody, 'parentMessageId' | 'codeWorkspaces'>;
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;

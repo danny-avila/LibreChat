@@ -50,11 +50,33 @@ describe('agent attachment helpers', () => {
     ).toBe(true);
     expect(
       isModelBoundAttachmentFile({
+        file_id: 'text-with-code-ref',
+        llmDeliveryPath: 'text',
+        text: 'context survives provisioning',
+        metadata: { codeEnvRef: { file_id: 'code-file', storage_session_id: 'session' } },
+      } as IMongoFile),
+    ).toBe(true);
+    expect(
+      isModelBoundAttachmentFile({
         file_id: 'empty-text',
         source: FileSources.text,
         text: '',
       } as IMongoFile),
     ).toBe(false);
+    expect(
+      isModelBoundAttachmentFile({
+        file_id: 'lazy-code-file',
+        llmDeliveryPath: 'none',
+        bytes: 200 * 1024 * 1024,
+      } as IMongoFile),
+    ).toBe(false);
+    expect(
+      isModelBoundAttachmentFile({
+        file_id: 'provider-with-code-ref',
+        llmDeliveryPath: 'provider',
+        metadata: { codeEnvRef: { file_id: 'code-file', storage_session_id: 'session' } },
+      } as IMongoFile),
+    ).toBe(true);
   });
 
   it('summarizes unique attachment bytes and extracted text', () => {

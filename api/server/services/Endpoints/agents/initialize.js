@@ -21,6 +21,7 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
+  resolveCodeExecutionWorkspaceContext,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -64,6 +65,13 @@ const {
   resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
+const {
+  loadCodeApiKey,
+  provisionToCodeEnv,
+  provisionToVectorDB,
+  checkSessionsAlive,
+} = require('~/server/services/Files/provision');
+const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
@@ -76,6 +84,7 @@ const {
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
@@ -393,6 +402,11 @@ const initializeClient = async ({
 
   const invokedSkillIdentities = new Map();
   const toolExecuteOptions = {
+    // Keep foreground cancellation owned by this request even when the agents
+    // SDK rebuilds a graph for approval resume. The SDK event's breaker signal
+    // is composed with this authoritative job signal by the handler.
+    runSignal: signal,
+    foregroundRunId: runtimeRequestBody?.messageId,
     loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
@@ -476,6 +490,11 @@ const initializeClient = async ({
       }
     },
     ...getSkillToolDeps(),
+    provisionFiles: createProvisionFilesCallback({
+      req,
+      agentToolContexts,
+      resolvePrimaryAgentId: () => primaryConfig?.id,
+    }),
   };
 
   const summarizationOptions =
@@ -647,12 +666,18 @@ const initializeClient = async ({
       updateFilesUsage: db.updateFilesUsage,
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
+      getDeferredProvisionFiles: db.getDeferredProvisionFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
       getSkillByName: skillDbMethods.getSkillByName,
+      provisionToCodeEnv,
+      provisionToVectorDB,
+      checkSessionsAlive,
+      loadCodeApiKey,
+      updateFile: db.updateFile,
     },
   );
 
@@ -731,12 +756,18 @@ const initializeClient = async ({
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
+        getDeferredProvisionFiles: db.getDeferredProvisionFiles,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        provisionToCodeEnv,
+        provisionToVectorDB,
+        checkSessionsAlive,
+        loadCodeApiKey,
+        updateFile: db.updateFile,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -986,7 +1017,7 @@ const initializeClient = async ({
     const hasConfiguredCodeEnvironment =
       agent.code_environment_id != null ||
       configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
-    const codeExecutionContext =
+    const baseCodeExecutionContext =
       lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
         ? resolveCodeExecutionContext({
             statefulSessions: statefulCodeSessions,
@@ -998,6 +1029,15 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
+    const codeExecutionContext = baseCodeExecutionContext
+      ? await resolveCodeExecutionWorkspaceContext({
+          context: baseCodeExecutionContext,
+          requestedSelections: runtimeRequestBody?.codeWorkspaces,
+          persistedSelections: req.resolvedConversation?.codeWorkspaces,
+          environments: configuredCodeEnvironments,
+          getAppConfig,
+        })
+      : undefined;
     const {
       alwaysApplySkillPrimes,
       historicalToolNames,
@@ -1177,12 +1217,18 @@ const initializeClient = async ({
           updateFilesUsage: db.updateFilesUsage,
           getUserKeyValues: db.getUserKeyValues,
           getUserCodeFiles: db.getUserCodeFiles,
+          getDeferredProvisionFiles: db.getDeferredProvisionFiles,
           getToolFilesByIds: db.getToolFilesByIds,
           getCodeGeneratedFiles: db.getCodeGeneratedFiles,
           filterFilesByAgentAccess,
           listSkillsByAccess: skillDbMethods.listSkillsByAccess,
           listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
           getSkillByName: skillDbMethods.getSkillByName,
+          provisionToCodeEnv,
+          provisionToVectorDB,
+          checkSessionsAlive,
+          loadCodeApiKey,
+          updateFile: db.updateFile,
         },
       ),
       context.signal,

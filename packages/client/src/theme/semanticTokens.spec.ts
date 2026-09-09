@@ -33,7 +33,11 @@ describe('shared component color guardrail', () => {
   it('keeps shared primitives free of direct palette utilities and hex colors', () => {
     const directPalette =
       /(?:bg|text|border|ring|from|via|to)-(?:gray|red|green|blue|purple|amber|yellow|orange|pink|indigo|violet|teal|cyan|slate|zinc|neutral|stone)-\d/;
-    const hexColor = /#[0-9a-f]{3,8}\b/i;
+    /** Only CSS-legal hex lengths (3, 4, 6, 8). `{3,8}` also matched a five-
+     *  digit issue reference in a comment — see the PR number in
+     *  `OriginalDialog.tsx` — which reads as a color to a regex and to nobody
+     *  else. */
+    const hexColor = /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b/i;
 
     sharedComponents.forEach((component) => {
       const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
@@ -41,6 +45,14 @@ describe('shared component color guardrail', () => {
       expect(source).not.toMatch(directPalette);
       expect(source).not.toMatch(hexColor);
     });
+
+    /** The guardrail still has to catch what it exists for. */
+    expect('bg-surface-primary text-[#ff0000]').toMatch(hexColor);
+    expect('color: #fff;').toMatch(hexColor);
+    expect('#aabbccdd').toMatch(hexColor);
+    /** …and leave prose alone: an issue reference is not a color. */
+    expect('pinned by #11023').not.toMatch(hexColor);
+    expect('closes #15738').not.toMatch(hexColor);
   });
 
   it('keeps every shared dialog shell on the semantic dialog surface', () => {

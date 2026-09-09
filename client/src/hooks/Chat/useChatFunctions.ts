@@ -40,6 +40,7 @@ import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedRespons
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
+import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
@@ -232,6 +233,7 @@ export default function useChatFunctions({
     immutableConversation,
     addedConversation,
   );
+  const codeWorkspaceState = useCodeWorkspace(immutableConversation, addedConversation);
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -329,6 +331,12 @@ export default function useChatFunctions({
       latestCodeApprovalMode != null && codeApprovalModes.includes(latestCodeApprovalMode)
         ? latestCodeApprovalMode
         : fallbackCodeApprovalMode;
+    const latestCodeWorkspaces = getConversation()?.codeWorkspaces ?? conversation?.codeWorkspaces;
+    const codeWorkspaces = codeWorkspaceState.resolveSelections(latestCodeWorkspaces);
+    if (codeWorkspaceState.required && codeWorkspaces == null) {
+      logger.warn('[useChatFunctions] Refusing to send without an available code workspace');
+      return false;
+    }
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {
@@ -743,6 +751,7 @@ export default function useChatFunctions({
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       codeApprovalMode,
+      codeWorkspaces,
       clientRequestId,
       recoverySteerId: overrideRecoverySteerId,
       expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,

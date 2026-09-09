@@ -545,7 +545,7 @@ describe('classification.ts', () => {
       [false, true].flatMap((definitionsOnly) => [
         { definitionsOnly, statefulWorkspace: false, runtimes: ['bash'], supported: false },
         { definitionsOnly, statefulWorkspace: true, runtimes: ['py'], supported: false },
-        { definitionsOnly, statefulWorkspace: true, runtimes: ['bash'], supported: true },
+        { definitionsOnly, statefulWorkspace: true, runtimes: ['bash'], supported: false },
       ]),
     )(
       'gates attached PTC: definitionsOnly=$definitionsOnly stateful=$statefulWorkspace runtimes=$runtimes',
@@ -620,7 +620,7 @@ describe('classification.ts', () => {
             'direct',
             'code_execution',
           ]);
-          expect(fetchSpy).toHaveBeenCalledTimes(1);
+          expect(fetchSpy).not.toHaveBeenCalled();
         } finally {
           fetchSpy.mockRestore();
           delete process.env.TEST_CODE_CAPABILITY_TOKEN;

@@ -22,6 +22,56 @@ export const usePopoverZIndex = (): number => {
   return contentZIndex + 10;
 };
 
+/**
+ * What a body-portaled Radix popover needs to survive a modal dialog, or
+ * `undefined` outside one — so a popover's own CSS layer (and any consumer
+ * override of it) is left untouched everywhere else.
+ *
+ * Radix coordinates nested layers through module-level state, so it only
+ * coordinates layers from the *same copy* of `react-dismissable-layer`. This
+ * app has three: `react-dialog` is pinned at 1.0.2 (see PR 11023) while `react-select`
+ * and `react-hover-card` resolve to their own newer copies. A popover therefore
+ * never learns that the dialog disabled body pointer events, and never lifts
+ * itself over the dialog — it opens behind an opaque overlay, inert.
+ *
+ * `pointer-events` mirrors what `DropdownPopup` already does for Ariakit menus
+ * in the same situation; a click inside still reaches the dialog's own
+ * "inside" check, because React portals bubble through the React tree.
+ */
+export const useNestedPopoverStyle = (): React.CSSProperties | undefined => {
+  const depth = useDialogDepth();
+  const zIndex = usePopoverZIndex();
+  return depth > 0 ? { zIndex, pointerEvents: 'auto' } : undefined;
+};
+
+/**
+ * Whether Escape belongs to something inside the dialog rather than the dialog
+ * itself: a trigger whose popover is open, focus inside a menu/listbox/combobox,
+ * or a tooltip. WCAG 2.1.1 wants those dismissable on their own, so the first
+ * Escape closes them and the dialog stays put.
+ */
+const escapeBelongsToPopup = (ownerDocument: Document): boolean => {
+  const activeElement = ownerDocument.activeElement;
+  if (activeElement?.getAttribute('aria-expanded') === 'true') {
+    return true;
+  }
+  const popovers = ownerDocument.querySelectorAll(
+    '[role="menu"], [role="listbox"], [role="combobox"]',
+  );
+  for (const popover of popovers) {
+    if (popover.contains(activeElement)) {
+      return true;
+    }
+  }
+  const tooltips = ownerDocument.querySelectorAll('.tooltip');
+  for (const tooltip of tooltips) {
+    if (tooltip.contains(activeElement)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 interface OGDialogProps extends DialogPrimitive.DialogProps {
   triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
   triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];
@@ -123,38 +173,119 @@ const DialogContent: React.ForwardRefExoticComponent<
   ) => {
     const depth = React.useContext(DialogDepthContext);
     const contentZIndex = 140 + (depth - 1) * 60;
+    const contentRef = React.useRef<HTMLDivElement | null>(null);
+    const composedRef = React.useCallback(
+      (node: HTMLDivElement | null) => {
+        contentRef.current = node;
+        if (typeof ref !== 'function') {
+          if (ref) {
+            (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+          }
+          return undefined;
+        }
+        /** React 19 lets a callback ref return a teardown, and swallowing it
+         *  here would strand a consumer's observers and listeners on a replaced
+         *  node. Only a real function is passed on: React 18 warns about any
+         *  other return value. */
+        const cleanup: unknown = ref(node);
+        if (typeof cleanup !== 'function') {
+          return undefined;
+        }
+        return () => {
+          contentRef.current = null;
+          (cleanup as () => void)();
+        };
+      },
+      [ref],
+    );
+
+    /**
+     * Radix routes Escape to the highest dismissable layer only, and a toast
+     * registers one *above* whatever dialog is already open — so a status toast
+     * on screen swallows the Escape that should have closed the dialog under
+     * it, and the reader has to press it twice.
+     *
+     * A toast is transient status, not something the reader is working in, so
+     * the dialog takes Escape back while one is up. Scoped to exactly that
+     * case: with no toast on screen Radix's own arbitration is untouched, and
+     * only the frontmost dialog acts, so an inner dialog still closes alone.
+     * Closing goes through a hidden `Dialog.Close`, which drives Radix's own
+     * close path and therefore works for controlled and uncontrolled dialogs
+     * alike.
+     */
+    const escapeFallbackRef = React.useRef<HTMLButtonElement>(null);
+    React.useEffect(() => {
+      const handleKeyDown = (event: KeyboardEvent) => {
+        const content = contentRef.current;
+        if (content == null || event.key !== 'Escape' || event.isComposing) {
+          return;
+        }
+        /** Another layer already answered this Escape — a select inside the
+         *  dialog closing its own listbox, say. Forcing the dialog shut on top
+         *  of that would take the reader's work with it. */
+        if (event.defaultPrevented) {
+          return;
+        }
+        const ownerDocument = content.ownerDocument;
+        if (escapeBelongsToPopup(ownerDocument)) {
+          return;
+        }
+        /** Radix Toast's own `li`. Matched whatever its `data-state`, because a
+         *  toast that has begun closing keeps its dismissable layer registered
+         *  until the exit animation ends — and that layer is what takes the
+         *  Escape. */
+        const toast = ownerDocument.querySelector('li[data-radix-collection-item]');
+        if (toast == null) {
+          return;
+        }
+        /** Read the RESOLVED z-index: dialogs outside this primitive carry
+         *  theirs in a class (`ImagePreview` is `z-[250]`), and an inline-only
+         *  reading scores those zero and mistakes the dialog underneath for the
+         *  frontmost one. Ties fall to the later element, which is the one
+         *  painted on top. */
+        const stackOrder = (element: HTMLElement): number => {
+          const zIndex = Number(ownerDocument.defaultView?.getComputedStyle(element).zIndex);
+          return Number.isNaN(zIndex) ? 0 : zIndex;
+        };
+        const frontmost = Array.from(
+          ownerDocument.querySelectorAll<HTMLElement>(
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+          ),
+        ).reduce<HTMLElement | null>(
+          (highest, candidate) =>
+            highest == null || stackOrder(candidate) >= stackOrder(highest) ? candidate : highest,
+          null,
+        );
+        if (frontmost !== content) {
+          return;
+        }
+        /** Only now, with this dialog established as the one the Escape belongs
+         *  to. Every mounted dialog runs this listener, and calling a consumer's
+         *  handler from the ones underneath would fire their side effects for
+         *  someone else's keystroke — and a `preventDefault()` there would stop
+         *  the frontmost dialog from closing at all.
+         *
+         *  The consumer's own `onEscapeKeyDown` never ran: Radix calls it only
+         *  for the highest layer, which the toast is. Give it the say it would
+         *  have had, so a dialog that refuses to close on Escape still does. */
+        propsOnEscapeKeyDown?.(event);
+        if (event.defaultPrevented) {
+          return;
+        }
+        escapeFallbackRef.current?.click();
+      };
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [propsOnEscapeKeyDown]);
 
     /* Handle Escape key to prevent closing dialog if a tooltip or dropdown has focus
     (this is a workaround in order to achieve WCAG compliance which requires
     that our tooltips be dismissable with Escape key) */
     const handleEscapeKeyDown = React.useCallback(
       (event: KeyboardEvent) => {
-        const activeElement = document.activeElement;
-
-        // Check if active element is a trigger with an open popover (aria-expanded="true")
-        if (activeElement?.getAttribute('aria-expanded') === 'true') {
+        if (escapeBelongsToPopup(document)) {
           event.preventDefault();
           return;
-        }
-
-        // Check if a dropdown menu, listbox, or combobox has focus (focus is within it)
-        const popoverElements = document.querySelectorAll(
-          '[role="menu"], [role="listbox"], [role="combobox"]',
-        );
-        for (const popover of popoverElements) {
-          if (popover.contains(activeElement)) {
-            event.preventDefault();
-            return;
-          }
-        }
-
-        // Check if a tooltip has focus (focus is within it)
-        const tooltips = document.querySelectorAll('.tooltip');
-        for (const tooltip of tooltips) {
-          if (tooltip.contains(activeElement)) {
-            event.preventDefault();
-            return;
-          }
         }
 
         propsOnEscapeKeyDown?.(event);
@@ -166,7 +297,7 @@ const DialogContent: React.ForwardRefExoticComponent<
       <DialogPortal>
         <DialogOverlay className={overlayClassName} />
         <DialogPrimitive.Content
-          ref={ref}
+          ref={composedRef}
           style={{ ...style, zIndex: contentZIndex }}
           onEscapeKeyDown={handleEscapeKeyDown}
           className={cn(
@@ -178,6 +309,12 @@ const DialogContent: React.ForwardRefExoticComponent<
           {...props}
         >
           {children}
+          <DialogPrimitive.Close
+            ref={escapeFallbackRef}
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
           {showCloseButton && (
             <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-ring-primary ring-offset-surface-dialog transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-hover data-[state=open]:text-text-secondary">
               <X className="h-6 w-6" aria-hidden="true" />

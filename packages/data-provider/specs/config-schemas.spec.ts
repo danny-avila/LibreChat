@@ -1398,6 +1398,27 @@ describe('configSchema skillSync', () => {
 });
 
 describe('interfaceSchema', () => {
+  it('accepts independent retention periods', () => {
+    expect(
+      interfaceSchema.parse({
+        retentionMode: RetentionMode.ALL,
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+      }),
+    ).toMatchObject({
+      temporaryChatRetention: 1,
+      generalChatRetention: 2160,
+    });
+    expect(interfaceSchema.parse({})).not.toHaveProperty('generalChatRetention');
+  });
+
+  it.each([0, 8761, '2160', null])(
+    'rejects invalid general retention: %s',
+    (generalChatRetention) => {
+      expect(interfaceSchema.safeParse({ generalChatRetention }).success).toBe(false);
+    },
+  );
+
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({
       endpointsMenu: true,

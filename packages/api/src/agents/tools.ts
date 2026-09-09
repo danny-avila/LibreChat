@@ -5,12 +5,13 @@ import {
   splitMCPToolKey,
 } from 'librechat-data-provider';
 import {
+  Constants as AgentConstants,
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
-import type { AgentToolOptions, GraphEdge } from 'librechat-data-provider';
+import type { AgentToolOptions, CodeWorkspaceOperation, GraphEdge } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
 import {
@@ -30,6 +31,23 @@ export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
 ]);
+
+/**
+ * Every tool that reads or writes the code environment. Eligibility and provisioning both
+ * consult this: a turn starting with any of them needs its files in the sandbox already,
+ * and an agent that has any of them wants code-file provisioning built even when it never
+ * names the `execute_code` marker itself.
+ */
+export const CODE_FILE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...CODE_EXECUTION_TOOLS,
+  ...FILE_AUTHORING_TOOL_NAMES,
+  AgentConstants.READ_FILE,
+  AgentConstants.WRITE_FILE,
+]);
+
+export function isCodeFileToolName(name: string): boolean {
+  return CODE_FILE_TOOL_NAMES.has(name);
+}
 
 export function isCodeSessionToolName(
   name: string,
@@ -359,6 +377,8 @@ export interface RegisterCodeExecutionToolsParams {
    * backed by the selected attached worker, including bounded line pagination.
    */
   workspaceTools?: boolean;
+  /** Live operation ceiling for the selected workspace. Omitted for managed runtimes. */
+  workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
   /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
@@ -402,6 +422,8 @@ export interface RegisterFileAuthoringToolsParams {
   includeSkillFileInstructions?: boolean;
   /** When true, non-skill paths use the attached worker's workspace/ namespace. */
   workspaceTools?: boolean;
+  /** Live operation ceiling for the selected workspace. Omitted for managed runtimes. */
+  workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
 }
 
 /**
@@ -928,20 +950,30 @@ export function registerCodeExecutionTools(
     includeBash,
     includeSkillFileInstructions = true,
     workspaceTools = false,
+    workspaceOperations,
     enableToolOutputReferences = false,
     statefulSessions = false,
   } = params;
 
-  const readFileDef = buildReadFileDef(includeSkillFileInstructions, workspaceTools);
-  const codeTools: LCTool[] = includeBash
-    ? [
-        readFileDef,
-        buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
-      ]
-    : [readFileDef];
-  const candidates = workspaceTools
-    ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF, LIST_WORKSPACE_FILES_TOOL_DEF]
-    : codeTools;
+  const supportsWorkspaceOperation = (operation: CodeWorkspaceOperation): boolean =>
+    !workspaceTools || workspaceOperations?.has(operation) === true;
+  const candidates: LCTool[] = [];
+  if (!workspaceTools || supportsWorkspaceOperation('read_file')) {
+    candidates.push(buildReadFileDef(includeSkillFileInstructions, workspaceTools));
+  } else if (includeSkillFileInstructions) {
+    candidates.push(buildReadFileDef(true, false));
+  }
+  if (includeBash && supportsWorkspaceOperation('execute_command')) {
+    candidates.push(
+      buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
+    );
+  }
+  if (workspaceTools && supportsWorkspaceOperation('search_text')) {
+    candidates.push(SEARCH_WORKSPACE_TOOL_DEF);
+  }
+  if (workspaceTools && supportsWorkspaceOperation('list_files')) {
+    candidates.push(LIST_WORKSPACE_FILES_TOOL_DEF);
+  }
   const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];
@@ -1002,9 +1034,28 @@ export function registerFileAuthoringTools(
     toolDefinitions,
     includeSkillFileInstructions = true,
     workspaceTools = false,
+    workspaceOperations,
   } = params;
 
-  const candidates = buildFileAuthoringDefs(includeSkillFileInstructions, workspaceTools);
+  const supportsWorkspaceOperation = (operation: CodeWorkspaceOperation): boolean =>
+    !workspaceTools || workspaceOperations?.has(operation) === true;
+  let candidates = buildFileAuthoringDefs(includeSkillFileInstructions, false);
+  if (workspaceTools) {
+    candidates = [];
+    if (includeSkillFileInstructions) {
+      candidates.push(
+        supportsWorkspaceOperation('write_file')
+          ? ATTACHED_SKILL_CREATE_FILE_DEF
+          : SKILL_CREATE_FILE_DEF,
+        supportsWorkspaceOperation('edit_file')
+          ? ATTACHED_SKILL_EDIT_FILE_DEF
+          : SKILL_EDIT_FILE_DEF,
+      );
+    } else {
+      if (supportsWorkspaceOperation('write_file')) candidates.push(ATTACHED_CODE_CREATE_FILE_DEF);
+      if (supportsWorkspaceOperation('edit_file')) candidates.push(ATTACHED_CODE_EDIT_FILE_DEF);
+    }
+  }
   const toolNames = candidates.map((def) => def.name);
   const inputDefinitions = toolDefinitions ?? [];
   let workingDefinitions = inputDefinitions;

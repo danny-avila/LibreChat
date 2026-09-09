@@ -126,6 +126,7 @@ const errorMessages = {
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
   [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
+  [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE]: 'com_error_code_workspace_unavailable',
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
   [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,

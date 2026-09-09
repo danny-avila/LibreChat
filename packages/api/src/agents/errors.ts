@@ -49,6 +49,7 @@ export function isFatalAgentInitializationError(
     code === AGENT_ATTACHMENT_LIMIT_EXCEEDED ||
     code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED ||
     code === ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED ||
+    code === ErrorTypes.CODE_WORKSPACE_UNAVAILABLE ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)
   );
 }

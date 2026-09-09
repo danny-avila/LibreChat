@@ -12,6 +12,7 @@ import {
 import { buildApprovalPreview, buildApprovalPreviews } from '~/components/Chat/approval/preview';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
+import { useComposerOverlay } from '~/components/Chat/Input/overlay';
 import { useLocalize } from '~/hooks';
 
 const approvalPanelOpenFamily = atomFamily((_conversationId: string) => atom(false));
@@ -67,6 +68,8 @@ export const PendingToolApprovalPanel = memo(function PendingToolApprovalPanel({
       setOpen(true);
     }
   }, [actionId, setOpen]);
+
+  useComposerOverlay(conversationId, open && pendingAction != null);
 
   const reviews = useMemo(() => {
     if (pendingAction == null) return [];

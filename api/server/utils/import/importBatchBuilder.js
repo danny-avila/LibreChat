@@ -9,7 +9,7 @@ const {
   getTenantId,
   logger,
   createFallbackRetentionDate,
-  createTempChatExpirationDate,
+  createChatExpirationDate,
 } = require('@librechat/data-schemas');
 const {
   EModelEndpoint,
@@ -94,7 +94,7 @@ class ImportBatchBuilder {
     try {
       this.retentionFields = {
         isTemporary: false,
-        expiredAt: createTempChatExpirationDate(this.interfaceConfig),
+        expiredAt: createChatExpirationDate(this.interfaceConfig),
       };
     } catch (error) {
       logger.error('[ImportBatchBuilder] Error creating import expiration date:', error);

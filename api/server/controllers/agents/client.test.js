@@ -37,13 +37,37 @@ const { resolveConfigServers } = require('~/server/services/MCP');
 describe('AgentClient code approval persistence', () => {
   it('persists a validated mode in agent conversation options', () => {
     const client = Object.create(AgentClient.prototype);
+    client.agentConfigs = new Map([
+      [
+        'secondary',
+        {
+          codeExecutionContext: {
+            environmentId: 'team-vm',
+            environmentType: 'attached',
+            codeWorkspace: {
+              environmentId: 'team-vm',
+              workspaceId: 'project-b',
+              operations: ['read_file'],
+            },
+          },
+        },
+      ],
+    ]);
+    const secondary = client.agentConfigs.get('secondary');
     client.agentConfigs = new Map();
     client.options = {
       endpoint: EModelEndpoint.agents,
       agent: {
         id: 'attached-agent',
+        subagentAgentConfigs: [secondary],
         codeExecutionContext: {
+          environmentId: 'attached-vm',
           environmentType: 'attached',
+          codeWorkspace: {
+            environmentId: 'attached-vm',
+            workspaceId: 'project-a',
+            operations: ['read_file', 'execute_command'],
+          },
           codeEnvironmentConfigSchema: {
             permissions: {
               fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
@@ -58,7 +82,13 @@ describe('AgentClient code approval persistence', () => {
       },
     };
 
-    expect(client.getSaveOptions()).toMatchObject({ codeApprovalMode: 'acceptEdits' });
+    expect(client.getSaveOptions()).toMatchObject({
+      codeApprovalMode: 'acceptEdits',
+      codeWorkspaces: [
+        { environmentId: 'attached-vm', workspaceId: 'project-a' },
+        { environmentId: 'team-vm', workspaceId: 'project-b' },
+      ],
+    });
   });
 });
 

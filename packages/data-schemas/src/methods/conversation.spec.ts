@@ -14,6 +14,7 @@ import type {
   IAgentEventActorSuspensionEvidence,
   IChatProject,
   IConversation,
+  AppConfig,
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -122,7 +123,7 @@ describe('Conversation Operations', () => {
     userId: string;
     isTemporary?: boolean;
     expiredAt?: Date;
-    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
+    interfaceConfig?: AppConfig['interfaceConfig'];
   };
   let mockConversationData: {
     conversationId: string;
@@ -1374,6 +1375,73 @@ describe('Conversation Operations', () => {
 
       expect(secondSave?.title).toBe('Updated Title');
       expect(secondSave?.expiredAt).toBeNull();
+    });
+
+    it.each([true, false, undefined])(
+      'uses the independent retention period for isTemporary=%s',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const now = Date.now();
+        const result = await saveConvo(mockCtx, mockConversationData);
+        const expectedHours = isTemporary === true ? 1 : 2160;
+
+        expect(result?.isTemporary).toBe(isTemporary === true);
+        expect(result?.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + expectedHours * 3600000);
+        expect(result?.expiredAt?.getTime()).toBeLessThan(now + expectedHours * 3600000 + 5000);
+      },
+    );
+
+    it('ignores caller-supplied retention fields', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const suppliedExpiration = new Date('2099-01-01T00:00:00.000Z');
+
+      const result = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        isTemporary: true,
+        expiredAt: suppliedExpiration,
+      });
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).not.toEqual(suppliedExpiration);
+    });
+
+    it.each([true, false])(
+      'preserves the stored deadline when chat type %s is omitted',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const first = await saveConvo(mockCtx, mockConversationData);
+        mockCtx.isTemporary = undefined;
+        const second = await saveConvo(mockCtx, { ...mockConversationData });
+        expect(second?.isTemporary).toBe(isTemporary);
+        expect(second?.expiredAt).toEqual(first?.expiredAt);
+      },
+    );
+
+    it('preserves an explicitly inherited deadline with separate retention periods', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.expiredAt = new Date(Date.now() + 60000);
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toEqual(mockCtx.expiredAt);
     });
 
     it('should set expiredAt for non-temporary conversation when retentionMode is ALL', async () => {

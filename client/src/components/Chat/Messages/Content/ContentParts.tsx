@@ -165,6 +165,13 @@ const PartWithContext = memo(function PartWithContext({
     [messageId, conversationId, idx, nextType, isSubmitting, isLatestMessage],
   );
 
+  /** Being last WITHIN a body is not being last in the message: activity
+   *  phases split one response into several bodies, so every settled phase has
+   *  a trailing part too. Only the body that holds the message's cursor can
+   *  own a live part — otherwise a phase from minutes ago keeps its reasoning
+   *  shimmering and its peek scrolling while later phases stream. */
+  const holdsCursor = isLastPart && isLast;
+
   return (
     <MessageContext.Provider value={contextValue}>
       <Part
@@ -173,8 +180,8 @@ const PartWithContext = memo(function PartWithContext({
         isSubmitting={isSubmitting}
         key={`part-${messageId}-${getPartKeyIndex(part, idx)}`}
         isCreatedByUser={isCreatedByUser}
-        isLast={isLastPart}
-        showCursor={isLastPart && isLast}
+        isLast={holdsCursor}
+        showCursor={holdsCursor}
         hideAttachments={hideAttachments}
         onToolExpand={onToolExpand}
       />
@@ -1053,8 +1060,9 @@ const ContentPartsBody = memo(function ContentPartsBody({
                *  mark its group as last or nothing holds the streaming
                *  cursor until the next delta. */
               isLast={
-                group.parts.some((p) => p.idx === lastContentIdx) ||
-                group.labelPart?.idx === lastContentIdx
+                isLast &&
+                (group.parts.some((p) => p.idx === lastContentIdx) ||
+                  group.labelPart?.idx === lastContentIdx)
               }
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}

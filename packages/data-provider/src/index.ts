@@ -6,6 +6,7 @@ export * from './config';
 export * from './langchain';
 export * from './filters';
 export * from './file-config';
+export * from './resolve-llm-delivery-path';
 /* messages  */
 export * from './messages';
 /* run steps */
@@ -73,3 +74,4 @@ export * from './agentToolOptions';
 export * from './codeEnvRef';
 export * from './code/worker';
 export * from './code/approval';
+export * from './code/workspace';

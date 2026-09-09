@@ -21,8 +21,18 @@ type ButtonVariantOptions =
         | 'header-action'
         | null
         | undefined;
-      size?: 'default' | 'icon' | 'icon-sm' | 'icon-xs' | 'sm' | 'lg' | 'theme' | null | undefined;
-      shape?: 'default' | 'theme' | null | undefined;
+      size?:
+        | 'default'
+        | 'icon'
+        | 'icon-sm'
+        | 'icon-xs'
+        | 'icon-theme'
+        | 'sm'
+        | 'lg'
+        | 'theme'
+        | null
+        | undefined;
+      shape?: 'default' | 'theme' | 'round' | null | undefined;
     } & ClassProp)
   | undefined;
 
@@ -79,11 +89,18 @@ const buttonVariantRecipe = cva(
         icon: 'size-10',
         'icon-sm': 'size-8 p-0',
         'icon-xs': 'size-7',
+        /**
+         * A square icon control on the theme's control height — the size of
+         * every button in the composer's action row, for a control that has to
+         * line up with them.
+         */
+        'icon-theme': 'size-theme-control p-0',
         theme: 'h-theme-control gap-theme-compact px-theme-normal',
       },
       shape: {
         default: 'rounded-lg',
         theme: 'rounded-theme-control',
+        round: 'rounded-theme-control-round',
         unset: '',
       },
     },

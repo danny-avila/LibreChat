@@ -19,6 +19,7 @@ import {
   useMCPToolsQuery,
 } from '~/data-provider';
 import { isMCPServerReadyForAgent } from '~/components/MCP/mcpServerUtils';
+import { useMCPRefresh } from '~/hooks/MCP/useMCPRefresh';
 import { Panel, isEphemeralAgent } from '~/common';
 import store from '~/store';
 
@@ -63,6 +64,15 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   /** The tools query keeps its own warmup gate: the servers list resolving
    * alone must not pull the heavier tools request ahead of its stagger. */
   const mcpToolsReady = useCatalogReady('mcpTools');
+  useMCPRefresh({
+    enabled:
+      panelVisible &&
+      mcpToolsReady &&
+      !isEphemeralAgent(agent_id) &&
+      !isLoading &&
+      availableMCPServers.length > 0,
+    tools: true,
+  });
   const { data: mcpData, isFetching: mcpToolsFetching } = useMCPToolsQuery({
     enabled:
       mcpToolsReady &&
