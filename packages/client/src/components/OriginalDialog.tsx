@@ -127,9 +127,14 @@ const DialogClose: React.ForwardRefExoticComponent<
  * redefines it moves every OGDialog with it; the opacity stays at 80% because
  * that leaves the themes whose overlay is black (dark, and both high-contrast
  * modes) rendering exactly as before, and puts the light theme's gray scrim at
- * 4.3:1 against the dialog it frames — past the 3:1 floor for a non-text
- * boundary, and between the two other dialog families' scrims.
+ * 4.3:1 against the dialog it frames, past the 3:1 floor for a non-text
+ * boundary, and between the two other dialog families' scrims. Exported so a
+ * caller that has to animate its own backdrop, a shared-layout morph whose dim
+ * outlives the dialog's mount, consumes this appearance instead of restating it
+ * in feature code.
  */
+export const DIALOG_SCRIM_CLASS = 'bg-surface-overlay/80';
+
 export const DialogOverlay: React.ForwardRefExoticComponent<
   Omit<DialogPrimitive.DialogOverlayProps & React.RefAttributes<HTMLDivElement>, 'ref'> &
     React.RefAttributes<HTMLDivElement>
@@ -145,7 +150,9 @@ export const DialogOverlay: React.ForwardRefExoticComponent<
       ref={ref}
       style={{ ...style, zIndex: overlayZIndex }}
       className={cn(
-        'fixed inset-0 bg-surface-overlay/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+        'fixed inset-0',
+        DIALOG_SCRIM_CLASS,
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         className,
       )}
       {...props}
