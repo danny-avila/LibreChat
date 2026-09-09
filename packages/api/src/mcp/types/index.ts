@@ -336,4 +336,5 @@ export interface ToolDiscoveryResult {
   tools: Tool[] | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  authenticationKind?: 'oauth' | 'obo' | 'server';
 }

@@ -230,6 +230,9 @@ const getMCPTools = async (req, res) => {
         }),
         oboIdentityContext,
         signal: catalogAbortController.signal,
+        ...(req.config?.mcpSettings?.catalogRecovery && {
+          recoveryPolicy: req.config.mcpSettings.catalogRecovery,
+        }),
       });
     } finally {
       res.off('close', abortCatalogLoad);

@@ -27,6 +27,7 @@ import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } fro
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
+import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
@@ -72,12 +73,22 @@ type OAuthReconnectResult =
 const OAUTH_RECOVERY_RECONNECT_ATTEMPTS = 3;
 const OAUTH_RECOVERY_RECONNECT_DELAY_MS = 2000;
 
+function getDiscoveryAuthenticationKind(
+  serverConfig: t.ParsedServerConfig,
+): 'oauth' | 'obo' | 'server' {
+  if (serverConfig.obo != null) {
+    return 'obo';
+  }
+  return isOAuthServer(serverConfig) ? 'oauth' : 'server';
+}
+
 /**
  * Centralized manager for MCP server connections and tool execution.
  * Extends UserConnectionManager to handle both app-level and user-specific connections.
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private readonly catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker();
   private readonly recoveryCancellation = new WeakMap<
     Promise<void>,
     { controller: AbortController; waiters: number; connection: MCPConnection }
@@ -113,6 +124,25 @@ export class MCPManager extends UserConnectionManager {
   public async initialize(configs: t.MCPServers): Promise<void> {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
+  }
+
+  public getCatalogRecoveryTracker(): MCPServerCatalogRecoveryTracker {
+    return this.catalogRecoveryTracker;
+  }
+
+  public clearCatalogRecoveryState(userId: string, serverName?: string): void {
+    this.catalogRecoveryTracker.clear(userId, serverName);
+  }
+
+  public override async disconnectUserConnection(
+    userId: string,
+    serverName: string,
+    options?: Parameters<UserConnectionManager['disconnectUserConnection']>[2],
+  ): Promise<void> {
+    if ((options?.reason ?? 'mutation') === 'mutation') {
+      this.clearCatalogRecoveryState(userId, serverName);
+    }
+    await super.disconnectUserConnection(userId, serverName, options);
   }
 
   public override async getUserConnection(
@@ -432,6 +462,9 @@ export class MCPManager extends UserConnectionManager {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
+        ...(result.oauthRequired && {
+          authenticationKind: getDiscoveryAuthenticationKind(serverConfig),
+        }),
       };
     };
 
@@ -451,7 +484,12 @@ export class MCPManager extends UserConnectionManager {
 
     if (!user || !args.flowManager) {
       logger.warn('[MCP][Discovery] OAuth server requires a user and flow manager');
-      return { tools: null, oauthRequired: true, oauthUrl: null };
+      return {
+        tools: null,
+        oauthRequired: true,
+        oauthUrl: null,
+        authenticationKind: getDiscoveryAuthenticationKind(serverConfig),
+      };
     }
 
     const result = await MCPConnectionFactory.discoverTools(basic, {

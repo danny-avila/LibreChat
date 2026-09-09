@@ -1,4 +1,5 @@
 import {
+  applyMCPDiscoveryAuthorizationState,
   getMCPOAuthTimeout,
   getMCPOAuthPollingOutcome,
   isMCPReadyAfterOAuth,
@@ -6,6 +7,38 @@ import {
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
 } from '../polling';
+
+describe('applyMCPDiscoveryAuthorizationState', () => {
+  it('overrides stale connected status when catalog discovery requires reauthorization', () => {
+    const result = applyMCPDiscoveryAuthorizationState(
+      {
+        oauth: {
+          requiresOAuth: true,
+          connectionState: 'connected',
+          authorizationState: 'authorized',
+        },
+      },
+      {
+        servers: {
+          oauth: {
+            name: 'oauth',
+            icon: '',
+            authenticated: false,
+            authorizationState: 'reauth_required',
+            authConfig: [],
+            tools: [],
+          },
+        },
+      },
+    );
+
+    expect(result?.oauth).toEqual({
+      requiresOAuth: true,
+      connectionState: 'disconnected',
+      authorizationState: 'needs_authorization',
+    });
+  });
+});
 
 describe('getMCPOAuthTimeout', () => {
   it('preserves the remaining timeout of a reused flow over the global server window', () => {

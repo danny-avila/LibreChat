@@ -201,6 +201,7 @@ const mockOAuthCompletion = (tokens) => {
 };
 
 const createLeasedMcpManager = (connection, overrides = {}) => ({
+  clearCatalogRecoveryState: jest.fn(),
   ...overrides,
   withUserConnectionLease: jest.fn((_options, useConnection) => useConnection(connection)),
 });
@@ -977,6 +978,10 @@ describe('MCP Routes', () => {
         const basePath = getBasePath();
         expect(response.status).toBe(302);
         expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+        expect(mockMcpManager.clearCatalogRecoveryState).toHaveBeenCalledWith(
+          'test-user-id',
+          'test-server',
+        );
       });
 
       it('should use the merged server config to defer request-scoped post-OAuth reconnect', async () => {

@@ -1,8 +1,32 @@
 import type {
   MCPServerStatus,
+  MCPServersResponse,
   MCPOAuthStatusResponse,
   MCPReinitializeResponse,
 } from 'librechat-data-provider';
+
+export function applyMCPDiscoveryAuthorizationState(
+  connectionStatus: Record<string, MCPServerStatus> | undefined,
+  discoveredTools: MCPServersResponse | undefined,
+): Record<string, MCPServerStatus> | undefined {
+  const reauthRequired = Object.entries(discoveredTools?.servers ?? {})
+    .filter(([, server]) => server.authorizationState === 'reauth_required')
+    .map(([serverName]) => serverName);
+  if (reauthRequired.length === 0) {
+    return connectionStatus;
+  }
+
+  const nextStatus = { ...(connectionStatus ?? {}) };
+  for (const serverName of reauthRequired) {
+    nextStatus[serverName] = {
+      ...nextStatus[serverName],
+      requiresOAuth: true,
+      connectionState: 'disconnected',
+      authorizationState: 'needs_authorization',
+    };
+  }
+  return nextStatus;
+}
 
 export type MCPOAuthPollingOutcome = 'pending' | 'completed' | 'failed';
 

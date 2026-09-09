@@ -533,6 +533,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               await rollbackStoredTokens(storedTokens);
               throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
             }
+            getMCPManager()?.clearCatalogRecoveryState?.(flowState.userId, serverName);
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
               userId: flowState.userId,

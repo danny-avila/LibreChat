@@ -4,7 +4,6 @@ const {
   getUserMCPAuthMap,
   getMissingCustomUserVars,
   loadMCPServerCatalogs: loadCatalogs,
-  clearMCPServerCatalogRecoveryState,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
   MCPAuthenticationRejectedError,
@@ -50,6 +49,7 @@ const isMCPReauthenticationError = (error) =>
  * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider] - Live upstream-token closure for OBO discovery, built at the request boundary so this layer never receives the raw Express request.
  * @param {import('@librechat/api').AuthIdentityContext} [params.oboIdentityContext] - Non-template-visible OBO identity context built from the real request user.
  * @param {AbortSignal} [params.signal] - Cancels queued and in-flight catalog reads when the request ends.
+ * @param {import('@librechat/api').MCPServerCatalogRecoveryPolicy} [params.recoveryPolicy]
  */
 async function loadMCPServerCatalogs({
   user,
@@ -57,12 +57,13 @@ async function loadMCPServerCatalogs({
   upstreamTokenProvider,
   oboIdentityContext,
   signal,
+  recoveryPolicy,
 }) {
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
   return loadCatalogs(
-    { user, servers, signal },
+    { user, servers, signal, ...(recoveryPolicy && { recoveryPolicy }) },
     {
       loadUserMCPAuthMap: (userId, serverNames) =>
         getUserMCPAuthMap({
@@ -82,6 +83,7 @@ async function loadMCPServerCatalogs({
           oboIdentityContext,
         }),
       formatServerTools: formatMCPServerTools,
+      recoveryTracker: mcpManager.getCatalogRecoveryTracker?.(),
       getCachedServerTools: getMCPServerTools,
       getServerToolFunctionsSnapshot: (userId, serverName, serverConfig, options) =>
         mcpManager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig, options),
@@ -128,7 +130,6 @@ async function reinitMCPServer({
   oboIdentityContext,
   oauthEnd,
 }) {
-  clearMCPServerCatalogRecoveryState(user.id, serverName);
   /** @type {MCPConnection | null} */
   let connection = null;
   let serverConfig = providedConfig;

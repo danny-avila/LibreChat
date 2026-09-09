@@ -33,6 +33,7 @@ import {
   shouldFailMCPOAuthFallback,
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
+  applyMCPDiscoveryAuthorizationState,
 } from './polling';
 import {
   useLocalize,
@@ -41,7 +42,7 @@ import {
   useCatalogReady,
   useMCPConnectionStatus,
 } from '~/hooks';
-import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
+import { useGetStartupConfig, useMCPServersQuery, useMCPToolsQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
 
@@ -92,6 +93,10 @@ export function useMCPServerManager({
   const mcpEnabled = canUseMcp && mcpServersReady;
 
   const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: mcpEnabled });
+  const mcpToolsReady = useCatalogReady('mcpTools');
+  const { data: discoveredMCPTools } = useMCPToolsQuery({
+    enabled: mcpEnabled && mcpToolsReady && Object.keys(loadedServers ?? {}).length > 0,
+  });
 
   // Fetch effective permissions for all MCP servers
   const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER, {
@@ -201,7 +206,7 @@ export function useMCPServerManager({
   });
   const connectionStatus = useMemo(() => {
     if (!polledConnectionStatus) {
-      return polledConnectionStatus;
+      return applyMCPDiscoveryAuthorizationState(polledConnectionStatus, discoveredMCPTools);
     }
 
     let changed = false;
@@ -214,8 +219,9 @@ export function useMCPServerManager({
       changed = true;
       nextStatus[serverName] = { ...status, requestScoped: true };
     }
-    return changed ? nextStatus : polledConnectionStatus;
-  }, [polledConnectionStatus, loadedServers]);
+    const normalizedStatus = changed ? nextStatus : polledConnectionStatus;
+    return applyMCPDiscoveryAuthorizationState(normalizedStatus, discoveredMCPTools);
+  }, [polledConnectionStatus, loadedServers, discoveredMCPTools]);
 
   const updateServerInitState = useCallback(
     (serverName: string, updates: Partial<MCPServerInitState>) => {

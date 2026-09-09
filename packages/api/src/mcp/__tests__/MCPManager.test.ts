@@ -4068,6 +4068,28 @@ describe('MCPManager', () => {
       expect(discoveryConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
+    it('classifies an authentication challenge from a plain server separately from OAuth', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: null,
+        connection: null,
+        oauthRequired: true,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('server');
+    });
+
     it('should forward runtime context to discoverTools in the non-OAuth path', async () => {
       const mockUser = { id: 'user123', email: 'test@example.com' } as unknown as IUser;
       const customUserVars = { MY_CUSTOM_KEY: 'c527bd0abc123' };
@@ -4176,6 +4198,7 @@ describe('MCPManager', () => {
 
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('oauth');
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
     });
 
@@ -4195,6 +4218,7 @@ describe('MCPManager', () => {
 
       expect(result.tools).toBeNull();
       expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('oauth');
       expect(mockLogger.warn).toHaveBeenCalledWith(
         '[MCP][Discovery] OAuth server requires a user and flow manager',
       );
@@ -4236,6 +4260,7 @@ describe('MCPManager', () => {
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(true);
       expect(result.oauthUrl).toBe('https://auth.example.com/authorize');
+      expect(result.authenticationKind).toBe('oauth');
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
         expect.objectContaining({ serverName }),
         expect.objectContaining({
@@ -4960,6 +4985,17 @@ describe('MCPManager', () => {
       } finally {
         cancelSpy.mockRestore();
       }
+    });
+
+    it('clears catalog recovery suppression for mutations but preserves it for lifecycle cleanup', async () => {
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const clearRecoveryState = jest.spyOn(manager.getCatalogRecoveryTracker(), 'clear');
+
+      await manager.disconnectUserConnection(userId, serverName, { reason: 'lifecycle' });
+      expect(clearRecoveryState).not.toHaveBeenCalled();
+
+      await manager.disconnectUserConnection(userId, serverName);
+      expect(clearRecoveryState).toHaveBeenCalledWith(userId, serverName);
     });
 
     it('fails a creation that a lifecycle teardown keeps cancelling on every attempt', async () => {

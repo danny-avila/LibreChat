@@ -25,6 +25,7 @@ jest.mock('~/hooks', () => ({
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: {} }),
   useMCPServersQuery: () => ({ data: {}, isLoading: false }),
+  useMCPToolsQuery: () => ({ data: undefined }),
 }));
 
 jest.mock('librechat-data-provider/react-query', () => ({

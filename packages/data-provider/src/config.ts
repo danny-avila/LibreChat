@@ -2687,6 +2687,28 @@ export const configSchema = z.object({
     .object({
       allowedDomains: z.array(z.string()).optional(),
       allowedAddresses: allowedAddressesSchema,
+      catalogRecovery: z
+        .object({
+          discoveryBackoffMs: z
+            .array(
+              z
+                .number()
+                .int()
+                .positive()
+                .max(24 * 60 * 60_000),
+            )
+            .min(1)
+            .max(8)
+            .default([5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000]),
+          reauthRetryMs: z
+            .number()
+            .int()
+            .positive()
+            .max(24 * 60 * 60_000)
+            .default(30 * 60_000),
+          maxStateEntries: z.number().int().positive().max(1_000_000).default(10_000),
+        })
+        .default({}),
     })
     .optional(),
   interface: interfaceSchema,
