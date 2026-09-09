@@ -165,7 +165,7 @@ it('loads each graph frontier in one batch', async () => {
 });
 
 it('does not count the root or legacy handoff nodes against the spawn graph budget', async () => {
-  const spawnIds = Array.from({ length: 50 }, (_, index) => `spawn-${index}`);
+  const spawnIds = Array.from({ length: 49 }, (_, index) => `spawn-${index}`);
   const legacyIds = Array.from({ length: 55 }, (_, index) => `handoff-${index}`);
   const { check, deps } = setup();
   deps.getAppConfig = jest.fn(
@@ -191,6 +191,30 @@ it('does not count the root or legacy handoff nodes against the spawn graph budg
   );
 
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+});
+
+it('rejects direct trees beyond the runtime expanded-config limit', async () => {
+  const spawnIds = Array.from({ length: 50 }, (_, index) => `spawn-${index}`);
+  const { check, deps } = setup([]);
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? graphNode(id, {
+            subagents: { enabled: true, agent_ids: spawnIds } as never,
+          })
+        : graphNode(id, { subagents: { enabled: true } as never }),
+    ),
+  );
+
+  await expect(check('root', principal)).rejects.toThrow('maximum of 100 expanded entries');
 });
 
 it('skips only a subagent graph definition that exceeds the runtime member budget', async () => {

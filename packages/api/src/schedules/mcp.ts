@@ -5,6 +5,7 @@ import {
   EModelEndpoint,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
+  MAX_SUBAGENT_RUN_CONFIGS,
   Permissions,
   PermissionTypes,
   isActionTool,
@@ -226,6 +227,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       .map((id) => accessibleById.get(id))
       .filter((agent): agent is AgentGraphNode => agent != null);
     const rootConfigIds = new Set(rootConfigs.map((agent) => agent.id));
+    let expandedSubagentConfigs = 0;
     let subagentsAvailable: boolean | undefined;
     const canUseSubagents = async (): Promise<boolean> => {
       if (subagentsAvailable != null) return subagentsAvailable;
@@ -243,6 +245,14 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         );
       }
       subagentGraphIds.add(id);
+    };
+    const countExpandedSubagentConfig = (): void => {
+      expandedSubagentConfigs += 1;
+      if (expandedSubagentConfigs > MAX_SUBAGENT_RUN_CONFIGS) {
+        throw new Error(
+          `Subagent run configuration exceeds the maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries.`,
+        );
+      }
     };
     const includeGraph = async (ids: string[]): Promise<void> => {
       await loadNodes(ids);
@@ -277,6 +287,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       ancestors: Set<string>,
     ): Promise<void> => {
       if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
+      if (agent.subagents.allowSelf !== false) countExpandedSubagentConfig();
       const directIds = [...new Set(agent.subagents.agent_ids ?? [])].filter(
         (id) => id.length > 0 && id !== agent.id,
       );
@@ -293,6 +304,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const child = accessibleById.get(childId);
         if (!child) continue;
         addGraphBudgetMember(childId);
+        countExpandedSubagentConfig();
         explicitSeeds.add(childId);
         expanded.add(childId);
         await visitDirectTree(child, depth + 1, nextAncestors);
