@@ -1,6 +1,11 @@
 import { renderHook, act } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
+import type {
+  CodeWorkspaceSelection,
+  TConversation,
+  TMessage,
+  TSubmission,
+} from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -13,6 +18,15 @@ const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
 const mockGetQueryData = jest.fn(() => ({}));
 const mockLoggerWarn = jest.fn();
+const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
+const mockResolveCodeWorkspace = jest.fn<
+  CodeWorkspaceSelection[] | undefined,
+  [CodeWorkspaceSelection[]?]
+>(() => undefined);
+const mockCodeWorkspace = {
+  required: false,
+  resolveSelections: mockResolveCodeWorkspace,
+};
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -40,6 +54,12 @@ jest.mock('recoil', () => ({
 }));
 
 jest.mock('~/hooks/Files/useSetFilesToDelete', () => () => mockSetFilesToDelete);
+jest.mock('~/hooks/Agents/useCodeApprovalMode', () => () => ({
+  modes: ['ask', 'acceptEdits'],
+  selected: 'ask',
+}));
+jest.mock('~/hooks/Agents/useCodeWorkspace', () => () => mockCodeWorkspace);
+jest.mock('~/hooks/Conversations/useGetConversation', () => () => mockGetLatestConversation);
 jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
 jest.mock('~/hooks', () => ({
@@ -55,6 +75,7 @@ jest.mock('~/store', () => ({
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
     pendingQuotesByConvoId: () => 'pendingQuotes',
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
+    conversationByKeySelector: () => 'conversation',
   },
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
@@ -128,6 +149,54 @@ describe('useChatFunctions ask', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetQueryData.mockReturnValue({});
+    mockGetLatestConversation.mockReturnValue(null);
+    mockCodeWorkspace.required = false;
+    mockResolveCodeWorkspace.mockReturnValue(undefined);
+  });
+
+  it('reads an approval-mode selection made immediately before send', () => {
+    mockGetLatestConversation.mockReturnValue({
+      ...conversation('conversation-1'),
+      codeApprovalMode: 'acceptEdits',
+    });
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.codeApprovalMode).toBe('acceptEdits');
+  });
+
+  it('submits the latest validated workspace selection', () => {
+    const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+    mockCodeWorkspace.required = true;
+    mockResolveCodeWorkspace.mockReturnValue([selection]);
+    mockGetLatestConversation.mockReturnValue({
+      ...conversation('conversation-1'),
+      codeWorkspaces: [selection],
+    });
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(mockResolveCodeWorkspace).toHaveBeenCalledWith([selection]);
+    expect(submission.codeWorkspaces).toEqual([selection]);
+  });
+
+  it('refuses to send while the required workspace is unavailable', () => {
+    mockCodeWorkspace.required = true;
+    mockResolveCodeWorkspace.mockReturnValue(undefined);
+    const { result, setSubmission } = renderAsk([]);
+
+    expect(result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' })).toBe(
+      false,
+    );
+    expect(setSubmission).not.toHaveBeenCalled();
   });
 
   it('refuses to send to an existing conversation before its history loads', () => {
@@ -276,6 +345,7 @@ describe('useChatFunctions regenerate', () => {
     });
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.codeApprovalMode).toBe('ask');
     expect(submission.userMessage.overrideParentMessageId).toBe('user-1');
     expect(submission.userMessage.responseMessageId).toBe('assistant-1_');
     expect(submission.initialResponse?.messageId).toBe('assistant-1_');
@@ -382,5 +452,107 @@ describe('useChatFunctions ask attachments', () => {
 
     expect(isPasteSubmitted('queued-override-file')).toBe(true);
     expect(isPasteSubmitted('queued-override-temp-file')).toBe(true);
+  });
+});
+
+describe('useChatFunctions ask compaction', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetQueryData.mockReturnValue({});
+  });
+
+  it('submits a summarize-only turn hung off the leaf without a new user bubble', () => {
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1')];
+    const { result, setMessages, setSubmission } = renderAsk(messages);
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'a1', parentMessageId: 'u1' },
+        { compact: true },
+      );
+    });
+
+    expect(setSubmission).toHaveBeenCalledTimes(1);
+    const submission = setSubmission.mock.calls[0][0] as TSubmission;
+    expect(submission.compact).toBe(true);
+    expect(submission.isRegenerate).toBe(true);
+    expect(submission.initialResponse?.parentMessageId).toBe('a1');
+    expect(submission.initialResponse?.messageId).toBe('a1_');
+    /** The leaf stands in for the user message so an error lands under it. */
+    expect(submission.userMessage.messageId).toBe('a1');
+    expect(submission.userMessage.overrideParentMessageId).toBeNull();
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.messages.map((message) => message.messageId)).toEqual(['u1', 'a1']);
+    expect(submission.regenerateMessages?.map((message) => message.messageId)).toEqual([
+      'u1',
+      'a1',
+    ]);
+
+    const rendered = setMessages.mock.calls[0][0] as TMessage[];
+    expect(rendered.map((message) => message.messageId)).toEqual(['u1', 'a1', 'a1_']);
+  });
+
+  it('does not re-attach the leaf files a user-message leaf carries', () => {
+    const leaf = { ...userMessage('u2', 'a1'), files: [{ file_id: 'f1' }] } as TMessage;
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1'), leaf];
+    const { result, setSubmission } = renderAsk(messages);
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'u2', parentMessageId: 'a1' },
+        { compact: true },
+      );
+    });
+
+    const submission = setSubmission.mock.calls[0][0] as TSubmission;
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.initialResponse?.parentMessageId).toBe('u2');
+  });
+});
+
+describe('useChatFunctions ask compaction and the composer', () => {
+  it('leaves files staged in the composer untouched', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'staged-file',
+        {
+          file_id: 'staged-file',
+          filepath: '/uploads/staged-file',
+          filename: 'next-message.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+    const messages = [userMessage('u1'), assistantMessage('a1', 'u1')];
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: messages[1],
+        conversation: conversation('conversation-1'),
+        getMessages: () => messages,
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask(
+        { text: '', conversationId: 'conversation-1', messageId: 'a1', parentMessageId: 'a1' },
+        { compact: true },
+      );
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.compact).toBe(true);
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.userMessage.parentMessageId).toBe('a1');
+    expect(setFiles).not.toHaveBeenCalled();
+    expect(isPasteSubmitted('staged-file')).toBe(false);
   });
 });

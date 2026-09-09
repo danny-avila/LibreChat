@@ -48,6 +48,7 @@ function Conversation({
   const [titleInput, setTitleInput] = useState(title || '');
   const [renaming, setRenaming] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   // Lazy-load ConvoOptions to avoid running heavy hooks for all conversations
   const [hasInteracted, setHasInteracted] = useState(false);
 
@@ -222,6 +223,13 @@ function Conversation({
           ? 'bg-surface-active-alt before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-full before:bg-text-primary'
           : 'hover:bg-surface-active-alt',
       )}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse') {
+          setIsHovered(true);
+        }
+      }}
+      onPointerLeave={() => setIsHovered(false)}
+      onPointerCancel={() => setIsHovered(false)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
@@ -249,6 +257,7 @@ function Conversation({
         <ConvoLink
           isActiveConvo={isActiveConvo}
           isPopoverActive={isPopoverActive}
+          isHovered={isHovered}
           isSharedBadgeVisible={isSharedBadgeVisible}
           title={title}
           onRename={handleRename}

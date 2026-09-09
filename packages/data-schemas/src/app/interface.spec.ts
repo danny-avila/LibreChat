@@ -168,10 +168,11 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(true);
   });
 
-  it('preserves the configured temporary chat retention period', async () => {
+  it('preserves the configured chat retention periods', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {
         temporaryChatRetention: 24,
+        generalChatRetention: 2160,
       },
     };
 
@@ -181,6 +182,7 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig?.temporaryChatRetention).toBe(24);
+    expect(interfaceConfig?.generalChatRetention).toBe(2160);
   });
 
   it('omits temporary chat retention when it is not explicitly configured', async () => {
@@ -190,6 +192,7 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig).not.toHaveProperty('temporaryChatRetention');
+    expect(interfaceConfig).not.toHaveProperty('generalChatRetention');
   });
 
   it('preserves the configured agent file retention exemption', async () => {

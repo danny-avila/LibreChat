@@ -299,11 +299,6 @@ const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
   default: false,
 });
 
-const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
-  key: 'showSkillsPopoverByIndex',
-  default: false,
-});
-
 /**
  * Per-conversation queue of skill names the user invoked manually via the
  * `$` popover for the next submission. Structured channel that the submit
@@ -681,11 +676,6 @@ const audioRunFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
-const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
-  key: 'messagesSiblingIdx',
-  default: 0,
-});
-
 /** Setter-only access to the conversation atom: registers the key like
  * `useCreateConversationAtom` but never subscribes to the value, so callers
  * that only write (navigation, per-row actions) don't re-render on every
@@ -801,7 +791,6 @@ export default {
   isSubmittingFamily,
   optionSettingsFamily,
   showPopoverFamily,
-  messagesSiblingIdxFamily,
   anySubmittingSelector,
   allConversationsSelector,
   conversationIdByIndex,
@@ -825,7 +814,6 @@ export default {
   activePromptByIndex,
   useClearSubmissionState,
   showPromptsPopoverFamily,
-  showSkillsPopoverFamily,
   pendingComposerTextByConvoId,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,

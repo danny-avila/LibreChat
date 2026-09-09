@@ -14,6 +14,7 @@ import type {
   IAgentEventActorSuspensionEvidence,
   IChatProject,
   IConversation,
+  AppConfig,
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -26,6 +27,7 @@ jest.mock('~/config/winston', () => ({
   debug: jest.fn(),
 }));
 
+const MEILI_SEARCH_LIMIT = 1000;
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Conversation: mongoose.Model<IConversation>;
 let ChatProject: mongoose.Model<IChatProject>;
@@ -40,6 +42,7 @@ let modelsToCleanup: string[] = [];
 // Mock message methods (same as original test mocking ./Message)
 const getMessages = jest.fn().mockResolvedValue([]);
 const deleteMessages = jest.fn().mockResolvedValue({ deletedCount: 0 });
+const searchMessages = jest.fn().mockResolvedValue({ hits: [] });
 
 let methods: ConversationMethods;
 
@@ -59,7 +62,7 @@ beforeAll(async () => {
     position: number;
   }>;
 
-  methods = createConversationMethods(mongoose, { getMessages, deleteMessages });
+  methods = createConversationMethods(mongoose, { getMessages, deleteMessages, searchMessages });
 
   await mongoose.connect(mongoUri);
 });
@@ -120,7 +123,7 @@ describe('Conversation Operations', () => {
     userId: string;
     isTemporary?: boolean;
     expiredAt?: Date;
-    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
+    interfaceConfig?: AppConfig['interfaceConfig'];
   };
   let mockConversationData: {
     conversationId: string;
@@ -138,6 +141,7 @@ describe('Conversation Operations', () => {
     jest.clearAllMocks();
     getMessages.mockResolvedValue([]);
     deleteMessages.mockResolvedValue({ deletedCount: 0 });
+    searchMessages.mockResolvedValue({ hits: [] });
 
     mockCtx = {
       userId: 'user123',
@@ -169,6 +173,97 @@ describe('Conversation Operations', () => {
       });
       expect(savedConvo).toBeTruthy();
       expect(savedConvo?.title).toBe('Test Conversation');
+    });
+
+    it('rejects actor checkpoint ownership evidence through ordinary saves and imports', async () => {
+      const forged = {
+        agentEventActor: {
+          generation: 1,
+          checkpoint: {
+            threadId: 'other',
+            checkpointNs: 'event-actor/other',
+            checkpointId: 'other',
+          },
+        },
+        agentEventActorCleanup: [
+          { threadId: 'other', checkpointNs: 'event-actor/other', checkpointId: 'other' },
+        ],
+        agentEventActorReconciliations: [
+          {
+            checkpoint: {
+              threadId: 'other',
+              checkpointNs: 'event-actor/other',
+              checkpointId: 'other',
+            },
+          },
+        ],
+        agentEventActorSuspension: { status: 'closed' },
+        'agentEventActor.checkpoint': {
+          threadId: 'other',
+          checkpointNs: 'event-actor/other',
+          checkpointId: 'other',
+        },
+        'agentEventActorCleanup.0': {
+          threadId: 'other',
+          checkpointNs: 'event-actor/other',
+          checkpointId: 'other',
+        },
+      };
+      await saveConvo(mockCtx, { ...mockConversationData, ...forged });
+      await methods.bulkSaveConvos([{ ...mockConversationData, user: mockCtx.userId, ...forged }]);
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select(
+          '+agentEventActor +agentEventActorCleanup +agentEventActorReconciliations +agentEventActorSuspension',
+        )
+        .lean();
+      for (const field of Object.keys(forged)) {
+        expect(saved).not.toHaveProperty(field);
+      }
+    });
+
+    it('sets immutable agent attribution from server metadata only on insert', async () => {
+      await saveConvo(
+        mockCtx,
+        {
+          ...mockConversationData,
+          agent_id: 'agent-a',
+          initial_agent_id: 'forged-agent',
+        },
+        { initialAgentId: 'agent-a' },
+      );
+      await saveConvo(
+        mockCtx,
+        {
+          conversationId: mockConversationData.conversationId,
+          agent_id: 'agent-b',
+          initial_agent_id: 'forged-agent-b',
+        },
+        { initialAgentId: 'agent-b' },
+      );
+
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select('+initial_agent_id')
+        .lean();
+      expect(saved?.initial_agent_id).toBe('agent-a');
+      expect(saved?.agent_id).toBe('agent-b');
+    });
+
+    it('stores explicit null attribution for a new non-agent conversation', async () => {
+      await saveConvo(mockCtx, mockConversationData);
+
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+        user: mockCtx.userId,
+      })
+        .select('+initial_agent_id')
+        .lean();
+      expect(saved).toHaveProperty('initial_agent_id', null);
     });
 
     it('should query messages when saving a conversation', async () => {
@@ -270,6 +365,24 @@ describe('Conversation Operations', () => {
 
       const refreshedProject = await ChatProject.findById(project._id).lean<IChatProject>();
       expect(refreshedProject?.conversationCount).toBe(1);
+    });
+
+    it('bulkSaveConvos strips supplied attribution and stores explicit null on insert', async () => {
+      const conversationId = uuidv4();
+
+      await methods.bulkSaveConvos([
+        {
+          conversationId,
+          user: mockCtx.userId,
+          endpoint: EModelEndpoint.openAI,
+          initial_agent_id: 'forged-agent',
+        },
+      ]);
+
+      const saved = await Conversation.findOne({ conversationId, user: mockCtx.userId })
+        .select('+initial_agent_id')
+        .lean();
+      expect(saved).toHaveProperty('initial_agent_id', null);
     });
 
     it('refreshes both projects when a save moves a conversation between them', async () => {
@@ -1264,6 +1377,73 @@ describe('Conversation Operations', () => {
       expect(secondSave?.expiredAt).toBeNull();
     });
 
+    it.each([true, false, undefined])(
+      'uses the independent retention period for isTemporary=%s',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const now = Date.now();
+        const result = await saveConvo(mockCtx, mockConversationData);
+        const expectedHours = isTemporary === true ? 1 : 2160;
+
+        expect(result?.isTemporary).toBe(isTemporary === true);
+        expect(result?.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + expectedHours * 3600000);
+        expect(result?.expiredAt?.getTime()).toBeLessThan(now + expectedHours * 3600000 + 5000);
+      },
+    );
+
+    it('ignores caller-supplied retention fields', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const suppliedExpiration = new Date('2099-01-01T00:00:00.000Z');
+
+      const result = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        isTemporary: true,
+        expiredAt: suppliedExpiration,
+      });
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).not.toEqual(suppliedExpiration);
+    });
+
+    it.each([true, false])(
+      'preserves the stored deadline when chat type %s is omitted',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const first = await saveConvo(mockCtx, mockConversationData);
+        mockCtx.isTemporary = undefined;
+        const second = await saveConvo(mockCtx, { ...mockConversationData });
+        expect(second?.isTemporary).toBe(isTemporary);
+        expect(second?.expiredAt).toEqual(first?.expiredAt);
+      },
+    );
+
+    it('preserves an explicitly inherited deadline with separate retention periods', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.expiredAt = new Date(Date.now() + 60000);
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.expiredAt).toEqual(mockCtx.expiredAt);
+    });
+
     it('should set expiredAt for non-temporary conversation when retentionMode is ALL', async () => {
       mockCtx.isTemporary = false;
       mockCtx.interfaceConfig = {
@@ -2014,6 +2194,16 @@ describe('Conversation Operations', () => {
       await expect(deleteConvos('user123', { conversationId: 'non-existent' })).rejects.toThrow(
         'Conversation not found or already deleted.',
       );
+    });
+
+    it('allows a single-conversation cleanup retry after topology and messages are gone', async () => {
+      const result = await deleteConvos(
+        'user123',
+        { conversationId: 'already-absent' },
+        { allowEmpty: true },
+      );
+      expect(result.deletedCount).toBe(0);
+      expect(result.conversationIds).toEqual(['already-absent']);
     });
 
     it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {
@@ -3662,6 +3852,72 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('getConvosByCursor page size bounds', () => {
+    const TOTAL = 105;
+    const user = 'page-size-user';
+
+    beforeEach(async () => {
+      const baseTime = new Date('2026-06-01T00:00:00.000Z').getTime();
+      await Conversation.collection.insertMany(
+        Array.from({ length: TOTAL }, (_, index) => ({
+          conversationId: uuidv4(),
+          user,
+          title: `Conversation ${index}`,
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: new Date(baseTime + index * 1000),
+          updatedAt: new Date(baseTime + index * 1000),
+        })),
+      );
+    });
+
+    afterEach(async () => {
+      await Conversation.deleteMany({ user });
+    });
+
+    /** `.limit(limit + 1)` turned a -1 page size into `.limit(0)`, which MongoDB reads as
+     * "no limit" — the query returned the caller's entire collection in one response. */
+    it.each([
+      ['negative', -1],
+      ['zero', 0],
+      ['oversized', 999999999],
+    ])('bounds a %s page size', async (_label, limit) => {
+      const result = await getConvosByCursor(user, { limit });
+
+      expect(result.conversations.length).toBeLessThanOrEqual(100);
+      expect(result.conversations.length).toBeGreaterThan(0);
+      expect(result.nextCursor).not.toBeNull();
+    });
+
+    it('caps an oversized page size at the ceiling and still pages the remainder', async () => {
+      const first = await getConvosByCursor(user, { limit: Number.MAX_SAFE_INTEGER });
+
+      expect(first.conversations).toHaveLength(100);
+      expect(first.nextCursor).not.toBeNull();
+
+      const second = await getConvosByCursor(user, {
+        limit: Number.MAX_SAFE_INTEGER,
+        cursor: first.nextCursor,
+      });
+
+      expect(second.conversations).toHaveLength(TOTAL - 100);
+      expect(second.nextCursor).toBeNull();
+
+      const ids = new Set(
+        [...first.conversations, ...second.conversations].map((convo) => convo.conversationId),
+      );
+      expect(ids.size).toBe(TOTAL);
+    });
+
+    it('serves a page size inside the range unchanged', async () => {
+      const result = await getConvosByCursor(user, { limit: 10 });
+
+      expect(result.conversations).toHaveLength(10);
+      expect(result.nextCursor).not.toBeNull();
+    });
+  });
+
   describe('subagent thread leases', () => {
     it('reserves child lineage once without overwriting a concurrent winner', async () => {
       await Conversation.init();
@@ -4007,279 +4263,315 @@ describe('Conversation Operations', () => {
       );
     });
 
-    it('serializes suspension ownership through claim, re-pause, and resumed commit', async () => {
-      const conversationId = uuidv4();
-      const owner = {
-        user: 'suspended-actor-user',
-        tenantId: 'tenant-a',
-        conversationId,
-      };
-      await Conversation.create({
-        conversationId,
-        user: owner.user,
-        tenantId: owner.tenantId,
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent-player',
-        agentEventBinding: {
-          bindingId: `evtbind_${'s'.repeat(48)}`,
-          sourceKeyId: 'key-a',
-          actorId: 'player-a',
-        },
-        subagentThread: {
-          rootConversationId: 'parent',
-          parentConversationId: 'parent',
-          parentMessageId: 'parent-message',
-          parentToolCallId: 'event-binding',
-          parentAgentId: 'agent-director',
-          subagentType: 'agent-player',
-          subagentKind: 'agent',
-          depth: 1,
-        },
-      });
-      const checkpoint = (suffix: string) => ({
-        threadId: conversationId,
-        checkpointId: `checkpoint-${suffix}`,
-        checkpointNs: `event-actor/${suffix}`,
-      });
-      const suspension = (suffix: string, attempt: number): IAgentEventActorSuspensionEvidence => ({
-        version: 1,
-        suspensionId: `suspension-${suffix}`,
-        attempt,
-        issuedAt: 1_000 + attempt,
-        expiresAt: 100_000 + attempt,
-        invocation: {
-          actorThreadId: conversationId,
-          invocationId: 'event-pause',
-          depth: 1,
-          continuation: 'cold',
-          base: { actorThreadId: conversationId, generation: 0 },
-          fork: { ...checkpoint('fork'), invocationId: 'event-pause' },
-        },
-        checkpoint: {
-          ...checkpoint('fork'),
+    it.each(['owned', 'legacy'])(
+      'serializes %s suspension ownership through claim, re-pause, and resumed commit',
+      async (storage) => {
+        const conversationId = uuidv4();
+        const owner = {
+          user: 'suspended-actor-user',
+          tenantId: 'tenant-a',
+          conversationId,
+        };
+        await Conversation.create({
+          conversationId,
+          user: owner.user,
+          tenantId: owner.tenantId,
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-player',
+          agentEventBinding: {
+            bindingId: `evtbind_${'s'.repeat(48)}`,
+            sourceKeyId: 'key-a',
+            actorId: 'player-a',
+          },
+          subagentThread: {
+            rootConversationId: 'parent',
+            parentConversationId: 'parent',
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'event-binding',
+            parentAgentId: 'agent-director',
+            subagentType: 'agent-player',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        });
+        const checkpoint = (suffix: string) => ({
+          threadId: conversationId,
           checkpointId: `checkpoint-${suffix}`,
-          invocationId: 'event-pause',
-        },
-        interrupt: {
-          id: `interrupt-${suffix}`,
-          payload: { type: 'ask_user_question', actionId: `action-${suffix}` },
-        },
-        suspensionDigest: `digest-${suffix}`,
-      });
-
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          ...owner,
-          reconciliation: {
+          checkpointNs: `event-actor/${suffix}`,
+        });
+        const suspension = (
+          suffix: string,
+          attempt: number,
+        ): IAgentEventActorSuspensionEvidence => ({
+          version: 1,
+          suspensionId: `suspension-${suffix}`,
+          attempt,
+          issuedAt: 1_000 + attempt,
+          expiresAt: 100_000 + attempt,
+          invocation: {
+            actorThreadId: conversationId,
             invocationId: 'event-pause',
-            actionAdmitted: true,
-            status: 'invocation_pending',
-            checkpoint: checkpoint('fork'),
-            action: { toolName: 'submit_move' },
-            observedAt: new Date(),
+            depth: 1,
+            continuation: 'cold',
+            base: { actorThreadId: conversationId, generation: 0 },
+            fork: { ...checkpoint('fork'), invocationId: 'event-pause' },
           },
-        }),
-      ).resolves.toBe(true);
-      const first = suspension('first', 0);
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: {
-            ...first,
-            interrupt: {
-              ...first.interrupt,
-              payload: { type: 'ask_user_question', question: 'x'.repeat(65 * 1_024) },
+          checkpoint: {
+            ...checkpoint('fork'),
+            checkpointId: `checkpoint-${suffix}`,
+            invocationId: 'event-pause',
+          },
+          interrupt: {
+            id: `interrupt-${suffix}`,
+            payload: { type: 'ask_user_question', actionId: `action-${suffix}` },
+          },
+          suspensionDigest: `digest-${suffix}`,
+        });
+
+        await expect(
+          methods.recordAgentEventActorReconciliation({
+            ...owner,
+            reconciliation: {
+              invocationId: 'event-pause',
+              actionAdmitted: true,
+              status: 'invocation_pending',
+              checkpoint: checkpoint('fork'),
+              action: { toolName: 'submit_move' },
+              observedAt: new Date(),
             },
-          },
-          actionId: 'action-oversized',
-          jobCreatedAt: 123,
-        }),
-      ).rejects.toThrow('Event actor suspension exceeds maximum payload size');
-      await expect(
-        methods.storeAgentEventActorSuspension({
+          }),
+        ).resolves.toBe(true);
+        const first = suspension('first', 0);
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: {
+              ...first,
+              interrupt: {
+                ...first.interrupt,
+                payload: { type: 'ask_user_question', question: 'x'.repeat(65 * 1_024) },
+              },
+            },
+            actionId: 'action-oversized',
+            jobCreatedAt: 123,
+          }),
+        ).rejects.toThrow('Event actor suspension exceeds maximum payload size');
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: first,
+            actionId: 'action-first',
+            jobCreatedAt: 123,
+          }),
+        ).resolves.toEqual({ status: 'stored' });
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: { kind: 'human_decision' },
+        });
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: { ...first, suspensionId: 'competing-suspension' },
+            actionId: 'action-first',
+            jobCreatedAt: 123,
+          }),
+        ).resolves.toEqual({ status: 'stale' });
+
+        expect(
+          (await Conversation.collection.findOne({ conversationId }))?.agentEventActorSuspension
+            .status,
+        ).toBe('pending_owned');
+        const oldClaim = await Conversation.collection.updateOne(
+          { conversationId, user: owner.user, 'agentEventActorSuspension.status': 'pending' },
+          { $set: { 'agentEventActorSuspension.status': 'claimed' } },
+        );
+        expect(oldClaim.matchedCount).toBe(0);
+        if (storage === 'legacy') {
+          await Conversation.collection.updateOne(
+            { conversationId },
+            { $set: { 'agentEventActorSuspension.status': 'pending' } },
+          );
+        }
+
+        const claim = {
           ...owner,
-          suspension: first,
+          suspensionId: first.suspensionId,
+          attempt: first.attempt,
           actionId: 'action-first',
           jobCreatedAt: 123,
-        }),
-      ).resolves.toEqual({ status: 'stored' });
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: { kind: 'human_decision' },
-      });
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: { ...first, suspensionId: 'competing-suspension' },
-          actionId: 'action-first',
-          jobCreatedAt: 123,
-        }),
-      ).resolves.toEqual({ status: 'stale' });
+          resumeAttemptId: 'resume-one',
+        };
+        const claims = await Promise.all([
+          methods.claimAgentEventActorSuspension(claim),
+          methods.claimAgentEventActorSuspension({ ...claim, resumeAttemptId: 'resume-two' }),
+        ]);
+        expect(claims).toEqual(
+          expect.arrayContaining([{ status: 'claimed' }, { status: 'stale' }]),
+        );
+        const winningResumeAttemptId = claims[0].status === 'claimed' ? 'resume-one' : 'resume-two';
+        expect(
+          (await Conversation.collection.findOne({ conversationId }))?.agentEventActorSuspension
+            .status,
+        ).toBe('claimed_owned');
+        expect(
+          (
+            await Conversation.collection.updateOne(
+              { conversationId, user: owner.user, 'agentEventActorSuspension.status': 'claimed' },
+              { $set: { 'agentEventActorSuspension.status': 'closed' } },
+            )
+          ).matchedCount,
+        ).toBe(0);
 
-      const claim = {
-        ...owner,
-        suspensionId: first.suspensionId,
-        attempt: first.attempt,
-        actionId: 'action-first',
-        jobCreatedAt: 123,
-        resumeAttemptId: 'resume-one',
-      };
-      const claims = await Promise.all([
-        methods.claimAgentEventActorSuspension(claim),
-        methods.claimAgentEventActorSuspension({ ...claim, resumeAttemptId: 'resume-two' }),
-      ]);
-      expect(claims).toEqual(expect.arrayContaining([{ status: 'claimed' }, { status: 'stale' }]));
-      const winningResumeAttemptId = claims[0].status === 'claimed' ? 'resume-one' : 'resume-two';
-
-      const second = suspension('second', 1);
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: second,
-          kind: 'internal_completion',
-          actionId: 'action-second',
-          jobCreatedAt: 123,
-          previous: {
-            suspensionId: first.suspensionId,
-            attempt: first.attempt,
-            resumeAttemptId: winningResumeAttemptId,
+        const second = suspension('second', 1);
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: second,
+            kind: 'internal_completion',
+            actionId: 'action-second',
+            jobCreatedAt: 123,
+            previous: {
+              suspensionId: first.suspensionId,
+              attempt: first.attempt,
+              resumeAttemptId: winningResumeAttemptId,
+            },
+          }),
+        ).resolves.toEqual({ status: 'stored' });
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: {
+            kind: 'internal_completion',
+            suspension: { suspensionId: second.suspensionId },
           },
-        }),
-      ).resolves.toEqual({ status: 'stored' });
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: {
-          kind: 'internal_completion',
-          suspension: { suspensionId: second.suspensionId },
-        },
-      });
-      await expect(
-        methods.claimAgentEventActorSuspension({
-          ...owner,
-          suspensionId: second.suspensionId,
-          attempt: second.attempt,
-          actionId: 'action-second',
-          jobCreatedAt: 123,
-          resumeAttemptId: 'resume-three',
-        }),
-      ).resolves.toEqual({ status: 'claimed' });
-
-      await expect(
-        methods.commitAgentEventActorState({
-          ...owner,
-          invocationId: 'event-pause',
-          expectedEpoch: 0,
-          action: { toolName: 'submit_move' },
-          checkpoint: checkpoint('committed'),
-          settlementAuthority: {
+        });
+        await expect(
+          methods.claimAgentEventActorSuspension({
+            ...owner,
             suspensionId: second.suspensionId,
             attempt: second.attempt,
+            actionId: 'action-second',
+            jobCreatedAt: 123,
+            resumeAttemptId: 'resume-three',
+          }),
+        ).resolves.toEqual({ status: 'claimed' });
+
+        await expect(
+          methods.commitAgentEventActorState({
+            ...owner,
+            invocationId: 'event-pause',
+            expectedEpoch: 0,
+            action: { toolName: 'submit_move' },
+            checkpoint: checkpoint('committed'),
+            settlementAuthority: {
+              suspensionId: second.suspensionId,
+              attempt: second.attempt,
+              resumeAttemptId: 'resume-three',
+            },
+          }),
+        ).resolves.toMatchObject({ status: 'committed' });
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: {
+            status: 'closed',
+            outcome: 'committed',
             resumeAttemptId: 'resume-three',
           },
-        }),
-      ).resolves.toMatchObject({ status: 'committed' });
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: {
-          status: 'closed',
-          outcome: 'committed',
-          resumeAttemptId: 'resume-three',
-        },
-        state: { generation: 1, checkpoint: checkpoint('committed') },
-      });
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          ...owner,
-          reconciliation: {
+          state: { generation: 1, checkpoint: checkpoint('committed') },
+        });
+        await expect(
+          methods.recordAgentEventActorReconciliation({
+            ...owner,
+            reconciliation: {
+              invocationId: 'event-pause',
+              actionAdmitted: true,
+              status: 'history_persisted',
+              checkpoint: checkpoint('committed'),
+              action: { toolName: 'submit_move' },
+              observedAt: new Date(),
+            },
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          methods.resolveAgentEventActorReconciliation({
+            ...owner,
             invocationId: 'event-pause',
-            actionAdmitted: true,
-            status: 'history_persisted',
             checkpoint: checkpoint('committed'),
-            action: { toolName: 'submit_move' },
-            observedAt: new Date(),
-          },
-        }),
-      ).resolves.toBe(true);
-      await expect(
-        methods.resolveAgentEventActorReconciliation({
-          ...owner,
-          invocationId: 'event-pause',
-          checkpoint: checkpoint('committed'),
-          resolution: 'checkpoint_verified',
-        }),
-      ).resolves.toBe(true);
+            resolution: 'checkpoint_verified',
+          }),
+        ).resolves.toBe(true);
 
-      const cancellationCheckpoint = checkpoint('cancel');
-      const cancellationSuspension: IAgentEventActorSuspensionEvidence = {
-        ...suspension('cancel', 0),
-        invocation: {
-          ...suspension('cancel', 0).invocation,
-          invocationId: 'event-cancel',
-          fork: {
+        const cancellationCheckpoint = checkpoint('cancel');
+        const cancellationSuspension: IAgentEventActorSuspensionEvidence = {
+          ...suspension('cancel', 0),
+          invocation: {
+            ...suspension('cancel', 0).invocation,
+            invocationId: 'event-cancel',
+            fork: {
+              ...cancellationCheckpoint,
+              invocationId: 'event-cancel',
+            },
+          },
+          checkpoint: {
             ...cancellationCheckpoint,
             invocationId: 'event-cancel',
           },
-        },
-        checkpoint: {
-          ...cancellationCheckpoint,
-          invocationId: 'event-cancel',
-        },
-      };
-      await expect(
-        methods.recordAgentEventActorReconciliation({
-          ...owner,
-          reconciliation: {
-            invocationId: 'event-cancel',
-            status: 'invocation_pending',
-            checkpoint: cancellationCheckpoint,
-            action: { toolName: 'submit_move' },
-            observedAt: new Date(),
-          },
-        }),
-      ).resolves.toBe(true);
-      await expect(
-        methods.storeAgentEventActorSuspension({
-          ...owner,
-          suspension: cancellationSuspension,
-          actionId: 'action-cancel',
-          jobCreatedAt: 124,
-        }),
-      ).resolves.toEqual({ status: 'stored' });
-      const [resumeRace, cancelRace] = await Promise.all([
-        methods.claimAgentEventActorSuspension({
-          ...owner,
-          suspensionId: cancellationSuspension.suspensionId,
-          attempt: 0,
-          actionId: 'action-cancel',
-          jobCreatedAt: 124,
-          resumeAttemptId: 'resume-race',
-        }),
-        methods.cancelAgentEventActorSuspension({
-          ...owner,
-          suspensionId: cancellationSuspension.suspensionId,
-          attempt: 0,
-          invocationId: 'event-cancel',
-          checkpoint: cancellationCheckpoint,
-        }),
-      ]);
-      const raceStatuses = [resumeRace.status, cancelRace.status];
-      expect(raceStatuses.filter((status) => status === 'stale')).toHaveLength(1);
-      expect(raceStatuses).toEqual(
-        expect.arrayContaining([expect.stringMatching(/^(claimed|cancelled)$/), 'stale']),
-      );
-      if (resumeRace.status === 'claimed') {
+        };
         await expect(
+          methods.recordAgentEventActorReconciliation({
+            ...owner,
+            reconciliation: {
+              invocationId: 'event-cancel',
+              status: 'invocation_pending',
+              checkpoint: cancellationCheckpoint,
+              action: { toolName: 'submit_move' },
+              observedAt: new Date(),
+            },
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          methods.storeAgentEventActorSuspension({
+            ...owner,
+            suspension: cancellationSuspension,
+            actionId: 'action-cancel',
+            jobCreatedAt: 124,
+          }),
+        ).resolves.toEqual({ status: 'stored' });
+        const [resumeRace, cancelRace] = await Promise.all([
+          methods.claimAgentEventActorSuspension({
+            ...owner,
+            suspensionId: cancellationSuspension.suspensionId,
+            attempt: 0,
+            actionId: 'action-cancel',
+            jobCreatedAt: 124,
+            resumeAttemptId: 'resume-race',
+          }),
           methods.cancelAgentEventActorSuspension({
             ...owner,
             suspensionId: cancellationSuspension.suspensionId,
             attempt: 0,
             invocationId: 'event-cancel',
             checkpoint: cancellationCheckpoint,
-            claimedResumeAttemptId: 'resume-race',
           }),
-        ).resolves.toEqual({ status: 'cancelled' });
-      }
-      await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
-        suspension: { status: 'closed', outcome: 'cancelled' },
-      });
-    });
+        ]);
+        const raceStatuses = [resumeRace.status, cancelRace.status];
+        expect(raceStatuses.filter((status) => status === 'stale')).toHaveLength(1);
+        expect(raceStatuses).toEqual(
+          expect.arrayContaining([expect.stringMatching(/^(claimed|cancelled)$/), 'stale']),
+        );
+        if (resumeRace.status === 'claimed') {
+          await expect(
+            methods.cancelAgentEventActorSuspension({
+              ...owner,
+              suspensionId: cancellationSuspension.suspensionId,
+              attempt: 0,
+              invocationId: 'event-cancel',
+              checkpoint: cancellationCheckpoint,
+              claimedResumeAttemptId: 'resume-race',
+            }),
+          ).resolves.toEqual({ status: 'cancelled' });
+        }
+        await expect(methods.getAgentEventActorSnapshot(owner)).resolves.toMatchObject({
+          suspension: { status: 'closed', outcome: 'cancelled' },
+        });
+      },
+    );
 
     it('closes a resumed suspension when the actor-head commit is stale', async () => {
       const conversationId = uuidv4();
@@ -4598,6 +4890,10 @@ describe('Conversation Operations', () => {
         },
         prunableCheckpoint: checkpoint('one'),
       });
+      const pendingPruning = await Conversation.findOne({ conversationId })
+        .select('+agentEventActorCleanup')
+        .lean();
+      expect(pendingPruning?.agentEventActorCleanup).toEqual([checkpoint('one')]);
       await expect(finishInvocation('three', checkpoint('three'))).resolves.toBe(true);
       await expect(
         methods.getAgentEventActorSnapshot({
@@ -4870,6 +5166,39 @@ describe('Conversation Operations', () => {
           contextMeta: { calibrationRatio: 9, encoding: 'o200k_base' },
         }),
       ).rejects.toThrow('Event actor context calibration is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-fading',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          contextMeta: {
+            calibrationRatio: 1.25,
+            fading: { v: 1, budgetTokens: -5, masked: true },
+          },
+        }),
+      ).rejects.toThrow('Event actor context fading tier is invalid');
+
+      await expect(
+        methods.commitAgentEventActorState({
+          user: 'actor-context-user',
+          conversationId,
+          invocationId: 'invalid-fading-tiers',
+          expectedEpoch: 0,
+          action: { toolName: 'submit_move' },
+          checkpoint: actorCheckpoint,
+          contextMeta: {
+            calibrationRatio: 1.25,
+            fadingTiers: [
+              { agentId: 'agent-a', v: 1, budgetTokens: 20_000, masked: true },
+              { agentId: 'agent-a', v: 1, budgetTokens: 10_000, masked: true },
+            ],
+          },
+        }),
+      ).rejects.toThrow('Event actor context fading tiers are invalid');
 
       await expect(
         methods.commitAgentEventActorState({
@@ -6556,6 +6885,162 @@ describe('Conversation Operations', () => {
       expect(refreshedProject?.conversationCount).toBe(1);
       expect(refreshedProject?.lastConversationId).toBe(conversationId);
       expect(refreshedProject?.lastConversationAt?.toISOString()).toBe(createdAt.toISOString());
+    });
+  });
+
+  describe('getConvosByCursor search', () => {
+    it('should include conversations matched only by message content', async () => {
+      const titleMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+      const contentMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Unrelated title',
+        endpoint: EModelEndpoint.openAI,
+      });
+      await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'No match anywhere',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] });
+      Object.assign(Conversation, { meiliSearch });
+      searchMessages.mockResolvedValue({
+        hits: [{ conversationId: contentMatch.conversationId }],
+      });
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      const searchParams = {
+        filter: 'user = "user123"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
+      const convoIds = result?.conversations.map((c) => c.conversationId);
+      expect(convoIds).toHaveLength(2);
+      expect(convoIds).toContain(titleMatch.conversationId);
+      expect(convoIds).toContain(contentMatch.conversationId);
+    });
+
+    it('should dedupe conversations matched by both title and message search', async () => {
+      const overlapMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+      const titleOnlyMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Keyword in title',
+        endpoint: EModelEndpoint.openAI,
+      });
+      const messageOnlyMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Unrelated title',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const meiliSearch = jest.fn().mockResolvedValue({
+        hits: [
+          { conversationId: overlapMatch.conversationId },
+          { conversationId: titleOnlyMatch.conversationId },
+        ],
+      });
+      Object.assign(Conversation, { meiliSearch });
+      searchMessages.mockResolvedValue({
+        hits: [
+          { conversationId: overlapMatch.conversationId },
+          { conversationId: messageOnlyMatch.conversationId },
+        ],
+      });
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      const searchParams = {
+        filter: 'user = "user123"',
+        limit: MEILI_SEARCH_LIMIT,
+        attributesToRetrieve: ['conversationId', 'originalConversationId'],
+      };
+      expect(meiliSearch).toHaveBeenCalledWith('keyword', searchParams);
+      expect(searchMessages).toHaveBeenCalledWith('keyword', searchParams);
+      const convoIds = result?.conversations.map((c) => c.conversationId);
+      expect(convoIds).toHaveLength(3);
+      expect(convoIds).toContain(overlapMatch.conversationId);
+      expect(convoIds).toContain(titleOnlyMatch.conversationId);
+      expect(convoIds).toContain(messageOnlyMatch.conversationId);
+    });
+
+    it('should return an empty result when neither titles nor messages match', async () => {
+      await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'No match anywhere',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+      searchMessages.mockResolvedValue({ hits: [] });
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations).toHaveLength(0);
+      expect(result?.nextCursor).toBeNull();
+    });
+
+    it('should fall back to title matches when the message index search fails', async () => {
+      const titleMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] }),
+      });
+      searchMessages.mockRejectedValue(new Error('MeiliSearch plugin not registered'));
+
+      const result = await getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([
+        titleMatch.conversationId,
+      ]);
+    });
+
+    it('should search titles when message methods are not injected', async () => {
+      const titleMatch = await Conversation.create({
+        conversationId: uuidv4(),
+        user: 'user123',
+        title: 'Contains keyword',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: titleMatch.conversationId }] }),
+      });
+
+      const scopedMethods = createConversationMethods(mongoose);
+      const result = await scopedMethods.getConvosByCursor('user123', { search: 'keyword' });
+
+      expect(result?.conversations.map((c) => c.conversationId)).toEqual([
+        titleMatch.conversationId,
+      ]);
     });
   });
 });

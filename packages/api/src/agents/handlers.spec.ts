@@ -10,11 +10,16 @@ import type {
   ToolExecuteResult,
   ToolCallRequest,
 } from '@librechat/agents';
-import type { PtcToolCallEvent } from 'librechat-data-provider';
+import type { CodeWorkspaceOperation, PtcToolCallEvent } from 'librechat-data-provider';
 import type { CodeExecutionContext } from './execution';
-import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
+import {
+  createOwnedToolEndHandler,
+  createToolExecuteHandler,
+  ToolExecuteOptions,
+} from './handlers';
 import { markSandboxReady } from './prewarm';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { WorkspaceToolHttpError } from '../code/workspace';
 
 function createMockTool(
   name: string,
@@ -100,6 +105,32 @@ function skillsInScope(): unknown[] {
   return [new Types.ObjectId()];
 }
 
+const TEST_ATTACHED_WORKSPACE_OPERATIONS: CodeWorkspaceOperation[] = [
+  'read_file',
+  'search_text',
+  'list_files',
+  'write_file',
+  'preview_edit',
+  'edit_file',
+  'execute_command',
+];
+
+function withTestAttachedWorkspace(
+  context: CodeExecutionContext | undefined,
+): CodeExecutionContext | undefined {
+  if (context?.environmentType !== 'attached' || context.codeWorkspace != null) return context;
+  const environmentId = context.environmentId ?? 'personal-machine';
+  return {
+    ...context,
+    environmentId,
+    codeWorkspace: {
+      environmentId,
+      workspaceId: 'project-a',
+      operations: TEST_ATTACHED_WORKSPACE_OPERATIONS,
+    },
+  };
+}
+
 function protectedToolOutputRequest() {
   return {
     user: { id: 'user-1' },
@@ -122,6 +153,28 @@ function protectedToolOutputRequest() {
     },
   } as never;
 }
+
+describe('createOwnedToolEndHandler', () => {
+  it('forwards the graph-owned step identity to the tool callback', async () => {
+    const callback = jest.fn(async () => undefined);
+    const handler = createOwnedToolEndHandler(callback as never, logger);
+    const graph = {
+      toolCallStepIds: new Map([['call_1', 'step-1']]),
+    } as never;
+
+    await handler.handle(
+      'on_tool_end',
+      { output: { tool_call_id: 'call_1', content: 'ok' } } as never,
+      { agent_id: 'agent-a' },
+      graph,
+    );
+
+    expect(callback).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ agent_id: 'agent-a', stepId: 'step-1' }),
+    );
+  });
+});
 
 describe('createToolExecuteHandler', () => {
   describe('code execution session context passthrough', () => {
@@ -306,6 +359,242 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].session_id).toBeUndefined();
       expect(capturedConfigs[0]._injected_files).toBeUndefined();
+    });
+  });
+
+  describe('run cancellation', () => {
+    /** Production aborts with no reason, yielding a DOMException named
+     *  `AbortError` — the shape every cancellation check downstream keys on. */
+    function abortingTool(name = 'slow_tool') {
+      return {
+        name,
+        invoke: jest.fn(
+          (_args: unknown, config: Record<string, unknown>) =>
+            new Promise((_resolve, reject) => {
+              const signal = config.signal as AbortSignal | undefined;
+              if (signal == null) {
+                setTimeout(() => reject(new Error('never aborted')), 50);
+                return;
+              }
+              signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            }),
+        ),
+      };
+    }
+
+    function runBatch(
+      tool: { name: string; invoke: jest.Mock },
+      request: Partial<ToolExecuteBatchRequest>,
+      controller: AbortController,
+      options: Partial<ToolExecuteOptions> = {},
+    ): Promise<ToolExecuteResult[]> {
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools, ...options });
+      return new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
+          signal: controller.signal,
+          ...request,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+        setTimeout(() => controller.abort(), 10);
+      });
+    }
+
+    it('forwards the batch abort signal into foreground tool invocations', async () => {
+      const controller = new AbortController();
+      const tool = abortingTool();
+
+      const results = await runBatch(tool, {}, controller);
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(controller.signal);
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('error');
+    });
+
+    it('uses the host-owned run signal when an SDK event omits its signal', async () => {
+      const controller = new AbortController();
+      const tool = abortingTool();
+
+      const results = await runBatch(
+        tool,
+        { signal: undefined, metadata: { run_id: 'foreground-run' } },
+        controller,
+        {
+          runSignal: controller.signal,
+          foregroundRunId: 'foreground-run',
+        },
+      );
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(controller.signal);
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('error');
+    });
+
+    it('composes host cancellation with an SDK event circuit-breaker signal', async () => {
+      const controller = new AbortController();
+      const eventController = new AbortController();
+      const tool = abortingTool();
+
+      const results = await runBatch(
+        tool,
+        { signal: eventController.signal, metadata: { run_id: 'foreground-run' } },
+        controller,
+        {
+          runSignal: controller.signal,
+          foregroundRunId: 'foreground-run',
+        },
+      );
+
+      const invokedSignal = tool.invoke.mock.calls[0][1].signal as AbortSignal;
+      expect(invokedSignal).not.toBe(controller.signal);
+      expect(invokedSignal.aborted).toBe(true);
+      expect(eventController.signal.aborted).toBe(false);
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('error');
+    });
+
+    it('does not bind a detached child run to the foreground host signal', async () => {
+      const foregroundController = new AbortController();
+      const childController = new AbortController();
+      foregroundController.abort();
+      const tool = {
+        name: 'child_tool',
+        invoke: jest.fn(async (_args: unknown, _config: Record<string, unknown>) => ({
+          content: 'done',
+        })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        runSignal: foregroundController.signal,
+        foregroundRunId: 'foreground-run',
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
+          metadata: { run_id: 'detached-child-run' },
+          signal: childController.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(childController.signal);
+      expect(result.status).toBe('success');
+    });
+
+    it('does not bind a tagged child run when the foreground identity is unavailable', async () => {
+      const foregroundController = new AbortController();
+      const childController = new AbortController();
+      foregroundController.abort();
+      const tool = {
+        name: 'child_tool',
+        invoke: jest.fn(async (_args: unknown, _config: Record<string, unknown>) => ({
+          content: 'done',
+        })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        runSignal: foregroundController.signal,
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
+          metadata: { run_id: 'detached-child-run' },
+          signal: childController.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(childController.signal);
+      expect(result.status).toBe('success');
+    });
+
+    it('logs a cancelled tool call as debug rather than a tool error', async () => {
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const controller = new AbortController();
+
+      await runBatch(abortingTool(), {}, controller);
+
+      expect(
+        errorSpy.mock.calls.filter(([message]) =>
+          String(message).includes('[ON_TOOL_EXECUTE] Tool slow_tool error'),
+        ),
+      ).toHaveLength(0);
+    });
+
+    /**
+     * An aborted run says the turn is over, not that this rejection was the
+     * cancellation. A genuine failure that lands in the same tick as the Stop
+     * must stay visible to operational logging.
+     */
+    it('keeps an unrelated failure racing the Stop at error level', async () => {
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const controller = new AbortController();
+      const tool = {
+        name: 'slow_tool',
+        invoke: jest.fn(
+          (_args: unknown, config: Record<string, unknown>) =>
+            new Promise((_resolve, reject) => {
+              const signal = config.signal as AbortSignal;
+              signal.addEventListener(
+                'abort',
+                () => reject(new Error('upstream 503 from the tool backend')),
+                { once: true },
+              );
+            }),
+        ),
+      };
+
+      await runBatch(tool, {}, controller);
+
+      expect(
+        errorSpy.mock.calls.filter(([message]) =>
+          String(message).includes('[ON_TOOL_EXECUTE] Tool slow_tool error'),
+        ),
+      ).toHaveLength(1);
+    });
+
+    /**
+     * The quiet-log branch must never double as a way around output filtering.
+     */
+    it('still filters a tool failure that rejects after the run was aborted', async () => {
+      const protectedValue = 'PROTECTED-CANCELLED-TOOL-OUTPUT';
+      const controller = new AbortController();
+      const tool = {
+        name: 'slow_tool',
+        invoke: jest.fn(
+          (_args: unknown, config: Record<string, unknown>) =>
+            new Promise((_resolve, reject) => {
+              const signal = config.signal as AbortSignal;
+              signal.addEventListener('abort', () => reject(new Error(protectedValue)), {
+                once: true,
+              });
+            }),
+        ),
+      };
+
+      const [result] = await runBatch(
+        tool,
+        { configurable: { req: protectedToolOutputRequest() } },
+        controller,
+      );
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(result.errorMessage).not.toContain(protectedValue);
     });
   });
 
@@ -886,6 +1175,60 @@ describe('createToolExecuteHandler', () => {
         expect.any(Object),
       );
     });
+
+    it('allows audit-only tool output that cannot be completely traversed', async () => {
+      const opaqueArtifact = new Proxy(
+        { value: 'hidden' },
+        {
+          ownKeys: () => {
+            throw new Error('opaque');
+          },
+        },
+      );
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'opaque_output_tool',
+        invoke: jest.fn(async () => ({ content: 'safe result', artifact: opaqueArtifact })),
+      };
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({
+          loadedTools: [tool] as never[],
+          configurable: {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      action: 'audit',
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-value',
+                          label: 'protected value',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        toolEndCallback,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_opaque_audit_output', name: 'opaque_output_tool', args: {} },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).toBe(opaqueArtifact);
+      expect(toolEndCallback).toHaveBeenCalledTimes(1);
+      expect(toolEndCallback.mock.calls[0][0].outputFiltered).toBeUndefined();
+      expect(toolEndCallback.mock.calls[0][0].output.artifact).toBe(opaqueArtifact);
+    });
   });
 
   describe('programmatic tool config', () => {
@@ -1250,58 +1593,92 @@ describe('createToolExecuteHandler', () => {
       }
     });
 
-    it('filters thrown foreground errors before result delivery or logging', async () => {
-      const protectedValue = 'PROTECTED-FOREGROUND-ERROR';
-      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
-        loadedTools: [
-          {
-            name: 'throwing_tool',
-            invoke: jest.fn(async () => {
-              throw new Error(protectedValue);
-            }),
-          },
-        ] as never[],
-      }));
-      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
-      try {
-        const handler = createToolExecuteHandler({ loadTools });
-        const [result] = await invokeHandlerWithConfig(
-          handler,
-          [{ id: 'call_filtered_throw', name: 'throwing_tool', args: {} }],
-          {
-            req: {
-              config: {
-                filters: {
-                  toolArguments: {
-                    pii: {
-                      fields: ['output'],
-                      starterPatterns: [],
-                      customPatterns: [
-                        {
-                          id: 'protected-output',
-                          label: 'protected output',
-                          regex: 'PROTECTED-[A-Z-]+',
-                        },
-                      ],
+    it.each(['generic', 'workspace', 'workspace-expanded'])(
+      'filters %s foreground errors before result delivery or logging',
+      async (kind) => {
+        const protectedValue = 'PROTECTED-FOREGROUND-ERROR';
+        const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+          loadedTools: [
+            {
+              name: 'throwing_tool',
+              invoke: jest.fn(async () => {
+                if (kind.startsWith('workspace')) {
+                  const body =
+                    kind === 'workspace-expanded'
+                      ? '\u0001'.repeat(2000) + protectedValue + '\u0001'.repeat(2000)
+                      : protectedValue;
+                  throw new WorkspaceToolHttpError('rejected', 503, body);
+                }
+                throw new Error(protectedValue);
+              }),
+            },
+          ] as never[],
+        }));
+        const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+        try {
+          const handler = createToolExecuteHandler({ loadTools });
+          const [result] = await invokeHandlerWithConfig(
+            handler,
+            [{ id: 'call_filtered_throw', name: 'throwing_tool', args: {} }],
+            {
+              req: {
+                config: {
+                  filters: {
+                    toolArguments: {
+                      pii: {
+                        fields: ['output'],
+                        starterPatterns: [],
+                        customPatterns: [
+                          {
+                            id: 'protected-output',
+                            label: 'protected output',
+                            regex: 'PROTECTED-[A-Z-]+',
+                          },
+                        ],
+                      },
                     },
                   },
                 },
               },
             },
-          },
-        );
+          );
 
-        expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('content_filter_block');
-        expect(result.errorMessage).not.toContain(protectedValue);
-        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
-        expect(errorSpy).toHaveBeenCalledWith(
-          '[ON_TOOL_EXECUTE] Tool throwing_tool error',
-          expect.objectContaining({ contentFiltered: true }),
-        );
-      } finally {
-        errorSpy.mockRestore();
-      }
+          expect(result.status).toBe('error');
+          expect(result.errorMessage).toContain('content_filter_block');
+          expect(result.errorMessage).not.toContain(protectedValue);
+          expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
+          expect(errorSpy).toHaveBeenCalledWith(
+            '[ON_TOOL_EXECUTE] Tool throwing_tool error',
+            expect.objectContaining({ contentFiltered: true }),
+          );
+        } finally {
+          errorSpy.mockRestore();
+        }
+      },
+    );
+
+    it('surfaces workspace transport diagnostics thrown by a loaded tool', async () => {
+      const body = '{"code":"ASSIGNMENT_EXPIRED"}';
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'workspace_command',
+            invoke: jest.fn(async () => {
+              throw new WorkspaceToolHttpError('rejected', 504, body);
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const [result] = await invokeHandler(createToolExecuteHandler({ loadTools }), [
+        { id: 'call_command_error', name: 'workspace_command', args: {} },
+      ]);
+      expect(result.errorMessage).toContain('upstreamStatus: 504');
+      expect(result.errorMessage).toContain('ASSIGNMENT_EXPIRED');
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[ON_TOOL_EXECUTE] Tool workspace_command error',
+        expect.objectContaining({ upstreamStatus: 504, upstreamBody: body }),
+      );
     });
 
     it('truncates oversized tool errors in the result and log context', async () => {
@@ -3670,10 +4047,16 @@ describe('createToolExecuteHandler', () => {
       config: {},
     } as never;
 
+    /** The subset of the sandbox IO params these assertions read. */
+    type SandboxIoParams = { session_id?: string; files?: unknown };
+
     function makeSandboxAuthoringHandler(
       params: Partial<ToolExecuteOptions>,
       configurable?: Record<string, unknown>,
     ) {
+      const codeExecutionContext = withTestAttachedWorkspace(
+        configurable?.codeExecutionContext as CodeExecutionContext | undefined,
+      );
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
         configurable: {
@@ -3683,6 +4066,7 @@ describe('createToolExecuteHandler', () => {
           skillAuthoringAvailable: false,
           fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
           ...(configurable ?? {}),
+          ...(codeExecutionContext == null ? {} : { codeExecutionContext }),
         },
       }));
       return createToolExecuteHandler({
@@ -3735,6 +4119,499 @@ describe('createToolExecuteHandler', () => {
         files: [{ id: 'f1', name: 'input.csv', session_id: 'sess-prev' }],
         req,
       });
+    });
+
+    it('does not report a sandbox write as durable when artifact delivery failed', async () => {
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/new.txt: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/new.txt\n',
+        session_id: 'sess-new',
+        files: [],
+        artifact_delivery: {
+          code: 'artifact_delivery_failed' as const,
+          status: 'failed' as const,
+          attempted: 1,
+          delivered: 0,
+          failed: 1,
+        },
+      }));
+      const handler = makeSandboxAuthoringHandler({
+        readSandboxFile,
+        writeSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_sandbox_delivery_failure',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/new.txt',
+            content: 'hello world',
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('could not be persisted');
+      expect(result.errorMessage).toContain('do not retry automatically');
+      expect(result.errorMessage).not.toContain('storage');
+      expect(result.artifact).toBeUndefined();
+    });
+
+    it('carries whole file refs into the next authoring call on the same path', async () => {
+      /**
+       * Regression: the batch-local sandbox context rebuilt each ref from
+       * `{ id, name, session_id, storage_session_id }` and replaced the
+       * mounted list wholesale. A second authoring call on the same path
+       * therefore sent the Code API a skill ref stripped of the `version`
+       * it requires, and unmounted every primed file this write did not
+       * itself return.
+       */
+      const skillRef = {
+        id: 'skill-file-1',
+        resource_id: 'skill-1',
+        name: 'SKILL.md',
+        kind: 'skill' as const,
+        version: 7,
+        storage_session_id: 'store-skill',
+      };
+      let reads = 0;
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        reads += 1;
+        if (reads === 1) {
+          throw new Error('cat: /mnt/data/note.md: No such file or directory');
+        }
+        return { content: 'hello world' };
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/note.md\n',
+        session_id: 'sess-write',
+        files: [{ id: 'file-note', name: 'note.md', kind: 'user' as const }],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      const codeSessionContext = {
+        session_id: 'sess-prev',
+        files: [skillRef],
+      };
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_create_note',
+          name: 'create_file',
+          args: { path: '/mnt/data/note.md', content: 'hello world' },
+          codeSessionContext,
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_edit_note',
+          name: 'edit_file',
+          args: { path: '/mnt/data/note.md', old_text: 'hello', new_text: 'goodbye' },
+          codeSessionContext,
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(results.every((result) => result.status === 'success')).toBe(true);
+      /* The follow-up read/write mount the primed skill ref whole — version
+       * included — alongside the file the create just produced. */
+      const followUpFiles = readSandboxFile.mock.calls[1][0].files;
+      expect(followUpFiles).toEqual([
+        skillRef,
+        { id: 'file-note', name: 'note.md', kind: 'user', storage_session_id: 'sess-write' },
+      ]);
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual(followUpFiles);
+      expect(writeSandboxFile.mock.calls[1][0].session_id).toBe('sess-write');
+    });
+
+    it('keeps a legacy per-file session over the execution session', async () => {
+      /**
+       * `getPreparedCodeOutputBuffer` resolves storage as
+       * `storage_session_id ?? session_id ?? session_id`, so defaulting an
+       * absent `storage_session_id` straight to the execution session masks
+       * the legacy value and remounts the file against the bucket that
+       * merely produced it.
+       */
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        throw new Error('cat: /mnt/data/legacy.md: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 2 bytes to /mnt/data/legacy.md\n',
+        session_id: 'sess-exec',
+        files: [
+          { id: 'file-legacy', name: 'legacy.md', session_id: 'store-legacy' },
+          { id: 'file-fresh', name: 'fresh.md' },
+        ],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_legacy_1',
+          name: 'create_file',
+          args: { path: '/mnt/data/legacy.md', content: 'hi' },
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_legacy_2',
+          name: 'create_file',
+          args: { path: '/mnt/data/legacy.md', content: 'hi again', overwrite: true },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual([
+        {
+          id: 'file-legacy',
+          name: 'legacy.md',
+          session_id: 'store-legacy',
+          storage_session_id: 'store-legacy',
+        },
+        { id: 'file-fresh', name: 'fresh.md', storage_session_id: 'sess-exec' },
+      ]);
+    });
+
+    it('mounts a file named twice by one artifact only once', async () => {
+      /* codeapi rejects an `/exec` whose files collide on a destination and
+       * takes the whole call down, so a repeated ref must fold, not stack. */
+      const readSandboxFile = jest.fn(async (_params: SandboxIoParams) => {
+        throw new Error('cat: /mnt/data/dup.md: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async (_params: SandboxIoParams) => ({
+        stdout: 'WROTE 2 bytes to /mnt/data/dup.md\n',
+        session_id: 'sess-exec',
+        files: [
+          { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1' },
+          { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1', kind: 'user' as const },
+        ],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_dup_1',
+          name: 'create_file',
+          args: { path: '/mnt/data/dup.md', content: 'hi' },
+        } as unknown as ToolCallRequest,
+        {
+          id: 'call_dup_2',
+          name: 'create_file',
+          args: { path: '/mnt/data/dup.md', content: 'hi again', overwrite: true },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(writeSandboxFile.mock.calls[1][0].files).toEqual([
+        { id: 'file-dup', name: 'dup.md', storage_session_id: 'store-1', kind: 'user' },
+      ]);
+    });
+
+    it('creates a file atomically in an attached workspace', async () => {
+      const writeWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'write_file' as const,
+        workspaceId: 'primary',
+        path: 'src/new.ts',
+        created: true,
+        bytesWritten: 20,
+      }));
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace',
+          name: 'create_file',
+          args: {
+            path: 'workspace/src/new.ts',
+            content: 'export const ok = 1;',
+          },
+        },
+      ]);
+
+      expect(result).toMatchObject({
+        status: 'success',
+        artifact: {
+          path: 'workspace/src/new.ts',
+          created: true,
+          bytes_written: 20,
+        },
+      });
+      expect(writeWorkspaceFile).toHaveBeenCalledWith({
+        file_path: 'src/new.ts',
+        content: 'export const ok = 1;',
+        overwrite: false,
+        workspace_id: 'project-a',
+        codeApiBaseUrl: 'https://code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'user-worker',
+        req,
+      });
+    });
+
+    it('surfaces an attached create-only conflict without retrying as an overwrite', async () => {
+      const writeWorkspaceFile = jest.fn(async () => {
+        throw new WorkspaceToolHttpError('rejected', 409);
+      });
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace_conflict',
+          name: 'create_file',
+          args: { path: 'workspace/existing.txt', content: 'replacement' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('overwrite: true');
+      expect(writeWorkspaceFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects attached workspace writes above the worker protocol limit', async () => {
+      const writeWorkspaceFile = jest.fn();
+      const handler = makeSandboxAuthoringHandler(
+        { writeWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_workspace_oversized',
+          name: 'create_file',
+          args: {
+            path: 'workspace/large.txt',
+            content: 'x'.repeat(1024 * 1024 + 1),
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('1 MiB');
+      expect(writeWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('sends attached edit batches as one atomic workspace mutation', async () => {
+      const editWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'edit_file' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 2,
+        bytesWritten: 24,
+      }));
+      const handler = makeSandboxAuthoringHandler(
+        { editWorkspaceFile },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_workspace',
+          name: 'edit_file',
+          args: {
+            path: 'workspace/src/app.ts',
+            edits: [
+              { old_text: 'draft', new_text: 'ready' },
+              { old_text: 'false', new_text: 'true' },
+            ],
+          },
+        },
+      ]);
+
+      expect(result).toMatchObject({
+        status: 'success',
+        artifact: {
+          path: 'workspace/src/app.ts',
+          edits: 2,
+          strategies: ['exact', 'exact'],
+        },
+      });
+      expect(editWorkspaceFile).toHaveBeenCalledWith({
+        file_path: 'src/app.ts',
+        edits: [
+          { oldText: 'draft', newText: 'ready' },
+          { oldText: 'false', newText: 'true' },
+        ],
+        workspace_id: 'project-a',
+        codeApiBaseUrl: 'https://code.example.com',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'user-worker',
+        req,
+      });
+    });
+
+    it('blocks protected attached edit content before worker dispatch', async () => {
+      const previewWorkspaceEdit = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'preview_edit' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'prefix ATTACHED-SECRET suffix',
+        hasUtf8Bom: false,
+        baseSha256: 'a'.repeat(64),
+        replacements: 1,
+        bytesWritten: 29,
+      }));
+      const editWorkspaceFile = jest.fn();
+      const filteredReq = {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'attached-secret',
+                    label: 'attached secret',
+                    regex: 'ATTACHED-SECRET',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        { previewWorkspaceEdit, editWorkspaceFile },
+        {
+          req: filteredReq,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_workspace_filtered',
+          name: 'edit_file',
+          args: {
+            path: 'workspace/src/app.ts',
+            old_text: ' suffix',
+            new_text: '-SECRET suffix',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(previewWorkspaceEdit).toHaveBeenCalledTimes(1);
+      expect(editWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('commits inspected attached edits with the preview revision fence', async () => {
+      const previewWorkspaceEdit = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'preview_edit' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'const state = "ready";',
+        hasUtf8Bom: false,
+        baseSha256: 'b'.repeat(64),
+        replacements: 1,
+        bytesWritten: 22,
+      }));
+      const editWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'edit_file' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        replacements: 1,
+        bytesWritten: 22,
+      }));
+      const protectedReq = {
+        user: { id: 'user-1' },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'blocked-placeholder',
+                    label: 'blocked placeholder',
+                    regex: 'NEVER-MATCH-THIS',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        { previewWorkspaceEdit, editWorkspaceFile },
+        {
+          req: protectedReq,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached-session',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+            bridgeWorkerId: 'user-worker',
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_workspace_inspected',
+          name: 'edit_file',
+          args: {
+            path: 'workspace/src/app.ts',
+            old_text: 'draft',
+            new_text: 'ready',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(editWorkspaceFile).toHaveBeenCalledWith(
+        expect.objectContaining({ expected_base_sha256: 'b'.repeat(64) }),
+      );
     });
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {
@@ -4366,6 +5243,9 @@ describe('createToolExecuteHandler', () => {
       skillAuthoringAvailable?: boolean;
       codeExecutionContext?: CodeExecutionContext;
       req?: unknown;
+      readWorkspaceFile?: ToolExecuteOptions['readWorkspaceFile'];
+      searchWorkspace?: ToolExecuteOptions['searchWorkspace'];
+      listWorkspaceFiles?: ToolExecuteOptions['listWorkspaceFiles'];
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
@@ -4380,17 +5260,731 @@ describe('createToolExecuteHandler', () => {
           activeSkillNames: params.activeSkillNames,
           skillPrimedIdsByName: params.skillPrimedIdsByName,
           skillAuthoringAvailable: params.skillAuthoringAvailable === true,
-          codeExecutionContext: params.codeExecutionContext,
+          codeExecutionContext: withTestAttachedWorkspace(params.codeExecutionContext),
         },
       }));
       return createToolExecuteHandler({
         loadTools,
         getSkillByName: params.getSkillByName,
         getAuthorSkillByName: params.getAuthorSkillByName,
+        readWorkspaceFile: params.readWorkspaceFile,
+        searchWorkspace: params.searchWorkspace,
+        listWorkspaceFiles: params.listWorkspaceFiles,
         readSandboxFile: params.readSandboxFile,
         readSandboxImage: params.readSandboxImage,
       });
     }
+
+    it('routes explicit workspace paths to the selected attached worker', async () => {
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+        content: 'const ready = true;',
+        startLine: 1,
+        endLine: 1,
+        truncated: false,
+      }));
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_read',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts' },
+        },
+      ]);
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith({
+        file_path: 'src/app.ts',
+        workspace_id: 'project-a',
+        start_line: 1,
+        max_lines: 200,
+        codeApiBaseUrl: 'https://code.example.com/v1',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+      });
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        status: 'success',
+        content: '1 | const ready = true;',
+      });
+    });
+
+    it('forwards the run abort signal to attached workspace reads', async () => {
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'notes.txt',
+        content: 'ready',
+        startLine: 1,
+        endLine: 1,
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+      const controller = new AbortController();
+
+      await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_abort',
+              name: Constants.READ_FILE,
+              args: { path: 'workspace/notes.txt' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('uses bounded pagination for attached workspace reads', async () => {
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'notes.txt',
+        content: 'third\nfourth',
+        startLine: 3,
+        endLine: 4,
+        truncated: true,
+        nextStartLine: 5,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_page',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/notes.txt', start_line: 3, max_lines: 2 },
+        },
+      ]);
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith(
+        expect.objectContaining({ start_line: 3, max_lines: 2 }),
+      );
+      expect(result.content).toContain('3 | third\n4 | fourth');
+      expect(result.content).toContain('start_line 5');
+    });
+
+    it('continues from the first line omitted by local workspace truncation', async () => {
+      const firstLine = 'a'.repeat(140_000);
+      const secondLine = 'b'.repeat(140_000);
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'notes.txt',
+        content: `${firstLine}\n${secondLine}`,
+        startLine: 10,
+        endLine: 11,
+        truncated: true,
+        nextStartLine: 12,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_local_page',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/notes.txt', start_line: 10, max_lines: 2 },
+        },
+      ]);
+
+      expect(result.content).toContain('10 | ');
+      expect(result.content).not.toContain('11 | ');
+      expect(result.content).toContain('start_line 11');
+      expect(result.content).not.toContain('start_line 12');
+    });
+
+    it('applies local workspace truncation in UTF-8 bytes', async () => {
+      const firstLine = '界'.repeat(80_000);
+      const secondLine = '界'.repeat(10_000);
+      const readWorkspaceFile = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'read_file' as const,
+        workspaceId: 'primary',
+        path: 'multibyte.txt',
+        content: `${firstLine}\n${secondLine}`,
+        startLine: 1,
+        endLine: 2,
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_workspace_multibyte',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/multibyte.txt', max_lines: 2 },
+        },
+      ]);
+
+      expect(result.content).toContain('1 | ');
+      expect(result.content).not.toContain('2 | ');
+      expect(result.content).toContain('start_line 2');
+      expect(Buffer.byteLength(result.content as string, 'utf8')).toBeLessThan(262_300);
+    });
+
+    it('rejects workspace paths unless the selected environment is attached', async () => {
+      const readWorkspaceFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:managed',
+          executionProfile: 'stateful',
+          environmentType: 'managed',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_managed_workspace_read',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts' },
+        },
+      ]);
+
+      expect(result).toMatchObject({
+        status: 'error',
+        errorMessage: 'workspace/ paths require an attached code environment.',
+      });
+      expect(readWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects empty and unbounded attached workspace reads before dispatch', async () => {
+      const readWorkspaceFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [emptyPath] = await invokeHandler(handler, [
+        { id: 'call_empty_workspace', name: Constants.READ_FILE, args: { path: 'workspace/' } },
+      ]);
+      const [unbounded] = await invokeHandler(handler, [
+        {
+          id: 'call_unbounded_workspace',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts', max_lines: 501 },
+        },
+      ]);
+
+      expect(emptyPath.errorMessage).toContain('relative path');
+      expect(unbounded.errorMessage).toContain('between 1 and 500');
+      expect(readWorkspaceFile).not.toHaveBeenCalled();
+    });
+
+    it('does not expose attached-worker failure details to the model', async () => {
+      const readWorkspaceFile = jest.fn(async () => {
+        throw new Error('upstream response contained /Users/operator/private');
+      });
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        readWorkspaceFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_failed_workspace',
+          name: Constants.READ_FILE,
+          args: { path: 'workspace/src/app.ts' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('could not be read');
+      expect(result.errorMessage).not.toContain('/Users/operator/private');
+    });
+
+    it('searches literal text through the selected attached worker', async () => {
+      const controller = new AbortController();
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: [{ path: 'src/app.ts', line: 7, column: 3, text: 'const needle = true;' }],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_search',
+              name: 'search_workspace',
+              args: { query: 'needle', path: 'src', max_results: 20 },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(searchWorkspace).toHaveBeenCalledWith({
+        query: 'needle',
+        workspace_id: 'project-a',
+        path: 'src',
+        max_results: 20,
+        codeApiBaseUrl: 'https://code.example.com/v1',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+        signal: controller.signal,
+      });
+      expect(result).toMatchObject({
+        status: 'success',
+        content: 'workspace/src/app.ts:7:3: const needle = true;',
+      });
+    });
+
+    it('bounds workspace search output in UTF-8 bytes', async () => {
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: Array.from({ length: 200 }, (_, index) => ({
+          path: `src/result-${index}.txt`,
+          line: index + 1,
+          column: 1,
+          text: '界'.repeat(600),
+        })),
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_large_workspace_search',
+          name: 'search_workspace',
+          args: { query: '界', max_results: 200 },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('[results truncated]');
+      expect(Buffer.byteLength(result.content as string, 'utf8')).toBeLessThanOrEqual(262_144);
+    });
+
+    it('rejects workspace search outside attached environments', async () => {
+      const searchWorkspace = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:managed',
+          executionProfile: 'stateful',
+          environmentType: 'managed',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_managed_workspace_search',
+          name: 'search_workspace',
+          args: { query: 'needle' },
+        },
+      ]);
+
+      expect(result.errorMessage).toContain('requires an attached code environment');
+      expect(searchWorkspace).not.toHaveBeenCalled();
+    });
+
+    it.each([400, 409, 503, 504])(
+      'surfaces workspace HTTP %i in logs and model results',
+      async (status) => {
+        const body = '{"code":"WORKER_BUSY","error":"Worker is busy"}';
+        const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'attached',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+            environmentType: 'attached',
+          },
+          listWorkspaceFiles: jest.fn(async () => {
+            throw new WorkspaceToolHttpError('rejected', status, body);
+          }),
+        });
+        const [result] = await invokeHandler(handler, [
+          { id: 'call_workspace_error', name: 'list_workspace_files', args: {} },
+        ]);
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain(`upstreamStatus: ${status}`);
+        expect(result.errorMessage).toContain('WORKER_BUSY');
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool list_workspace_files error',
+          expect.objectContaining({
+            name: 'WorkspaceToolHttpError',
+            upstreamStatus: status,
+            upstreamBody: body,
+            upstreamBodyTruncated: false,
+          }),
+        );
+      },
+    );
+
+    it('lists files through the selected attached worker and forwards cancellation', async () => {
+      const controller = new AbortController();
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths: ['src/app.ts', 'src/worker.ts'],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          bridgeWorkerId: 'personal-worker-1',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_workspace_list',
+              name: 'list_workspace_files',
+              args: { path: 'src', after_path: 'src/app.ts', max_results: 20 },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(listWorkspaceFiles).toHaveBeenCalledWith({
+        workspace_id: 'project-a',
+        path: 'src',
+        after_path: 'src/app.ts',
+        max_results: 20,
+        codeApiBaseUrl: 'https://code.example.com/v1',
+        executionProfile: 'stateful',
+        bridgeWorkerId: 'personal-worker-1',
+        signal: controller.signal,
+      });
+      expect(result).toMatchObject({
+        status: 'success',
+        content: 'workspace/src/app.ts\nworkspace/src/worker.ts',
+      });
+    });
+
+    it('bounds workspace listings without returning a partial path', async () => {
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths: Array.from(
+          { length: 500 },
+          (_, index) => `src/${String(index).padStart(3, '0')}-${'a'.repeat(600)}.txt`,
+        ),
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_large_workspace_list',
+          name: 'list_workspace_files',
+          args: { max_results: 500 },
+        },
+      ]);
+
+      const content = result.content as string;
+      const [listedPaths] = content.split('\n\n');
+      expect(result.status).toBe('success');
+      expect(content).toContain('[results truncated; continue with after_path:');
+      expect(Buffer.byteLength(content, 'utf8')).toBeLessThanOrEqual(262_144);
+      expect(listedPaths.split('\n').every((path) => path.endsWith('.txt'))).toBe(true);
+    });
+
+    it('reserves truncation-notice bytes without returning a partial final path', async () => {
+      const paths = Array.from(
+        { length: 64 },
+        (_, index) => `src/${index}-${'a'.repeat(4074)}.txt`,
+      );
+      const unboundedContent = paths.map((path) => `workspace/${path}`).join('\n');
+      expect(Buffer.byteLength(unboundedContent, 'utf8')).toBeLessThanOrEqual(262_144);
+
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths,
+        truncated: true,
+        nextAfterPath: paths[paths.length - 1],
+      }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_upstream_truncated_workspace_list',
+          name: 'list_workspace_files',
+          args: { max_results: 64 },
+        },
+      ]);
+
+      const content = result.content as string;
+      const [listedPaths] = content.split('\n\n');
+      const completePaths = listedPaths.split('\n');
+      const lastContinuationPath = completePaths[completePaths.length - 1]?.slice(
+        'workspace/'.length,
+      );
+      expect(result.status).toBe('success');
+      expect(content).toContain('[results truncated; continue with after_path:');
+      expect(Buffer.byteLength(content, 'utf8')).toBeLessThanOrEqual(262_144);
+      expect(completePaths.length).toBeGreaterThan(0);
+      expect(completePaths.length).toBeLessThan(paths.length);
+      expect(completePaths.every((path) => path.endsWith('.txt'))).toBe(true);
+      expect(content).toContain(`after_path: ${JSON.stringify(lastContinuationPath)}`);
+    });
+
+    it('filters every listed workspace filename before returning any path', async () => {
+      const protectedValue = 'PROTECTED-WORKSPACE-NAME';
+      const listWorkspaceFiles = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'list_files' as const,
+        workspaceId: 'primary',
+        paths: ['safe.txt', `${protectedValue}.txt`],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        req: {
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['name'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-workspace-name',
+                      label: 'protected workspace name',
+                      regex: protectedValue,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        listWorkspaceFiles,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_workspace_list',
+          name: 'list_workspace_files',
+          args: {},
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.content).not.toContain('safe.txt');
+      expect(JSON.stringify(result)).not.toContain(protectedValue);
+    });
+
+    it('filters every workspace search match before returning any result', async () => {
+      const protectedValue = 'PROTECTED-WORKSPACE-MATCH';
+      const searchWorkspace = jest.fn(async () => ({
+        protocolVersion: 1 as const,
+        operation: 'search_text' as const,
+        workspaceId: 'primary',
+        matches: [
+          { path: 'safe.txt', line: 1, column: 1, text: 'safe match' },
+          { path: 'secret.txt', line: 2, column: 1, text: protectedValue },
+        ],
+        truncated: false,
+      }));
+      const handler = makeReadFileHandler({
+        req: {
+          user: { id: 'user-1' },
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['content'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-workspace-match',
+                      label: 'protected workspace match',
+                      regex: protectedValue,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        codeEnvAvailable: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code.example.com/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          environmentType: 'attached',
+          statefulSessions: true,
+        },
+        searchWorkspace,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_workspace_search',
+          name: 'search_workspace',
+          args: { query: 'match' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('content_filter_block');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.content).toBe('');
+    });
 
     it('routes /mnt/data/ paths to the sandbox fallback when codeEnv is available', async () => {
       const readSandboxFile = jest.fn(async () => ({ content: 'hello-world' }));
@@ -4430,6 +6024,8 @@ describe('createToolExecuteHandler', () => {
           baseUrl: 'https://stateful-code.example.com',
           codeSessionKey: 'execute_code:stateful:v1:user',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
+          executionRouteKey: 'stateful:deployment-a',
           runtimeSessionHint: 'v1:user',
           statefulSessions: true,
         },
@@ -4449,6 +6045,8 @@ describe('createToolExecuteHandler', () => {
         expect.objectContaining({
           codeApiBaseUrl: 'https://stateful-code.example.com',
           executionProfile: 'stateful',
+          bridgeWorkerId: 'personal-worker-1',
+          executionRouteKey: 'stateful:deployment-a',
           runtime_session_hint: 'v1:user',
         }),
       );
@@ -5601,10 +7199,43 @@ describe('createToolExecuteHandler', () => {
         expect(result.content).toContain('bash_tool');
       });
 
-      it('degrades to the image hint when decoded bytes are truncated (integrity guard)', async () => {
+      it('reports a round-trip-bound image as unreadable inline, not oversize', async () => {
+        /* Within the byte cap but needing more windowed `/exec` reads than
+         * one call may spend on the Code API's execution limiter. Saying
+         * "over the inline limit" here would misstate a fixable cause. */
+        const readSandboxImage = jest.fn(async () => ({
+          tooLarge: true as const,
+          reason: 'round_trips' as const,
+          bytes: 900_000,
+          inlineCeiling: 489_600,
+        }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_trips',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/wide.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('success');
+        /* Names the size that would actually work, so the model has a
+         * downscale target instead of a guess. */
+        expect(result.content).toContain('489600');
+        expect(result.content).not.toContain('inline limit');
+        expect(result.content).toContain('Downscale');
+      });
+
+      it('reports a truncated transfer as a failed read, not an unreadable format', async () => {
         /* Simulate codeapi clipping a large `/exec` stdout: the reported
-         * size does not match the decoded base64 length, so the bytes are
-         * unsafe to forward and we fall back to the bash hint. */
+         * size does not match the decoded base64 length. The bytes are
+         * unsafe to forward, but the read is retryable — saying the file
+         * "cannot be read as text" would report a permanent limit. */
         const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes + 100 }));
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,
@@ -5622,11 +7253,39 @@ describe('createToolExecuteHandler', () => {
 
         expect(result.status).toBe('error');
         expect(result.artifact).toBeUndefined();
-        expect(result.errorMessage).toContain('image file');
-        expect(result.errorMessage).toContain('bash_tool');
+        expect(result.errorMessage).toContain('truncated transfer');
+        expect(result.errorMessage).toContain('Retry the read');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
       });
 
-      it('degrades to the image hint when the image reader throws', async () => {
+      it('reports a missing interpreter as itself, not as a missing image path', async () => {
+        /* The sandbox reader surfaces `python3: not found` on stderr. A
+         * generic "not found" match would send the model to `ls /mnt/data`
+         * and hide the runner dependency the operator has to fix. */
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error('python3: not found');
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_nopython',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/chart.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('python3: not found');
+        expect(result.errorMessage).not.toContain('was not found in the code-execution sandbox');
+        expect(result.errorMessage).not.toContain('ls /mnt/data');
+      });
+
+      it('surfaces the transport failure when the image reader throws', async () => {
         const readSandboxImage = jest.fn(async () => {
           throw new Error('codeapi unreachable');
         });
@@ -5645,8 +7304,62 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('image file');
-        expect(result.errorMessage).toContain('bash_tool');
+        expect(result.errorMessage).toContain('codeapi unreachable');
+        expect(result.errorMessage).toContain('Retry the read');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
+      });
+
+      it('tells the model to wait when the sandbox rate-limited the read', async () => {
+        /* Each window is one `/exec` call against a per-user limiter, so a
+         * chart-heavy turn can exhaust it. The old catch-all told the model
+         * images are unreadable, which stopped it from ever retrying. */
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error(
+            'Code API rate limit reached while reading "/mnt/data/7_interest_gap.png" from the sandbox (retry in 17s).',
+          );
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_429',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/7_interest_gap.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('rate limit reached');
+        expect(result.errorMessage).toContain('read it once more');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
+      });
+
+      it('points a missing image at the directory listing instead of the bytes', async () => {
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error("[Errno 2] No such file or directory: '/mnt/data/gone.png'");
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_missing',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/gone.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('was not found');
+        expect(result.errorMessage).toContain('ls /mnt/data');
+        expect(result.errorMessage).not.toContain('cannot be read as text');
       });
 
       it('rejects non-image binary types with a bash-pointing message (not the image path)', async () => {

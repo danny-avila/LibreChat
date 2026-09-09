@@ -966,6 +966,33 @@ describe('importLibreChatConvo', () => {
     ]);
   });
 
+  it('drops server-private context meta from imported messages', async () => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: 'Imported response',
+      isCreatedByUser: false,
+      contextMeta: {
+        calibrationRatio: 1,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 1, masked: true },
+      },
+    };
+    const jsonData = {
+      conversationId: 'context-meta-import',
+      title: 'Context meta import',
+      recursive: false,
+      messages: [message],
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
+    expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);
+  });
+
   it('sanitizes singleton content and attachment fields before Mongoose array casting', async () => {
     const message = {
       messageId: 'message-1',
@@ -1298,22 +1325,30 @@ describe('importLibreChatConvo', () => {
       expect(result.conversation.model).toBe(openAISettings.model.default);
     });
 
-    it('applies all-data retention to imported conversations and messages', () => {
-      const requestUserId = 'user-123';
-      const builder = new ImportBatchBuilder(requestUserId, {
-        retentionMode: RetentionMode.ALL,
-        temporaryChatRetention: 24,
-      });
-      builder.startConversation(EModelEndpoint.openAI);
-      const message = builder.addUserMessage('Retained import');
-      const result = builder.finishConversation('Imported retained chat');
+    it.each([undefined, 2160])(
+      'applies all-data retention to imports with general retention %s',
+      (generalChatRetention) => {
+        const requestUserId = 'user-123';
+        const builder = new ImportBatchBuilder(requestUserId, {
+          retentionMode: RetentionMode.ALL,
+          temporaryChatRetention: 24,
+          generalChatRetention,
+        });
+        const now = Date.now();
+        builder.startConversation(EModelEndpoint.openAI);
+        const message = builder.addUserMessage('Retained import');
+        const result = builder.finishConversation('Imported retained chat');
 
-      expect(message.isTemporary).toBe(false);
-      expect(message.expiredAt).toBeInstanceOf(Date);
-      expect(result.conversation.isTemporary).toBe(false);
-      expect(result.conversation.expiredAt).toBeInstanceOf(Date);
-      expect(result.conversation.expiredAt).toBe(message.expiredAt);
-    });
+        expect(message.isTemporary).toBe(false);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+        expect(result.conversation.isTemporary).toBe(false);
+        expect(result.conversation.expiredAt).toBeInstanceOf(Date);
+        expect(result.conversation.expiredAt).toBe(message.expiredAt);
+        const hours = generalChatRetention ?? 24;
+        expect(message.expiredAt.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
+        expect(message.expiredAt.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
+      },
+    );
   });
 });
 

@@ -275,6 +275,7 @@ export interface JobIdentity {
 /** Job-store state plus the job's scheduled identity (absent on a replacement turn). */
 export interface JobState {
   status: string;
+  checkpointNamespace?: string;
   createdAt?: number;
   scheduleId?: string;
   scheduledFor?: string;

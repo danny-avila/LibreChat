@@ -228,6 +228,26 @@ describe('getScheduleRunProject (occurrence scope, recorded vs unknown)', () => 
    * if that ever stopped holding, a deliberately unscoped run would silently start
    * being validated against the schedule's current project instead.
    */
+  it("narrows the user's in-flight runs to the statuses asked for", async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const generating = new Date('2026-07-22T12:00:00Z');
+    const paused = new Date('2026-07-23T12:00:00Z');
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: paused }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: paused,
+      status: 'requires_action',
+      autoDisableAfterFailures: 5,
+    });
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: generating }));
+
+    const all = await methods.getActiveRunsForUser(schedule.user);
+    const started = await methods.getActiveRunsForUser(schedule.user, ['started']);
+
+    expect(all.map((run) => run.status).sort()).toEqual(['requires_action', 'started']);
+    expect(started.map((run) => run.scheduledFor)).toEqual([generating]);
+  });
+
   it('reports a recorded null apart from a field that was never written', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const scoped = new Date('2026-07-20T12:00:00Z');
@@ -443,6 +463,29 @@ describe('createScheduleWithSlot (atomic per-user cap)', () => {
 });
 
 describe('recordRunOutcome', () => {
+  it('persists the paused namespace and preserves it when recovery has no namespace projection', async () => {
+    const schedule = await Schedule.create(scheduleData());
+    const row = await ScheduleRun.create(runData(schedule, { conversationId: 'paused-thread' }));
+    const outcome = {
+      scheduleId: schedule.id,
+      scheduledFor: row.scheduledFor,
+      status: 'requires_action' as const,
+      conversationId: 'paused-thread',
+      autoDisableAfterFailures: 3,
+    };
+    await methods.recordRunOutcome({ ...outcome, checkpointNamespace: 'owned-namespace' });
+    await methods.recordRunOutcome(outcome);
+    expect(await methods.getActiveRunsForSchedule(schedule.id)).toEqual([
+      expect.objectContaining({
+        status: 'requires_action',
+        checkpointNamespace: 'owned-namespace',
+      }),
+    ]);
+    expect(await ScheduleRun.findOne({ _id: row._id }).lean()).not.toHaveProperty(
+      'checkpointNamespace',
+    );
+  });
+
   const scheduledFor = new Date('2026-07-20T12:00:00Z');
 
   it('success finalizes the run, increments runCount, and resets failure state', async () => {
@@ -1886,6 +1929,105 @@ describe('reserveStartedRun duplicate reporting', () => {
 
     const settled = await methods.reserveStartedRun({ ...base, conversationId: 'third' });
     expect(settled).toMatchObject({ conflict: 'duplicate', existingStatus: 'success' });
+  });
+});
+
+describe('run reservation database error formats', () => {
+  const conflicts = [
+    {
+      conflict: 'duplicate',
+      keyPattern: { scheduleId: 1, scheduledFor: 1 },
+      index: 'scheduleId_1_scheduledFor_1',
+    },
+    { conflict: 'overlap', keyPattern: { scheduleId: 1 }, index: 'scheduleId_1' },
+    { conflict: 'slot-taken', keyPattern: { capacitySlot: 1 }, index: 'capacitySlot_1' },
+  ] as const;
+
+  describe.each(['keyPattern', 'errmsg', 'message'] as const)('%s', (format) => {
+    it.each(conflicts)(
+      'classifies $conflict on admission',
+      async ({ conflict, keyPattern, index }) => {
+        const schedule = await methods.createSchedule(scheduleData());
+        const data = runData(schedule);
+        await ScheduleRun.create({ ...data, status: 'success' });
+        const error = {
+          code: 11000,
+          ...(format === 'keyPattern'
+            ? { keyPattern }
+            : { [format]: `E11000 duplicate key error collection: scheduleruns index: ${index}` }),
+        };
+        // Inject the external database response shape; the occurrence lookup remains real.
+        jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce(error);
+        await expect(methods.reserveStartedRun(data)).resolves.toEqual(
+          conflict === 'duplicate' ? { conflict, existingStatus: 'success' } : { conflict },
+        );
+      },
+    );
+
+    it.each(conflicts.filter(({ conflict }) => conflict !== 'duplicate'))(
+      'classifies $conflict on approval resume',
+      async ({ conflict, keyPattern, index }) => {
+        const error = {
+          code: 11000,
+          ...(format === 'keyPattern'
+            ? { keyPattern }
+            : { [format]: `E11000 duplicate key error collection: scheduleruns index: ${index}` }),
+        };
+        jest.spyOn(ScheduleRun, 'findOneAndUpdate').mockImplementationOnce(() => {
+          throw error;
+        });
+        await expect(methods.markRunResumeClaimed('schedule', new Date(), 0)).resolves.toEqual({
+          conflict,
+        });
+      },
+    );
+  });
+
+  it.each(['started', 'requires_action', 'success'] as const)(
+    'preserves the existing %s occurrence status without keyPattern or keyValue',
+    async (status) => {
+      const schedule = await methods.createSchedule(scheduleData());
+      const data = runData(schedule);
+      await ScheduleRun.create({ ...data, status });
+      jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce({
+        code: 11000,
+        message:
+          'E11000 duplicate key error collection: scheduleruns index: scheduleId_1_scheduledFor_1 dup key: { scheduleId: "schedule" }',
+      });
+      await expect(methods.reserveStartedRun(data)).resolves.toEqual({
+        conflict: 'duplicate',
+        existingStatus: status,
+      });
+    },
+  );
+
+  it('prefers keyPattern over a contradictory index name', async () => {
+    jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce({
+      code: 11000,
+      keyPattern: { capacitySlot: 1 },
+      message: 'E11000 duplicate key error collection: scheduleruns index: scheduleId_1',
+    });
+    await expect(methods.reserveStartedRun({})).resolves.toEqual({ conflict: 'slot-taken' });
+  });
+
+  it.each([
+    { code: 11000 },
+    { code: 42, message: 'index: scheduleId_1' },
+    { code: 11000, message: 'index: scheduleId_1_extra' },
+    { code: 11000, message: 'index: prefix_scheduleId_1' },
+    { code: 11000, message: 'index: unrelated dup key: { value: "index: scheduleId_1" }' },
+    { code: 11000, keyPattern: {}, message: 'index: scheduleId_1' },
+    { code: 11000, keyPattern: { scheduleId: 1, unexpected: 1 } },
+    { code: 11000, keyPattern: { scheduledFor: 1 } },
+    { code: 11000, message: 123 },
+    new Error('connection lost'),
+  ])('rethrows unrecognized errors: %j', async (error) => {
+    jest.spyOn(ScheduleRun, 'create').mockRejectedValueOnce(error);
+    await expect(methods.reserveStartedRun({})).rejects.toBe(error);
+    jest.spyOn(ScheduleRun, 'findOneAndUpdate').mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(methods.markRunResumeClaimed('schedule', new Date(), 0)).rejects.toBe(error);
   });
 });
 

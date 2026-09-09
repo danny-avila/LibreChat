@@ -1,5 +1,9 @@
+import type {
+  CodeApprovalMode,
+  CodeWorkspaceSelection,
+  TEndpointOption,
+} from 'librechat-data-provider';
 import type { IUser, AppConfig, IConversation } from '@librechat/data-schemas';
-import type { TEndpointOption } from 'librechat-data-provider';
 import type { Request } from 'express';
 
 /**
@@ -18,6 +22,8 @@ export type RequestBody = {
   endpointOption?: Partial<TEndpointOption>;
   /** Browser IANA timezone used to resolve local-time prompt variables (e.g. `{{current_datetime}}`). */
   timezone?: string;
+  codeApprovalMode?: CodeApprovalMode;
+  codeWorkspaces?: CodeWorkspaceSelection[];
 };
 
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {

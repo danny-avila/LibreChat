@@ -38,7 +38,10 @@ export type OboTokenResolver = (
  *   - throws: refresh was attempted and the IdP rejected it. Caller wraps as
  *     `session_refresh_failed`.
  */
-export type UpstreamTokenProvider = () => Promise<OIDCTokens | null>;
+export type UpstreamTokenProvider = (options?: {
+  forceRefresh?: boolean;
+  signal?: AbortSignal;
+}) => Promise<OIDCTokens | null>;
 
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
@@ -116,7 +119,7 @@ export class OboTokenResolutionError extends Error {
   }
 }
 
-function isRetryableOboExchangeError(error: unknown): boolean {
+export function isRetryableOboExchangeError(error: unknown): boolean {
   const taggedRetryable = getErrorRetryableFlag(error);
   if (taggedRetryable != null) {
     return taggedRetryable;
@@ -191,6 +194,11 @@ function buildUpstreamTokenInfo(
  * itself carries that verified upstream bearer — still works. Browser requests
  * whose Express session was cleared reject in the provider instead of reaching
  * this fallback with a stale strategy-time snapshot.
+ *
+ * @param forceRefresh Bypasses the resolver's token cache. Set it when the downstream
+ * server has rejected the current credential: a revoked or scope-invalidated token is
+ * still inside its cached lifetime, so a cached read would hand back the same rejected
+ * bearer instead of minting a replacement.
  */
 export async function resolveOboToken(
   user: IUser,
@@ -198,6 +206,7 @@ export async function resolveOboToken(
   oboTokenResolver: OboTokenResolver,
   upstreamTokenProvider: UpstreamTokenProvider,
   identityContext?: AuthIdentityContext,
+  forceRefresh = false,
 ): Promise<MCPOAuthTokens> {
   let liveTokens: OIDCTokens | null;
   try {
@@ -240,7 +249,7 @@ export async function resolveOboToken(
       user,
       tokenInfo.accessToken,
       oboConfig.scopes,
-      true,
+      !forceRefresh,
       identityContext,
     );
 

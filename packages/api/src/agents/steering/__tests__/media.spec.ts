@@ -2,6 +2,7 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import type { SteerFileFetcher } from '../request';
 import type { SteerMediaClient } from '../media';
 import { buildSteerMedia, collectSteerStampTargets, stampSteerPartMedia } from '../media';
+import { AttachmentObjectNotFoundError } from '~/files/encode/utils';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -283,6 +284,35 @@ describe('stampSteerPartMedia', () => {
     await stampSteerPartMedia({ client: createClient(), user, payload: [message], getFiles });
 
     expect((message.content as unknown[])[0]).toBe(steerPart);
+    expect(steerPart).not.toHaveProperty('media');
+  });
+
+  it('propagates a missing attachment object instead of replaying text only', async () => {
+    const getFiles: SteerFileFetcher = jest.fn(async () => []);
+    const client = createClient();
+    client.processAttachments = jest
+      .fn()
+      .mockRejectedValue(new AttachmentObjectNotFoundError('missing-object'));
+    const steerPart = {
+      type: 'steer',
+      steer: 'read the missing file',
+      steerId: 'missing-steer',
+      files: [{ file_id: 'missing-object' }],
+    };
+    const message = { role: 'assistant', content: [steerPart] };
+
+    await expect(
+      stampSteerPartMedia({
+        client,
+        user,
+        payload: [message],
+        docsById: new Map([['missing-object', imageDoc]]),
+        getFiles,
+      }),
+    ).rejects.toMatchObject({
+      code: 'ATTACHMENT_OBJECT_NOT_FOUND',
+      fileId: 'missing-object',
+    });
     expect(steerPart).not.toHaveProperty('media');
   });
 

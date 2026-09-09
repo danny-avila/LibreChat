@@ -18,6 +18,7 @@ import {
   Summary,
   Text,
   SkillCall,
+  MemoryCall,
   ReadFileCall,
   FileAuthoringCall,
   BashCall,
@@ -164,7 +165,9 @@ const Part = memo(function Part({
         model={part.model}
         provider={part.provider}
         tokenCount={part.tokenCount}
+        initiatedBy={part.initiatedBy}
         summarizing={part.summarizing}
+        failed={part.failed}
       />
     );
   } else if (part.type === ContentTypes.ACTIVITY_LABEL) {
@@ -206,6 +209,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
+              backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
               attachments={attachments}
               commandField="code"
               hideAttachments={hideAttachments}
@@ -225,6 +229,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
+              backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               args={toolCall.args}
@@ -304,6 +309,21 @@ const Part = memo(function Part({
               hideAttachments={hideAttachments}
             />
           );
+        } else if (toolCall.name === 'set_memory' || toolCall.name === 'delete_memory') {
+          return (
+            <MemoryCall
+              toolName={toolCall.name}
+              args={toolCall.args}
+              output={toolCall.output ?? ''}
+              initialProgress={toolCall.progress ?? 0.1}
+              isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
+              attachments={attachments}
+              hideAttachments={hideAttachments}
+              onExpand={onToolExpand}
+            />
+          );
         } else if (toolCall.name === 'read_file') {
           return (
             <ReadFileCall
@@ -343,6 +363,7 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
+              backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -358,6 +379,7 @@ const Part = memo(function Part({
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
+              hideAttachments={hideAttachments}
               isLast={isLast}
               onExpand={onToolExpand}
             />
@@ -391,7 +413,9 @@ const Part = memo(function Part({
             isLast={isLast}
             hideAttachments={hideAttachments}
             onExpand={onToolExpand}
-            runStepStatus={toolCall.runStepStatus}
+            runStepStatus={
+              toolCall.backgroundTask?.cancelled === true ? 'cancelled' : toolCall.runStepStatus
+            }
             runStepDurationMs={toolCall.runStepDurationMs}
           />
         );

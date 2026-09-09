@@ -58,6 +58,33 @@ type TGenericError = {
   info: string;
 };
 
+type TContextOverflow = {
+  info?: string;
+  provider?: string;
+  projectedMessageTokens?: number;
+  availableMessageTokens?: number;
+};
+
+type TCompactionSkipped = {
+  reason?: string;
+};
+
+/** Why a manual compaction could not run, keyed by the SDK's skip reason. */
+const compactionSkippedKeys: Record<string, TranslationKeys> = {
+  disabled: 'com_error_compaction_disabled',
+  instructions_exceed_budget: 'com_error_compaction_budget',
+  nothing_to_summarize: 'com_error_compaction_nothing',
+};
+
+/**
+ * SDK boilerplate already covered by the localized headline; whatever remains
+ * (specific guidance and the token budget breakdown) renders as details.
+ */
+const emptyMessagesBoilerplate = [
+  'Message pruning removed all messages as none fit in the context window.',
+  'Please increase the context window size or make your message shorter.',
+];
+
 const errorMessages = {
   [ErrorTypes.MODERATION]: 'com_error_moderation',
   [ErrorTypes.NO_USER_KEY]: 'com_error_no_user_key',
@@ -99,9 +126,46 @@ const errorMessages = {
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
   [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
+  [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE]: 'com_error_code_workspace_unavailable',
   [ErrorTypes.STREAM_EXPIRED]: 'com_error_stream_expired',
   [ErrorTypes.MODEL_NOT_FOUND]: langChainErrorKeys.MODEL_NOT_FOUND,
   [ErrorTypes.MODEL_RATE_LIMIT]: langChainErrorKeys.MODEL_RATE_LIMIT,
+  [ErrorTypes.COMPACTION_FAILED]: 'com_error_compaction_failed',
+  [ErrorTypes.COMPACTION_SKIPPED]: (json: TCompactionSkipped, localize: LocalizeFunction) =>
+    localize(compactionSkippedKeys[json.reason ?? ''] ?? 'com_error_compaction_failed'),
+  [ErrorTypes.EMPTY_MESSAGES]: (json: TGenericError, localize: LocalizeFunction) => {
+    const detail = emptyMessagesBoilerplate
+      .reduce((info, sentence) => info.replace(sentence, ''), json.info ?? '')
+      .trim();
+    return (
+      <>
+        {localize('com_error_empty_messages')}
+        {detail && (
+          <>
+            <br />
+            <br />
+            <CodeBlock
+              lang={localize('com_ui_details')}
+              error={true}
+              allowExecution={false}
+              codeChildren={detail}
+            />
+          </>
+        )}
+      </>
+    );
+  },
+  [ErrorTypes.FINAL_CONTEXT_OVERFLOW]: (json: TContextOverflow, localize: LocalizeFunction) => {
+    const { projectedMessageTokens: projected, availableMessageTokens: available } = json;
+    const message = localize('com_error_final_context_overflow');
+    if (typeof projected !== 'number' || typeof available !== 'number') {
+      return message;
+    }
+    return `${message} ${localize('com_error_context_tokens_detail', {
+      0: projected,
+      1: available,
+    })}`;
+  },
   [ViolationTypes.BAN]:
     'Your account has been temporarily banned due to violations of our service.',
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: (json: TGenericError, localize: LocalizeFunction) => {

@@ -1,4 +1,8 @@
-import type { TSubagentThreadLineage } from 'librechat-data-provider';
+import type {
+  CodeApprovalMode,
+  CodeWorkspaceSelection,
+  TSubagentThreadLineage,
+} from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 import type { ICompactionSemanticIndexProjection } from './compaction';
 
@@ -45,9 +49,37 @@ export interface IAgentEventActorSummary {
   tokenCount: number;
 }
 
+/**
+ * Latched context-fading tier from `@librechat/agents`. Every cap the SDK
+ * applies to its provider-only projection of historical tool results derives
+ * from it alone, so persisting it keeps that projection byte-stable across runs
+ * for prefix-based provider prompt caches. Graph messages stay canonical.
+ */
+export interface IAgentFadingTier {
+  v: 1;
+  /** Token budget the caps derive from; never grows within a conversation. */
+  budgetTokens: number;
+  /** Whether observation masking has activated. */
+  masked: boolean;
+}
+
+/** One agent's latched tier inside the persisted per-agent map. */
+export interface IAgentFadingTierEntry extends IAgentFadingTier {
+  agentId: string;
+}
+
+/**
+ * Compact context state a run hands to its successor: calibration and the
+ * latched fading tiers. Messages themselves are never part of it; the SDK keeps
+ * graph history canonical and derives a provider-only projection per run.
+ */
 export interface IAgentEventActorContextMeta {
   calibrationRatio: number;
   encoding?: string;
+  /** Default agent's tier, kept for single-agent seeding. */
+  fading?: IAgentFadingTier;
+  /** Tiers keyed by agent ID, stored as entries so agent IDs never become field names. */
+  fadingTiers?: IAgentFadingTierEntry[];
 }
 
 /** Private committed checkpoint state for one event-bound child actor. */
@@ -160,7 +192,8 @@ export interface IAgentEventActorSuspension {
   handlingGenerationCreatedAt?: number;
   actionId: string;
   jobCreatedAt: number;
-  status: 'pending' | 'claimed' | 'closed';
+  /** Owned states fence legacy replicas; snapshot readers expose pending/claimed. */
+  status: 'pending' | 'claimed' | 'pending_owned' | 'claimed_owned' | 'closed';
   resumeAttemptId?: string;
   outcome?: 'committed' | 'stale' | 'settled' | 'cancelled';
   closedAt?: Date;
@@ -236,6 +269,10 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  codeApprovalMode?: CodeApprovalMode;
+  codeWorkspaces?: CodeWorkspaceSelection[];
+  /** Immutable primary persisted-agent attribution for Insights. */
+  initial_agent_id?: string | null;
   subagentThread?: TSubagentThreadLineage;
   /** Internal execution fence. Excluded from ordinary conversation reads. */
   subagentThreadLease?: ISubagentThreadLease;
@@ -243,6 +280,8 @@ export interface IConversation extends Document {
   agentEventBinding?: IAgentEventBinding;
   /** Internal event-actor checkpoint head. Excluded from ordinary conversation reads. */
   agentEventActor?: IAgentEventActorState;
+  /** Prune work persisted atomically before the actor rotates its predecessor. */
+  agentEventActorCleanup?: IAgentEventActorCheckpoint[];
   /** Private invocation proof: active lifecycle fences plus settled same-ID receipts. */
   agentEventActorReconciliations?: IAgentEventActorReconciliation[];
   /** Private invalidation epoch; see {@link IAgentEventActorSnapshot.epoch}. */

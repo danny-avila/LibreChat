@@ -1,5 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { PrincipalType, PermissionTypes, Permissions } = require('librechat-data-provider');
+const {
+  PrincipalType,
+  PermissionTypes,
+  Permissions,
+  SystemRoles,
+} = require('librechat-data-provider');
 const { getRoleByName } = require('~/models');
 
 const VALID_PRINCIPAL_TYPES = new Set([
@@ -25,6 +30,10 @@ const checkPeoplePickerAccess = async (req, res, next) => {
         error: 'Unauthorized',
         message: 'Authentication required',
       });
+    }
+
+    if (user.role === SystemRoles.ADMIN) {
+      return next();
     }
 
     const role = await getRoleByName(user.role);

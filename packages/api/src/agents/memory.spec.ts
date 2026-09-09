@@ -282,6 +282,7 @@ describe('Memory Agent Header Resolution', () => {
       instructions: 'test instructions',
       llmConfig,
       user: testUser,
+      tenantId: 'request-tenant',
     });
 
     expect(Run.create as jest.Mock).toHaveBeenCalled();
@@ -290,6 +291,9 @@ describe('Memory Agent Header Resolution', () => {
       'X-User-Identifier': 'test@example.com',
       'X-User-ID': 'user-123',
     });
+    expect(mockResolveConfigHeaders).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'request-tenant' }),
+    );
   });
 
   it('should handle mixed environment variables and user placeholders', async () => {

@@ -1,5 +1,7 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librechat-data-provider';
+import { findResponseMessageIndex } from '~/utils/steer';
+import { hasParallelLanes } from '~/utils/lanes';
 
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
@@ -412,6 +414,7 @@ function synthesizeActivityFolds(
  */
 export function groupActivityPhases(
   content: Array<TMessageContentParts | undefined> | undefined,
+  laneGroups?: ReadonlySet<number>,
 ): ActivityPhaseSegment[] | undefined {
   if (!content) {
     return undefined;
@@ -420,10 +423,14 @@ export function groupActivityPhases(
   /** Parallel columns lay their own activity out and are rendered by
    *  `ParallelContentRenderer`, which a synthesized card would pull onto the
    *  phase path. Server markers may still claim parallel spans; only the
-   *  client-built folds stand down. */
-  const foldable = !definedIndices.some(
-    (index) => (content[index] as { groupId?: string } | undefined)?.groupId != null,
-  );
+   *  client-built folds stand down. A group id alone is not enough: one that
+   *  resolves to a single agent renders sequentially, so it folds like any
+   *  other run.
+   *
+   *  `laneGroups` is the caller's own lane scan over this same content, and
+   *  content is rewritten on every streamed delta — taking the answer rather
+   *  than repeating the scan keeps a render to one pass. */
+  const foldable = laneGroups != null ? laneGroups.size === 0 : !hasParallelLanes(content);
   const completed = definedIndices
     .map((index) => ({ part: getActivityLabelPart(content[index]), index }))
     .filter(
@@ -671,29 +678,13 @@ export function lastCursorContentIdx(
   return lastIdx;
 }
 
-/**
- * Resolves the assistant response message an activity-label event targets.
- * Exact-id assistant match when `responseMessageId` is present (a miss
- * returns -1 so the caller retries next frame); best-effort last assistant
- * otherwise. Mirrors `findSteerMessageIndex`.
- */
+/** Resolves the assistant row an activity label targets; see `findResponseMessageIndex`. */
 export function findActivityLabelMessageIndex(
   messages: TMessage[],
   event: TActivityLabelEvent,
+  fallbackMessageIds: readonly (string | null | undefined)[] = [],
 ): number {
-  const isAssistant = (message: TMessage | undefined) => message?.isCreatedByUser === false;
-  const { responseMessageId } = event;
-  if (responseMessageId) {
-    return messages.findIndex(
-      (message) => message.messageId === responseMessageId && isAssistant(message),
-    );
-  }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (isAssistant(messages[i])) {
-      return i;
-    }
-  }
-  return -1;
+  return findResponseMessageIndex(messages, event.responseMessageId, fallbackMessageIds);
 }
 
 /**

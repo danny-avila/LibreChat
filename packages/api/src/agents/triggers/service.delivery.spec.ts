@@ -386,6 +386,34 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  it('runs checkpoint evidence maintenance in system context and waits on shutdown', async () => {
+    let finish!: () => void;
+    const pending = new Promise<number>((resolve) => {
+      finish = () => resolve(1);
+    });
+    const reclaimCheckpointDeletions = jest.fn(() => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+      return pending;
+    });
+    const service = createAgentTriggerService({
+      methods: deliveryMethods(),
+      reclaimCheckpointDeletions,
+      purgeRecoveryLimit: 17,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+    expect(reclaimCheckpointDeletions).toHaveBeenCalledWith(17);
+    let stopped = false;
+    const stop = service.stop().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(stopped).toBe(false);
+    finish();
+    await stop;
+    expect(stopped).toBe(true);
+  });
+
   it('reclaims lanes even when another maintenance step rejects', async () => {
     /** A single broken cleanup (e.g. an engine-specific query rejection) used
      * to fail the whole Promise.all and skip the sequenced lane reclamation on

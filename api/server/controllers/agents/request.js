@@ -1,4 +1,4 @@
-const { logger, tenantStorage } = require('@librechat/data-schemas');
+const { logger, tenantStorage, createChatExpirationDate } = require('@librechat/data-schemas');
 const { v5: uuidv5 } = require('uuid');
 const {
   Constants,
@@ -40,6 +40,7 @@ const {
   isHITLEnabled,
   agentRequestsAskUserQuestion,
   resolveAgentTurnExecutionPlan,
+  logAgentMemorySnapshot,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -146,6 +147,81 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
   }
 
   return `${messageId.replace(/_+$/, '')}_`;
+}
+
+/**
+ * Manual compaction runs as a summarize-only turn hung off the branch's leaf.
+ * It needs an existing branch to summarize, and it cannot be combined with the
+ * turn shapes that create or rewrite a user message.
+ * @returns {{ status: number, code: string, error: string } | null}
+ */
+function getCompactionRejection(req, { conversationId, parentMessageId }) {
+  if (req.config?.summarization?.enabled === false) {
+    return {
+      status: 400,
+      code: 'COMPACTION_DISABLED',
+      error: 'Context compaction is disabled for this deployment.',
+    };
+  }
+  if (!conversationId || conversationId === Constants.NEW_CONVO) {
+    return {
+      status: 400,
+      code: 'INVALID_COMPACTION_REQUEST',
+      error: 'Compaction requires an existing conversation.',
+    };
+  }
+  if (
+    typeof parentMessageId !== 'string' ||
+    parentMessageId.length === 0 ||
+    parentMessageId === Constants.NO_PARENT
+  ) {
+    return {
+      status: 400,
+      code: 'INVALID_COMPACTION_REQUEST',
+      error: 'Compaction requires the message to compact up to.',
+    };
+  }
+  const { isContinued, isRegenerate, editedContent, responseMessageId } = req.body ?? {};
+  if (isContinued || isRegenerate || editedContent != null || responseMessageId) {
+    return {
+      status: 400,
+      code: 'INVALID_COMPACTION_REQUEST',
+      error: 'Compaction cannot be combined with an edit, regenerate, or continue.',
+    };
+  }
+  return null;
+}
+
+/**
+ * The leaf a compaction hangs off, in the user-message slot the job metadata
+ * and the abort path read before the branch is loaded. Identity only: the
+ * client validates the leaf against the history it loads anyway, and the job
+ * must not carry the leaf's content.
+ */
+function projectCompactionAnchor({ messageId, conversationId }) {
+  return { messageId, conversationId, text: '' };
+}
+
+/**
+ * The id the turn's user message is created under. A compaction creates no
+ * user message: its "user message" slot holds the leaf it summarizes up to,
+ * and a bound event turn keys the id off its task.
+ * @returns {string}
+ */
+function resolvePreallocatedUserMessageId({
+  isCompaction,
+  parentMessageId,
+  eventTaskId,
+  overrideUserMessageId,
+  overrideParentMessageId,
+}) {
+  if (isCompaction) {
+    return parentMessageId;
+  }
+  if (eventTaskId != null) {
+    return `${eventTaskId}:user`;
+  }
+  return overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID();
 }
 
 function getPreliminaryUserMessage(
@@ -272,6 +348,7 @@ async function saveErrorTurn(
     liveUserMessage,
     liveResponseMessageId,
     sender,
+    initialAgentId,
   },
 ) {
   try {
@@ -290,7 +367,16 @@ async function saveErrorTurn(
     let userMessage = null;
     let errorMessageId = null;
     let errorParentMessageId = null;
-    if (isRegenerate) {
+    if (req.body?.compact === true) {
+      /** The anchor is the persisted leaf, never rewritten. Without the
+       *  loaded anchor (the branch failed to load) there is nothing safe
+       *  to parent an error row onto, so nothing is written. */
+      if (liveUserMessage?.messageId == null) {
+        return;
+      }
+      errorMessageId = getPreliminaryResponseMessageId({ messageId: liveUserMessage.messageId });
+      errorParentMessageId = liveUserMessage.messageId;
+    } else if (isRegenerate) {
       errorMessageId =
         typeof responseMessageId === 'string' && responseMessageId.length > 0
           ? responseMessageId
@@ -346,8 +432,12 @@ async function saveErrorTurn(
 
     const reqCtx = {
       userId,
-      isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-      expiredAt: req?._agentEventBindingRetention?.expiredAt,
+      isTemporary:
+        req?._agentEventBindingRetention?.isTemporary ??
+        req?.resolvedConversation?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt:
+        req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     };
     const context = 'api/server/controllers/agents/request.js - failed turn';
@@ -413,7 +503,15 @@ async function saveErrorTurn(
     await saveConvo(
       reqCtx,
       { conversationId, ...convoFields },
-      seedConvo ? { context } : { context, noUpsert: true },
+      seedConvo
+        ? {
+            context,
+            initialAgentId:
+              typeof initialAgentId === 'string' && !isEphemeralAgentId(initialAgentId)
+                ? initialAgentId
+                : null,
+          }
+        : { context, noUpsert: true },
     );
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
@@ -605,6 +703,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   const userId = req.user.id;
   const tenantId = req.user.tenantId;
+  const isCompaction = req.body?.compact === true;
+  if (isCompaction) {
+    const rejection = getCompactionRejection(req, {
+      conversationId: reqConversationId,
+      parentMessageId,
+    });
+    if (rejection) {
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(
+        res,
+        rejection.status,
+        { code: rejection.code, error: rejection.error },
+        generationProtocolVersion,
+      );
+    }
+  }
   const rawClientRequestId = req.body?.clientRequestId;
   if (
     rawClientRequestId != null &&
@@ -1345,10 +1459,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   if (eventTaskId != null) {
     req._agentEventTaskId = eventTaskId;
   }
-  const preallocatedUserMessageId =
-    eventTaskId == null
-      ? (overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID())
-      : `${eventTaskId}:user`;
+  const preallocatedUserMessageId = resolvePreallocatedUserMessageId({
+    isCompaction,
+    parentMessageId,
+    eventTaskId,
+    overrideUserMessageId,
+    overrideParentMessageId,
+  });
   const overrideConversationId = rawOverrideConversationId
     ? rawOverrideConversationId.split(Constants.COMMON_DIVIDER)[0]
     : undefined;
@@ -1366,11 +1483,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId: effectiveConversationId,
+    codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
     parentMessageId:
       editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
   });
 
   let client = null;
+  let verifiedInitialAgentId = null;
   let jobCreatedAt;
   let providerExecutionId;
   let releaseEventChildLease;
@@ -1389,6 +1508,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       jobCreatedAt,
       status,
       conversationId,
+      ...(status === 'requires_action' && client?.checkpointNamespace != null
+        ? { checkpointNamespace: client.checkpointNamespace }
+        : {}),
       clearConversationId,
       error,
     });
@@ -1430,11 +1552,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     const endpointIconURL = getEndpointIconURL(req, endpointOption);
     const responseModel = getAgentResponseModel(req, endpointOption);
-    const preliminaryUserMessage = getPreliminaryUserMessage(
-      { ...req.body, messageId: preallocatedUserMessageId },
-      conversationId,
-      req._agentEventTriggerProjection,
-    );
+    const preliminaryUserMessage = isCompaction
+      ? projectCompactionAnchor({ messageId: parentMessageId, conversationId })
+      : getPreliminaryUserMessage(
+          { ...req.body, messageId: preallocatedUserMessageId },
+          conversationId,
+          req._agentEventTriggerProjection,
+        );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,
       ...(recoveredSteerId && { recoveredSteerId }),
@@ -1464,7 +1588,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         agent_id: endpointOption.agent_id ?? req.body?.agent_id,
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
-        isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
+        isTemporary:
+          req._agentEventBindingRetention?.isTemporary ??
+          req.resolvedConversation?.isTemporary ??
+          req.body?.isTemporary,
+        ...((req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation?.expiredAt) !=
+          null && {
+          retentionExpiresAt: new Date(
+            req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation.expiredAt,
+          ).toISOString(),
+        }),
+        ...((req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation?.expiredAt) ==
+          null &&
+          req.config?.interfaceConfig?.retentionMode === 'all' && {
+            retentionExpiresAt: createChatExpirationDate(
+              req.config.interfaceConfig,
+              req.resolvedConversation?.isTemporary ?? req.body?.isTemporary,
+            ).toISOString(),
+          }),
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
           ...(internalDetachedCompletion == null
@@ -1482,7 +1623,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }),
           }),
         }),
-        ...(isRegenerate && { isRegenerate: true }),
+        /** A compaction is regenerate-shaped for every consumer of the job:
+         *  no user message of its own, the response parented onto an
+         *  existing message. A reconnecting client rebuilds it that way. */
+        ...((isRegenerate || isCompaction) && { isRegenerate: true }),
         ...(scheduleId
           ? {
               scheduleId,
@@ -1679,7 +1823,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
-      const resumeState = await GenerationJobManager.getResumeState(streamId, jobCreatedAt);
+      const [resumeState, jobRecord] = await Promise.all([
+        GenerationJobManager.getResumeState(streamId, jobCreatedAt),
+        GenerationJobManager.getJobStore().getJob(streamId),
+      ]);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
         return;
@@ -1687,6 +1834,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
       partialResponseSaved = true;
       const responseConversationId = resumeState.conversationId || conversationId;
+      /** The run publishes its calibration and fading tiers onto the job; a
+       * partial response saved on disconnect must carry them like the Stop and
+       * pause paths do, or a turn continued from it re-derives its provider
+       * projection of history and loses the cached prefix. The same-epoch job
+       * record is the source, since the client-facing resume snapshot never
+       * carries server-private state. */
+      const contextMeta = jobRecord?.createdAt === jobCreatedAt ? jobRecord.contextMeta : undefined;
 
       try {
         const partialMessage = {
@@ -1702,6 +1856,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           endpoint: endpointOption.endpoint,
           iconURL: resumeState.iconURL || endpointIconURL,
           model: resumeState.model || responseModel,
+          ...(contextMeta != null && { contextMeta }),
         };
 
         if (req.body?.agent_id) {
@@ -1712,8 +1867,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           saveMessage(
             {
               userId,
-              isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-              expiredAt: req?._agentEventBindingRetention?.expiredAt,
+              isTemporary:
+                req?._agentEventBindingRetention?.isTemporary ??
+                req?.resolvedConversation?.isTemporary ??
+                req?.body?.isTemporary,
+              expiredAt:
+                req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
               interfaceConfig: req?.config?.interfaceConfig,
             },
             partialMessage,
@@ -1748,10 +1907,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       signal: job.abortController.signal,
       jobCreatedAt,
       checkpointNamespace: job.metadata?.checkpointNamespace,
+      foregroundRunId: mcpRequestBody.messageId,
       requestBody: mcpRequestBody,
     });
     startupTelemetry?.mark('client_initialized');
     client = result.client;
+    if (
+      typeof client?.options?.agent?.id === 'string' &&
+      !isEphemeralAgentId(client.options.agent.id)
+    ) {
+      verifiedInitialAgentId = client.options.agent.id;
+    }
 
     /** Request-shape validation rejects every known edit/regenerate path, but
      * the client owns the final persistence decision. Fail closed if a future
@@ -1892,6 +2058,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     let terminalPersistenceChecked = false;
     let terminalWasAborted = false;
     let preemptIncomplete = false;
+    /** The graph exhausted its per-turn step budget. Like `preemptIncomplete`, an
+     *  honest `unfinished` outcome rather than an error: the partial turn is real
+     *  work and the user is offered a way to carry on. */
+    let stepLimitReached = false;
     /** A pause-row write failure is terminalized through the exact action/epoch
      * barrier. Once that path starts, neither generic background error handler
      * may call completeJob: the pause may already have been replaced by a newer
@@ -1929,6 +2099,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       preemptIncomplete =
         (preemptStats?.emptyBoundaries ?? 0) > 0 ||
         client?.run?.getHaltReason?.() === 'preempt_incomplete';
+      stepLimitReached = client?.stepLimitReached === true;
       terminalClaim = await GenerationJobManager.claimTerminalJob(
         streamId,
         terminalWasAborted ? 'aborted' : 'complete',
@@ -2116,6 +2287,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           getReqData,
           isContinued,
           isRegenerate,
+          isCompaction,
           editedContent,
           conversationId,
           parentMessageId,
@@ -2484,8 +2656,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     {
                       userId,
                       isTemporary:
-                        req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-                      expiredAt: req?._agentEventBindingRetention?.expiredAt,
+                        req?._agentEventBindingRetention?.isTemporary ??
+                        req?.resolvedConversation?.isTemporary ??
+                        req?.body?.isTemporary,
+                      expiredAt:
+                        req?._agentEventBindingRetention?.expiredAt ??
+                        req?.resolvedConversation?.expiredAt,
                       interfaceConfig: req?.config?.interfaceConfig,
                     },
                     userMessage,
@@ -2506,8 +2682,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 {
                   userId,
                   isTemporary:
-                    req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-                  expiredAt: req?._agentEventBindingRetention?.expiredAt,
+                    req?._agentEventBindingRetention?.isTemporary ??
+                    req?.resolvedConversation?.isTemporary ??
+                    req?.body?.isTemporary,
+                  expiredAt:
+                    req?._agentEventBindingRetention?.expiredAt ??
+                    req?.resolvedConversation?.expiredAt,
                   interfaceConfig: req?.config?.interfaceConfig,
                 },
                 {
@@ -2685,10 +2865,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // where client refetch happens before database is updated
         const reqCtx = {
           userId: req?.user?.id,
-          isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
-          expiredAt: req?._agentEventBindingRetention?.expiredAt,
+          isTemporary:
+            req?._agentEventBindingRetention?.isTemporary ??
+            req?.resolvedConversation?.isTemporary ??
+            req?.body?.isTemporary,
+          expiredAt:
+            req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
           interfaceConfig: req?.config?.interfaceConfig,
         };
+        const terminalMemoryContext = {
+          ...(client?.attachmentMemoryContext ?? {}),
+          req,
+          conversationId: conversation?.conversationId,
+          messageId: response?.messageId,
+          attachments:
+            client?.attachmentMemoryContext?.attachments ??
+            client?.modelBoundCurrentFiles ??
+            req.body.files,
+        };
+        logAgentMemorySnapshot('before_terminal_save', terminalMemoryContext);
 
         if (!client.skipSaveUserMessage) {
           if (!userMessage) {
@@ -2712,13 +2907,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         /** BaseClient can add the id to savedMessageIds even when its model-layer
          * save resolved falsy. Re-save the terminal row idempotently and require
          * the returned durable row before publishing the normal FINAL. */
-        const responseIsUnfinished = terminalWasAborted || preemptIncomplete;
+        const responseIsUnfinished = terminalWasAborted || preemptIncomplete || stepLimitReached;
         const savedResponseMessage = await saveMessage(
           reqCtx,
           {
             ...response,
+            /** A neutral finish unsets what a disconnect snapshot may have stored. */
+            contextMeta: response.contextMeta ?? null,
             user: userId,
             unfinished: responseIsUnfinished,
+            /** Distinguishes "ran out of steps" from a user stop, so the client can
+             *  render the actionable tool-call-limit notice rather than the generic
+             *  incomplete-response warning. */
+            ...(stepLimitReached && {
+              finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+            }),
           },
           {
             context: responseIsUnfinished
@@ -2733,6 +2936,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               : 'Response message could not be persisted before terminal publication',
           );
         }
+        logAgentMemorySnapshot('after_terminal_save', terminalMemoryContext);
         if (appliedEventActor != null) {
           const recorded = await recordAgentEventActorReconciliation({
             user: userId,
@@ -2778,9 +2982,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           scheduleCompletionError = 'Scheduled run was stopped';
         } else if (preemptIncomplete) {
           scheduleCompletionError = 'Scheduled run was interrupted before completion';
+        } else if (stepLimitReached) {
+          scheduleCompletionError = 'Scheduled run reached its tool call limit before completion';
         }
         await settleScheduledRun({
-          status: terminalWasAborted || preemptIncomplete ? 'interrupted' : 'success',
+          status: responseIsUnfinished ? 'interrupted' : 'success',
           ...(scheduleCompletionError != null && { error: scheduleCompletionError }),
         });
 
@@ -2794,7 +3000,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: {
               ...response,
-              ...((terminalWasAborted || preemptIncomplete) && { unfinished: true }),
+              ...(responseIsUnfinished && { unfinished: true }),
+              ...(stepLimitReached && {
+                finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
+              }),
             },
             ...(pendingSteers.length > 0 && { pendingSteers }),
           };
@@ -2813,10 +3022,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           );
 
           terminalPublicationStarted = true;
+          logAgentMemorySnapshot('before_final_publish', terminalMemoryContext);
           const publication = await GenerationJobManager.publishTerminalClaim(
             terminalClaim,
             finalEvent,
           );
+          logAgentMemorySnapshot('after_final_publish', terminalMemoryContext);
           let terminalOutcome = 'completed_without_delta';
           if (publication.persistenceFailed) {
             terminalOutcome = 'error';
@@ -2968,6 +3179,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     liveUserMessage: userMessage,
                     liveResponseMessageId,
                     sender: client?.sender,
+                    initialAgentId: verifiedInitialAgentId,
                   }),
               })) === true;
             /** A true completion means this owner won the terminal CAS and
@@ -3172,6 +3384,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 endpointOption,
                 isNewConvo,
                 errorText: initializationError,
+                initialAgentId: verifiedInitialAgentId,
               }),
           })
         : GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt);

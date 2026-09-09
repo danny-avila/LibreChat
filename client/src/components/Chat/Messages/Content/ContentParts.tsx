@@ -26,6 +26,7 @@ import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceCh
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
+import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
@@ -164,6 +165,13 @@ const PartWithContext = memo(function PartWithContext({
     [messageId, conversationId, idx, nextType, isSubmitting, isLatestMessage],
   );
 
+  /** Being last WITHIN a body is not being last in the message: activity
+   *  phases split one response into several bodies, so every settled phase has
+   *  a trailing part too. Only the body that holds the message's cursor can
+   *  own a live part — otherwise a phase from minutes ago keeps its reasoning
+   *  shimmering and its peek scrolling while later phases stream. */
+  const holdsCursor = isLastPart && isLast;
+
   return (
     <MessageContext.Provider value={contextValue}>
       <Part
@@ -172,8 +180,8 @@ const PartWithContext = memo(function PartWithContext({
         isSubmitting={isSubmitting}
         key={`part-${messageId}-${getPartKeyIndex(part, idx)}`}
         isCreatedByUser={isCreatedByUser}
-        isLast={isLastPart}
-        showCursor={isLastPart && isLast}
+        isLast={holdsCursor}
+        showCursor={holdsCursor}
         hideAttachments={hideAttachments}
         onToolExpand={onToolExpand}
       />
@@ -205,6 +213,7 @@ type ContentPartsProps = {
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
   isCreatedByUser: boolean;
+  showThinking: boolean;
   isLast: boolean;
   isSubmitting: boolean;
   isLatestMessage?: boolean;
@@ -234,6 +243,9 @@ type ContentPartsProps = {
   contentIndexOffset?: number;
   /** Absolute transcript index for each compacted sparse segment entry. */
   contentIndices?: ReadonlyArray<number>;
+  /** Message-wide lane cardinality retained across nested phase segments, so a
+   *  slice holding one agent of a real two-agent group keeps its columns. */
+  laneGroups?: ReadonlySet<number>;
   /** Message-wide steer attribution retained across nested phase segments. */
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
   /** Message-wide tool-group expansion overrides retained across phase slices. */
@@ -265,6 +277,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   authorHeader,
   conversationId,
   isCreatedByUser,
+  showThinking,
   isLatestMessage,
   createdAt,
   nestedActivityPhase = false,
@@ -274,6 +287,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   workspaceAttachmentsPartitioned = false,
   contentIndexOffset = 0,
   contentIndices,
+  laneGroups,
   resumeAuthors,
   toolGroupExpansionState,
   toolGroupOccurrenceByIndex,
@@ -343,9 +357,16 @@ const ContentPartsBody = memo(function ContentPartsBody({
   /** Hoisted above the early returns to feed the entrance-detection hook
    *  below, so it is memoized rather than re-walked on every unrelated
    *  re-render of a message that has no phases at all. */
+  /** Resolved once over the whole message and handed to every slice below —
+   *  and to `groupActivityPhases`, so a streamed delta scans content once. */
+  const messageLaneGroups = useMemo(
+    () => laneGroups ?? parallelLaneGroups(content),
+    [laneGroups, content],
+  );
+
   const phaseSegments = useMemo(
-    () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
-    [nestedActivityPhase, content],
+    () => (nestedActivityPhase ? undefined : groupActivityPhases(content, messageLaneGroups)),
+    [nestedActivityPhase, content, messageLaneGroups],
   );
   /** Every file a phase's parts produced, in transcript order, deduplicated
    *  across parts that share a tool call. */
@@ -649,15 +670,16 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const baseGroupId = getToolGroupId(group.parts, fallbackScope);
       const occurrence =
         resolvedToolGroupOccurrences.get(getToolGroupAnchorIndex(group.parts)) ?? 1;
-      /** Legacy rows lack run-step identity. Their provider ids may repeat,
-       * so preserve the first group's historic stable key and distinguish
-       * later occurrences by sequence rather than a shifting content index. */
       const groupId = occurrence === 1 ? baseGroupId : `${baseGroupId}:occurrence:${occurrence}`;
-      /** Hoisted a level higher when a phase card owns the media row, so the
-       *  same file is not offered by both the block and the card. */
-      const groupAttachments = hideAttachments
-        ? undefined
-        : group.parts.flatMap(({ part }) => attachmentsForPart(part) ?? []);
+      const seenAttachments = new Set<TAttachment>();
+      if (!hideAttachments) {
+        for (const { part } of group.parts) {
+          for (const attachment of attachmentsForPart(part) ?? []) {
+            seenAttachments.add(attachment);
+          }
+        }
+      }
+      const groupAttachments = hideAttachments ? undefined : Array.from(seenAttachments);
       return { ...group, groupId, groupAttachments };
     });
   }, [
@@ -798,12 +820,14 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
+          showThinking={showThinking}
           withinActivityPhase={withinPhase}
           cursorOwnedElsewhere={cursorOwnedByCard}
           hideAttachments={hoisted}
           workspaceAttachmentsPartitioned
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
+          laneGroups={messageLaneGroups}
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
           toolGroupOccurrenceByIndex={resolvedToolGroupOccurrences}
@@ -811,7 +835,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
         />
       );
     };
-    const hasParallelContent = content?.some((part) => part?.groupId != null) === true;
+    const hasParallelContent = hasParallelLanes(content, messageLaneGroups);
     return (
       <ApprovalProvider>
         <SearchContext.Provider value={{ searchResults }}>
@@ -960,8 +984,9 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const relativeLastContentIdx = lastCursorContentIdx(safeContent);
   const lastContentIdx = relativeLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeLastContentIdx);
 
-  // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
-  const hasParallelContent = safeContent.some((part) => part?.groupId != null);
+  /** Columns only when at least two agents share a group — a lone group
+   *  renders here, where tool grouping and activity labels apply. */
+  const hasParallelContent = hasParallelLanes(safeContent, messageLaneGroups);
   if (hasParallelContent) {
     const parallelContent = (
       <>
@@ -979,6 +1004,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           showDecorations={!nestedActivityPhase}
           contentIndexOffset={contentIndexOffset}
           contentIndices={contentIndices}
+          laneGroups={messageLaneGroups}
         />
         {!nestedActivityPhase && <WorkspaceChanges attachments={workspaceChanges} />}
       </>
@@ -1034,13 +1060,15 @@ const ContentPartsBody = memo(function ContentPartsBody({
                *  mark its group as last or nothing holds the streaming
                *  cursor until the next delta. */
               isLast={
-                group.parts.some((p) => p.idx === lastContentIdx) ||
-                group.labelPart?.idx === lastContentIdx
+                isLast &&
+                (group.parts.some((p) => p.idx === lastContentIdx) ||
+                  group.labelPart?.idx === lastContentIdx)
               }
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}
               groupAttachments={group.groupAttachments}
               initialExpansionState={expansionState.get(groupId)}
+              showThinking={showThinking}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
               labelPart={group.labelPart}
               withinActivityPhase={withinActivityPhase}

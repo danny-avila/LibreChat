@@ -40,7 +40,11 @@ const {
   containsGraphTokenPlaceholder,
   createAuthIdentityContext,
   isOAuthServer,
+  isAbortError,
+  isDirectOpenIDBearerRecoveryEnabled,
   OpenIDReauthRequiredError,
+  MCPAuthenticationRefreshError,
+  MCPAuthenticationRejectedError,
 } = require('@librechat/api');
 const {
   Time,
@@ -467,6 +471,18 @@ async function resolveCollisionAuditNames({ rawServerNames, accessibleServerName
   }
 }
 
+/**
+ * The MCP servers a user can reach, keyed by name, with the registry's tier
+ * precedence already applied. This is the resolution behind `GET /api/mcp/servers`,
+ * so anything derived from it agrees with the catalog the client was given.
+ * @param {string} userId
+ * @param {string} [role]
+ * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
+ */
+async function getAccessibleMCPServers(userId, role) {
+  return await resolveAllMcpConfigs(userId, role != null ? { role } : undefined);
+}
+
 async function resolveAllMcpConfigs(userId, user) {
   const registry = getMCPServersRegistry();
   const appConfig = await getAppConfigForUser(userId, user);
@@ -687,18 +703,23 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 }
 
 function resolveToolCallUserId({ effectiveUser, capturedUser, invocationUserId, serverConfig }) {
-  if (serverConfig?.obo == null) {
+  const identityBoundCredential =
+    serverConfig?.obo != null || isDirectOpenIDBearerRecoveryEnabled(serverConfig ?? {});
+  if (!identityBoundCredential) {
     return effectiveUser?.id || invocationUserId || capturedUser?.id;
   }
 
   const effectiveUserId = effectiveUser?.id;
   const capturedUserId = capturedUser?.id;
+  const credentialLabel = serverConfig?.obo != null ? 'OBO' : 'Direct OpenID bearer';
   if (!effectiveUserId || !capturedUserId) {
-    throw new Error('OBO tool calls require matching captured and effective user ids');
+    throw new Error(
+      `${credentialLabel} tool calls require matching captured and effective user ids`,
+    );
   }
 
   if (effectiveUserId !== capturedUserId) {
-    throw new Error('OBO tool call user mismatch');
+    throw new Error(`${credentialLabel} tool call user mismatch`);
   }
 
   return effectiveUserId;
@@ -1296,13 +1317,28 @@ function createToolInstance({
       }
       return result;
     } catch (error) {
-      logger.error(
-        `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
-        error,
-      );
+      /** A user Stop aborts every in-flight call at once, and that rejection is
+       *  the cancellation working, so it must not reach error-level operational
+       *  alerts; the wrapping below still reports it to the turn. The error has
+       *  to look like an abort as well: a permission, OAuth, or upstream failure
+       *  can reject in the same tick as the Stop and must stay visible. */
+      if (config?.signal?.aborted === true && isAbortError(error)) {
+        logger.debug(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Tool call cancelled by user abort`,
+        );
+      } else {
+        logger.error(
+          `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
+          error,
+        );
+      }
 
       /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
-      if (error instanceof OpenIDReauthRequiredError) {
+      if (
+        error instanceof OpenIDReauthRequiredError ||
+        error instanceof MCPAuthenticationRefreshError ||
+        error instanceof MCPAuthenticationRejectedError
+      ) {
         throw error;
       }
 
@@ -1648,6 +1684,7 @@ module.exports = {
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  getAccessibleMCPServers,
   createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,

@@ -2,11 +2,15 @@
  * @jest-environment jsdom
  */
 import React from 'react';
-import { Providers } from 'librechat-data-provider';
 import { FormProvider, useForm } from 'react-hook-form';
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
+import { Providers, EModelEndpoint, agentParamSettings } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
+import type { UseFormReturn } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import ModelPanel from './ModelPanel';
+
+const mockStartupConfig = jest.fn<Partial<TStartupConfig>, []>(() => ({}));
 
 jest.mock('@librechat/client', () => ({
   Alert: ({ children }: { children: React.ReactNode }) => <div role="alert">{children}</div>,
@@ -59,6 +63,7 @@ jest.mock('~/components/SidePanel/Parameters/components', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: {} }),
+  useGetStartupConfig: () => ({ data: mockStartupConfig() }),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -75,14 +80,18 @@ jest.mock('~/utils', () => ({
 
 function TestForm({
   defaultModel = '',
+  defaultModelParameters = {},
   defaultProvider = '',
+  formRef,
   models,
   modelsError = false,
   modelsReady,
   providers = [{ label: 'Custom', value: 'custom' }],
 }: {
   defaultModel?: string;
+  defaultModelParameters?: Partial<AgentForm['model_parameters']>;
   defaultProvider?: string;
+  formRef?: React.MutableRefObject<UseFormReturn<AgentForm> | null>;
   models: Record<string, string[]>;
   modelsError?: boolean;
   modelsReady: boolean;
@@ -92,9 +101,13 @@ function TestForm({
     defaultValues: {
       provider: defaultProvider,
       model: defaultModel,
-      model_parameters: {},
+      model_parameters: defaultModelParameters as AgentForm['model_parameters'],
     },
   });
+
+  if (formRef) {
+    formRef.current = methods;
+  }
 
   return (
     <FormProvider {...methods}>
@@ -110,7 +123,10 @@ function TestForm({
 }
 
 describe('ModelPanel', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    mockStartupConfig.mockReturnValue({});
+  });
 
   it('disables model selection until the model catalogue is ready', () => {
     const { getByTestId } = render(
@@ -257,5 +273,94 @@ describe('ModelPanel', () => {
     expect(container.querySelector('label[for="model"]')).not.toBeNull();
     expect(container.querySelector('#provider')).not.toBeNull();
     expect(container.querySelector('#model')).not.toBeNull();
+  });
+
+  it('prunes a saved model_parameters value once its endpoint drops the matching param', async () => {
+    mockStartupConfig.mockReturnValue({
+      endpointsDropParamsMap: { [EModelEndpoint.openAI]: ['topP'] },
+    });
+
+    const formRef: React.MutableRefObject<UseFormReturn<AgentForm> | null> = { current: null };
+    render(
+      <TestForm
+        defaultProvider={EModelEndpoint.openAI}
+        defaultModel="gpt-4o"
+        defaultModelParameters={{ model: 'deployment-override', temperature: 0.5, top_p: 0.9 }}
+        formRef={formRef}
+        models={{ [EModelEndpoint.openAI]: ['gpt-4o'] }}
+        modelsReady={true}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(formRef.current?.getValues('model_parameters')).toEqual({
+        model: 'deployment-override',
+        temperature: 0.5,
+      });
+    });
+  });
+
+  it('keeps a saved model_parameters value while its control is still visible', () => {
+    const formRef: React.MutableRefObject<UseFormReturn<AgentForm> | null> = { current: null };
+    render(
+      <TestForm
+        defaultProvider={EModelEndpoint.openAI}
+        defaultModel="gpt-4o"
+        defaultModelParameters={{ temperature: 0.5, top_p: 0.9 }}
+        formRef={formRef}
+        models={{ [EModelEndpoint.openAI]: ['gpt-4o'] }}
+        modelsReady={true}
+      />,
+    );
+
+    expect(formRef.current?.getValues('model_parameters')).toEqual({
+      temperature: 0.5,
+      top_p: 0.9,
+    });
+  });
+
+  it('keeps saved model_parameters when the provider has no known parameter settings', () => {
+    const formRef: React.MutableRefObject<UseFormReturn<AgentForm> | null> = { current: null };
+    render(
+      <TestForm
+        defaultProvider="removed-provider"
+        defaultModel="removed-model"
+        defaultModelParameters={{ temperature: 0.5, top_p: 0.9 }}
+        formRef={formRef}
+        models={{ 'removed-provider': ['removed-model'] }}
+        modelsReady={true}
+      />,
+    );
+
+    expect(formRef.current?.getValues('model_parameters')).toEqual({
+      temperature: 0.5,
+      top_p: 0.9,
+    });
+  });
+
+  it('prunes saved model_parameters when every known setting is dropped', async () => {
+    mockStartupConfig.mockReturnValue({
+      endpointsDropParamsMap: {
+        [EModelEndpoint.openAI]: (agentParamSettings[EModelEndpoint.openAI] ?? []).map(
+          ({ key }) => key,
+        ),
+      },
+    });
+
+    const formRef: React.MutableRefObject<UseFormReturn<AgentForm> | null> = { current: null };
+    render(
+      <TestForm
+        defaultProvider={EModelEndpoint.openAI}
+        defaultModel="gpt-4o"
+        defaultModelParameters={{ temperature: 0.5, top_p: 0.9 }}
+        formRef={formRef}
+        models={{ [EModelEndpoint.openAI]: ['gpt-4o'] }}
+        modelsReady={true}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(formRef.current?.getValues('model_parameters')).toEqual({});
+    });
   });
 });

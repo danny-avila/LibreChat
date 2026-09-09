@@ -33,6 +33,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           streaming: true,
           model: 'gpt-5-nano',
           useResponsesApi: true,
+          firstPartyEndpoint: true,
           user: 'some-user',
           apiKey: 'sk-proj-somekey',
           reasoning: {

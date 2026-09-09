@@ -5,6 +5,7 @@ const {
   createShareContentPreflight,
   isEnabled,
   isContentFilterError,
+  isConversationImportError,
   generateCheckAccess,
   grantCreationPermissions,
   ensureLinkPermissions,
@@ -23,12 +24,13 @@ const {
   createSharedLangfuseSessionResolver,
   recordShareLinkRejection,
   traceIdForMessage,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   logger,
   runAsSystem,
   tenantStorage,
-  createTempChatExpirationDate,
+  createChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
@@ -48,7 +50,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
 const { forkSharedConversation } = require('~/server/utils/import/fork');
-const { createForkLimiters } = require('~/server/middleware/limiters');
+const { createForkLimiters, createShareLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
@@ -116,7 +118,7 @@ const resolveSharedLinkExpiration = (req, conversationId) =>
           'isTemporary expiredAt',
         ).lean();
       },
-      createExpirationDate: createTempChatExpirationDate,
+      createExpirationDate: createChatExpirationDate,
       logger,
     },
   );
@@ -296,7 +298,7 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 
   // Strip any cache-busting query string (e.g. code-output images add `?v=...`) so
   // the local stream resolves the real filename, not a literal `*.png?v=...` path.
-  const streamPath = (file.storageKey || file.filepath || '').split('?')[0];
+  const streamPath = (resolveDownloadPath(file) || '').split('?')[0];
   const fileStream = await getDownloadStream(req, streamPath);
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -336,6 +338,7 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
+  const { shareIpLimiter, shareUserLimiter } = createShareLimiters();
 
   router.get(
     '/:shareId/config',
@@ -357,6 +360,8 @@ if (allowSharedLinks) {
   router.get(
     '/:shareId',
     optionalJwtAuth,
+    shareIpLimiter,
+    shareUserLimiter,
     canAccessSharedLink,
     sharedLinkConfigMiddleware,
     async (req, res) => {
@@ -434,6 +439,9 @@ if (allowSharedLinks) {
         return res.status(201).json(result);
       } catch (error) {
         if (isContentFilterError(error)) {
+          return res.status(error.statusCode).json(error.body);
+        }
+        if (isConversationImportError(error)) {
           return res.status(error.statusCode).json(error.body);
         }
         if (error?.code !== 'SHARE_REVISION_MISMATCH') {

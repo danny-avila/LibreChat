@@ -11,6 +11,7 @@ const {
 const {
   checkAccess,
   GenerationJobManager,
+  GENERATION_RECOVERY_FAILED_ERROR,
   isPendingActionStale,
   mapToolApprovalResolutions,
   resolveAskUserQuestionResume,
@@ -45,6 +46,8 @@ const {
   createAgentEventActionRecorder,
   createAgentEventActorDetachedActionLifecycle,
   findAgentEventAppliedAction,
+  assertCodeExecutionApprovalBinding,
+  collectReachableAgents,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -309,7 +312,9 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
     {
       userId,
       isTemporary: meta.isTemporary ?? req.body?.isTemporary,
-      expiredAt: req._agentEventBindingRetention?.expiredAt,
+      expiredAt:
+        req._agentEventBindingRetention?.expiredAt ??
+        (meta.retentionExpiresAt ? new Date(meta.retentionExpiresAt) : undefined),
       interfaceConfig: req?.config?.interfaceConfig,
     },
     {
@@ -447,6 +452,8 @@ async function finalizeResumedTurn({
   const preemptIncomplete =
     (preemptStats?.emptyBoundaries ?? 0) > 0 ||
     client?.run?.getHaltReason?.() === 'preempt_incomplete';
+  /** Same honest-incomplete contract for a resumed turn that runs out of steps. */
+  const stepLimitReached = client?.stepLimitReached === true;
 
   const responseMessage = {
     messageId: responseMessageId,
@@ -457,7 +464,8 @@ async function finalizeResumedTurn({
     endpoint: meta.endpoint,
     iconURL: meta.iconURL,
     model: meta.model,
-    unfinished: preemptIncomplete,
+    unfinished: preemptIncomplete || stepLimitReached,
+    ...(stepLimitReached && { finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON }),
     error: false,
     isCreatedByUser: false,
     user: userId,
@@ -497,11 +505,12 @@ async function finalizeResumedTurn({
   if (Object.keys(responseMetadata).length > 0) {
     responseMessage.metadata = responseMetadata;
   }
-  // Carry the resumed run's context-window calibration (BaseClient.sendMessage persists
-  // this on the response). Without it, the NEXT turn can't seed its pruner from this
-  // run and falls back to uncalibrated token accounting.
-  if (client?.contextMeta != null) {
-    responseMessage.contextMeta = client.contextMeta;
+  // Carry the resumed run's compact context meta (calibration and fading tiers), as
+  // BaseClient.sendMessage persists it on the response. Without it, the NEXT turn can't
+  // seed its pruner from this run. A neutral finish unsets what the paused segment
+  // stored on this row, since an omitted field would otherwise survive the save.
+  if (client != null) {
+    responseMessage.contextMeta = client.contextMeta ?? null;
   }
 
   // Win terminal ownership BEFORE the outcome-defining response write. Stop
@@ -528,7 +537,9 @@ async function finalizeResumedTurn({
       {
         userId,
         isTemporary,
-        expiredAt: req._agentEventBindingRetention?.expiredAt,
+        expiredAt:
+          req._agentEventBindingRetention?.expiredAt ??
+          (meta.retentionExpiresAt ? new Date(meta.retentionExpiresAt) : undefined),
         interfaceConfig: req?.config?.interfaceConfig,
       },
       responseMessage,
@@ -612,11 +623,15 @@ async function finalizeResumedTurn({
         scheduledFor: meta.scheduledFor,
         streamId,
         jobCreatedAt: job.createdAt,
-        status: preemptIncomplete ? 'interrupted' : 'success',
+        status: preemptIncomplete || stepLimitReached ? 'interrupted' : 'success',
         conversationId,
         ...(preemptIncomplete && {
           error: 'Scheduled run was interrupted before completion',
         }),
+        ...(stepLimitReached &&
+          !preemptIncomplete && {
+            error: 'Scheduled run reached its tool call limit before completion',
+          }),
       });
     }
 
@@ -1023,7 +1038,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let resumeState;
   let preparedContent;
   try {
-    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt, {
+      validateEarlyBufferRecovery: true,
+    });
     const batchedAnswer =
       mapped.resumeValue?.answers != null &&
       typeof mapped.resumeValue.answers === 'object' &&
@@ -1078,6 +1095,40 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       '[ResumeAgentController] Resume content preflight failed',
       getSafeErrorMetadata(err),
     );
+    if (scheduleId) {
+      const terminalJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+      if (
+        terminalJob?.createdAt === job.createdAt &&
+        terminalJob.status === 'error' &&
+        terminalJob.error === GENERATION_RECOVERY_FAILED_ERROR
+      ) {
+        try {
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: 'error',
+            conversationId,
+            error: GENERATION_RECOVERY_FAILED_ERROR,
+          });
+        } catch (scheduleError) {
+          logger.error(
+            '[ResumeAgentController] Failed to settle scheduled recovery failure',
+            getSafeErrorMetadata(scheduleError),
+          );
+        }
+        await deleteFailedResumeCheckpoint(
+          {
+            conversationId,
+            checkpointerCfg,
+            job,
+            checkpointGeneration: await checkpointGenerationPromise,
+          },
+          'scheduled recovery validation failure',
+        );
+      }
+    }
     if (isContentFilterError(err)) {
       return sendGenerationJson(res, err.statusCode, err.body, generationProtocolVersion);
     }
@@ -1764,6 +1815,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       );
     }
 
+    const mcpRequestBody =
+      job.metadata.mcpRequestBody ??
+      createMCPRuntimeRequestBody({
+        messageId: job.metadata.responseMessageId,
+        conversationId: streamId,
+        codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
+        parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
+      });
     const result = await initializeClient({
       req,
       res,
@@ -1771,15 +1830,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       signal: job.abortController.signal,
       jobCreatedAt: job.createdAt,
       checkpointNamespace,
-      requestBody:
-        job.metadata.mcpRequestBody ??
-        createMCPRuntimeRequestBody({
-          messageId: job.metadata.responseMessageId,
-          conversationId: streamId,
-          parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
-        }),
+      foregroundRunId: mcpRequestBody.messageId,
+      requestBody: mcpRequestBody,
     });
     client = result.client;
+
+    // The user approved the code action against the route/session selected at
+    // pause time. Re-resolve it on this replica and fail before provider/tool
+    // execution if the environment, worker, or workspace scope moved.
+    assertCodeExecutionApprovalBinding(
+      pendingAction.codeExecutionBinding,
+      collectReachableAgents([client.options?.agent, ...(client.agentConfigs?.values() ?? [])]),
+    );
 
     // Bind the rebuilt client to the in-flight turn's identity (no new user message).
     client.conversationId = streamId;
@@ -1790,6 +1852,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     client.checkpointNamespace = checkpointNamespace;
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
+    // Seed the rebuilt pruner from the tier and calibration captured at the pause, so the
+    // resumed segment keeps historical tool results byte-identical to the paused one.
+    client.seedContextMeta?.(job.metadata?.contextMeta);
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
@@ -1919,6 +1984,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             jobCreatedAt: job.createdAt,
             status: 'requires_action',
             conversationId,
+            checkpointNamespace: client.checkpointNamespace,
           });
         }
       } else {

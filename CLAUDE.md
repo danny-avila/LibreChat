@@ -21,10 +21,39 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 ## Workspace Boundaries
 
 - **All new backend code must be TypeScript** in `/packages/api`.
-- Keep `/api` changes to the absolute minimum (thin JS wrappers calling into `/packages/api`).
+- **`/api` holds wiring, not behavior.** When a change would add logic to a CJS file under `/api` —
+  a branch, a helper, a validation step, a new service call — that logic goes in `/packages/api`,
+  and the JS file keeps only what wires it up: requires, route registration, request plumbing, and
+  the call into the TS module. `api/server/services/MCPRequestContext.js` is the shape, at thirteen
+  lines of re-export. "Minimum" describes how much behavior `/api` gains, not how small the diff is:
+  lifting a function into `/packages/api` and calling it is the larger diff and the correct one.
+  Editing an existing CJS file is the common case and the rule applies there, not only to new files.
 - Database-specific shared logic goes in `/packages/data-schemas`.
 - Frontend/backend shared API logic (endpoints, types, data-service) goes in `/packages/data-provider`.
 - Build data-provider from project root: `npm run build:data-provider`.
+- **Database contracts stay inside `/packages/data-schemas`.** A Mongoose type in an exported
+  signature — `FilterQuery`, `Types.ObjectId`, `Document`, `HydratedDocument` — makes the storage
+  engine part of that module's public API, and every consumer then depends on Mongo instead of on
+  the data it needs. Take and return plain typed objects, and express the query behind a
+  data-schemas method. The boundary already leaks across dozens of files in `/packages/api`, so the
+  rule is to stop widening it rather than to rewrite what exists; `/client` carries none of it and
+  must stay that way.
+- **New levers ship configurable.** A limit, timeout, toggle or capability introduced in code earns
+  a field on `configSchema` (`packages/data-provider/src/config.ts`) so an operator can set it in
+  `librechat.yaml`, with a default that reproduces today's behavior. Hard-coded constants and
+  env-only switches need a reason. The schema is also what keeps one definition of the value instead
+  of a constant, a fallback and a doc line that drift apart.
+- **A backend module takes its dependencies, it does not reach for them.** Code in `/packages/api`
+  should receive its config, database methods and clients from the caller the way
+  `createModels(mongoose)` receives the app's connection, rather than importing app singletons or
+  reading global state. A module the caller constructs can be tested without a running app and moved
+  to another workspace without a rewrite; one that calls `getInstance()` can do neither. This is the
+  backend half of "Client State Ownership" — pass it in, do not reach for it. The static singletons
+  under `packages/api/src/mcp` are the shape to stop extending, not a pattern to copy.
+- **Integrations arrive through an interface the caller supplies.** A provider SDK, storage backend,
+  vector store or OAuth server is injected, so a second implementation is a new argument instead of
+  a new branch in shared code, and a test can exercise the real logic against a substitute at the
+  boundary rather than mocking the module that holds it.
 
 ---
 
@@ -48,6 +77,64 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
 - **Git worktrees share one stash stack.** `refs/stash` lives in the common `.git` directory, so a
   bare `git stash pop` in one worktree can take work stashed in another. Prefer a throwaway WIP
   commit; if you must stash, `git stash push -m <tag>` and `apply` that specific entry.
+- **Write the description for a reader who has not followed the branch.** Say what breaks, what
+  triggers it, and how it behaves after the change, then show the mechanism with whichever one or
+  two views make it reviewable — a focused diff, a call tree, a shallow file tree, or a Mermaid
+  sequence — keeping only the calls, files and state the change actually carries. Describe the code
+  as it stands: do not narrate what earlier commits tried or what a review round changed. Naming the
+  merged pull request that caused the bug is different — that is history the reader needs.
+  `.github/pull_request_template.md` carries the formats and examples.
+
+---
+
+## Review and Completion
+
+### AI review cycles
+
+The reviewer, its trigger phrase and its cadence all change; this subsection is the fluid one, so
+rewrite it when they do. What survives a change of tool: a review counts only for the exact commit
+it ran on, its findings are judged against the code rather than accepted or dismissed wholesale, and
+findings that keep arriving mean the subsystem needs a sweep, not another patch.
+
+- **Inline review threads are the source of truth.** A summary comment, a check name or a
+  notification list omits findings — read the threads on the pull request itself.
+- Audit every finding against the current code. Fix the valid ones; reject the obsolete or wrong
+  ones in a reply that says why.
+- After each round of fixes, run the focused tests and `npx tsc --noEmit` for every workspace you
+  changed, push, read the pull request's remote head (`gh pr view <n> --json headRefOid`), and
+  request the next review naming that exact SHA. **A clean review of an earlier head says nothing
+  about what you just pushed.** Do not wait for CI before asking — review and CI run on their own
+  clocks.
+- Reply on each thread you resolved with the commit that resolved it and the coverage that proves
+  it.
+- **After two actionable rounds** — or sooner, when each fix uncovers an adjacent defect — stop
+  answering threads one at a time and read the subsystem by invariant: identity, ownership,
+  authorization, persistence, retry, replay, abort, cleanup, expiry, rollout. Follow producers,
+  consumers, adapters, alternate write paths, and the final consumer of every limit; check
+  mixed-version behavior in both directions; read the whole base-to-head diff with the callers and
+  tests around it; then add transition or failure-injection coverage at the deepest boundary that
+  owns the behavior.
+- The cycle ends when the exact pushed head draws no major findings, or only repeats ones already
+  resolved. A clean review is one completion signal, not the definition of done.
+
+### Definition of done
+
+- **Ship the observable experience, not the reported path.** Where they apply, cover loading, empty,
+  success, failure, cancellation, retry and restored-session behavior.
+- **A backend capability with no frontend entry point is unfinished**, and so is a control with no
+  validation, persistence, error handling or authorization behind it.
+- Localize every visible string through `useLocalize()`, keep semantic HTML, keyboard behavior and
+  ARIA intact, and compose shared primitives and semantic theme roles before adding local styling
+  (see "Frontend Rules"). Custom styling that proves unavoidable still supports light/dark and
+  reduced motion.
+- Preserve existing defaults, configuration compatibility, stored data, and mixed-version behavior,
+  and expose any new lever through `configSchema` rather than a constant (see "Workspace
+  Boundaries").
+- Make the fix the smallest one consistent with the patterns already in the file, and test the
+  behavior that was missed rather than the line a reviewer pointed at.
+- **Report what you actually ran**: the pushed head, the local checks from "Testing" and
+  "Typechecking", CI state, the review result at that head, and any finding you rejected with the
+  reasoning. Name the checks you could not run instead of implying coverage.
 
 ---
 
@@ -177,6 +264,31 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Feature hooks: `client/src/data-provider/[Feature]/queries.ts` → `[Feature]/index.ts` → `client/src/data-provider/index.ts`.
 - React Query (`@tanstack/react-query`) for all API interactions; proper query invalidation on mutations.
 - QueryKeys and MutationKeys in `packages/data-provider/src/keys.ts`.
+
+### Client State Ownership
+
+The client is migrating from Recoil to Jotai. **New state is always Jotai**, including inside a file
+that already imports Recoil. For existing state, the unit of conversion is one atom together with
+every file that reads or writes it: the two libraries hold different atom objects, so an atom cannot
+be half converted, and many files already import both — mixed imports are not a signal that either
+choice is fine here. Convert the areas you touch rather than migrating wholesale, and split the work
+by who owns the state:
+
+- **Feature-owned state** — atoms a single feature both writes and reads. Convert these to
+  Jotai as you touch them, with all of their consumers, and keep them inside the feature.
+  `client/src/store/jotai-utils.ts` carries the equivalents for persisted atoms
+  (`createStorageAtom`, `createStorageAtomWithEffect`, `createTabIsolatedAtom`), so a Recoil atom
+  with a localStorage effect has a direct port.
+- **App-global state** — preferences and shell state a feature merely consumes
+  (`maximizeChatSpace`, `showScrollButton`, `enterToSend`, artifact visibility). A feature
+  that could plausibly be extracted must not reach into `~/store` for these; accept them
+  through props or a small context the host supplies. When a consumer sits outside the feature you
+  are changing, leave the atom on Recoil and pass it in — do not convert the shell to make one
+  feature tidy.
+
+Passing app-global state in — rather than reaching for it — is what lets a feature move to
+its own workspace later without a rewrite, and it keeps the Jotai conversion scoped to the
+state a feature actually owns instead of dragging the global migration forward early.
 
 ### Data-Provider Integration
 

@@ -440,6 +440,27 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 });
 
+describe('reinitMCPServer — direct bearer authentication outcomes', () => {
+  it('preserves a typed rejection instead of reducing it to a generic result', async () => {
+    const { MCPAuthenticationRejectedError } = require('@librechat/api');
+    const rejection = new MCPAuthenticationRejectedError('private-mcp', false);
+    mockGetConnection.mockRejectedValue(rejection);
+
+    await expect(
+      reinitMCPServer({
+        user: { id: 'user-123' },
+        serverName: 'private-mcp',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com',
+          source: 'yaml',
+          headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+        },
+      }),
+    ).rejects.toBe(rejection);
+  });
+});
+
 describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)', () => {
   const user = { id: 'user-123' };
   const serverName = 'Thingy';

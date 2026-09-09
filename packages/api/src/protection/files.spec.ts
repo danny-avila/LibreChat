@@ -9,6 +9,7 @@ import {
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
   getBlockedUninspectableSkillFileField,
+  getCanonicalFileInspectionCoverage,
   getUploadExtractedTextPlan,
   hasActiveFileFieldPolicy,
   hasActiveFilePolicy,
@@ -65,6 +66,10 @@ describe('file content inspection policy', () => {
       }),
     ).toBe(false);
 
+    /* An explicitly narrowed text list names types the built-in parser does not handle.
+     * Processing sends those to RAG with native fallback off and passes the result
+     * through extractInspectableFileText, so the extraction step exists and fail-closing
+     * here would reject an upload that does get inspected. */
     const configuredNonDocumentText = mergeFileConfig({
       ocr: { supportedMimeTypes: [] },
       text: { supportedMimeTypes: ['application/x-rag-document'] },
@@ -75,6 +80,15 @@ describe('file content inspection policy', () => {
         mimeType: 'application/x-rag-document',
         fileConfig: configuredNonDocumentText,
         ragConfigured: true,
+      }),
+    ).toBe(true);
+    /* Only when RAG is actually configured: without it nothing extracts the type. */
+    expect(
+      canInspectUploadExtractedTextAfterProcessing({
+        ...baseInput,
+        mimeType: 'application/x-rag-document',
+        fileConfig: configuredNonDocumentText,
+        ragConfigured: false,
       }),
     ).toBe(false);
 
@@ -178,6 +192,38 @@ describe('file content inspection policy', () => {
         sttSupported: true,
       }),
     ).toBe(false);
+  });
+
+  it('treats a text-delivery audio file as carrying its own transcript', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'local',
+      llmDeliveryPath: 'text',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBe('spoken words');
+    expect(coverage.textProvidesTranscript).toBe(true);
+  });
+
+  it('still requires provenance before treating audio text as a transcript', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'local',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBeUndefined();
+  });
+
+  it('keeps recognizing the legacy text source as provenance', () => {
+    const coverage = getCanonicalFileInspectionCoverage({
+      type: 'audio/mpeg',
+      source: 'text',
+      text: 'spoken words',
+    });
+
+    expect(coverage.transcript).toBe('spoken words');
   });
 
   it('rejects applicable audio when no downstream transcript inspection is available', () => {
@@ -376,6 +422,17 @@ describe('file content inspection policy', () => {
         skills: { pii: { fields: ['file_text'], starterPatterns: [] } },
       } as FiltersConfig),
     ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { action: 'audit', fields: ['file_text'] } },
+      } as FiltersConfig),
+    ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { action: 'audit', fields: ['file_text'] } },
+        files: { pii: { fields: ['content'], uninspectable: 'block' } },
+      } as FiltersConfig),
+    ).toBe('content');
   });
 
   it('returns a stable raw-free block response', () => {
@@ -888,6 +945,40 @@ describe('file content inspection policy', () => {
       expect(getFiles).not.toHaveBeenCalled();
     },
   );
+
+  it('allows an oversized canonical file subtree for an audit-only policy', async () => {
+    const input = {
+      files: Array.from({ length: 4_200 }, (_, index) => ({
+        file_id: `file-${index}`,
+      })),
+    };
+    const getFiles = jest.fn();
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters: {
+          files: {
+            pii: {
+              action: 'audit',
+              fields: ['uri'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-file-field',
+                  label: 'private file field',
+                  regex: 'PRIVATE-FILE-[A-Z]+',
+                },
+              ],
+            },
+          },
+        },
+        input,
+        user: { id: 'user-1' },
+        getFiles,
+      }),
+    ).resolves.toMatchObject({ sanitizedInput: input, hydratedFiles: [] });
+    expect(getFiles).not.toHaveBeenCalled();
+  });
 
   it('hydrates discovered file names without rejecting an unrelated oversized subtree', async () => {
     const canonicalFile = {

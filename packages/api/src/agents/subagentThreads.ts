@@ -451,14 +451,23 @@ function serializeTranscript(
   };
 }
 
+function retentionContext(conversation: IConversation): {
+  isTemporary?: boolean;
+  expiredAt?: Date;
+} {
+  return {
+    ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
+    ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
+  };
+}
+
 function retentionFields(conversation: IConversation): {
   isTemporary?: boolean;
   expiredAt?: Date;
   tenantId?: string;
 } {
   return {
-    ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
-    ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
+    ...retentionContext(conversation),
     ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
   };
 }
@@ -2909,7 +2918,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         const abandonedMessage =
           'Subagent task failed: The prior execution ended before its result could be persisted.';
         const savedAbandoned = await this.methods.saveMessage(
-          { userId: scope.userId },
+          { userId: scope.userId, ...retentionContext(conversation) },
           {
             messageId: `${taskId}:assistant`,
             conversationId: threadId,
@@ -2926,7 +2935,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               ...(requestFingerprint == null ? {} : { requestFingerprint }),
               status: 'error',
             },
-            ...retentionFields(conversation),
+            ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
           },
           { context: 'SubagentThreadTaskStore.prepareThread.abandonedAttempt' },
         );
@@ -2970,7 +2979,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       });
       const savedUserMessage = await observeSlowPreparation(
         this.methods.saveMessage(
-          { userId: scope.userId },
+          { userId: scope.userId, ...retentionContext(conversation) },
           {
             messageId: userMessageId,
             conversationId: threadId,
@@ -2985,7 +2994,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               ...(requestFingerprint == null ? {} : { requestFingerprint }),
               status: 'running',
             },
-            ...retentionFields(conversation),
+            ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
           },
           { context: 'SubagentThreadTaskStore.prepareThread' },
         ),
@@ -3095,7 +3104,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
     const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedAssistantMessage = await this.methods.saveMessage(
-      { userId: scope.userId },
+      { userId: scope.userId, ...retentionContext(conversation) },
       {
         messageId: `${taskId}:assistant`,
         conversationId: conversation.conversationId,
@@ -3116,7 +3125,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           status: 'completed',
         },
         ...(usage == null ? {} : { metadata: { usage } }),
-        ...retentionFields(conversation),
+        ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
       },
       { context: 'SubagentThreadTaskStore.persistResult' },
     );
@@ -3141,7 +3150,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
     const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedFailure = await this.methods.saveMessage(
-      { userId: scope.userId },
+      { userId: scope.userId, ...retentionContext(conversation) },
       {
         messageId: `${taskId}:assistant`,
         conversationId: threadId,
@@ -3161,7 +3170,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           status: 'error',
         },
         ...(usage == null ? {} : { metadata: { usage } }),
-        ...retentionFields(conversation),
+        ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
       },
       { context: 'SubagentThreadTaskStore.persistFailure' },
     );
@@ -3210,7 +3219,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
     const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedCancellation = await this.methods.saveMessage(
-      { userId: scope.userId },
+      { userId: scope.userId, ...retentionContext(conversation) },
       {
         messageId: `${taskId}:assistant`,
         conversationId: threadId,
@@ -3229,7 +3238,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           status: 'cancelled',
         },
         ...(usage == null ? {} : { metadata: { usage } }),
-        ...retentionFields(conversation),
+        ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
       },
       { context: 'SubagentThreadTaskStore.persistCancellation' },
     );

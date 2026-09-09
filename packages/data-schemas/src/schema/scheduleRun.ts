@@ -29,6 +29,10 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     conversationId: {
       type: String,
     },
+    checkpointNamespace: {
+      type: String,
+      select: false,
+    },
     /** Deterministic durable-trigger delivery key for this occurrence, stamped at
      *  reservation before enqueue so reconciliation can read the delivery's live/dead
      *  state rather than orphan-settling a deferred or dead-lettered run. */

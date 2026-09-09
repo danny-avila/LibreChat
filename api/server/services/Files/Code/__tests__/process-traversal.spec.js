@@ -20,12 +20,14 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
     sanitizeArtifactPath: mockSanitizeArtifactPath,
     flattenArtifactPath: mockFlattenArtifactPath,
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    codeExecutionHeaders: jest.fn(() => ({})),
     getCodeExecutionBaseUrl: jest.fn(() => 'http://localhost:8000'),
     CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     classifyCodeArtifact: jest.fn(() => 'other'),

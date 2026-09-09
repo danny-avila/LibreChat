@@ -19,12 +19,14 @@
  * ```
  */
 import { nanoid } from 'nanoid';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { isCodeWorkspaceSelections } from 'librechat-data-provider';
+import { AgentCapabilities, EModelEndpoint } from 'librechat-data-provider';
 import type {
   FiltersConfig,
   MessageFilterConfig,
   MessageFilterPiiConfig,
   StatefulCodeEnvironment,
+  TAgentsEndpoint,
 } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
@@ -45,6 +47,7 @@ import type {
 } from '~/protection';
 import type { InitializeAgentParams as CoreInitializeAgentParams } from '../initialize';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { LangfuseTraceContext } from '~/langfuse/identity';
 import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
 import {
@@ -70,9 +73,11 @@ import {
 } from '~/middleware/modelBoundContent';
 import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
 import { contentFilterUninspectableResponse } from '~/protection/files';
+import { resolveToolRoleGrants } from '../../tools/rolePermissions';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { getUserFacingProviderError } from '../errors';
 import { collectReachableAgents } from '../traversal';
+import { resolveRecursionLimit } from '../config';
 import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
 
@@ -116,6 +121,13 @@ export interface ChatCompletionDependencies {
    * keep tenant tracing and code execution working.
    */
   appConfig?: AppConfig;
+  /**
+   * Supply to have `codeEnvAvailable` and `fileSearchAvailable` respect the
+   * caller's `RUN_CODE` / `FILE_SEARCH` grants as well as the deployment
+   * capabilities. Optional so existing embedders keep their current behavior;
+   * without it this route is gated by capability alone.
+   */
+  getRoleByName?: Parameters<typeof resolveToolRoleGrants>[0]['getRoleByName'];
   /** Tool execute options for event-driven tool execution */
   toolExecuteOptions?: ToolExecuteOptions;
 }
@@ -164,6 +176,7 @@ interface InitializedAgent {
   subagentAgentConfigs?: InitializedAgent[];
   /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
   intentToolNames?: string[];
+  recursion_limit?: number;
   [key: string]: unknown;
 }
 
@@ -191,6 +204,13 @@ interface InitializeAgentParams {
    * skips the expansion (same semantics as the in-repo controllers).
    */
   codeEnvAvailable?: boolean;
+  /**
+   * Whether `file_search` is available to this caller — the capability AND, when
+   * the embedder wires `getRoleByName`, the `FILE_SEARCH` grant. Read only when
+   * re-hydrating a conversation's prior-turn files; absent / `undefined` leaves
+   * that priming unconditional.
+   */
+  fileSearchAvailable?: boolean;
   /**
    * Whether the admin-level `stateful_code_sessions` capability is enabled.
    * Threaded to `initializeAgent` alongside `codeEnvAvailable` so this
@@ -253,6 +273,7 @@ type CreateRunFn = (params: {
   customHandlers: Record<string, EventHandler>;
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
+  traceContext?: LangfuseTraceContext;
   tenantId?: string;
   appConfig?: CreateRunAppConfig;
   tokenCounter?: (message: unknown) => number;
@@ -515,6 +536,15 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
     return { valid: false, error: 'conversation_id must be a string' };
   }
+  if (
+    request.code_workspaces !== undefined &&
+    !isCodeWorkspaceSelections(request.code_workspaces)
+  ) {
+    return {
+      valid: false,
+      error: 'code_workspaces must contain unique environment/workspace selections',
+    };
+  }
 
   if (request.parent_message_id !== undefined && typeof request.parent_message_id !== 'string') {
     return { valid: false, error: 'parent_message_id must be a string' };
@@ -623,6 +653,7 @@ export async function createAgentChatCompletion(
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
+    codeWorkspaces: request.code_workspaces,
     parentMessageId: mcpParentMessageId,
   });
   const created = Math.floor(Date.now() / 1000);
@@ -663,7 +694,23 @@ export async function createAgentChatCompletion(
       agentsConfig != null && typeof agentsConfig === 'object'
         ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(capability)
         : undefined;
-    const codeEnvAvailable = capabilityEnabled(AgentCapabilities.execute_code);
+    const capabilityAllowsCodeEnv = capabilityEnabled(AgentCapabilities.execute_code);
+    /** Paired with the role grant when the embedder wires `getRoleByName`;
+     *  `initializeAgent` rebuilds `bash_tool`, `read_file` and the workspace
+     *  file tools from this flag, so a denied role would otherwise keep the
+     *  code environment's file handlers. */
+    const codeEnvAvailable =
+      capabilityAllowsCodeEnv === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).runCode
+        : capabilityAllowsCodeEnv;
+    const capabilityAllowsFileSearch = capabilityEnabled(AgentCapabilities.file_search);
+    /** The same pairing for the other gated tool, read only by the resend-file
+     *  priming inside `initializeAgent`. The grant resolution is memoized on the
+     *  request, so pairing both flags costs one role read. */
+    const fileSearchAvailable =
+      capabilityAllowsFileSearch === true && deps.getRoleByName != null
+        ? (await resolveToolRoleGrants({ req, getRoleByName: deps.getRoleByName })).fileSearch
+        : capabilityAllowsFileSearch;
     /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
@@ -712,6 +759,7 @@ export async function createAgentChatCompletion(
       allowedProviders,
       isInitialAgent: true,
       codeEnvAvailable,
+      fileSearchAvailable,
       statefulSessionsAvailable,
       allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,
@@ -797,6 +845,7 @@ export async function createAgentChatCompletion(
         customHandlers: eventHandlers,
         requestBody: mcpRequestBody,
         user: safeUser,
+        traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
         appConfig: selectCreateRunAppConfig(deps.appConfig),
       });
@@ -819,6 +868,10 @@ export async function createAgentChatCompletion(
                 ? { intentToolNames: initializedAgent.intentToolNames }
                 : {}),
             },
+            recursionLimit: resolveRecursionLimit(
+              agentsConfig as Partial<TAgentsEndpoint> | undefined,
+              initializedAgent,
+            ),
             signal: abortController.signal,
             streamMode: 'values',
             version: 'v2',

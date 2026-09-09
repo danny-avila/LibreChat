@@ -8,6 +8,7 @@ import type { SteerFileFetcher } from './request';
 import type { SteerMediaResult } from './runtime';
 import type { SteerRequestUser } from './refs';
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
+import { isAttachmentObjectNotFoundError } from '~/files/encode/utils';
 import { getReferencedQuotes, mergeQuotedText } from '~/utils';
 import { prependFileContext } from '../client';
 
@@ -305,6 +306,9 @@ export async function stampSteerPartMedia({
               ),
           );
         } catch (error) {
+          if (isAttachmentObjectNotFoundError(error)) {
+            throw error;
+          }
           logger.warn(
             `[stampSteerPartMedia] Failed to re-encode steer media (steer=${part.steerId}); replaying text only`,
             error,
