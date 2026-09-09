@@ -72,7 +72,9 @@ type ScopeSource = {
    * configured" from "this object never carried the cap", and the second silently
    * disables the quota.
    */
-  config: { fileConfig?: Parameters<typeof mergeFileConfig>[0] };
+  config: {
+    fileConfig?: Parameters<typeof mergeFileConfig>[0] & { storageLimit?: number };
+  };
 };
 
 /** Keyed by request identity so the scope neither mutates the request nor outlives it. */
