@@ -9,6 +9,10 @@ import {
   type TConversation,
   type TMessage,
 } from 'librechat-data-provider';
+import {
+  MessagesViewContext,
+  type MessagesViewContextValue,
+} from '~/Providers/MessagesViewContext';
 import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
@@ -35,6 +39,7 @@ function renderHoverButtons({
   latestMessageId = 'assistant-1',
   getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
   handleFeedback,
+  thread,
 }: {
   isSubmitting: boolean;
   message?: TMessage;
@@ -43,6 +48,9 @@ function renderHoverButtons({
   latestMessageId?: string;
   getCanCopy?: () => boolean;
   handleFeedback?: () => void;
+  /** The rows the hover controls resolve the message's parent from. Omitted, the
+   *  thread is unavailable, as on a search row. */
+  thread?: TMessage[];
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -53,23 +61,27 @@ function renderHoverButtons({
   const { container } = render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initializeState}>
-        <MemoryRouter>
-          <HoverButtons
-            index={0}
-            isLast={isLast}
-            isEditing={false}
-            message={message}
-            conversation={targetConversation}
-            isSubmitting={isSubmitting}
-            enterEdit={jest.fn()}
-            regenerate={jest.fn()}
-            handleContinue={jest.fn()}
-            copyToClipboard={jest.fn()}
-            getCanCopy={getCanCopy}
-            latestMessageId={latestMessageId}
-            handleFeedback={handleFeedback}
-          />
-        </MemoryRouter>
+        <MessagesViewContext.Provider
+          value={{ getMessages: () => thread } as unknown as MessagesViewContextValue}
+        >
+          <MemoryRouter>
+            <HoverButtons
+              index={0}
+              isLast={isLast}
+              isEditing={false}
+              message={message}
+              conversation={targetConversation}
+              isSubmitting={isSubmitting}
+              enterEdit={jest.fn()}
+              regenerate={jest.fn()}
+              handleContinue={jest.fn()}
+              copyToClipboard={jest.fn()}
+              getCanCopy={getCanCopy}
+              latestMessageId={latestMessageId}
+              handleFeedback={handleFeedback}
+            />
+          </MemoryRouter>
+        </MessagesViewContext.Provider>
       </RecoilRoot>
     </QueryClientProvider>,
   );
@@ -215,16 +227,24 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
 
-  /** A compaction turn parents onto the leaf it summarized, so both rerun shapes
-   *  would replay an assistant message in the user slot and the request fails. */
+  /** A compaction turn parents onto the leaf it summarized, so every rerun shape
+   *  would replay a model turn in the user slot: the submission mints a user
+   *  message under an existing response's id and runs on empty text. */
   it.each([
     ['a finished compaction', { summarizing: false }],
     ['a failed compaction', { failed: true }],
   ])('withholds rerun controls on %s', (_label, state) => {
+    const summarizedLeaf = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: 'user-1',
+      isCreatedByUser: false,
+      text: 'The long answer',
+    } as TMessage;
     const compactionMessage = {
       ...userMessage,
       messageId: 'compaction-1',
-      parentMessageId: 'assistant-1',
+      parentMessageId: summarizedLeaf.messageId,
       isCreatedByUser: false,
       text: '',
       finish_reason: 'length',
@@ -242,6 +262,7 @@ describe('HoverButtons edit affordance', () => {
       message: compactionMessage,
       isLast: true,
       latestMessageId: compactionMessage.messageId,
+      thread: [userMessage, summarizedLeaf, compactionMessage],
     });
 
     /** The row itself is intact — only the rerun shapes are withheld. */
@@ -249,6 +270,61 @@ describe('HoverButtons edit affordance', () => {
     expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).toBeNull();
     expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+
+  /** An ordinary turn that auto-summarized and was cancelled before its first
+   *  answer token persists the same summary-only content, but it hangs off the
+   *  user's message and is exactly the turn a user needs to rerun. */
+  it('keeps rerun controls on a cancelled turn that only auto-summarized', () => {
+    const summarizedResponse = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Older turns were summarized.' }],
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: summarizedResponse,
+      isLast: true,
+      latestMessageId: summarizedResponse.messageId,
+      thread: [userMessage, summarizedResponse],
+    });
+
+    expect(container.querySelector(`#edit-${summarizedResponse.messageId}`)).not.toBeNull();
+    expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
+    expect(screen.getByTestId('continue-generation-button')).toBeEnabled();
+  });
+
+  /** A row rendered outside the messages view cannot resolve its parent. Withholding
+   *  on an unknown parent would strip the controls from every such row, so the gate
+   *  stays open and the rerun paths refuse a non-user parent on their own. */
+  it('keeps rerun controls when the thread is unavailable', () => {
+    const assistantMessage = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      text: 'Complete answer',
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: assistantMessage,
+      isLast: true,
+      latestMessageId: assistantMessage.messageId,
+    });
+
+    expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).not.toBeNull();
+    expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
   });
 });
 

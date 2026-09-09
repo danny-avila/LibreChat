@@ -10,10 +10,11 @@ type TUseGenerations = {
   finish_reason?: string;
   latestMessageId?: string;
   isCreatedByUser?: boolean;
-  /** The message is a compaction turn (summary-only content). It hangs off the
-   *  leaf it summarized, not off a user message, so there is no user turn for a
-   *  regenerate or an edit-and-rerun to replay. */
-  isCompactionTurn?: boolean;
+  /** For a model turn: whether the message it hangs off is the user turn a rerun
+   *  would replay. `undefined` when the thread is unavailable (a search or share
+   *  row), which withholds nothing. A manual compaction parents onto the leaf it
+   *  summarized, so it is the one model turn with no user turn behind it. */
+  parentIsUserMessage?: boolean;
 };
 
 export default function useGenerationsByLatest({
@@ -26,7 +27,7 @@ export default function useGenerationsByLatest({
   finish_reason = '',
   latestMessageId,
   isCreatedByUser = false,
-  isCompactionTurn = false,
+  parentIsUserMessage,
 }: TUseGenerations) {
   const isEditableEndpoint = Boolean(
     [
@@ -40,6 +41,14 @@ export default function useGenerationsByLatest({
     ].find((e) => e === endpoint),
   );
 
+  /** Every rerun shape replays the message's parent as the turn's user message, so
+   *  a model turn hanging off another model turn has nothing to replay: the
+   *  submission would mint a user message under an existing response's id. Only a
+   *  manual compaction, which parents onto the leaf it summarized, is shaped that
+   *  way; its redo path is the context indicator's Compact action. An unknown
+   *  parent withholds nothing, and the rerun paths refuse it on their own. */
+  const hasNoUserTurnToReplay = !isCreatedByUser && parentIsUserMessage === false;
+
   /** The tool-call-limit notice already offers Keep going / Answer now. The hover
    *  Continue would re-submit the parent user turn with `isContinued`, a different
    *  and weaker path sitting next to the intended one. */
@@ -51,7 +60,7 @@ export default function useGenerationsByLatest({
     !isEditing &&
     !isSubmitting &&
     !searchResult &&
-    !isCompactionTurn &&
+    !hasNoUserTurnToReplay &&
     isEditableEndpoint;
 
   const branchingSupported = Boolean(
@@ -66,16 +75,12 @@ export default function useGenerationsByLatest({
     ].find((e) => e === endpoint),
   );
 
-  /** A compaction turn is excluded from all three: its parent is the summarized
-   *  leaf rather than a user message, so a regenerate, a continue or an
-   *  edit-and-rerun would replay an assistant message in the user slot. The
-   *  context indicator's Compact action is the only way to redo one. */
   const regenerateEnabled =
     !isCreatedByUser &&
     !searchResult &&
     !isEditing &&
     !isSubmitting &&
-    !isCompactionTurn &&
+    !hasNoUserTurnToReplay &&
     branchingSupported;
 
   const isActiveStreamingMessage =
@@ -85,7 +90,7 @@ export default function useGenerationsByLatest({
     isActiveStreamingMessage ||
     error ||
     searchResult ||
-    isCompactionTurn ||
+    hasNoUserTurnToReplay ||
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 

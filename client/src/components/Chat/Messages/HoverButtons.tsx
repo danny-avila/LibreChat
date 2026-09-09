@@ -1,7 +1,6 @@
 import React, { useState, useMemo, memo } from 'react';
 import { Copy, Check } from 'lucide';
 import { useRecoilState } from 'recoil';
-import { isCompactionTurn } from 'librechat-data-provider';
 import {
   Button,
   EditIcon,
@@ -12,6 +11,7 @@ import {
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useOptionalMessagesOperations } from '~/Providers';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -136,6 +136,7 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const { getMessages } = useOptionalMessagesOperations();
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -143,6 +144,19 @@ const HoverButtons = ({
     }
     return conversation.endpointType ?? conversation.endpoint;
   }, [conversation]);
+
+  /** Which turn a rerun would replay. Looked up only for a model turn, and keyed
+   *  on the parent id so a streaming row does not rescan the thread: `getMessages`
+   *  is a cache read, not a subscription, and a parent's authorship never changes.
+   *  Outside the messages view (a search row) the thread is unavailable and the
+   *  answer stays unknown. */
+  const parentIsUserMessage = useMemo(() => {
+    if (message.isCreatedByUser === true || message.parentMessageId == null) {
+      return undefined;
+    }
+    const parent = getMessages()?.find((item) => item.messageId === message.parentMessageId);
+    return parent == null ? undefined : parent.isCreatedByUser === true;
+  }, [getMessages, message.isCreatedByUser, message.parentMessageId]);
 
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
@@ -153,7 +167,7 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
-    isCompactionTurn: isCompactionTurn(message),
+    parentIsUserMessage,
     latestMessageId: latestMessageId,
   });
 
