@@ -777,6 +777,7 @@ export class MCPServersRegistry {
    */
   public async ensureConfigServers(
     resolvedMcpConfig: Record<string, t.MCPOptions>,
+    limit: <T>(task: () => Promise<T>) => Promise<T> = (task) => task(),
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (!resolvedMcpConfig || Object.keys(resolvedMcpConfig).length === 0) {
       return {};
@@ -794,15 +795,17 @@ export class MCPServersRegistry {
     const yamlSnapshot = await this.cacheConfigsRepo.getAll();
 
     const settled = await Promise.allSettled(
-      Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
-        if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
-          return;
-        }
-        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
-        if (parsed) {
-          result[serverName] = parsed;
-        }
-      }),
+      Object.entries(resolvedMcpConfig).map(([serverName, rawConfig]) =>
+        limit(async () => {
+          if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+            return;
+          }
+          const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
+          if (parsed) {
+            result[serverName] = parsed;
+          }
+        }),
+      ),
     );
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {

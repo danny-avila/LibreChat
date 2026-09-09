@@ -91,6 +91,7 @@ interface ScheduleMCPDeps {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
   ensureConfigServers: (
     config: NonNullable<AppConfig['mcpConfig']>,
+    limit?: <T>(task: () => Promise<T>) => Promise<T>,
   ) => Promise<Record<string, ParsedServerConfig>>;
   getServerConfigs: (
     userId: string,
@@ -131,6 +132,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const attempted = new Set<string>();
     const expanded = new Set<string>();
     const expandedHandoffs = new Set<string>();
+    const expandedHandoffEdges = new Set<string>();
     const accessibleById = new Map<string, AgentGraphNode>();
     const subagentGraphIds = new Set<string>();
     const accessIdentity = {
@@ -187,29 +189,38 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
 
     // Match discoverConnectedAgents first: handoff agents are initialized and pruned
     // before any isolated subagent descriptors or graph definitions are considered.
-    let handoffFrontier = [agentId];
+    type HandoffCandidate = { id: string; expandEdges: boolean };
+    let handoffFrontier: HandoffCandidate[] = [{ id: agentId, expandEdges: true }];
     while (handoffFrontier.length > 0) {
       const frontier = handoffFrontier;
       handoffFrontier = [];
-      await loadNodes(frontier);
-      for (const id of frontier) {
-        if (expandedHandoffs.has(id)) continue;
+      await loadNodes(frontier.map(({ id }) => id));
+      for (const { id, expandEdges } of frontier) {
         const agent = accessibleById.get(id);
         if (!agent) continue;
         expandedHandoffs.add(id);
         expanded.add(id);
-        graphEdges.push(...(agent.edges ?? []));
         if (agent.id === agentId) {
           let previousId = agent.id;
           for (const childId of agent.agent_ids ?? []) {
             if (childId === agent.id || childId.length === 0) continue;
             graphEdges.push({ from: previousId, to: childId });
-            handoffFrontier.push(childId);
+            // discoverConnectedAgents initializes legacy chain members only after
+            // recursive handoff discovery and never collects their persisted edges.
+            handoffFrontier.push({ id: childId, expandEdges: false });
             previousId = childId;
           }
         }
+        if (!expandEdges || expandedHandoffEdges.has(id)) continue;
+        expandedHandoffEdges.add(id);
+        graphEdges.push(...(agent.edges ?? []));
         for (const edge of agent.edges ?? []) {
-          handoffFrontier.push(...[edge.from, edge.to].flat());
+          handoffFrontier.push(
+            ...[edge.from, edge.to].flat().map((childId) => ({
+              id: childId,
+              expandEdges: true,
+            })),
+          );
         }
       }
     }
@@ -227,6 +238,8 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       .map((id) => accessibleById.get(id))
       .filter((agent): agent is AgentGraphNode => agent != null);
     const rootConfigIds = new Set(rootConfigs.map((agent) => agent.id));
+    const directAgentIds = new Set<string>();
+    const acceptedGraphCounts = new Map<string, number>();
     let expandedSubagentConfigs = 0;
     let subagentsAvailable: boolean | undefined;
     const canUseSubagents = async (): Promise<boolean> => {
@@ -254,13 +267,14 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         );
       }
     };
-    const includeGraph = async (ids: string[]): Promise<void> => {
+    const includeGraph = async (ids: string[]): Promise<boolean> => {
       await loadNodes(ids);
-      if (ids.some((id) => !accessibleById.has(id))) return;
+      if (ids.some((id) => !accessibleById.has(id))) return false;
       for (const id of ids) {
         explicitSeeds.add(id);
         expanded.add(id);
       }
+      return true;
     };
     const processDirectGraphs = async (agent: AgentGraphNode): Promise<void> => {
       if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
@@ -278,7 +292,9 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       await loadNodes(memberIds);
       for (const definition of definitions) {
         const ids = [...new Set(definition.agent_ids ?? [])];
-        await includeGraph(ids);
+        if (await includeGraph(ids)) {
+          acceptedGraphCounts.set(agent.id, (acceptedGraphCounts.get(agent.id) ?? 0) + 1);
+        }
       }
     };
     const visitDirectTree = async (
@@ -304,6 +320,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const child = accessibleById.get(childId);
         if (!child) continue;
         addGraphBudgetMember(childId);
+        directAgentIds.add(childId);
         countExpandedSubagentConfig();
         explicitSeeds.add(childId);
         expanded.add(childId);
@@ -328,8 +345,51 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         );
         if (subagentGraphIds.size + staged.length > MAX_SUBAGENT_GRAPH_NODES) continue;
         staged.forEach((id) => subagentGraphIds.add(id));
-        await includeGraph(ids);
+        if (await includeGraph(ids)) {
+          acceptedGraphCounts.set(root.id, (acceptedGraphCounts.get(root.id) ?? 0) + 1);
+        }
       }
+    }
+    const validateRunConfigTree = (
+      agent: AgentGraphNode,
+      state: { count: number },
+      ancestors: Set<string>,
+    ): void => {
+      if (!agent.subagents?.enabled || subagentsAvailable !== true) return;
+      const count = (): void => {
+        state.count += 1;
+        if (state.count > MAX_SUBAGENT_RUN_CONFIGS) {
+          throw new Error(
+            `Subagent run configuration exceeds the maximum of ${MAX_SUBAGENT_RUN_CONFIGS} expanded entries.`,
+          );
+        }
+      };
+      if (agent.subagents.allowSelf !== false) count();
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(agent.id);
+      for (const childId of new Set(agent.subagents.agent_ids ?? [])) {
+        if (childId === agent.id || nextAncestors.has(childId)) continue;
+        const child = accessibleById.get(childId);
+        if (!child) continue;
+        count();
+        // Only already initialized handoff configs are eager in the initial run.
+        // Other direct children resolve lazily with their own fresh counter below.
+        if (rootConfigIds.has(childId)) {
+          validateRunConfigTree(child, state, nextAncestors);
+        }
+      }
+      for (let index = 0; index < (acceptedGraphCounts.get(agent.id) ?? 0); index++) count();
+    };
+    const initialRunState = { count: 0 };
+    for (const root of rootConfigs) {
+      validateRunConfigTree(root, initialRunState, new Set());
+    }
+    for (const directId of directAgentIds) {
+      if (rootConfigIds.has(directId)) continue;
+      const direct = accessibleById.get(directId);
+      if (!direct) continue;
+      // createLazySubagentConfig seeds the selected child's resolution at one.
+      validateRunConfigTree(direct, { count: 1 }, new Set());
     }
     const skippedAgentIds = new Set(
       [...attempted].filter((id) => id !== agentId && !accessibleById.has(id)),
@@ -395,7 +455,10 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const selectedRawConfig = Object.fromEntries(
       Object.entries(rawConfig).filter(([serverName]) => selected.has(serverName)),
     );
-    const config = await deps.ensureConfigServers(selectedRawConfig);
+    const requestProbeLimit = createConcurrencyLimiter(options.concurrency);
+    const config = await deps.ensureConfigServers(selectedRawConfig, (task) =>
+      requestProbeLimit(() => sharedProbeLimit(task)),
+    );
     const servers = await deps.getServerConfigs(user.id, config, user.role);
     throwIfAborted();
     const auth = await getPluginAuthMap({
@@ -405,7 +468,6 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
     const context = createMCPRequestContext();
-    const requestProbeLimit = createConcurrencyLimiter(options.concurrency);
     const requestBody = {
       messageId: randomUUID(),
       conversationId: randomUUID(),

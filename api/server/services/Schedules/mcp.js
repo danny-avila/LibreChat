@@ -16,7 +16,8 @@ module.exports = createScheduleMCPPreflight({
   getModelsConfig: (user) => getModelsConfig({ user }),
   getUser: (id) => methods.findUser({ _id: id }),
   getAppConfig,
-  ensureConfigServers: (config) => getMCPServersRegistry().ensureConfigServers(config),
+  ensureConfigServers: (config, limit) =>
+    getMCPServersRegistry().ensureConfigServers(config, limit),
   getServerConfigs: (userId, config, role) =>
     getMCPServersRegistry().getAllServerConfigs(userId, config, role),
   findPluginAuthsByKeys: methods.findPluginAuthsByKeys,

@@ -217,6 +217,35 @@ it('rejects direct trees beyond the runtime expanded-config limit', async () => 
   await expect(check('root', principal)).rejects.toThrow('maximum of 100 expanded entries');
 });
 
+it('counts accepted graph descriptors against the runtime run-config limit', async () => {
+  const { check, deps } = setup([]);
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? graphNode(id, {
+            subagents: {
+              enabled: true,
+              graphs: Array.from({ length: 100 }, (_, index) => ({
+                name: `graph-${index}`,
+                agent_ids: ['member'],
+              })),
+            } as never,
+          })
+        : graphNode(id),
+    ),
+  );
+
+  await expect(check('root', principal)).rejects.toThrow('maximum of 100 expanded entries');
+});
+
 it('skips only a subagent graph definition that exceeds the runtime member budget', async () => {
   const acceptedIds = Array.from({ length: 50 }, (_, index) => `accepted-${index}`);
   const { check, deps } = setup([]);
@@ -513,6 +542,30 @@ it('prunes later legacy chain members when an earlier member is unavailable', as
   expect(deps.connect).not.toHaveBeenCalled();
 });
 
+it('does not expand persisted handoffs from legacy-chain-only agents', async () => {
+  const { check, deps } = setup();
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, { tools: [], agent_ids: ['legacy'] });
+      }
+      if (id === 'legacy') {
+        return graphNode(id, {
+          tools: ['search_mcp_docs'],
+          edges: [{ from: 'legacy', to: 'downstream' }],
+        });
+      }
+      return graphNode(id, { tools: ['read_mcp_private'] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
+    expect.arrayContaining(['downstream']),
+    expect.anything(),
+  );
+});
+
 it('includes enabled spawn-graph members when the capability is available', async () => {
   const { check, deps } = setup();
   deps.getAppConfig = jest.fn(
@@ -645,9 +698,12 @@ it('initializes only config servers selected by the runnable graph', async () =>
 
   await check('agent', principal);
 
-  expect(deps.ensureConfigServers).toHaveBeenCalledWith({
-    docs: { type: 'streamable-http', url: 'https://docs.example.test/mcp' },
-  });
+  expect(deps.ensureConfigServers).toHaveBeenCalledWith(
+    {
+      docs: { type: 'streamable-http', url: 'https://docs.example.test/mcp' },
+    },
+    expect.any(Function),
+  );
 });
 
 it('rejects a selected server shadowed by an unselected config server', async () => {
@@ -667,9 +723,12 @@ it('rejects a selected server shadowed by an unselected config server', async ()
   await expect(check('agent', principal)).rejects.toMatchObject({
     code: 'mcp_configuration_missing',
   });
-  expect(deps.ensureConfigServers).toHaveBeenCalledWith({
-    'Sales Force': { type: 'streamable-http', url: 'https://first.example.test/mcp' },
-  });
+  expect(deps.ensureConfigServers).toHaveBeenCalledWith(
+    {
+      'Sales Force': { type: 'streamable-http', url: 'https://first.example.test/mcp' },
+    },
+    expect.any(Function),
+  );
   expect(deps.connect).not.toHaveBeenCalled();
 });
 
@@ -784,6 +843,53 @@ it('bounds simultaneous MCP connection probes', async () => {
   }
   await expect(result).resolves.toHaveLength(5);
   expect(deps.connect).toHaveBeenCalledTimes(5);
+});
+
+it('bounds config-source initialization before connection probing', async () => {
+  const serverNames = Array.from({ length: 12 }, (_, index) => `server-${index}`);
+  const { check, deps } = setup(serverNames.map((name) => `search_mcp_${name}`));
+  const serverConfigs = Object.fromEntries(serverNames.map((name) => [name, server]));
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        mcpConfig: serverConfigs,
+      }) as unknown as AppConfig,
+  );
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markTenStarted: () => void = () => undefined;
+  const tenStarted = new Promise<void>((resolve) => {
+    markTenStarted = resolve;
+  });
+  let active = 0;
+  let maxActive = 0;
+  deps.ensureConfigServers = jest.fn(async (config, limit = (task) => task()) => {
+    const initialized: Record<string, ParsedServerConfig> = {};
+    await Promise.all(
+      Object.entries(config).map(([name, value]) =>
+        limit(async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          if (active === 10) markTenStarted();
+          await gate;
+          active -= 1;
+          initialized[name] = value as ParsedServerConfig;
+        }),
+      ),
+    );
+    return initialized;
+  });
+  deps.getServerConfigs = async (_userId, config) => config;
+
+  const result = check('agent', principal, { concurrency: 10 });
+  await tenStarted;
+  expect(active).toBe(10);
+  release();
+  await expect(result).resolves.toHaveLength(12);
+  expect(maxActive).toBe(10);
 });
 
 it('bounds MCP connection probes across concurrent schedule preflights', async () => {
