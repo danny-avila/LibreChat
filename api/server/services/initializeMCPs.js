@@ -113,7 +113,9 @@ async function initializeMCPs() {
   }
 
   try {
-    const mcpManager = await createMCPManager(mcpServers || {});
+    const mcpManager = await createMCPManager(mcpServers || {}, {
+      catalogRecoveryMaxStateEntries: appConfig?.mcpSettings?.catalogRecovery?.maxStateEntries,
+    });
     setMCPToolsChangedHandler(refreshChangedServerTools);
     setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
     setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);

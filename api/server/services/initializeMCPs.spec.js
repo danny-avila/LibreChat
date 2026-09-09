@@ -224,7 +224,12 @@ describe('initializeMCPs', () => {
 
       // MCPManager should be created with empty object when no configured servers
       expect(mockCreateMCPManager).toHaveBeenCalledTimes(1);
-      expect(mockCreateMCPManager).toHaveBeenCalledWith({});
+      expect(mockCreateMCPManager).toHaveBeenCalledWith(
+        {},
+        {
+          catalogRecoveryMaxStateEntries: undefined,
+        },
+      );
     });
 
     it('should initialize MCPManager with configured servers when provided', async () => {
@@ -236,7 +241,25 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPManager).toHaveBeenCalledWith(mcpServers);
+      expect(mockCreateMCPManager).toHaveBeenCalledWith(mcpServers, {
+        catalogRecoveryMaxStateEntries: undefined,
+      });
+    });
+
+    it('sets process-wide recovery capacity from the base config', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: {},
+        mcpSettings: { catalogRecovery: { maxStateEntries: 2500 } },
+      });
+
+      await initializeMCPs();
+
+      expect(mockCreateMCPManager).toHaveBeenCalledWith(
+        {},
+        {
+          catalogRecoveryMaxStateEntries: 2500,
+        },
+      );
     });
 
     it('should register app connections for graceful shutdown', async () => {
@@ -416,7 +439,12 @@ describe('initializeMCPs', () => {
       expect(mockCreateMCPManager).toHaveBeenCalledTimes(1);
 
       // Verify manager was created with empty config (not null/undefined)
-      expect(mockCreateMCPManager).toHaveBeenCalledWith({});
+      expect(mockCreateMCPManager).toHaveBeenCalledWith(
+        {},
+        {
+          catalogRecoveryMaxStateEntries: undefined,
+        },
+      );
     });
   });
 });

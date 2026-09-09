@@ -427,6 +427,7 @@ async function getAssistantToolDefinitions({ req, res, tools }) {
           userMCPAuthMap,
           upstreamTokenProvider,
           oboIdentityContext,
+          recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
         return result?.availableTools ?? null;
       },
@@ -759,6 +760,7 @@ async function reconnectServer({
   oboIdentityContext,
   streamId = null,
   jobCreatedAt,
+  recoveryPolicy,
 }) {
   logger.debug('[MCP][reconnectServer] Starting reconnect', {
     userId: user?.id,
@@ -823,6 +825,7 @@ async function reconnectServer({
     requestBody,
     requestScopedConnections,
     upstreamTokenProvider,
+    recoveryPolicy,
     oboIdentityContext,
     forceNew: true,
     returnOnOAuth: false,
@@ -873,6 +876,7 @@ async function createMCPTools({
   streamId = null,
   jobCreatedAt,
 }) {
+  let recoveryPolicy;
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
 
@@ -882,6 +886,7 @@ async function createMCPTools({
       tenantId: user?.tenantId,
       userId: user?.id,
     });
+    recoveryPolicy = appConfig?.mcpSettings?.catalogRecovery;
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
@@ -914,6 +919,7 @@ async function createMCPTools({
     oboIdentityContext,
     streamId,
     jobCreatedAt,
+    recoveryPolicy,
   });
   if (result === null) {
     logger.debug('[MCP] Reconnect throttled; skipping tool creation');
@@ -940,6 +946,7 @@ async function createMCPTools({
       configServers,
       streamId,
       jobCreatedAt,
+      authorizationFenceRetryMs: recoveryPolicy?.authorizationFenceRetryMs,
       availableTools: result.availableTools,
       serverName,
       /** Model-facing key: matches the normalized `availableTools` keys and
@@ -1003,6 +1010,7 @@ async function createMCPTool({
   onAvailableTools,
   streamId = null,
   jobCreatedAt,
+  authorizationFenceRetryMs,
 }) {
   /** `loadTools` already resolved the server for this key; parsing is the fallback. */
   const [parsedToolName, parsedServerName] = splitMCPToolKey(
@@ -1047,6 +1055,8 @@ async function createMCPTool({
       tenantId: user?.tenantId,
       userId: user?.id,
     });
+    authorizationFenceRetryMs ??=
+      appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs;
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
@@ -1175,6 +1185,7 @@ async function createMCPTool({
     oboIdentityContext,
     streamId,
     jobCreatedAt,
+    authorizationFenceRetryMs,
   });
 }
 
@@ -1195,6 +1206,7 @@ function createToolInstance({
   oboIdentityContext: capturedOboIdentityContext = null,
   streamId = null,
   jobCreatedAt,
+  authorizationFenceRetryMs,
 }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
@@ -1310,6 +1322,7 @@ function createToolInstance({
             invalidateRecoveryGeneration: invalidateCachedTools,
             clearLocalRecovery: (userId, changedServerName) =>
               mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
+            retryDelaysMs: authorizationFenceRetryMs,
           }),
         oauthStart,
         oauthEnd,

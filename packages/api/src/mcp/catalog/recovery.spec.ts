@@ -102,6 +102,59 @@ describe('publishMCPAuthorizationMutation', () => {
   });
 });
 
+describe('MCPServerCatalogRecoveryTracker capacity', () => {
+  const policy = {
+    discoveryBackoffMs: [60_000],
+    reauthRetryMs: 60_000,
+    maxStateEntries: 2,
+    generationReadTimeoutMs: 500,
+    authorizationFenceRetryMs: [0],
+  };
+
+  const candidate = (serverName: string) => ({
+    serverName,
+    serverConfig: serverConfig(serverName),
+  });
+  const failed = (serverName: string) => async () => ({
+    serverName,
+    tools: null,
+    state: 'backoff' as const,
+  });
+
+  it('keeps one process-wide capacity when requests carry different limits', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker(2);
+    const discoverA = jest.fn(failed('a'));
+
+    await tracker.run(user, candidate('a'), policy, 'generation-1', discoverA);
+    await tracker.run(
+      user,
+      candidate('b'),
+      { ...policy, maxStateEntries: 1 },
+      'generation-1',
+      failed('b'),
+    );
+    await tracker.run(user, candidate('a'), policy, 'generation-1', discoverA);
+
+    expect(discoverA).toHaveBeenCalledTimes(1);
+  });
+
+  it('evicts the least recently used completed entry', async () => {
+    const tracker = new MCPServerCatalogRecoveryTracker(2);
+    const discoverA = jest.fn(failed('a'));
+    const discoverB = jest.fn(failed('b'));
+
+    await tracker.run(user, candidate('a'), policy, 'generation-1', discoverA);
+    await tracker.run(user, candidate('b'), policy, 'generation-1', discoverB);
+    await tracker.run(user, candidate('a'), policy, 'generation-1', discoverA);
+    await tracker.run(user, candidate('c'), policy, 'generation-1', failed('c'));
+    await tracker.run(user, candidate('a'), policy, 'generation-1', discoverA);
+    await tracker.run(user, candidate('b'), policy, 'generation-1', discoverB);
+
+    expect(discoverA).toHaveBeenCalledTimes(1);
+    expect(discoverB).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('recoverMCPServerCatalogs', () => {
   it('does not discover with a credential snapshot superseded while auth was loading', async () => {
     const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });

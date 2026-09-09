@@ -516,6 +516,33 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             return exchangedTokens;
           }
 
+          const clearCachedTokenFlows = async (committedTokens) => {
+            if (typeof flowManager?.deleteFlow !== 'function') {
+              return;
+            }
+            try {
+              const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
+                flowState.userId,
+                serverName,
+                flowState.tenantId,
+              );
+              await clearGetTokensFlow({
+                flowManager,
+                flowId: tokenFlowId,
+                tokens: committedTokens,
+              });
+              if (tokenFlowId !== flowId) {
+                await clearGetTokensFlow({
+                  flowManager,
+                  flowId,
+                  tokens: committedTokens,
+                });
+              }
+            } catch (error) {
+              logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
+            }
+          };
+
           let storedTokens;
           try {
             storedTokens =
@@ -546,8 +573,11 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                       invalidateRecoveryGeneration: invalidateCachedTools,
                       clearLocalRecovery: (userId, changedServerName) =>
                         getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
+                      retryDelaysMs:
+                        req.config?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
                     },
                   );
+                  await clearCachedTokenFlows(committedTokens);
                   await completePersistedFlow(committedTokens);
                 },
               })) ?? exchangedTokens;
@@ -558,34 +588,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           } catch (error) {
             logger.error('[MCP OAuth] Failed to store OAuth tokens before flow completion', error);
             throw error;
-          }
-
-          /**
-           * Clear any cached `mcp_get_tokens` flow result before the OAuth flow wakes its
-           * waiters, so they cannot observe stale credentials after completion.
-           */
-          if (typeof flowManager?.deleteFlow === 'function') {
-            try {
-              const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
-                flowState.userId,
-                serverName,
-                flowState.tenantId,
-              );
-              await clearGetTokensFlow({
-                flowManager,
-                flowId: tokenFlowId,
-                tokens: storedTokens,
-              });
-              if (tokenFlowId !== flowId) {
-                await clearGetTokensFlow({
-                  flowManager,
-                  flowId,
-                  tokens: storedTokens,
-                });
-              }
-            } catch (error) {
-              logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
-            }
           }
 
           return storedTokens;
@@ -669,6 +671,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                     invalidateRecoveryGeneration: invalidateCachedTools,
                     clearLocalRecovery: (userId, changedServerName) =>
                       getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
+                    retryDelaysMs:
+                      req.config?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
                   }),
               },
               async (userConnection) => {
@@ -987,6 +991,7 @@ router.post(
           tokenPreference: 'access_token',
         }),
         oboIdentityContext,
+        recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
       });
 
       if (!result) {

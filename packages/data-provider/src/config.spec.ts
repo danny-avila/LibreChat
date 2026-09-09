@@ -871,12 +871,19 @@ describe('allowedAddressesSchema', () => {
         reauthRetryMs: 1_800_000,
         maxStateEntries: 10_000,
         generationReadTimeoutMs: 500,
+        authorizationFenceRetryMs: [0, 50, 200],
       });
 
       expect(
         configSchema.safeParse({
           version: '1.0',
           mcpSettings: { catalogRecovery: { discoveryBackoffMs: [] } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceRetryMs: [-1] } },
         }).success,
       ).toBe(false);
     });

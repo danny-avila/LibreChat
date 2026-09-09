@@ -4,7 +4,7 @@ const { CacheKeys } = require('librechat-data-provider');
 const { createOAuthReconnectionManager, getFlowStateManager, getMCPManager } = require('~/config');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getLogStores } = require('~/cache');
-const { invalidateCachedTools } = require('~/server/services/Config');
+const { getAppConfig, invalidateCachedTools } = require('~/server/services/Config');
 
 /**
  * Initialize OAuth reconnect manager
@@ -12,6 +12,7 @@ const { invalidateCachedTools } = require('~/server/services/Config');
 async function initializeOAuthReconnectManager() {
   try {
     const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
+    const appConfig = await getAppConfig({ baseOnly: true });
     const tokenMethods = {
       findToken,
       updateToken,
@@ -23,6 +24,7 @@ async function initializeOAuthReconnectManager() {
         invalidateRecoveryGeneration: invalidateCachedTools,
         clearLocalRecovery: (userId, serverName) =>
           getMCPManager()?.clearCatalogRecoveryState?.(userId, serverName),
+        retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
       }),
     );
     logger.info(`OAuth reconnect manager initialized successfully.`);

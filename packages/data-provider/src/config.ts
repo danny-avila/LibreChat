@@ -2708,6 +2708,11 @@ export const configSchema = z.object({
             .default(30 * 60_000),
           maxStateEntries: z.number().int().positive().max(1_000_000).default(10_000),
           generationReadTimeoutMs: z.number().int().positive().max(10_000).default(500),
+          authorizationFenceRetryMs: z
+            .array(z.number().int().nonnegative().max(60_000))
+            .min(1)
+            .max(8)
+            .default([0, 50, 200]),
         })
         .default({}),
     })

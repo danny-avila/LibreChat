@@ -88,7 +88,7 @@ function getDiscoveryAuthenticationKind(
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
-  private readonly catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker();
+  private readonly catalogRecoveryTracker: MCPServerCatalogRecoveryTracker;
   private readonly recoveryCancellation = new WeakMap<
     Promise<void>,
     { controller: AbortController; waiters: number; connection: MCPConnection }
@@ -106,10 +106,20 @@ export class MCPManager extends UserConnectionManager {
     }
   >();
 
+  constructor(catalogRecoveryMaxStateEntries?: number) {
+    super();
+    this.catalogRecoveryTracker = new MCPServerCatalogRecoveryTracker(
+      catalogRecoveryMaxStateEntries,
+    );
+  }
+
   /** Creates and initializes the singleton MCPManager instance */
-  public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
+  public static async createInstance(
+    configs: t.MCPServers,
+    options?: { catalogRecoveryMaxStateEntries?: number },
+  ): Promise<MCPManager> {
     if (MCPManager.instance) throw new Error('MCPManager has already been initialized.');
-    MCPManager.instance = new MCPManager();
+    MCPManager.instance = new MCPManager(options?.catalogRecoveryMaxStateEntries);
     await MCPManager.instance.initialize(configs);
     return MCPManager.instance;
   }

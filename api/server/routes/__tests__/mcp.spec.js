@@ -603,6 +603,13 @@ describe('MCP Routes', () => {
   describe('GET /:serverName/oauth/callback', () => {
     const { MCPOAuthHandler, MCPTokenStorage } = require('@librechat/api');
     const { getLogStores } = require('~/cache');
+    const mockTokenStorageCommit = (storedTokens) => {
+      MCPTokenStorage.storeTokens.mockImplementation(async (params) => {
+        const committedTokens = storedTokens ?? params.tokens;
+        await params.onStoreCommitted?.(committedTokens);
+        return committedTokens;
+      });
+    };
 
     beforeEach(() => {
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
@@ -903,7 +910,7 @@ describe('MCP Routes', () => {
         codeVerifier: 'current-verifier',
       });
       mockOAuthCompletion({ access_token: 'test-token' });
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
       const mockMcpManager = createLeasedMcpManager({
@@ -997,6 +1004,9 @@ describe('MCP Routes', () => {
           userId: 'test-user-id',
           serverName: 'test-server',
         });
+        expect(mockFlowManager.deleteFlow.mock.invocationCallOrder[0]).toBeLessThan(
+          mockFlowManager.completeFlow.mock.invocationCallOrder[0],
+        );
       });
 
       it('should use the merged server config to defer request-scoped post-OAuth reconnect', async () => {
@@ -1029,7 +1039,7 @@ describe('MCP Routes', () => {
         mockOAuthCompletion({
           access_token: 'test-token',
         });
-        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockTokenStorageCommit();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
         mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': mergedServerConfig });
 
@@ -1097,7 +1107,7 @@ describe('MCP Routes', () => {
         mockOAuthCompletion({
           access_token: 'test-token',
         });
-        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockTokenStorageCommit();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
         mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': mergedServerConfig });
         require('@librechat/api').getUserMCPAuthMap.mockResolvedValueOnce({
@@ -1162,7 +1172,7 @@ describe('MCP Routes', () => {
         mockOAuthCompletion({
           access_token: 'test-token',
         });
-        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockTokenStorageCommit();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
         mockResolveAllMcpConfigs.mockResolvedValue({ 'test-server': mergedServerConfig });
         require('@librechat/api').getUserMCPAuthMap.mockClear();
@@ -1341,7 +1351,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         url: 'https://mcp.example.com/mcp',
       });
@@ -1449,7 +1459,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -1524,7 +1534,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue(storedTokens);
+      mockTokenStorageCommit(storedTokens);
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
@@ -1583,7 +1593,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockResolveAllMcpConfigs.mockResolvedValue({
         'test-server': { url: 'https://mcp.example.com/mcp' },
       });
@@ -1640,7 +1650,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         url: 'https://mcp.example.com/mcp',
         oauth_headers: { 'X-Registry-Header': 'from-registry' },
@@ -1723,7 +1733,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
@@ -1767,7 +1777,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
@@ -1829,7 +1839,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue(mockTokens);
+      mockTokenStorageCommit(mockTokens);
       mockResolveAllMcpConfigs.mockResolvedValue({
         'test-server': {
           type: 'streamable-http',
@@ -2006,7 +2016,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.getFlowState.mockResolvedValue(flowState);
       mockOAuthCompletion(mockTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockTokenStorageCommit();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
       getLogStores.mockReturnValue({});
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);

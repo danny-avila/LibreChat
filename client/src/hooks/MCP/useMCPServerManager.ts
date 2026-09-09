@@ -65,6 +65,7 @@ export function useMCPServerManager({
   storageContextKey,
   specName,
   ownsChatSelection = false,
+  observeToolAuthorization = true,
 }: {
   conversationId?: string | null;
   storageContextKey?: string;
@@ -77,6 +78,8 @@ export function useMCPServerManager({
    * needed to prune it correctly.
    */
   ownsChatSelection?: boolean;
+  /** Allows hosts that suppress MCP catalog work (such as ephemeral agents) to reuse the manager. */
+  observeToolAuthorization?: boolean;
 } = {}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
@@ -95,7 +98,11 @@ export function useMCPServerManager({
   const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: mcpEnabled });
   const mcpToolsReady = useCatalogReady('mcpTools');
   const { data: discoveredMCPTools } = useMCPToolsQuery({
-    enabled: mcpEnabled && mcpToolsReady && Object.keys(loadedServers ?? {}).length > 0,
+    enabled:
+      observeToolAuthorization &&
+      mcpEnabled &&
+      mcpToolsReady &&
+      Object.keys(loadedServers ?? {}).length > 0,
   });
 
   // Fetch effective permissions for all MCP servers

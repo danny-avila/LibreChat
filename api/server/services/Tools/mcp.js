@@ -69,6 +69,7 @@ async function loadMCPServerCatalogs({
       invalidateRecoveryGeneration: invalidateCachedTools,
       clearLocalRecovery: (userId, serverName) =>
         mcpManager.clearCatalogRecoveryState?.(userId, serverName),
+      retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
     });
   return loadCatalogs(
     { user, servers, signal, recoveryPolicy },
@@ -121,6 +122,7 @@ async function loadMCPServerCatalogs({
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').MCPServerCatalogRecoveryPolicy} [params.recoveryPolicy]
  */
 async function reinitMCPServer({
   user,
@@ -139,6 +141,7 @@ async function reinitMCPServer({
   upstreamTokenProvider,
   oboIdentityContext,
   oauthEnd,
+  recoveryPolicy,
 }) {
   /** @type {MCPConnection | null} */
   let connection = null;
@@ -250,6 +253,7 @@ async function reinitMCPServer({
         invalidateRecoveryGeneration: invalidateCachedTools,
         clearLocalRecovery: (userId, changedServerName) =>
           mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
+        retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
       });
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
 

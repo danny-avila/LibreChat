@@ -13,7 +13,7 @@ const {
   waitForGenerationPersistence,
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
-  publishMCPAuthorizationMutation,
+  finalizeMCPAuthorizationMutation,
 } = require('@librechat/api');
 const { Tools, Constants, FileSources, ResourceType } = require('librechat-data-provider');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
@@ -253,7 +253,8 @@ const updateUserPluginsController = async (req, res) => {
     let message;
     /** @type {IPluginAuth | Error} */
     let authService;
-    let mcpCredentialMutationCommitted = false;
+    const mcpCredentialMutationResults = [];
+    let mcpTeardown = false;
 
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
@@ -276,8 +277,9 @@ const updateUserPluginsController = async (req, res) => {
           if (pluginKey === Tools.web_search) {
             break;
           }
-        } else if (isMCPTool) {
-          mcpCredentialMutationCommitted = true;
+        }
+        if (isMCPTool) {
+          mcpCredentialMutationResults.push(authService);
         }
       }
     } else if (action === 'uninstall') {
@@ -292,44 +294,9 @@ const updateUserPluginsController = async (req, res) => {
             authService,
           );
           ({ status, message } = normalizeHttpError(authService));
-        } else {
-          mcpCredentialMutationCommitted = true;
         }
-        const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-        try {
-          await publishMCPAuthorizationMutation(
-            { userId: user.id, serverName },
-            {
-              invalidateRecoveryGeneration: invalidateCachedTools,
-              clearLocalRecovery: (changedUserId, changedServerName) =>
-                getMCPManager()?.clearCatalogRecoveryState?.(changedUserId, changedServerName),
-            },
-          );
-        } catch (error) {
-          logger.error(
-            `[updateUserPluginsController] Error fencing MCP connection before OAuth teardown for user ${user.id}:`,
-            error,
-          );
-        }
-        try {
-          await getMCPManager()?.disconnectUserConnection(user.id, serverName);
-        } catch (error) {
-          logger.error(
-            `[updateUserPluginsController] Error disconnecting MCP connection before OAuth teardown for user ${user.id}:`,
-            error,
-          );
-        }
-        try {
-          // if the MCP server uses OAuth, perform a full cleanup and token revocation
-          await maybeUninstallOAuthMCP(user.id, pluginKey, appConfig);
-        } catch (error) {
-          logger.error(
-            `[updateUserPluginsController] Error uninstalling OAuth MCP for ${pluginKey}:`,
-            error,
-          );
-          status = 503;
-          message = 'OAuth credential cleanup is temporarily unavailable';
-        }
+        mcpCredentialMutationResults.push(authService);
+        mcpTeardown = true;
       } else {
         // This handles:
         // 1. Web_search uninstall (entries include every configured field).
@@ -340,8 +307,9 @@ const updateUserPluginsController = async (req, res) => {
           if (authService instanceof Error) {
             logger.error('[authService] Error deleting specific auth key:', authService);
             ({ status, message } = normalizeHttpError(authService));
-          } else if (isMCPTool) {
-            mcpCredentialMutationCommitted = true;
+          }
+          if (isMCPTool) {
+            mcpCredentialMutationResults.push(authService);
           }
         }
       }
@@ -349,40 +317,45 @@ const updateUserPluginsController = async (req, res) => {
 
     // Every committed MCP credential write advances the fence, including a partial batch whose
     // later field failed. Otherwise another worker can retain a stale authorization decision.
-    if (mcpCredentialMutationCommitted && pluginKey.startsWith(Constants.mcp_prefix)) {
+    if (pluginKey.startsWith(Constants.mcp_prefix)) {
       try {
         const mcpManager = getMCPManager();
         // Extract server name from pluginKey (format: "mcp_<serverName>")
         const serverName = pluginKey.replace(Constants.mcp_prefix, '');
-        if (mcpManager) {
-          logger.info(
-            `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
-          );
-        }
-        let invalidationError;
-        try {
-          await publishMCPAuthorizationMutation(
-            { userId: user.id, serverName },
-            {
-              invalidateRecoveryGeneration: invalidateCachedTools,
-              clearLocalRecovery: (changedUserId, changedServerName) =>
-                mcpManager?.clearCatalogRecoveryState?.(changedUserId, changedServerName),
-            },
-          );
-        } catch (error) {
-          invalidationError = error;
-        }
-        try {
-          await mcpManager?.disconnectUserConnection(user.id, serverName);
-        } catch (error) {
-          logger.error(
-            `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
-            error,
-          );
-        }
-        if (invalidationError) {
-          throw invalidationError;
-        }
+        await finalizeMCPAuthorizationMutation(
+          {
+            scope: { userId: user.id, serverName },
+            mutationResults: mcpCredentialMutationResults,
+            teardown: mcpTeardown,
+          },
+          {
+            invalidateRecoveryGeneration: invalidateCachedTools,
+            clearLocalRecovery: (changedUserId, changedServerName) =>
+              mcpManager?.clearCatalogRecoveryState?.(changedUserId, changedServerName),
+            disconnectUserConnection: (changedUserId, changedServerName) =>
+              mcpManager?.disconnectUserConnection(changedUserId, changedServerName),
+            retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
+            onDisconnectError: (error) =>
+              logger.error(
+                `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+                error,
+              ),
+            ...(mcpTeardown && {
+              afterDisconnect: async () => {
+                try {
+                  await maybeUninstallOAuthMCP(user.id, pluginKey, appConfig);
+                } catch (error) {
+                  logger.error(
+                    `[updateUserPluginsController] Error uninstalling OAuth MCP for ${pluginKey}:`,
+                    error,
+                  );
+                  status = 503;
+                  message = 'OAuth credential cleanup is temporarily unavailable';
+                }
+              },
+            }),
+          },
+        );
       } catch (disconnectError) {
         logger.error(
           `[updateUserPluginsController] Error fencing MCP connection for user ${user.id} after plugin auth update:`,

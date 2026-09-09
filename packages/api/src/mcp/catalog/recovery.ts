@@ -25,6 +25,7 @@ const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   reauthRetryMs: 30 * 60_000,
   maxStateEntries: 10_000,
   generationReadTimeoutMs: 500,
+  authorizationFenceRetryMs: [0, 50, 200],
 };
 
 export interface MCPServerCatalogRecoveryInput {
@@ -91,6 +92,7 @@ export interface MCPServerCatalogRecoveryPolicy {
   reauthRetryMs: number;
   maxStateEntries: number;
   generationReadTimeoutMs: number;
+  authorizationFenceRetryMs: readonly number[];
 }
 
 export interface MCPServerCatalogSnapshot {
@@ -257,6 +259,16 @@ function getRecoveryFingerprint(
 export class MCPServerCatalogRecoveryTracker {
   private readonly states = new Map<string, RecoveryStateEntry>();
 
+  constructor(private readonly maxStateEntries: number = DEFAULT_RECOVERY_POLICY.maxStateEntries) {}
+
+  private touch(key: string, entry: RecoveryStateEntry): void {
+    if (this.states.get(key) !== entry) {
+      return;
+    }
+    this.states.delete(key);
+    this.states.set(key, entry);
+  }
+
   /** Clears suppression after a credential/config mutation commits. */
   public clear(userId: string, serverName?: string): void {
     if (serverName != null) {
@@ -287,6 +299,7 @@ export class MCPServerCatalogRecoveryTracker {
       (recoveryGeneration == null || existing.recoveryGeneration === recoveryGeneration);
     if (sameObservedState) {
       existing.lastTouchedAt = now;
+      this.touch(key, existing);
       if (existing.inFlight != null) {
         return existing.inFlight;
       }
@@ -309,6 +322,7 @@ export class MCPServerCatalogRecoveryTracker {
           return { serverName: candidate.serverName, tools: null };
         }
         entry.lastTouchedAt = Date.now();
+        this.touch(key, entry);
         outcome.recoveryGeneration = entry.recoveryGeneration;
         if (outcome.state === 'reauth_required') {
           entry.failureCount = 0;
@@ -332,29 +346,27 @@ export class MCPServerCatalogRecoveryTracker {
       .finally(() => {
         if (this.states.get(key) === entry) {
           entry.inFlight = undefined;
+          this.trim();
         }
       });
     entry.inFlight = flight;
     this.states.set(key, entry);
-    this.trim(policy.maxStateEntries);
+    this.trim();
     return flight;
   }
 
-  private trim(maxStateEntries: number): void {
-    while (this.states.size > maxStateEntries) {
-      let oldest: [string, RecoveryStateEntry] | undefined;
-      for (const entry of this.states) {
-        if (entry[1].inFlight != null) {
+  private trim(): void {
+    while (this.states.size > this.maxStateEntries) {
+      let removed = false;
+      for (const [key, entry] of this.states) {
+        if (entry.inFlight != null) {
           continue;
         }
-        if (oldest == null || entry[1].lastTouchedAt < oldest[1].lastTouchedAt) {
-          oldest = entry;
-        }
+        this.states.delete(key);
+        removed = true;
+        break;
       }
-      if (oldest == null) {
-        return;
-      }
-      this.states.delete(oldest[0]);
+      if (!removed) return;
     }
   }
 }
