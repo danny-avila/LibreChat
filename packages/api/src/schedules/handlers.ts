@@ -4,7 +4,6 @@ import {
   createSchedulePayloadSchema,
   updateSchedulePayloadSchema,
   isCronCadence,
-  readScheduleMCPOutcomes,
 } from 'librechat-data-provider';
 import type { TScheduleCadence, TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
 import type { ScheduleMethods, ISchedule, IScheduleRun } from '@librechat/data-schemas';
@@ -1006,14 +1005,11 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       update.failureCount = 0;
       update.balanceSkipCount = 0;
     }
-    const clearsMCPFailure =
-      reEnabled && readScheduleMCPOutcomes(existing.lastRun?.error).length > 0;
     const unset =
-      reEnabled || clearsProject || clearsMCPFailure
+      reEnabled || clearsProject
         ? {
             ...(reEnabled && { disabledReason: 1 as const }),
             ...(clearsProject && { chatProjectId: 1 as const }),
-            ...(clearsMCPFailure && { lastRun: 1 as const }),
           }
         : undefined;
     // Retain the new attachments BEFORE committing the edit, so a retention failure
@@ -1138,7 +1134,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       }
       let status = 409;
       if (result.skipped === 'rate_limited') status = 429;
-      else if (mcpStatus === 'mcp_unavailable') status = 503;
+      else if (mcpStatus === 'mcp_unavailable' || result.mcpPreflightUnavailable === true)
+        status = 503;
       else if (mcpStatus != null) status = 400;
       const error =
         result.skipped === 'rate_limited'

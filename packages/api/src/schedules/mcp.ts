@@ -5,7 +5,9 @@ import {
   EModelEndpoint,
   MAX_SUBAGENT_GRAPH_NODES,
   Permissions,
+  PermissionBits,
   PermissionTypes,
+  ResourceType,
   isActionTool,
   buildServerNameAliases,
   normalizeMCPToolKey,
@@ -49,7 +51,13 @@ interface ScheduleMCPDeps {
   getAgents: (
     ids: string[],
   ) => Promise<Array<Pick<IAgent, '_id' | 'id' | 'tools' | 'agent_ids' | 'edges' | 'subagents'>>>;
-  getViewableAgentIds: (user: IUser) => Promise<Set<string>>;
+  findAccessibleResources: (params: {
+    userId: string;
+    role?: string;
+    idOnTheSource?: string | null;
+    resourceType: string;
+    requiredPermissions: number;
+  }) => Promise<unknown[]>;
   getRoleByName: CheckAccessParams['getRoleByName'];
   getUser: (id: string) => Promise<IUser | null>;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
@@ -76,7 +84,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     let appConfig: AppConfig | undefined;
     const loadAppConfig = async (): Promise<AppConfig | undefined> => {
       appConfig ??= await deps.getAppConfig({
-        ...getAppConfigOptionsFromUser(principal),
+        ...getAppConfigOptionsFromUser(user),
         failClosed: true,
       });
       return appConfig;
@@ -96,7 +104,14 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       const loaded = await deps.getAgents(frontier);
       const byId = new Map(loaded.map((agent) => [agent.id, agent]));
       if (frontier.some((id) => id !== agentId) && viewableAgentIds == null) {
-        viewableAgentIds = await deps.getViewableAgentIds(user);
+        const ids = await deps.findAccessibleResources({
+          userId: user.id,
+          role: user.role,
+          idOnTheSource: user.idOnTheSource,
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        });
+        viewableAgentIds = new Set(ids.map(String));
       }
       const accessible = frontier.map((id) => {
         const agent = byId.get(id);
@@ -205,9 +220,9 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
             let status: ScheduleMCPStatus = 'ready';
             if (reauth) {
               status = 'mcp_reauth_required';
-            } else if (!snapshot.complete || available.size === 0) {
+            } else if (!snapshot.complete) {
               status = 'mcp_unavailable';
-            } else if (!required.every((tool) => available.has(tool))) {
+            } else if (available.size === 0 || !required.every((tool) => available.has(tool))) {
               status = 'mcp_configuration_missing';
             }
             return { server, status };

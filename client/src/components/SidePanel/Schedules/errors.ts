@@ -1,5 +1,5 @@
-import { scheduleMCPOutcomeSchema } from 'librechat-data-provider';
-import type { ScheduleMCPStatus } from 'librechat-data-provider';
+import { readScheduleMCPOutcomes, scheduleMCPOutcomeSchema } from 'librechat-data-provider';
+import type { TSchedule, ScheduleMCPStatus } from 'librechat-data-provider';
 import type { TranslationKeys, useLocalize } from '~/hooks';
 
 export const MCP_STATUS_LABELS: Record<ScheduleMCPStatus, TranslationKeys> = {
@@ -8,6 +8,10 @@ export const MCP_STATUS_LABELS: Record<ScheduleMCPStatus, TranslationKeys> = {
   mcp_configuration_missing: 'com_ui_schedule_mcp_configuration',
   mcp_unavailable: 'com_ui_schedule_mcp_unavailable',
 };
+
+export function scheduleMCPRecoveryOutcomes(schedule: Pick<TSchedule, 'enabled' | 'lastRun'>) {
+  return schedule.enabled ? [] : readScheduleMCPOutcomes(schedule.lastRun?.error);
+}
 
 export function scheduleMCPErrorMessage(
   error: Error,

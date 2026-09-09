@@ -1153,7 +1153,7 @@ describe('updateSchedule re-enable attachment revalidation', () => {
     expect(deps.methods.updateScheduleById).toHaveBeenCalled();
   });
 
-  it('clears a stale MCP failure after re-enable preflight succeeds', async () => {
+  it('preserves run history when re-enable preflight succeeds', async () => {
     const deps = makeCreateDeps({ isUserDeleting: async () => false });
     jest.mocked(deps.methods.getScheduleById).mockResolvedValue({
       ...disabledWithFiles(),
@@ -1172,9 +1172,11 @@ describe('updateSchedule re-enable attachment revalidation', () => {
       'sched-1',
       'user-1',
       expect.objectContaining({ enabled: true }),
-      expect.objectContaining({ disabledReason: 1, lastRun: 1 }),
+      expect.objectContaining({ disabledReason: 1 }),
       expect.any(Object),
     );
+    const [, , , unset] = jest.mocked(deps.methods.updateScheduleById).mock.calls[0];
+    expect(unset).not.toHaveProperty('lastRun');
   });
 
   it('skips the stored-attachment recheck when the edit replaces file_ids', async () => {
@@ -1260,6 +1262,26 @@ describe('Run Now MCP failures', () => {
 
     expect(captured.status).toBe(expectedStatus);
     expect(captured.body).toMatchObject({ code: mcpStatus });
+  });
+
+  it('returns service unavailable when MCP infrastructure preflight fails', async () => {
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => false,
+      fireNow: async () => ({
+        fired: false,
+        error: 'MCP preflight unavailable',
+        mcpPreflightUnavailable: true,
+      }),
+    });
+    jest.mocked(deps.methods.getScheduleById).mockResolvedValue(fullScheduleDoc());
+    const req = makeCreateReq();
+    req.params = { id: 'sched-1' };
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).runScheduleNow(req, res);
+
+    expect(captured.status).toBe(503);
+    expect(captured.body).toMatchObject({ error: 'MCP preflight unavailable' });
   });
 });
 

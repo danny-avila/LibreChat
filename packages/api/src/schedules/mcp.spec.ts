@@ -10,7 +10,7 @@ function setup(tools = ['search_mcp_docs']) {
   const disconnect = jest.fn();
   const deps: Parameters<typeof createScheduleMCPPreflight>[0] = {
     getAgents: jest.fn(async (ids) => ids.map((id) => ({ _id: id as never, id, tools }))),
-    getViewableAgentIds: jest.fn(async () => new Set(['root', 'agent', 'child', 'spawned'])),
+    findAccessibleResources: jest.fn(async () => ['root', 'agent', 'child', 'spawned']),
     getRoleByName: jest.fn(
       async () =>
         ({ permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } } }) as IRole,
@@ -125,7 +125,7 @@ it('checks graph agents once even when edges cycle', async () => {
 it('loads each graph frontier in one batch', async () => {
   const childIds = Array.from({ length: 20 }, (_, index) => `child-${index}`);
   const { check, deps } = setup();
-  deps.getViewableAgentIds = jest.fn(async () => new Set(childIds));
+  deps.findAccessibleResources = jest.fn(async () => childIds);
   deps.getAgents = jest.fn(async (ids) =>
     ids.map((id) => ({
       _id: id as never,
@@ -138,7 +138,7 @@ it('loads each graph frontier in one batch', async () => {
   expect(deps.getAgents).toHaveBeenNthCalledWith(1, ['root']);
   expect(deps.getAgents).toHaveBeenNthCalledWith(2, childIds);
   expect(deps.getAgents).toHaveBeenCalledTimes(2);
-  expect(deps.getViewableAgentIds).toHaveBeenCalledTimes(1);
+  expect(deps.findAccessibleResources).toHaveBeenCalledTimes(1);
 });
 
 it('does not count the root or legacy handoff nodes against the spawn graph budget', async () => {
@@ -146,7 +146,7 @@ it('does not count the root or legacy handoff nodes against the spawn graph budg
   const legacyIds = Array.from({ length: 55 }, (_, index) => `handoff-${index}`);
   const allIds = [...spawnIds, ...legacyIds];
   const { check, deps } = setup();
-  deps.getViewableAgentIds = jest.fn(async () => new Set(allIds));
+  deps.findAccessibleResources = jest.fn(async () => allIds);
   deps.getAppConfig = jest.fn(
     async () => ({ endpoints: { agents: { capabilities: ['subagents'] } } }) as AppConfig,
   );
@@ -180,7 +180,7 @@ it('skips MCP tools on graph agents the owner cannot view', async () => {
         : { _id: id as never, id, tools: ['search_mcp_docs'] },
     ),
   );
-  deps.getViewableAgentIds = async () => new Set();
+  deps.findAccessibleResources = async () => [];
   await expect(check('root', principal)).resolves.toEqual([]);
   expect(deps.connect).not.toHaveBeenCalled();
 });
@@ -227,6 +227,30 @@ it('propagates principal-config outages instead of reporting missing configurati
   await expect(check('agent', principal)).rejects.not.toBeInstanceOf(ScheduleMCPError);
 });
 
+it('reuses the loaded external identity for principal configuration', async () => {
+  const { check, deps } = setup();
+  deps.getUser = jest.fn(
+    async () =>
+      ({
+        id: 'owner',
+        role: 'USER',
+        email: 'owner@example.test',
+        idOnTheSource: 'external-owner',
+      }) as IUser,
+  );
+
+  await check('agent', principal);
+
+  expect(deps.getAppConfig).toHaveBeenCalledWith(
+    expect.objectContaining({
+      userId: 'owner',
+      role: 'USER',
+      idOnTheSource: 'external-owner',
+      failClosed: true,
+    }),
+  );
+});
+
 it('rejects an explicitly selected tool removed from an otherwise healthy server', async () => {
   const { check } = setup(['deleted_mcp_docs']);
   await expect(check('agent', principal)).rejects.toMatchObject({
@@ -238,6 +262,14 @@ it('distinguishes an incomplete catalog from missing tools', async () => {
   const { check, deps } = setup(['deleted_mcp_docs']);
   deps.connect = async () => ({ fetchToolsSnapshot: async () => ({ tools: [], complete: false }) });
   await expect(check('agent', principal)).rejects.toMatchObject({ code: 'mcp_unavailable' });
+});
+
+it('treats a complete empty catalog as missing selected configuration', async () => {
+  const { check, deps } = setup(['deleted_mcp_docs']);
+  deps.connect = async () => ({ fetchToolsSnapshot: async () => ({ tools: [], complete: true }) });
+  await expect(check('agent', principal)).rejects.toMatchObject({
+    code: 'mcp_configuration_missing',
+  });
 });
 
 it('preserves authentication failures reported by tools/list snapshots', async () => {

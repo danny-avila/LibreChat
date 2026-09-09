@@ -592,7 +592,11 @@ export async function fireSchedule(
         clearConversationId: true,
       });
       await advance();
-      return { fired: false, error: message, ...(failure ? { mcp: failure.outcomes } : {}) };
+      return {
+        fired: false,
+        error: message,
+        ...(failure ? { mcp: failure.outcomes } : { mcpPreflightUnavailable: true }),
+      };
     }
 
     // Last check before the point of no return: re-verify this fire still holds an

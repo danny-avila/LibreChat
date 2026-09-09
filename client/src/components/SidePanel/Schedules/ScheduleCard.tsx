@@ -2,7 +2,6 @@ import { useId, useRef, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { readScheduleMCPOutcomes } from 'librechat-data-provider';
 import { Play, Trash, Folder, Pencil, Ellipsis } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
@@ -23,8 +22,8 @@ import {
   useUpdateScheduleMutation,
   useRunScheduleNowMutation,
 } from '~/data-provider';
+import { MCP_STATUS_LABELS, scheduleMCPErrorMessage, scheduleMCPRecoveryOutcomes } from './errors';
 import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
-import { MCP_STATUS_LABELS, scheduleMCPErrorMessage } from './errors';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
 import ScheduleDialog from './ScheduleDialog';
@@ -64,7 +63,7 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
 export default function ScheduleCard({ schedule, projectName }: ScheduleCardProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const mcpOutcomes = readScheduleMCPOutcomes(schedule.lastRun?.error);
+  const mcpOutcomes = scheduleMCPRecoveryOutcomes(schedule);
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();

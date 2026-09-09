@@ -295,6 +295,7 @@ export interface JobState {
 
 export interface FireResult {
   mcp?: ScheduleMCPOutcome[];
+  mcpPreflightUnavailable?: boolean;
   fired: boolean;
   conversationId?: string;
   skipped?:

@@ -859,7 +859,11 @@ it('does not invent a server outcome for infrastructure preflight failures', asy
     },
   });
   const result = await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'));
-  expect(result).toMatchObject({ fired: false, error: 'MCP preflight unavailable' });
+  expect(result).toMatchObject({
+    fired: false,
+    error: 'MCP preflight unavailable',
+    mcpPreflightUnavailable: true,
+  });
   expect(result.mcp).toBeUndefined();
   expect(methods.recordRunOutcome).toHaveBeenCalledWith(
     expect.objectContaining({ error: 'MCP preflight unavailable' }),
