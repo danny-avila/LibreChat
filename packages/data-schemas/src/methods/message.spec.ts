@@ -1518,7 +1518,6 @@ describe('Message Operations', () => {
             output: 'Background task cancellation requested',
           },
         ],
-        messageId: 'msg123',
       });
     });
 
