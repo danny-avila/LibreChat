@@ -1789,8 +1789,16 @@ export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
 export type LocalizedString = z.infer<typeof localizedStringSchema>;
 
+export const mcpRefreshDefaults = {
+  toolsRefreshInterval: 5 * 60 * 1000,
+  statusRefreshInterval: 30 * 1000,
+};
+
 const mcpServersSchema = z
   .object({
+    /** Foreground polling intervals in milliseconds; 0 disables polling. */
+    toolsRefreshInterval: z.number().int().nonnegative().max(2_147_483_647).optional(),
+    statusRefreshInterval: z.number().int().nonnegative().max(2_147_483_647).optional(),
     placeholder: z.string().optional(),
     use: z.boolean().optional(),
     create: z.boolean().optional(),

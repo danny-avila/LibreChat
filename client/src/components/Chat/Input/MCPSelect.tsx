@@ -6,6 +6,7 @@ import { TooltipAnchor, composerControlClasses } from '@librechat/client';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
+import { useMCPRefresh } from '~/hooks/MCP/useMCPRefresh';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -18,6 +19,9 @@ function MCPSelectContent() {
   const menuStore = Ariakit.useMenuStore({ focusLoop: true });
   const isOpen = menuStore.useState('open');
   const configDialogOpen = manager?.getConfigDialogProps()?.isOpen === true;
+  useMCPRefresh({
+    enabled: (isOpen || configDialogOpen) && (manager?.availableMCPServers.length ?? 0) > 0,
+  });
 
   /**
    * The menu closes with the dialog it launched. Ariakit only takes Escape for

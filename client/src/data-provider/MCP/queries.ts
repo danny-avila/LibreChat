@@ -38,8 +38,7 @@ export const useMCPToolsQuery = <TData = t.MCPServersResponse>(
       refetchOnReconnect: true,
       refetchOnMount: true,
       staleTime: 5 * 60 * 1000,
-      /** Backend list_changed notifications do not reach the browser cache. */
-      refetchInterval: 5 * 60 * 1000,
+      refetchInterval: false,
       refetchIntervalInBackground: false,
       ...config,
     },

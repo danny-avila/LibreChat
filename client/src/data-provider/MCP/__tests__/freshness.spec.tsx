@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query';
 import type { MCPServersResponse, MCPConnectionStatusResponse } from 'librechat-data-provider';
 import { useMCPConnectionStatusQuery } from '../../Tools/queries';
+import { useMCPRefresh } from '~/hooks/MCP/useMCPRefresh';
 import { useMCPToolsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
@@ -16,6 +17,12 @@ jest.mock('librechat-data-provider', () => {
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
   return { ...actual, dataService: { ...actual.dataService } };
 });
+
+const mockRefreshConfig = { statusRefreshInterval: 30_000, toolsRefreshInterval: 300_000 };
+
+jest.mock('~/data-provider/Endpoints/queries', () => ({
+  useGetStartupConfig: () => ({ data: { interface: { mcpServers: mockRefreshConfig } } }),
+}));
 
 const catalog: MCPServersResponse = { servers: {} };
 const connected: MCPConnectionStatusResponse = {
@@ -33,8 +40,7 @@ const changedCatalog: MCPServersResponse = {
 };
 
 function useCatalogQueries(enabled = true) {
-  useMCPToolsQuery({ enabled });
-  useMCPConnectionStatusQuery({ enabled });
+  useMCPRefresh({ enabled, tools: true });
 }
 
 describe('MCP cache freshness', () => {
@@ -45,6 +51,8 @@ describe('MCP cache freshness', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
+    mockRefreshConfig.statusRefreshInterval = 30_000;
+    mockRefreshConfig.toolsRefreshInterval = 300_000;
     focusManager.setFocused(true);
     onlineManager.setOnline(true);
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -59,6 +67,73 @@ describe('MCP cache freshness', () => {
     focusManager.setFocused(undefined);
     onlineManager.setOnline(true);
     jest.useRealTimers();
+  });
+
+  it('keeps always-mounted cache observers free of polling', async () => {
+    const { unmount } = renderHook(
+      () => {
+        useMCPToolsQuery();
+        useMCPConnectionStatusQuery();
+      },
+      { wrapper },
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(600_000);
+    });
+    expect(dataService.getMCPTools).not.toHaveBeenCalled();
+    expect(dataService.getMCPConnectionStatus).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('starts polling when a surface opens and stops when it closes', async () => {
+    const { rerender, unmount } = renderHook(
+      ({ visible }) => {
+        useMCPToolsQuery();
+        useMCPConnectionStatusQuery();
+        useMCPRefresh({ enabled: visible, tools: true });
+      },
+      { wrapper, initialProps: { visible: false } },
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(600_000);
+    });
+    expect(dataService.getMCPTools).not.toHaveBeenCalled();
+    expect(dataService.getMCPConnectionStatus).not.toHaveBeenCalled();
+    await act(async () => {
+      rerender({ visible: true });
+    });
+    expect(dataService.getMCPTools).toHaveBeenCalledTimes(1);
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(2);
+    rerender({ visible: false });
+    await act(async () => {
+      jest.advanceTimersByTime(600_000);
+    });
+    expect(dataService.getMCPTools).toHaveBeenCalledTimes(1);
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('honors configured polling intervals and zero to disable', async () => {
+    mockRefreshConfig.statusRefreshInterval = 60_000;
+    mockRefreshConfig.toolsRefreshInterval = 0;
+    const { unmount } = renderHook(() => useCatalogQueries(), { wrapper });
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(dataService.getMCPConnectionStatus).not.toHaveBeenCalled();
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(300_000);
+    });
+    expect(dataService.getMCPTools).not.toHaveBeenCalled();
+    unmount();
   });
 
   it('reconciles server-side changes at bounded intervals without sending messages', async () => {

@@ -1154,3 +1154,25 @@ describe('bedrockModels defaults', () => {
     expect(bedrockModels).not.toContain('anthropic.claude-opus-5');
   });
 });
+
+describe('MCP UI refresh configuration', () => {
+  it('preserves configured intervals, including zero to disable polling', () => {
+    const result = configSchema.parse({
+      version: '1.3.5',
+      interface: { mcpServers: { toolsRefreshInterval: 0, statusRefreshInterval: 60_000 } },
+    });
+    expect(result.interface?.mcpServers).toMatchObject({
+      toolsRefreshInterval: 0,
+      statusRefreshInterval: 60_000,
+    });
+  });
+
+  it.each([-1, 1.5, 2_147_483_648])('rejects invalid timer intervals: %s', (interval) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.5',
+        interface: { mcpServers: { statusRefreshInterval: interval } },
+      }).success,
+    ).toBe(false);
+  });
+});
