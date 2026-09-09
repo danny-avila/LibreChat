@@ -7,7 +7,11 @@
 
 import type { TokenMethods } from '@librechat/data-schemas';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
-import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
+import {
+  MCPTokenStorage,
+  MCPTokenStorageUnavailableError,
+  ReauthenticationRequiredError,
+} from '~/mcp/oauth';
 import { InMemoryTokenStore } from './helpers/oauthTestServer';
 
 const credentialSetId = 'credential-set-a';
@@ -973,6 +977,21 @@ describe('MCPTokenStorage', () => {
       expect(result).not.toBeNull();
       expect(result!.access_token).toBe('valid-token');
       expect(result!.token_type).toBe('Bearer');
+    });
+
+    it('reports token-store outages separately from reauthentication', async () => {
+      const storageError = new Error('database unavailable');
+
+      await expect(
+        MCPTokenStorage.getTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: jest.fn().mockRejectedValue(storageError),
+        }),
+      ).rejects.toMatchObject({
+        name: 'MCPTokenStorageUnavailableError',
+        cause: storageError,
+      } satisfies Partial<MCPTokenStorageUnavailableError>);
     });
 
     it('rejects an access token read before a concurrent client generation replacement', async () => {

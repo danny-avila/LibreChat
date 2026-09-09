@@ -169,6 +169,11 @@ jest.mock('~/server/services/MCP/oauthCleanup', () => ({
   maybeUninstallOAuthMCP: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('~/server/services/MCPAuthorizationFenceRetry', () => ({
+  persistMCPAuthorizationFenceRetry: jest.fn().mockResolvedValue(undefined),
+  clearMCPAuthorizationFenceRetry: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(),
   getFlowStateManager: jest.fn(),
@@ -953,13 +958,15 @@ describe('MCP Routes', () => {
     describe('CSRF fallback via active PENDING flow', () => {
       it('should proceed when a fresh PENDING flow exists and no cookies are present', async () => {
         const flowId = 'test-user-id:test-server';
+        const pendingCreatedAt = Date.now();
         const mockFlowManager = {
           getFlowState: jest.fn().mockResolvedValue({
             type: 'mcp_get_tokens',
             status: 'PENDING',
-            createdAt: Date.now(),
+            createdAt: pendingCreatedAt,
           }),
           completeFlow: jest.fn().mockResolvedValue(true),
+          settleFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
           deleteFlow: jest.fn().mockResolvedValue(true),
         };
         const mockFlowState = {
@@ -1014,14 +1021,10 @@ describe('MCP Routes', () => {
         const oauthCompletionIndex = mockFlowManager.completeFlow.mock.calls.findIndex(
           ([, type]) => type === 'mcp_oauth',
         );
-        const tokenCompletionIndex = mockFlowManager.completeFlow.mock.calls.findIndex(
-          ([, type]) => type === 'mcp_get_tokens',
-        );
         expect(oauthCompletionIndex).toBeGreaterThanOrEqual(0);
-        expect(tokenCompletionIndex).toBeGreaterThanOrEqual(0);
         expect(
           mockFlowManager.completeFlow.mock.invocationCallOrder[oauthCompletionIndex],
-        ).toBeLessThan(mockFlowManager.completeFlow.mock.invocationCallOrder[tokenCompletionIndex]);
+        ).toBeLessThan(mockFlowManager.settleFlowIfCurrent.mock.invocationCallOrder[0]);
       });
 
       it('should use the merged server config to defer request-scoped post-OAuth reconnect', async () => {
@@ -1522,11 +1525,13 @@ describe('MCP Routes', () => {
             return Promise.resolve({
               type: 'mcp_get_tokens',
               status: 'PENDING',
+              createdAt: 123,
             });
           }
           return Promise.resolve({ status: 'PENDING', createdAt: Date.now() });
         }),
         completeFlow: jest.fn().mockResolvedValue(true),
+        settleFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
@@ -1576,9 +1581,11 @@ describe('MCP Routes', () => {
         });
 
       expect(response.status).toBe(302);
-      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
+      expect(mockFlowManager.settleFlowIfCurrent).toHaveBeenCalledWith(
         'tenant:tenant-a:test-user-id:test-server',
         'mcp_get_tokens',
+        123,
+        '',
         storedTokens,
       );
       expect(mockFlowManager.deleteFlow).not.toHaveBeenCalledWith(

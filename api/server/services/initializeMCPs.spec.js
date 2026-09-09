@@ -29,6 +29,14 @@ jest.mock('@librechat/data-schemas', () => ({
 const mockGetAppConfig = jest.fn();
 const mockSyncStaticTools = jest.fn();
 const mockMergeAppTools = jest.fn();
+const mockInvalidateCachedTools = jest.fn();
+const mockStartMCPAuthorizationFenceRetryWorker = jest.fn();
+
+jest.mock('./MCPAuthorizationFenceRetry', () => ({
+  get startMCPAuthorizationFenceRetryWorker() {
+    return mockStartMCPAuthorizationFenceRetryWorker;
+  },
+}));
 
 jest.mock('./Config', () => ({
   get getAppConfig() {
@@ -39,6 +47,9 @@ jest.mock('./Config', () => ({
   },
   get syncStaticTools() {
     return mockSyncStaticTools;
+  },
+  get invalidateCachedTools() {
+    return mockInvalidateCachedTools;
   },
 }));
 

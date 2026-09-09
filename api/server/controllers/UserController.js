@@ -22,6 +22,10 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager } = require('~/config');
 const { maybeUninstallOAuthMCP } = require('~/server/services/MCP/oauthCleanup');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const {
@@ -330,6 +334,8 @@ const updateUserPluginsController = async (req, res) => {
           },
           {
             invalidateRecoveryGeneration: invalidateCachedTools,
+            persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+            clearPublicationRetry: clearMCPAuthorizationFenceRetry,
             clearLocalRecovery: (changedUserId, changedServerName) =>
               mcpManager?.clearCatalogRecoveryState?.(changedUserId, changedServerName),
             disconnectUserConnection: (changedUserId, changedServerName) =>

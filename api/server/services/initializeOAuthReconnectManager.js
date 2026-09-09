@@ -5,6 +5,10 @@ const { createOAuthReconnectionManager, getFlowStateManager, getMCPManager } = r
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
 const { getLogStores } = require('~/cache');
 const { getAppConfig, invalidateCachedTools } = require('~/server/services/Config');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
 
 /**
  * Initialize OAuth reconnect manager
@@ -22,6 +26,8 @@ async function initializeOAuthReconnectManager() {
     await createOAuthReconnectionManager(flowManager, tokenMethods, undefined, (scope) =>
       publishMCPAuthorizationMutation(scope, {
         invalidateRecoveryGeneration: invalidateCachedTools,
+        persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+        clearPublicationRetry: clearMCPAuthorizationFenceRetry,
         clearLocalRecovery: (userId, serverName) =>
           getMCPManager()?.clearCatalogRecoveryState?.(userId, serverName),
         retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,

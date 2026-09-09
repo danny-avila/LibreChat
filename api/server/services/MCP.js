@@ -76,6 +76,10 @@ const {
   invalidateCachedTools,
 } = require('./Config');
 const { getLogStores } = require('~/cache');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('./MCPAuthorizationFenceRetry');
 
 const MAX_CACHE_SIZE = 1000;
 const lastReconnectAttempts = new Map();
@@ -1320,6 +1324,8 @@ function createToolInstance({
         onOAuthCredentialsChanged: (scope) =>
           publishMCPAuthorizationMutation(scope, {
             invalidateRecoveryGeneration: invalidateCachedTools,
+            persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+            clearPublicationRetry: clearMCPAuthorizationFenceRetry,
             clearLocalRecovery: (userId, changedServerName) =>
               mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
             retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,

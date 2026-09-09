@@ -65,10 +65,16 @@ export async function publishMCPAuthorizationMutation(
   deps: {
     invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
     clearLocalRecovery?: (userId: string, serverName: string) => void;
+    persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
+    clearPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<void>;
     retryDelaysMs?: readonly number[];
     attemptTimeoutMs?: number;
   },
 ): Promise<void> {
+  /** Persist retry intent before touching the shared cache. A credential writer can keep this
+   * inside its rollback boundary, so a cache outage never leaves a committed mutation with no
+   * durable path to fence other replicas. */
+  await deps.persistPublicationRetry?.(scope);
   let lastError: unknown;
   for (const delayMs of deps.retryDelaysMs ?? AUTHORIZATION_FENCE_RETRY_DELAYS_MS) {
     if (delayMs > 0) {
@@ -90,6 +96,15 @@ export async function publishMCPAuthorizationMutation(
         ]);
       } finally {
         if (timeoutId != null) clearTimeout(timeoutId);
+      }
+      try {
+        await deps.clearPublicationRetry?.(scope);
+      } catch (error) {
+        /** A leftover retry only advances the opaque generation again and is therefore safe. */
+        logger.warn(
+          `[MCP authorization] Published generation for ${scope.serverName} but could not clear its retry intent`,
+          error,
+        );
       }
       deps.clearLocalRecovery?.(scope.userId, scope.serverName);
       return;

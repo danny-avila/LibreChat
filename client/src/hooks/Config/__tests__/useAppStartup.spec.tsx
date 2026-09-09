@@ -73,6 +73,18 @@ const mockUser = {
 const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <RecoilRoot>{children}</RecoilRoot>
 );
+const hydratedWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <RecoilRoot
+    initializeState={({ set }) =>
+      set(store.conversationByIndex(0), {
+        conversationId: 'new',
+        endpoint: EModelEndpoint.openAI,
+      } as TConversation)
+    }
+  >
+    {children}
+  </RecoilRoot>
+);
 
 describe('useAppStartup: MCP permission gating', () => {
   beforeEach(() => {
@@ -85,7 +97,9 @@ describe('useAppStartup: MCP permission gating', () => {
   it('checks the MCP_SERVERS.USE permission via useHasAccess', () => {
     mockUseHasAccess.mockReturnValue(false);
 
-    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
+    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), {
+      wrapper: hydratedWrapper,
+    });
 
     expect(mockUseHasAccess).toHaveBeenCalledWith({
       permissionType: PermissionTypes.MCP_SERVERS,
@@ -121,10 +135,24 @@ describe('useAppStartup: MCP permission gating', () => {
       isLoading: false,
     });
 
-    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
+    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), {
+      wrapper: hydratedWrapper,
+    });
 
     expect(mockUseMCPServersQuery).toHaveBeenCalledWith({ enabled: true });
     expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it('waits for conversation hydration before warming the tools catalog', () => {
+    mockUseHasAccess.mockReturnValue(true);
+    mockUseMCPServersQuery.mockReturnValue({
+      data: { 'test-server': { url: 'http://test' } },
+      isLoading: false,
+    });
+
+    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
+
+    expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('suppresses background tool discovery for an ephemeral agent conversation', () => {

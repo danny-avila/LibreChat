@@ -32,7 +32,7 @@ const {
   OpenIDReauthRequiredError,
   readMCPRecoveryGenerationAround,
   publishMCPAuthorizationMutation,
-  completeMCPAuthorizationWithTokenWaiters,
+  persistMCPAuthorizationTransaction,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -68,6 +68,10 @@ const {
 } = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -516,62 +520,57 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
           let storedTokens;
           try {
-            storedTokens =
-              (await MCPTokenStorage.storeTokens({
-                userId: flowState.userId,
-                serverName,
+            const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
+              flowState.userId,
+              serverName,
+              flowState.tenantId,
+            );
+            storedTokens = await persistMCPAuthorizationTransaction(
+              {
+                scope: { userId: flowState.userId, serverName },
+                flowIds: [tokenFlowId, flowId],
                 tokens: exchangedTokens,
-                createToken: db.createToken,
-                updateToken: db.updateToken,
-                deleteTokens: db.deleteTokens,
-                findToken: db.findToken,
-                clientInfo: flowState.clientInfo,
-                metadata: MCPOAuthHandler.buildStoredClientMetadata(
-                  flowState.metadata,
-                  flowState.resourceMetadata,
-                  flowState.serverUrl,
-                  flowState.clientSource,
-                ),
-                onStoreCommitted: async (committedTokens) => {
-                  if (!(await resolveActiveServer())) {
-                    throw new Error(
-                      `MCP server ${serverName} was deleted during OAuth authorization`,
-                    );
-                  }
-                  await publishMCPAuthorizationMutation(
-                    { userId: flowState.userId, serverName },
-                    {
-                      invalidateRecoveryGeneration: invalidateCachedTools,
-                      clearLocalRecovery: (userId, changedServerName) =>
-                        getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
-                      retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
-                      attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
-                    },
-                  );
-                  const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
-                    flowState.userId,
+                completeAuthorization: completePersistedFlow,
+                persistTokens: async (candidateTokens, onStoreCommitted) =>
+                  (await MCPTokenStorage.storeTokens({
+                    userId: flowState.userId,
                     serverName,
-                    flowState.tenantId,
-                  );
-                  await completeMCPAuthorizationWithTokenWaiters(
-                    {
-                      flowIds: [tokenFlowId, flowId],
-                      tokens: committedTokens,
-                      completeAuthorization: completePersistedFlow,
-                    },
-                    {
-                      flowManager,
-                      onTokenFlowError: (phase, error) =>
-                        logger.warn(
-                          phase === 'prepare'
-                            ? '[MCP OAuth] Failed to clear cached token flow state'
-                            : '[MCP OAuth] Failed to wake a pending token flow',
-                          error,
-                        ),
-                    },
-                  );
-                },
-              })) ?? exchangedTokens;
+                    tokens: candidateTokens,
+                    createToken: db.createToken,
+                    updateToken: db.updateToken,
+                    deleteTokens: db.deleteTokens,
+                    findToken: db.findToken,
+                    clientInfo: flowState.clientInfo,
+                    metadata: MCPOAuthHandler.buildStoredClientMetadata(
+                      flowState.metadata,
+                      flowState.resourceMetadata,
+                      flowState.serverUrl,
+                      flowState.clientSource,
+                    ),
+                    onStoreCommitted,
+                  })) ?? candidateTokens,
+              },
+              {
+                ensureServerActive: resolveActiveServer,
+                inactiveServerError: () =>
+                  new Error(`MCP server ${serverName} was deleted during OAuth authorization`),
+                invalidateRecoveryGeneration: invalidateCachedTools,
+                clearLocalRecovery: (userId, changedServerName) =>
+                  getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
+                persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+                clearPublicationRetry: clearMCPAuthorizationFenceRetry,
+                retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
+                attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
+                flowManager,
+                onTokenFlowError: (phase, error) =>
+                  logger.warn(
+                    phase === 'prepare'
+                      ? '[MCP OAuth] Failed to clear cached token flow state'
+                      : '[MCP OAuth] Failed to wake a pending token flow',
+                    error,
+                  ),
+              },
+            );
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
               userId: flowState.userId,
@@ -660,6 +659,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                 onOAuthCredentialsChanged: (scope) =>
                   publishMCPAuthorizationMutation(scope, {
                     invalidateRecoveryGeneration: invalidateCachedTools,
+                    persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+                    clearPublicationRetry: clearMCPAuthorizationFenceRetry,
                     clearLocalRecovery: (userId, changedServerName) =>
                       getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
                     retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,

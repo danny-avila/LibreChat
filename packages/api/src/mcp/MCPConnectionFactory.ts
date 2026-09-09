@@ -17,6 +17,7 @@ import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import {
   MCPTokenStorage,
+  MCPTokenStorageUnavailableError,
   MCPOAuthHandler,
   getMCPServerGeneration,
   getMCPOAuthLeaseId,
@@ -939,6 +940,13 @@ export class MCPConnectionFactory {
       if (error instanceof ReauthenticationRequiredError) {
         logger.info(`${this.logPrefix} Reauthentication required; triggering OAuth flow`);
         return null;
+      }
+      if (
+        error instanceof MCPTokenStorageUnavailableError ||
+        (error instanceof Error && error.name === 'MCPTokenStorageUnavailableError')
+      ) {
+        logger.warn(`${this.logPrefix} OAuth token loading failed; deferring connection recovery`);
+        throw error;
       }
       logger.debug(`${this.logPrefix} No existing tokens found or token loading failed`);
       return null;

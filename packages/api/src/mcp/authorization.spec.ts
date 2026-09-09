@@ -1,6 +1,7 @@
 import {
   completeMCPAuthorizationWithTokenWaiters,
   finalizeMCPAuthorizationMutation,
+  persistMCPAuthorizationTransaction,
 } from './authorization';
 
 const scope = { userId: 'user-1', serverName: 'server-1' };
@@ -12,11 +13,11 @@ describe('completeMCPAuthorizationWithTokenWaiters', () => {
     const flowManager = {
       getFlowState: jest.fn(async (flowId: string) =>
         flowId === 'pending'
-          ? { type: 'mcp_get_tokens', status: 'PENDING' }
+          ? { type: 'mcp_get_tokens', status: 'PENDING', createdAt: 123, metadata: {} }
           : { type: 'mcp_get_tokens', status: 'COMPLETED' },
       ),
       deleteFlow: jest.fn().mockResolvedValue(undefined),
-      completeFlow: jest.fn().mockResolvedValue(undefined),
+      settleFlowIfCurrent: jest.fn().mockResolvedValue('updated'),
     };
 
     await completeMCPAuthorizationWithTokenWaiters(
@@ -25,18 +26,26 @@ describe('completeMCPAuthorizationWithTokenWaiters', () => {
     );
 
     expect(flowManager.deleteFlow).toHaveBeenCalledWith('stale', 'mcp_get_tokens');
-    expect(flowManager.completeFlow).toHaveBeenCalledWith('pending', 'mcp_get_tokens', tokens);
+    expect(flowManager.settleFlowIfCurrent).toHaveBeenCalledWith(
+      'pending',
+      'mcp_get_tokens',
+      123,
+      '',
+      tokens,
+    );
     expect(completeAuthorization.mock.invocationCallOrder[0]).toBeLessThan(
-      flowManager.completeFlow.mock.invocationCallOrder[0],
+      flowManager.settleFlowIfCurrent.mock.invocationCallOrder[0],
     );
   });
 
   it('does not expose tokens when guarded authorization completion fails', async () => {
     const error = new Error('cancelled');
     const flowManager = {
-      getFlowState: jest.fn().mockResolvedValue({ type: 'mcp_get_tokens', status: 'PENDING' }),
+      getFlowState: jest
+        .fn()
+        .mockResolvedValue({ type: 'mcp_get_tokens', status: 'PENDING', createdAt: 123 }),
       deleteFlow: jest.fn(),
-      completeFlow: jest.fn(),
+      settleFlowIfCurrent: jest.fn(),
     };
 
     await expect(
@@ -50,7 +59,51 @@ describe('completeMCPAuthorizationWithTokenWaiters', () => {
       ),
     ).rejects.toBe(error);
 
-    expect(flowManager.completeFlow).not.toHaveBeenCalled();
+    expect(flowManager.settleFlowIfCurrent).not.toHaveBeenCalled();
+  });
+});
+
+describe('persistMCPAuthorizationTransaction', () => {
+  it('keeps validation, publication, OAuth settlement, and token-waiter settlement in one boundary', async () => {
+    const tokens = { access_token: 'fresh' };
+    const persistTokens = jest.fn(async (_tokens, onStoreCommitted) => {
+      await onStoreCommitted(tokens);
+      return tokens;
+    });
+    const completeAuthorization = jest.fn().mockResolvedValue(undefined);
+    const invalidateRecoveryGeneration = jest.fn().mockResolvedValue(undefined);
+    const ensureServerActive = jest.fn().mockResolvedValue(true);
+    const flowManager = {
+      getFlowState: jest.fn().mockResolvedValue(null),
+      deleteFlow: jest.fn().mockResolvedValue(true),
+      settleFlowIfCurrent: jest.fn(),
+    };
+
+    await expect(
+      persistMCPAuthorizationTransaction(
+        {
+          scope,
+          flowIds: ['token-flow'],
+          tokens,
+          completeAuthorization,
+          persistTokens,
+        },
+        {
+          ensureServerActive,
+          inactiveServerError: () => new Error('deleted'),
+          invalidateRecoveryGeneration,
+          flowManager,
+          retryDelaysMs: [0],
+        },
+      ),
+    ).resolves.toBe(tokens);
+
+    expect(ensureServerActive.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateRecoveryGeneration.mock.invocationCallOrder[0],
+    );
+    expect(invalidateRecoveryGeneration.mock.invocationCallOrder[0]).toBeLessThan(
+      completeAuthorization.mock.invocationCallOrder[0],
+    );
   });
 });
 

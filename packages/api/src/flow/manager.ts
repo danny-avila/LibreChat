@@ -76,6 +76,25 @@ redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
 return 1
 `;
 
+/** Replaces either a pending or completed result for the exact observed attempt. This is used
+ * when a fresher durable credential must win a race with the handler that loaded the old one. */
+const GUARDED_SETTLE_FLOW = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local data = cjson.decode(raw)
+local flow = data.value
+if flow.createdAt ~= tonumber(ARGV[1]) then return -1 end
+local state = flow.metadata and flow.metadata.state or ''
+if state ~= ARGV[2] then return -1 end
+if flow.status == 'FAILED' then return -1 end
+flow.status = 'COMPLETED'
+flow.result = cjson.decode(ARGV[3])
+flow.completedAt = tonumber(ARGV[4])
+data.expires = tonumber(ARGV[4]) + tonumber(ARGV[5])
+redis.call('SET', KEYS[1], cjson.encode(data), 'PX', ARGV[5])
+return 1
+`;
+
 const READ_LEASE_GENERATION = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
@@ -521,6 +540,62 @@ export class FlowStateManager<T = unknown> {
     return 'updated';
   }
 
+  /** Publishes a result for the exact observed attempt even if that attempt completed while the
+   * caller was committing a fresher durable value. A failed or replaced attempt is never revived. */
+  async settleFlowIfCurrent(
+    flowId: string,
+    type: string,
+    expectedCreatedAt: number,
+    expectedState: string,
+    result: T,
+  ): Promise<GuardedMutationResult> {
+    const flowKey = this.getFlowKey(flowId, type);
+    const completedAt = Date.now();
+    const redisKey = this.getRedisKey(flowKey);
+    if (redisKey) {
+      const guardedResult = await this.evalRedisScript(GUARDED_SETTLE_FLOW, redisKey, [
+        String(expectedCreatedAt),
+        expectedState,
+        JSON.stringify(result) ?? 'null',
+        String(completedAt),
+        String(this.ttl),
+      ]);
+      return FlowStateManager.guardedResult(guardedResult);
+    }
+
+    const settle = (current: FlowState<T>): FlowState<T> | null => {
+      if (!FlowStateManager.isCurrentAttempt(current, expectedCreatedAt, expectedState)) {
+        return null;
+      }
+      if (current.status === 'FAILED') {
+        return null;
+      }
+      return { ...current, status: 'COMPLETED', result, completedAt };
+    };
+    const memoryEntry = this.getInMemoryEntry(flowKey);
+    if (memoryEntry) {
+      const updated = settle(memoryEntry.envelope.value);
+      if (updated == null) {
+        return 'stale';
+      }
+      memoryEntry.envelope.value = updated;
+      memoryEntry.envelope.expires = completedAt + this.ttl;
+      memoryEntry.store.set(memoryEntry.key, JSON.stringify(memoryEntry.envelope));
+      return 'updated';
+    }
+
+    const current = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+    if (!current) {
+      return 'missing';
+    }
+    const updated = settle(current);
+    if (updated == null) {
+      return 'stale';
+    }
+    await this.keyv.set(flowKey, updated, this.ttl);
+    return 'updated';
+  }
+
   private isTokenExpired(flowState: FlowState<T> | undefined): boolean {
     if (!flowState?.result || typeof flowState.result !== 'object') {
       return false;
@@ -893,14 +968,20 @@ export class FlowStateManager<T = unknown> {
 
     try {
       const result = await handler();
-      await this.completeFlow(flowId, type, result);
+      await this.completeFlowIfCurrent(flowId, type, initialState.createdAt, '', result);
       const completedState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
       if (completedState?.status === 'COMPLETED' && completedState.result !== undefined) {
         return completedState.result;
       }
       return result;
     } catch (error) {
-      await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));
+      await this.failFlowIfCurrent(
+        flowId,
+        type,
+        initialState.createdAt,
+        '',
+        error instanceof Error ? error : new Error(String(error)),
+      );
       throw error;
     }
   }

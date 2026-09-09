@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
 import TagManager from 'react-gtm-module';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { installCloudFrontImageRetry } from '@librechat/client';
 import {
   getTokenHeader,
@@ -27,6 +27,7 @@ export default function useAppStartup({
 }) {
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const activeConversation = useRecoilValue(store.conversationByIndex(0));
+  const conversationHydrated = activeConversation != null;
   const isEphemeralAgentActive =
     isAgentsEndpoint(activeConversation?.endpoint) &&
     isEphemeralAgentId(activeConversation?.agent_id);
@@ -51,6 +52,7 @@ export default function useAppStartup({
       !serversLoading &&
       !!loadedServers &&
       Object.keys(loadedServers).length > 0 &&
+      conversationHydrated &&
       !isEphemeralAgentActive &&
       !!user,
   });

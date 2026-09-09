@@ -28,6 +28,15 @@ export class ReauthenticationRequiredError extends Error {
   }
 }
 
+/** Durable credentials could not be read or decrypted. This is retryable infrastructure state,
+ * never evidence that the user must authorize the server again. */
+export class MCPTokenStorageUnavailableError extends Error {
+  constructor(serverName: string, cause: unknown) {
+    super(`OAuth token storage is unavailable for "${serverName}"`, { cause });
+    this.name = 'MCPTokenStorageUnavailableError';
+  }
+}
+
 interface StoreTokensParams {
   userId: string;
   serverName: string;
@@ -1314,7 +1323,7 @@ export class MCPTokenStorage {
         throw error;
       }
       logger.error(`${logPrefix} Failed to retrieve tokens`, error);
-      return null;
+      throw new MCPTokenStorageUnavailableError(serverName, error);
     }
   }
 

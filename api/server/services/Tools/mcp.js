@@ -31,6 +31,10 @@ const {
   invalidateCachedTools,
 } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
 
 const MCP_REINITIALIZE_FAILURE_REASONS = {
   UNREACHABLE: 'unreachable',
@@ -67,6 +71,8 @@ async function loadMCPServerCatalogs({
   const onOAuthCredentialsChanged = (scope) =>
     publishMCPAuthorizationMutation(scope, {
       invalidateRecoveryGeneration: invalidateCachedTools,
+      persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+      clearPublicationRetry: clearMCPAuthorizationFenceRetry,
       clearLocalRecovery: (userId, serverName) =>
         mcpManager.clearCatalogRecoveryState?.(userId, serverName),
       retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
@@ -252,6 +258,8 @@ async function reinitMCPServer({
     const onOAuthCredentialsChanged = (scope) =>
       publishMCPAuthorizationMutation(scope, {
         invalidateRecoveryGeneration: invalidateCachedTools,
+        persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+        clearPublicationRetry: clearMCPAuthorizationFenceRetry,
         clearLocalRecovery: (userId, changedServerName) =>
           mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
         retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,

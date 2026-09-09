@@ -3,7 +3,12 @@ import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
-import { MCPOAuthHandler, MCPTokenStorage, OboTokenResolutionError } from '~/mcp/oauth';
+import {
+  MCPOAuthHandler,
+  MCPTokenStorage,
+  OboTokenResolutionError,
+  ReauthenticationRequiredError,
+} from '~/mcp/oauth';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { preProcessGraphTokens } from '~/utils/graph';
@@ -659,7 +664,7 @@ describe('MCPConnectionFactory', () => {
       mockMCPTokenStorage.assertCredentialSetBinding.mockImplementationOnce(
         (_serverName, tokenCredentialSetId, clientMetadata) => {
           if (tokenCredentialSetId !== clientMetadata?.credential_set_id) {
-            throw new Error('mixed OAuth credential generations');
+            throw new ReauthenticationRequiredError('test-server', 'binding');
           }
         },
       );
@@ -852,7 +857,7 @@ describe('MCPConnectionFactory', () => {
       },
     );
 
-    it('should handle token retrieval errors gracefully', async () => {
+    it('does not misclassify token storage failures as missing authorization', async () => {
       const basicOptions = {
         serverName: 'test-server',
         serverConfig: mockServerConfig,
@@ -870,25 +875,16 @@ describe('MCPConnectionFactory', () => {
         },
       };
 
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('Token fetch failed'));
-      mockConnectionInstance.isConnected.mockResolvedValue(true);
-
-      const connection = await MCPConnectionFactory.create(basicOptions, oauthOptions);
-
-      expect(connection).toBe(mockConnectionInstance);
-      expect(mockMCPConnection).toHaveBeenCalledWith({
-        serverName: 'test-server',
-        serverConfig: mockServerConfig,
-        userId: 'user123',
-        oauthTokens: null,
-        useSSRFProtection: false,
-        allowedAddresses: undefined,
-        ephemeralConnection: false,
-      });
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        '[MCP][User: user123] No existing tokens found or token loading failed',
+      const storageError = new Error('OAuth token storage is unavailable for "test-server"');
+      storageError.name = 'MCPTokenStorageUnavailableError';
+      mockFlowManager.createFlowWithHandler.mockRejectedValue(storageError);
+      await expect(MCPConnectionFactory.create(basicOptions, oauthOptions)).rejects.toThrow(
+        'OAuth token storage is unavailable',
       );
-      expect(JSON.stringify(mockLogger.debug.mock.calls)).not.toContain('Token fetch failed');
+      expect(mockMCPConnection).not.toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[MCP][User: user123] OAuth token loading failed; deferring connection recovery',
+      );
     });
   });
 

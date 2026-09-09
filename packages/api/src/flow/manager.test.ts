@@ -149,6 +149,39 @@ describe('FlowStateManager', () => {
       });
     });
 
+    it('settles a fresher result over a completion from the same observed attempt', async () => {
+      await flowManager.initFlow('token-flow', 'mcp_get_tokens');
+      const flow = await flowManager.getFlowState('token-flow', 'mcp_get_tokens');
+      await flowManager.completeFlow('token-flow', 'mcp_get_tokens', 'old-token');
+
+      await expect(
+        flowManager.settleFlowIfCurrent(
+          'token-flow',
+          'mcp_get_tokens',
+          flow!.createdAt,
+          '',
+          'fresh-token',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await flowManager.getFlowState('token-flow', 'mcp_get_tokens')).toMatchObject({
+        status: 'COMPLETED',
+        result: 'fresh-token',
+      });
+    });
+
+    it('does not settle a replacement token-flow attempt', async () => {
+      await flowManager.initFlow('token-flow', 'mcp_get_tokens');
+
+      await expect(
+        flowManager.settleFlowIfCurrent('token-flow', 'mcp_get_tokens', 1, '', 'old-token'),
+      ).resolves.toBe('stale');
+
+      expect(await flowManager.getFlowState('token-flow', 'mcp_get_tokens')).toMatchObject({
+        status: 'PENDING',
+      });
+    });
+
     it('fails only the observed OAuth attempt', async () => {
       await flowManager.initFlow('oauth-flow', 'mcp_oauth', { state: 'expected-state' });
       const flow = await flowManager.getFlowState('oauth-flow', 'mcp_oauth');

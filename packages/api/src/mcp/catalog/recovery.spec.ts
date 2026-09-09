@@ -91,27 +91,49 @@ describe('publishMCPAuthorizationMutation', () => {
       .mockRejectedValueOnce(new Error('cache unavailable'))
       .mockResolvedValue(undefined);
     const clearLocalRecovery = jest.fn();
+    const persistPublicationRetry = jest.fn().mockResolvedValue(undefined);
+    const clearPublicationRetry = jest.fn().mockResolvedValue(undefined);
 
     await publishMCPAuthorizationMutation(
       { userId: user.id, serverName: 'oauth' },
-      { invalidateRecoveryGeneration, clearLocalRecovery, retryDelaysMs: [0, 0] },
+      {
+        invalidateRecoveryGeneration,
+        clearLocalRecovery,
+        persistPublicationRetry,
+        clearPublicationRetry,
+        retryDelaysMs: [0, 0],
+      },
     );
 
     expect(invalidateRecoveryGeneration).toHaveBeenCalledTimes(2);
+    expect(persistPublicationRetry.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateRecoveryGeneration.mock.invocationCallOrder[0],
+    );
+    expect(clearPublicationRetry).toHaveBeenCalledWith({ userId: user.id, serverName: 'oauth' });
     expect(clearLocalRecovery).toHaveBeenCalledWith(user.id, 'oauth');
   });
 
   it('bounds each shared fence attempt', async () => {
     const invalidateRecoveryGeneration = jest.fn(() => new Promise(() => undefined));
+    const persistPublicationRetry = jest.fn().mockResolvedValue(undefined);
+    const clearPublicationRetry = jest.fn();
 
     await expect(
       publishMCPAuthorizationMutation(
         { userId: user.id, serverName: 'oauth' },
-        { invalidateRecoveryGeneration, retryDelaysMs: [0], attemptTimeoutMs: 5 },
+        {
+          invalidateRecoveryGeneration,
+          persistPublicationRetry,
+          clearPublicationRetry,
+          retryDelaysMs: [0],
+          attemptTimeoutMs: 5,
+        },
       ),
     ).rejects.toThrow('MCP authorization generation publication timed out');
 
     expect(invalidateRecoveryGeneration).toHaveBeenCalledTimes(1);
+    expect(persistPublicationRetry).toHaveBeenCalledTimes(1);
+    expect(clearPublicationRetry).not.toHaveBeenCalled();
   });
 });
 

@@ -8,7 +8,8 @@ const {
   setMCPToolsChangedGenerationRenewalHandler,
   setMCPToolsChangedRevisionHandler,
 } = require('@librechat/api');
-const { syncStaticTools, mergeAppTools, getAppConfig } = require('./Config');
+const { syncStaticTools, mergeAppTools, getAppConfig, invalidateCachedTools } = require('./Config');
+const { startMCPAuthorizationFenceRetryWorker } = require('./MCPAuthorizationFenceRetry');
 const {
   getMCPToolsCacheGeneration,
   renewMCPToolsCacheGeneration,
@@ -116,6 +117,7 @@ async function initializeMCPs() {
     const mcpManager = await createMCPManager(mcpServers || {}, {
       catalogRecoveryMaxStateEntries: appConfig?.mcpSettings?.catalogRecovery?.maxStateEntries,
     });
+    startMCPAuthorizationFenceRetryWorker(invalidateCachedTools);
     setMCPToolsChangedHandler(refreshChangedServerTools);
     setMCPToolsChangedGenerationHandler(getMCPToolsCacheGeneration);
     setMCPToolsChangedGenerationRenewalHandler(renewMCPToolsCacheGeneration);
