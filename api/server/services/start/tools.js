@@ -16,7 +16,7 @@ const { toolkits } = require('~/app/clients/tools/manifest');
 /**
  * Loads and formats tools from the specified tool directory.
  *
- * The directory is scanned for JavaScript files, excluding any files in the filter set.
+ * The directory is scanned for JavaScript files, excluding test files and any files in the filter set.
  * For each file, it attempts to load the file as a module and instantiate a class, if it's a subclass of `StructuredTool`.
  * Each tool instance is then formatted to be compatible with the OpenAI Assistant.
  * Additionally, instances of LangChain Tools are included in the result.
@@ -42,7 +42,11 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
 
   for (const file of files) {
     const filePath = path.join(directory, file);
-    if (!file.endsWith('.js') || (filter.has(file) && included.size === 0)) {
+    if (
+      !file.endsWith('.js') ||
+      /\.(spec|test)\.js$/.test(file) ||
+      (filter.has(file) && included.size === 0)
+    ) {
       continue;
     }
 
