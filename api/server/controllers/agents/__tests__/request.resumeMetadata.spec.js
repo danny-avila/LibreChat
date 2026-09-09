@@ -326,10 +326,16 @@ jest.mock('@librechat/api', () => ({
     agent?.toolDefinitions?.some((tool) => tool?.name === 'ask_user_question') === true,
   isAgentEventRetentionActive: (expiredAt) =>
     expiredAt == null || new Date(expiredAt).getTime() > Date.now(),
-  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+  createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
     parentMessageId,
+    codeWorkspaces,
+  }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+    ...(codeWorkspaces !== undefined ? { codeWorkspaces } : {}),
   }),
 }));
 
@@ -4201,45 +4207,56 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
-  it('proceeds to create the job when it wins the idempotency claim', async () => {
-    mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
-    const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Fresh submission.',
-        messageId: 'user-msg',
-        clientRequestId: 'req-abc',
-        conversationId: 'conversation-123',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-    const res = {
-      headersSent: true,
-      json: jest.fn(() => {
-        res.headersSent = true;
-      }),
-      status: jest.fn(() => res),
-      set: jest.fn(),
-    };
-
-    await AgentController(req, res, jest.fn(), initializeClient, null);
-
-    expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
-    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
-      'conversation-123',
-      'user-123',
-      'conversation-123',
-      expect.objectContaining({
-        startupTelemetry: mockStartupTelemetry,
-        initialMetadata: expect.objectContaining({
+  it.each(['submitted', 'persisted'])(
+    'preserves %s workspace selections in the runtime envelope',
+    async (source) => {
+      mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
+      const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
+      const codeWorkspaces = [{ environmentId: 'machine-a', workspaceId: 'project-b' }];
+      const req = {
+        user: { id: 'user-123' },
+        ...(source === 'persisted' ? { resolvedConversation: { codeWorkspaces } } : {}),
+        body: {
+          ...(source === 'submitted' ? { codeWorkspaces } : {}),
+          text: 'Fresh submission.',
+          messageId: 'user-msg',
+          clientRequestId: 'req-abc',
           conversationId: 'conversation-123',
-          endpoint: 'agents',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        },
+        config: {},
+      };
+      const res = {
+        headersSent: true,
+        json: jest.fn(() => {
+          res.headersSent = true;
         }),
-      }),
-    );
-  });
+        status: jest.fn(() => res),
+        set: jest.fn(),
+      };
+
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+
+      expect(initializeClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({ codeWorkspaces }),
+        }),
+      );
+      expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
+      expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+        'conversation-123',
+        'user-123',
+        'conversation-123',
+        expect.objectContaining({
+          startupTelemetry: mockStartupTelemetry,
+          initialMetadata: expect.objectContaining({
+            conversationId: 'conversation-123',
+            endpoint: 'agents',
+          }),
+        }),
+      );
+    },
+  );
 
   it('retains terminal metadata for the first event in an empty bound actor thread', async () => {
     const expiredAt = new Date(Date.now() + 60_000);

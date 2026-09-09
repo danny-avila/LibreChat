@@ -4496,6 +4496,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeWorkspaces:
+                this.options.req.body.codeWorkspaces ??
+                this.options.req.resolvedConversation?.codeWorkspaces,
             }),
           user: createSafeUser(this.options.req.user),
         },
@@ -5268,6 +5271,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeWorkspaces:
+                this.options.req.body.codeWorkspaces ??
+                this.options.req.resolvedConversation?.codeWorkspaces,
             }),
           user: createSafeUser(this.options.req.user),
         },

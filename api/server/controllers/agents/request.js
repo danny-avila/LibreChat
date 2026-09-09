@@ -1483,6 +1483,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId: effectiveConversationId,
+    codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
     parentMessageId:
       editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
   });

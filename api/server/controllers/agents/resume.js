@@ -1827,6 +1827,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         createMCPRuntimeRequestBody({
           messageId: job.metadata.responseMessageId,
           conversationId: streamId,
+          codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
           parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
         }),
     });
