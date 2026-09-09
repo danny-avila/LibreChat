@@ -98,9 +98,15 @@ export default function useAutoRetry({
 
   /**
    * Connectivity returning is the strongest signal available, so it resets the
-   * backoff and fires at once instead of waiting out the current delay. Focus
-   * counts too: a request that failed while the tab was hidden would otherwise
-   * sit on a stale error, since browsers throttle background timers.
+   * backoff and fires at once instead of waiting out the current delay. Coming back
+   * to the view counts too: a request that failed while the tab was hidden — or while
+   * the window was behind another one, which throttles timers just the same — would
+   * otherwise sit on a stale error, and once the backoff is spent nothing else would
+   * ever retry it.
+   *
+   * Switching back to a background tab fires `visibilitychange` and `focus` together,
+   * and a window that only lost focus fires `focus` alone, so recovery is counted once
+   * per activation rather than once per event.
    */
   useEffect(() => {
     if (!enabled) {
@@ -114,17 +120,34 @@ export default function useAutoRetry({
       }
       restart();
     };
-    const recoverWhenVisible = () => {
+    let active = document.visibilityState === 'visible' && document.hasFocus();
+    const activate = () => {
+      if (document.visibilityState !== 'visible' || active) {
+        return;
+      }
+      active = true;
+      recover();
+    };
+    const deactivate = () => {
+      active = false;
+    };
+    const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        recover();
+        activate();
+      } else {
+        deactivate();
       }
     };
 
     window.addEventListener('online', recover);
-    document.addEventListener('visibilitychange', recoverWhenVisible);
+    window.addEventListener('focus', activate);
+    window.addEventListener('blur', deactivate);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('online', recover);
-      document.removeEventListener('visibilitychange', recoverWhenVisible);
+      window.removeEventListener('focus', activate);
+      window.removeEventListener('blur', deactivate);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [enabled, restart]);
 

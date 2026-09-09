@@ -37,6 +37,7 @@ const {
   isContentTraversalProtected,
   isContentTraversalLimitError,
   resolveCanonicalFileReferences,
+  resolveMarketplaceListQuery,
 } = require('@librechat/api');
 const {
   Time,
@@ -92,9 +93,6 @@ const systemTools = {
 
 const MAX_SEARCH_LEN = 100;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** Marketplace list sort modes; validated against this allowlist rather than trusting
- * the query string directly, since the value flows into a `$sort`/`$lookup` pipeline. */
-const ALLOWED_SORTS = new Set(['newest', 'oldest', 'popular', 'author']);
 const getSafeModelParameters = (modelParameters) => {
   const { useResponsesApi } = modelParameters ?? {};
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
@@ -1675,8 +1673,8 @@ const deleteAgentHandler = async (req, res) => {
 const getListAgentsHandler = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { category, search, limit = 100, cursor, promoted, sort, mine } = req.query;
-    const sortMode = ALLOWED_SORTS.has(sort) ? sort : 'newest';
+    const { category, search, limit = 100, cursor, promoted } = req.query;
+    const { sort: sortMode, mineOnly } = resolveMarketplaceListQuery(req.query);
     let requiredPermission = req.query.requiredPermission;
     if (typeof requiredPermission === 'string') {
       requiredPermission = parseInt(requiredPermission, 10);
@@ -1711,7 +1709,7 @@ const getListAgentsHandler = async (req, res) => {
     // "Only my agents" filter - narrows to agents authored by the caller, on top of
     // (not instead of) the ACL-resolved `accessibleIds` below. No tenant/role logic
     // here: it's a plain author match, same as any other `filter` field.
-    if (mine === '1') {
+    if (mineOnly) {
       filter.author = userId;
     }
 
