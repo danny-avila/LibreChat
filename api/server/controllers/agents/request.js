@@ -6,6 +6,7 @@ const {
   ErrorTypes,
   ViolationTypes,
   isEphemeralAgentId,
+  isCodeWorkspaceSelectionErrorReason,
 } = require('librechat-data-provider');
 const {
   toPendingSteer,
@@ -110,6 +111,10 @@ function getInitializationFailure(error) {
   return {
     status: candidateStatus,
     ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+    ...(error?.code === ErrorTypes.CODE_WORKSPACE_UNAVAILABLE &&
+    isCodeWorkspaceSelectionErrorReason(error?.reason)
+      ? { reason: error.reason }
+      : {}),
     error: error?.message || 'Failed to start generation',
   };
 }

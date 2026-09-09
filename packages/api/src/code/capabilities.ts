@@ -1,9 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorTypes, isCodeWorkspaceSelections } from 'librechat-data-provider';
-import type { CodeWorkspaceSelection } from 'librechat-data-provider';
+import type {
+  CodeWorkspaceSelection,
+  CodeWorkspaceSelectionErrorReason,
+} from 'librechat-data-provider';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
 import type { createAppConfigService } from '~/app/service';
 import type { CodeBridgeWorkerStatus } from './bridge';
+export type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 import {
   CodeBridgeStatusError,
   createCodeBridgeStatusPoller,
@@ -13,13 +17,6 @@ import {
 export type CodeCapabilityConfigLoader = ReturnType<typeof createAppConfigService>['getAppConfig'];
 
 const pollWorkerStatus = createCodeBridgeStatusPoller();
-
-export type CodeWorkspaceSelectionErrorReason =
-  | 'required'
-  | 'invalid'
-  | 'worker_unavailable'
-  | 'unsupported'
-  | 'missing';
 
 function codeWorkspaceSelectionErrorMessage(reason: CodeWorkspaceSelectionErrorReason): string {
   switch (reason) {

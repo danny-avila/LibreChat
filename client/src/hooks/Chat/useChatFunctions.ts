@@ -332,11 +332,12 @@ export default function useChatFunctions({
         ? latestCodeApprovalMode
         : fallbackCodeApprovalMode;
     const latestCodeWorkspaces = getConversation()?.codeWorkspaces ?? conversation?.codeWorkspaces;
-    const codeWorkspaces = codeWorkspaceState.resolveSelections(latestCodeWorkspaces);
-    if (codeWorkspaceState.required && codeWorkspaces == null) {
+    const workspaceSubmission = codeWorkspaceState.resolveSubmission(latestCodeWorkspaces);
+    if (workspaceSubmission == null) {
       logger.warn('[useChatFunctions] Refusing to send without an available code workspace');
       return false;
     }
+    const { codeWorkspaces } = workspaceSubmission;
 
     const endpoint = conversation?.endpoint;
     if (endpoint === null) {

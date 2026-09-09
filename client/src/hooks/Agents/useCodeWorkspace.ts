@@ -1,6 +1,11 @@
 import { useCallback, useMemo } from 'react';
 import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
-import { EModelEndpoint, Tools, isCodeWorkspaceSelections } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  Tools,
+  isEphemeralAgentId,
+  isCodeWorkspaceSelections,
+} from 'librechat-data-provider';
 import type {
   CodeWorkspaceDescriptor,
   CodeWorkspaceSelection,
@@ -35,11 +40,15 @@ export interface CodeWorkspaceEnvironmentResult {
 export interface CodeWorkspaceResult {
   required: boolean;
   state: CodeWorkspaceState;
+  canSubmit: boolean;
   environments: CodeWorkspaceEnvironmentResult[];
   selections?: CodeWorkspaceSelection[];
   resolveSelections: (
     selections?: CodeWorkspaceSelection[],
   ) => CodeWorkspaceSelection[] | undefined;
+  resolveSubmission: (
+    selections?: CodeWorkspaceSelection[],
+  ) => { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined;
 }
 
 function aggregateState(
@@ -84,7 +93,7 @@ export default function useCodeWorkspace(
   conversation: TConversation | null,
   addedConversation?: TConversation | null,
 ): CodeWorkspaceResult {
-  const { agentsConfig } = useGetAgentsConfig();
+  const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
     permissionType: PermissionTypes.RUN_CODE,
     permission: Permissions.USE,
@@ -126,14 +135,22 @@ export default function useCodeWorkspace(
   const isAgentsConversation =
     (conversation?.endpointType ?? conversation?.endpoint) === EModelEndpoint.agents;
   const expectedRoot = conversation?.agent_id != null || addedConversation?.agent_id != null;
+  const expectedSavedAgent = [conversation?.agent_id, addedConversation?.agent_id].some(
+    (agentId) => agentId != null && !isEphemeralAgentId(agentId),
+  );
+  const configurationLoaded = endpointsConfig !== undefined || agentsConfig != null;
+  const configurationPending =
+    canRunCode && isAgentsConversation && expectedSavedAgent && !configurationLoaded;
   const attachedEnvironments = workspaceMetadata.environments;
   const metadataComplete =
     !isAgentsConversation || !expectedRoot || (reachable.complete && workspaceMetadata.complete);
   const required =
-    codeEnabled && isAgentsConversation && (!metadataComplete || attachedEnvironments.length > 0);
+    configurationPending ||
+    (codeEnabled && isAgentsConversation && (!metadataComplete || attachedEnvironments.length > 0));
+  const selectionMetadataComplete = !configurationPending && metadataComplete;
   const statuses = useCodeEnvironmentStatusQueries(
     attachedEnvironments.map(({ id }) => id),
-    required && metadataComplete,
+    required && selectionMetadataComplete,
   );
   const storedSelections = conversation?.codeWorkspaces;
   const environmentResults = attachedEnvironments.map((environment, index) => {
@@ -166,7 +183,7 @@ export default function useCodeWorkspace(
 
   const resolveSelections = useCallback(
     (selections?: CodeWorkspaceSelection[]): CodeWorkspaceSelection[] | undefined => {
-      if (!required || !metadataComplete || !isCodeWorkspaceSelections(selections ?? [])) {
+      if (!required || !selectionMetadataComplete || !isCodeWorkspaceSelections(selections ?? [])) {
         return undefined;
       }
       const resolved: CodeWorkspaceSelection[] = [];
@@ -198,10 +215,31 @@ export default function useCodeWorkspace(
       }
       return resolved.sort((a, b) => a.environmentId.localeCompare(b.environmentId));
     },
-    [environmentResults, metadataComplete, required],
+    [environmentResults, required, selectionMetadataComplete],
   );
 
   const selections = resolveSelections(storedSelections);
-  const state = aggregateState(required, metadataComplete, environmentResults, selections);
-  return { required, state, environments: environmentResults, selections, resolveSelections };
+  const state = configurationPending
+    ? 'loading'
+    : aggregateState(required, metadataComplete, environmentResults, selections);
+  const resolveSubmission = useCallback(
+    (
+      candidateSelections?: CodeWorkspaceSelection[],
+    ): { codeWorkspaces?: CodeWorkspaceSelection[] } | undefined => {
+      if (!required) return {};
+      const codeWorkspaces = resolveSelections(candidateSelections);
+      return codeWorkspaces == null ? undefined : { codeWorkspaces };
+    },
+    [required, resolveSelections],
+  );
+  const canSubmit = resolveSubmission(storedSelections) != null;
+  return {
+    required,
+    state,
+    canSubmit,
+    environments: environmentResults,
+    selections,
+    resolveSelections,
+    resolveSubmission,
+  };
 }

@@ -2667,6 +2667,45 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it.each([
+    ['required', 'required'],
+    ['future_reason', undefined],
+  ])('serializes only allowlisted workspace reason %s', async (reason, expectedReason) => {
+    const workspaceError = Object.assign(new Error('Choose an attached workspace'), {
+      code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+      reason,
+      status: 409,
+      statusCode: 409,
+    });
+    const initializeClient = jest.fn().mockRejectedValue(workspaceError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Edit the project.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 409,
+        code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+        ...(expectedReason == null ? {} : { reason: expectedReason }),
+        error: 'Choose an attached workspace',
+      }),
+      1000,
+      expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+    );
+  });
+
   it('preserves a stateful scope policy denial in the durable initialization error', async () => {
     const policyError = Object.assign(
       new Error('Stateful code environment is not allowed by this deployment: conversation'),
