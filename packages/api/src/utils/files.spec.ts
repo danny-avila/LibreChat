@@ -3,6 +3,7 @@ import {
   sanitizeArtifactPath,
   flattenArtifactPath,
   resolveUploadErrorMessage,
+  resolveUploadErrorStatusCode,
 } from './files';
 
 jest.mock('node:crypto', () => {
@@ -611,6 +612,17 @@ describe('resolveUploadErrorMessage', () => {
     expect(resolveUploadErrorMessage({ message: 'file_ids limit' }, 'Upload failed', true)).toBe(
       'Upload failed: File limit reached',
     );
+  });
+});
+
+describe('resolveUploadErrorStatusCode', () => {
+  it('accepts safe user-facing HTTP status codes', () => {
+    expect(resolveUploadErrorStatusCode({ userErrorStatusCode: 413 })).toBe(413);
+  });
+
+  it('falls back to 500 for absent or invalid status codes', () => {
+    expect(resolveUploadErrorStatusCode(undefined)).toBe(500);
+    expect(resolveUploadErrorStatusCode({ userErrorStatusCode: 200 })).toBe(500);
   });
 });
 

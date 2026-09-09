@@ -366,13 +366,14 @@ export type SkillFileRow = LedgerRow & {
  */
 export function persistFileWithQuota<TRow extends FileRow, TResult>(
   params: PersistParams<TRow, TResult> & {
-    replacing?: { user?: unknown; tenantId?: string | null } | null;
+    replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null;
   },
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   const { replacing, ...rest } = params;
   const replacedByRequester =
     replacing != null &&
+    replacing.file_id === rest.row.file_id &&
     idsMatch(replacing.user as string, params.scope.userId) &&
     tenantsMatch(replacing.tenantId, params.scope.tenantId);
   const replacementKey =

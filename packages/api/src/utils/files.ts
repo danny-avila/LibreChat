@@ -119,6 +119,15 @@ export function resolveUploadErrorMessage(
   return defaultMessage;
 }
 
+export function resolveUploadErrorStatusCode(
+  error: { userErrorStatusCode?: number } | null | undefined,
+): number {
+  const statusCode = error?.userErrorStatusCode;
+  return Number.isInteger(statusCode) && statusCode! >= 400 && statusCode! <= 599
+    ? statusCode!
+    : 500;
+}
+
 /**
  * Sanitize a filename by removing any directory components, replacing unsafe characters
  * @param inputName

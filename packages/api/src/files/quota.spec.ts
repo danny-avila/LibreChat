@@ -243,7 +243,7 @@ describe('persistFileWithQuota', () => {
     await persistFileWithQuota({ ...params, write: async (row) => row }, noRollbackErrors);
     const write = jest.fn(async (row: { bytes: number }) => row);
     await persistFileWithQuota(
-      { ...params, replacing: { user: userId }, replacedBytes: 6, write },
+      { ...params, replacing: { file_id: 'file-1', user: userId }, replacedBytes: 6, write },
       noRollbackErrors,
     );
 
@@ -281,7 +281,7 @@ describe('persistFileWithQuota', () => {
       {
         scope,
         row: { bytes: 8, file_id: 'file-1' },
-        replacing: { user: userId },
+        replacing: { file_id: 'file-1', user: userId },
         replacedBytes: 6,
         write: async (row) => row,
         rollback: null,
@@ -308,7 +308,24 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 11, file_id: 'foreign-file' },
-          replacing: { user: '64f0000000000000000000ff' },
+          replacing: { file_id: 'foreign-file', user: '64f0000000000000000000ff' },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not credit a different owned file as the replacement', async () => {
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 11, file_id: 'new-file' },
+          replacing: { file_id: 'large-existing-file', user: userId },
           replacedBytes: 20,
           write: async (row) => row,
           rollback: null,
@@ -385,7 +402,7 @@ describe('persistFileWithQuota', () => {
       {
         scope,
         row: { bytes: 4, file_id: 'file-a' },
-        replacing: { user: userId },
+        replacing: { file_id: 'file-a', user: userId },
         replacedBytes: 8,
         write: async (row) => {
           await replacementWrite;
@@ -423,7 +440,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'same-file' },
-          replacing: { user: userId },
+          replacing: { file_id: 'same-file', user: userId },
           replacedBytes: 100,
           write: async (row) => row,
           rollback: null,
@@ -435,7 +452,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'same-file' },
-          replacing: { user: userId },
+          replacing: { file_id: 'same-file', user: userId },
           replacedBytes: 100,
           write: async (row) => row,
           rollback: null,
@@ -469,7 +486,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'empty-file' },
-          replacing: { user: userId },
+          replacing: { file_id: 'empty-file', user: userId },
           replacedBytes: 0,
           write: async (row) => row,
           rollback: null,
@@ -481,7 +498,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'empty-file' },
-          replacing: { user: userId },
+          replacing: { file_id: 'empty-file', user: userId },
           replacedBytes: 0,
           write: async (row) => row,
           rollback: null,
@@ -532,7 +549,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 5, file_id: 'replacement' },
-          replacing: { user: userId },
+          replacing: { file_id: 'replacement', user: userId },
           replacedBytes: 20,
           write: async () => null,
           rollback: null,
@@ -649,7 +666,7 @@ describe('persistFileWithQuota', () => {
         {
           scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
           row: { bytes: 4 * megabyte, file_id: 'file-1' },
-          replacing: { user: userId },
+          replacing: { file_id: 'file-1', user: userId },
           replacedBytes: 2 * megabyte,
           write: jest.fn(),
           rollback: null,

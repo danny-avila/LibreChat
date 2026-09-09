@@ -8,6 +8,7 @@ const {
   startUploadSseStream,
   sendUploadPolicyError,
   resolveUploadErrorMessage,
+  resolveUploadErrorStatusCode,
   verifyAgentUploadPermission,
   assertUploadContentAllowed,
   hasActiveFilePolicy,
@@ -196,13 +197,7 @@ router.post('/', async (req, res) => {
       'Error processing file',
       contentProtectionActive,
     );
-    const userErrorStatusCode = error?.userErrorStatusCode;
-    const errorStatusCode =
-      Number.isInteger(userErrorStatusCode) &&
-      userErrorStatusCode >= 400 &&
-      userErrorStatusCode <= 599
-        ? userErrorStatusCode
-        : 500;
+    const errorStatusCode = resolveUploadErrorStatusCode(error);
     if (sseStream) {
       sseStream.sendError({
         message,
