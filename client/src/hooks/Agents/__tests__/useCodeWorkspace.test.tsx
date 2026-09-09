@@ -99,6 +99,26 @@ describe('useCodeWorkspace', () => {
     expect(mockStatus).toHaveBeenCalledWith(['personal-vm'], true);
   });
 
+  it.each(['ephemeral', 'openAI__gpt-4o'])('does not block ephemeral agent %s', (agent_id) => {
+    mockAgentPermissions.mockReturnValue({});
+    const { result } = renderHook(() => useCodeWorkspace({ ...conversation(), agent_id }));
+    expect(result.current.required).toBe(false);
+    expect(result.current.state).toBe('not_required');
+    expect(mockStatus).toHaveBeenLastCalledWith([], false);
+  });
+
+  it('still blocks missing saved-agent metadata alongside an ephemeral agent', () => {
+    mockAgentPermissions.mockReturnValue({});
+    const { result } = renderHook(() =>
+      useCodeWorkspace(
+        { ...conversation(), agent_id: 'ephemeral' },
+        { ...conversation(), agent_id: 'agent_missing' },
+      ),
+    );
+    expect(result.current.required).toBe(true);
+    expect(result.current.state).toBe('unavailable');
+  });
+
   it.each([false, undefined])('rejects non-stateful worker support: %s', (statefulWorkspace) => {
     const statuses = mockStatus();
     statuses[0].data.statefulWorkspace = statefulWorkspace;

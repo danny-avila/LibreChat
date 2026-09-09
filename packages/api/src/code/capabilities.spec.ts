@@ -333,6 +333,49 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     });
   });
 
+  it.each(['worker', 'replacement', undefined])(
+    'pins deployment worker identity: %s',
+    async (workerId) => {
+      const fetch = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(workspaceStatus([{ id: 'project-a' }]));
+      const deploymentEnvironment: CodeEnvironmentConfig = {
+        id: 'fixed',
+        name: 'Fixed VM',
+        type: 'attached',
+        owner: 'deployment',
+        baseURL: context.baseUrl,
+        pairing: { workerId, tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN' },
+      };
+      const pending = resolveCodeExecutionWorkspaceContext({
+        context: { ...context, environmentId: 'fixed' },
+        requestedSelections: [{ environmentId: 'fixed', workspaceId: 'project-a' }],
+        environments: [
+          {
+            ...deploymentEnvironment,
+            pairing: { ...deploymentEnvironment.pairing, workerId: 'worker' },
+          },
+        ],
+        getAppConfig: jest.fn(
+          async () =>
+            ({
+              endpoints: {
+                agents: { statefulCodeSessions: { environments: [deploymentEnvironment] } },
+              },
+            }) as AppConfig,
+        ),
+      });
+      if (workerId === 'worker') {
+        await expect(pending).resolves.toMatchObject({
+          codeWorkspace: { workspaceId: 'project-a' },
+        });
+      } else {
+        await expect(pending).rejects.toMatchObject({ reason: 'worker_unavailable' });
+        expect(fetch).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it('uses the persisted binding when the request omits one', async () => {
     jest.spyOn(globalThis, 'fetch').mockResolvedValue(workspaceStatus([{ id: 'project-a' }]));
 

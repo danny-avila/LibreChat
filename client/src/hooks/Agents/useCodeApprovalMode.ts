@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   EModelEndpoint,
   Tools,
+  isEphemeralAgentId,
   getAllowedCodeApprovalModes,
   CODE_APPROVAL_MODES,
 } from 'librechat-data-provider';
@@ -113,7 +114,7 @@ export function collectReachableAgents(
   const visited = new Set<string>();
   const agents: Agent[] = [];
   let complete = expectedRootIds.every(
-    (id) => id == null || roots.some((agent) => agent?.id === id),
+    (id) => isEphemeralAgentId(id) || roots.some((agent) => agent?.id === id),
   );
   while (pending.length > 0) {
     const agent = pending.pop();

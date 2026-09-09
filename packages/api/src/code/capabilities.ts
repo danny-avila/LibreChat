@@ -75,6 +75,9 @@ async function readAuthorizedAttachedWorkerStatus(
   );
   if (
     !controlPlane ||
+    (selected?.workerId ?? selected?.pairing?.workerId) !== context.bridgeWorkerId ||
+    (selected?.owner === 'deployment' &&
+      controlPlane.pairing?.workerId !== context.bridgeWorkerId) ||
     controlPlane.baseURL.replace(/\/+$/, '') !== context.baseUrl.replace(/\/+$/, '')
   ) {
     throw new CodeWorkspaceSelectionError('worker_unavailable');
