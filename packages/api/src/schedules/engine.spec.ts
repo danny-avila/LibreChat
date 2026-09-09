@@ -340,6 +340,46 @@ describe('reconciliation consults the durable trigger delivery', () => {
     );
   });
 
+  it('replays admission-only MCP evidence without consulting a generation job', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([
+      {
+        ...joblessRun(YOUNG()),
+        admissionOnly: true,
+        error: 'mcp_configuration_missing',
+        mcp: [
+          {
+            server: 'Notion',
+            agentId: 'research-agent',
+            status: 'mcp_configuration_missing',
+          },
+        ],
+      },
+    ]);
+    const getJobStatus = jest.fn(async () => {
+      throw new Error('admission-only rows have no job');
+    });
+
+    await tickOnce(makeDeps(methods, { getJobStatus }));
+
+    expect(getJobStatus).not.toHaveBeenCalled();
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduleId: 's1',
+        status: 'error',
+        error: 'mcp_configuration_missing',
+        clearConversationId: true,
+        mcp: [
+          {
+            server: 'Notion',
+            agentId: 'research-agent',
+            status: 'mcp_configuration_missing',
+          },
+        ],
+      }),
+    );
+  });
+
   it('does NOT orphan a PENDING delivery past the cutoff (Retry-After may still fire it)', async () => {
     const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'pending' }));
     expect(methods.recordRunOutcome).not.toHaveBeenCalled();

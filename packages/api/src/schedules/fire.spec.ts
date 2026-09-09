@@ -879,7 +879,11 @@ it('settles an unavailable MCP occurrence without dispatching a generation', asy
   expect(result).toMatchObject({ fired: false, mcp: failure.outcomes });
   expect(capacitySpy).not.toHaveBeenCalled();
   expect(methods.reserveStartedRun).toHaveBeenCalledWith(
-    expect.objectContaining({ admissionOnly: true }),
+    expect.objectContaining({
+      admissionOnly: true,
+      error: failure.message,
+      mcp: failure.outcomes,
+    }),
   );
   expect(deps.enqueueTrigger).not.toHaveBeenCalled();
   expect(methods.recordRunOutcome).toHaveBeenCalledWith(

@@ -15,6 +15,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TSchedule, ScheduleRunStatus, ScheduleDisabledReason } from 'librechat-data-provider';
+import type { ImmediateScheduleMCPFailure } from './errors';
 import type { TranslationKeys } from '~/hooks';
 import {
   useGetAgentByIdQuery,
@@ -25,7 +26,8 @@ import {
 import {
   scheduleMCPErrorMessage,
   scheduleMCPErrorOutcomes,
-  scheduleMCPRecoveryOutcomes,
+  scheduleLastRunKey,
+  scheduleMCPCardOutcomes,
 } from './errors';
 import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
 import ScheduleMCPRecovery from './ScheduleMCPRecovery';
@@ -69,11 +71,10 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
 export default function ScheduleCard({ schedule, projectName }: ScheduleCardProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const persistedMCPOutcomes = scheduleMCPRecoveryOutcomes(schedule);
-  const [immediateMCPOutcomes, setImmediateMCPOutcomes] = useState<
-    ReturnType<typeof scheduleMCPErrorOutcomes>
-  >([]);
-  const mcpOutcomes = immediateMCPOutcomes.length > 0 ? immediateMCPOutcomes : persistedMCPOutcomes;
+  const lastRunKey = scheduleLastRunKey(schedule);
+  const [immediateMCPFailure, setImmediateMCPFailure] =
+    useState<ImmediateScheduleMCPFailure | null>(null);
+  const mcpOutcomes = scheduleMCPCardOutcomes(schedule, immediateMCPFailure);
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
@@ -111,7 +112,8 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
      *  leave the owner flipping a switch that keeps flipping back; point them at the
      *  dialog, which is where the fixable settings are. */
     onError: (error, variables) => {
-      setImmediateMCPOutcomes(scheduleMCPErrorOutcomes(error));
+      const outcomes = scheduleMCPErrorOutcomes(error);
+      setImmediateMCPFailure(outcomes.length > 0 ? { outcomes, lastRunKey } : null);
       const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
       const blockedEnable = status === 400 && variables.payload.enabled === true;
       showToast({
@@ -127,28 +129,29 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
 
   const handleToggle = useCallback(
     (checked: boolean) => {
-      setImmediateMCPOutcomes([]);
+      setImmediateMCPFailure(null);
       updateSchedule.mutate({ id: schedule.id, payload: { enabled: checked } });
     },
     [schedule.id, updateSchedule],
   );
 
   const handleRunNow = useCallback(() => {
-    setImmediateMCPOutcomes([]);
+    setImmediateMCPFailure(null);
     runSchedule.mutate(schedule.id, {
       onSuccess: () => {
         showToast({ message: localize('com_ui_schedule_run_now_started'), status: 'success' });
         setMenuOpen(false);
       },
       onError: (error) => {
-        setImmediateMCPOutcomes(scheduleMCPErrorOutcomes(error));
+        const outcomes = scheduleMCPErrorOutcomes(error);
+        setImmediateMCPFailure(outcomes.length > 0 ? { outcomes, lastRunKey } : null);
         showToast({
           message: scheduleMCPErrorMessage(error, localize) ?? localize('com_ui_error'),
           status: 'error',
         });
       },
     });
-  }, [schedule.id, runSchedule, showToast, localize]);
+  }, [schedule.id, runSchedule, showToast, localize, lastRunKey]);
 
   const confirmDelete = useCallback(() => {
     deleteSchedule.mutate(schedule.id, {

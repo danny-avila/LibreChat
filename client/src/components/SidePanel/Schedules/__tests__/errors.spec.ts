@@ -2,6 +2,7 @@ import { readScheduleMCPOutcomes } from 'librechat-data-provider';
 import {
   scheduleMCPErrorMessage,
   scheduleMCPErrorOutcomes,
+  scheduleMCPCardOutcomes,
   scheduleMCPRecoveryOutcomes,
   scheduleMCPNeedsAgentRecovery,
 } from '../errors';
@@ -22,6 +23,24 @@ it('shows localized recovery reasons and exact server names', () => {
     { server: 'Notion', status: 'mcp_reauth_required' },
     { server: 'ClickHouse', status: 'ready' },
   ]);
+});
+
+it('drops an immediate MCP failure after polling reports a newer run', () => {
+  const immediate = {
+    lastRunKey: '2026-09-09T12:00:00.000Z:error',
+    outcomes: [{ server: 'Notion', status: 'mcp_unavailable' as const }],
+  };
+  const prior = {
+    enabled: true,
+    lastRun: { firedAt: '2026-09-09T12:00:00.000Z', status: 'error' as const },
+  };
+  const recovered = {
+    enabled: true,
+    lastRun: { firedAt: '2026-09-09T13:00:00.000Z', status: 'success' as const },
+  };
+
+  expect(scheduleMCPCardOutcomes(prior, immediate)).toEqual(immediate.outcomes);
+  expect(scheduleMCPCardOutcomes(recovered, immediate)).toEqual([]);
 });
 
 it('preserves descendant owners from immediate admission errors', () => {

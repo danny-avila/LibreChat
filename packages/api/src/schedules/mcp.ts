@@ -537,6 +537,11 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     );
     const authoritativeCandidates = Array.from(new Set([...authoritativeNames, ...serverHints]));
     const authoritativeAliases = buildServerNameAliases(authoritativeNames);
+    for (const hint of serverHints) {
+      if (!authoritativeAliases.has(hint)) authoritativeAliases.set(hint, hint);
+      const normalized = normalizeServerName(hint);
+      if (!authoritativeAliases.has(normalized)) authoritativeAliases.set(normalized, hint);
+    }
     ({ selected, serverAgentIds, toolAgentIds } = collectSelected(
       authoritativeCandidates,
       authoritativeAliases,
@@ -566,19 +571,18 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       throwError: true,
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
-    const context = createMCPRequestContext();
     const requestBody = {
       messageId: randomUUID(),
       conversationId: randomUUID(),
       parentMessageId: String(Constants.NO_PARENT),
     };
-    let outcomes: ScheduleMCPOutcome[];
-    try {
-      outcomes = (
-        await Promise.all(
-          [...selected].map(([server, required]) =>
-            requestProbeLimit(() =>
-              sharedProbeLimit(async (): Promise<ScheduleMCPOutcome[]> => {
+    const outcomes = (
+      await Promise.all(
+        [...selected].map(([server, required]) =>
+          requestProbeLimit(() =>
+            sharedProbeLimit(async (): Promise<ScheduleMCPOutcome[]> => {
+              const context = createMCPRequestContext();
+              try {
                 throwIfAborted();
                 const serverConfig = servers[server];
                 const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
@@ -653,14 +657,16 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                       : 'mcp_unavailable',
                   );
                 }
-              }),
-            ),
+              } finally {
+                // The shared slot bounds live transports, not only tools/list calls.
+                // Dispose this probe's isolated connection before releasing the slot.
+                await cleanupMCPRequestContext(context);
+              }
+            }),
           ),
-        )
-      ).flat();
-    } finally {
-      await cleanupMCPRequestContext(context);
-    }
+        ),
+      )
+    ).flat();
     if (outcomes.some((item) => item.status !== 'ready')) throw new ScheduleMCPError(outcomes);
     return outcomes;
   };

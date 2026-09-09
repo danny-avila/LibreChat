@@ -926,16 +926,18 @@ it('prefers an exact accessible registry name over a colliding config alias', as
   expect(deps.ensureConfigServers).toHaveBeenCalledWith({}, expect.any(Function));
 });
 
-it('retains a stored server hint when the registry cannot return that identity', async () => {
-  const { check, deps } = setup(['search_mcp_private']);
+it('retains a normalized alias for an inaccessible raw server hint', async () => {
+  const { check, deps } = setup(['search_mcp_Sales_Force']);
   deps.getAgentGraphNodes = jest.fn(async (ids) =>
-    ids.map((id) => graphNode(id, { tools: ['search_mcp_private'], mcpServerNames: ['private'] })),
+    ids.map((id) =>
+      graphNode(id, { tools: ['search_mcp_Sales_Force'], mcpServerNames: ['Sales Force'] }),
+    ),
   );
   deps.getServerConfigs = jest.fn(async () => ({}));
 
   await expect(check('agent', principal)).rejects.toMatchObject({
     code: 'mcp_configuration_missing',
-    outcomes: [{ server: 'private', status: 'mcp_configuration_missing' }],
+    outcomes: [{ server: 'Sales Force', status: 'mcp_configuration_missing' }],
   });
   expect(deps.connect).not.toHaveBeenCalled();
 });
@@ -1136,6 +1138,33 @@ it('bounds simultaneous MCP connection probes', async () => {
   }
   await expect(result).resolves.toHaveLength(5);
   expect(deps.connect).toHaveBeenCalledTimes(5);
+});
+
+it('disposes each transport before releasing its shared probe slot', async () => {
+  const serverNames = Array.from({ length: 12 }, (_, index) => `server-${index}`);
+  const { check, deps } = setup(serverNames.map((name) => `search_mcp_${name}`));
+  deps.getServerConfigs = async () => Object.fromEntries(serverNames.map((name) => [name, server]));
+  let live = 0;
+  let maxLive = 0;
+  const disconnect = jest.fn(async () => {
+    live -= 1;
+  });
+  deps.connect = jest.fn(async (options) => {
+    live += 1;
+    maxLive = Math.max(maxLive, live);
+    options.requestScopedConnections?.connections.set(options.serverName, { disconnect });
+    return {
+      fetchToolsSnapshot: async () => ({
+        tools: [{ name: 'search', inputSchema: { type: 'object' as const } }],
+        complete: true,
+      }),
+    };
+  });
+
+  await expect(check('agent', principal, { concurrency: 10 })).resolves.toHaveLength(12);
+  expect(maxLive).toBeLessThanOrEqual(10);
+  expect(live).toBe(0);
+  expect(disconnect).toHaveBeenCalledTimes(12);
 });
 
 it('bounds config-source initialization before connection probing', async () => {

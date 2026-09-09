@@ -24,6 +24,25 @@ export function scheduleMCPRecoveryOutcomes(
   return persisted.success ? persisted.data : readScheduleMCPOutcomes(schedule.lastRun?.error);
 }
 
+export type ImmediateScheduleMCPFailure = {
+  outcomes: ScheduleMCPOutcome[];
+  lastRunKey: string;
+};
+
+export function scheduleLastRunKey(schedule: Pick<TSchedule, 'lastRun'>): string {
+  return `${schedule.lastRun?.firedAt ?? ''}:${schedule.lastRun?.status ?? ''}`;
+}
+
+/** Keeps a request-local error visible until polling reports a different run. */
+export function scheduleMCPCardOutcomes(
+  schedule: Pick<TSchedule, 'enabled' | 'disabledReason' | 'lastRun'>,
+  immediate: ImmediateScheduleMCPFailure | null,
+): ScheduleMCPOutcome[] {
+  return immediate?.lastRunKey === scheduleLastRunKey(schedule)
+    ? immediate.outcomes
+    : scheduleMCPRecoveryOutcomes(schedule);
+}
+
 export function scheduleMCPNeedsAgentRecovery(outcomes: ScheduleMCPOutcome[]): boolean {
   return outcomes.some(
     (outcome) => outcome.status !== 'ready' && outcome.status !== 'mcp_permission_denied',

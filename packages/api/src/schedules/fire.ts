@@ -511,13 +511,25 @@ export async function fireSchedule(
       };
     }
     const deliveryKey = getAgentTriggerIdempotencyKey(triggerEnvelope);
-    const reserveRun = (capacitySlot?: number, admissionOnly = false) =>
+    const reserveRun = (
+      capacitySlot?: number,
+      admissionFailure?: {
+        error: string;
+        mcp?: Awaited<ReturnType<ScheduleEngineDeps['preflightMCP']>>;
+      },
+    ) =>
       methods.reserveStartedRun({
         ...baseRun,
         conversationId,
         firedAt: new Date(),
         ...(capacitySlot != null ? { capacitySlot } : {}),
-        ...(admissionOnly ? { admissionOnly: true } : {}),
+        ...(admissionFailure
+          ? {
+              admissionOnly: true,
+              error: admissionFailure.error,
+              ...(admissionFailure.mcp ? { mcp: admissionFailure.mcp } : {}),
+            }
+          : {}),
         deliveryKey,
         // The destination THIS occurrence used. The schedule-level value can move on
         // (a pin redirects later fires, and a paused run does not block them), so a
@@ -536,7 +548,10 @@ export async function fireSchedule(
       // A terminal admission failure needs durable evidence and schedule bookkeeping,
       // but it never starts a generation. Reserve the occurrence idempotently without
       // a generation slot, then settle it immediately below.
-      reservation = await reserveRun(undefined, true);
+      reservation = await reserveRun(undefined, {
+        error: mcpFailure.message.slice(0, 2048),
+        ...(mcpFailure.error ? { mcp: mcpFailure.error.outcomes } : {}),
+      });
     } else {
       // The GLOBAL fireConcurrency cap is enforced by claiming a unique capacity slot
       // in the SAME insert that reserves a generation, so it is decided by the DB rather

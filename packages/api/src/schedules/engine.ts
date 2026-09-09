@@ -69,16 +69,12 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           // settles, so it has to make progress on the rest; the examined-at stamp
           // below then rotates failures behind rows this pass did not inspect.
           try {
+            let jobState: Awaited<ReturnType<typeof deps.getJobStatus>> | null = null;
             // Identity-fence the job lookup: a replacement user turn reuses this
             // conversationId but sheds the scheduleId/scheduledFor metadata. Only
             // trust the job's status when it still carries THIS occurrence's identity;
             // otherwise treat the job as gone (null) so a replacement generation's
             // status can never finalize — or its hash be deleted for — this run.
-            const jobState = run.conversationId
-              ? await deps.getJobStatus(run.conversationId)
-              : null;
-            const jobStatus = jobIdentityMatches(jobState, run) ? jobState!.status : null;
-            const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
             // Resolve the run owner's limits so crash-reconciled auto-disable uses
             // the same per-principal threshold as an inline completion. Must run in
             // the OWNER's tenant context: getLimits resolves config via the ALS
@@ -106,8 +102,21 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
                 conversationId: opts?.omitConversationId ? undefined : run.conversationId,
                 clearConversationId: opts?.omitConversationId,
                 error,
+                ...(run.mcp ? { mcp: run.mcp } : {}),
                 autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
               });
+            // Admission-only rows never reached the delivery or generation layers.
+            // Their deterministic failure was stored with the reservation, so replay it
+            // directly instead of waiting for the generic orphan timeout.
+            if (run.status === 'started' && run.admissionOnly) {
+              await finalize('error', run.error ?? 'MCP preflight unavailable', {
+                omitConversationId: true,
+              });
+              continue;
+            }
+            jobState = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
+            const jobStatus = jobIdentityMatches(jobState, run) ? jobState!.status : null;
+            const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
             // The clear runs AFTER finalize (the retained job is the only evidence if
             // the finalize write fails), which means a clear that keeps failing has no
             // natural retry: the now-terminal run never rescans, so nothing else would
