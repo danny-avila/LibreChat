@@ -11,7 +11,7 @@ import {
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
-import type { AgentToolOptions, GraphEdge } from 'librechat-data-provider';
+import type { AgentToolOptions, CodeWorkspaceOperation, GraphEdge } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import type { ReachableAgent } from './traversal';
 import {
@@ -377,6 +377,8 @@ export interface RegisterCodeExecutionToolsParams {
    * backed by the selected attached worker, including bounded line pagination.
    */
   workspaceTools?: boolean;
+  /** Live operation ceiling for the selected workspace. Omitted for managed runtimes. */
+  workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
   /**
    * When `true`, the registered `bash_tool` description includes the
    * LLM-facing `{{tool<idx>turn<turn>}}` reference syntax guide so the
@@ -420,6 +422,8 @@ export interface RegisterFileAuthoringToolsParams {
   includeSkillFileInstructions?: boolean;
   /** When true, non-skill paths use the attached worker's workspace/ namespace. */
   workspaceTools?: boolean;
+  /** Live operation ceiling for the selected workspace. Omitted for managed runtimes. */
+  workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
 }
 
 /**
@@ -946,20 +950,30 @@ export function registerCodeExecutionTools(
     includeBash,
     includeSkillFileInstructions = true,
     workspaceTools = false,
+    workspaceOperations,
     enableToolOutputReferences = false,
     statefulSessions = false,
   } = params;
 
-  const readFileDef = buildReadFileDef(includeSkillFileInstructions, workspaceTools);
-  const codeTools: LCTool[] = includeBash
-    ? [
-        readFileDef,
-        buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
-      ]
-    : [readFileDef];
-  const candidates = workspaceTools
-    ? [...codeTools, SEARCH_WORKSPACE_TOOL_DEF, LIST_WORKSPACE_FILES_TOOL_DEF]
-    : codeTools;
+  const supportsWorkspaceOperation = (operation: CodeWorkspaceOperation): boolean =>
+    !workspaceTools || workspaceOperations?.has(operation) === true;
+  const candidates: LCTool[] = [];
+  if (!workspaceTools || supportsWorkspaceOperation('read_file')) {
+    candidates.push(buildReadFileDef(includeSkillFileInstructions, workspaceTools));
+  } else if (includeSkillFileInstructions) {
+    candidates.push(buildReadFileDef(true, false));
+  }
+  if (includeBash && supportsWorkspaceOperation('execute_command')) {
+    candidates.push(
+      buildBashToolDef({ enableToolOutputReferences, statefulSessions, workspaceTools }),
+    );
+  }
+  if (workspaceTools && supportsWorkspaceOperation('search_text')) {
+    candidates.push(SEARCH_WORKSPACE_TOOL_DEF);
+  }
+  if (workspaceTools && supportsWorkspaceOperation('list_files')) {
+    candidates.push(LIST_WORKSPACE_FILES_TOOL_DEF);
+  }
   const toolNames = candidates.map((def) => def.name);
 
   const inputDefinitions = toolDefinitions ?? [];
@@ -1020,9 +1034,28 @@ export function registerFileAuthoringTools(
     toolDefinitions,
     includeSkillFileInstructions = true,
     workspaceTools = false,
+    workspaceOperations,
   } = params;
 
-  const candidates = buildFileAuthoringDefs(includeSkillFileInstructions, workspaceTools);
+  const supportsWorkspaceOperation = (operation: CodeWorkspaceOperation): boolean =>
+    !workspaceTools || workspaceOperations?.has(operation) === true;
+  let candidates = buildFileAuthoringDefs(includeSkillFileInstructions, false);
+  if (workspaceTools) {
+    candidates = [];
+    if (includeSkillFileInstructions) {
+      candidates.push(
+        supportsWorkspaceOperation('write_file')
+          ? ATTACHED_SKILL_CREATE_FILE_DEF
+          : SKILL_CREATE_FILE_DEF,
+        supportsWorkspaceOperation('edit_file')
+          ? ATTACHED_SKILL_EDIT_FILE_DEF
+          : SKILL_EDIT_FILE_DEF,
+      );
+    } else {
+      if (supportsWorkspaceOperation('write_file')) candidates.push(ATTACHED_CODE_CREATE_FILE_DEF);
+      if (supportsWorkspaceOperation('edit_file')) candidates.push(ATTACHED_CODE_EDIT_FILE_DEF);
+    }
+  }
   const toolNames = candidates.map((def) => def.name);
   const inputDefinitions = toolDefinitions ?? [];
   let workingDefinitions = inputDefinitions;

@@ -29,7 +29,21 @@ describe('code environment HTTP handlers', () => {
           online: true,
           ready: true,
           leaseExpiresInMs: 50_000,
-          capabilities: { sandboxProfile: 'native-srt', runtimes: ['bash'] },
+          capabilities: {
+            sandboxProfile: 'native-srt',
+            runtimes: ['bash'],
+            workspaceTools: {
+              protocolVersion: 1,
+              operations: ['read_file', 'execute_command'],
+              workspaces: [
+                {
+                  id: 'project-a',
+                  name: 'Project A',
+                  operations: ['read_file', 'execute_command'],
+                },
+              ],
+            },
+          },
         }),
       ),
     );
@@ -93,6 +107,14 @@ describe('code environment HTTP handlers', () => {
       leaseExpiresInMs: 50_000,
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],
+      operations: ['read_file', 'execute_command'],
+      workspaces: [
+        {
+          id: 'project-a',
+          name: 'Project A',
+          operations: ['read_file', 'execute_command'],
+        },
+      ],
     });
     expect(coalescedRes.body).toEqual(res.body);
     expect(fetchImpl).toHaveBeenCalledTimes(1);

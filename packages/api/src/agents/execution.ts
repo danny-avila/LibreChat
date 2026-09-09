@@ -3,6 +3,8 @@ import { logger } from '@librechat/data-schemas';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type {
   Agents,
+  CodeWorkspaceOperation,
+  CodeWorkspaceSelection,
   CodeEnvironmentUserConfigSchema,
   CodeEnvironmentUserSettings,
   StatefulCodeEnvironment,
@@ -35,6 +37,30 @@ export interface CodeExecutionContext {
   bridgeWorkerId?: string;
   codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
   codeEnvironmentSettings?: CodeEnvironmentUserSettings;
+  /** Live, server-validated directory selection. Never derive session reuse from this field. */
+  codeWorkspace?: CodeWorkspaceSelection & { operations: CodeWorkspaceOperation[] };
+}
+
+/** Removes live capability data before a workspace binding is persisted. */
+export function getCodeWorkspaceSelection(
+  context?: Pick<
+    CodeExecutionContext,
+    'environmentId' | 'environmentType' | 'codeWorkspace'
+  > | null,
+): CodeWorkspaceSelection | undefined {
+  const workspace = context?.codeWorkspace;
+  if (
+    context?.environmentType !== 'attached' ||
+    context.environmentId == null ||
+    workspace == null ||
+    workspace.environmentId !== context.environmentId
+  ) {
+    return undefined;
+  }
+  return {
+    environmentId: workspace.environmentId,
+    workspaceId: workspace.workspaceId,
+  };
 }
 
 type CodeExecutionApprovalAgent = {
@@ -71,6 +97,7 @@ export function captureCodeExecutionApprovalBinding(
           context.environmentId ?? null,
           context.environmentType ?? null,
           context.bridgeWorkerId ?? null,
+          context.codeWorkspace ?? null,
         ]),
       )
       .digest('hex');

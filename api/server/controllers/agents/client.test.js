@@ -43,7 +43,13 @@ describe('AgentClient code approval persistence', () => {
       agent: {
         id: 'attached-agent',
         codeExecutionContext: {
+          environmentId: 'attached-vm',
           environmentType: 'attached',
+          codeWorkspace: {
+            environmentId: 'attached-vm',
+            workspaceId: 'project-a',
+            operations: ['read_file', 'execute_command'],
+          },
           codeEnvironmentConfigSchema: {
             permissions: {
               fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
@@ -58,7 +64,10 @@ describe('AgentClient code approval persistence', () => {
       },
     };
 
-    expect(client.getSaveOptions()).toMatchObject({ codeApprovalMode: 'acceptEdits' });
+    expect(client.getSaveOptions()).toMatchObject({
+      codeApprovalMode: 'acceptEdits',
+      codeWorkspace: { environmentId: 'attached-vm', workspaceId: 'project-a' },
+    });
   });
 });
 

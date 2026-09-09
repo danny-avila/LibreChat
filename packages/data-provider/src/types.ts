@@ -10,6 +10,11 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
+import type {
+  CodeWorkspaceDescriptor,
+  CodeWorkspaceOperation,
+  CodeWorkspaceSelection,
+} from './code/workspace';
 import type { CodeEnvironmentUserConfigSchema, CodeEnvironmentUserSettings } from './config';
 import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { CodeApprovalMode } from './code/approval';
@@ -152,6 +157,8 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Conversation-scoped preference for code tool approval behavior. */
     codeApprovalMode?: CodeApprovalMode;
+    /** Conversation-selected workspace, bound to the environment that advertised it. */
+    codeWorkspace?: CodeWorkspaceSelection;
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
     timezone?: string;
     /**
@@ -233,6 +240,8 @@ export type TSubmission = {
   manualSkills?: string[];
   /** Conversation-scoped preference for code tool approval behavior. */
   codeApprovalMode?: CodeApprovalMode;
+  /** Conversation-selected workspace, bound to the environment that advertised it. */
+  codeWorkspace?: CodeWorkspaceSelection;
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
   clientRequestId?: string;
   /** Client-only carry-through for a receipt-bound queued recovery. */
@@ -586,7 +595,8 @@ export type TCodeEnvironmentStatusResponse = {
   leaseExpiresInMs?: number;
   sandboxProfile?: string;
   runtimes?: string[];
-  operations?: string[];
+  operations?: CodeWorkspaceOperation[];
+  workspaces?: CodeWorkspaceDescriptor[];
 };
 
 export type TConfig = {

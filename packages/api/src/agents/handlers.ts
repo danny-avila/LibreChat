@@ -17,9 +17,9 @@ import type {
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
+import type { CodeEnvRef, CodeWorkspaceOperation, PtcToolCallEvent } from 'librechat-data-provider';
 import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
-import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
 import type {
   WorkspaceEditResult,
@@ -706,6 +706,31 @@ function getCodeExecutionContext(
     return undefined;
   }
   return candidate as CodeExecutionContext;
+}
+
+function selectedWorkspaceId(
+  context: CodeExecutionContext,
+  operation: CodeWorkspaceOperation,
+): string | undefined {
+  const workspace = context.codeWorkspace;
+  if (
+    workspace == null ||
+    workspace.environmentId !== context.environmentId ||
+    !workspace.operations.includes(operation)
+  ) {
+    return undefined;
+  }
+  return workspace.workspaceId;
+}
+
+function unavailableWorkspaceOperation(
+  tc: ToolCallRequest,
+  operation: CodeWorkspaceOperation,
+): ToolExecuteResult {
+  return errorResult(
+    tc,
+    `The selected attached workspace is unavailable or does not permit ${operation}. Choose an available workspace and retry.`,
+  );
 }
 
 function codeExecutionRequestParams(context?: CodeExecutionContext): {
@@ -2311,6 +2336,8 @@ async function handleWorkspaceFileRead(
       errorMessage: 'Attached workspace reading is not configured.',
     };
   }
+  const workspaceId = selectedWorkspaceId(codeExecutionContext, 'read_file');
+  if (!workspaceId) return unavailableWorkspaceOperation(tc, 'read_file');
   const args = tc.args as { start_line?: number; max_lines?: number };
   const startLine = args.start_line ?? 1;
   const maxLines = args.max_lines ?? 200;
@@ -2344,7 +2371,7 @@ async function handleWorkspaceFileRead(
   try {
     const result = await readWorkspaceFile({
       file_path: filePath,
-      workspace_id: 'primary',
+      workspace_id: workspaceId,
       start_line: startLine,
       max_lines: maxLines,
       codeApiBaseUrl: codeExecutionContext.baseUrl,
@@ -2426,6 +2453,8 @@ async function handleWorkspaceSearchCall(
   if (!options.searchWorkspace) {
     return errorResult(tc, 'Attached workspace search is not configured.');
   }
+  const workspaceId = selectedWorkspaceId(codeExecutionContext, 'search_text');
+  if (!workspaceId) return unavailableWorkspaceOperation(tc, 'search_text');
 
   const args = tc.args as { query?: unknown; path?: unknown; max_results?: unknown };
   const maxResults = args.max_results ?? 50;
@@ -2444,7 +2473,7 @@ async function handleWorkspaceSearchCall(
   try {
     const result = await options.searchWorkspace({
       query: args.query,
-      workspace_id: 'primary',
+      workspace_id: workspaceId,
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
@@ -2508,6 +2537,8 @@ async function handleWorkspaceListCall(
   if (!options.listWorkspaceFiles) {
     return errorResult(tc, 'Attached workspace file listing is not configured.');
   }
+  const workspaceId = selectedWorkspaceId(codeExecutionContext, 'list_files');
+  if (!workspaceId) return unavailableWorkspaceOperation(tc, 'list_files');
 
   const args = tc.args as { path?: unknown; after_path?: unknown; max_results?: unknown };
   const maxResults = args.max_results ?? 100;
@@ -2526,7 +2557,7 @@ async function handleWorkspaceListCall(
 
   try {
     const result = await options.listWorkspaceFiles({
-      workspace_id: 'primary',
+      workspace_id: workspaceId,
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
       ...(typeof args.after_path === 'string' && args.after_path.length > 0
         ? { after_path: args.after_path }
@@ -3677,6 +3708,7 @@ function attachedWorkspaceAuthoringPath(
 
 function attachedWorkspaceMutationParams(
   codeExecutionContext: CodeExecutionContext,
+  workspaceId: string,
   req: ServerRequest | undefined,
   signal: AbortSignal | undefined,
 ): {
@@ -3688,7 +3720,7 @@ function attachedWorkspaceMutationParams(
   signal?: AbortSignal;
 } {
   return {
-    workspace_id: 'primary',
+    workspace_id: workspaceId,
     codeApiBaseUrl: codeExecutionContext.baseUrl,
     executionProfile: codeExecutionContext.executionProfile,
     ...(codeExecutionContext.bridgeWorkerId
@@ -3728,13 +3760,15 @@ async function handleAttachedWorkspaceCreateFileCall({
   }
   const filtered = filteredFileResult(tc, req, path.filePath, content);
   if (filtered != null) return filtered;
+  const workspaceId = selectedWorkspaceId(codeExecutionContext, 'write_file');
+  if (!workspaceId) return unavailableWorkspaceOperation(tc, 'write_file');
 
   try {
     const result = await options.writeWorkspaceFile({
       file_path: path.filePath,
       content,
       overwrite,
-      ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+      ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
     });
     const action = result.created ? 'Created' : 'Updated';
     return successResult(tc, `${action} workspace/${path.filePath} (${content.length} chars).`, {
@@ -3796,6 +3830,8 @@ async function handleAttachedWorkspaceEditFileCall({
   }
   const filteredName = filteredFileNameResult(tc, req, path.filePath);
   if (filteredName != null) return filteredName;
+  const workspaceId = selectedWorkspaceId(codeExecutionContext, 'edit_file');
+  if (!workspaceId) return unavailableWorkspaceOperation(tc, 'edit_file');
 
   try {
     const workspaceEdits = edits.map((edit) => ({
@@ -3810,12 +3846,15 @@ async function handleAttachedWorkspaceEditFileCall({
           'Attached workspace editing requires an updated BYOM worker while file-content protections are enabled.',
         );
       }
+      if (!selectedWorkspaceId(codeExecutionContext, 'preview_edit')) {
+        return unavailableWorkspaceOperation(tc, 'preview_edit');
+      }
       let preview: WorkspacePreviewEditResult;
       try {
         preview = await options.previewWorkspaceEdit({
           file_path: path.filePath,
           edits: workspaceEdits,
-          ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+          ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
         });
       } catch (error) {
         if (signal?.aborted === true && isAbortError(error)) throw error;
@@ -3833,7 +3872,7 @@ async function handleAttachedWorkspaceEditFileCall({
       file_path: path.filePath,
       edits: workspaceEdits,
       ...(expectedBaseSha256 ? { expected_base_sha256: expectedBaseSha256 } : {}),
-      ...attachedWorkspaceMutationParams(codeExecutionContext, req, signal),
+      ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
     });
     return successResult(
       tc,

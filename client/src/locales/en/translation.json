@@ -1,5 +1,11 @@
 {
   "com_ui_code_approval_mode": "Code approval mode",
+  "com_ui_code_workspace": "Code workspace",
+  "com_ui_code_workspace_choose": "Choose workspace",
+  "com_ui_code_workspace_loading": "Loading workspace…",
+  "com_ui_code_workspace_missing": "Workspace missing",
+  "com_ui_code_workspace_unavailable": "Workspace unavailable",
+  "com_ui_code_workspace_unsupported": "Update worker for workspaces",
   "com_ui_code_approval_ask": "Ask before changes",
   "com_ui_code_approval_ask_description": "Ask before editing files or running commands",
   "com_ui_code_approval_accept_edits": "Accept edits",

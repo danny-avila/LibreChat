@@ -49,7 +49,7 @@ jest.mock('@librechat/agents', () => ({
 
 import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
-import { Constants } from 'librechat-data-provider';
+import { CODE_WORKSPACE_OPERATIONS, Constants } from 'librechat-data-provider';
 import {
   buildToolSet,
   buildRunToolSet,
@@ -492,6 +492,7 @@ describe('registerCodeExecutionTools', () => {
         includeBash: true,
         includeSkillFileInstructions: false,
         workspaceTools: true,
+        workspaceOperations: new Set(CODE_WORKSPACE_OPERATIONS),
       });
 
       const readFile = result.toolDefinitions.find((definition) => definition.name === 'read_file');
@@ -518,6 +519,7 @@ describe('registerCodeExecutionTools', () => {
         properties: {
           command: { type: 'string' },
           args: { type: 'array' },
+          cwd: { type: 'string', maxLength: 4096 },
         },
         required: ['command'],
       });
@@ -546,6 +548,34 @@ describe('registerCodeExecutionTools', () => {
       expect(listWorkspaceFiles?.description).toContain('empty directory');
       expect(listWorkspaceFiles?.description).toContain('after_path');
       expect(filePathDescription(listWorkspaceFiles)).toContain('canonical relative');
+    });
+
+    it('registers only operations advertised by the selected workspace', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        workspaceTools: true,
+        workspaceOperations: new Set(['read_file', 'list_files']),
+      });
+
+      expect(result.toolDefinitions.map(({ name }) => name).sort()).toEqual([
+        'list_workspace_files',
+        'read_file',
+      ]);
+    });
+
+    it('fails closed when attached workspace operations were not validated', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        workspaceTools: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([]);
     });
 
     it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
@@ -579,6 +609,7 @@ describe('registerCodeExecutionTools', () => {
         includeBash: true,
         includeSkillFileInstructions: false,
         workspaceTools: true,
+        workspaceOperations: new Set(CODE_WORKSPACE_OPERATIONS),
       });
       const upgraded = registerCodeExecutionTools({
         toolRegistry,
@@ -586,6 +617,7 @@ describe('registerCodeExecutionTools', () => {
         includeBash: false,
         includeSkillFileInstructions: true,
         workspaceTools: true,
+        workspaceOperations: new Set(CODE_WORKSPACE_OPERATIONS),
       });
 
       const readFile = upgraded.toolDefinitions.find(
@@ -877,6 +909,7 @@ describe('registerFileAuthoringTools', () => {
       toolDefinitions: [],
       includeSkillFileInstructions: false,
       workspaceTools: true,
+      workspaceOperations: new Set(CODE_WORKSPACE_OPERATIONS),
     });
     const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
     const editFile = result.toolDefinitions.find((d) => d.name === 'edit_file');
@@ -888,6 +921,29 @@ describe('registerFileAuthoringTools', () => {
     expect(filePathDescription(editFile)).toContain('workspace/{relativePath}');
     expect(isFileAuthoringToolDefinition(createFile)).toBe(true);
     expect(isFileAuthoringToolDefinition(editFile)).toBe(true);
+  });
+
+  it('registers only authoring operations advertised by the selected workspace', () => {
+    const result = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+      workspaceTools: true,
+      workspaceOperations: new Set(['edit_file']),
+    });
+
+    expect(result.toolDefinitions.map(({ name }) => name)).toEqual(['edit_file']);
+  });
+
+  it('fails closed when attached authoring operations were not validated', () => {
+    const result = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+      workspaceTools: true,
+    });
+
+    expect(result.toolDefinitions).toEqual([]);
   });
 
   it('is idempotent across repeated registration calls', () => {
@@ -946,6 +1002,7 @@ describe('registerFileAuthoringTools', () => {
       toolDefinitions: [],
       includeSkillFileInstructions: true,
       workspaceTools: true,
+      workspaceOperations: new Set(CODE_WORKSPACE_OPERATIONS),
     });
 
     expect(

@@ -1,11 +1,13 @@
 import winston from 'winston';
 import { Writable } from 'node:stream';
 import { logger } from '@librechat/data-schemas';
+import type { CodeExecutionContext } from './execution';
 import {
   assertCodeExecutionApprovalBinding,
   captureCodeExecutionApprovalBinding,
   codeExecutionAuthHeaders,
   codeExecutionHeaders,
+  getCodeWorkspaceSelection,
   resolveCodeExecutionContext,
 } from './execution';
 
@@ -350,7 +352,7 @@ describe('resolveCodeExecutionContext', () => {
 });
 
 describe('stateful code approval target binding', () => {
-  const context = (overrides: Record<string, unknown> = {}) => ({
+  const context = (overrides: Partial<CodeExecutionContext> = {}): CodeExecutionContext => ({
     baseUrl: 'https://bridge.example/v1',
     codeSessionKey: 'execute_code:stateful:route-a:session-a',
     executionProfile: 'stateful' as const,
@@ -360,6 +362,11 @@ describe('stateful code approval target binding', () => {
     environmentId: 'environment-a',
     environmentType: 'attached' as const,
     bridgeWorkerId: 'worker-a',
+    codeWorkspace: {
+      environmentId: 'environment-a',
+      workspaceId: 'project-a',
+      operations: ['read_file', 'execute_command'],
+    },
     ...overrides,
   });
 
@@ -431,6 +438,16 @@ describe('stateful code approval target binding', () => {
     ['route', { executionRouteKey: 'stateful:route-b' }],
     ['worker', { bridgeWorkerId: 'worker-b' }],
     ['workspace session', { runtimeSessionHint: 'v3:environment-a:agent-user:session-b' }],
+    [
+      'selected directory',
+      {
+        codeWorkspace: {
+          environmentId: 'environment-a',
+          workspaceId: 'project-b',
+          operations: ['read_file', 'execute_command'],
+        },
+      },
+    ],
     ['base URL', { baseUrl: 'https://replacement.example/v1' }],
   ])('rejects a changed %s before execution', (_label, overrides) => {
     const binding = captureCodeExecutionApprovalBinding([
@@ -439,7 +456,10 @@ describe('stateful code approval target binding', () => {
 
     expect(() =>
       assertCodeExecutionApprovalBinding(binding, [
-        { id: 'agent-a', codeExecutionContext: context(overrides) },
+        {
+          id: 'agent-a',
+          codeExecutionContext: context(overrides as Partial<CodeExecutionContext>),
+        },
       ]),
     ).toThrow('Retry the request and review the action again');
   });
@@ -459,6 +479,13 @@ describe('stateful code approval target binding', () => {
         { id: 'agent-a', codeExecutionContext: context() },
       ]),
     ).not.toThrow();
+  });
+
+  it('persists only the environment/workspace pair, not live capabilities', () => {
+    expect(getCodeWorkspaceSelection(context())).toEqual({
+      environmentId: 'environment-a',
+      workspaceId: 'project-a',
+    });
   });
 });
 

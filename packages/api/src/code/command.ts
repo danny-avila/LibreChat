@@ -11,7 +11,6 @@ import type { WorkspaceExecuteCommandResult } from './workspace';
 import type { CodeBridgeFetch } from './bridge';
 import { executeWorkspaceTool } from './workspace';
 
-const DEFAULT_WORKSPACE_ID = 'primary';
 const DEFAULT_OUTPUT_BYTES = 256 * 1024;
 
 export const ATTACHED_WORKSPACE_BASH_DESCRIPTION = `Runs bash commands inside the selected attached environment and returns stdout/stderr. The workspace may be an existing project, a Git repository, or an empty directory; Git is not required.
@@ -35,6 +34,20 @@ const attachedCommandSchema: NonNullable<LCTool['parameters']> = {
     'The bash command or script to execute from the attached workspace root. Files written in the workspace persist between calls, but each call starts a fresh process.',
 };
 
+/** `maxLength` is valid JSON Schema, but the SDK's schema type omits it. */
+interface BoundedWorkingDirectorySchema {
+  type: 'string';
+  maxLength: number;
+  description: string;
+}
+
+const attachedWorkingDirectorySchema: BoundedWorkingDirectorySchema = {
+  type: 'string',
+  maxLength: 4096,
+  description:
+    'Optional working directory relative to the selected workspace root, such as "packages/api". Absolute paths and parent traversal are rejected.',
+};
+
 /**
  * This definition is shared with agent metadata. LangChain's JSON Schema
  * dereferencer annotates schemas during validation, so each tool receives an
@@ -45,6 +58,7 @@ export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> =
   properties: {
     ...bashSchema.properties,
     command: attachedCommandSchema,
+    cwd: attachedWorkingDirectorySchema,
   },
   required: ['command'],
 });
@@ -114,19 +128,19 @@ function formatCommandResult(result: WorkspaceExecuteCommandResult): string {
 export function createAttachedWorkspaceBashTool({
   baseUrl,
   authHeaders,
-  workspaceId = DEFAULT_WORKSPACE_ID,
+  workspaceId,
   gitIdentity,
   fetchImpl,
 }: {
   baseUrl: string;
   authHeaders: () => Promise<Record<string, string>> | Record<string, string>;
-  workspaceId?: string;
+  workspaceId: string;
   gitIdentity?: AgentGitIdentity | null;
   fetchImpl?: CodeBridgeFetch;
 }): DynamicStructuredTool {
   return tool(
     async (
-      rawInput: { command: string; args?: string[]; intent?: string },
+      rawInput: { command: string; args?: string[]; cwd?: string; intent?: string },
       config,
     ): Promise<[string, Record<string, never>]> => {
       const command = commandWithGitIdentity(
@@ -141,6 +155,7 @@ export function createAttachedWorkspaceBashTool({
           operation: 'execute_command',
           workspaceId,
           command,
+          ...(rawInput.cwd ? { cwd: rawInput.cwd } : {}),
           maxOutputBytes: DEFAULT_OUTPUT_BYTES,
         },
         signal: config?.signal,

@@ -10,7 +10,7 @@ import type {
   ToolExecuteResult,
   ToolCallRequest,
 } from '@librechat/agents';
-import type { PtcToolCallEvent } from 'librechat-data-provider';
+import type { CodeWorkspaceOperation, PtcToolCallEvent } from 'librechat-data-provider';
 import type { CodeExecutionContext } from './execution';
 import {
   createOwnedToolEndHandler,
@@ -103,6 +103,32 @@ function invokeHandlerWithConfig(
 function skillsInScope(): unknown[] {
   const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
   return [new Types.ObjectId()];
+}
+
+const TEST_ATTACHED_WORKSPACE_OPERATIONS: CodeWorkspaceOperation[] = [
+  'read_file',
+  'search_text',
+  'list_files',
+  'write_file',
+  'preview_edit',
+  'edit_file',
+  'execute_command',
+];
+
+function withTestAttachedWorkspace(
+  context: CodeExecutionContext | undefined,
+): CodeExecutionContext | undefined {
+  if (context?.environmentType !== 'attached' || context.codeWorkspace != null) return context;
+  const environmentId = context.environmentId ?? 'personal-machine';
+  return {
+    ...context,
+    environmentId,
+    codeWorkspace: {
+      environmentId,
+      workspaceId: 'project-a',
+      operations: TEST_ATTACHED_WORKSPACE_OPERATIONS,
+    },
+  };
 }
 
 function protectedToolOutputRequest() {
@@ -3920,6 +3946,9 @@ describe('createToolExecuteHandler', () => {
       params: Partial<ToolExecuteOptions>,
       configurable?: Record<string, unknown>,
     ) {
+      const codeExecutionContext = withTestAttachedWorkspace(
+        configurable?.codeExecutionContext as CodeExecutionContext | undefined,
+      );
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
         configurable: {
@@ -3929,6 +3958,7 @@ describe('createToolExecuteHandler', () => {
           skillAuthoringAvailable: false,
           fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
           ...(configurable ?? {}),
+          ...(codeExecutionContext == null ? {} : { codeExecutionContext }),
         },
       }));
       return createToolExecuteHandler({
@@ -4210,7 +4240,7 @@ describe('createToolExecuteHandler', () => {
         file_path: 'src/new.ts',
         content: 'export const ok = 1;',
         overwrite: false,
-        workspace_id: 'primary',
+        workspace_id: 'project-a',
         codeApiBaseUrl: 'https://code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'user-worker',
@@ -4330,7 +4360,7 @@ describe('createToolExecuteHandler', () => {
           { oldText: 'draft', newText: 'ready' },
           { oldText: 'false', newText: 'true' },
         ],
-        workspace_id: 'primary',
+        workspace_id: 'project-a',
         codeApiBaseUrl: 'https://code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'user-worker',
@@ -5122,7 +5152,7 @@ describe('createToolExecuteHandler', () => {
           activeSkillNames: params.activeSkillNames,
           skillPrimedIdsByName: params.skillPrimedIdsByName,
           skillAuthoringAvailable: params.skillAuthoringAvailable === true,
-          codeExecutionContext: params.codeExecutionContext,
+          codeExecutionContext: withTestAttachedWorkspace(params.codeExecutionContext),
         },
       }));
       return createToolExecuteHandler({
@@ -5174,7 +5204,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(readWorkspaceFile).toHaveBeenCalledWith({
         file_path: 'src/app.ts',
-        workspace_id: 'primary',
+        workspace_id: 'project-a',
         start_line: 1,
         max_lines: 200,
         codeApiBaseUrl: 'https://code.example.com/v1',
@@ -5480,7 +5510,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(searchWorkspace).toHaveBeenCalledWith({
         query: 'needle',
-        workspace_id: 'primary',
+        workspace_id: 'project-a',
         path: 'src',
         max_results: 20,
         codeApiBaseUrl: 'https://code.example.com/v1',
@@ -5632,7 +5662,7 @@ describe('createToolExecuteHandler', () => {
       });
 
       expect(listWorkspaceFiles).toHaveBeenCalledWith({
-        workspace_id: 'primary',
+        workspace_id: 'project-a',
         path: 'src',
         after_path: 'src/app.ts',
         max_results: 20,

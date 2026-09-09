@@ -22,6 +22,15 @@ const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
 const mockEmitChunk = jest.fn();
 const mockCreateAttachedWorkspaceBashTool = jest.fn(() => ({ name: AgentConstants.BASH_TOOL }));
+const attachedWorkspaceOperations = [
+  'read_file',
+  'search_text',
+  'list_files',
+  'write_file',
+  'preview_edit',
+  'edit_file',
+  'execute_command',
+];
 const mockResolveCodeExecutionContext = jest.fn(
   ({ statefulSessions, environment, userId, agentId, conversationId }) => {
     if (!statefulSessions) {
@@ -56,6 +65,21 @@ const mockResolveCodeExecutionContext = jest.fn(
     };
   },
 );
+const mockResolveCodeExecutionWorkspaceContext = jest.fn(async ({ context }) => {
+  if (context.environmentType !== 'attached') {
+    return context;
+  }
+  const environmentId = context.environmentId ?? 'personal-machine';
+  return {
+    ...context,
+    environmentId,
+    codeWorkspace: {
+      environmentId,
+      workspaceId: 'project-a',
+      operations: attachedWorkspaceOperations,
+    },
+  };
+});
 const mockPrimeSearchFiles = jest.fn().mockResolvedValue({});
 const mockPrimeCodeFiles = jest.fn().mockResolvedValue({});
 jest.mock('~/server/services/Config', () => ({
@@ -85,6 +109,8 @@ jest.mock('@librechat/api', () => ({
     emitChunk: (...args) => mockEmitChunk(...args),
   },
   resolveCodeExecutionContext: (...args) => mockResolveCodeExecutionContext(...args),
+  resolveCodeExecutionWorkspaceContext: (...args) =>
+    mockResolveCodeExecutionWorkspaceContext(...args),
   createAttachedWorkspaceBashTool: (...args) => mockCreateAttachedWorkspaceBashTool(...args),
 }));
 
@@ -2712,6 +2738,9 @@ describe('ToolService - Action Capability Gating', () => {
         AgentCapabilities.stateful_code_sessions,
       ];
       const req = createMockReq(capabilities);
+      req.body = {
+        codeWorkspace: { environmentId: 'personal-machine', workspaceId: 'project-a' },
+      };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockResolveCodeExecutionContext.mockReturnValueOnce({
         baseUrl: 'http://attached-code.test/v1',
@@ -2719,6 +2748,7 @@ describe('ToolService - Action Capability Gating', () => {
         executionProfile: 'stateful',
         statefulSessions: true,
         environmentType: 'attached',
+        environmentId: 'personal-machine',
         bridgeWorkerId: 'worker-abc',
       });
       const toolRegistry = new Map([
@@ -2743,8 +2773,12 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockCreateAttachedWorkspaceBashTool).toHaveBeenCalledWith({
         authHeaders: expect.any(Function),
         baseUrl: 'http://attached-code.test/v1',
+        workspaceId: 'project-a',
         gitIdentity: { name: 'LibreChat Agent', email: 'agent@example.com' },
       });
+      expect(mockResolveCodeExecutionWorkspaceContext).toHaveBeenCalledWith(
+        expect.objectContaining({ requestedSelection: req.body.codeWorkspace }),
+      );
       expect(result.loadedTools).toContainEqual({ name: AgentConstants.BASH_TOOL });
     });
 

@@ -51,7 +51,7 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
     JSON.stringify({
       protocolVersion: 1,
       operation: 'execute_command',
-      workspaceId: 'primary',
+      workspaceId: 'project-a',
       exitCode: 0,
       stdout: 'ready\n',
       stderr: '',
@@ -64,7 +64,7 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe('createAttachedWorkspaceBashTool', () => {
-  test('executes in the attached default workspace with per-user bridge authentication', async () => {
+  test('executes in the selected workspace and relative working directory', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const authHeaders = jest.fn().mockResolvedValue({
       Authorization: 'Bearer jwt',
@@ -73,13 +73,13 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1/',
       authHeaders,
+      workspaceId: 'project-a',
       fetchImpl,
     });
 
-    await expect(bashTool.func({ command: 'pwd' }, undefined, {})).resolves.toEqual([
-      'stdout:\nready\n\n[exit code: 0]',
-      {},
-    ]);
+    await expect(
+      bashTool.func({ command: 'pwd', cwd: 'packages/api' }, undefined, {}),
+    ).resolves.toEqual(['stdout:\nready\n\n[exit code: 0]', {}]);
 
     expect(authHeaders).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -95,8 +95,9 @@ describe('createAttachedWorkspaceBashTool', () => {
     expect(request).toEqual({
       protocolVersion: 1,
       operation: 'execute_command',
-      workspaceId: 'primary',
+      workspaceId: 'project-a',
       command: 'pwd',
+      cwd: 'packages/api',
       maxOutputBytes: 256 * 1024,
     });
   });
@@ -106,6 +107,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       fetchImpl,
     });
 
@@ -122,6 +124,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       fetchImpl,
     });
 
@@ -136,6 +139,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       gitIdentity: { name: "Agent O'Brien", email: 'agent@example.com' },
       fetchImpl,
     });
@@ -163,6 +167,7 @@ describe('createAttachedWorkspaceBashTool', () => {
     const bashTool = createAttachedWorkspaceBashTool({
       baseUrl: 'https://code.example.com/v1',
       authHeaders: () => ({}),
+      workspaceId: 'project-a',
       fetchImpl,
     });
 

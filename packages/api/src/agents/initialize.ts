@@ -689,6 +689,8 @@ export interface InitializeAgentParams {
      * artifacts don't reach the sandbox.
      */
     primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
+    /** Live workspace binding resolved by the execution-side loader. */
+    codeExecutionContext?: CodeExecutionContext;
   } | null>;
   /** Endpoint option (contains model_parameters and endpoint info) */
   endpointOption?: Partial<TEndpointOption>;
@@ -1645,6 +1647,7 @@ export async function initializeAgent(
     oauthActionToolNames,
     tools: structuredTools,
     primedCodeFiles,
+    codeExecutionContext: loadedCodeExecutionContext,
   } = loadToolsResult ?? {
     tools: [],
     toolContextMap: {},
@@ -1659,7 +1662,13 @@ export async function initializeAgent(
     actionsEnabled: undefined,
     oauthActionToolNames: undefined,
     primedCodeFiles: undefined,
+    codeExecutionContext: undefined,
   };
+  const trustedCodeExecutionContext = loadedCodeExecutionContext ?? codeExecutionContext;
+  const attachedWorkspaceOperations =
+    trustedCodeExecutionContext.environmentType === 'attached'
+      ? new Set(trustedCodeExecutionContext.codeWorkspace?.operations ?? [])
+      : undefined;
 
   let toolDefinitions = loadedToolDefinitions;
 
@@ -1787,6 +1796,7 @@ export async function initializeAgent(
       enableToolOutputReferences: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
       workspaceTools: attachedWorkspaceTools,
+      workspaceOperations: attachedWorkspaceOperations,
     });
     toolDefinitions = codeExecResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.execute_code, codeExecResult.toolNames);
@@ -1836,6 +1846,7 @@ export async function initializeAgent(
       includeSkillFileInstructions: true,
       enableToolOutputReferences: effectiveCodeEnvAvailable,
       workspaceTools: attachedWorkspaceTools,
+      workspaceOperations: attachedWorkspaceOperations,
     });
     toolDefinitions = skillReadResult.toolDefinitions;
     recordCapabilityToolNames(AgentCapabilities.skills, skillReadResult.toolNames);
@@ -1847,6 +1858,7 @@ export async function initializeAgent(
       toolDefinitions,
       includeSkillFileInstructions: skillAuthoringAvailable,
       workspaceTools: attachedWorkspaceTools,
+      workspaceOperations: attachedWorkspaceOperations,
     });
     toolDefinitions = fileAuthoringResult.toolDefinitions;
     /** File authoring is owned by whichever capability switched it on —
@@ -1998,6 +2010,7 @@ export async function initializeAgent(
       codeEnvAvailable: effectiveCodeEnvAvailable,
       statefulSessions: effectiveStatefulSessions,
       workspaceTools: attachedWorkspaceTools,
+      workspaceOperations: attachedWorkspaceOperations,
       userId: user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
@@ -2122,8 +2135,8 @@ export async function initializeAgent(
     codeEnvAvailable: effectiveCodeEnvAvailable,
     statefulCodeSessions: effectiveStatefulSessions,
     statefulCodeEnvironment,
-    codeSessionKey: codeExecutionContext.codeSessionKey,
-    codeExecutionContext,
+    codeSessionKey: trustedCodeExecutionContext.codeSessionKey,
+    codeExecutionContext: trustedCodeExecutionContext,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,
