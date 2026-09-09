@@ -5230,9 +5230,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         eventRunId = configurable.run_id;
       }
       const foregroundHostSignal =
-        foregroundRunId == null || eventRunId == null || eventRunId === foregroundRunId
-          ? hostRunSignal
-          : undefined;
+        eventRunId == null || eventRunId === foregroundRunId ? hostRunSignal : undefined;
       const runSignal =
         foregroundHostSignal != null &&
         eventRunSignal != null &&

@@ -463,7 +463,9 @@ describe('createToolExecuteHandler', () => {
       foregroundController.abort();
       const tool = {
         name: 'child_tool',
-        invoke: jest.fn(async () => ({ content: 'done' })),
+        invoke: jest.fn(async (_args: unknown, _config: Record<string, unknown>) => ({
+          content: 'done',
+        })),
       };
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [tool] as never[],
@@ -472,6 +474,38 @@ describe('createToolExecuteHandler', () => {
         loadTools,
         runSignal: foregroundController.signal,
         foregroundRunId: 'foreground-run',
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
+          metadata: { run_id: 'detached-child-run' },
+          signal: childController.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(childController.signal);
+      expect(result.status).toBe('success');
+    });
+
+    it('does not bind a tagged child run when the foreground identity is unavailable', async () => {
+      const foregroundController = new AbortController();
+      const childController = new AbortController();
+      foregroundController.abort();
+      const tool = {
+        name: 'child_tool',
+        invoke: jest.fn(async (_args: unknown, _config: Record<string, unknown>) => ({
+          content: 'done',
+        })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        runSignal: foregroundController.signal,
       });
 
       const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
