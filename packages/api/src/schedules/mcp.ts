@@ -125,7 +125,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       });
       return appConfig;
     };
-    const tools: string[] = [];
+    const tools: Array<{ name: string; agentId: string }> = [];
     const serverHints = new Set<string>();
     const graphEdges: NonNullable<AgentGraphNode['edges']> = [];
     const explicitSeeds = new Set<string>([agentId]);
@@ -240,7 +240,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       .map((id) => accessibleById.get(id))
       .filter((agent): agent is AgentGraphNode => agent != null);
     const rootConfigIds = new Set(rootConfigs.map((agent) => agent.id));
-    const directAgentIds = new Set<string>();
+    const directValidationContexts: Array<{ id: string; ancestors: Set<string> }> = [];
     const acceptedGraphCounts = new Map<string, number>();
     let expandedSubagentConfigs = 0;
     let subagentsAvailable: boolean | undefined;
@@ -332,7 +332,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         countExpandedSubagentConfig();
         const childRunnable = parentRunnable && accessibleById.has(childId);
         if (childRunnable) {
-          directAgentIds.add(childId);
+          directValidationContexts.push({ id: childId, ancestors: nextAncestors });
           explicitSeeds.add(childId);
           expanded.add(childId);
         }
@@ -396,12 +396,12 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     for (const root of rootConfigs) {
       validateRunConfigTree(root, initialRunState, new Set());
     }
-    for (const directId of directAgentIds) {
+    for (const { id: directId, ancestors } of directValidationContexts) {
       if (rootConfigIds.has(directId)) continue;
       const direct = accessibleById.get(directId);
       if (!direct) continue;
       // createLazySubagentConfig seeds the selected child's resolution at one.
-      validateRunConfigTree(direct, { count: 1 }, new Set());
+      validateRunConfigTree(direct, { count: 1 }, ancestors);
     }
     const skippedAgentIds = new Set(
       [...attempted].filter((id) => id !== agentId && !accessibleById.has(id)),
@@ -415,13 +415,17 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     for (const id of reachable) {
       const agent = accessibleById.get(id);
       if (!agent || !expanded.has(id)) continue;
-      tools.push(...(agent.tools ?? []).filter((tool) => !isActionTool(tool)));
+      tools.push(
+        ...(agent.tools ?? [])
+          .filter((tool) => !isActionTool(tool))
+          .map((name) => ({ name, agentId: agent.id })),
+      );
       for (const name of agent.mcpServerNames ?? []) serverHints.add(name);
     }
     const selectedTools = tools.filter(
-      (tool) =>
-        tool.includes(Constants.mcp_delimiter) &&
-        !tool.startsWith(`${Constants.mcp_server}${Constants.mcp_delimiter}`),
+      ({ name }) =>
+        name.includes(Constants.mcp_delimiter) &&
+        !name.startsWith(`${Constants.mcp_server}${Constants.mcp_delimiter}`),
     );
     if (selectedTools.length === 0) return [];
 
@@ -431,20 +435,29 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const aliases = buildServerNameAliases(candidateNames);
     const candidates = [...candidateNames, ...aliases.keys()];
     const selected = new Map<string, string[]>();
-    for (const tool of selectedTools) {
+    const serverAgentIds = new Map<string, Set<string>>();
+    for (const { name: tool, agentId: toolAgentId } of selectedTools) {
       const [, name] = splitMCPToolKey(tool, candidates);
       if (!name) continue;
       const server = candidateNames.includes(name) ? name : (aliases.get(name) ?? name);
+      const owners = serverAgentIds.get(server) ?? new Set<string>();
+      owners.add(toolAgentId);
+      serverAgentIds.set(server, owners);
       const required = selected.get(server) ?? [];
       if (!tool.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`)) {
         required.push(normalizeMCPToolKey(tool, candidateNames));
       }
       selected.set(server, required);
     }
+    const outcome = (server: string, status: ScheduleMCPStatus): ScheduleMCPOutcome => {
+      const owners = serverAgentIds.get(server);
+      const outcomeAgentId = owners?.has(agentId) ? undefined : owners?.values().next().value;
+      return { server, status, ...(outcomeAgentId ? { agentId: outcomeAgentId } : {}) };
+    };
     const capabilities = effectiveConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
     if (!capabilities.includes(AgentCapabilities.tools)) {
       throw new ScheduleMCPError(
-        [...selected.keys()].map((server) => ({ server, status: 'mcp_configuration_missing' })),
+        [...selected.keys()].map((server) => outcome(server, 'mcp_configuration_missing')),
       );
     }
     if (
@@ -456,7 +469,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       }))
     ) {
       throw new ScheduleMCPError(
-        [...selected.keys()].map((server) => ({ server, status: 'mcp_permission_denied' })),
+        [...selected.keys()].map((server) => outcome(server, 'mcp_permission_denied')),
       );
     }
     const rawServerNames = [
@@ -469,7 +482,13 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     );
     const requestProbeLimit = createConcurrencyLimiter(options.concurrency);
     const config = await deps.ensureConfigServers(selectedRawConfig, (task) =>
-      requestProbeLimit(() => sharedProbeLimit(task)),
+      requestProbeLimit(() => {
+        throwIfAborted();
+        return sharedProbeLimit(async () => {
+          throwIfAborted();
+          return task();
+        });
+      }),
     );
     const servers = await deps.getServerConfigs(user.id, config, user.role);
     throwIfAborted();
@@ -499,7 +518,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                 shadowed.has(server) ||
                 getMissingCustomUserVars(serverConfig, customUserVars).length > 0
               ) {
-                return { server, status: 'mcp_configuration_missing' };
+                return outcome(server, 'mcp_configuration_missing');
               }
               let reauth = false;
               try {
@@ -535,19 +554,18 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                 } else if (available.size === 0 || !required.every((tool) => available.has(tool))) {
                   status = 'mcp_configuration_missing';
                 }
-                return { server, status };
+                return outcome(server, status);
               } catch (error) {
-                return {
+                return outcome(
                   server,
-                  status:
-                    reauth ||
+                  reauth ||
                     error instanceof MCPAuthenticationRejectedError ||
                     error instanceof OpenIDReauthRequiredError ||
                     error instanceof MCPOAuthSecretReentryRequiredError ||
                     isOAuthAuthenticationError(error)
-                      ? 'mcp_reauth_required'
-                      : 'mcp_unavailable',
-                };
+                    ? 'mcp_reauth_required'
+                    : 'mcp_unavailable',
+                );
               }
             }),
           ),

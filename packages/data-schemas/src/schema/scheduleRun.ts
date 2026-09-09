@@ -70,6 +70,7 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
         {
           _id: false,
           server: { type: String, required: true },
+          agentId: { type: String },
           status: {
             type: String,
             required: true,

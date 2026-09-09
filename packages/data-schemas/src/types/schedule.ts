@@ -58,6 +58,7 @@ export interface ISchedule {
     conversationId?: string;
     status: ScheduleRunStatus;
     error?: string;
+    mcp?: ScheduleMCPOutcome[];
     firedAt: Date;
     /** The OCCURRENCE this projection came from; orders the card against delayed
      *  outcomes (a resumed pause, a reconciler replay) arriving after a newer run. */

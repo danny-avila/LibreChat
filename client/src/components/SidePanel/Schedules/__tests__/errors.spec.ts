@@ -46,11 +46,14 @@ it('explains administrator-revoked MCP permission', () => {
 });
 
 it('restores saved per-server failure outcomes on the schedule card', () => {
-  const outcomes = [{ server: 'Notion', status: 'mcp_reauth_required' }];
+  const outcomes = [
+    { server: 'Notion', agentId: 'research-agent', status: 'mcp_reauth_required' as const },
+  ];
   const lastRun = {
     status: 'error' as const,
     firedAt: new Date().toISOString(),
-    error: `mcp_reauth_required: ${JSON.stringify(outcomes)}`,
+    error: 'mcp_reauth_required: [legacy malformed payload',
+    mcp: outcomes,
   };
   expect(
     scheduleMCPRecoveryOutcomes({

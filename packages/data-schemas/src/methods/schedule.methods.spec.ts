@@ -3032,12 +3032,18 @@ describe('scheduled MCP failure policy', () => {
       scheduledFor,
       status: 'error',
       error: `${reason}: [{"server":"Notion","status":"${reason}"}]`,
+      mcp: [{ server: 'Notion', agentId: 'research-agent', status: reason as never }],
       autoDisableAfterFailures: 5,
     });
     const updated = await getSchedule(schedule.id);
     expect(updated.failureCount).toBe(1);
     expect(updated.enabled).toBe(reason === 'mcp_unavailable');
     expect(updated.disabledReason).toBe(reason === 'mcp_unavailable' ? undefined : reason);
+    expect(updated.lastRun?.mcp?.[0]).toMatchObject({
+      server: 'Notion',
+      agentId: 'research-agent',
+      status: reason,
+    });
   });
 });
 

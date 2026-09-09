@@ -70,7 +70,6 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
   const localize = useLocalize();
   const navigate = useNavigate();
   const mcpOutcomes = scheduleMCPRecoveryOutcomes(schedule);
-  const canReconnectMCP = scheduleMCPNeedsAgentRecovery(mcpOutcomes);
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
@@ -283,19 +282,29 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
       {mcpOutcomes
         .filter((item) => item.status !== 'ready')
         .map((item) => (
-          <p key={item.server} className="mt-1 text-xs text-text-secondary">
-            {item.server}: {localize(MCP_STATUS_LABELS[item.status])}
-          </p>
+          <div
+            key={`${item.server}:${item.agentId ?? schedule.agent_id}`}
+            className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-text-secondary"
+          >
+            <p>
+              {item.server}: {localize(MCP_STATUS_LABELS[item.status])}
+            </p>
+            {scheduleMCPNeedsAgentRecovery([item]) && (
+              <button
+                type="button"
+                className="text-text-primary underline"
+                aria-label={`${item.server}: ${localize('com_ui_schedule_mcp_open_agent')}`}
+                onClick={() =>
+                  navigate(
+                    `/c/new?agent_id=${encodeURIComponent(item.agentId ?? schedule.agent_id)}`,
+                  )
+                }
+              >
+                {localize('com_ui_schedule_mcp_open_agent')}
+              </button>
+            )}
+          </div>
         ))}
-      {canReconnectMCP && (
-        <button
-          type="button"
-          className="mt-2 text-sm text-text-primary underline"
-          onClick={() => navigate(`/c/new?agent_id=${encodeURIComponent(schedule.agent_id)}`)}
-        >
-          {localize('com_ui_schedule_mcp_open_agent')}
-        </button>
-      )}
       {editOpen && (
         <ScheduleDialog
           open={editOpen}

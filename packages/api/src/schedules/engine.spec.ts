@@ -466,6 +466,7 @@ describe('bookkeeping replay rotation', () => {
       user: 'u1',
       status: 'success',
       conversationId: 'convo-crashed',
+      mcp: [{ server: 'Notion', agentId: 'research-agent', status: 'ready' }],
     };
     (methods.getUnbookkeptRuns as jest.Mock).mockResolvedValue([unbookkept]);
     const clearReconciledJob = jest.fn(async () => undefined);
@@ -473,7 +474,10 @@ describe('bookkeeping replay rotation', () => {
     await reconcileOnce(makeDeps(methods, { clearReconciledJob }));
 
     expect(methods.finalizeBookkeeping).toHaveBeenCalledWith(
-      expect.objectContaining({ scheduleId: 'sched-crashed' }),
+      expect.objectContaining({
+        scheduleId: 'sched-crashed',
+        mcp: [{ server: 'Notion', agentId: 'research-agent', status: 'ready' }],
+      }),
     );
     expect(clearReconciledJob).toHaveBeenCalledWith('convo-crashed', {
       scheduleId: 'sched-crashed',

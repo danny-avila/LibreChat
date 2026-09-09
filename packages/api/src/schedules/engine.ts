@@ -301,6 +301,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
                 | 'skipped_overlap',
               conversationId: run.conversationId,
               error: run.error,
+              mcp: run.mcp,
               autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
               balanceSkipDisableThreshold: BALANCE_SKIP_DISABLE_THRESHOLD,
             });

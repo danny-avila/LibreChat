@@ -19,9 +19,9 @@ export function scheduleMCPRecoveryOutcomes(
     reason === 'mcp_configuration_missing' ||
     reason === 'mcp_permission_denied' ||
     reason === 'too_many_failures';
-  return schedule.enabled || !preservesMCPRecovery
-    ? []
-    : readScheduleMCPOutcomes(schedule.lastRun?.error);
+  if (schedule.enabled || !preservesMCPRecovery) return [];
+  const persisted = scheduleMCPOutcomeSchema.array().safeParse(schedule.lastRun?.mcp);
+  return persisted.success ? persisted.data : readScheduleMCPOutcomes(schedule.lastRun?.error);
 }
 
 export function scheduleMCPNeedsAgentRecovery(outcomes: ScheduleMCPOutcome[]): boolean {

@@ -139,7 +139,9 @@ it('checks graph agents once even when edges cycle', async () => {
         : graphNode(id, { tools: ['search_mcp_docs'], agent_ids: ['root'] }),
     ),
   );
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'child' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenCalledTimes(2);
 });
 
@@ -155,7 +157,9 @@ it('loads each graph frontier in one batch', async () => {
       }),
     ),
   );
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'child-0' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenNthCalledWith(1, ['root']);
   expect(deps.getAgentGraphNodes).toHaveBeenNthCalledWith(2, childIds, expect.any(Object));
   expect(deps.resolveAgentGraphAccess).toHaveBeenCalledWith(
@@ -190,7 +194,9 @@ it('does not count the root or legacy handoff nodes against the spawn graph budg
     ),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'spawn-0' },
+  ]);
 });
 
 it('rejects direct trees beyond the runtime expanded-config limit', async () => {
@@ -246,6 +252,39 @@ it('counts accepted graph descriptors against the runtime run-config limit', asy
   await expect(check('root', principal)).rejects.toThrow('maximum of 100 expanded entries');
 });
 
+it('keeps lazy descriptor ancestors when validating cyclic run-config limits', async () => {
+  const { check, deps } = setup([]);
+  const graphs = Array.from({ length: 49 }, (_, index) => ({
+    name: `graph-${index}`,
+    agent_ids: ['member'],
+  }));
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          subagents: { enabled: true, agent_ids: ['child'], graphs } as never,
+        });
+      }
+      if (id === 'child') {
+        return graphNode(id, {
+          subagents: { enabled: true, agent_ids: ['root'], graphs } as never,
+        });
+      }
+      return graphNode(id);
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([]);
+});
+
 it('skips only a subagent graph definition that exceeds the runtime member budget', async () => {
   const acceptedIds = Array.from({ length: 50 }, (_, index) => `accepted-${index}`);
   const { check, deps } = setup([]);
@@ -271,7 +310,9 @@ it('skips only a subagent graph definition that exceeds the runtime member budge
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'accepted-0' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenCalledTimes(2);
   expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
     expect.arrayContaining(['overflow']),
@@ -305,7 +346,9 @@ it('charges direct subagents before admitting graph definitions', async () => {
     ),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'direct' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(['direct'], expect.any(Object));
   expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(['accepted'], expect.any(Object));
   expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
@@ -345,7 +388,9 @@ it('counts the complete nested direct tree before root graph admission', async (
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'direct-b' },
+  ]);
   expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
     expect.arrayContaining([graphIds[0]]),
     expect.anything(),
@@ -382,7 +427,9 @@ it('does not charge inaccessible direct targets to the graph budget', async () =
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'graph-0' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(graphIds, expect.any(Object));
 });
 
@@ -456,7 +503,9 @@ it('does not retry a model-invalid handoff as a direct subagent descriptor', asy
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'graph-0' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(graphIds, expect.any(Object));
 });
 
@@ -514,7 +563,9 @@ it('does not expand persisted handoffs from graph-only members', async () => {
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'member' },
+  ]);
   expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
     expect.arrayContaining(['downstream']),
     expect.anything(),
@@ -549,7 +600,9 @@ it('reuses one resolved access context across deep graph frontiers', async () =>
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'leaf' },
+  ]);
   expect(deps.getAgentGraphNodes).toHaveBeenCalledTimes(3);
   expect(deps.resolveAgentGraphAccess).toHaveBeenCalledTimes(1);
 });
@@ -633,7 +686,9 @@ it('does not expand persisted handoffs from legacy-chain-only agents', async () 
     }),
   );
 
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'legacy' },
+  ]);
   expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
     expect.arrayContaining(['downstream']),
     expect.anything(),
@@ -663,7 +718,9 @@ it('includes enabled spawn-graph members when the capability is available', asyn
         : graphNode(id, { tools: ['search_mcp_docs'] }),
     ),
   );
-  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  await expect(check('root', principal)).resolves.toEqual([
+    { server: 'docs', status: 'ready', agentId: 'spawned' },
+  ]);
 });
 
 it('skips every member of an incomplete spawn graph', async () => {
@@ -964,6 +1021,56 @@ it('bounds config-source initialization before connection probing', async () => 
   release();
   await expect(result).resolves.toHaveLength(12);
   expect(maxActive).toBe(10);
+});
+
+it('does not start queued config initialization after cancellation', async () => {
+  const serverNames = ['first', 'queued-1', 'queued-2'];
+  const { check, deps } = setup(serverNames.map((name) => `search_mcp_${name}`));
+  const serverConfigs = Object.fromEntries(serverNames.map((name) => [name, server]));
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        mcpConfig: serverConfigs,
+      }) as unknown as AppConfig,
+  );
+  let releaseFirst: () => void = () => undefined;
+  const firstGate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let markFirstStarted: () => void = () => undefined;
+  const firstStarted = new Promise<void>((resolve) => {
+    markFirstStarted = resolve;
+  });
+  let markFinished: () => void = () => undefined;
+  const finished = new Promise<void>((resolve) => {
+    markFinished = resolve;
+  });
+  const started: string[] = [];
+  deps.ensureConfigServers = jest.fn(async (config, limit = (task) => task()) => {
+    await Promise.allSettled(
+      Object.entries(config).map(([name]) =>
+        limit(async () => {
+          started.push(name);
+          if (name === 'first') {
+            markFirstStarted();
+            await firstGate;
+          }
+        }),
+      ),
+    );
+    markFinished();
+    return config as Record<string, ParsedServerConfig>;
+  });
+  const controller = new AbortController();
+  const result = check('agent', principal, { concurrency: 1, signal: controller.signal });
+
+  await firstStarted;
+  controller.abort(new Error('canceled'));
+  await expect(result).rejects.toThrow('canceled');
+  releaseFirst();
+  await finished;
+  expect(started).toEqual(['first']);
 });
 
 it('bounds MCP connection probes across concurrent schedule preflights', async () => {

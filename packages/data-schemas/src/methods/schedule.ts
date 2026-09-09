@@ -1182,6 +1182,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       conversationId: params.conversationId,
       status: params.status,
       error: params.error,
+      mcp: params.mcp,
       firedAt: params.firedAt,
     };
     const isFailure = params.status === 'error';

@@ -120,6 +120,7 @@ export type TScheduleLastRun = {
   conversationId?: string;
   status: ScheduleRunStatus;
   error?: string;
+  mcp?: ScheduleMCPOutcome[];
   firedAt: string;
 };
 
@@ -204,6 +205,9 @@ export function getScheduleMCPDisabledReason(
 
 export const scheduleMCPOutcomeSchema = z.object({
   server: z.string(),
+  /** Agent whose selected tool requires this server. Used to open the correct
+   * recovery chat when the requirement belongs to a handoff or subagent. */
+  agentId: z.string().optional(),
   status: z.enum([
     'ready',
     'mcp_reauth_required',

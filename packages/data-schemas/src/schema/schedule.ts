@@ -226,6 +226,27 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
         conversationId: { type: String },
         status: { type: String, required: true },
         error: { type: String },
+        mcp: {
+          type: [
+            {
+              _id: false,
+              server: { type: String, required: true },
+              agentId: { type: String },
+              status: {
+                type: String,
+                required: true,
+                enum: [
+                  'ready',
+                  'mcp_reauth_required',
+                  'mcp_configuration_missing',
+                  'mcp_permission_denied',
+                  'mcp_unavailable',
+                ],
+              },
+            },
+          ],
+          default: undefined,
+        },
         firedAt: { type: Date, required: true },
         scheduledFor: { type: Date },
       },
