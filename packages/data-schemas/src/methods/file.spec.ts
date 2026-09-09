@@ -1605,6 +1605,37 @@ describe('File Methods', () => {
       expect(updated?.expiresAt).toBeUndefined();
     });
 
+    /* `prepareImageURL` clears the upload TTL with nothing but the id on every
+     * reuse of an image. Project resume compatibility fingerprints canonical
+     * content by `updatedAt`, so that bookkeeping must not read as a new
+     * version while a real field write still must. */
+    it('clears the upload TTL without posing as a content write', async () => {
+      const fileId = uuidv4();
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: new mongoose.Types.ObjectId(),
+        filename: 'reused.png',
+        filepath: '/uploads/reused.png',
+        type: 'image/png',
+        bytes: 100,
+      });
+      const stamp = new Date('2020-01-01T00:00:00.000Z');
+      await File.updateOne(
+        { file_id: fileId },
+        { $set: { updatedAt: stamp } },
+        {
+          timestamps: false,
+        },
+      );
+
+      const reused = await fileMethods.updateFile({ file_id: fileId });
+      expect(reused?.expiresAt).toBeUndefined();
+      expect(reused?.updatedAt).toEqual(stamp);
+
+      const rewritten = await fileMethods.updateFile({ file_id: fileId, text: 'extracted' });
+      expect(rewritten?.updatedAt).not.toEqual(stamp);
+    });
+
     /* The optional `extraFilter` enables conditional updates — used by
      * the deferred-preview render's `finalizePreview` to guard against
      * an older render of the same `file_id` overwriting a newer turn's

@@ -108,6 +108,7 @@ jest.mock('~/hooks', () => ({
       com_ui_retry: 'Retry',
       com_ui_loading: 'Loading',
       com_ui_load_more: 'Load more',
+      com_ui_no_search_results: 'No results match your search',
     };
     return (translations[key] ?? key).replace('{{count}}', String(options?.count ?? ''));
   },
@@ -284,6 +285,18 @@ describe('ProjectResources', () => {
     await user.click(screen.getByRole('button', { name: 'Add files' }));
     await user.click(screen.getByRole('menuitem', { name: 'Choose an existing file' }));
     expect(await screen.findByRole('button', { name: /ready.txt/ })).toHaveTextContent('12.5 KB');
+  });
+
+  it('separates an empty file history from a search that matches nothing', async () => {
+    renderResources();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add files' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Choose an existing file' }));
+    expect(await screen.findByText('No eligible indexed files')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Search files' }), 'invoice');
+    expect(await screen.findByText('No results match your search')).toBeInTheDocument();
+    expect(screen.queryByText('No eligible indexed files')).not.toBeInTheDocument();
   });
 
   it('keeps eligible existing files available when device upload is denied', async () => {

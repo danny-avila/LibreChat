@@ -744,6 +744,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * same `file_id` overwriting a newer turn's record on cross-turn
    * filename reuse.
    *
+   * Content timestamps advance only when the caller actually writes a
+   * field. Clearing the upload TTL alone is bookkeeping: image reuse
+   * calls this with nothing but the id on every turn, and consumers that
+   * fingerprint content by `updatedAt` — Project resume compatibility —
+   * would otherwise read a new version and reject an approved turn.
+   *
    * @param data - The data to update, must contain file_id
    * @param extraFilter - Optional extra equality filter merged into the query.
    * @returns A promise that resolves to the updated file document, or
@@ -763,6 +769,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
+      timestamps: Object.keys(update).length > 0,
     }).lean<IMongoFile>();
   }
 
