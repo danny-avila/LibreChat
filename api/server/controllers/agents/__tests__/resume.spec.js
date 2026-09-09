@@ -84,6 +84,7 @@ const mockCheckpointGetTuple = jest.fn();
 
 const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
+const mockGetChatProject = jest.fn();
 const mockGetMessages = jest.fn();
 const mockGetFiles = jest.fn();
 const mockGetAgent = jest.fn();
@@ -150,6 +151,7 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  getChatProject: (...args) => mockGetChatProject(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getFiles: (...args) => mockGetFiles(...args),
   getAgent: (...args) => mockGetAgent(...args),
@@ -327,6 +329,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockCleanupMCPRequestContextForReq.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue({});
     mockGetConvo.mockResolvedValue(null);
+    mockGetChatProject.mockResolvedValue(null);
     mockGetMessages.mockResolvedValue([]);
     mockGetFiles.mockResolvedValue([]);
     mockGetAgent.mockResolvedValue(null);
@@ -2220,6 +2223,170 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(
         mockGenerationJobManager.beginProviderExecution.mock.invocationCallOrder[0],
       ).toBeGreaterThan(mockInitializeClient.mock.invocationCallOrder[0]);
+    });
+  });
+
+  describe('project context resume fencing', () => {
+    const projectConversation = {
+      conversationId: CONVO_ID,
+      chatProjectId: 'project-1',
+      user: USER_ID,
+      tenantId: TENANT_ID,
+    };
+    const projectResource = {
+      _id: '507f1f77bcf86cd799439012',
+      file_id: 'file-1',
+      filename: 'reference.txt',
+      filepath: '/uploads/reference.txt',
+      object: 'file',
+      type: 'text/plain',
+      bytes: 10,
+      usage: 0,
+      embedded: true,
+      context: 'message_attachment',
+      user: USER_ID,
+      tenantId: TENANT_ID,
+      updatedAt: new Date('2020-01-01'),
+    };
+
+    const projectRecord = (contextRevision, instructions = 'Use the project context.') => ({
+      _id: 'project-1',
+      tenantId: TENANT_ID,
+      contextRevision,
+      instructions,
+      file_ids: ['file-1'],
+    });
+
+    const withProject = (contextRevision, pendingRevision) => {
+      const { getChatProjectContextKey, toCanonicalProjectResource } =
+        jest.requireActual('@librechat/api');
+      const pendingKey =
+        pendingRevision === undefined
+          ? undefined
+          : getChatProjectContextKey({
+              ...projectRecord(pendingRevision),
+              projectId: 'project-1',
+              resources: [toCanonicalProjectResource(projectResource)],
+            });
+      mockGetConvo.mockResolvedValue(projectConversation);
+      mockGetChatProject.mockResolvedValue(projectRecord(contextRevision));
+      mockGetFiles.mockResolvedValue([projectResource]);
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: { pendingAction: { projectContextKey: pendingKey } },
+        }),
+      );
+    };
+
+    it('resumes when the authoritative project context key is unchanged', async () => {
+      withProject(3, 3);
+      const res = await post(approveBody());
+      await settled;
+      expect(res.status).toBe(200);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      expect(mockInitializeClient).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['deleted', []],
+      ['expired', [{ ...projectResource, expiredAt: new Date(0) }]],
+      ['ineligible', [{ ...projectResource, embedded: false }]],
+      ['replaced', [{ ...projectResource, _id: '507f1f77bcf86cd799439013' }]],
+      ['changed content', [{ ...projectResource, updatedAt: new Date('2030-01-01') }]],
+    ])('rejects a %s canonical file without a Project revision change', async (_change, files) => {
+      withProject(3, 3);
+      mockGetFiles.mockResolvedValue(files);
+      const res = await post(approveBody());
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        { threadId: CONVO_ID, checkpointIds: ['checkpoint-old'] },
+      );
+    });
+
+    it('ignores usage and temporary-hold bookkeeping when resuming the same content', async () => {
+      withProject(3, 3);
+      mockGetFiles.mockResolvedValue([
+        {
+          ...projectResource,
+          usage: 9,
+          temp_file_id: 'temporary-id',
+          expiresAt: new Date('2030-01-01'),
+        },
+      ]);
+      const res = await post(approveBody());
+      await settled;
+      expect(res.status).toBe(200);
+      expect(mockInitializeClient).toHaveBeenCalled();
+    });
+
+    it('terminalizes and prunes the claimed epoch when project context changes', async () => {
+      withProject(4, 3);
+      const res = await post(approveBody());
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.any(String),
+        1000,
+      );
+      expect(mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.completeJob.mock.invocationCallOrder[0],
+      );
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        { threadId: CONVO_ID, checkpointIds: ['checkpoint-old'] },
+      );
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+    it('terminalizes a claimed resume when the fresh project lookup fails', async () => {
+      withProject(3, 3);
+      mockGetConvo.mockRejectedValueOnce(new Error('fresh project read failed'));
+
+      const res = await post(approveBody());
+      await settled;
+
+      expect(res.status).toBe(500);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      expect(mockGetConvo.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.any(String),
+        1000,
+      );
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        { threadId: CONVO_ID, checkpointIds: ['checkpoint-old'] },
+      );
+      expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+    });
+
+    it('rejects legacy unscoped resumes when current project context is model-facing', async () => {
+      withProject(3, undefined);
+      const res = await post(approveBody());
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('does not terminalize or prune when the approval claim loses its CAS', async () => {
+      withProject(4, 3);
+      mockGenerationJobManager.approvals.resolve.mockResolvedValue(false);
+      const res = await post(approveBody());
+      expect(res.status).toBe(409);
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
     });
   });
 

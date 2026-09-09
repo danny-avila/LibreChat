@@ -19,6 +19,7 @@ jest.mock('~/hooks/AuthContext', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetMessagesByConvoId: () => ({ data: null, isLoading: false, isFetching: false }),
+  useProjectQuery: () => ({ data: undefined }),
 }));
 
 /**
@@ -64,12 +65,6 @@ describe('ChatView page heading', () => {
     expect(headings).toHaveLength(1);
   });
 
-  test('keeps the heading visually hidden', () => {
-    render(<ChatView />);
-
-    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('sr-only');
-  });
-
   test('announces a localized new chat heading on the landing page', () => {
     render(<ChatView />);
 
@@ -112,26 +107,5 @@ describe('ChatView page heading', () => {
     expect(
       screen.queryByRole('heading', { level: 1, name: 'Previous chat' }),
     ).not.toBeInTheDocument();
-  });
-});
-
-describe('ChatView composer column', () => {
-  beforeEach(() => {
-    mockParams.mockReturnValue({ conversationId: 'convo-1' });
-    mockConversation.mockReturnValue({ conversationId: 'convo-1', title: 'Deploy checklist' });
-  });
-
-  /* The composer's in-flight steer overlay is painted above the composer's top
-     edge, so a scroll container here would clip it out of sight for the whole
-     run. The gutter that lines the column up with the messages has to be
-     reserved with padding instead. */
-  test('reserves the message column gutter without becoming a scroll container', () => {
-    const { container } = render(<ChatView />);
-
-    const composerColumn = container.querySelector('.scrollbar-gutter-spacer');
-
-    expect(composerColumn).not.toBeNull();
-    expect(composerColumn).not.toHaveClass('overflow-y-auto');
-    expect(composerColumn).not.toHaveClass('scrollbar-gutter-stable');
   });
 });

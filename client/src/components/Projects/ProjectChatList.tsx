@@ -53,8 +53,8 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style}>
-          {children}
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} role="row">
+          <div role="gridcell">{children}</div>
         </div>
       )}
     </CellMeasurer>
@@ -145,6 +145,7 @@ const ProjectChatList = ({
   emptyLabel,
   loadMore,
 }: ProjectChatListProps) => {
+  const localize = useLocalize();
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
@@ -268,6 +269,8 @@ const ProjectChatList = ({
       <AutoSizer>
         {({ width, height }) => (
           <List
+            aria-label={localize('com_ui_chats')}
+            containerRole="rowgroup"
             ref={listRef}
             width={width}
             height={height}

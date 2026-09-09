@@ -758,9 +758,13 @@ describe('userGroup methods', () => {
 
     it('deduplicates concurrent cache builds for the same member key', async () => {
       const user = await createTestUser({ idOnTheSource: 'dedup-ext-1' });
+      let releaseCacheRead!: () => void;
+      const cacheRead = new Promise<void>((resolve) => {
+        releaseCacheRead = resolve;
+      });
       const cache = {
         get: jest.fn(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await cacheRead;
           return undefined;
         }),
         set: jest.fn(async () => undefined),
@@ -771,24 +775,33 @@ describe('userGroup methods', () => {
         role: SystemRoles.USER,
         idOnTheSource: 'dedup-ext-1',
       };
+      const findSpy = jest.spyOn(Group, 'find');
 
-      const [first, second, third] = await Promise.all([
+      const calls = [
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
-      ]);
+      ];
+      /** Hold the first cache read open while all callers join the same lookup. */
+      releaseCacheRead();
+      const [first, second, third] = await Promise.all(calls);
 
       expect(first).toEqual(second);
       expect(second).toEqual(third);
-      expect(cache.get).toHaveBeenCalledTimes(3);
+      expect(findSpy).toHaveBeenCalledTimes(1);
       expect(cache.set).toHaveBeenCalledTimes(1);
+      findSpy.mockRestore();
     });
 
     it('shares one lock and DB build across concurrent same-process callers', async () => {
       const user = await createTestUser({ idOnTheSource: 'lock-ext-1' });
+      let releaseCacheRead!: () => void;
+      const cacheRead = new Promise<void>((resolve) => {
+        releaseCacheRead = resolve;
+      });
       const cache = {
         get: jest.fn(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await cacheRead;
           return undefined;
         }),
         set: jest.fn(async () => undefined),
@@ -803,11 +816,14 @@ describe('userGroup methods', () => {
         idOnTheSource: 'lock-ext-1',
       };
 
-      const [first, second, third] = await Promise.all([
+      const calls = [
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
-      ]);
+      ];
+      /** Hold the first cache read open while all callers join the same lookup. */
+      releaseCacheRead();
+      const [first, second, third] = await Promise.all(calls);
 
       expect(first).toEqual(second);
       expect(second).toEqual(third);
