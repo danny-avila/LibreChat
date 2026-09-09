@@ -489,6 +489,38 @@ describe('persistFileWithQuota', () => {
     expect(write).toHaveBeenCalled();
   });
 
+  it('treats a no-op conditional write as a failed commit', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 5, file_id: 'replacement' },
+          replacedBytes: 20,
+          write: async () => null,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toThrow(/without committing a row/i);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 11, file_id: 'next-file' },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
   it('rolls back a prewritten blob when the quota read fails', async () => {
     const rollback = jest.fn();
     const write = jest.fn();
@@ -712,6 +744,28 @@ describe('persistSkillFileWithQuota', () => {
           scope,
           row: { ...skillRow, bytes: 6, relativePath: 'scripts/b.sh' },
           replacing: null,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
+  it('does not net off bytes owned by the requester in another tenant', async () => {
+    const scope = resolveStorageScope(
+      makeReq({ storageLimitMb: 1, requestTenantId: 'request-tenant' }),
+    );
+    const getUserStorageUsage = usageOf(megabyte - 10);
+
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope,
+          row: { ...skillRow, bytes: 11 },
+          replacing: { author: userId, tenantId: 'different-tenant' },
+          replacedBytes: 20,
           write: async (row) => row,
           rollback: null,
           getUserStorageUsage,

@@ -2,6 +2,7 @@ import type { IndexSpecification } from 'mongodb';
 import type { Connection } from 'mongoose';
 import conversationTagSchema from '~/schema/conversationTag';
 import skillSyncStatusSchema from '~/schema/skillSyncStatus';
+import skillFileSchema from '~/schema/skillFile';
 import agentCategorySchema from '~/schema/agentCategory';
 import { buildIndexWithRetry } from '~/utils/retry';
 import accessRoleSchema from '~/schema/accessRole';
@@ -30,6 +31,7 @@ const TENANT_SCHEMAS = {
   files: fileSchema,
   groups: groupSchema,
   skillsyncstatuses: skillSyncStatusSchema,
+  skillfiles: skillFileSchema,
 };
 
 /**

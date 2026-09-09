@@ -157,6 +157,10 @@ function idsMatch(
   return left != null && right != null && left.toString() === right.toString();
 }
 
+function tenantsMatch(left?: string | null, right?: string | null): boolean {
+  return (left ?? null) === (right ?? null);
+}
+
 /**
  * Soft gate: blocks writes once observed usage reaches the cap. Concurrent requests
  * can each pass before either has committed its row, so the cap is approximate under
@@ -290,6 +294,9 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
 
   try {
     const result = await write(scopedRow);
+    if (result == null) {
+      throw new Error('Quota-bearing persistence callback completed without committing a row');
+    }
     if (scope.storageLimit !== undefined && charge < 0) {
       scope.currentUsage = Math.max(0, (scope.currentUsage as number) + charge);
     }
@@ -371,12 +378,16 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
  * discounted.
  */
 export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
-  params: PersistParams<TRow, TResult> & { replacing?: { author?: unknown } | null },
+  params: PersistParams<TRow, TResult> & {
+    replacing?: { author?: unknown; tenantId?: string | null } | null;
+  },
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   const { replacing, ...rest } = params;
   const replacedByRequester =
-    replacing != null && idsMatch(replacing.author as string, params.scope.userId);
+    replacing != null &&
+    idsMatch(replacing.author as string, params.scope.userId) &&
+    tenantsMatch(replacing.tenantId, params.scope.tenantId);
   const replacementKey =
     replacedByRequester && rest.replacedBytes != null && rest.row.skillId && rest.row.relativePath
       ? `skill:${rest.row.skillId.toString()}:${rest.row.relativePath}`
