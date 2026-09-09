@@ -270,6 +270,24 @@ it('prunes viewable descendants stranded behind an inaccessible edge node', asyn
   expect(deps.connect).not.toHaveBeenCalled();
 });
 
+it('prunes later legacy chain members when an earlier member is unavailable', async () => {
+  const { check, deps } = setup();
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.flatMap((id) => {
+      if (id === 'root') {
+        return [graphNode(id, { tools: [], agent_ids: ['missing', 'visible'] })];
+      }
+      if (id === 'visible') {
+        return [graphNode(id, { tools: ['search_mcp_docs'] })];
+      }
+      return [];
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([]);
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
 it('includes enabled spawn-graph members when the capability is available', async () => {
   const { check, deps } = setup();
   deps.getAppConfig = jest.fn(
@@ -405,6 +423,29 @@ it('initializes only config servers selected by the runnable graph', async () =>
   expect(deps.ensureConfigServers).toHaveBeenCalledWith({
     docs: { type: 'streamable-http', url: 'https://docs.example.test/mcp' },
   });
+});
+
+it('rejects a selected server shadowed by an unselected config server', async () => {
+  const { check, deps } = setup(['search_mcp_Sales Force']);
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        mcpConfig: {
+          'Sales Force': { type: 'streamable-http', url: 'https://first.example.test/mcp' },
+          Sales_Force: { type: 'streamable-http', url: 'https://second.example.test/mcp' },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getServerConfigs = async () => ({ 'Sales Force': server });
+
+  await expect(check('agent', principal)).rejects.toMatchObject({
+    code: 'mcp_configuration_missing',
+  });
+  expect(deps.ensureConfigServers).toHaveBeenCalledWith({
+    'Sales Force': { type: 'streamable-http', url: 'https://first.example.test/mcp' },
+  });
+  expect(deps.connect).not.toHaveBeenCalled();
 });
 
 it('rejects an explicitly selected tool removed from an otherwise healthy server', async () => {

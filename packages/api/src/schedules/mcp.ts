@@ -39,11 +39,11 @@ import {
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
-import { detachOnAbort } from '../utils/promises';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
 import { resolveReachableGraph } from '../agents/edges';
 import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
+import { detachOnAbort } from '../utils/promises';
 import { getPluginAuthMap } from '../agents/auth';
 
 export class ScheduleMCPError extends Error {
@@ -194,8 +194,14 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const agent = accessibleById.get(id);
         if (!agent) continue;
         graphEdges.push(...(agent.edges ?? []));
-        for (const childId of agent.agent_ids ?? []) {
-          pending.push({ ids: [childId], requireAll: false, explicitSeed: true });
+        if (agent.id === agentId) {
+          let previousId = agent.id;
+          for (const childId of agent.agent_ids ?? []) {
+            if (childId === agent.id || childId.length === 0) continue;
+            graphEdges.push({ from: previousId, to: childId });
+            pending.push({ ids: [childId], requireAll: false, explicitSeed: false });
+            previousId = childId;
+          }
         }
         for (const edge of agent.edges ?? []) {
           for (const childId of [edge.from, edge.to].flat()) {
@@ -281,13 +287,17 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         [...selected.keys()].map((server) => ({ server, status: 'mcp_permission_denied' })),
       );
     }
+    const rawServerNames = [
+      ...Object.keys(rawConfig),
+      ...[...serverHints].filter((name) => !(name in rawConfig)),
+    ];
+    const shadowed = findShadowedServerNames(rawServerNames);
     const selectedRawConfig = Object.fromEntries(
       Object.entries(rawConfig).filter(([serverName]) => selected.has(serverName)),
     );
     const config = await deps.ensureConfigServers(selectedRawConfig);
     const servers = await deps.getServerConfigs(user.id, config, user.role);
     throwIfAborted();
-    const shadowed = findShadowedServerNames(Object.keys(servers));
     const auth = await getPluginAuthMap({
       userId: user.id,
       pluginKeys: [...selected.keys()].map((server) => `${Constants.mcp_prefix}${server}`),

@@ -49,7 +49,7 @@ const limits = {
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
-  mcpPreflightTimeoutMs: 30_000,
+  mcpPreflightTimeoutMs: 300_000,
   requireProject: false,
 };
 

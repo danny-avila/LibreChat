@@ -226,8 +226,8 @@ interface:
   #   fireConcurrency: 5
   #   # Maximum MCP readiness connections opened at once by one schedule admission (1-10).
   #   mcpPreflightConcurrency: 3
-  #   # Maximum wall-clock time for one MCP readiness admission (1000-120000 ms).
-  #   mcpPreflightTimeoutMs: 30000
+  #   # Maximum wall-clock time for one MCP readiness admission (1000-600000 ms).
+  #   mcpPreflightTimeoutMs: 300000
   #   # Require every schedule to be filed under a chat project. Enforced on
   #   # create/update AND at each fire, so turning it on stops (auto-disables)
   #   # schedules that predate it rather than letting their runs land loose.

@@ -138,7 +138,7 @@ describe('manual Run Now lease cleanup', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     ).rejects.toThrow('user lookup failed');
@@ -1522,7 +1522,7 @@ describe('scheduled resume capacity', () => {
             autoDisableAfterFailures: 5,
             fireConcurrency: 1,
             mcpPreflightConcurrency: 3,
-            mcpPreflightTimeoutMs: 30_000,
+            mcpPreflightTimeoutMs: 300_000,
             ...(over.projectConfig ?? {}),
           },
         },

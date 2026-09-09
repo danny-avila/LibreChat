@@ -181,7 +181,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
       autoDisableAfterFailures: 5,
       fireConcurrency: 5,
       mcpPreflightConcurrency: 3,
-      mcpPreflightTimeoutMs: 30_000,
+      mcpPreflightTimeoutMs: 300_000,
       requireProject: false,
     }),
     preflightMCP: jest.fn().mockResolvedValue([]),
@@ -447,7 +447,7 @@ describe('create with a cron cadence', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     });
@@ -471,7 +471,7 @@ describe('create with a cron cadence', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     });
@@ -498,7 +498,7 @@ describe('create with a cron cadence', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     });
@@ -1052,7 +1052,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     });
@@ -1078,7 +1078,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     });
@@ -1112,7 +1112,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
-        mcpPreflightTimeoutMs: 30_000,
+        mcpPreflightTimeoutMs: 300_000,
         requireProject: false,
       }),
     });

@@ -40,13 +40,13 @@ describe('scheduled MCP preflight config', () => {
     expect(
       configSchema.safeParse({
         version: '1.2.1',
-        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 120000 } },
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 600000 } },
       }).success,
     ).toBe(true);
     expect(
       configSchema.safeParse({
         version: '1.2.1',
-        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 120001 } },
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 600001 } },
       }).success,
     ).toBe(false);
     expect(
