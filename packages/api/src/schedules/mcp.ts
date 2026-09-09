@@ -133,6 +133,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const expanded = new Set<string>();
     const expandedHandoffs = new Set<string>();
     const expandedHandoffEdges = new Set<string>();
+    const viewableById = new Map<string, AgentGraphNode>();
     const accessibleById = new Map<string, AgentGraphNode>();
     const subagentGraphIds = new Set<string>();
     const accessIdentity = {
@@ -174,6 +175,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         modelsConfig ??= await deps.getModelsConfig(user);
       }
       for (const agent of loaded) {
+        viewableById.set(agent.id, agent);
         const availableModels =
           agent.id === agentId
             ? undefined
@@ -267,16 +269,19 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         );
       }
     };
-    const includeGraph = async (ids: string[]): Promise<boolean> => {
+    const includeGraph = async (ids: string[], parentRunnable: boolean): Promise<boolean> => {
       await loadNodes(ids);
-      if (ids.some((id) => !accessibleById.has(id))) return false;
+      if (!parentRunnable || ids.some((id) => !accessibleById.has(id))) return false;
       for (const id of ids) {
         explicitSeeds.add(id);
         expanded.add(id);
       }
       return true;
     };
-    const processDirectGraphs = async (agent: AgentGraphNode): Promise<void> => {
+    const processDirectGraphs = async (
+      agent: AgentGraphNode,
+      parentRunnable: boolean,
+    ): Promise<void> => {
       if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
       const definitions = agent.subagents.graphs ?? [];
       const memberIds = [...new Set(definitions.flatMap((graph) => graph.agent_ids ?? []))].filter(
@@ -292,7 +297,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       await loadNodes(memberIds);
       for (const definition of definitions) {
         const ids = [...new Set(definition.agent_ids ?? [])];
-        if (await includeGraph(ids)) {
+        if (await includeGraph(ids, parentRunnable)) {
           acceptedGraphCounts.set(agent.id, (acceptedGraphCounts.get(agent.id) ?? 0) + 1);
         }
       }
@@ -301,6 +306,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       agent: AgentGraphNode,
       depth: number,
       ancestors: Set<string>,
+      parentRunnable: boolean,
     ): Promise<void> => {
       if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
       if (agent.subagents.allowSelf !== false) countExpandedSubagentConfig();
@@ -316,23 +322,29 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       const nextAncestors = new Set(ancestors);
       nextAncestors.add(agent.id);
       for (const childId of directIds) {
-        if (nextAncestors.has(childId)) continue;
-        const child = accessibleById.get(childId);
+        if (nextAncestors.has(childId) || handoffSkippedIds.has(childId)) continue;
+        // Lazy runtime initialization loads VIEW-checked metadata before model
+        // validation. Even an invalid-model descriptor consumes depth, expanded-
+        // config, and graph-node budgets, but its MCP tools can never execute.
+        const child = viewableById.get(childId);
         if (!child) continue;
         addGraphBudgetMember(childId);
-        directAgentIds.add(childId);
         countExpandedSubagentConfig();
-        explicitSeeds.add(childId);
-        expanded.add(childId);
-        await visitDirectTree(child, depth + 1, nextAncestors);
+        const childRunnable = parentRunnable && accessibleById.has(childId);
+        if (childRunnable) {
+          directAgentIds.add(childId);
+          explicitSeeds.add(childId);
+          expanded.add(childId);
+        }
+        await visitDirectTree(child, depth + 1, nextAncestors, childRunnable);
         // initializeClient preloads a direct child's graph members only after its
         // complete nested direct tree, before root-level graphs are resolved.
-        await processDirectGraphs(child);
+        await processDirectGraphs(child, childRunnable);
       }
     };
 
     for (const root of rootConfigs) {
-      await visitDirectTree(root, 0, new Set());
+      await visitDirectTree(root, 0, new Set(), true);
     }
     // Root and handoff graph definitions run after every direct tree. Each definition
     // is skipped atomically when its new members would exceed the shared runtime budget.
@@ -345,7 +357,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         );
         if (subagentGraphIds.size + staged.length > MAX_SUBAGENT_GRAPH_NODES) continue;
         staged.forEach((id) => subagentGraphIds.add(id));
-        if (await includeGraph(ids)) {
+        if (await includeGraph(ids, true)) {
           acceptedGraphCounts.set(root.id, (acceptedGraphCounts.get(root.id) ?? 0) + 1);
         }
       }
@@ -369,7 +381,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       nextAncestors.add(agent.id);
       for (const childId of new Set(agent.subagents.agent_ids ?? [])) {
         if (childId === agent.id || nextAncestors.has(childId)) continue;
-        const child = accessibleById.get(childId);
+        const child = viewableById.get(childId);
         if (!child) continue;
         count();
         // Only already initialized handoff configs are eager in the initial run.

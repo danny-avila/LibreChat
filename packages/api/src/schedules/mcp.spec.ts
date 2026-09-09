@@ -386,6 +386,80 @@ it('does not charge inaccessible direct targets to the graph budget', async () =
   expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(graphIds, expect.any(Object));
 });
 
+it('charges viewable invalid-model direct targets to the runtime graph budget', async () => {
+  const graphIds = Array.from({ length: 50 }, (_, index) => `graph-${index}`);
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          tools: [],
+          subagents: {
+            enabled: true,
+            agent_ids: ['retired'],
+            graphs: [{ agent_ids: graphIds }],
+          } as never,
+        });
+      }
+      if (id === 'retired') {
+        return graphNode(id, {
+          provider: 'anthropic',
+          model: 'retired-model',
+          tools: ['search_mcp_docs'],
+        });
+      }
+      return graphNode(id, { tools: id === graphIds[0] ? ['search_mcp_docs'] : [] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([]);
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(graphIds, expect.anything());
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
+it('does not retry a model-invalid handoff as a direct subagent descriptor', async () => {
+  const graphIds = Array.from({ length: 50 }, (_, index) => `graph-${index}`);
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          tools: [],
+          edges: [{ from: 'root', to: 'retired' }],
+          subagents: {
+            enabled: true,
+            agent_ids: ['retired'],
+            graphs: [{ agent_ids: graphIds }],
+          } as never,
+        });
+      }
+      if (id === 'retired') {
+        return graphNode(id, { provider: 'anthropic', model: 'retired-model' });
+      }
+      return graphNode(id, { tools: id === graphIds[0] ? ['search_mcp_docs'] : [] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(graphIds, expect.any(Object));
+});
+
 it('rejects direct subagent trees beyond the runtime depth limit', async () => {
   const { check, deps } = setup([]);
   deps.getAppConfig = jest.fn(
