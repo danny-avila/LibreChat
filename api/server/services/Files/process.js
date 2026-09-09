@@ -198,6 +198,16 @@ const getDeleteMethod = ({ source, deletionMethods }) => {
 const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
   return async (req, file, openai) => {
     const secondaryDeleteMethods = [];
+    const secondaryStorageSource = file.metadata?.secondaryStorageSource;
+    if (secondaryStorageSource && secondaryStorageSource !== source) {
+      const deleteSecondaryStorage = getDeleteMethod({
+        source: secondaryStorageSource,
+        deletionMethods,
+      });
+      secondaryDeleteMethods.push((req, file) =>
+        deleteSecondaryStorage(req, { ...file, source: secondaryStorageSource }),
+      );
+    }
     if (file.embedded === true && source !== FileSources.vectordb) {
       secondaryDeleteMethods.push(
         getDeleteMethod({ source: FileSources.vectordb, deletionMethods }),
@@ -719,7 +729,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
   let secondaryStoredFile;
-  let persistedSource = source;
+  let secondaryStorageSource;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -736,7 +746,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     secondaryStoredFile = result;
     bytes = providerBytes + (result.bytes ?? 0);
     filepath = result.filepath;
-    persistedSource = result.source;
+    secondaryStorageSource = result.source;
     storageMetadata = getStorageMetadata({
       filepath,
       source: result.source,
@@ -766,7 +776,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       type: file.mimetype,
       ...(await retentionExpiryPromise),
       embedded,
-      source: persistedSource,
+      source,
+      metadata: secondaryStorageSource ? { secondaryStorageSource } : undefined,
       height,
       width,
       tenantId: req.user.tenantId,

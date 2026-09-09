@@ -73,6 +73,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     codeEnvRefs?: CodeEnvRefMap;
     /** Dispatch-order stamp for the current source artifact generation. */
     sourceDispatchedAt?: number;
+    /** Per-attempt ownership token for foreground generated-file writes. */
+    outputClaimRevision?: string;
     /** Vector namespaces this file has been embedded into. */
     embeddedEntities?: string[];
     /** The user named this destination, so absent ones were declined. */

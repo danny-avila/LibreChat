@@ -13,10 +13,11 @@ describe('storage quota write boundaries', () => {
 
   it('keeps Code output row commits inside the quota callback', () => {
     const source = read('./Code/process.js');
-    expect(source.match(/^\s*\? createFile\(/gm)).toHaveLength(1);
+    expect(source).not.toMatch(/\bcreateFile\(/);
     expect(source).toContain('const persistCodeFile = createFileQuotaCommitter({');
     expect(source).toContain('await persistCodeFile(');
-    expect(source).toContain('? createFile(scopedRow, true)');
+    expect(source).toContain("? { 'metadata.outputClaimRevision': outputClaimRevision }");
+    expect(source).toContain('updateFile(');
   });
 
   it('keeps server SkillFile writes behind the shared quota service', () => {

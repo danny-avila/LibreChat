@@ -49,7 +49,7 @@ const fs = require('fs');
 const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
 const { resolveEffectiveToolResource } = require('~/server/services/Files/routing');
 const { filterFile } = require('~/server/services/Files/process');
-const { UninspectableFileError } = require('@librechat/api');
+const { FileStorageLimitError, UninspectableFileError } = require('@librechat/api');
 
 const router = require('~/server/routes/files/images');
 
@@ -729,6 +729,32 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ message: legacyMessage });
+  });
+
+  it('returns 413 only for the typed storage quota error', async () => {
+    processImageFile.mockRejectedValueOnce(new FileStorageLimitError(100, 100));
+    const app = createAppWithUser(otherUserId);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(413);
+  });
+
+  it('does not trust an unrelated provider status of 413', async () => {
+    processImageFile.mockRejectedValueOnce(
+      Object.assign(new Error('provider rejected'), { status: 413 }),
+    );
+    const app = createAppWithUser(otherUserId);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
   });
 
   it.each([

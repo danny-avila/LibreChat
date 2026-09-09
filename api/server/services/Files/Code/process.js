@@ -63,12 +63,11 @@ const {
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
-  createFile,
   getFiles,
   updateFile,
   claimCodeFile,
   getUserStorageUsage,
-  deleteFile: deleteFileRecord,
+  deleteFileByFilter,
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
@@ -798,7 +797,7 @@ const processCodeOutput = async ({
      * a single record instead of creating duplicates (TOCTOU race fix).
      *
      * Claim by `safeName` (not raw `name`) so the claim and the eventual
-     * `createFile` agree on the filename column — otherwise weird inputs
+     * claim agree on the filename column — otherwise weird inputs
      * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
      * then write under the sanitized one, leaving the claim row orphaned.
      */
@@ -811,6 +810,7 @@ const processCodeOutput = async ({
      * content write lands.
      */
     const sourceDispatchedAt = freshClaimAfter ?? Date.now();
+    const outputClaimRevision = freshClaimAfter == null ? v4() : undefined;
     const storageScope = resolveStorageScope(req);
 
     const newFileId = v4();
@@ -821,6 +821,7 @@ const processCodeOutput = async ({
       user: req.user.id,
       tenantId: storageScope.tenantId,
       sourceDispatchedAt,
+      outputClaimRevision,
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
@@ -857,10 +858,10 @@ const processCodeOutput = async ({
      * the update's filter, so check and write are one atomic operation — a
      * stale harvest's commit simply misses and its attachment is skipped.
      * The row always exists here (the claim inserted it), so the non-upsert
-     * `updateFile` matches `createFile(data, true)` semantics ($set + TTL
-     * unset). Bytes a loser may have already uploaded to the shared storage
+     * `updateFile` applies the completed row and removes its TTL. Bytes a
+     * loser may have already uploaded to the shared storage
      * key are a narrow residual that per-file locking would be needed to
-     * close. Foreground writes keep the unconditional `createFile` path.
+     * close. Foreground writes use a per-claim revision as their CAS token.
      */
     const commitCodeFile = async (fileData) => {
       const { deleteFile: deleteNewFile } = getStrategyFunctions(fileData.source);
@@ -870,14 +871,17 @@ const processCodeOutput = async ({
           req,
           fileData,
           (scopedRow) =>
-            freshClaimAfter == null
-              ? createFile(scopedRow, true)
-              : updateFile(scopedRow, {
-                  $or: [
-                    { 'metadata.sourceDispatchedAt': { $exists: false } },
-                    { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
-                  ],
-                }),
+            updateFile(
+              scopedRow,
+              freshClaimAfter == null
+                ? { 'metadata.outputClaimRevision': outputClaimRevision }
+                : {
+                    $or: [
+                      { 'metadata.sourceDispatchedAt': { $exists: false } },
+                      { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
+                    ],
+                  },
+            ),
           null,
           isUpdate ? claimed.bytes : 0,
         );
@@ -891,7 +895,18 @@ const processCodeOutput = async ({
           );
         }
         if (!isUpdate) {
-          await deleteFileRecord(file_id).catch((cleanupError) =>
+          const claimFilter = outputClaimRevision
+            ? {
+                file_id,
+                'metadata.outputClaimRevision': outputClaimRevision,
+                filepath: { $exists: false },
+              }
+            : {
+                file_id,
+                'metadata.sourceDispatchedAt': sourceDispatchedAt,
+                filepath: { $exists: false },
+              };
+          await deleteFileByFilter(claimFilter).catch((cleanupError) =>
             logger.error(
               '[processCodeOutput] Failed to remove rejected output claim:',
               cleanupError,
@@ -1132,7 +1147,7 @@ const processCodeOutput = async ({
     const file = {
       ...baseFile,
       // Always set explicitly so an update which produces a binary or
-      // oversized artifact clears any previously cached text — createFile
+      // oversized artifact clears any previously cached text — updateFile
       // uses findOneAndUpdate with $set semantics.
       text: text ?? null,
       textFormat: textFormat ?? null,

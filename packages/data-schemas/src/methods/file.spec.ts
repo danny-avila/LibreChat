@@ -215,6 +215,41 @@ describe('File Methods', () => {
       ).toBe(111);
     });
 
+    it('rotates foreground claim ownership without changing the content timestamp', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const File = mongoose.models.File;
+      await fileMethods.claimCodeFile({
+        filename: 'foreground.csv',
+        conversationId: 'conversation-foreground-claim',
+        file_id: 'foreground-file',
+        user: userId,
+        sourceDispatchedAt: 111,
+        outputClaimRevision: 'claim-a',
+      });
+      const written = new Date('2024-01-01T00:00:00.000Z');
+      await File.updateOne(
+        { file_id: 'foreground-file' },
+        { $set: { updatedAt: written } },
+        { timestamps: false },
+      );
+
+      const reclaimed = await fileMethods.claimCodeFile({
+        filename: 'foreground.csv',
+        conversationId: 'conversation-foreground-claim',
+        file_id: 'unused-file-id',
+        user: userId,
+        sourceDispatchedAt: 222,
+        outputClaimRevision: 'claim-b',
+      });
+
+      expect(reclaimed.file_id).toBe('foreground-file');
+      expect((reclaimed.metadata as { outputClaimRevision?: string }).outputClaimRevision).toBe(
+        'claim-b',
+      );
+      expect((reclaimed.metadata as { sourceDispatchedAt?: number }).sourceDispatchedAt).toBe(222);
+      expect(new Date(reclaimed.updatedAt as unknown as string).getTime()).toBe(written.getTime());
+    });
+
     it('keeps non-tenant code output claims in the legacy namespace', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 

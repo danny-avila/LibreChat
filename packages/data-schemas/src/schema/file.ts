@@ -134,6 +134,12 @@ const file: Schema<IMongoFile> = new Schema(
         type: Number,
         default: undefined,
       },
+      /** Per-attempt ownership token used to conditionally commit a
+       *  foreground generated-file write. */
+      outputClaimRevision: {
+        type: String,
+        default: undefined,
+      },
       /** Vector namespaces this file has been embedded into. Vectors are stored per
        *  entity, so a duplicated agent needs its own embedding even though the record
        *  is shared. */

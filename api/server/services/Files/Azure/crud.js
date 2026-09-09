@@ -131,7 +131,7 @@ async function deleteFileFromAzure(req, file) {
 
   try {
     const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
-    const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1];
+    const blobPath = file.filepath.split(`${AZURE_CONTAINER_NAME}/`)[1]?.split('?')[0];
     if (!blobPath.includes(req.user.id)) {
       throw new Error('User ID not found in blob path');
     }

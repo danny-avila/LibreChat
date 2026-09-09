@@ -98,6 +98,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     user: string;
     tenantId?: string | null;
     sourceDispatchedAt?: number;
+    /** Per-attempt ownership token for foreground writers. The eventual
+     *  content update must match this value so a superseded claimant cannot
+     *  commit bytes or remove the winning placeholder. */
+    outputClaimRevision?: string;
   }) => Promise<IMongoFile>;
   createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
   updateFile: (
@@ -732,6 +736,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
      *  freshly claimed (not-yet-written) row still carries an ownership
      *  signal for the background harvest's stale-output guard. */
     sourceDispatchedAt?: number;
+    outputClaimRevision?: string;
   }): Promise<IMongoFile> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const tenantFilter = data.tenantId ? { tenantId: data.tenantId } : { tenantId: null };
@@ -739,8 +744,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       file_id: data.file_id,
       user: data.user,
       ...(data.tenantId ? { tenantId: data.tenantId } : {}),
-      ...(data.sourceDispatchedAt != null
-        ? { metadata: { sourceDispatchedAt: data.sourceDispatchedAt } }
+      ...(data.sourceDispatchedAt != null && !data.outputClaimRevision
+        ? { 'metadata.sourceDispatchedAt': data.sourceDispatchedAt }
         : {}),
     };
     const result = await File.findOneAndUpdate(
@@ -750,7 +755,19 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         context: FileContext.execute_code,
         ...tenantFilter,
       },
-      { $setOnInsert: insertData },
+      {
+        $setOnInsert: insertData,
+        ...(data.outputClaimRevision
+          ? {
+              $set: {
+                'metadata.outputClaimRevision': data.outputClaimRevision,
+                ...(data.sourceDispatchedAt != null
+                  ? { 'metadata.sourceDispatchedAt': data.sourceDispatchedAt }
+                  : {}),
+              },
+            }
+          : {}),
+      },
       /** `timestamps: false`: a claim is an id reservation, not a content
        *  write — bumping `updatedAt` here would make the row look freshly
        *  written to the background harvest's out-of-order guard, which
