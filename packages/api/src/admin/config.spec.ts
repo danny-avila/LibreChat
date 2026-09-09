@@ -10,12 +10,13 @@ describe('isValidFieldPath', () => {
 
   it('rejects empty and non-string', () => {
     expect(isValidFieldPath('')).toBe(false);
-    // @ts-expect-error testing invalid input
     expect(isValidFieldPath(undefined)).toBe(false);
-    // @ts-expect-error testing invalid input
     expect(isValidFieldPath(null)).toBe(false);
-    // @ts-expect-error testing invalid input
     expect(isValidFieldPath(42)).toBe(false);
+  });
+
+  it('rejects NUL bytes before BSON persistence', () => {
+    expect(isValidFieldPath('cache.\0value')).toBe(false);
   });
 
   it('rejects __proto__ and dunder-prefixed segments', () => {
@@ -49,6 +50,13 @@ describe('isValidFieldPath', () => {
     expect(isValidFieldPath('speech.tts.$.apiKey')).toBe(false);
     expect(isValidFieldPath('a.$set')).toBe(false);
     expect(isValidFieldPath('$')).toBe(false);
+  });
+
+  it('rejects paths that exceed shared length or depth limits', () => {
+    expect(isValidFieldPath('a'.repeat(513))).toBe(false);
+    expect(
+      isValidFieldPath(Array.from({ length: 33 }, (_, index) => `seg${index}`).join('.')),
+    ).toBe(false);
   });
 });
 

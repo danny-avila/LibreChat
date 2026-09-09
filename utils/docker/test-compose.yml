@@ -27,7 +27,13 @@ services:
     restart: always
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --quiet
+      interval: 5s
+      timeout: 30s
+      retries: 30
+      start_period: 10s
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.7.3

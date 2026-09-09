@@ -7,6 +7,7 @@ import {
   getRequestPath,
   SYSTEM_TENANT_ID,
   logger,
+  tenantStorage,
 } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -19,6 +20,7 @@ import {
   resolveRequestTenantId,
   _resetTenantMiddlewareStrictCache,
 } from '../tenant';
+import { preAuthTenantMiddleware } from '../preAuthTenant';
 
 jest.mock('fs/promises', () => ({
   unlink: jest.fn().mockResolvedValue(undefined),
@@ -180,6 +182,7 @@ describe('tenantContextMiddleware', () => {
   afterEach(() => {
     _resetTenantMiddlewareStrictCache();
     delete process.env.TENANT_ISOLATION_STRICT;
+    delete process.env.TRUST_TENANT_HEADER;
     unlinkMock.mockClear();
     jest.restoreAllMocks();
   });
@@ -190,6 +193,58 @@ describe('tenantContextMiddleware', () => {
 
     const tenantId = await runMiddleware(req, res);
     expect(tenantId).toBe('tenant-x');
+  });
+
+  it('preserves a trusted pre-auth tenant instead of replacing it with the JWT tenant', async () => {
+    const req = mockReq({ tenantId: 'tenant-from-jwt', role: 'user' });
+    const res = mockRes();
+
+    const tenantId = await tenantStorage.run({ tenantId: 'tenant-from-header' }, () =>
+      runMiddleware(req, res),
+    );
+
+    expect(tenantId).toBe('tenant-from-header');
+  });
+
+  it('preserves the trusted header across pre-auth, Passport user assignment, and authenticated tenant middleware', async () => {
+    process.env.TRUST_TENANT_HEADER = 'true';
+    const req = mockReqWithHeaders(undefined, {
+      'x-tenant-id': 'tenant-from-header',
+      'x-expected-tenant-id': 'tenant-from-header',
+    }) as ServerRequest & Parameters<typeof preAuthTenantMiddleware>[0];
+    const res = mockRes();
+
+    const tenantId = await new Promise<string | undefined>((resolve) => {
+      preAuthTenantMiddleware(req, res, () => {
+        req.user = {
+          id: 'user-1',
+          tenantId: 'tenant-from-jwt',
+          role: 'user',
+        } as ServerRequest['user'];
+        tenantContextMiddleware(req, res, () => resolve(getTenantId()));
+      });
+    });
+
+    expect(tenantId).toBe('tenant-from-header');
+  });
+
+  it('rejects stale tenant-scoped UI state before reaching an authenticated handler', () => {
+    const req = mockReqWithHeaders(
+      { id: 'user-1', tenantId: 'tenant-b', role: 'user' },
+      { 'x-expected-tenant-id': 'tenant-a' },
+    );
+    const res = mockRes();
+    const next = jest.fn();
+
+    tenantContextMiddleware(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Tenant context changed',
+      expectedTenantId: 'tenant-a',
+      currentTenantId: 'tenant-b',
+    });
   });
 
   it('sets ALS user and request context for authenticated tenant requests', async () => {
@@ -501,5 +556,15 @@ describe('resolveRequestTenantId', () => {
     const req = mockReq({ tenantId: 'tenant-user', role: 'user' });
 
     expect(resolveRequestTenantId(req)).toBe('tenant-user');
+  });
+
+  it('keeps the trusted ALS tenant before falling back to req.user.tenantId', () => {
+    const req = mockReq({ tenantId: 'tenant-user', role: 'user' });
+
+    const tenantId = tenantStorage.run({ tenantId: 'tenant-header' }, () =>
+      resolveRequestTenantId(req),
+    );
+
+    expect(tenantId).toBe('tenant-header');
   });
 });

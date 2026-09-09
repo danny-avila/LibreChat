@@ -10,6 +10,7 @@ import {
 } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
 import type { TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
+import { resolveConfigSecret, isEncryptedSecretPayload } from '../admin/secrets';
 import { isSSRFTarget, resolveHostnameSSRF, getEffectivePort } from '../auth';
 
 /**
@@ -160,6 +161,73 @@ interface KeenableAuthResolution {
 }
 
 /**
+ * Prefix marking a synthetic field name for a webSearch key resolved
+ * directly from an admin-encrypted config value (e.g. `serperApiKey`,
+ * `keenableApiKey`) rather than an env var name to look up. Never a real env
+ * var, so it can't collide with one. `extractWebSearchEnvVars` — shared with
+ * the unrelated plugin-install/uninstall flows — only understands `${VAR}`
+ * placeholders and silently drops any other literal (including ciphertext),
+ * so `loadWebSearchAuth`'s own resolution uses this instead: it keeps a
+ * field entry per key with a resolvable value, same as a successfully
+ * extracted `${VAR}` name, so the required/optional counting and
+ * key<->field position-zipping below (which assume that contract) still see
+ * a decrypted admin secret as "resolved" rather than "missing".
+ */
+const ADMIN_ENCRYPTED_FIELD_PREFIX = 'ADMIN_ENCRYPTED_WEB_SEARCH::';
+
+/**
+ * Like `extractWebSearchEnvVars`, but decrypts an admin-encrypted literal
+ * into a synthetic field name instead of dropping it, recording its
+ * decrypted value in `directValues` for the caller to merge into
+ * `authValues` without a real `loadAuthValues` lookup (a synthetic name has
+ * no env var or per-user plugin credential to find). Returns key<->field
+ * pairs — not a flat field list — so callers never need to re-derive which
+ * key a resolved field belongs to by array position, which silently
+ * misaligns as soon as any key in the middle fails to resolve.
+ */
+function extractWebSearchAuthFields(
+  keys: TWebSearchKeys[],
+  config: TCustomConfig['webSearch'] | undefined,
+  directValues: Map<string, string>,
+): Array<{ key: TWebSearchKeys; field: string }> {
+  const entries: Array<{ key: TWebSearchKeys; field: string }> = [];
+  for (const key of keys) {
+    const raw = config?.[key];
+    if (typeof raw === 'string' && isEncryptedSecretPayload(raw.trim())) {
+      const decrypted = resolveConfigSecret(raw);
+      if (decrypted) {
+        const field = `${ADMIN_ENCRYPTED_FIELD_PREFIX}${key}`;
+        directValues.set(field, decrypted);
+        entries.push({ key, field });
+      }
+      continue;
+    }
+    const [field] = extractWebSearchEnvVars({ keys: [key], config });
+    if (field) {
+      entries.push({ key, field });
+    }
+  }
+  return entries;
+}
+
+function resolveFirecrawlOptions(
+  options: TWebSearchConfig['firecrawlOptions'],
+): TWebSearchConfig['firecrawlOptions'] {
+  if (!options?.headers) {
+    return options;
+  }
+  return {
+    ...options,
+    headers: Object.fromEntries(
+      Object.entries(options.headers).map(([key, value]) => [
+        key,
+        resolveConfigSecret(value) ?? '',
+      ]),
+    ),
+  };
+}
+
+/**
  * Loads and verifies web search authentication values
  * @param params - Authentication parameters
  * @returns Authentication result
@@ -204,28 +272,24 @@ export async function loadWebSearchAuth({
       const keenableKeys: TWebSearchKeys[] = includeApiUrl
         ? ['keenableApiKey', 'keenableApiUrl']
         : ['keenableApiKey'];
-      const authEntries: Array<{ key: TWebSearchKeys; field: string }> = [];
-
-      for (const originalKey of keenableKeys) {
-        const [field] = extractWebSearchEnvVars({
-          keys: [originalKey],
-          config: webSearchConfig,
-        });
-        if (field) {
-          authEntries.push({ key: originalKey, field });
-        }
-      }
+      const directValues = new Map<string, string>();
+      const authEntries = extractWebSearchAuthFields(keenableKeys, webSearchConfig, directValues);
 
       let authValues: Record<string, string> = {};
       try {
         const authFields = authEntries.map(({ field }) => field);
-        authValues = await loadAuthValues({
-          userId,
-          authFields,
-          optional: new Set(authFields),
-          throwError: true,
-          failOnOptionalError: true,
-        });
+        const lookupFields = authFields.filter((field) => !directValues.has(field));
+        const looked =
+          lookupFields.length > 0
+            ? await loadAuthValues({
+                userId,
+                authFields: lookupFields,
+                optional: new Set(lookupFields),
+                throwError: true,
+                failOnOptionalError: true,
+              })
+            : {};
+        authValues = { ...looked, ...Object.fromEntries(directValues) };
       } catch {
         return {
           isUserProvided: false,
@@ -242,12 +306,16 @@ export async function loadWebSearchAuth({
       }> = [];
       for (const { key: originalKey, field } of authEntries) {
         const value = authValues[field];
-        const envValue = process.env[field];
-        const normalizedEnvValue = envValue?.trim();
-        const isFieldUserProvided =
-          normalizedEnvValue == null ||
-          normalizedEnvValue === '' ||
-          normalizedEnvValue === AuthType.USER_PROVIDED;
+        const isFieldUserProvided = directValues.has(field)
+          ? false
+          : (() => {
+              const normalizedEnvValue = process.env[field]?.trim();
+              return (
+                normalizedEnvValue == null ||
+                normalizedEnvValue === '' ||
+                normalizedEnvValue === AuthType.USER_PROVIDED
+              );
+            })();
         if (isFieldUserProvided) {
           // The category stays editable even before the user saves a value.
           // Otherwise a system key would hide a separately user-provided URL.
@@ -458,40 +526,51 @@ export async function loadWebSearchAuth({
 
       if (requiredKeys.length === 0) continue;
 
-      const requiredAuthFields = extractWebSearchEnvVars({
-        keys: requiredKeys,
-        config: webSearchConfig,
-      });
-      const optionalAuthFields = extractWebSearchEnvVars({
-        keys: optionalKeys,
-        config: webSearchConfig,
-      });
-      if (requiredAuthFields.length !== requiredKeys.length) continue;
+      const directValues = new Map<string, string>();
+      const requiredEntries = extractWebSearchAuthFields(
+        requiredKeys,
+        webSearchConfig,
+        directValues,
+      );
+      const optionalEntries = extractWebSearchAuthFields(
+        optionalKeys,
+        webSearchConfig,
+        directValues,
+      );
+      if (requiredEntries.length !== requiredKeys.length) continue;
 
-      const allKeys = [...requiredKeys, ...optionalKeys];
-      const allAuthFields = [...requiredAuthFields, ...optionalAuthFields];
-      const optionalSet = new Set(optionalAuthFields);
+      const allEntries = [...requiredEntries, ...optionalEntries];
+      const allAuthFields = allEntries.map(({ field }) => field);
+      const optionalSet = new Set(optionalEntries.map(({ field }) => field));
 
       try {
-        const authValues = await loadAuthValues({
-          userId,
-          authFields: allAuthFields,
-          optional: optionalSet,
-          throwError,
-        });
+        const lookupFields = allAuthFields.filter((field) => !directValues.has(field));
+        const looked =
+          lookupFields.length > 0
+            ? await loadAuthValues({
+                userId,
+                authFields: lookupFields,
+                optional: optionalSet,
+                throwError,
+              })
+            : {};
+        const authValues: Record<string, string> = {
+          ...looked,
+          ...Object.fromEntries(directValues),
+        };
 
         let allFieldsAuthenticated = true;
-        for (let j = 0; j < allAuthFields.length; j++) {
-          const field = allAuthFields[j];
+        for (let j = 0; j < allEntries.length; j++) {
+          const { key: originalKey, field } = allEntries[j];
           const value = authValues[field];
-          const originalKey = allKeys[j];
 
           if (!optionalSet.has(field) && !value) {
             allFieldsAuthenticated = false;
             break;
           }
 
-          const isFieldUserProvided = value != null && process.env[field] !== value;
+          const isFieldUserProvided =
+            !directValues.has(field) && value != null && process.env[field] !== value;
           const isUserProvidedUrlKey =
             originalKey != null && USER_PROVIDED_URL_KEYS.has(originalKey);
           const isUserProvidedOptInUrlKey =
@@ -634,7 +713,7 @@ export async function loadWebSearchAuth({
     authResult.safeSearch = webSearchConfig?.safeSearch ?? SafeSearchTypes.MODERATE;
   }
   authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
-  authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
+  authResult.firecrawlOptions = resolveFirecrawlOptions(webSearchConfig?.firecrawlOptions);
   authResult.searxngSearchOptions = webSearchConfig?.searxngSearchOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;

@@ -20,16 +20,13 @@ const maxConnecting = parseInt(process.env.MONGO_MAX_CONNECTING) || undefined;
 const maxIdleTimeMS = parseInt(process.env.MONGO_MAX_IDLE_TIME_MS) || undefined;
 /** The maximum time in milliseconds that a thread can wait for a connection to become available. */
 const waitQueueTimeoutMS = parseInt(process.env.MONGO_WAIT_QUEUE_TIMEOUT_MS) || undefined;
-/** Set to false to disable automatic index creation for all models associated with this connection. */
+/** Explicit `true`/`false` controls Mongoose autoIndex; absent variable preserves the Mongoose default (`true`). */
 const autoIndex =
-  process.env.MONGO_AUTO_INDEX != undefined
-    ? isEnabled(process.env.MONGO_AUTO_INDEX) || false
-    : undefined;
-
-/** Set to `false` to disable Mongoose automatically calling `createCollection()` on every model created on this connection. */
+  process.env.MONGO_AUTO_INDEX !== undefined ? isEnabled(process.env.MONGO_AUTO_INDEX) : undefined;
+/** Explicit `true`/`false` controls Mongoose autoCreate; absent variable preserves the Mongoose default (`true`). */
 const autoCreate =
-  process.env.MONGO_AUTO_CREATE != undefined
-    ? isEnabled(process.env.MONGO_AUTO_CREATE) || false
+  process.env.MONGO_AUTO_CREATE !== undefined
+    ? isEnabled(process.env.MONGO_AUTO_CREATE)
     : undefined;
 /**
  * Global is used here to maintain a cached connection across hot reloads
@@ -60,8 +57,8 @@ async function connectDb() {
       ...(maxConnecting ? { maxConnecting } : {}),
       ...(maxIdleTimeMS ? { maxIdleTimeMS } : {}),
       ...(waitQueueTimeoutMS ? { waitQueueTimeoutMS } : {}),
-      ...(autoIndex != undefined ? { autoIndex } : {}),
-      ...(autoCreate != undefined ? { autoCreate } : {}),
+      ...(autoIndex !== undefined ? { autoIndex } : {}),
+      ...(autoCreate !== undefined ? { autoCreate } : {}),
       // useNewUrlParser: true,
       // useUnifiedTopology: true,
       // bufferMaxEntries: 0,

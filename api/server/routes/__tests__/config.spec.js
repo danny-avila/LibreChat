@@ -324,9 +324,24 @@ describe('GET /api/config', () => {
       });
     });
 
-    it('should prefer user tenantId over getTenantId fallback', async () => {
+    it('should prefer the effective request tenant over the user tenantId', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockGetTenantId.mockReturnValue('fallback-tenant');
+      const app = createApp({ ...mockUser, tenantId: 'user-tenant' });
+
+      await request(app).get('/api/config');
+
+      expect(mockGetAppConfig).toHaveBeenCalledWith({
+        role: 'USER',
+        userId: 'user123',
+        idOnTheSource: undefined,
+        tenantId: 'fallback-tenant',
+      });
+    });
+
+    it('should use the user tenantId when no effective request tenant exists', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockGetTenantId.mockReturnValue(undefined);
       const app = createApp({ ...mockUser, tenantId: 'user-tenant' });
 
       await request(app).get('/api/config');

@@ -5,6 +5,7 @@ const {
   constructAzureURL,
   checkUserKeyExpiry,
   getProxyDispatcher,
+  resolveConfigSecret,
 } = require('@librechat/api');
 const { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const { getUserKeyValues, getUserKeyExpiry } = require('~/models');
@@ -101,14 +102,20 @@ const initializeClient = async ({ req, res, version, endpointOption, initAppClie
       groupMap,
     });
 
-    azureOptions = currentOptions;
+    // groupMap's apiKey is encrypted at rest (see ARRAY_SECRET_FIELDS in
+    // packages/api/src/admin/secrets.ts) — resolve it once here, the same
+    // way the regular Azure OpenAI initializer does, so neither the OpenAI
+    // client's own `apiKey` (which it uses to build its default
+    // `Authorization` header) nor anything else reading `azureOptions` later
+    // (e.g. `openai.locals.azureOptions`) ends up holding ciphertext instead
+    // of the real key.
+    apiKey = resolveConfigSecret(currentOptions.azureOpenAIApiKey) ?? '';
+    azureOptions = { ...currentOptions, azureOpenAIApiKey: apiKey };
 
     baseURL = constructAzureURL({
       baseURL: azureBaseURL ?? 'https://${INSTANCE_NAME}.openai.azure.com/openai',
       azureOptions,
     });
-
-    apiKey = azureOptions.azureOpenAIApiKey;
     opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
     opts.defaultHeaders = resolveHeaders({
       headers: {

@@ -9,7 +9,11 @@ import type {
   TLangfuseConnectionTestResponse,
   TLangfuseSessionLinkResponse,
 } from 'librechat-data-provider';
-import type { IConfig, MessageMethods } from '@librechat/data-schemas';
+import type {
+  FindConfigByPrincipalOptions,
+  IConfig,
+  MessageMethods,
+} from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
@@ -18,14 +22,23 @@ import {
   getLangfuseTenantDestinations,
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
+import {
+  decryptConfigSecret,
+  encryptConfigSecretFields,
+  encryptLegacyPlaintextConfigSecrets,
+} from './secrets';
+import {
+  isTransactionRequired,
+  isConfigVersionConflict,
+  rejectConfigVersionConflict,
+} from './config';
 import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
-import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
 import { scopeHeadersToDestination } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 import { resolveLangfuseSessionUrl } from '~/langfuse/session';
+import { getEffectiveTenantId } from '~/middleware/tenant';
 import { mergeHeaders } from '~/utils/headers';
 
-const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
 const LANGFUSE_VERIFICATION_TIMEOUT_MS = 10_000;
 
@@ -49,34 +62,39 @@ export interface LangfuseConnectionEvent {
   verification_result: 'skipped' | 'success';
 }
 
+type LangfuseMutationOp = {
+  kind: 'fields';
+  resetPaths: string[];
+  fields: Record<string, unknown>;
+  priority: number;
+  isActive?: boolean;
+};
+
 export interface AdminLangfuseDeps {
   findConfigByPrincipal: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    options?: { includeInactive?: boolean },
+    options?: FindConfigByPrincipalOptions,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
-  patchConfigFields: (
-    principalType: PrincipalType,
-    principalId: string | Types.ObjectId,
-    principalModel: PrincipalModel,
-    fields: Record<string, unknown>,
-    priority: number,
-    session?: ClientSession,
-  ) => Promise<IConfig | null>;
-  toggleConfigActive: (
-    principalType: PrincipalType,
-    principalId: string | Types.ObjectId,
-    isActive: boolean,
-    session?: ClientSession,
-  ) => Promise<IConfig | null>;
+  mutateConfigWithRevision: (params: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    principalModel: PrincipalModel;
+    expectedVersion: number | null;
+    op: LangfuseMutationOp;
+    cause: 'save';
+    actor: { actorId: string; actorEmail?: string; tenantId: string };
+    normalizeSecrets?: (overrides: Record<string, unknown>) => Record<string, unknown>;
+    trustedBasePrincipalSections?: string[];
+  }) => Promise<{
+    changed: boolean;
+    config: IConfig | null;
+    revision: { id: string } | null;
+  }>;
   getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
-}
-
-function getTenantId(req: ServerRequest): string | undefined {
-  return (req.user as { tenantId?: string } | undefined)?.tenantId;
 }
 
 /** Reads from the stored override tree, so this is `TCustomConfig`'s
@@ -87,17 +105,26 @@ function readStoredLangfuse(config: IConfig | null): TCustomConfig['langfuse'] {
   return overrides?.langfuse;
 }
 
-function buildStatus(config: IConfig | null): TLangfuseConnectionStatus {
+function buildStatus(config: IConfig | null, effectiveTenantId: string): TLangfuseConnectionStatus {
   const stored = readStoredLangfuse(config);
   const configured = Boolean(stored?.publicKey && stored?.secretKey);
+  const configActive = config?.isActive !== false;
   return {
     configured,
-    enabled: configured && stored?.enabled === true,
+    enabled: configActive && configured && stored?.enabled === true,
+    configActive,
     destinations: getLangfuseTenantDestinations(),
     destination: stored?.destination,
     publicKey: stored?.publicKey,
     secretKeyPreview: stored?.secretKeyPreview,
     updatedAt: config?.updatedAt ? new Date(config.updatedAt).toISOString() : undefined,
+    // `null` means "no document at all" for CAS purposes — a legacy or
+    // inactive document that exists but predates the version counter must
+    // report 0, the same fallback mutateConfigWithRevision's own CAS check
+    // uses, or the client's next `expectedVersion: null` write will never
+    // match the live document and 409 indefinitely.
+    configVersion: config == null ? null : (config.configVersion ?? 0),
+    effectiveTenantId,
   };
 }
 
@@ -288,18 +315,21 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 } {
   const {
     findConfigByPrincipal,
-    patchConfigFields,
-    toggleConfigActive,
+    mutateConfigWithRevision,
     getMessages,
     invalidateConfigCaches,
     recordConnectionUpdate = (event) =>
       logger.info({ message: '[adminLangfuse] Connection updated', ...event }),
   } = deps;
 
-  function findBaseConfig(options?: { includeInactive?: boolean }): Promise<IConfig | null> {
-    return options
-      ? findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, options)
-      : findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+  function findBaseConfig(
+    req: ServerRequest,
+    options: Pick<FindConfigByPrincipalOptions, 'includeInactive'> = {},
+  ): Promise<IConfig | null> {
+    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, {
+      ...options,
+      tenantId: getEffectiveTenantId(req) ?? '',
+    });
   }
 
   async function getConnection(req: ServerRequest, res: Response): Promise<Response> {
@@ -309,8 +339,11 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     }
 
     try {
-      const config = await findBaseConfig();
-      return res.status(200).json(buildStatus(config));
+      // Must see an inactive document to report both its lifecycle state and
+      // real configVersion. Treating it as absent would freeze the next write
+      // at `expectedVersion: null` against a document that actually exists.
+      const config = await findBaseConfig(req, { includeInactive: true });
+      return res.status(200).json(buildStatus(config, getEffectiveTenantId(req) ?? ''));
     } catch (error) {
       logger.error('[adminLangfuse] getConnection error:', error);
       return res.status(500).json({ error: 'Failed to read Langfuse connection' });
@@ -334,7 +367,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 
     try {
       const url = await resolveLangfuseSessionUrl({
-        config: readStoredLangfuse(await findBaseConfig()),
+        config: readStoredLangfuse(await findBaseConfig(req)),
         conversationId,
         userId,
         getMessages,
@@ -360,6 +393,34 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       const publicKey = typeof body.publicKey === 'string' ? body.publicKey.trim() : '';
       const secretKey = typeof body.secretKey === 'string' ? body.secretKey.trim() : '';
 
+      // Independently enforced, not just relied on from the panel's own Zod
+      // schema — a caller bypassing the panel must not be able to smuggle a
+      // missing, negative, or fractional expectedVersion past the CAS check
+      // by way of a silent `null` coercion.
+      const rawExpectedVersion = body.expectedVersion;
+      const expectedVersionValid =
+        rawExpectedVersion === null ||
+        (typeof rawExpectedVersion === 'number' &&
+          Number.isInteger(rawExpectedVersion) &&
+          rawExpectedVersion >= 0);
+      if (!expectedVersionValid) {
+        return res
+          .status(400)
+          .json({ error: 'expectedVersion must be a non-negative integer or null' });
+      }
+      const expectedVersion = rawExpectedVersion as number | null;
+      const requestTenantId = getEffectiveTenantId(req) ?? '';
+      if (typeof body.expectedTenantId !== 'string') {
+        return res.status(400).json({ error: 'expectedTenantId is required' });
+      }
+      if (body.expectedTenantId !== requestTenantId) {
+        return res.status(409).json({
+          error: 'Tenant context changed',
+          expectedTenantId: body.expectedTenantId,
+          currentTenantId: requestTenantId,
+        });
+      }
+
       if (!destination) {
         return res.status(400).json({ error: 'destination is required' });
       }
@@ -370,7 +431,16 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         return res.status(400).json({ error: 'Encrypted secretKey values cannot be submitted' });
       }
 
-      const existing = await findBaseConfig({ includeInactive: true });
+      const existing = await findBaseConfig(req, { includeInactive: true });
+      const versionConflictResponse = rejectConfigVersionConflict(res, expectedVersion, existing);
+      if (versionConflictResponse) {
+        return versionConflictResponse;
+      }
+      if (enabled && existing?.isActive === false) {
+        return res.status(409).json({
+          error: 'The base configuration is inactive; activate it before enabling Langfuse',
+        });
+      }
       const stored = readStoredLangfuse(existing);
       const hasStoredSecret = Boolean(stored?.secretKey);
       const tenantDestination = resolveLangfuseTenantDestination(destination);
@@ -434,18 +504,42 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         fields['langfuse.secretKey'] = secretKey;
       }
 
-      let updated = await patchConfigFields(
-        PrincipalType.ROLE,
-        BASE_CONFIG_PRINCIPAL_ID,
-        PrincipalModel.ROLE,
-        encryptConfigSecretFields(fields),
-        existing?.priority ?? DEFAULT_PRIORITY,
-      );
-      if (updated?.isActive === false) {
-        updated = await toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, true);
-      }
+      const actorId = req.user?.id ?? req.user?._id?.toString() ?? '';
+      // The same effective tenant the route's capability middleware
+      // authorized against, so the config write (Mongoose, ALS-scoped) and the
+      // raw revision/epoch read/write (explicit tenant filter) land in the
+      // tenant whose grants were actually checked.
+      const { config: updated } = await mutateConfigWithRevision({
+        principalType: PrincipalType.ROLE,
+        principalId: BASE_CONFIG_PRINCIPAL_ID,
+        principalModel: PrincipalModel.ROLE,
+        expectedVersion,
+        op: {
+          kind: 'fields',
+          resetPaths: [],
+          fields: encryptConfigSecretFields(fields),
+          // Base config has no more-general layer beneath it, so a
+          // brand-new __base__ document must use priority 0 — tying it with
+          // the default role-profile priority (10) leaves their relative
+          // ordering undefined, and the base config must always apply first.
+          priority: existing?.priority ?? 0,
+        },
+        cause: 'save',
+        actor: {
+          actorId,
+          actorEmail: (req.user as { email?: string } | undefined)?.email,
+          tenantId: requestTenantId,
+        },
+        normalizeSecrets: encryptLegacyPlaintextConfigSecrets,
+        // `langfuse` is a base-principal-protected section: every other
+        // base-config write path (generic save, import, restore) must never
+        // be able to smuggle a langfuse change past this handler's own
+        // credential verification and encryption. This is the one call
+        // trusted to actually write it.
+        trustedBasePrincipalSections: ['langfuse'],
+      });
 
-      const status = buildStatus(updated ?? existing);
+      const status = buildStatus(updated ?? existing, requestTenantId);
       const changes = getConnectionChanges(
         stored,
         enabled,
@@ -455,7 +549,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       );
       recordConnectionUpdate({
         event_name: 'librechat.langfuse.connection.changed',
-        tenant_id: getTenantId(req),
+        tenant_id: requestTenantId,
         configured: status.configured,
         enabled: status.enabled,
         destination: status.destination,
@@ -464,12 +558,21 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         verification_result: connectionChanged ? 'success' : 'skipped',
       });
 
-      invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
+      invalidateConfigCaches?.(requestTenantId)?.catch((err) =>
         logger.error('[adminLangfuse] Cache invalidation failed after update:', err),
       );
 
       return res.status(200).json(status);
     } catch (error) {
+      if (isConfigVersionConflict(error)) {
+        return res.status(409).json({
+          error: 'Config version conflict',
+          currentVersion: error.currentVersion,
+        });
+      }
+      if (isTransactionRequired(error)) {
+        return res.status(503).json({ error: error.message });
+      }
       logger.error('[adminLangfuse] updateConnection error:', error);
       return res.status(500).json({ error: 'Failed to update Langfuse connection' });
     }
@@ -499,7 +602,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       }
 
       if (!secretKey) {
-        const existing = await findBaseConfig();
+        const existing = await findBaseConfig(req);
         const stored = readStoredLangfuse(existing);
         const unchangedConnection =
           stored?.destination === tenantDestination.key && stored.publicKey === publicKey;

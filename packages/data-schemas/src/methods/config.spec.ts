@@ -2,8 +2,67 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { IConfig } from '~/types';
-import { createConfigMethods } from './config';
+import {
+  ADMIN_CONFIG_REVISIONS_COLLECTION,
+  createConfigMethods,
+  ensureConfigIndexes,
+  fieldPathPolicyError,
+  isValidFieldPath,
+} from './config';
+import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import configSchema from '~/schema/config';
+
+function seedBaseConfig(overrides: IConfig['overrides'] = {}, priority = 0) {
+  return mongoose.models.Config.create({
+    principalType: PrincipalType.ROLE,
+    principalId: BASE_CONFIG_PRINCIPAL_ID,
+    principalModel: PrincipalModel.ROLE,
+    overrides,
+    priority,
+    isActive: true,
+    configVersion: 1,
+  });
+}
+
+async function dropNonDefaultIndexes(configModel: typeof mongoose.models.Config): Promise<void> {
+  await configModel.createCollection();
+  const indexes = await configModel.collection.indexes();
+  for (const index of indexes) {
+    if (index.name && index.name !== '_id_') {
+      await configModel.collection.dropIndex(index.name);
+    }
+  }
+}
+
+async function openIsolatedConfigContext(): Promise<{
+  server: MongoMemoryServer;
+  conn: mongoose.Connection;
+  Config: mongoose.Model<IConfig>;
+  methods: ReturnType<typeof createConfigMethods>;
+  mongooseLike: typeof mongoose;
+}> {
+  const server = await MongoMemoryServer.create();
+  const conn = mongoose.createConnection(server.getUri(), { autoIndex: false });
+  await conn.asPromise();
+  const Config = conn.model<IConfig>('Config', configSchema);
+  await Config.createCollection();
+  await dropNonDefaultIndexes(Config);
+  return {
+    server,
+    conn,
+    Config,
+    methods: createConfigMethods(conn as unknown as typeof mongoose),
+    mongooseLike: conn as unknown as typeof mongoose,
+  };
+}
+
+async function closeIsolatedConfigContext(ctx: {
+  conn: mongoose.Connection;
+  server: MongoMemoryServer;
+}): Promise<void> {
+  await ctx.conn.close();
+  await ctx.server.stop();
+}
 
 let mongoServer: MongoMemoryServer;
 let methods: ReturnType<typeof createConfigMethods>;
@@ -11,10 +70,8 @@ let methods: ReturnType<typeof createConfigMethods>;
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
-  if (!mongoose.models.Config) {
-    mongoose.model<IConfig>('Config', configSchema);
-  }
-  await mongoose.models.Config.init();
+  const Config = mongoose.models.Config ?? mongoose.model<IConfig>('Config', configSchema);
+  await Config.init();
   methods = createConfigMethods(mongoose);
 });
 
@@ -25,6 +82,24 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.models.Config.deleteMany({});
+});
+
+describe('field path policy', () => {
+  it('accepts simple dot paths', () => {
+    expect(isValidFieldPath('interface.modelSelect')).toBe(true);
+    expect(isValidFieldPath('registration.socialLogins')).toBe(true);
+  });
+
+  it('rejects empty, non-string, and unsafe segments', () => {
+    expect(isValidFieldPath('')).toBe(false);
+    expect(isValidFieldPath(undefined)).toBe(false);
+    expect(isValidFieldPath('cache.\0value')).toBe(false);
+    expect(isValidFieldPath('__proto__.polluted')).toBe(false);
+    expect(isValidFieldPath('cache.__internal-key.value')).toBe(false);
+    expect(isValidFieldPath('cache.__på.value')).toBe(false);
+    expect(fieldPathPolicyError('cache.\0value')).toMatch(/NUL byte/);
+    expect(fieldPathPolicyError('__proto__.polluted')).toMatch(/forbidden segment/);
+  });
 });
 
 describe('upsertConfig tombstone preservation', () => {
@@ -50,7 +125,7 @@ describe('upsertConfig tombstone preservation', () => {
       PrincipalType.ROLE,
       'admin',
       PrincipalModel.ROLE,
-      { interface: { modelSelect: false } },
+      { cache: true },
       10,
     );
 
@@ -168,13 +243,7 @@ describe('listAllConfigs', () => {
 
 describe('getApplicableConfigs', () => {
   it('always includes the __base__ config', async () => {
-    await methods.upsertConfig(
-      PrincipalType.ROLE,
-      '__base__',
-      PrincipalModel.ROLE,
-      { cache: true },
-      0,
-    );
+    await seedBaseConfig({ cache: true }, 0);
 
     const configs = await methods.getApplicableConfigs([]);
     expect(configs).toHaveLength(1);
@@ -182,13 +251,7 @@ describe('getApplicableConfigs', () => {
   });
 
   it('returns base + matching principals', async () => {
-    await methods.upsertConfig(
-      PrincipalType.ROLE,
-      '__base__',
-      PrincipalModel.ROLE,
-      { cache: true },
-      0,
-    );
+    await seedBaseConfig({ cache: true }, 0);
     await methods.upsertConfig(
       PrincipalType.ROLE,
       'admin',
@@ -213,7 +276,7 @@ describe('getApplicableConfigs', () => {
   });
 
   it('returns sorted by priority', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, {}, 0);
+    await seedBaseConfig({}, 0);
     await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
 
     const configs = await methods.getApplicableConfigs([
@@ -225,7 +288,7 @@ describe('getApplicableConfigs', () => {
   });
 
   it('skips principals with undefined principalId', async () => {
-    await methods.upsertConfig(PrincipalType.ROLE, '__base__', PrincipalModel.ROLE, {}, 0);
+    await seedBaseConfig({}, 0);
 
     const configs = await methods.getApplicableConfigs([
       { principalType: PrincipalType.GROUP, principalId: undefined },
@@ -272,6 +335,46 @@ describe('patchConfigFields', () => {
     expect(result!.principalId).toBe('newrole');
   });
 
+  it('patches a legacy document whose configVersion field is explicitly null', async () => {
+    await mongoose.models.Config.collection.insertOne({
+      principalType: PrincipalType.ROLE,
+      principalId: 'admin',
+      principalModel: PrincipalModel.ROLE,
+      overrides: { interface: { modelSelect: true } },
+      tombstones: [],
+      priority: 10,
+      isActive: true,
+      configVersion: null,
+    });
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'interface.modelSelect': false },
+      10,
+    );
+
+    expect(result!.configVersion).toBe(1);
+    const overrides = result!.overrides as Record<string, unknown>;
+    expect((overrides.interface as Record<string, unknown>).modelSelect).toBe(false);
+  });
+
+  it('rejects unsafe field paths before writing or polluting prototypes', async () => {
+    await expect(
+      methods.patchConfigFields(
+        PrincipalType.ROLE,
+        'admin',
+        PrincipalModel.ROLE,
+        { '__proto__.polluted': true },
+        10,
+      ),
+    ).rejects.toThrow(/forbidden segment/);
+
+    expect(await mongoose.models.Config.countDocuments({ principalId: 'admin' })).toBe(0);
+    expect(Object.prototype).not.toHaveProperty('polluted');
+  });
+
   it('clears tombstones for patched paths and their ancestors', async () => {
     await methods.tombstoneConfigField(
       PrincipalType.ROLE,
@@ -310,6 +413,144 @@ describe('patchConfigFields', () => {
     );
 
     expect(result!.tombstones).toContain('mcpServers');
+  });
+
+  it('sanitizes legacy protected tombstones during field patches', async () => {
+    await mongoose.models.Config.create({
+      principalType: PrincipalType.ROLE,
+      principalId: 'admin',
+      principalModel: PrincipalModel.ROLE,
+      overrides: {},
+      tombstones: ['interface', 'interfaceConfig.prompts', 'cache'],
+      priority: 10,
+      isActive: true,
+      configVersion: 1,
+    });
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'registration.enabled': false },
+      10,
+    );
+
+    expect(result!.tombstones).toEqual(['cache']);
+  });
+
+  it('retries patch updates after a CAS miss', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { cache: false },
+      10,
+    );
+
+    const findOneAndUpdateSpy = jest.spyOn(mongoose.models.Config, 'findOneAndUpdate');
+    findOneAndUpdateSpy.mockImplementationOnce((async () => null) as never);
+
+    try {
+      const result = await methods.patchConfigFields(
+        PrincipalType.ROLE,
+        'admin',
+        PrincipalModel.ROLE,
+        { cache: true },
+        10,
+      );
+
+      expect(result).toBeTruthy();
+      expect(result!.overrides).toEqual({ cache: true });
+      expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+    }
+  });
+
+  it('preserves concurrent priority changes during field patch retries', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { cache: false },
+      10,
+    );
+
+    const findOneAndUpdateSpy = jest.spyOn(mongoose.models.Config, 'findOneAndUpdate');
+    findOneAndUpdateSpy.mockImplementationOnce((async () => {
+      await mongoose.models.Config.updateOne(
+        { principalId: 'admin' },
+        { $set: { priority: 20 }, $inc: { configVersion: 1 } },
+      );
+      return null;
+    }) as never);
+
+    try {
+      const result = await methods.patchConfigFields(
+        PrincipalType.ROLE,
+        'admin',
+        PrincipalModel.ROLE,
+        { cache: true },
+      );
+
+      expect(result!.priority).toBe(20);
+      expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+    }
+  });
+
+  it('prevents duplicate config documents on concurrent patch creates', async () => {
+    const [first, second] = await Promise.all([
+      methods.patchConfigFields(
+        PrincipalType.ROLE,
+        'race-admin',
+        PrincipalModel.ROLE,
+        { cache: true },
+        10,
+      ),
+      methods.patchConfigFields(
+        PrincipalType.ROLE,
+        'race-admin',
+        PrincipalModel.ROLE,
+        { 'registration.enabled': false },
+        10,
+      ),
+    ]);
+
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(await mongoose.models.Config.countDocuments({ principalId: 'race-admin' })).toBe(1);
+  });
+
+  it('sanitizes legacy unsafe overrides during field patches', async () => {
+    await mongoose.models.Config.create({
+      principalType: PrincipalType.ROLE,
+      principalId: 'admin',
+      principalModel: PrincipalModel.ROLE,
+      overrides: {
+        cache: false,
+        interfaceConfig: { prompts: false },
+        interface: null,
+      },
+      tombstones: [],
+      priority: 10,
+      isActive: true,
+      configVersion: 1,
+    });
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'registration.enabled': false },
+      10,
+    );
+    const overrides = result!.overrides as Record<string, unknown>;
+    expect(overrides.cache).toBe(false);
+    expect(overrides.interfaceConfig).toBeUndefined();
+    expect(overrides.interface).toBeUndefined();
+    expect(overrides.registration).toEqual({ enabled: false });
   });
 });
 
@@ -379,6 +620,91 @@ describe('tombstoneConfigField', () => {
 
     expect(result!.isActive).toBe(false);
     expect(result!.tombstones).toContain('mcpServers.github');
+  });
+
+  it('sanitizes legacy protected tombstones when adding a new tombstone', async () => {
+    await mongoose.models.Config.create({
+      principalType: PrincipalType.ROLE,
+      principalId: 'admin',
+      principalModel: PrincipalModel.ROLE,
+      overrides: {},
+      tombstones: ['interface', 'interfaceConfig.prompts', 'cache'],
+      priority: 10,
+      isActive: true,
+      configVersion: 1,
+    });
+
+    const result = await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    expect(result!.tombstones).toEqual(['cache', 'mcpServers.github']);
+  });
+
+  it('retries tombstone updates after a CAS miss', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { cache: false },
+      10,
+    );
+
+    const findOneAndUpdateSpy = jest.spyOn(mongoose.models.Config, 'findOneAndUpdate');
+    findOneAndUpdateSpy.mockImplementationOnce((async () => null) as never);
+
+    try {
+      const result = await methods.tombstoneConfigField(
+        PrincipalType.ROLE,
+        'admin',
+        PrincipalModel.ROLE,
+        'cache',
+        10,
+      );
+
+      expect(result).toBeTruthy();
+      expect(result!.tombstones).toContain('cache');
+      expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+    }
+  });
+
+  it('preserves concurrent priority changes during tombstone retries', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { cache: false },
+      10,
+    );
+
+    const findOneAndUpdateSpy = jest.spyOn(mongoose.models.Config, 'findOneAndUpdate');
+    findOneAndUpdateSpy.mockImplementationOnce((async () => {
+      await mongoose.models.Config.updateOne(
+        { principalId: 'admin' },
+        { $set: { priority: 20 }, $inc: { configVersion: 1 } },
+      );
+      return null;
+    }) as never);
+
+    try {
+      const result = await methods.tombstoneConfigField(
+        PrincipalType.ROLE,
+        'admin',
+        PrincipalModel.ROLE,
+        'cache',
+      );
+
+      expect(result!.priority).toBe(20);
+      expect(findOneAndUpdateSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+    }
   });
 });
 
@@ -467,6 +793,15 @@ describe('toggleConfigActive', () => {
 
     const result = await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
     expect(result!.isActive).toBe(false);
+  });
+
+  it('increments configVersion when toggling active state', async () => {
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
+    const before = await mongoose.models.Config.findOne({ principalId: 'admin' });
+    expect(before?.configVersion).toBe(1);
+
+    const result = await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
+    expect(result!.configVersion).toBe(2);
   });
 
   it('reactivates an inactive config', async () => {
@@ -645,4 +980,472 @@ describe('expectEmpty atomic guard', () => {
     expect(doc!.priority).toBe(10);
     expect(Object.keys(doc!.overrides ?? {}).length).toBeGreaterThan(0);
   });
+});
+
+describe('ensureConfigIndexes', () => {
+  it('builds indexes independently for each Config model', async () => {
+    const first = await openIsolatedConfigContext();
+    const secondServer = await MongoMemoryServer.create();
+    const secondConn = mongoose.createConnection(secondServer.getUri(), { autoIndex: false });
+    await secondConn.asPromise();
+    const secondConfig = secondConn.model<IConfig>('Config', configSchema);
+    await secondConfig.createCollection();
+
+    const firstSpy = jest.spyOn(first.Config, 'createIndexes');
+    const secondSpy = jest.spyOn(secondConfig, 'createIndexes');
+
+    try {
+      await ensureConfigIndexes(first.mongooseLike);
+      await ensureConfigIndexes(secondConn as unknown as typeof mongoose);
+
+      expect(firstSpy).toHaveBeenCalledTimes(1);
+      expect(secondSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      firstSpy.mockRestore();
+      secondSpy.mockRestore();
+      await closeIsolatedConfigContext(first);
+      await secondConn.close();
+      await secondServer.stop();
+    }
+  });
+
+  it('concurrently replaces a stale revision index across independent Config models', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const revisions = ctx.conn.collection(ADMIN_CONFIG_REVISIONS_COLLECTION);
+    await revisions.createIndex(
+      { tenantId: 1, principalType: 1, principalId: 1, status: 1, createdAt: -1 },
+      { name: 'scope_status_created', background: true },
+    );
+
+    const additionalConnections = await Promise.all(
+      Array.from({ length: 3 }, async () => {
+        const conn = mongoose.createConnection(ctx.server.getUri(), { autoIndex: false });
+        await conn.asPromise();
+        conn.model<IConfig>('Config', configSchema);
+        return conn;
+      }),
+    );
+
+    try {
+      await expect(
+        Promise.all(
+          [ctx.conn, ...additionalConnections].map((conn) =>
+            ensureConfigIndexes(conn as unknown as typeof mongoose),
+          ),
+        ),
+      ).resolves.toHaveLength(4);
+
+      const indexes = await revisions.indexes();
+      const migrated = indexes.find((index) => index.name === 'scope_status_created');
+      expect(migrated?.key).toEqual({
+        tenantId: 1,
+        principalType: 1,
+        principalId: 1,
+        status: 1,
+        configVersion: -1,
+        createdAt: -1,
+      });
+    } finally {
+      await Promise.all(additionalConnections.map((conn) => conn.close()));
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('creates the unique index before concurrent patch creates when autoIndex is disabled', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const createIndexesSpy = jest.spyOn(ctx.Config, 'createIndexes');
+
+    try {
+      const [first, second] = await Promise.all([
+        ctx.methods.patchConfigFields(
+          PrincipalType.ROLE,
+          'race-admin',
+          PrincipalModel.ROLE,
+          { cache: true },
+          10,
+        ),
+        ctx.methods.patchConfigFields(
+          PrincipalType.ROLE,
+          'race-admin',
+          PrincipalModel.ROLE,
+          { 'registration.enabled': false },
+          10,
+        ),
+      ]);
+
+      expect(createIndexesSpy).toHaveBeenCalled();
+      expect(first).toBeTruthy();
+      expect(second).toBeTruthy();
+      expect(await ctx.Config.countDocuments({ principalId: 'race-admin' })).toBe(1);
+    } finally {
+      createIndexesSpy.mockRestore();
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('retries ensureConfigIndexes after a rejected build', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const originalCreateIndexes = ctx.Config.createIndexes.bind(ctx.Config);
+    let createIndexCalls = 0;
+    const createIndexesSpy = jest.spyOn(ctx.Config, 'createIndexes').mockImplementation(function (
+      this: typeof ctx.Config,
+      ...args: Parameters<typeof ctx.Config.createIndexes>
+    ) {
+      createIndexCalls += 1;
+      if (createIndexCalls === 1) {
+        return Promise.reject(new Error('index build denied'));
+      }
+      return originalCreateIndexes(...args);
+    });
+
+    try {
+      await expect(ensureConfigIndexes(ctx.mongooseLike)).rejects.toThrow('index build denied');
+
+      await ensureConfigIndexes(ctx.mongooseLike);
+
+      expect(createIndexCalls).toBe(2);
+
+      const indexes = await ctx.Config.collection.indexes();
+      const uniquePrincipalIndex = indexes.find(
+        (index) =>
+          index.unique === true &&
+          index.key?.principalType === 1 &&
+          index.key?.principalId === 1 &&
+          index.key?.tenantId === 1,
+      );
+      expect(uniquePrincipalIndex).toBeDefined();
+    } finally {
+      createIndexesSpy.mockRestore();
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('does not build indexes when patchConfigFields rejects oversized paths', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const createIndexesSpy = jest.spyOn(ctx.Config, 'createIndexes');
+    const oversizedKey = Array.from({ length: 33 }, (_, i) => `s${i}`).join('.');
+
+    try {
+      await expect(
+        ctx.methods.patchConfigFields(
+          PrincipalType.ROLE,
+          'admin',
+          PrincipalModel.ROLE,
+          { [oversizedKey]: true },
+          10,
+        ),
+      ).rejects.toThrow(/maximum depth/);
+      expect(createIndexesSpy).not.toHaveBeenCalled();
+    } finally {
+      createIndexesSpy.mockRestore();
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('does not build indexes when tombstoneConfigField rejects oversized paths', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const createIndexesSpy = jest.spyOn(ctx.Config, 'createIndexes');
+    const oversizedPath = Array.from({ length: 33 }, (_, i) => `s${i}`).join('.');
+
+    try {
+      await expect(
+        ctx.methods.tombstoneConfigField(
+          PrincipalType.ROLE,
+          'admin',
+          PrincipalModel.ROLE,
+          oversizedPath,
+          10,
+        ),
+      ).rejects.toThrow(/maximum depth/);
+      expect(createIndexesSpy).not.toHaveBeenCalled();
+    } finally {
+      createIndexesSpy.mockRestore();
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('fails closed on duplicate principals without deleting either configuration', async () => {
+    const ctx = await openIsolatedConfigContext();
+    try {
+      await ctx.Config.collection.insertMany([
+        {
+          principalType: PrincipalType.ROLE,
+          principalId: 'dup-role',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: { cache: false },
+          tombstones: [],
+          isActive: true,
+          configVersion: 1,
+          tenantId: '',
+        },
+        {
+          principalType: PrincipalType.ROLE,
+          principalId: 'dup-role',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: { cache: true },
+          tombstones: [],
+          isActive: true,
+          configVersion: 2,
+          tenantId: '',
+        },
+      ]);
+
+      await expect(ensureConfigIndexes(ctx.mongooseLike)).rejects.toThrow(
+        /Duplicate configuration principals detected.*dup-role/,
+      );
+
+      const configs = await ctx.Config.collection
+        .find({ principalId: 'dup-role' })
+        .sort({ configVersion: 1 })
+        .toArray();
+      expect(configs).toHaveLength(2);
+      expect(configs.map((config) => config.overrides)).toEqual([
+        { cache: false },
+        { cache: true },
+      ]);
+    } finally {
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('fails closed consistently when concurrent pods discover the same duplicates', async () => {
+    const ctx = await openIsolatedConfigContext();
+    try {
+      await ctx.Config.collection.insertMany([
+        {
+          principalType: PrincipalType.ROLE,
+          principalId: 'tied-role',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: { cache: false },
+          tombstones: [],
+          isActive: true,
+          tenantId: '',
+        },
+        {
+          principalType: PrincipalType.ROLE,
+          principalId: 'tied-role',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: { cache: true },
+          tombstones: [],
+          isActive: true,
+          tenantId: '',
+        },
+      ] as never);
+
+      // Simulate two pods running startup dedup concurrently against the same
+      // data: two independent connections/models (ensureConfigIndexes memoizes
+      // per Model instance, not per database) racing the same migration.
+      const secondConn = mongoose.createConnection(ctx.server.getUri(), { autoIndex: false });
+      await secondConn.asPromise();
+      secondConn.model<IConfig>('Config', configSchema);
+      try {
+        const outcomes = await Promise.allSettled([
+          ensureConfigIndexes(ctx.mongooseLike),
+          ensureConfigIndexes(secondConn as unknown as typeof mongoose),
+        ]);
+        expect(outcomes.every((outcome) => outcome.status === 'rejected')).toBe(true);
+      } finally {
+        await secondConn.close();
+      }
+
+      const survivors = await ctx.Config.find({ principalId: 'tied-role' });
+      expect(survivors).toHaveLength(2);
+    } finally {
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('normalizes missing tenantId to null before building the index', async () => {
+    const ctx = await openIsolatedConfigContext();
+    try {
+      // Insert a doc without tenantId (simulates a write from an old pod without the default)
+      await ctx.Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: 'missing-tenant',
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        overrides: { cache: false },
+        tombstones: [],
+        isActive: true,
+        configVersion: 1,
+      } as never);
+
+      await ensureConfigIndexes(ctx.mongooseLike);
+
+      const doc = await ctx.Config.collection.findOne({ principalId: 'missing-tenant' });
+      expect(doc?.tenantId).toBeNull();
+    } finally {
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('fails closed on a null/empty tenant alias pair even when the unique index exists', async () => {
+    const ctx = await openIsolatedConfigContext();
+    try {
+      // Pre-build the unique index directly (simulates a prior deployment)
+      await ctx.Config.collection.createIndex(
+        { principalType: 1, principalId: 1, tenantId: 1 },
+        { unique: true },
+      );
+
+      // Two logical-duplicate docs — '' and null are different index keys so both inserts succeed
+      await ctx.Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: 'alias-pair',
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        overrides: { cache: false },
+        tombstones: [],
+        isActive: true,
+        configVersion: 1,
+        tenantId: '',
+      });
+      await ctx.Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: 'alias-pair',
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        overrides: { cache: true },
+        tombstones: [],
+        isActive: true,
+        configVersion: 2,
+        tenantId: null,
+      });
+
+      await expect(ensureConfigIndexes(ctx.mongooseLike)).rejects.toThrow(
+        /Duplicate configuration principals detected.*alias-pair/,
+      );
+
+      expect(await ctx.Config.countDocuments({ principalId: 'alias-pair' })).toBe(2);
+    } finally {
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('canonicalizes a single empty-string tenant to null and rejects a later alias insert', async () => {
+    const ctx = await openIsolatedConfigContext();
+    try {
+      await ctx.Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: 'empty-winner',
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        overrides: { cache: true },
+        tombstones: [],
+        isActive: true,
+        configVersion: 2,
+        tenantId: '',
+      });
+
+      await ensureConfigIndexes(ctx.mongooseLike);
+
+      const survivor = await ctx.Config.collection.findOne({ principalId: 'empty-winner' });
+      expect(survivor?.tenantId).toBeNull();
+
+      // A subsequent missing-tenantId write for the same principal must be rejected
+      await expect(
+        ctx.Config.collection.insertOne({
+          principalType: PrincipalType.ROLE,
+          principalId: 'empty-winner',
+          principalModel: PrincipalModel.ROLE,
+          priority: 10,
+          overrides: {},
+          tombstones: [],
+          isActive: true,
+          configVersion: 3,
+        } as never),
+      ).rejects.toMatchObject({ code: 11000 });
+    } finally {
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+
+  it('retries on E11000 thrown by the canonicalization step inside principal validation', async () => {
+    const ctx = await openIsolatedConfigContext();
+    const originalUpdateMany = ctx.Config.collection.updateMany.bind(ctx.Config.collection);
+    let updateManyCalls = 0;
+    ctx.Config.collection.updateMany = ((...args: Parameters<typeof originalUpdateMany>) => {
+      updateManyCalls += 1;
+      if (updateManyCalls === 1) {
+        return Promise.reject(
+          Object.assign(new Error('E11000 simulated concurrent alias'), { code: 11000 }),
+        );
+      }
+      return originalUpdateMany(...args);
+    }) as typeof ctx.Config.collection.updateMany;
+
+    try {
+      await ctx.Config.collection.insertOne({
+        principalType: PrincipalType.ROLE,
+        principalId: 'retry-canon',
+        principalModel: PrincipalModel.ROLE,
+        priority: 10,
+        overrides: {},
+        tombstones: [],
+        isActive: true,
+        configVersion: 1,
+        tenantId: null,
+      });
+
+      // With validation/canonicalization inside the retry boundary, the E11000 from
+      // the canonicalization step is caught and the next attempt succeeds.
+      await expect(ensureConfigIndexes(ctx.mongooseLike)).resolves.not.toThrow();
+      expect(updateManyCalls).toBeGreaterThanOrEqual(2);
+    } finally {
+      ctx.Config.collection.updateMany = originalUpdateMany;
+      await closeIsolatedConfigContext(ctx);
+    }
+  });
+});
+
+describe('legacy base mutation boundary', () => {
+  const writes = {
+    upsert: () =>
+      methods.upsertConfig(
+        PrincipalType.ROLE,
+        BASE_CONFIG_PRINCIPAL_ID,
+        PrincipalModel.ROLE,
+        {},
+        0,
+      ),
+    patch: () =>
+      methods.patchConfigFields(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, PrincipalModel.ROLE, {
+        cache: false,
+      }),
+    tombstone: () =>
+      methods.tombstoneConfigField(
+        PrincipalType.ROLE,
+        BASE_CONFIG_PRINCIPAL_ID,
+        PrincipalModel.ROLE,
+        'cache',
+      ),
+    unset: () => methods.unsetConfigField(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, 'cache'),
+    delete: () => methods.deleteConfig(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID),
+    toggle: () => methods.toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, false),
+  };
+
+  it.each(Object.entries(writes))(
+    'rejects %s before reads, index initialization, or writes',
+    async (_name, write) => {
+      const before = await seedBaseConfig({ cache: true });
+      const find = jest.spyOn(mongoose.models.Config, 'findOne');
+      const indexes = jest.spyOn(mongoose.models.Config, 'createIndexes');
+      const session = jest.spyOn(mongoose.models.Config.db, 'startSession');
+      try {
+        await expect(write()).rejects.toThrow('must use mutateConfigWithRevision');
+        expect(find).not.toHaveBeenCalled();
+        expect(indexes).not.toHaveBeenCalled();
+        expect(session).not.toHaveBeenCalled();
+      } finally {
+        find.mockRestore();
+        indexes.mockRestore();
+        session.mockRestore();
+      }
+      expect(await mongoose.models.Config.findById(before._id).lean()).toEqual(before.toObject());
+    },
+  );
 });

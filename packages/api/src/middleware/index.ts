@@ -12,6 +12,7 @@ export {
   tenantContextMiddleware,
   restoreTenantContextFromReq,
   resolveRequestTenantId,
+  getEffectiveTenantId,
 } from './tenant';
 export { preAuthTenantMiddleware } from './preAuthTenant';
 export * from './concurrency';

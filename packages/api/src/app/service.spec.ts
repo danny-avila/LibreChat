@@ -322,7 +322,7 @@ describe('createAppConfigService', () => {
 
         await getAppConfig({ tenantId: 'tenant-a' });
 
-        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([], { tenantId: 'tenant-a' });
       });
 
       it('warns once when non-empty principals proceed without tenantId', async () => {
@@ -354,7 +354,7 @@ describe('createAppConfigService', () => {
           getAppConfig(),
         );
 
-        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([], { tenantId: 'tenant-a' });
         expect((config as TestConfig).restricted).toBe(true);
       });
     });
@@ -375,6 +375,15 @@ describe('createAppConfigService', () => {
         await getAppConfig();
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+      });
+
+      it('passes an explicit default-tenant scope to the database read', async () => {
+        const deps = createDeps();
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await getAppConfig({ tenantId: '' });
+
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([], { tenantId: '' });
       });
 
       it('scopes the override cache key to the ALS tenant when no tenantId param is given', async () => {
@@ -477,6 +486,33 @@ describe('createAppConfigService', () => {
       expect(deps.getUserPrincipals).not.toHaveBeenCalled();
       expect(deps.getApplicableConfigs).toHaveBeenCalledWith(resolvedPrincipals);
     });
+
+    it.each(['', 'tenant-a'])(
+      'keeps explicit tenant %j when reusing principals and skipping augmentation',
+      async (tenantId) => {
+        const augmentConfig = jest.fn(async ({ appConfig }) => appConfig);
+        const deps = createDeps({ augmentConfig });
+        const { getAppConfig } = createAppConfigService(deps);
+        const resolvedPrincipals = [
+          { principalType: 'role', principalId: 'USER' },
+          { principalType: 'user', principalId: 'uid1' },
+        ];
+
+        await getAppConfig({
+          role: 'USER',
+          userId: 'uid1',
+          tenantId,
+          resolvedPrincipals,
+          skipRuntimeAugmentation: true,
+          failClosed: true,
+          refresh: true,
+        });
+
+        expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith(resolvedPrincipals, { tenantId });
+        expect(augmentConfig).not.toHaveBeenCalled();
+      },
+    );
 
     it('re-runs mutable principal config augmentation without rebuilding cached overrides', async () => {
       const augmentConfig = jest.fn(async ({ appConfig, principals }) => ({

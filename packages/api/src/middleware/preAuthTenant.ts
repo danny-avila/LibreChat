@@ -14,6 +14,7 @@ import { isEnabled } from '~/utils';
  * authentication has occurred:
  * - `GET /api/config` — login page needs tenant-specific config (social logins, registration)
  * - `/api/auth/*` — login, register, password reset
+ * - `/api/admin/*` — admin-panel reads and writes must use the same request-selected tenant
  * - `/oauth/*` — OAuth callback flows
  * - `GET /api/share/:shareId` — public shared conversation links
  *

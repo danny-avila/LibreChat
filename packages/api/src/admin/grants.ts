@@ -17,6 +17,7 @@ import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
+import { getEffectiveTenantId } from '~/middleware/tenant';
 import { parsePagination } from './pagination';
 import { buildAuditContext } from './context';
 
@@ -184,7 +185,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     /** JWT-loaded `req.user` already carries name/username/email, so the actor
      * display name is available without a database round-trip. */
     const actorName = user.name || user.username || user.email || userId;
-    return { userId, role: user.role, actorName, tenantId: user.tenantId };
+    return { userId, role: user.role, actorName, tenantId: getEffectiveTenantId(req) };
   }
 
   async function resolvePrincipals(user: {
@@ -301,7 +302,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       );
 
       if (!filteredPrincipals.length) {
-        return res.status(200).json({ capabilities: [] });
+        return res.status(200).json({ capabilities: [], effectiveTenantId: tenantId ?? '' });
       }
 
       const grants = await getCapabilitiesForPrincipals({
@@ -314,7 +315,10 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         directCaps.add(grant.capability);
       }
 
-      return res.status(200).json({ capabilities: expandImplications(Array.from(directCaps)) });
+      return res.status(200).json({
+        capabilities: expandImplications(Array.from(directCaps)),
+        effectiveTenantId: tenantId ?? '',
+      });
     } catch (error) {
       logger.error('[adminGrants] getEffectiveCapabilities error:', error);
       return res.status(500).json({ error: 'Failed to get effective capabilities' });
