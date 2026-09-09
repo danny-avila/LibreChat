@@ -1201,6 +1201,10 @@ export const agentsEndpointSchema = baseEndpointSchema
         .max(MAX_SUBAGENTS_CEILING)
         .optional()
         .default(MAX_SUBAGENTS),
+      /** Maximum concurrent Code API uploads per route and authenticated principal. */
+      codeApiUploadConcurrency: z.number().int().min(1).max(100).optional().default(3),
+      /** Maximum wall-clock time spent waiting on Code API rate limits per operation. */
+      codeApiMaxRetryWaitMs: z.number().int().min(0).max(300_000).optional().default(20_000),
       allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))

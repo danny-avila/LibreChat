@@ -20,6 +20,7 @@ import {
 import { markSandboxReady } from './prewarm';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { WorkspaceToolHttpError } from '../code/workspace';
+import { createCodeApiUploadRegistry } from '~/utils';
 
 function createMockTool(
   name: string,
@@ -415,6 +416,35 @@ describe('createToolExecuteHandler', () => {
       expect(results[0].status).toBe('error');
     });
 
+    it('forwards the effective batch signal into deferred tool loading', async () => {
+      const controller = new AbortController();
+      const tool = {
+        name: 'loaded_tool',
+        invoke: jest.fn(async () => ({ content: 'done' })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-load', name: tool.name, args: {} }],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(loadTools).toHaveBeenCalledWith(
+        [tool.name],
+        undefined,
+        undefined,
+        undefined,
+        controller.signal,
+      );
+    });
+
     it('uses the host-owned run signal when an SDK event omits its signal', async () => {
       const controller = new AbortController();
       const tool = abortingTool();
@@ -803,7 +833,13 @@ describe('createToolExecuteHandler', () => {
       );
 
       expect(loadTools).toHaveBeenCalledTimes(1);
-      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined, configurable, undefined);
+      expect(loadTools).toHaveBeenCalledWith(
+        ['allowed_tool'],
+        undefined,
+        configurable,
+        undefined,
+        undefined,
+      );
       expect(JSON.stringify(jest.mocked(loadTools).mock.calls)).not.toContain(protectedName);
       expect(results[0]).toEqual(
         expect.objectContaining({
@@ -1333,6 +1369,7 @@ describe('createToolExecuteHandler', () => {
         undefined,
         undefined,
         callerCapabilityProjection,
+        undefined,
       );
       expect(capturedConfigs[0].toolDefs).toEqual([
         { name: 'active_programmatic_tool', allowed_callers: ['code_execution'] },
@@ -1829,12 +1866,20 @@ describe('createToolExecuteHandler', () => {
         configurable: {
           accessibleSkillIds: skillsInScope(),
           codeEnvAvailable: true,
-          req: { user: { id: 'user-1' } },
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-1' },
+            app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+            config: {
+              endpoints: {
+                agents: { codeApiUploadConcurrency: 1, codeApiMaxRetryWaitMs: 1_000 },
+              },
+            },
+          },
         },
       }));
-      const getSkillByName: ToolExecuteOptions['getSkillByName'] = jest.fn(async () => ({
-        _id: `${skillName}-id` as unknown as never,
-        name: skillName,
+      const getSkillByName: ToolExecuteOptions['getSkillByName'] = jest.fn(async (name) => ({
+        _id: `${name ?? skillName}-id` as unknown as never,
+        name: name ?? skillName,
         body: 'skill body',
         fileCount: 1,
         version: 1,
@@ -2173,6 +2218,7 @@ describe('createToolExecuteHandler', () => {
     });
 
     it('omits the unavailability note when file priming succeeds', async () => {
+      const controller = new AbortController();
       const batchUploadCodeEnvFiles = jest.fn(async () => ({
         storage_session_id: 'session-ok',
         files: [
@@ -2182,14 +2228,24 @@ describe('createToolExecuteHandler', () => {
       }));
       const handler = createPrimingSkillHandler('note-ok-skill', batchUploadCodeEnvFiles);
 
-      const [result] = await invokeHandler(handler, [
-        {
-          id: 'call_prime_ok',
-          name: Constants.SKILL_TOOL,
-          args: { skillName: 'note-ok-skill' },
-        },
-      ]);
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_prime_ok',
+              name: Constants.SKILL_TOOL,
+              args: { skillName: 'note-ok-skill' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
 
+      expect(batchUploadCodeEnvFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
       expect(result.status).toBe('success');
       expect(result.content).not.toContain('could not be loaded');
       expect(result.artifact).toEqual(
@@ -2204,6 +2260,74 @@ describe('createToolExecuteHandler', () => {
           ],
         }),
       );
+    });
+
+    it('shares one retry-wait budget across skill calls in a tool batch', async () => {
+      const attempts = new Map<string, number>();
+      const batchUploadCodeEnvFiles = jest.fn(async ({ id }: { id: string }) => {
+        const attempt = (attempts.get(id) ?? 0) + 1;
+        attempts.set(id, attempt);
+        if (attempt === 1) {
+          const error = Object.assign(new Error('Request failed with status code 429'), {
+            isAxiosError: true,
+            response: { status: 429, headers: { 'retry-after': '0' } },
+          });
+          throw error;
+        }
+        const name = id.replace(/-id$/, '');
+        return {
+          storage_session_id: `session-${name}`,
+          files: [{ fileId: `file-${name}`, filename: `skills/${name}/references/style.md` }],
+        };
+      });
+      const handler = createPrimingSkillHandler('fallback-skill', batchUploadCodeEnvFiles);
+
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_first_skill',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'first-skill' },
+        },
+        {
+          id: 'call_second_skill',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'second-skill' },
+        },
+      ]);
+
+      expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(3);
+      expect(results.filter((result) => result.artifact != null)).toHaveLength(1);
+    });
+
+    it('returns cancellation instead of a successful skill when upload recovery is aborted', async () => {
+      const controller = new AbortController();
+      const batchUploadCodeEnvFiles = jest.fn(
+        ({ signal }: { signal?: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      );
+      const handler = createPrimingSkillHandler('cancelled-skill', batchUploadCodeEnvFiles);
+      const resultPromise = new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_cancelled_skill',
+              name: Constants.SKILL_TOOL,
+              args: { skillName: 'cancelled-skill' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+      setTimeout(() => controller.abort(), 10);
+
+      const [result] = await resultPromise;
+
+      expect(result.status).toBe('error');
+      expect(result.content).not.toContain('Skill "cancelled-skill" loaded');
     });
 
     it("read_file pins lookup to the primed skill's _id when manually invoked this turn (no shadowing on collision)", async () => {
@@ -5248,6 +5372,7 @@ describe('createToolExecuteHandler', () => {
       listWorkspaceFiles?: ToolExecuteOptions['listWorkspaceFiles'];
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
+      runSignal?: AbortSignal;
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
       getAuthorSkillByName?: ToolExecuteOptions['getAuthorSkillByName'];
     }) {
@@ -5265,6 +5390,7 @@ describe('createToolExecuteHandler', () => {
       }));
       return createToolExecuteHandler({
         loadTools,
+        runSignal: params.runSignal,
         getSkillByName: params.getSkillByName,
         getAuthorSkillByName: params.getAuthorSkillByName,
         readWorkspaceFile: params.readWorkspaceFile,
@@ -6900,6 +7026,7 @@ describe('createToolExecuteHandler', () => {
        * bytes, which was the matplotlib-shape mojibake regression.
        */
       it('returns a sandbox image as an image_url artifact the model can see', async () => {
+        const controller = new AbortController();
         const readSandboxFile = jest.fn();
         const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes }));
         const handler = makeReadFileHandler({
@@ -6909,14 +7036,21 @@ describe('createToolExecuteHandler', () => {
           readSandboxImage,
         });
 
-        const [result] = await invokeHandler(handler, [
-          {
-            id: 'call_png',
-            name: Constants.READ_FILE,
-            args: { path: '/mnt/data/simple_graph.png' },
-            codeSessionContext: { session_id: 'sess-Z', files: [] },
-          } as unknown as ToolCallRequest,
-        ]);
+        const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+          handler.handle('on_tool_execute', {
+            toolCalls: [
+              {
+                id: 'call_png',
+                name: Constants.READ_FILE,
+                args: { path: '/mnt/data/simple_graph.png' },
+                codeSessionContext: { session_id: 'sess-Z', files: [] },
+              } as unknown as ToolCallRequest,
+            ],
+            signal: controller.signal,
+            resolve,
+            reject,
+          } as ToolExecuteBatchRequest);
+        });
 
         expect(readSandboxFile).not.toHaveBeenCalled();
         expect(readSandboxImage).toHaveBeenCalledWith(
@@ -6924,6 +7058,7 @@ describe('createToolExecuteHandler', () => {
             file_path: '/mnt/data/simple_graph.png',
             session_id: 'sess-Z',
             maxBytes: expect.any(Number),
+            signal: controller.signal,
           }),
         );
         expect(result.status).toBe('success');

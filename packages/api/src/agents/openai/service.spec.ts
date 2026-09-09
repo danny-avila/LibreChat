@@ -255,6 +255,7 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
       'agent_test',
       expect.objectContaining({ requestBody: runArgs.requestBody }),
       undefined,
+      undefined,
     );
   });
 

@@ -413,7 +413,7 @@ const initializeClient = async ({
     runSignal: signal,
     foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
-    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
+    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection, runSignal) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
@@ -421,7 +421,7 @@ const initializeClient = async ({
       const result = await loadToolsForExecution({
         req,
         res,
-        signal,
+        signal: runSignal ?? signal,
         streamId,
         conversationId,
         requestBody: runtimeRequestBody,
@@ -1599,6 +1599,7 @@ const initializeClient = async ({
           req,
           payload,
           skillNames,
+          signal,
           accessibleSkillIds,
           executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),

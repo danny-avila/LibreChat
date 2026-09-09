@@ -79,6 +79,14 @@ import {
   isCodeSessionToolName,
 } from './tools';
 import {
+  createCodeApiRateLimitBudget,
+  isAbortError,
+  logAxiosError,
+  truncateMiddle,
+  runOutsideTracing,
+  getSafeErrorMetadata,
+} from '~/utils';
+import {
   ContentFilterError,
   contentFilterModelBoundBlockResponse,
   isContentFilterError,
@@ -87,13 +95,6 @@ import {
   BACKGROUND_TASK_ABORT_GRACE_MS,
   BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
 } from './backgroundCompletion';
-import {
-  isAbortError,
-  logAxiosError,
-  truncateMiddle,
-  runOutsideTracing,
-  getSafeErrorMetadata,
-} from '~/utils';
 import {
   WorkspaceToolHttpError,
   WORKSPACE_EDIT_MAX_COUNT,
@@ -237,6 +238,8 @@ export interface ToolExecuteOptions {
     configurable?: Record<string, unknown>,
     /** SDK-owned live caller capability projection for this agent context. */
     callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
+    /** Effective cancellation signal for this tool-execute batch. */
+    signal?: AbortSignal,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -466,6 +469,7 @@ export interface ToolExecuteOptions {
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
+    signal?: AbortSignal;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -626,6 +630,7 @@ export interface ToolExecuteOptions {
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
+    signal?: AbortSignal;
   }) => Promise<
     | { base64: string; bytes: number }
     /** `size`: over `maxBytes`. `round_trips`: within the byte cap, but more
@@ -2119,6 +2124,7 @@ async function handleSandboxImageRead(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const filtered = filteredBinaryFileResult(tc, req, filePath);
   if (filtered != null) {
@@ -2153,6 +2159,7 @@ async function handleSandboxImageRead(
       session_id: ctx?.session_id,
       files: ctx?.files,
       maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      ...(signal ? { signal } : {}),
       ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
@@ -2235,10 +2242,20 @@ async function handleSandboxFileFallback(
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
+  signal?: AbortSignal,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
-    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
+    return handleSandboxImageRead(
+      tc,
+      filePath,
+      ext,
+      options,
+      req,
+      codeExecutionContext,
+      onSuccess,
+      signal,
+    );
   }
   const filteredName = filteredFileNameResult(tc, req, filePath);
   if (filteredName != null) {
@@ -4366,6 +4383,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4402,6 +4420,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4429,6 +4448,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4498,6 +4518,7 @@ async function handleReadFileCall(
         req,
         codeExecutionContext,
         onSandboxReadSuccess,
+        signal,
       );
     }
     return {
@@ -4544,6 +4565,7 @@ async function handleReadFileCall(
           req,
           codeExecutionContext,
           onSandboxReadSuccess,
+          signal,
         );
       }
       return {
@@ -4869,6 +4891,8 @@ async function handleSkillToolCall(
   options: ToolExecuteOptions,
   agentId?: string,
   req?: ServerRequest,
+  signal?: AbortSignal,
+  rateLimitBudget?: import('~/utils').CodeApiRateLimitBudget,
 ): Promise<ToolExecuteResult> {
   const {
     getSkillByName,
@@ -4984,7 +5008,9 @@ async function handleSkillToolCall(
   ) {
     let primeResult: PrimeSkillFilesResult | null = null;
     try {
+      signal?.throwIfAborted();
       const skillFiles = await listSkillFiles(skill._id);
+      signal?.throwIfAborted();
       primeResult = await primeSkillFiles({
         skill,
         skillFiles,
@@ -4995,6 +5021,8 @@ async function handleSkillToolCall(
         checkIfActive,
         updateSkillFileCodeEnvIds,
         codeExecutionContext,
+        signal,
+        rateLimitBudget,
       });
       if (primeResult) {
         /* `session_id` at the top of the artifact is the (representative)
@@ -5019,6 +5047,9 @@ async function handleSkillToolCall(
         };
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (isContentFilterError(error)) {
         return error instanceof ContentFilterError
           ? errorResult(tc, modelBoundContentFilterErrorMessage(error.body))
@@ -5303,6 +5334,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               agentId,
               sourceConfigurable,
               callerCapabilityProjection,
+              runSignal,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
@@ -6186,6 +6218,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               };
             };
 
+            const batchReq = mergedConfigurable?.req as ServerRequest | undefined;
+            const batchCodeApiRateLimitBudget = createCodeApiRateLimitBudget(
+              batchReq?.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+            );
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 const preloadedNameBlock = preloadedNameBlocks.get(tc);
@@ -6478,6 +6514,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           agentId,
                           req,
+                          runSignal,
+                          batchCodeApiRateLimitBudget,
                         );
                       } else if (tc.name === Constants.READ_FILE) {
                         handlerResult = await handleReadFileCall(

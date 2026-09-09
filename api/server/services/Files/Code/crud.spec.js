@@ -42,6 +42,14 @@ jest.mock('@librechat/api', () => {
       form.append('id', identity.id);
       if (identity.version != null) form.append('version', String(identity.version));
     }),
+    wrapCodeApiUploadError: jest.fn((error, message) => {
+      const wrapped = new Error(`${message} ${error.message}`, { cause: error });
+      if (error?.isAxiosError === true) {
+        wrapped.isAxiosError = true;
+        wrapped.response = error.response;
+      }
+      return wrapped;
+    }),
     buildCodeEnvDownloadQuery: jest.fn((identity) => {
       validateIdentity(identity, 'buildCodeEnvDownloadQuery');
       const params = new URLSearchParams({ kind: identity.kind, id: identity.id });
@@ -561,10 +569,25 @@ describe('Code CRUD', () => {
 
       await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toThrow();
     });
+
+    it('preserves rate-limit metadata through the upload logging boundary', async () => {
+      const rateLimit = Object.assign(new Error('Too Many Requests'), {
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '7' } },
+      });
+      mockAxios.post.mockRejectedValue(rateLimit);
+
+      await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toMatchObject({
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '7' } },
+        cause: rateLimit,
+      });
+    });
   });
 
   describe('batchUploadCodeEnvFiles', () => {
     it('routes batch uploads through the selected bridge worker', async () => {
+      const controller = new AbortController();
       const req = { user: { id: 'user-123' } };
       mockAxios.post.mockResolvedValue({
         data: {
@@ -584,6 +607,7 @@ describe('Code CRUD', () => {
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'personal-worker-1',
+        signal: controller.signal,
       });
 
       const [url, , callConfig] = mockAxios.post.mock.calls[0];
@@ -591,6 +615,7 @@ describe('Code CRUD', () => {
       expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req, 'personal-worker-1');
       expect(callConfig.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
       expect(callConfig.headers['X-LibreChat-Code-Worker-ID']).toBe('personal-worker-1');
+      expect(callConfig.signal).toBe(controller.signal);
     });
   });
 });

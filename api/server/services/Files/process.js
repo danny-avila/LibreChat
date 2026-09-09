@@ -45,6 +45,9 @@ const {
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
   resolveToolRoleGrants,
+  createCodeApiRateLimitBudget,
+  getCodeApiUploadOptions,
+  withCodeApiUploadRecovery,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -1221,20 +1224,34 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     /* Upload from the persisted representation. Images have already been converted here,
      * so both the bytes and extension advertised to the sandbox describe the same file. */
     const downloadPath = storageResult.storageKey ?? storageResult.filepath;
-    const stream = getDownloadStream
-      ? await getDownloadStream(req, downloadPath)
-      : fs.createReadStream(file.path);
     const codeKind = messageAttachment === true ? 'user' : 'agent';
     const codeId = messageAttachment === true ? req.user.id : agent_id;
     const sandboxFilename = resolveSandboxFilename(sanitizeFilename(file.originalname), storedType);
+    const uploadOptions = getCodeApiUploadOptions(req, 'default');
     let uploaded;
     try {
-      uploaded = await uploadCodeEnvFile({
-        req,
-        stream,
-        filename: sandboxFilename,
-        kind: codeKind,
-        id: codeId,
+      uploaded = await withCodeApiUploadRecovery({
+        registry: req.app?.locals?.codeApiUploadRegistry,
+        scope: uploadOptions.scope,
+        concurrency: uploadOptions.concurrency,
+        label: `uploading "${sandboxFilename}" to the code environment`,
+        budget: createCodeApiRateLimitBudget(uploadOptions.retryWaitMs),
+        onWait: (waitMs) =>
+          logger.warn(
+            `[processAgentFileUpload] Rate-limited Code API upload; retrying in ${waitMs}ms`,
+          ),
+        openSource: () =>
+          getDownloadStream
+            ? getDownloadStream(req, downloadPath)
+            : Promise.resolve(fs.createReadStream(file.path)),
+        upload: (stream) =>
+          uploadCodeEnvFile({
+            req,
+            stream,
+            filename: sandboxFilename,
+            kind: codeKind,
+            id: codeId,
+          }),
       });
     } catch (error) {
       const { deleteFile } = getStrategyFunctions(source);

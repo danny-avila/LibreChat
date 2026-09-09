@@ -773,6 +773,7 @@ const isBuiltInTool = (toolName) =>
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
+ * @param {AbortSignal} [params.signal] - Effective run cancellation signal
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -792,6 +793,7 @@ async function loadToolDefinitionsWrapper({
   tool_resources,
   codeExecutionContext,
   accessibleMcpServerNames,
+  signal,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -1448,6 +1450,7 @@ async function loadToolDefinitionsWrapper({
         tool_resources,
         agentId: agent.id,
         agentResourceType,
+        signal,
         codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
         executionProfile: resolvedCodeExecutionContext.executionProfile,
         executionRouteKey: resolvedCodeExecutionContext.executionRouteKey,
@@ -1581,6 +1584,7 @@ async function loadAgentTools({
         tool_resources,
         codeExecutionContext: providedCodeExecutionContext,
         accessibleMcpServerNames,
+        signal,
       });
     } catch (error) {
       if (
