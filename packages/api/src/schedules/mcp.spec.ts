@@ -162,3 +162,28 @@ it('keeps a role-store outage retryable instead of disabling the schedule', asyn
   await expect(check('agent', principal)).rejects.not.toBeInstanceOf(ScheduleMCPError);
   expect(deps.connect).not.toHaveBeenCalled();
 });
+
+it('starts independent server probes together instead of serializing their timeouts', async () => {
+  const { check, deps } = setup(['search_mcp_docs', 'search_mcp_private']);
+  deps.getServerConfigs = async () => ({ docs: server, private: server });
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const connect = deps.connect;
+  deps.connect = jest.fn(async (options) => {
+    await gate;
+    return connect(options);
+  });
+  const result = check('agent', principal);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  try {
+    expect(deps.connect).toHaveBeenCalledTimes(2);
+  } finally {
+    release();
+  }
+  await expect(result).resolves.toEqual([
+    { server: 'docs', status: 'ready' },
+    { server: 'private', status: 'ready' },
+  ]);
+});

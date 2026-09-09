@@ -15,11 +15,14 @@ import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
 import type { GetAppConfigOptions } from '../app/service';
 import type { ScheduleMCPPreflight } from './types';
-import { MCPAuthenticationRejectedError, MCPOAuthSecretReentryRequiredError } from '../mcp/errors';
+import {
+  MCPAuthenticationRejectedError,
+  MCPOAuthSecretReentryRequiredError,
+  isOAuthAuthenticationError,
+} from '../mcp/errors';
 import { getMissingCustomUserVars, splitMCPToolKey, findShadowedServerNames } from '../mcp/utils';
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { getAppConfigOptionsFromUser } from '../app/service';
-import { isOAuthAuthenticationError } from '../mcp/errors';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
 import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
@@ -126,63 +129,64 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       conversationId: randomUUID(),
       parentMessageId: String(Constants.NO_PARENT),
     };
-    const outcomes: ScheduleMCPOutcome[] = [];
+    let outcomes: ScheduleMCPOutcome[];
     try {
-      for (const [server, required] of selected) {
-        const serverConfig = servers[server];
-        const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
-        if (
-          !serverConfig ||
-          shadowed.has(server) ||
-          getMissingCustomUserVars(serverConfig, customUserVars).length > 0
-        ) {
-          outcomes.push({ server, status: 'mcp_configuration_missing' });
-          continue;
-        }
-        let reauth = false;
-        try {
-          const connection = await deps.connect({
-            user,
-            serverName: server,
-            serverConfig,
-            customUserVars,
-            requestBody,
-            requestScopedConnections: context,
-            ephemeralConnection: true,
-            returnOnOAuth: true,
-            oauthStart: async () => {
-              reauth = true;
-            },
-          });
-          const snapshot = await connection.fetchToolsSnapshot();
-          if (snapshot.authenticationError) throw snapshot.authenticationError;
-          const available = new Set(Object.keys(formatMCPServerTools(server, snapshot.tools)));
-          for (const tool of snapshot.tools) {
-            available.add(`${tool.name}${Constants.mcp_delimiter}${normalizeServerName(server)}`);
+      outcomes = await Promise.all(
+        [...selected].map(async ([server, required]): Promise<ScheduleMCPOutcome> => {
+          const serverConfig = servers[server];
+          const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
+          if (
+            !serverConfig ||
+            shadowed.has(server) ||
+            getMissingCustomUserVars(serverConfig, customUserVars).length > 0
+          ) {
+            return { server, status: 'mcp_configuration_missing' };
           }
-          let status: ScheduleMCPStatus = 'ready';
-          if (reauth) {
-            status = 'mcp_reauth_required';
-          } else if (!snapshot.complete || available.size === 0) {
-            status = 'mcp_unavailable';
-          } else if (!required.every((tool) => available.has(tool))) {
-            status = 'mcp_configuration_missing';
+          let reauth = false;
+          try {
+            const connection = await deps.connect({
+              user,
+              serverName: server,
+              serverConfig,
+              customUserVars,
+              requestBody,
+              requestScopedConnections: context,
+              ephemeralConnection: true,
+              returnOnOAuth: true,
+              oauthStart: async () => {
+                reauth = true;
+              },
+            });
+            const snapshot = await connection.fetchToolsSnapshot();
+            if (snapshot.authenticationError) throw snapshot.authenticationError;
+            const available = new Set(Object.keys(formatMCPServerTools(server, snapshot.tools)));
+            for (const tool of snapshot.tools) {
+              available.add(`${tool.name}${Constants.mcp_delimiter}${normalizeServerName(server)}`);
+            }
+            let status: ScheduleMCPStatus = 'ready';
+            if (reauth) {
+              status = 'mcp_reauth_required';
+            } else if (!snapshot.complete || available.size === 0) {
+              status = 'mcp_unavailable';
+            } else if (!required.every((tool) => available.has(tool))) {
+              status = 'mcp_configuration_missing';
+            }
+            return { server, status };
+          } catch (error) {
+            return {
+              server,
+              status:
+                reauth ||
+                error instanceof MCPAuthenticationRejectedError ||
+                error instanceof OpenIDReauthRequiredError ||
+                error instanceof MCPOAuthSecretReentryRequiredError ||
+                isOAuthAuthenticationError(error)
+                  ? 'mcp_reauth_required'
+                  : 'mcp_unavailable',
+            };
           }
-          outcomes.push({ server, status });
-        } catch (error) {
-          outcomes.push({
-            server,
-            status:
-              reauth ||
-              error instanceof MCPAuthenticationRejectedError ||
-              error instanceof OpenIDReauthRequiredError ||
-              error instanceof MCPOAuthSecretReentryRequiredError ||
-              isOAuthAuthenticationError(error)
-                ? 'mcp_reauth_required'
-                : 'mcp_unavailable',
-          });
-        }
-      }
+        }),
+      );
     } finally {
       await cleanupMCPRequestContext(context);
     }

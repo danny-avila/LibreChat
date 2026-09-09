@@ -6,6 +6,7 @@ import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
   ScheduleDeleteResult,
+  ScheduleMCPPreflight,
   ScheduleLimits,
   ScheduleUserContext,
   FireableSchedule,
@@ -16,7 +17,6 @@ import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { AgentCheckpointGeneration } from '../agents/checkpointer';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
-import type { ScheduleMCPPreflight } from './types';
 import {
   resolveScheduleProjectId,
   DEFAULT_SCHEDULE_LIMITS,

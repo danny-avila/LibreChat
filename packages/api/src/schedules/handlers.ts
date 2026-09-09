@@ -12,10 +12,10 @@ import type {
   ScheduleDeleteResult,
   ScheduleUserContext,
   FireableSchedule,
+  ScheduleMCPPreflight,
   ScheduleLimits,
   FireResult,
 } from './types';
-import type { ScheduleMCPPreflight } from './types';
 import type { ServerRequest } from '~/types';
 import {
   isValidCronExpression,
