@@ -341,6 +341,10 @@ export function createProvisionFilesCallback({
           }
         }),
       );
+      /* allSettled keeps independent file failures retryable, but cancellation belongs
+       * to the whole tool run. Preserve it before translating rejections into queued
+       * files or starting search provisioning. */
+      signal?.throwIfAborted();
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('[provisionFiles] Code env provisioning failed', result.reason);
@@ -410,6 +414,7 @@ export function createProvisionFilesCallback({
           throw new Error(`Vector store did not embed "${file.filename}" (${file.file_id})`);
         }),
       );
+      signal?.throwIfAborted();
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           logger.error('[provisionFiles] Vector DB provisioning failed', result.reason);

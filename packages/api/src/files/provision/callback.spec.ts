@@ -353,6 +353,43 @@ describe('createProvisionFilesCallback', () => {
     expect(provisionToCodeEnv).not.toHaveBeenCalled();
   });
 
+  it('preserves cancellation raised during code provisioning and skips search work', async () => {
+    const controller = new AbortController();
+    const codeImpl = jest.fn(async () => {
+      controller.abort();
+      controller.signal.throwIfAborted();
+    });
+    const vectorImpl = jest.fn();
+    const { provisionFiles } = buildHarness({
+      contexts: [
+        ['agent-a', { provisionState: state([makeFile()], [makeFile({ file_id: 'search-1' })]) }],
+      ],
+      codeImpl,
+      vectorImpl,
+    });
+
+    await expect(
+      provisionFiles([Constants.EXECUTE_CODE, 'file_search'], 'agent-a', controller.signal),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(vectorImpl).not.toHaveBeenCalled();
+  });
+
+  it('preserves cancellation raised during vector provisioning', async () => {
+    const controller = new AbortController();
+    const vectorImpl = jest.fn(async () => {
+      controller.abort();
+      controller.signal.throwIfAborted();
+    });
+    const { provisionFiles } = buildHarness({
+      contexts: [['agent-a', { provisionState: state([], [makeFile()]) }]],
+      vectorImpl,
+    });
+
+    await expect(
+      provisionFiles(['file_search'], 'agent-a', controller.signal),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('shares embedding work across agents queueing the same search file', async () => {
     const shared = makeFile();
     const { provisionFiles, provisionToVectorDB, addEmbeddedEntity } = buildHarness({
