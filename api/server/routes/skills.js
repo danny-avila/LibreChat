@@ -259,6 +259,9 @@ async function uploadFileHandler(req, res) {
 
     return res.status(200).json(result);
   } catch (error) {
+    if (error?.status === 413) {
+      return res.status(413).json({ error: error.message, code: error.code });
+    }
     if (error.code === 'SKILL_FILE_VALIDATION_FAILED') {
       return res.status(400).json({ error: error.message });
     }

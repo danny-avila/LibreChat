@@ -39,6 +39,8 @@ const {
   sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
   resolveDownloadPath,
+  resolveStorageScope,
+  persistFileWithQuota,
 } = require('@librechat/api');
 const {
   Tools,
@@ -59,13 +61,32 @@ const {
   resolveSandboxFilename,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
+const {
+  createFile,
+  getFiles,
+  updateFile,
+  claimCodeFile,
+  getUserStorageUsage,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { determineFileType } = require('~/server/utils');
 
 const axios = createAxiosInstance();
+
+const persistCodeFile = (req, row, write, rollback, replacedBytes) =>
+  persistFileWithQuota(
+    {
+      scope: resolveStorageScope(req),
+      row,
+      write,
+      rollback,
+      replacedBytes,
+      getUserStorageUsage,
+    },
+    (error) => logger.error('[processCodeOutput] Failed to clean up rejected output:', error),
+  );
 
 /** Request-scoped references to buffers already fetched by artifact preflight.
  * The request object is the ownership boundary, and WeakMap keeps completed
@@ -845,21 +866,38 @@ const processCodeOutput = async ({
      * close. Foreground writes keep the unconditional `createFile` path.
      */
     const commitCodeFile = async (fileData) => {
-      if (freshClaimAfter == null) {
-        await createFile(fileData, true);
-        return true;
-      }
-      const committed = await updateFile(fileData, {
-        $or: [
-          { 'metadata.sourceDispatchedAt': { $exists: false } },
-          { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
-        ],
-      });
+      const { deleteFile } = getStrategyFunctions(fileData.source);
+      const rollback = deleteFile ? () => deleteFile(req, fileData) : null;
+      const committed = await persistCodeFile(
+        req,
+        fileData,
+        (scopedRow) =>
+          freshClaimAfter == null
+            ? createFile(scopedRow, true).then(() => true)
+            : updateFile(scopedRow, {
+                $or: [
+                  { 'metadata.sourceDispatchedAt': { $exists: false } },
+                  { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
+                ],
+              }),
+        rollback,
+        isUpdate ? claimed.bytes : 0,
+      );
       if (!committed) {
+        if (rollback) {
+          await rollback().catch((error) =>
+            logger.error('[processCodeOutput] Failed to clean up stale output:', error),
+          );
+        }
         logger.warn(
           `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
         );
         return false;
+      }
+      if (isUpdate && claimed.filepath && claimed.filepath !== fileData.filepath && deleteFile) {
+        await deleteFile(req, claimed).catch((error) =>
+          logger.error('[processCodeOutput] Failed to clean up replaced output:', error),
+        );
       }
       return true;
     };
@@ -882,9 +920,15 @@ const processCodeOutput = async ({
       sourceDispatchedAt,
     };
 
+    const storageRevision = v4();
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
-      const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
+      const _file = await convertImage(
+        req,
+        buffer,
+        'high',
+        `${file_id}-${storageRevision}${fileExt}`,
+      );
       const filepath = usage > 1 ? `${_file.filepath}?v=${Date.now()}` : _file.filepath;
       const storageMetadata = getStorageMetadata({
         filepath: _file.filepath,
@@ -965,7 +1009,7 @@ const processCodeOutput = async ({
      */
     const NAME_MAX = 255;
     const flatName = flattenArtifactPath(safeName, NAME_MAX - file_id.length - 2);
-    const fileName = `${file_id}__${flatName}`;
+    const fileName = `${file_id}-${storageRevision}__${flatName}`;
     const filepath = await saveBuffer({
       userId: req.user.id,
       buffer,

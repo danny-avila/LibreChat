@@ -678,6 +678,29 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   });
   let bytes = providerBytes;
 
+  const rollbackAssistantProviderUpload = async () => {
+    const cleanup = [];
+    if (!metadata.message_file && !metadata.tool_resource) {
+      cleanup.push(openai.beta.assistants.files.del(metadata.assistant_id, id));
+    } else if (!metadata.message_file) {
+      cleanup.push(
+        deleteResourceFileId({
+          req,
+          openai,
+          file_id: id,
+          assistant_id: metadata.assistant_id,
+          tool_resource: metadata.tool_resource,
+        }),
+      );
+    }
+    cleanup.push(openai.files.del(id));
+    const results = await Promise.allSettled(cleanup);
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) {
+      throw failed.reason;
+    }
+  };
+
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     /** Authorized at the route before any bytes are sent — see
      *  `assertLegacyAssistantUploadAllowed` in `~/server/routes/files/files`. */
@@ -696,6 +719,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
   let secondaryStoredFile;
+  let persistedSource = source;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -712,6 +736,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     secondaryStoredFile = result;
     bytes = providerBytes + (result.bytes ?? 0);
     filepath = result.filepath;
+    persistedSource = result.source;
     storageMetadata = getStorageMetadata({
       filepath,
       source: result.source,
@@ -741,15 +766,24 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       type: file.mimetype,
       ...(await retentionExpiryPromise),
       embedded,
-      source,
+      source: persistedSource,
       height,
       width,
       tenantId: req.user.tenantId,
     },
-    /* The converted image is a distinct app-storage object. The provider-side
-     * cleanup is completed by the final enforcement PR, while this scoped write
-     * owns and removes the converted copy when admission rejects it. */
-    rollbackStoredFile,
+    isAssistantUpload
+      ? async () => {
+          const cleanup = [rollbackAssistantProviderUpload()];
+          if (secondaryStoredFile) {
+            cleanup.push(deleteStoredBlob(req, secondaryStoredFile));
+          }
+          const results = await Promise.allSettled(cleanup);
+          const failed = results.find((item) => item.status === 'rejected');
+          if (failed) {
+            throw failed.reason;
+          }
+        }
+      : rollbackStoredFile,
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -1404,9 +1438,28 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await persistFile(req, fileInfo, () =>
-    deleteStoredBlob(req, { source: storedSource, filepath, ...storageMetadata }),
-  );
+  const result = await persistFile(req, fileInfo, async () => {
+    const cleanup = [deleteStoredBlob(req, fileInfo)];
+    if (hasCodeEnvRef(fileInfo)) {
+      const { deleteFile: deleteCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+      if (deleteCodeEnvFile) {
+        cleanup.push(deleteCodeEnvFile(req, fileInfo));
+      }
+    }
+    if (!messageAttachment && effectiveToolResource) {
+      cleanup.push(
+        db.removeAgentResourceFiles({
+          agent_id,
+          files: [{ file_id, tool_resource: effectiveToolResource }],
+        }),
+      );
+    }
+    const results = await Promise.allSettled(cleanup);
+    const failed = results.find((item) => item.status === 'rejected');
+    if (failed) {
+      throw failed.reason;
+    }
+  });
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };

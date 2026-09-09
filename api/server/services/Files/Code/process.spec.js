@@ -66,6 +66,12 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    resolveStorageScope: (req) => ({
+      userId: req.user.id,
+      tenantId: req.tenantId ?? req.user.tenantId,
+    }),
+    persistFileWithQuota: ({ scope, row, write }) =>
+      write({ ...row, user: scope.userId, tenantId: scope.tenantId }),
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     /* Behaviourally identical to the real predicate in
@@ -650,7 +656,7 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'mock-uuid-1234.png',
+          'mock-uuid-1234-mock-uuid-1234.png',
         );
         expect(result.type).toBe('image/webp');
         expect(result.context).toBe(FileContext.execute_code);
@@ -698,7 +704,7 @@ describe('Code Process', () => {
           mockReq,
           imageBuffer,
           'high',
-          'existing-img-id.png',
+          'existing-img-id-mock-uuid-1234.png',
         );
         expect(result.file_id).toBe('existing-img-id');
         expect(result.usage).toBe(2);
@@ -723,8 +729,9 @@ describe('Code Process', () => {
         expect(mockSaveBuffer).toHaveBeenCalledWith({
           userId: 'user-123',
           buffer: smallBuffer,
-          fileName: 'mock-uuid-1234__test-file.txt',
+          fileName: 'mock-uuid-1234-mock-uuid-1234__test-file.txt',
           basePath: 'uploads',
+          tenantId: undefined,
         });
         expect(result.type).toBe('text/plain');
         expect(result.filepath).toBe('/uploads/saved-file.txt');
@@ -845,7 +852,7 @@ describe('Code Process', () => {
         // accidentally create real subdirectories under uploads/.
         expect(mockSaveBuffer).toHaveBeenCalledWith(
           expect.objectContaining({
-            fileName: 'mock-uuid-1234__test_folder__test_file.txt',
+            fileName: 'mock-uuid-1234-mock-uuid-1234__test_folder__test_file.txt',
           }),
         );
         // DB row keeps the nested path verbatim — that's what primeFiles
