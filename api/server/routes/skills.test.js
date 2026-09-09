@@ -31,7 +31,7 @@ const {
   PrincipalType,
   PermissionBits,
 } = require('librechat-data-provider');
-const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
+const { CONTENT_TRAVERSAL_MAX_DEPTH, FileStorageLimitError } = require('@librechat/api');
 
 let mockFileConfig;
 let mockFilters;
@@ -93,6 +93,7 @@ jest.mock('~/models', () => {
   return {
     ...methods,
     getRoleByName: jest.fn(),
+    upsertSkillFile: jest.fn(methods.upsertSkillFile),
   };
 });
 
@@ -748,6 +749,42 @@ describe('Skill routes', () => {
       const res = await request(app).post(`/api/skills/${created.body._id}/files`);
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/no file/i);
+    });
+
+    it('returns 413 for an application storage quota rejection', async () => {
+      const created = await createSkillAsOwner();
+      const { upsertSkillFile } = require('~/models');
+      upsertSkillFile.mockRejectedValueOnce(new FileStorageLimitError(100, 100));
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'references/notes.txt')
+        .attach('file', Buffer.from('notes'), {
+          filename: 'notes.txt',
+          contentType: 'text/plain',
+        });
+
+      expect(res.status).toBe(413);
+      expect(res.body.code).toBe('FILE_STORAGE_LIMIT_EXCEEDED');
+    });
+
+    it('does not convert an unrelated upstream 413 into a quota response', async () => {
+      const created = await createSkillAsOwner();
+      const { upsertSkillFile } = require('~/models');
+      upsertSkillFile.mockRejectedValueOnce(
+        Object.assign(new Error('upstream payload rejected'), { status: 413 }),
+      );
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'references/notes.txt')
+        .attach('file', Buffer.from('notes'), {
+          filename: 'notes.txt',
+          contentType: 'text/plain',
+        });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Failed to upload file' });
     });
 
     it('blocks text file content before storage', async () => {

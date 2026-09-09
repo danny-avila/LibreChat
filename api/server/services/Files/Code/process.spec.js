@@ -70,8 +70,20 @@ jest.mock('@librechat/api', () => {
       userId: req.user.id,
       tenantId: req.tenantId ?? req.user.tenantId,
     }),
-    persistFileWithQuota: ({ scope, row, write }) =>
-      write({ ...row, user: scope.userId, tenantId: scope.tenantId }),
+    createFileQuotaCommitter:
+      ({ resolveScope }) =>
+      async (req, row, write) => {
+        const scope = resolveScope(req);
+        const result = await write({ ...row, user: scope.userId, tenantId: scope.tenantId });
+        if (result == null) {
+          const error = new Error('not committed');
+          error.name = 'FilePersistenceNotCommittedError';
+          throw error;
+        }
+        return result;
+      },
+    isFilePersistenceNotCommittedError: (error) =>
+      error?.name === 'FilePersistenceNotCommittedError',
     resolveDownloadPath: (file) => file.storageKey || file.filepath,
     logAxiosError: jest.fn(),
     /* Behaviourally identical to the real predicate in
@@ -244,11 +256,13 @@ jest.mock('@librechat/agents', () => ({
 // Mock models
 const mockClaimCodeFile = jest.fn();
 const mockUpdateFile = jest.fn();
+const mockDeleteFileRecord = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
+  deleteFile: (...args) => mockDeleteFileRecord(...args),
 }));
 
 // Mock permissions (must be before process.js import)
@@ -335,6 +349,7 @@ describe('Code Process', () => {
       file_id: 'mock-uuid-1234',
       user: 'user-123',
     });
+    mockDeleteFileRecord.mockResolvedValue(undefined);
     getFiles.mockResolvedValue(null);
     createFile.mockResolvedValue({});
     getStrategyFunctions.mockReturnValue({
@@ -553,6 +568,11 @@ describe('Code Process', () => {
       });
       mockUpdateFile.mockResolvedValueOnce(null);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn().mockResolvedValue('/uploads/rejected-file.txt'),
+        deleteFile: deleteStoredFile,
+      });
 
       const result = await processCodeOutput({
         ...baseParams,
@@ -572,6 +592,56 @@ describe('Code Process', () => {
             },
           ],
         },
+      );
+      expect(deleteStoredFile).toHaveBeenCalledWith(
+        mockReq,
+        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
+      );
+      expect(mockDeleteFileRecord).toHaveBeenCalledWith('mock-uuid-1234');
+    });
+
+    it('cleans the new revision and inserted claim when the database write fails', async () => {
+      const deleteStoredFile = jest.fn().mockResolvedValue(undefined);
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer: jest.fn().mockResolvedValue('/uploads/uncommitted-file.txt'),
+        deleteFile: deleteStoredFile,
+      });
+      createFile.mockRejectedValueOnce(new Error('database unavailable'));
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      await processCodeOutput(baseParams);
+
+      expect(deleteStoredFile).toHaveBeenCalledWith(
+        mockReq,
+        expect.objectContaining({
+          file_id: 'mock-uuid-1234',
+          filepath: '/uploads/uncommitted-file.txt',
+        }),
+      );
+      expect(mockDeleteFileRecord).toHaveBeenCalledWith('mock-uuid-1234');
+    });
+
+    it('deletes a replaced blob through the storage strategy that originally owned it', async () => {
+      const deleteOldFile = jest.fn().mockResolvedValue(undefined);
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        filepath: '/old/object.txt',
+        source: 's3',
+        bytes: 50,
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+      getStrategyFunctions.mockImplementation((source) =>
+        source === 's3'
+          ? { deleteFile: deleteOldFile }
+          : { saveBuffer: jest.fn().mockResolvedValue('/uploads/new-object.txt') },
+      );
+
+      await processCodeOutput(baseParams);
+
+      expect(deleteOldFile).toHaveBeenCalledWith(
+        mockReq,
+        expect.objectContaining({ source: 's3', filepath: '/old/object.txt' }),
       );
     });
 
@@ -664,7 +734,11 @@ describe('Code Process', () => {
       });
 
       it('persists tenantId on image code output records when present', async () => {
-        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const tenantReq = {
+          ...mockReq,
+          tenantId: 'tenantA',
+          user: { ...mockReq.user, tenantId: 'staleTenant' },
+        };
         const imageBuffer = Buffer.alloc(500);
         mockAxios.mockResolvedValue({ data: imageBuffer });
         convertImage.mockResolvedValue({
@@ -803,7 +877,11 @@ describe('Code Process', () => {
       });
 
       it('passes and persists tenantId for non-image code output records', async () => {
-        const tenantReq = { ...mockReq, user: { ...mockReq.user, tenantId: 'tenantA' } };
+        const tenantReq = {
+          ...mockReq,
+          tenantId: 'tenantA',
+          user: { ...mockReq.user, tenantId: 'staleTenant' },
+        };
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
 
@@ -886,9 +964,9 @@ describe('Code Process', () => {
 
         // The handler should call flattenArtifactPath with both the
         // safeName AND a budget = NAME_MAX (255) minus the prefix
-        // (`${file_id}__`). file_id mock is `mock-uuid-1234` (14 chars),
-        // so the budget should be 255 - 14 - 2 = 239.
-        expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 239);
+        // (`${file_id}-${revision}__`). Both mocked UUIDs are 14 chars, so the
+        // budget is 255 - 14 - 14 - 3 = 224.
+        expect(flattenSpy).toHaveBeenCalledWith(expect.any(String), 224);
       });
 
       it('passes the basename (not the full nested path) to classifyCodeArtifact and extractCodeArtifactText', async () => {

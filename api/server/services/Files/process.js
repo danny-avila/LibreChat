@@ -1446,6 +1446,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         cleanup.push(deleteCodeEnvFile(req, fileInfo));
       }
     }
+    if (fileInfo.embedded) {
+      const { deleteFile: deleteVectorFile } = getStrategyFunctions(FileSources.vectordb);
+      if (deleteVectorFile) {
+        cleanup.push(deleteVectorFile(req, fileInfo));
+      }
+    }
     if (!messageAttachment && effectiveToolResource) {
       cleanup.push(
         db.removeAgentResourceFiles({

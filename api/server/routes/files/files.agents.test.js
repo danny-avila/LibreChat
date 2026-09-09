@@ -73,7 +73,7 @@ jest.mock('fs', () => {
 });
 
 const { processAgentFileUpload } = require('~/server/services/Files/process');
-const { UninspectableFileError } = require('@librechat/api');
+const { FileStorageLimitError, UninspectableFileError } = require('@librechat/api');
 
 // Import the router
 const router = require('~/server/routes/files/files');
@@ -1283,6 +1283,34 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ message: legacyMessage });
+    });
+
+    it('does not expose an upstream provider status as an application auth failure', async () => {
+      processAgentFileUpload.mockRejectedValueOnce(
+        Object.assign(new Error('provider rejected credentials'), { status: 401 }),
+      );
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Error processing file' });
+    });
+
+    it('returns 413 only for the application storage quota error', async () => {
+      processAgentFileUpload.mockRejectedValueOnce(new FileStorageLimitError(100, 100));
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(413);
+      expect(response.body.message).toMatch(/storage limit/i);
     });
 
     it.each([

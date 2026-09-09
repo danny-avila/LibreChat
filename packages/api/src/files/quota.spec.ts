@@ -1,9 +1,11 @@
 import type { UserStorageUsageParams } from '@librechat/data-schemas';
 import type { GetUserStorageUsage, StorageScope } from './quota';
 import {
+  createFileQuotaCommitter,
   createSkillFileQuotaPersistence,
   FILE_STORAGE_LIMIT_ERROR_CODE,
   FileStorageLimitError,
+  isFilePersistenceNotCommittedError,
   isFileStorageLimitError,
   persistFileWithQuota,
   persistSkillFileWithQuota,
@@ -1204,6 +1206,27 @@ describe('createSkillFileQuotaPersistence', () => {
     await persistence.getSharedValue('user-a\0tenant-a', load);
 
     expect(load).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createFileQuotaCommitter', () => {
+  it('stamps the resolved tenant and classifies a conditional persistence miss', async () => {
+    const committer = createFileQuotaCommitter<TestRequest>({
+      resolveScope: resolveStorageScope,
+      getUserStorageUsage: usageOf(0),
+      onCleanupError: noRollbackErrors,
+    });
+    const write = jest.fn().mockResolvedValue(null);
+
+    const error = await committer(
+      makeReq({ storageLimitMb: 1, requestTenantId: 'request-tenant' }),
+      { bytes: 10, file_id: 'file-a', tenantId: 'stale-tenant' },
+      write,
+      null,
+    ).catch((caught: Error) => caught);
+
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'request-tenant' }));
+    expect(isFilePersistenceNotCommittedError(error)).toBe(true);
   });
 });
 
