@@ -444,6 +444,16 @@ export type AcceptTermsMutationOptions = MutationOptions<
   void
 >;
 
+export type SubmitQuestionnaireResponseMutationOptions = MutationOptions<
+  types.TSubmitQuestionnaireResponseResponse,
+  types.TSubmitQuestionnaireResponseRequest
+>;
+
+export type DismissQuestionnaireMutationOptions = MutationOptions<
+  types.TDismissQuestionnaireResponse,
+  types.TDismissQuestionnaireRequest
+>;
+
 /* Tools */
 export type UpdatePluginAuthOptions = MutationOptions<types.TUser, types.TUpdateUserPlugins>;
 

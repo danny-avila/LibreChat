@@ -38,6 +38,8 @@
     "reset-meili-sync": "node config/reset-meili-sync.js",
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
+    "update-questionnaire": "node config/update-questionnaire.js",
+    "delete-questionnaire": "node config/delete-questionnaire.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:inspect": "cross-env NODE_ENV=production node --inspect --expose-gc api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",

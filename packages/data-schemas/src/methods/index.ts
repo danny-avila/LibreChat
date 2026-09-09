@@ -53,6 +53,12 @@ import { createShareMethods, type ShareMethods } from './share';
 import { createActionMethods, type ActionMethods } from './action';
 import { createAssistantMethods, type AssistantMethods } from './assistant';
 import { createBannerMethods, type BannerMethods } from './banner';
+import {
+  createQuestionnaireMethods,
+  QuestionnaireValidationError,
+  validateQuestionnaireQuestions,
+  type QuestionnaireMethods,
+} from './questionnaire';
 import { createToolCallMethods, type ToolCallMethods } from './toolCall';
 import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
@@ -171,6 +177,8 @@ import { createInsightsMethods, type InsightsMethods } from './insights';
 export {
   runAfterTransaction,
   RoleConflictError,
+  QuestionnaireValidationError,
+  validateQuestionnaireQuestions,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
@@ -229,6 +237,7 @@ export type AllMethods = UserMethods &
   ActionMethods &
   AssistantMethods &
   BannerMethods &
+  QuestionnaireMethods &
   ToolCallMethods &
   CategoriesMethods &
   PresetMethods &
@@ -451,6 +460,7 @@ export function createMethods(
     ...actionMethods,
     ...createAssistantMethods(mongoose),
     ...createBannerMethods(mongoose),
+    ...createQuestionnaireMethods(mongoose),
     ...createToolCallMethods(mongoose),
     ...createCategoriesMethods(mongoose),
     ...createPresetMethods(mongoose),
@@ -507,6 +517,7 @@ export type {
   ActionMethods,
   AssistantMethods,
   BannerMethods,
+  QuestionnaireMethods,
   ToolCallMethods,
   CategoriesMethods,
   PresetMethods,

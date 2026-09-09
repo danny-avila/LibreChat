@@ -7,6 +7,7 @@ import type {
   TAttachment,
   TMessage,
   TBanner,
+  TQuestionnaire,
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
@@ -929,6 +930,36 @@ export type TAcceptTermsResponse = {
 };
 
 export type TBannerResponse = TBanner | null;
+
+export type TQuestionnaireResponse = {
+  questionnaire: TQuestionnaire | null;
+  completed: boolean;
+  /** ISO date string of when the current user last dismissed this questionnaire, if ever. */
+  dismissedAt: string | null;
+};
+
+export type TQuestionnaireAnswer = {
+  questionId: string;
+  value: string | number | string[];
+};
+
+export type TSubmitQuestionnaireResponseRequest = {
+  questionnaireId: string;
+  answers: TQuestionnaireAnswer[];
+};
+
+export type TSubmitQuestionnaireResponseResponse = {
+  success: boolean;
+};
+
+export type TDismissQuestionnaireRequest = {
+  questionnaireId: string;
+};
+
+export type TDismissQuestionnaireResponse = {
+  success: boolean;
+  dismissedAt: string;
+};
 
 export type TUpdateFeedbackRequest = {
   feedback?: TMinimalFeedback;

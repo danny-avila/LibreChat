@@ -1,0 +1,54 @@
+{
+  "label": "Q3 2026",
+  "title": "Quick feedback survey",
+  "intro": "A few short questions about how things are going. This takes about a minute.",
+  "thankYouMessage": "Thanks for the feedback!",
+  "displayFrom": "2026-07-01T00:00:00Z",
+  "displayTo": null,
+  "repromptIntervalHours": 24,
+  "questions": [
+    {
+      "id": "satisfaction",
+      "type": "scale",
+      "section": "Your experience",
+      "title": "How satisfied are you so far?",
+      "required": true,
+      "min": 1,
+      "max": 5,
+      "minLabel": "Not satisfied",
+      "maxLabel": "Very satisfied"
+    },
+    {
+      "id": "frequency",
+      "type": "single_choice",
+      "section": "Your experience",
+      "title": "How often do you use it?",
+      "required": true,
+      "options": ["Daily", "Weekly", "Monthly", "Less than monthly"]
+    },
+    {
+      "id": "tasks",
+      "type": "multiple_choice",
+      "section": "Your experience",
+      "title": "Which tasks do you use it for?",
+      "required": false,
+      "options": ["Writing", "Summarising", "Coding", "Learning", "Other"]
+    },
+    {
+      "id": "sessions_per_week",
+      "type": "numeric",
+      "section": "Anything else",
+      "title": "Roughly how many sessions per week?",
+      "required": false,
+      "min": 0,
+      "max": 100
+    },
+    {
+      "id": "comments",
+      "type": "text",
+      "section": "Anything else",
+      "title": "Anything you would change?",
+      "required": false
+    }
+  ]
+}

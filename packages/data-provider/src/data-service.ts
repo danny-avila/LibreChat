@@ -1459,6 +1459,22 @@ export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
 
+export function getQuestionnaire(): Promise<t.TQuestionnaireResponse> {
+  return request.get(endpoints.questionnaire());
+}
+
+export function submitQuestionnaireResponse(
+  payload: t.TSubmitQuestionnaireResponseRequest,
+): Promise<t.TSubmitQuestionnaireResponseResponse> {
+  return request.post(endpoints.questionnaireResponse(), payload);
+}
+
+export function dismissQuestionnaire(
+  payload: t.TDismissQuestionnaireRequest,
+): Promise<t.TDismissQuestionnaireResponse> {
+  return request.post(endpoints.questionnaireDismiss(), payload);
+}
+
 export function updateFeedback(
   conversationId: string,
   messageId: string,
