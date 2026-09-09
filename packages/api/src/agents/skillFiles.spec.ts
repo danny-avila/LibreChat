@@ -1844,6 +1844,9 @@ describe('primeSkillFiles — upload rate-limit resilience', () => {
         }),
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      signal: controller.signal,
+    });
     expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
   });
 

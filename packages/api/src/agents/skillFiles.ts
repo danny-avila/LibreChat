@@ -67,7 +67,11 @@ export interface PrimeSkillFilesParams {
   /** Effective foreground cancellation signal for acquisition, waits, and transport. */
   signal?: AbortSignal;
   getStrategyFunctions: (source: string) => {
-    getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
+    getDownloadStream?: (
+      req: ServerRequest,
+      filepath: string,
+      options?: { signal?: AbortSignal },
+    ) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
   };
   batchUploadCodeEnvFiles: (params: {
@@ -201,7 +205,7 @@ async function collectSkillUploadFiles(
         );
         return null;
       }
-      const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
+      const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file), { signal });
       signal?.throwIfAborted();
       return { stream, filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}` };
     }),
@@ -316,10 +320,14 @@ function throwIfStoredSkillFileMustBeInspectable(req: ServerRequest): void {
   }
 }
 
-async function bufferSkillFileStream(stream: NodeJS.ReadableStream): Promise<Buffer | null> {
+async function bufferSkillFileStream(
+  stream: NodeJS.ReadableStream,
+  signal?: AbortSignal,
+): Promise<Buffer | null> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of stream as AsyncIterable<Uint8Array | string>) {
+    signal?.throwIfAborted();
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.length;
     if (bytes > MAX_INSPECTABLE_SKILL_FILE_BYTES) {
@@ -327,6 +335,7 @@ async function bufferSkillFileStream(stream: NodeJS.ReadableStream): Promise<Buf
     }
     chunks.push(buffer);
   }
+  signal?.throwIfAborted();
   return Buffer.concat(chunks);
 }
 
@@ -418,8 +427,10 @@ async function executePrimeSkillFiles(
           logger.warn('[primeSkillFiles] No download stream for stored skill file');
           continue;
         }
-        const sourceStream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
-        const buffer = await bufferSkillFileStream(sourceStream);
+        const sourceStream = await strategy.getDownloadStream(req, resolveDownloadPath(file), {
+          signal,
+        });
+        const buffer = await bufferSkillFileStream(sourceStream, signal);
         if (buffer == null) {
           throwIfStoredSkillFileMustBeInspectable(req);
           continue;

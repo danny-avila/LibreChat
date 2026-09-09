@@ -2666,6 +2666,9 @@ describe('Code Process', () => {
         expect.objectContaining({ signal: controller.signal }),
       );
       expect(getDownloadStream).toHaveBeenCalledTimes(2);
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), '/uploads/report.csv', {
+        signal: controller.signal,
+      });
       expect(handleFileUpload.mock.calls.map(([args]) => args.stream)).toEqual([
         'first-stream',
         'second-stream',
