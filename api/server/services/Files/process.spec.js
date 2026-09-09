@@ -2447,6 +2447,7 @@ describe('processFileURL', () => {
         basePath: 'images',
         context: FileContext.image_generation,
         tenantId: 'tenant-a',
+        req: makeReq(),
       }),
     ).rejects.toThrow('Strategy "local" did not save "image.png"');
 
@@ -2454,7 +2455,7 @@ describe('processFileURL', () => {
     expect(db.createFile).not.toHaveBeenCalled();
   });
 
-  it('preserves direct persistence for callers without a request', async () => {
+  it('rejects a missing request before writing storage', async () => {
     const saveURL = jest.fn().mockResolvedValue({
       filepath: '/images/user-123/image.png',
       bytes: 512,
@@ -2462,24 +2463,20 @@ describe('processFileURL', () => {
     });
     getStrategyFunctions.mockReturnValue({ saveURL, getFileURL: jest.fn() });
 
-    await processFileURL({
-      fileStrategy: FileSources.local,
-      userId: 'user-123',
-      URL: 'https://example.com/image.png',
-      fileName: 'image.png',
-      basePath: 'images',
-      context: FileContext.image_generation,
-      tenantId: 'tenant-a',
-    });
-
-    expect(db.createFile).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user: 'user-123',
-        filepath: '/images/user-123/image.png',
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.local,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
         tenantId: 'tenant-a',
       }),
-      true,
-    );
+    ).rejects.toThrow('processFileURL requires an authenticated request');
+
+    expect(saveURL).not.toHaveBeenCalled();
+    expect(db.createFile).not.toHaveBeenCalled();
   });
 
   it('persists tenantId and strategy-returned filepath metadata', async () => {

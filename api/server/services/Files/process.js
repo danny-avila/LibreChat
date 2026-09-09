@@ -405,7 +405,7 @@ function startExpiredFileSweep(options = {}) {
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
  * @param {string} [params.tenantId] - Optional tenant identifier for tenant-prefixed storage paths.
- * @param {ServerRequest} [params.req] - Request context used to apply data retention metadata.
+ * @param {ServerRequest} params.req - Authenticated request context used for quota and retention.
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
@@ -419,8 +419,11 @@ const processFileURL = async ({
   tenantId,
   req,
 }) => {
+  if (!req) {
+    throw new Error('processFileURL requires an authenticated request');
+  }
   const retentionExpiryPromise = getRetentionExpiry(req);
-  const effectiveTenantId = req ? resolveStorageScope(req).tenantId : tenantId;
+  const effectiveTenantId = resolveStorageScope(req).tenantId;
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
     const savedFile = await saveURL({
@@ -478,10 +481,6 @@ const processFileURL = async ({
       width: dimensions.width,
       height: dimensions.height,
     };
-    if (!req) {
-      return await db.createFile(fileInfo, true);
-    }
-
     return await persistFile(req, fileInfo, () =>
       deleteStoredBlob(req, {
         source: fileStrategy,
