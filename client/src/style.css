@@ -228,8 +228,8 @@ html {
   --series-4: 182 123 5;
   --series-5: 216 90 142;
   --series-6: 126 35 205;
-  --series-8: 63 81 181;
   --series-7: 1 131 1;
+  --series-8: 63 81 181;
 
   /* Code syntax highlighting */
   --syntax-text: var(--gray-800);

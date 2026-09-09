@@ -211,6 +211,64 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-chart-widget-stroke']).toBe('50 51 52');
   });
 
+  /** A deliberately different reference theme: it paints the whole seven-slot
+   *  scale and its own surfaces, so it predates slot 8 and cannot name it.
+   *  Falling back to the bundled indigo would paint a stop whose 3:1 mark
+   *  contrast was only ever measured against LibreChat's surfaces. */
+  const ownedScaleTheme: ThemeDefinition = {
+    version: 1,
+    name: 'owned-scale-reference',
+    modes: {
+      light: {
+        colors: {
+          'rgb-text-primary': '250 250 250',
+          'rgb-text-secondary': '215 215 215',
+          'rgb-surface-secondary': '18 18 24',
+          'rgb-surface-tertiary': '30 30 38',
+          'rgb-series-1': '120 200 255',
+          'rgb-series-2': '255 160 90',
+          'rgb-series-3': '110 230 210',
+          'rgb-series-4': '240 200 100',
+          'rgb-series-5': '250 150 200',
+          'rgb-series-6': '190 160 255',
+          'rgb-series-7': '130 220 120',
+        },
+      },
+    },
+  };
+
+  it('derives an omitted eighth series slot from an owned scale’s neutral text', () => {
+    const owned = resolveTheme(ownedScaleTheme, 'light');
+
+    expect(owned.colors['rgb-series-8']).toBe('215 215 215');
+    expect(owned.colors['rgb-series-7']).toBe('130 220 120');
+  });
+
+  it('lets an owned scale name the eighth slot itself', () => {
+    const named = resolveTheme(
+      {
+        ...ownedScaleTheme,
+        modes: {
+          light: {
+            colors: { ...ownedScaleTheme.modes.light?.colors, 'rgb-series-8': '10 20 30' },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(named.colors['rgb-series-8']).toBe('10 20 30');
+  });
+
+  it('keeps the bundled eighth slot for a theme that paints no series colors', () => {
+    expect(resolveTheme(compactTheme, 'dark').colors['rgb-series-8']).toBe(
+      darkTheme['rgb-series-8'],
+    );
+    expect(resolveTheme(compactTheme, 'light').colors['rgb-series-8']).toBe(
+      defaultTheme['rgb-series-8'],
+    );
+  });
+
   it('resolves provider brand tokens and lets a theme override them', () => {
     const defaults = resolveTheme(libreChatTheme, 'light');
     expect(defaults.brands['provider-anthropic']).toBe('#d09a74');

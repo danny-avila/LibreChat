@@ -391,6 +391,28 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-border-light'] !== undefined
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
+  /**
+   * Slot 8 arrived after the seven-slot scale shipped, so a stored or
+   * environment theme that paints its own scale cannot name it. Filling the
+   * omission from the bundled base would drop LibreChat's indigo onto that
+   * theme's own surfaces — the one pairing it never checked, and the stop's 3:1
+   * mark contrast is a claim about the bundled surfaces only. Its neutral text
+   * is the single colour the theme guarantees against every surface it renders
+   * on, and being hue-neutral it cannot collide with a custom slot 1–7 under
+   * protanopia/deuteranopia either. A theme that wants a hue for slot 8 names
+   * it, the way `rgb-surface-composer-hover` opts out of its own fallback.
+   */
+  const ownsSeriesScale =
+    customColors != null &&
+    ([1, 2, 3, 4, 5, 6, 7] as const).some(
+      (slot) => customColors[`rgb-series-${slot}`] !== undefined,
+    );
+  const neutralSeriesStop =
+    customColors?.['rgb-text-secondary'] ?? customColors?.['rgb-text-primary'];
+  const seriesEightFallback =
+    customColors?.['rgb-series-8'] === undefined && ownsSeriesScale && neutralSeriesStop != null
+      ? { 'rgb-series-8': neutralSeriesStop }
+      : {};
 
   return {
     version: THEME_VERSION,
@@ -405,6 +427,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...textMutedFallback,
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
+      ...seriesEightFallback,
     } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
     /** Mode last: a mode override is more specific than the theme-wide set. */

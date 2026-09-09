@@ -78,20 +78,19 @@ const tailSnapshot: ContextSnapshot = {
   },
 } as unknown as ContextSnapshot;
 
-const renderTokenUsage = () => {
+const renderTokenUsage = (
+  anchors: Map<string, ContextSnapshot> = new Map([
+    ['a1', anchorSnapshot(196000)],
+    ['a2', anchorSnapshot(195000)],
+  ]),
+) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   queryClient.setQueryData([QueryKeys.messages, convo], messages);
   const store = getDefaultStore();
   store.set(contextSnapshotFamily(convo), tailSnapshot);
-  store.set(
-    snapshotsByAnchorFamily(convo),
-    new Map([
-      ['a1', anchorSnapshot(196000)],
-      ['a2', anchorSnapshot(195000)],
-    ]),
-  );
+  store.set(snapshotsByAnchorFamily(convo), anchors);
 
   return renderHook(
     () =>
@@ -125,5 +124,42 @@ describe('useTokenUsage — post-snapshot output', () => {
      *  latest exchange (500 + 2000) = 9500. Omitting the output would
      *  under-report the reclaim by the size of the final answer. */
     expect(result.current.compactionReclaim).toBe(9500);
+  });
+
+  /** The older persisted shape: a budget and a breakdown, no remaining count. */
+  const legacySnapshot = (messageTokens: number): ContextSnapshot =>
+    ({
+      anchorMessageId: null,
+      contextBudget: 200000,
+      breakdown: { maxContextTokens: 200000, instructionTokens: 4000, messageTokens },
+    }) as unknown as ContextSnapshot;
+
+  it('projects a branch whose snapshots predate the remaining-token field', () => {
+    /** Both readings are instruction+messages sums — 13000 then 14000, so the
+     *  call grew 1000. Reading the absent remaining as zero would score both
+     *  turns as having spent the entire 200000 window and hide the projection. */
+    const { result } = renderTokenUsage(
+      new Map([
+        ['a1', legacySnapshot(9000)],
+        ['a2', legacySnapshot(10000)],
+      ]),
+    );
+
+    expect(result.current.runwayTurns).toBe(3);
+  });
+
+  it('withholds the projection when the two readings were measured differently', () => {
+    /** `a1` reports remaining headroom (4000 used of 200000) and `a2` only a
+     *  breakdown (14000). Their difference is the content a breakdown omits,
+     *  not what the last call added, so no per-call growth can be read from
+     *  the pair — a 10000-token "growth" would report zero turns left. */
+    const { result } = renderTokenUsage(
+      new Map([
+        ['a1', anchorSnapshot(196000)],
+        ['a2', legacySnapshot(10000)],
+      ]),
+    );
+
+    expect(result.current.runwayTurns).toBeUndefined();
   });
 });

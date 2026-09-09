@@ -967,8 +967,36 @@ describe('per-message usage index (branch + total)', () => {
 
     const series = collectAnchorSeries(CONVO, 'a3', anchors);
     /** used = budget − remaining: 40 → 80 → 140, oldest first */
-    expect(series).toEqual([{ used: 40 }, { used: 80 }, { used: 140 }]);
+    expect(series).toEqual([
+      { used: 40, basis: 'remaining' },
+      { used: 80, basis: 'remaining' },
+      { used: 140, basis: 'remaining' },
+    ]);
     expect(collectAnchorSeries(CONVO, 'a3', new Map())).toEqual([]);
+  });
+
+  it('collectAnchorSeries derives a snapshot saved without remaining headroom', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 4),
+      msg('a1', 'u1', false, 10),
+      msg('u2', 'a1', true, 4),
+      msg('a2', 'u2', false, 20),
+    ]);
+    const anchors = new Map<string, unknown>([
+      /** The older shape: a budget and a breakdown, no remaining count. Read as
+       *  zero remaining it would claim the whole 1000-token window was spent. */
+      [
+        'a1',
+        {
+          contextBudget: 1000,
+          breakdown: { maxContextTokens: 1000, instructionTokens: 100, messageTokens: 60 },
+        },
+      ],
+      /** Nothing to read at all — skipped rather than counted as a full window. */
+      ['a2', { contextBudget: 1000, breakdown: { maxContextTokens: 1000 } }],
+    ]);
+
+    expect(collectAnchorSeries(CONVO, 'a2', anchors)).toEqual([{ used: 160, basis: 'breakdown' }]);
   });
 
   it('latestExchangeTokens sums the tail response and its user turn', () => {

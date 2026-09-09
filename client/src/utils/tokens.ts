@@ -527,22 +527,37 @@ export function prunedBranchTokens(
 }
 
 /**
+ * One persisted snapshot's used-context reading, with the basis it was measured
+ * on. `remaining` is the authoritative pre-invoke figure (`budget − remaining`);
+ * `breakdown` is the instruction+messages sum a snapshot saved before
+ * `remainingContextTokens` existed still supports. The two measure different
+ * quantities (the backend's remaining covers content the breakdown does not),
+ * so a growth delta may only compare readings of the same basis.
+ */
+export interface AnchorReading {
+  used: number;
+  basis: 'remaining' | 'breakdown';
+}
+
+/**
  * Used-token readings for every persisted snapshot on the viewed branch, oldest
  * → newest (the walk is tail→root, so results are reversed). Drives the growth
  * sparkline and the runway projection in the breakdown. Stops after a summarized
  * response — older snapshots describe discarded history, mirroring `sumBranch`.
+ * A snapshot that carries neither basis is skipped rather than reported as
+ * having consumed its entire budget.
  */
 export function collectAnchorSeries(
   conversationId: string,
   tailId: string | null | undefined,
   anchors: ReadonlyMap<string, unknown>,
-): Array<{ used: number }> {
+): AnchorReading[] {
   const index = registry.get(conversationId);
   if (!index || !tailId || anchors.size === 0) {
     return [];
   }
 
-  const series: Array<{ used: number }> = [];
+  const series: AnchorReading[] = [];
   let currentId: string | null = tailId;
   let guard = index.size;
 
@@ -555,16 +570,31 @@ export function collectAnchorSeries(
       | {
           contextBudget?: number;
           remainingContextTokens?: number;
-          breakdown?: { maxContextTokens?: number };
+          effectiveInstructionTokens?: number;
+          breakdown?: {
+            maxContextTokens?: number;
+            instructionTokens?: number;
+            messageTokens?: number;
+          };
         }
       | undefined;
     if (snapshot != null) {
       const budget = normalizeTokenCount(
         snapshot.contextBudget ?? snapshot.breakdown?.maxContextTokens,
       );
-      const remaining = normalizeTokenCount(snapshot.remainingContextTokens);
-      if (budget > 0) {
-        series.push({ used: Math.max(0, budget - remaining) });
+      /** Same precedence as the render path's `baseUsed`: the backend's
+       *  remaining headroom when it was saved, else the breakdown sum. */
+      if (snapshot.remainingContextTokens != null && budget > 0) {
+        const remaining = normalizeTokenCount(snapshot.remainingContextTokens);
+        series.push({ used: Math.max(0, budget - remaining), basis: 'remaining' });
+      } else {
+        const used =
+          normalizeTokenCount(
+            snapshot.effectiveInstructionTokens ?? snapshot.breakdown?.instructionTokens,
+          ) + normalizeTokenCount(snapshot.breakdown?.messageTokens);
+        if (used > 0) {
+          series.push({ used, basis: 'breakdown' });
+        }
       }
     }
     if (entry.summaryUsedTokens != null && entry.summaryUsedTokens > 0) {

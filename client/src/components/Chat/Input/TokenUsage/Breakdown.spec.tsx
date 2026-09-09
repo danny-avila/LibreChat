@@ -470,6 +470,32 @@ describe('TokenUsage Breakdown', () => {
         }),
       ).toBeInTheDocument();
     });
+
+    it('counts a cached subagent call in the all-branches subtotal', async () => {
+      /** A fully cached subagent call reports its prompt under cacheRead and
+       *  returns nothing: summing input+output alone would hide the row while
+       *  the cache rows above still count the same traffic. */
+      const cachedSubagent = {
+        ...view,
+        branchUsage: { ...view.branchUsage, cacheRead: 900 },
+        subagentUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 900,
+          cacheWrite: 100,
+          cost: 0,
+          costKnown: true,
+        },
+      } as TokenUsageView;
+
+      renderBreakdown({ view: cachedSubagent });
+      await userEvent.click(toggle());
+
+      const totals = within(screen.getByTestId('token-usage-totals'));
+      expect(
+        totals.getByText('com_ui_context_subagents_all').parentElement?.nextElementSibling,
+      ).toHaveTextContent('1K');
+    });
   });
 
   describe('langfuse', () => {

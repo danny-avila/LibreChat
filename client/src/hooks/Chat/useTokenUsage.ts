@@ -269,8 +269,14 @@ export default function useTokenUsage({
         : null;
     let runwayTurns: number | undefined;
     if (anchorSeries.length >= 2 && remainingForRunway != null) {
-      const perCallGrowth =
-        anchorSeries[anchorSeries.length - 1].used - anchorSeries[anchorSeries.length - 2].used;
+      const latest = anchorSeries[anchorSeries.length - 1];
+      const previous = anchorSeries[anchorSeries.length - 2];
+      /** Growth is only a per-call delta when both readings were measured the
+       *  same way; a remaining-based reading next to a breakdown-derived one
+       *  (a snapshot saved before `remainingContextTokens` existed) differs by
+       *  the content the breakdown omits, not by what the last call added. The
+       *  projection stays unavailable rather than reporting that difference. */
+      const perCallGrowth = latest.basis === previous.basis ? latest.used - previous.used : 0;
       if (perCallGrowth > 0) {
         runwayTurns = Math.max(0, Math.floor(remainingForRunway / perCallGrowth));
       }

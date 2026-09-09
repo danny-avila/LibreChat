@@ -138,6 +138,16 @@ export default function Breakdown({
     Number.isFinite(view.branchCost) &&
     view.totalCost - view.branchCost > 1e-9;
 
+  /** Every normalized bucket of the subagent calls: a cached call reports its
+   *  prompt under `cacheRead`/`cacheWrite`, so summing input+output alone
+   *  under-reports it — and hides a fully cached call with no output entirely,
+   *  while the Totals rows above still count its cache traffic. */
+  const subagentTokens =
+    normalizeTokenCount(view.subagentUsage?.input) +
+    normalizeTokenCount(view.subagentUsage?.output) +
+    normalizeTokenCount(view.subagentUsage?.cacheRead) +
+    normalizeTokenCount(view.subagentUsage?.cacheWrite);
+
   const breakdown = snapshotActive ? snapshot?.breakdown : undefined;
   const instructionTokens = normalizeTokenCount(
     snapshot?.effectiveInstructionTokens ?? breakdown?.instructionTokens,
@@ -589,16 +599,8 @@ export default function Breakdown({
                    *  and are not attributed to a response, so they cannot be scoped to
                    *  the viewed branch like the rows above; label them all-branches
                    *  rather than imply branch scope. */}
-                  {normalizeTokenCount(view.subagentUsage?.input) +
-                    normalizeTokenCount(view.subagentUsage?.output) >
-                    0 && (
-                    <Row
-                      label={localize('com_ui_context_subagents_all')}
-                      value={
-                        normalizeTokenCount(view.subagentUsage?.input) +
-                        normalizeTokenCount(view.subagentUsage?.output)
-                      }
-                    />
+                  {subagentTokens > 0 && (
+                    <Row label={localize('com_ui_context_subagents_all')} value={subagentTokens} />
                   )}
                 </div>
               </>
