@@ -492,6 +492,83 @@ describe('Agent queued-turn continuation', () => {
     );
   });
 
+  it('resolves an optimistic response placeholder from its persisted user message', async () => {
+    const { methods, spies } = resolverMethods();
+    const queued = claim();
+    queued.parentMessageId = 'user-1_';
+    spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: queued });
+    spies.getMessages.mockResolvedValueOnce([
+      persistedMessage({
+        messageId: 'user-1',
+        parentMessageId: 'root',
+        isCreatedByUser: true,
+        createdAt: new Date(NOW - 1_000),
+      }),
+      persistedMessage({
+        messageId: 'assistant-1',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: new Date(NOW),
+      }),
+    ]);
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
+      status: 'ready',
+      parentMessageId: 'assistant-1',
+    });
+    expect(spies.releaseAgentQueuedTurn).not.toHaveBeenCalled();
+  });
+
+  it('prefers an exact persisted anchor over placeholder normalization', async () => {
+    const { methods, spies } = resolverMethods();
+    const queued = claim();
+    queued.parentMessageId = 'user-1_';
+    spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: queued });
+    spies.getMessages.mockResolvedValueOnce([
+      persistedMessage({
+        messageId: 'user-1',
+        parentMessageId: 'root',
+        isCreatedByUser: true,
+        createdAt: new Date(NOW - 2_000),
+      }),
+      persistedMessage({
+        messageId: 'stripped-branch',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
+        createdAt: new Date(NOW),
+      }),
+      persistedMessage({
+        messageId: 'user-1_',
+        parentMessageId: 'root',
+        isCreatedByUser: true,
+        createdAt: new Date(NOW - 1_000),
+      }),
+      persistedMessage({
+        messageId: 'exact-branch',
+        parentMessageId: 'user-1_',
+        isCreatedByUser: false,
+        createdAt: new Date(NOW - 500),
+      }),
+    ]);
+    const resolve = createAgentQueuedTurnResolver({
+      methods,
+      getGenerationJob: async () => null,
+      now: () => NOW,
+      claimBy: 'worker-1',
+    });
+
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
+      status: 'ready',
+      parentMessageId: 'exact-branch',
+    });
+  });
+
   it('dead-letters a legacy admission order that cannot be reconstructed safely', async () => {
     const { methods, spies } = resolverMethods();
     (
