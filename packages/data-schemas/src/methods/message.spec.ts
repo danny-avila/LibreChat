@@ -1474,6 +1474,53 @@ describe('Message Operations', () => {
       expect(claim.status).toBe('acquired');
     });
 
+    it('claims a cancelled ordinary background-tool result as terminal evidence', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-cancelled-tool',
+              name: 'bash_tool',
+              output: 'Background task cancellation requested',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-cancelled-tool',
+                toolName: 'bash_tool',
+                status: 'error',
+                cancelled: true,
+                settledAt: new Date(),
+                completionWakeup: true,
+              },
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-cancelled-tool',
+          kind: 'wakeup',
+          claimId: 'delivery-cancelled-tool',
+        }),
+      ).resolves.toEqual({
+        status: 'acquired',
+        results: [
+          {
+            taskId: 'task-cancelled-tool',
+            toolCallId: 'call-cancelled-tool',
+            toolName: 'bash_tool',
+            status: 'cancelled',
+            output: 'Background task cancellation requested',
+          },
+        ],
+      });
+    });
+
     it('elects one result consumer and batches terminal siblings for a wakeup', async () => {
       const terminal = (id: string, taskId: string, output: string) => ({
         type: 'tool_call',

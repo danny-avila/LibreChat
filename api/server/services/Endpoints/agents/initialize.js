@@ -185,6 +185,9 @@ const initializeClient = async ({
   const completionWakeupsEnabled = backgroundCompletionWakeupsEnabled(
     appConfig?.endpoints?.[EModelEndpoint.agents],
   );
+  const ordinaryToolCancellationEnabled =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.ordinaryToolCancellation ===
+    true;
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -409,6 +412,7 @@ const initializeClient = async ({
     // is composed with this authoritative job signal by the handler.
     runSignal: signal,
     foregroundRunId,
+    ordinaryToolCancellation: ordinaryToolCancellationEnabled,
     loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);

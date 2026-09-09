@@ -652,6 +652,8 @@ endpoints:
   #   # Enabled by default; set false to keep background tools and subagents poll-only.
   #   backgroundTasks:
   #     completionWakeups: true
+  #     # Allow owners to cooperatively cancel ordinary background tools, including BYOM Bash.
+  #     ordinaryToolCancellation: false
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.

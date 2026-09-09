@@ -324,6 +324,31 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(capturedToolExecuteOptions.foregroundRunId).toBe('response-1');
   });
 
+  it('threads the deployment ordinary-tool cancellation gate into execution', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const disabledReq = makeReq();
+
+    await initializeClient({
+      req: disabledReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    expect(capturedToolExecuteOptions.ordinaryToolCancellation).toBe(false);
+
+    const enabledReq = makeReq();
+    enabledReq.config.endpoints.agents = {
+      backgroundTasks: { ordinaryToolCancellation: true },
+    };
+    await initializeClient({
+      req: enabledReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    expect(capturedToolExecuteOptions.ordinaryToolCancellation).toBe(true);
+  });
+
   it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {
     const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
       code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',

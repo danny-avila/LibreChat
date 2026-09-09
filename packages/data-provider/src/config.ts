@@ -1336,6 +1336,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       backgroundTasks: z
         .object({
           completionWakeups: z.boolean().optional().default(true),
+          /** Cooperative cancellation for process-local ordinary tools. Off
+           * by default so existing deployments opt into the new control. */
+          ordinaryToolCancellation: z.boolean().optional().default(false),
         })
         .optional(),
       skills: z

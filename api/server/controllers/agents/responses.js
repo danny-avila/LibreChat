@@ -703,6 +703,8 @@ const executeResponse = async (envelope, { req, res }) => {
         codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
       });
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+      const ordinaryToolCancellationEnabled =
+        agentsEConfig?.backgroundTasks?.ordinaryToolCancellation === true;
       const previousMessages = request.previous_response_id
         ? await loadPreviousMessages(request.previous_response_id, principal.userId)
         : [];
@@ -1144,6 +1146,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
         // Create tool execute options for event-driven tool execution
         const toolExecuteOptions = {
+          ordinaryToolCancellation: ordinaryToolCancellationEnabled,
           provisionFiles: createProvisionFilesCallback({
             req,
             agentToolContexts,
@@ -1372,6 +1375,7 @@ const executeResponse = async (envelope, { req, res }) => {
         });
 
         const toolExecuteOptions = {
+          ordinaryToolCancellation: ordinaryToolCancellationEnabled,
           provisionFiles: createProvisionFilesCallback({
             req,
             agentToolContexts,

@@ -1281,6 +1281,7 @@ describe('OpenAIChatCompletionController', () => {
       const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
       const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
+      req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
       await OpenAIChatCompletionController(req, res);
 
       const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
@@ -1308,6 +1309,7 @@ describe('OpenAIChatCompletionController', () => {
       );
 
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
       await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
         expect.objectContaining({
