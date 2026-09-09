@@ -3,7 +3,7 @@ import { Clock } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
   OGDialog,
-  DialogTemplate,
+  OGDialogTemplate,
   Checkbox,
   TextareaAutosize,
   cn,
@@ -362,7 +362,7 @@ export default function QuestionnaireModal() {
 
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTemplate
+      <OGDialogTemplate
         title={questionnaire.title}
         className="w-11/12 max-w-2xl sm:w-3/4 md:w-2/3"
         showCloseButton={false}

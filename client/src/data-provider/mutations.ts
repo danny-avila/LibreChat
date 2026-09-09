@@ -1405,7 +1405,9 @@ export const useSubmitQuestionnaireResponseMutation = (
     {
       onSuccess: (data, variables, context) => {
         queryClient.setQueryData<t.TQuestionnaireResponse>([QueryKeys.questionnaire], (previous) =>
-          previous ? { ...previous, completed: true } : { questionnaire: null, completed: true },
+          previous
+            ? { ...previous, completed: true }
+            : { questionnaire: null, completed: true, dismissedAt: null },
         );
         options?.onSuccess?.(data, variables, context);
       },
