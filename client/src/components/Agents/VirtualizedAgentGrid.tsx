@@ -63,8 +63,19 @@ export default function VirtualizedAgentGrid({
    * surface back, and it has to stay above its neighbours until then.
    */
   const [liftedAgentId, setLiftedAgentId] = useState<string | null>(null);
-  /** Resolved once per morph, so neither endpoint restates the radius token. */
-  const [surfaceRadius, setSurfaceRadius] = useState<number | null>(null);
+  /**
+   * The radius token resolved for the whole list, not per morph: the projection
+   * keeps a `borderRadius` it has been handed once, so a value that came and
+   * went with a selection would pin a morphed card's corner to whatever the
+   * theme was at the time. Re-resolved when the theme rewrites the root.
+   */
+  const [surfaceRadius, setSurfaceRadius] = useState(readSurfaceRadius);
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => setSurfaceRadius(readSurfaceRadius()));
+    observer.observe(root, { attributes: true, attributeFilter: ['style', 'class'] });
+    return () => observer.disconnect();
+  }, []);
   const reducedMotion = useReducedMotion();
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(closeTimerRef.current), []);
@@ -196,7 +207,6 @@ export default function VirtualizedAgentGrid({
       setSelection({ agent, phase: 'open' });
       if (reducedMotion !== true) {
         setLiftedAgentId(agent.id);
-        setSurfaceRadius(readSurfaceRadius());
       }
       onSelectAgent?.(agent);
     },
@@ -328,9 +338,7 @@ export default function VirtualizedAgentGrid({
                   onSelect={handleSelect}
                   expanded={selected}
                   morphing={agent.id === liftedAgentId}
-                  surfaceRadius={
-                    agent.id === liftedAgentId && surfaceRadius != null ? surfaceRadius : undefined
-                  }
+                  surfaceRadius={surfaceRadius}
                   ref={selected ? selectedTriggerRef : undefined}
                 />
               </div>,
@@ -359,12 +367,7 @@ export default function VirtualizedAgentGrid({
         })}
       </div>
       {createPortal(
-        <AnimatePresence
-          onExitComplete={() => {
-            setLiftedAgentId(null);
-            setSurfaceRadius(null);
-          }}
-        >
+        <AnimatePresence onExitComplete={() => setLiftedAgentId(null)}>
           {morphing && (
             <motion.div
               key="agent-detail-backdrop"
@@ -385,7 +388,7 @@ export default function VirtualizedAgentGrid({
           /* Without a mounted source card — the filters or the search moved on
              — there is nothing to morph from, so the dialog just fades. */
           morph={morphing ? selection.phase : undefined}
-          surfaceRadius={morphing && surfaceRadius != null ? surfaceRadius : undefined}
+          surfaceRadius={surfaceRadius}
         />
       )}
     </OGDialog>
