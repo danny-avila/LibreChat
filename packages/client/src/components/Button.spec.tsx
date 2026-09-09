@@ -18,6 +18,20 @@ describe('Button', () => {
     );
   });
 
+  it('offers the composer action row geometry as a size and a shape', () => {
+    render(
+      <Button size="icon-theme" shape="round" aria-label="Scroll to bottom">
+        v
+      </Button>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Scroll to bottom' })).toHaveClass(
+      'size-theme-control',
+      'p-0',
+      'rounded-theme-control-round',
+    );
+  });
+
   it('renders the header-action toggle from semantic tokens', () => {
     render(<Button variant="header-action">Toggle</Button>);
 

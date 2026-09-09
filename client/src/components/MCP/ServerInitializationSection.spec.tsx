@@ -7,6 +7,12 @@ import ServerInitializationSection from './ServerInitializationSection';
 const mockInitializeServer = jest.fn();
 const mockConnectionStatus = jest.fn((): MCPServerStatus | undefined => undefined);
 
+const mockMCPRefresh = jest.fn();
+
+jest.mock('~/hooks/MCP/useMCPRefresh', () => ({
+  useMCPRefresh: (options: { enabled: boolean; tools?: boolean }) => mockMCPRefresh(options),
+}));
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useMCPConnectionStatus: () => ({

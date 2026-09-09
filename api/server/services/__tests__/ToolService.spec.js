@@ -16,6 +16,7 @@ const {
 } = require('librechat-data-provider');
 
 const mockGetEndpointsConfig = jest.fn();
+const mockGetAppConfig = jest.fn();
 const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
@@ -59,6 +60,7 @@ const mockPrimeSearchFiles = jest.fn().mockResolvedValue({});
 const mockPrimeCodeFiles = jest.fn().mockResolvedValue({});
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
+  getAppConfig: (...args) => mockGetAppConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
   getCachedTools: (...args) => mockGetCachedTools(...args),
 }));
@@ -3012,6 +3014,128 @@ describe('ToolService - Action Capability Gating', () => {
         expect.objectContaining({ tools: [programmaticTool.name] }),
       );
     });
+
+    it('does not lazily load PTC for an attached worker without confirmed stateful support', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      req.config.endpoints.agents.statefulCodeSessions = {
+        environments: [
+          {
+            id: 'personal',
+            name: 'Personal',
+            type: 'attached',
+            owner: 'deployment',
+            baseURL: 'https://attached.example',
+            workerId: 'worker',
+          },
+        ],
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveCodeExecutionContext.mockImplementationOnce(
+        jest.requireActual('@librechat/api').resolveCodeExecutionContext,
+      );
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: {
+          id: 'agent_ptc',
+          tools: [Tools.execute_code],
+          stateful_code_sessions: true,
+          code_environment_id: 'personal',
+        },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry: new Map(),
+        actionsEnabled: false,
+      });
+      expect(result.loadedTools.map((tool) => tool.name)).not.toContain(
+        Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+      );
+    });
+
+    it.each([
+      { statefulWorkspace: false, runtimes: ['bash'], supported: false },
+      { statefulWorkspace: true, runtimes: ['py'], supported: false },
+      { statefulWorkspace: true, runtimes: ['bash'], supported: true },
+    ])(
+      'loads attached PTC using deployment credentials: stateful=$statefulWorkspace runtimes=$runtimes',
+      async ({ statefulWorkspace, runtimes, supported }) => {
+        const capabilities = [
+          AgentCapabilities.tools,
+          AgentCapabilities.programmatic_tools,
+          AgentCapabilities.execute_code,
+          AgentCapabilities.stateful_code_sessions,
+        ];
+        const req = createMockReq(capabilities);
+        const environment = {
+          id: 'personal',
+          name: 'Personal',
+          type: 'attached',
+          owner: 'deployment',
+          baseURL: 'https://attached.example',
+          workerId: `worker-${statefulWorkspace}-${runtimes[0]}`,
+          pairing: {
+            workerId: `worker-${statefulWorkspace}-${runtimes[0]}`,
+            tokenEnv: 'TEST_PTC_DEPLOYMENT_TOKEN',
+          },
+        };
+        req.config.endpoints.agents.statefulCodeSessions = { environments: [environment] };
+        mockGetAppConfig.mockResolvedValueOnce({
+          endpoints: { agents: { statefulCodeSessions: { environments: [environment] } } },
+        });
+        mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+        mockResolveCodeExecutionContext.mockImplementationOnce(
+          jest.requireActual('@librechat/api').resolveCodeExecutionContext,
+        );
+        process.env.TEST_PTC_DEPLOYMENT_TOKEN = `deployment-token-${statefulWorkspace}`;
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              protocolVersion: 1,
+              workerId: environment.workerId,
+              online: true,
+              ready: true,
+              leaseExpiresInMs: 45_000,
+              capabilities: { statefulWorkspace, sandboxProfile: 'native-srt', runtimes },
+            }),
+          ),
+        );
+        try {
+          const result = await loadToolsForExecution({
+            req,
+            res: {},
+            agent: {
+              id: 'agent_ptc',
+              tools: [Tools.execute_code],
+              stateful_code_sessions: true,
+              code_environment_id: 'personal',
+            },
+            toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+            toolRegistry: new Map(),
+            actionsEnabled: false,
+          });
+          expect(
+            result.loadedTools.some(
+              (tool) => tool.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
+            ),
+          ).toBe(supported);
+          expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+          expect(fetchSpy).toHaveBeenCalledWith(
+            `https://attached.example/bridge/workers/${environment.workerId}/status`,
+            expect.objectContaining({
+              headers: { Authorization: `Bearer deployment-token-${statefulWorkspace}` },
+            }),
+          );
+        } finally {
+          fetchSpy.mockRestore();
+          delete process.env.TEST_PTC_DEPLOYMENT_TOKEN;
+        }
+      },
+    );
 
     it('does not load PTC when programmatic tools capability is disabled', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];

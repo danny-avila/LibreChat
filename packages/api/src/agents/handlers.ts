@@ -17,9 +17,10 @@ import type {
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
+import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
-import type { ValidationIssue } from '@librechat/data-schemas';
+import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
 import type {
   WorkspaceEditResult,
   WorkspacePreviewEditResult,
@@ -106,6 +107,7 @@ import {
 } from './intent';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
+import { mergeCodeFilesIntoContext } from './codeFilesSession';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
 import { resolveDownloadPath } from '~/storage/path';
@@ -238,6 +240,14 @@ export interface ToolExecuteOptions {
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
   eventActorDetachedAction?: EventActorDetachedActionLifecycle;
+  /** Called once per batch before tool execution to lazily provision files to tool
+   *  environments. Resolves to the code-env refs it uploaded, which the caller folds
+   *  into this batch's code-session context. */
+  provisionFiles?: (
+    toolNames: string[],
+    agentId?: string,
+    signal?: AbortSignal,
+  ) => Promise<CodeEnvFile[] | void>;
   /**
    * Persists a backgrounded code-execution result onto the dispatch turn once
    * the detached call settles: downloads/persists generated files, patches the
@@ -283,15 +293,14 @@ export interface ToolExecuteOptions {
     claim: (params: {
       userId: string;
       conversationId: string;
-      messageId: string;
+      messageId?: string;
       taskId: string;
       agentId?: string;
       kind: 'manual';
       claimId: string;
-    }) => Promise<
-      | { status: 'acquired' | 'not_found' | 'not_ready' }
-      | { status: 'claimed'; claim?: { kind: 'manual' | 'wakeup'; claimId: string } }
-    >;
+      generationId?: string;
+      allowUnfinished?: boolean;
+    }) => Promise<BackgroundToolResultClaim>;
     recoverDeadClaim?: BackgroundToolDeadClaimRecovery;
   };
   /** Emits an `attachment` SSE event on the current request's live stream. */
@@ -765,6 +774,13 @@ function getSafeToolError(error: unknown): {
     message,
     logContext: {
       name: error instanceof Error ? error.name : typeof error,
+      ...(error instanceof WorkspaceToolHttpError
+        ? {
+            upstreamStatus: error.upstreamStatus,
+            upstreamBody: error.upstreamBody,
+            upstreamBodyTruncated: error.upstreamBodyTruncated,
+          }
+        : {}),
       message,
       messageLength: rawMessage.length,
       messageTruncated: message.length !== rawMessage.length,
@@ -2378,6 +2394,7 @@ async function handleWorkspaceFileRead(
       content: numbered,
     };
   } catch (error) {
+    if (error instanceof WorkspaceToolHttpError) throw error;
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceFileRead] Attached workspace read failed',
@@ -2464,6 +2481,7 @@ async function handleWorkspaceSearchCall(
       content: truncated ? `${content}${truncationNotice}` : content,
     };
   } catch (error) {
+    if (error instanceof WorkspaceToolHttpError) throw error;
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceSearchCall] Attached workspace search failed',
@@ -2566,6 +2584,7 @@ async function handleWorkspaceListCall(
       content: `${content}${truncationNotice}`,
     };
   } catch (error) {
+    if (error instanceof WorkspaceToolHttpError) throw error;
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn(
       '[handleWorkspaceListCall] Attached workspace file listing failed',
@@ -3725,8 +3744,11 @@ async function handleAttachedWorkspaceCreateFileCall({
       created: result.created,
     });
   } catch (error) {
-    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409 && !overwrite) {
-      return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+    if (error instanceof WorkspaceToolHttpError) {
+      if (error.upstreamStatus === 409 && !overwrite) {
+        error.message += '. File already exists. Pass overwrite: true to replace.';
+      }
+      throw error;
     }
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn('[file_authoring] Attached workspace write failed', getSafeErrorMetadata(error));
@@ -3798,10 +3820,8 @@ async function handleAttachedWorkspaceEditFileCall({
       } catch (error) {
         if (signal?.aborted === true && isAbortError(error)) throw error;
         if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 400) {
-          return errorResult(
-            tc,
-            'This attached environment must update its LibreChat Code worker before protected files can be edited.',
-          );
+          error.message +=
+            '. This attached environment must update its LibreChat Code worker before protected files can be edited.';
         }
         throw error;
       }
@@ -3828,11 +3848,11 @@ async function handleAttachedWorkspaceEditFileCall({
       },
     );
   } catch (error) {
-    if (error instanceof WorkspaceToolHttpError && error.upstreamStatus === 409) {
-      return errorResult(
-        tc,
-        `The requested text did not match exactly once in "workspace/${path.filePath}". Re-read the file and retry.`,
-      );
+    if (error instanceof WorkspaceToolHttpError) {
+      if (error.upstreamStatus === 409) {
+        error.message += `; The requested text did not match exactly once in "workspace/${path.filePath}". Re-read the file and retry.`;
+      }
+      throw error;
     }
     if (signal?.aborted === true && isAbortError(error)) throw error;
     logger.warn('[file_authoring] Attached workspace edit failed', getSafeErrorMetadata(error));
@@ -5140,6 +5160,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
+    provisionFiles,
   } = options;
 
   return {
@@ -5206,6 +5227,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               return;
             }
             const toolNames = [...new Set(allowedToolCalls.map((tc) => tc.name))];
+
+            const provisionedCodeFiles = provisionFiles
+              ? await provisionFiles(toolNames, agentId, runSignal)
+              : undefined;
+
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
               toolNames,
               agentId,
@@ -5218,6 +5244,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
+            /* The graph populated each call's code-session context from the sessions that
+             * existed at run start, before this batch provisioned anything, and nothing
+             * downstream refreshes it. buildToolCallConfig reads `_injected_files` from
+             * that context alone, so without this fold a successful upload still reaches
+             * a sandbox that cannot see the file. */
+            if (provisionedCodeFiles && provisionedCodeFiles.length > 0) {
+              for (const tc of allowedToolCalls) {
+                if (!isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                  continue;
+                }
+                const merged = mergeCodeFilesIntoContext(
+                  tc.codeSessionContext as CodeSessionContext | undefined,
+                  provisionedCodeFiles,
+                );
+                if (merged) {
+                  tc.codeSessionContext = merged;
+                }
+              }
+            }
+
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
             const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
             const executionRouteKey =
@@ -5508,6 +5554,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               kind: current.resultClaim.kind,
                               claimId: current.resultClaim.claimId,
                               claimedAt: new Date(current.resultClaim.claimedAt),
+                              ...(current.resultClaim.generationId == null
+                                ? {}
+                                : { generationId: current.resultClaim.generationId }),
                             },
                           }
                         : {}),
@@ -5542,6 +5591,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         certainty === 'ambiguous' ? { onlyIfUnclaimed: true } : undefined,
                       );
                       if (!retired) {
+                        const current = backgroundTaskRegistry.get(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                        );
+                        /** A prior manual poll may already have durably retired
+                         * this exact unclaimed delivery. In that case there is
+                         * no automatic consumer left to race the process-local
+                         * fallback, even though a second retirement is a no-op. */
+                        if (current?.completionWakeupRetired === true) {
+                          backgroundTaskRegistry.markCompletionPersistenceFailed(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            task.id,
+                          );
+                          return;
+                        }
                         logger.warn(
                           `[background] Could not retire failed completion delivery for task ${task.id}.`,
                         );
@@ -5963,6 +6029,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       policyError == null
                         ? filteredToolOutputResult(tc, backgroundReq, {
                             errorMessage: errorOutput,
+                            upstreamBody:
+                              toolError instanceof WorkspaceToolHttpError
+                                ? toolError.upstreamBody
+                                : undefined,
                           })
                         : null;
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
@@ -6056,6 +6126,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     toolCallId: tc.id,
                     agentId,
                     runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                    generationId: backgroundRunId,
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
@@ -6373,6 +6444,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       const { message, logContext } = getSafeToolError(toolError);
                       const filteredError = filteredToolOutputResult(tc, req, {
                         errorMessage: message,
+                        upstreamBody:
+                          toolError instanceof WorkspaceToolHttpError
+                            ? toolError.upstreamBody
+                            : undefined,
                       });
                       if (filteredError != null) {
                         logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
@@ -6781,6 +6856,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     const filteredError = filteredToolOutputResult(tc, req, {
                       errorMessage: message,
+                      upstreamBody:
+                        toolError instanceof WorkspaceToolHttpError
+                          ? toolError.upstreamBody
+                          : undefined,
                     });
                     if (filteredError != null) {
                       logToolFailure({

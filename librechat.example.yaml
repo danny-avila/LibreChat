@@ -266,6 +266,9 @@ interface:
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
+  #   # Poll only while MCP controls are visible, in milliseconds (0 disables polling).
+  #   toolsRefreshInterval: 300000
+  #   statusRefreshInterval: 30000
   # Controls user permissions for MCP (Model Context Protocol) server management
   # - use: Allow users to use configured MCP servers
   # - create: Allow users to create and manage new MCP servers
@@ -286,6 +289,10 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Regular chat retention in hours under retentionMode: "all" (min: 1, max: 8760).
+  # Defaults to the temporary chat retention policy when omitted.
+  # generalChatRetention: 2160 # 90 days, independently of temporary chats
+  # Existing stored deadlines are not migrated when these settings change.
   # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
   # Before switching from "all" back to "temporary", remove retention deadlines from non-temporary data
   # that should stop expiring:

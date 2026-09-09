@@ -127,7 +127,7 @@ describe('message mutation policy for durable subagent threads', () => {
     }
     expect(mockIsSubagentThreadWriteBlocked).toHaveBeenCalledTimes(5);
     expect(mockIsSubagentThreadWriteBlocked).toHaveBeenCalledWith(
-      expect.objectContaining({ getConvo: db.getConvo }),
+      expect.objectContaining({ getConvo: expect.any(Function) }),
       {
         userId: 'owner-user',
         conversationId: 'child-conversation',

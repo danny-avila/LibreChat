@@ -55,6 +55,9 @@ export interface CanonicalFileInspectionFile {
   readonly preview?: string;
   readonly type?: string;
   readonly source?: string;
+  /** Unified uploads persist their extracted text alongside the backing storage
+   *  source, so delivery path carries the provenance `source: 'text'` used to. */
+  readonly llmDeliveryPath?: string | null;
   readonly content?: string | null;
   readonly extractedText?: string | null;
   readonly text?: string | null;
@@ -324,12 +327,10 @@ export function getUploadExtractedTextPlan(
   ) {
     return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
   }
-  const isDocumentParserEligible = documentParserMimeTypes.some((mimePattern) =>
-    mimePattern.test(input.mimeType),
-  );
-  if (!isDocumentParserEligible) {
-    return null;
-  }
+  /* Ahead of the parser gate: an explicitly narrowed text list names types the built-in
+   * parser does not handle, and processing sends those to RAG with native fallback off
+   * and inspects what comes back. Judging them by the parser's list alone would
+   * fail-close an upload that does have an extraction step. */
   if (
     checkType != null &&
     input.ragConfigured &&
@@ -337,6 +338,12 @@ export function getUploadExtractedTextPlan(
     checkType(input.mimeType, input.fileConfig.text?.supportedMimeTypes ?? [])
   ) {
     return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+  }
+  const isDocumentParserEligible = documentParserMimeTypes.some((mimePattern) =>
+    mimePattern.test(input.mimeType),
+  );
+  if (!isDocumentParserEligible) {
+    return null;
   }
   return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
 }
@@ -959,7 +966,8 @@ export function getCanonicalFileInspectionCoverage(
   const isAudio = transcriptApplicable === true;
   const isTextual = mimeType.startsWith('text/') || TEXTUAL_APPLICATION_MIME_TYPES.has(mimeType);
   const hasExtractedTextProvenance =
-    typeof file.source === 'string' && file.source.toLowerCase() === 'text';
+    (typeof file.source === 'string' && file.source.toLowerCase() === 'text') ||
+    file.llmDeliveryPath === 'text';
   const text = getNonBlankInspectionText(file.text);
   const content = typeof file.content === 'string' ? file.content : undefined;
   const extractedText = getNonBlankInspectionText(file.extractedText);

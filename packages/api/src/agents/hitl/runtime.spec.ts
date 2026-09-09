@@ -1,8 +1,8 @@
 import { HookRegistry, executeHooks } from '@librechat/agents';
+import { buildHITLRunWiring, buildToolApprovalExecutionConfig } from './runtime';
 import { registerToolApprovalHook, clearToolApprovalHooks } from './hooks';
 import { createAttachedCodeEnvironmentPolicyHook } from './byom';
 import { resolveToolApprovalPolicy } from './policy';
-import { buildHITLRunWiring } from './runtime';
 
 describe('buildHITLRunWiring', () => {
   test.each([
@@ -212,5 +212,35 @@ describe('buildHITLRunWiring host-hook composition', () => {
     expect(hook).toHaveBeenCalledTimes(1);
     // Baseline policy + host matcher; plugins registered later remain last.
     expect(wiring?.hooks.getMatchers('PreToolUse')).toHaveLength(2);
+  });
+});
+
+describe('tool approval execution scope', () => {
+  test('reconstructs the same scope for repeated approval resumes', () => {
+    const generation = { responseMessageId: 'response-1', jobCreatedAt: 1000 };
+    const original = buildToolApprovalExecutionConfig(
+      generation.responseMessageId,
+      generation.jobCreatedAt,
+    );
+    const restored = JSON.parse(JSON.stringify(generation)) as typeof generation;
+    expect(
+      buildToolApprovalExecutionConfig(restored.responseMessageId, restored.jobCreatedAt),
+    ).toEqual(original);
+    expect(Object.values(original)[0]).toBeTruthy();
+  });
+
+  test('separates new generations even when an edit reuses the response id', () => {
+    const original = buildToolApprovalExecutionConfig('response-1', 1000);
+    expect(buildToolApprovalExecutionConfig('response-1', 1001)).not.toEqual(original);
+    expect(buildToolApprovalExecutionConfig('response-2', 1000)).not.toEqual(original);
+  });
+
+  test('uses the response id for runs without a generation job', () => {
+    expect(buildToolApprovalExecutionConfig('response-1')).toEqual(
+      buildToolApprovalExecutionConfig('response-1'),
+    );
+    expect(buildToolApprovalExecutionConfig('response-2')).not.toEqual(
+      buildToolApprovalExecutionConfig('response-1'),
+    );
   });
 });

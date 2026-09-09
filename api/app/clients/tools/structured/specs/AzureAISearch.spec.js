@@ -23,7 +23,7 @@ jest.mock(
   { virtual: true },
 );
 
-const AzureAISearch = require('./AzureAISearch');
+const AzureAISearch = require('../AzureAISearch');
 
 describe('AzureAISearch', () => {
   const requiredFields = {

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, RetentionMode } from 'librechat-data-provider';
-import type { IMessage } from '..';
+import type { AppConfig, IMessage } from '..';
 import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
@@ -112,7 +112,7 @@ describe('Message Operations', () => {
     userId: string;
     isTemporary?: boolean;
     expiredAt?: Date;
-    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
+    interfaceConfig?: AppConfig['interfaceConfig'];
   };
   let mockMessageData: Partial<IMessage> = {
     messageId: 'msg123',
@@ -1116,6 +1116,315 @@ describe('Message Operations', () => {
       ).tool_call?.backgroundTask;
       expect(task).toMatchObject({ taskId: 'task-1', status: 'error' });
       expect(task).not.toHaveProperty('completionWakeup');
+    });
+
+    it('lets a same-generation manual poll claim an anchored terminal receipt', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        unfinished: true,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent-a',
+            tool_call: {
+              id: 'call-same-generation',
+              name: 'slow_tool',
+              output: 'settled output',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-same-generation',
+                toolName: 'slow_tool',
+                status: 'completed',
+                settledAt: new Date(),
+                completionWakeup: true,
+              },
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-same-generation',
+          kind: 'wakeup',
+          claimId: 'automatic-delivery',
+        }),
+      ).resolves.toEqual({ status: 'not_ready' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-same-generation',
+          kind: 'manual',
+          claimId: 'manual-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_ready' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-same-generation',
+          kind: 'manual',
+          claimId: 'manual-poll',
+          allowUnfinished: true,
+        }),
+      ).resolves.toEqual({
+        status: 'acquired',
+        results: [
+          {
+            taskId: 'task-same-generation',
+            toolCallId: 'call-same-generation',
+            toolName: 'slow_tool',
+            status: 'completed',
+            output: 'settled output',
+            agentId: 'agent-a',
+          },
+        ],
+      });
+    });
+
+    it('restores same-generation claim ownership after the final response save', async () => {
+      const terminalContent = [
+        {
+          type: 'tool_call',
+          tool_call: {
+            id: 'call-finalize-race',
+            name: 'mutating_tool',
+            output: 'mutation completed',
+            backgroundTask: {
+              version: 1,
+              taskId: 'task-finalize-race',
+              toolName: 'mutating_tool',
+              status: 'completed',
+              settledAt: new Date(),
+              completionWakeup: true,
+            },
+          },
+        },
+      ];
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        unfinished: true,
+        content: terminalContent,
+      });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-finalize-race',
+          kind: 'manual',
+          claimId: 'manual-owner',
+          generationId: 'response-finalize-owner',
+          allowUnfinished: true,
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+
+      /** The final in-memory response did not observe the concurrent claim and
+       * rewrites the content part without it. The detached persistence retry
+       * must restore the mirrored owner before the receipt can be replayed. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        unfinished: false,
+        content: terminalContent,
+      });
+      await updateToolCallResult({
+        userId: 'user123',
+        conversationId: mockMessageData.conversationId as string,
+        messageId: 'msg123',
+        toolCallId: 'call-finalize-race',
+        output: 'mutation completed',
+        backgroundTask: {
+          taskId: 'task-finalize-race',
+          toolName: 'mutating_tool',
+          status: 'completed',
+          settledAt: new Date(),
+          completionWakeup: true,
+          resultClaim: {
+            kind: 'manual',
+            claimId: 'manual-owner',
+            claimedAt: new Date(),
+            generationId: 'response-finalize-owner',
+          },
+        },
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-finalize-race',
+          kind: 'manual',
+          claimId: 'competing-owner',
+        }),
+      ).resolves.toEqual({
+        status: 'claimed',
+        claim: {
+          kind: 'manual',
+          claimId: 'manual-owner',
+          generationId: 'response-finalize-owner',
+        },
+      });
+    });
+
+    it('recovers an unclaimed terminal receipt by task id after process-local state is lost', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent-a',
+            tool_call: {
+              id: 'call-recovered',
+              name: 'slow_tool',
+              output: 'durable result',
+              backgroundTask: {
+                version: 1,
+                taskId: 'task-recovered',
+                toolName: 'slow_tool',
+                status: 'completed',
+                settledAt: new Date(),
+              },
+            },
+          },
+        ],
+      });
+
+      const recovery = {
+        status: 'acquired',
+        messageId: 'msg123',
+        results: [
+          {
+            taskId: 'task-recovered',
+            toolCallId: 'call-recovered',
+            toolName: 'slow_tool',
+            status: 'completed',
+            output: 'durable result',
+            agentId: 'agent-a',
+          },
+        ],
+      };
+      const recover = () =>
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-recovered',
+          agentId: 'agent-a',
+          kind: 'manual',
+          claimId: 'recovery-poll',
+          generationId: 'response-recovery-owner',
+        });
+      await expect(recover()).resolves.toEqual(recovery);
+      await expect(recover()).resolves.toEqual(recovery);
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-recovered',
+          agentId: 'agent-a',
+          kind: 'manual',
+          claimId: 'competing-poll',
+        }),
+      ).resolves.toEqual({
+        status: 'claimed',
+        messageId: 'msg123',
+        claim: {
+          kind: 'manual',
+          claimId: 'recovery-poll',
+          generationId: 'response-recovery-owner',
+        },
+      });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'another-user',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-recovered',
+          kind: 'manual',
+          claimId: 'cross-user-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    it('reports an exact durable launch handle as outcome unknown after executor loss', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent-a',
+            tool_call: {
+              id: 'call-lost',
+              name: 'mutating_tool',
+              output: JSON.stringify({
+                background_task_id: 'task-lost',
+                tool: 'mutating_tool',
+                status: 'running',
+                message: 'Use check_background_task to poll.',
+              }),
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-lost',
+          agentId: 'agent-a',
+          kind: 'manual',
+          claimId: 'recovery-poll',
+        }),
+      ).resolves.toEqual({ status: 'outcome_unknown', toolName: 'mutating_tool' });
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-lost',
+          agentId: 'agent-b',
+          kind: 'manual',
+          claimId: 'wrong-agent-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    it('leaves a durable subagent handle to the routed subagent store', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'call-subagent',
+              name: 'subagent',
+              output: JSON.stringify({
+                background_task_id: 'task-subagent',
+                subagent_thread_id: 'thread-subagent',
+                tool: 'subagent',
+                subagent_type: 'researcher',
+                status: 'running',
+                progress: 0,
+              }),
+            },
+          },
+        ],
+      });
+
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          taskId: 'task-subagent',
+          kind: 'manual',
+          claimId: 'subagent-poll',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
     });
 
     it('claims a terminal result whose persisted claim stamp is a stored null', async () => {
@@ -2877,6 +3186,91 @@ describe('Message Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         expectedExpirationTime.getTime() + 1000,
       );
+    });
+
+    it.each([true, false, undefined])(
+      'uses the independent retention period for isTemporary=%s',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const now = Date.now();
+        const result = await saveMessage(mockCtx, mockMessageData);
+        const expectedHours = isTemporary === true ? 1 : 2160;
+
+        expect(result?.isTemporary).toBe(isTemporary === true);
+        expect(result?.expiredAt?.getTime()).toBeGreaterThanOrEqual(now + expectedHours * 3600000);
+        expect(result?.expiredAt?.getTime()).toBeLessThan(now + expectedHours * 3600000 + 5000);
+      },
+    );
+
+    it('atomically assigns general retention when inserting without a chat type', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const followupWrite = jest
+        .spyOn(Message, 'updateOne')
+        .mockRejectedValue(new Error('offline'));
+
+      const result = await saveMessage(mockCtx, mockMessageData);
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+      expect(followupWrite).not.toHaveBeenCalled();
+    });
+
+    it('ignores caller-supplied retention fields', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const suppliedExpiration = new Date('2099-01-01T00:00:00.000Z');
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isTemporary: true,
+        expiredAt: suppliedExpiration,
+      });
+
+      expect(result?.isTemporary).toBe(false);
+      expect(result?.expiredAt).not.toEqual(suppliedExpiration);
+    });
+
+    it.each([true, false])(
+      'preserves the stored deadline when chat type %s is omitted',
+      async (isTemporary) => {
+        mockCtx.isTemporary = isTemporary;
+        mockCtx.interfaceConfig = {
+          temporaryChatRetention: 1,
+          generalChatRetention: 2160,
+          retentionMode: RetentionMode.ALL,
+        };
+        const first = await saveMessage(mockCtx, mockMessageData);
+        mockCtx.isTemporary = undefined;
+        const second = await saveMessage(mockCtx, { ...mockMessageData });
+        expect(second?.isTemporary).toBe(isTemporary);
+        expect(second?.expiredAt).toEqual(first?.expiredAt);
+      },
+    );
+
+    it('preserves an explicitly inherited deadline with separate retention periods', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.expiredAt = new Date(Date.now() + 60000);
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toEqual(mockCtx.expiredAt);
     });
 
     it('should set expiredAt for non-temporary message when retentionMode is ALL', async () => {

@@ -124,7 +124,12 @@ function renderComposer({
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  queryClient.setQueryData([QueryKeys.fileConfig], {});
+  /* These interaction tests exercise the destination menu. Unified-mode control
+   * behavior has its own focused coverage, so opt this harness into the legacy menu
+   * instead of depending on the product default. */
+  queryClient.setQueryData([QueryKeys.fileConfig], {
+    endpoints: { default: { legacyFileUploadUX: true } },
+  });
   queryClient.setQueryData<TFile[]>([QueryKeys.files], []);
   queryClient.setQueryData([QueryKeys.endpoints], { [EModelEndpoint.openAI]: { order: 0 } });
 

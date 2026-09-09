@@ -17,7 +17,12 @@ const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
+/** Matches Code API's bounded admission wait and command settlement allowance. */
+const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
+const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_ERROR_BODY_BYTES = 4096;
+const ERROR_BODY_TIMEOUT_MS = 1000;
 const READ_RESULT_KEYS = new Set([
   'protocolVersion',
   'operation',
@@ -246,10 +251,62 @@ export class WorkspaceToolHttpError extends Error {
   constructor(
     public readonly reason: 'rejected' | 'invalid' | 'timeout' | 'failed',
     public readonly upstreamStatus?: number,
+    public readonly upstreamBody?: string,
+    public readonly upstreamBodyTruncated = false,
   ) {
-    super(`Workspace tool request ${reason}`);
+    super(
+      `Workspace tool request ${reason}` +
+        (upstreamStatus == null ? '' : ` (upstreamStatus: ${upstreamStatus})`) +
+        (upstreamBody ? `; upstreamBody: ${JSON.stringify(upstreamBody)}` : '') +
+        (upstreamBodyTruncated ? ' [body truncated or incomplete]' : ''),
+    );
     this.name = 'WorkspaceToolHttpError';
   }
+}
+
+/** Keep a received HTTP status even if reading its diagnostic body fails or stalls. */
+async function readErrorBody(
+  response: Response,
+  signal: AbortSignal,
+): Promise<{
+  body: string;
+  truncated: boolean;
+}> {
+  if (!response.body) return { body: '', truncated: false };
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let body = '';
+  let bytes = 0;
+  let complete = false;
+  let interrupted = false;
+  const cancel = () => {
+    interrupted = true;
+    void reader.cancel().catch(() => undefined);
+  };
+  const timer = setTimeout(cancel, ERROR_BODY_TIMEOUT_MS);
+  signal.addEventListener('abort', cancel, { once: true });
+  try {
+    if (signal.aborted) return { body, truncated: true };
+    while (bytes <= MAX_ERROR_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) {
+        complete = !interrupted;
+        body += decoder.decode();
+        break;
+      }
+      const remaining = MAX_ERROR_BODY_BYTES - bytes;
+      body += decoder.decode(value.subarray(0, remaining), { stream: true });
+      bytes += value.byteLength;
+    }
+  } catch {
+    complete = false;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', cancel);
+    cancel();
+    reader.releaseLock();
+  }
+  return { body, truncated: !complete || signal.aborted };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -599,8 +656,11 @@ function isValidResult(
 }
 
 function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
-  if (request.operation !== 'execute_command') return WORKSPACE_TOOL_TIMEOUT_MS;
-  return (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
+  const executionBudgetMs =
+    request.operation === 'execute_command'
+      ? (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS
+      : WORKSPACE_TOOL_TIMEOUT_MS;
+  return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
 export async function executeWorkspaceTool({
@@ -639,8 +699,9 @@ export async function executeWorkspaceTool({
       },
     );
     if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new WorkspaceToolHttpError('rejected', response.status);
+      const { body, truncated } = await readErrorBody(response, requestSignal);
+      signal?.throwIfAborted();
+      throw new WorkspaceToolHttpError('rejected', response.status, body, truncated);
     }
     const result = await readBoundedJson(response, requestSignal);
     if (!isValidResult(request, result)) {

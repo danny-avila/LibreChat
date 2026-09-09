@@ -401,6 +401,9 @@ describe('mergeAccessibleCodeEnvironments', () => {
       });
 
       const environments = result.endpoints?.agents?.statefulCodeSessions?.environments;
+      expect(environments?.find((environment) => environment.id === 'personal-vm')).toEqual(
+        expect.objectContaining({ controlPlaneId: 'self-service', baseURL: pairingOnly.baseURL }),
+      );
       expect(environments?.find((environment) => environment.id === 'self-service')?.default).toBe(
         false,
       );
