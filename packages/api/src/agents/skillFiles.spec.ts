@@ -14,6 +14,7 @@ jest.mock('./run', () => ({
 
 import { Readable } from 'stream';
 import { Types } from 'mongoose';
+import { createCodeApiUploadRegistry } from '~/utils';
 import { primeInvokedSkills, primeInvokedSkillsForProfiles, primeSkillFiles } from './skillFiles';
 import type {
   PrimeInvokedSkillsDeps,
@@ -23,6 +24,7 @@ import type {
 
 const SKILL_ID = new Types.ObjectId();
 const SKILL_VERSION = 7;
+const uploadRegistry = createCodeApiUploadRegistry();
 
 function makeDeps(overrides: Partial<PrimeInvokedSkillsDeps> = {}): PrimeInvokedSkillsDeps {
   const listSkillFiles = jest.fn().mockResolvedValue([]);
@@ -31,7 +33,10 @@ function makeDeps(overrides: Partial<PrimeInvokedSkillsDeps> = {}): PrimeInvoked
     files: [],
   });
   return {
-    req: { user: { id: 'user-1' } } as PrimeInvokedSkillsDeps['req'],
+    req: {
+      user: { id: 'user-1', tenantId: 'tenant-1' },
+      app: { locals: { codeApiUploadRegistry: uploadRegistry } },
+    } as unknown as PrimeInvokedSkillsDeps['req'],
     payload: [{ role: 'assistant', content: [] }],
     accessibleSkillIds: [SKILL_ID],
     codeEnvAvailable: true,
@@ -768,7 +773,10 @@ function makeSkillFilesDeps(overrides: Partial<PrimeSkillFilesParams> = {}): Pri
       version: SKILL_VERSION,
     },
     skillFiles: [],
-    req: { user: { id: 'user-1' } } as PrimeSkillFilesParams['req'],
+    req: {
+      user: { id: 'user-1', tenantId: 'tenant-1' },
+      app: { locals: { codeApiUploadRegistry: uploadRegistry } },
+    } as unknown as PrimeSkillFilesParams['req'],
     getStrategyFunctions: jest.fn().mockReturnValue({
       getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
     }),
@@ -969,7 +977,8 @@ describe('primeSkillFiles — resource identity propagation', () => {
     const batchUploadCodeEnvFiles = jest.fn();
     const deps = makeSkillFilesDeps({
       req: {
-        user: { id: 'user-1' },
+        user: { id: 'user-1', tenantId: 'tenant-1' },
+        app: { locals: { codeApiUploadRegistry: uploadRegistry } },
         config: {
           filters: {
             skills: {
@@ -980,7 +989,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
             },
           },
         },
-      } as PrimeSkillFilesParams['req'],
+      } as unknown as PrimeSkillFilesParams['req'],
       skillFiles: [
         {
           relativePath: 'references/style.md',
@@ -1019,7 +1028,8 @@ describe('primeSkillFiles — resource identity propagation', () => {
     const batchUploadCodeEnvFiles = jest.fn();
     const deps = makeSkillFilesDeps({
       req: {
-        user: { id: 'user-1' },
+        user: { id: 'user-1', tenantId: 'tenant-1' },
+        app: { locals: { codeApiUploadRegistry: uploadRegistry } },
         config: {
           filters: {
             files: {
@@ -1029,7 +1039,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
             },
           },
         },
-      } as PrimeSkillFilesParams['req'],
+      } as unknown as PrimeSkillFilesParams['req'],
       skillFiles: [
         {
           relativePath: 'references/style.md',
@@ -1077,7 +1087,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
             },
           },
         },
-      } as PrimeSkillFilesParams['req'],
+      } as unknown as PrimeSkillFilesParams['req'],
       skillFiles: [
         {
           relativePath: 'references/sk-private-name.md',
@@ -1123,7 +1133,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
             },
           },
         },
-      } as PrimeSkillFilesParams['req'],
+      } as unknown as PrimeSkillFilesParams['req'],
       skillFiles: [
         {
           relativePath: 'references/style.md',
@@ -1374,7 +1384,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
             },
           },
         },
-      } as PrimeSkillFilesParams['req'],
+      } as unknown as PrimeSkillFilesParams['req'],
       skillFiles: [
         {
           relativePath: 'references/unavailable.txt',
@@ -1505,7 +1515,8 @@ describe('primeSkillFiles — resource identity propagation', () => {
     });
     const deps = makeSkillFilesDeps({
       req: {
-        user: { id: 'user-1' },
+        user: { id: 'user-1', tenantId: 'tenant-1' },
+        app: { locals: { codeApiUploadRegistry: uploadRegistry } },
         config: {
           filters: {
             files: {
@@ -1517,7 +1528,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
             },
           },
         },
-      } as PrimeSkillFilesParams['req'],
+      } as unknown as PrimeSkillFilesParams['req'],
       skillFiles: [
         {
           relativePath: 'references/archive.bin',
@@ -1679,7 +1690,7 @@ describe('primeSkillFiles — upload rate-limit resilience', () => {
     expect(result).toBeNull();
   });
 
-  it('bounds concurrent batch uploads to 3 process-wide slots', async () => {
+  it('bounds concurrent batch uploads to 3 application-scoped slots', async () => {
     const gates = Array.from({ length: 5 }, () => deferred<ReturnType<typeof uploadResult>>());
     let uploadIndex = 0;
     const batchUploadCodeEnvFiles = jest

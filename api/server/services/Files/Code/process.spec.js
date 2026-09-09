@@ -95,8 +95,16 @@ jest.mock('@librechat/api', () => {
      * `utils/code.spec.ts`). These stand-ins are deliberately inert
      * passthroughs — they assert nothing about that behavior, so the
      * transport tests below cover only what this file still owns. */
-    createCodeApiRateLimitBudget: jest.fn(() => ({ deadlineAt: Date.now() + 20_000 })),
-    getCodeApiUploadOptions: jest.fn(() => ({ scope: 'default:user-123', concurrency: 3 })),
+    createCodeApiRateLimitBudget: jest.fn(() => ({
+      limitMs: 20_000,
+      waitedMs: 0,
+      activeWaitEnds: new Set(),
+    })),
+    getCodeApiUploadOptions: jest.fn(() => ({
+      scope: 'default:user-123',
+      concurrency: 3,
+      retryWaitMs: 20_000,
+    })),
     withCodeApiRateLimit: jest.fn(async ({ attempt }) => {
       try {
         return await attempt();

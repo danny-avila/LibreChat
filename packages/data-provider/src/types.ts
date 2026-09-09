@@ -634,6 +634,8 @@ export type TConfig = {
   maxSubagents?: number;
   /** Concurrent Code API uploads allowed per route and authenticated principal. */
   codeApiUploadConcurrency?: number;
+  /** Milliseconds one operation may spend waiting on Code API rate limits. */
+  codeApiMaxRetryWaitMs?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;

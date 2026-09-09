@@ -58,6 +58,7 @@ const {
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
   warnOnUnreachableDeliveryPaths,
+  createCodeApiUploadRegistry,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -101,6 +102,7 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+app.locals.codeApiUploadRegistry = createCodeApiUploadRegistry();
 let serverReady = false;
 /** @type {import('@librechat/api').ScheduleEngineState} */
 let scheduleEngineState = 'starting';

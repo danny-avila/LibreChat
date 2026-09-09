@@ -585,6 +585,8 @@ endpoints:
   #   maxSubagents: 20
   #   # (optional) Maximum concurrent Code API uploads per route and user. Defaults to 3.
   #   codeApiUploadConcurrency: 3
+  #   # (optional) Maximum total time spent waiting on Code API rate limits. Defaults to 20000 ms.
+  #   codeApiMaxRetryWaitMs: 20000
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:

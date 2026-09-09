@@ -242,7 +242,7 @@ export function createProvisionService({
     route,
     sandboxFilename: requestedSandboxFilename,
     signal,
-    rateLimitBudget = createCodeApiRateLimitBudget(),
+    rateLimitBudget,
   }: {
     req: ServerRequest;
     file: TFile;
@@ -267,13 +267,16 @@ export function createProvisionService({
     const executionProfile = route?.executionProfile ?? 'default';
     const sandboxFilename =
       requestedSandboxFilename ?? resolveSandboxFilename(file.filename, file.type);
+    const uploadOptions = getCodeApiUploadOptions(
+      req,
+      route?.executionRouteKey ?? route?.baseUrl ?? executionProfile,
+    );
     const uploaded = await withCodeApiUploadRecovery({
-      ...getCodeApiUploadOptions(
-        req,
-        route?.executionRouteKey ?? route?.baseUrl ?? executionProfile,
-      ),
+      registry: req.app.locals.codeApiUploadRegistry,
+      scope: uploadOptions.scope,
+      concurrency: uploadOptions.concurrency,
       label: `uploading "${file.filename}" to the code environment`,
-      budget: rateLimitBudget,
+      budget: rateLimitBudget ?? createCodeApiRateLimitBudget(uploadOptions.retryWaitMs),
       signal,
       onWait: (waitMs) =>
         logger.warn(

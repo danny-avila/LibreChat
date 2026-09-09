@@ -42,6 +42,14 @@ jest.mock('@librechat/api', () => {
       form.append('id', identity.id);
       if (identity.version != null) form.append('version', String(identity.version));
     }),
+    wrapCodeApiUploadError: jest.fn((error, message) => {
+      const wrapped = new Error(`${message} ${error.message}`, { cause: error });
+      if (error?.isAxiosError === true) {
+        wrapped.isAxiosError = true;
+        wrapped.response = error.response;
+      }
+      return wrapped;
+    }),
     buildCodeEnvDownloadQuery: jest.fn((identity) => {
       validateIdentity(identity, 'buildCodeEnvDownloadQuery');
       const params = new URLSearchParams({ kind: identity.kind, id: identity.id });

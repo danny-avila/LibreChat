@@ -441,13 +441,19 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
-  it('defaults Code API upload concurrency to three and validates overrides', () => {
+  it('defaults and bounds Code API upload recovery controls', () => {
     expect(agentsEndpointSchema.parse({}).codeApiUploadConcurrency).toBe(3);
     expect(
       agentsEndpointSchema.parse({ codeApiUploadConcurrency: 8 }).codeApiUploadConcurrency,
     ).toBe(8);
     expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 0 }).success).toBe(false);
     expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 101 }).success).toBe(false);
+    expect(agentsEndpointSchema.parse({}).codeApiMaxRetryWaitMs).toBe(20_000);
+    expect(
+      agentsEndpointSchema.parse({ codeApiMaxRetryWaitMs: 60_000 }).codeApiMaxRetryWaitMs,
+    ).toBe(60_000);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: -1 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: 300_001 }).success).toBe(false);
   });
 
   it('accepts a non-empty stateful code environment allowlist', () => {

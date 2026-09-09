@@ -21,9 +21,13 @@ jest.mock('@librechat/agents', () => ({
   getCodeBaseURL: () => 'http://code.test/v1',
 }));
 
+import { createCodeApiUploadRegistry } from '~/utils';
 import { createProvisionService } from './service';
 
-const req = { user: { id: 'u1' } } as unknown as ServerRequest;
+const req = {
+  user: { id: 'u1' },
+  app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+} as unknown as ServerRequest;
 
 const makeFile = (overrides: Partial<TFile> = {}): TFile =>
   ({
@@ -103,7 +107,11 @@ describe('createProvisionService', () => {
         service.provisionToCodeEnv({
           req,
           file: makeFile(),
-          rateLimitBudget: { deadlineAt: Date.now() + 2_000 },
+          rateLimitBudget: {
+            limitMs: 2_000,
+            waitedMs: 0,
+            activeWaitEnds: new Set(),
+          },
         }),
       ).resolves.toMatchObject({ referenceSet: { codeEnvRef: { file_id: 'remote-1' } } });
 

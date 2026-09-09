@@ -37,8 +37,16 @@ jest.mock('@librechat/api', () => {
   const actualDataProvider = jest.requireActual('librechat-data-provider');
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
-  const createCodeApiRateLimitBudget = jest.fn(() => ({ deadlineAt: Date.now() + 20_000 }));
-  const getCodeApiUploadOptions = jest.fn(() => ({ scope: 'default:user-1', concurrency: 3 }));
+  const createCodeApiRateLimitBudget = jest.fn(() => ({
+    limitMs: 20_000,
+    waitedMs: 0,
+    activeWaitEnds: new Set(),
+  }));
+  const getCodeApiUploadOptions = jest.fn(() => ({
+    scope: 'default:user-1',
+    concurrency: 3,
+    retryWaitMs: 20_000,
+  }));
   const withCodeApiUploadRecovery = jest.fn(async ({ openSource, upload }) => {
     try {
       return await upload(await openSource());

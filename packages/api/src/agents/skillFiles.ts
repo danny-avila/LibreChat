@@ -468,10 +468,13 @@ async function executePrimeSkillFiles(
 
   const entityId = skill._id.toString();
   try {
+    const uploadOptions = getCodeApiUploadOptions(req, executionRouteKey);
     const uploaded = await withCodeApiUploadRecovery({
-      ...getCodeApiUploadOptions(req, executionRouteKey),
+      registry: req.app.locals.codeApiUploadRegistry,
+      scope: uploadOptions.scope,
+      concurrency: uploadOptions.concurrency,
       label: `priming skill "${skill.name}"`,
-      budget: createCodeApiRateLimitBudget(),
+      budget: createCodeApiRateLimitBudget(uploadOptions.retryWaitMs),
       onWait: (waitMs) =>
         logger.warn(
           `[primeSkillFiles] Rate-limited priming skill "${skill.name}"; retrying in ${waitMs}ms`,

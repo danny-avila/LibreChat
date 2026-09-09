@@ -251,7 +251,9 @@ export function createProvisionFilesCallback({
       const queuedCodeFiles = provisionState.codeEnvFiles;
       /** Every file in this tool-load batch shares one wait allowance. This
        *  prevents a large recovery set from multiplying the live-turn delay. */
-      const codeApiRateLimitBudget = createCodeApiRateLimitBudget();
+      const codeApiRateLimitBudget = createCodeApiRateLimitBudget(
+        req.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+      );
       const destinations = createCodeDestinationSet();
       const existingCodeFiles = (
         ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>

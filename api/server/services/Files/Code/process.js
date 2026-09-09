@@ -1347,8 +1347,9 @@ const primeFiles = async (options) => {
 
   const files = [];
   const sessions = new Map();
+  const uploadOptions = getCodeApiUploadOptions(req, executionRouteKey);
   /** All stale-file reuploads in this prime share one live-turn wait cap. */
-  const uploadRateLimitBudget = createCodeApiRateLimitBudget();
+  const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
 
   /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
@@ -1455,7 +1456,9 @@ const primeFiles = async (options) => {
          * skill-cache-miss reupload would land in the user bucket
          * and never re-shareable cross-user. */
         const uploaded = await withCodeApiUploadRecovery({
-          ...getCodeApiUploadOptions(req, executionRouteKey),
+          registry: req.app?.locals?.codeApiUploadRegistry,
+          scope: uploadOptions.scope,
+          concurrency: uploadOptions.concurrency,
           label: `re-uploading file ${file.file_id} to the code environment`,
           budget: uploadRateLimitBudget,
           onWait: (waitMs) =>
@@ -1988,7 +1991,9 @@ async function readSandboxImage({
   /** Every window is one `/exec` call against the Code API's per-user
    *  execution limiter, so the read shares one wait budget: a window that
    *  resets mid-read is worth pausing for, an exhausted budget is not. */
-  const rateLimit = createCodeApiRateLimitBudget();
+  const rateLimit = createCodeApiRateLimitBudget(
+    req?.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+  );
   return readWindowedSandboxImage({
     filePath: file_path,
     baseUrl: baseURL,

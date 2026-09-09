@@ -5,7 +5,9 @@ import {
   withCodeApiRateLimit,
   withCodeApiUploadSlot,
   createCodeApiRateLimitBudget,
+  createCodeApiUploadRegistry,
 } from './code';
+import { wrapCodeApiUploadError } from './axios';
 
 /** Builds the error axios raises for a Code API rate-limit response. */
 function rateLimited({
@@ -27,6 +29,18 @@ function rateLimited({
   };
   return error;
 }
+
+describe('wrapCodeApiUploadError', () => {
+  it('preserves Axios rate-limit metadata on the contextual error', () => {
+    const cause = rateLimited({ headers: { 'retry-after': '7' } });
+
+    expect(wrapCodeApiUploadError(cause, 'Upload failed')).toMatchObject({
+      cause,
+      isAxiosError: true,
+      response: { status: 429 },
+    });
+  });
+});
 
 describe('getCodeApiRetryAfterMs', () => {
   it('reads the standard Retry-After header', () => {
@@ -94,7 +108,7 @@ describe('withCodeApiRateLimit', () => {
 
     expect(attempts).toBe(2);
     expect(waits).toEqual([1_000]);
-    expect(budget.deadlineAt).toBeGreaterThan(Date.now());
+    expect(budget.waitedMs).toBeGreaterThanOrEqual(1_000);
   });
 
   it('names the limit when the wait exceeds the remaining budget', async () => {
@@ -113,7 +127,7 @@ describe('withCodeApiRateLimit', () => {
       retryAfterMs: 300_000,
     });
     expect(attempt).toHaveBeenCalledTimes(1);
-    expect(budget.deadlineAt).toBeGreaterThan(Date.now());
+    expect(budget.waitedMs).toBe(0);
   });
 
   it('names the limit even when the response carries no usable delay', async () => {
@@ -199,15 +213,44 @@ describe('withCodeApiRateLimit', () => {
 
     await expect(Promise.all([run(0), run(1), run(2)])).resolves.toEqual([0, 1, 2]);
   });
+
+  it('does not charge successful request execution against the wait budget', async () => {
+    jest.useFakeTimers();
+    try {
+      const budget = createCodeApiRateLimitBudget(1_500);
+      let attempts = 0;
+      const pending = withCodeApiRateLimit({
+        budget,
+        label: 'reading windows',
+        attempt: async () => {
+          attempts++;
+          if (attempts === 1) {
+            await new Promise((resolve) => setTimeout(resolve, 30_000));
+            throw rateLimited({ headers: { 'retry-after': '1' } });
+          }
+          return 'ok';
+        },
+      });
+
+      await jest.advanceTimersByTimeAsync(30_000);
+      await jest.advanceTimersByTimeAsync(1_000);
+      await expect(pending).resolves.toBe('ok');
+      expect(budget.waitedMs).toBe(1_000);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 describe('withCodeApiUploadSlot', () => {
   it('removes a canceled caller from a busy scope immediately', async () => {
+    const registry = createCodeApiUploadRegistry();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const first = withCodeApiUploadSlot({
+      registry,
       scope: 'route:user-a',
       concurrency: 1,
       task: () => gate,
@@ -215,6 +258,7 @@ describe('withCodeApiUploadSlot', () => {
     const controller = new AbortController();
     const queuedTask = jest.fn(async () => undefined);
     const queued = withCodeApiUploadSlot({
+      registry,
       scope: 'route:user-a',
       concurrency: 1,
       signal: controller.signal,
@@ -229,11 +273,13 @@ describe('withCodeApiUploadSlot', () => {
   });
 
   it('does not block a different principal and route scope', async () => {
+    const registry = createCodeApiUploadRegistry();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const first = withCodeApiUploadSlot({
+      registry,
       scope: 'route-a:user-a',
       concurrency: 1,
       task: () => gate,
@@ -242,6 +288,7 @@ describe('withCodeApiUploadSlot', () => {
 
     await expect(
       withCodeApiUploadSlot({
+        registry,
         scope: 'route-b:user-b',
         concurrency: 1,
         task: independent,
@@ -269,6 +316,7 @@ describe('getCodeApiUploadOptions', () => {
 
     expect(first.concurrency).toBe(7);
     expect(second.concurrency).toBe(3);
+    expect(first.retryWaitMs).toBe(20_000);
     expect(first.scope).not.toBe(second.scope);
     expect(first.scope).not.toBe(
       getCodeApiUploadOptions({ user: { id: 'user-b', tenantId: 'tenant-a' } } as never, 'route-a')

@@ -4,6 +4,7 @@ const { getCodeBaseURL } = require('@librechat/agents');
 const { EModelEndpoint, getCodeEnvRefs } = require('librechat-data-provider');
 const {
   logAxiosError,
+  wrapCodeApiUploadError,
   appendCodeEnvFile,
   createAxiosInstance,
   codeServerHttpAgent,
@@ -237,21 +238,7 @@ async function uploadCodeEnvFile({
       file_id: result.files[0].fileId,
     };
   } catch (error) {
-    const wrapped = new Error(
-      logAxiosError({
-        message: `Error uploading code environment file: ${error.message}`,
-        error,
-      }),
-      { cause: error },
-    );
-    /* Recovery callers need the status and Retry-After fields after this
-     * logging boundary. Preserve the minimal Axios shape on the contextual
-     * wrapper instead of reducing a recoverable 429 to a plain error. */
-    if (error?.isAxiosError === true) {
-      wrapped.isAxiosError = true;
-      wrapped.response = error.response;
-    }
-    throw wrapped;
+    throw wrapCodeApiUploadError(error, `Error uploading code environment file: ${error.message}`);
   }
 }
 
