@@ -463,30 +463,32 @@ const processFileURL = async ({
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
 
-    return await persistFile(
-      req,
-      {
-        user: userId,
-        file_id: v4(),
-        bytes,
+    const fileInfo = {
+      user: userId,
+      file_id: v4(),
+      bytes,
+      filepath,
+      ...storageMetadata,
+      filename: fileName,
+      source: fileStrategy,
+      type,
+      context,
+      ...(await retentionExpiryPromise),
+      tenantId: effectiveTenantId,
+      width: dimensions.width,
+      height: dimensions.height,
+    };
+    if (!req) {
+      return await db.createFile(fileInfo, true);
+    }
+
+    return await persistFile(req, fileInfo, () =>
+      deleteStoredBlob(req, {
+        source: fileStrategy,
         filepath,
         ...storageMetadata,
-        filename: fileName,
-        source: fileStrategy,
-        type,
-        context,
-        ...(await retentionExpiryPromise),
         tenantId: effectiveTenantId,
-        width: dimensions.width,
-        height: dimensions.height,
-      },
-      () =>
-        deleteStoredBlob(req, {
-          source: fileStrategy,
-          filepath,
-          ...storageMetadata,
-          tenantId: effectiveTenantId,
-        }),
+      }),
     );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
@@ -1068,7 +1070,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         await Promise.all([
           deleteStoredBlob(req, { source, filepath }),
           addedAgentResource
-            ? db.removeAgentResourceFiles({ agent_id, files: [{ file_id }] })
+            ? db.removeAgentResourceFiles({
+                agent_id,
+                files: [{ file_id, tool_resource: effectiveToolResource }],
+              })
             : Promise.resolve(),
         ]);
       });
@@ -1469,7 +1474,10 @@ const processOpenAIFile = async ({
         user: userId,
         tenantId: resolveStorageScope(openai.req).tenantId ?? null,
       })) ?? [];
-    await persistFile(openai.req, file, null, { replacedBytes: existing?.bytes });
+    await persistFile(openai.req, file, null, {
+      replacedBytes: existing?.bytes,
+      replacing: existing,
+    });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({

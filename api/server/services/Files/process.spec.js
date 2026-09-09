@@ -2209,7 +2209,7 @@ describe('processAgentFileUpload', () => {
       );
       expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
         agent_id: 'agent-abc',
-        files: [{ file_id: 'file-uuid-123' }],
+        files: [{ file_id: 'file-uuid-123', tool_resource: 'context' }],
       });
     });
 
@@ -2452,6 +2452,34 @@ describe('processFileURL', () => {
 
     expect(getFileURL).not.toHaveBeenCalled();
     expect(db.createFile).not.toHaveBeenCalled();
+  });
+
+  it('preserves direct persistence for callers without a request', async () => {
+    const saveURL = jest.fn().mockResolvedValue({
+      filepath: '/images/user-123/image.png',
+      bytes: 512,
+      type: 'image/png',
+    });
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL: jest.fn() });
+
+    await processFileURL({
+      fileStrategy: FileSources.local,
+      userId: 'user-123',
+      URL: 'https://example.com/image.png',
+      fileName: 'image.png',
+      basePath: 'images',
+      context: FileContext.image_generation,
+      tenantId: 'tenant-a',
+    });
+
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: 'user-123',
+        filepath: '/images/user-123/image.png',
+        tenantId: 'tenant-a',
+      }),
+      true,
+    );
   });
 
   it('persists tenantId and strategy-returned filepath metadata', async () => {

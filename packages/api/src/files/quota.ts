@@ -465,7 +465,11 @@ export type FileQuotaPersistence<TRequest, TResult> = {
     req: TRequest,
     row: TRow,
     rollback: StorageRollback,
-    options?: { disableTTL?: boolean; replacedBytes?: number | null },
+    options?: {
+      disableTTL?: boolean;
+      replacedBytes?: number | null;
+      replacing?: { user?: unknown; tenantId?: string | null } | null;
+    },
   ) => Promise<TResult>;
 };
 
@@ -494,7 +498,11 @@ export function createFileQuotaPersistence<TRequest, TResult>(
     req: TRequest,
     row: TRow,
     rollback: StorageRollback,
-    options: { disableTTL?: boolean; replacedBytes?: number | null } = {},
+    options: {
+      disableTTL?: boolean;
+      replacedBytes?: number | null;
+      replacing?: { user?: unknown; tenantId?: string | null } | null;
+    } = {},
   ): Promise<TResult> =>
     persistFileWithQuota(
       {
@@ -504,6 +512,7 @@ export function createFileQuotaPersistence<TRequest, TResult>(
         rollback,
         getUserStorageUsage: dependencies.getUserStorageUsage,
         replacedBytes: options.replacedBytes,
+        replacing: options.replacing,
       },
       dependencies.onCleanupError,
     );
