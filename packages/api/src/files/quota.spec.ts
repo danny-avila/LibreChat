@@ -1210,6 +1210,26 @@ describe('createSkillFileQuotaPersistence', () => {
 });
 
 describe('createFileQuotaCommitter', () => {
+  it('forwards the replaced row identity for safe replacement credit', async () => {
+    const write = jest.fn(async (row) => row);
+    const committer = createFileQuotaCommitter<TestRequest>({
+      resolveScope: resolveStorageScope,
+      getUserStorageUsage: usageOf(megabyte - 2),
+      onCleanupError: noRollbackErrors,
+    });
+
+    await committer(
+      makeReq({ storageLimitMb: 1 }),
+      { bytes: 8, file_id: 'file-a' },
+      write,
+      null,
+      6,
+      { file_id: 'file-a', user: userId },
+    );
+
+    expect(write).toHaveBeenCalled();
+  });
+
   it('stamps the resolved tenant and classifies a conditional persistence miss', async () => {
     const committer = createFileQuotaCommitter<TestRequest>({
       resolveScope: resolveStorageScope,

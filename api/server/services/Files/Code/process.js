@@ -866,8 +866,9 @@ const processCodeOutput = async ({
     const commitCodeFile = async (fileData) => {
       const { deleteFile: deleteNewFile } = getStrategyFunctions(fileData.source);
       const cleanupNewBlob = deleteNewFile ? () => deleteNewFile(req, fileData) : null;
+      let replaced;
       try {
-        await persistCodeFile(
+        replaced = await persistCodeFile(
           req,
           fileData,
           (scopedRow) =>
@@ -881,9 +882,11 @@ const processCodeOutput = async ({
                       { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
                     ],
                   },
+              { returnPrevious: true },
             ),
           null,
           isUpdate ? claimed.bytes : 0,
+          isUpdate ? claimed : null,
         );
       } catch (error) {
         if (cleanupNewBlob) {
@@ -921,10 +924,10 @@ const processCodeOutput = async ({
         );
         return false;
       }
-      if (isUpdate && claimed.filepath && claimed.filepath !== fileData.filepath) {
-        const { deleteFile: deleteReplacedFile } = getStrategyFunctions(claimed.source);
+      if (isUpdate && replaced.filepath && replaced.filepath !== fileData.filepath) {
+        const { deleteFile: deleteReplacedFile } = getStrategyFunctions(replaced.source);
         if (deleteReplacedFile) {
-          await deleteReplacedFile(req, claimed).catch((error) =>
+          await deleteReplacedFile(req, replaced).catch((error) =>
             logger.error('[processCodeOutput] Failed to clean up replaced output:', error),
           );
         }

@@ -107,6 +107,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   updateFile: (
     data: Partial<IMongoFile> & { file_id: string },
     extraFilter?: FilterQuery<IMongoFile>,
+    options?: { returnPrevious?: boolean },
   ) => Promise<IMongoFile | null>;
   updateFileCodeEnvRef: (data: {
     file_id: string;
@@ -828,6 +829,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function updateFile(
     data: Partial<IMongoFile> & { file_id: string },
     extraFilter?: FilterQuery<IMongoFile>,
+    options?: { returnPrevious?: boolean },
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const { file_id, ...update } = data;
@@ -837,7 +839,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     };
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
-      new: true,
+      new: options?.returnPrevious !== true,
     }).lean<IMongoFile>();
   }
 

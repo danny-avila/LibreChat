@@ -493,6 +493,7 @@ export type FileQuotaCommitter<TRequest> = <TRow extends FileRow, TResult>(
   write: (row: TRow) => Promise<TResult>,
   rollback: StorageRollback,
   replacedBytes?: number | null,
+  replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null,
 ) => Promise<TResult>;
 
 /** Creates a dependency-wired quota committer for nonstandard File write paths. */
@@ -507,6 +508,7 @@ export function createFileQuotaCommitter<TRequest>(dependencies: {
     write: (row: TRow) => Promise<TResult>,
     rollback: StorageRollback,
     replacedBytes?: number | null,
+    replacing?: { file_id?: string; user?: unknown; tenantId?: string | null } | null,
   ): Promise<TResult> =>
     persistFileWithQuota(
       {
@@ -515,6 +517,7 @@ export function createFileQuotaCommitter<TRequest>(dependencies: {
         write,
         rollback,
         replacedBytes,
+        replacing,
         getUserStorageUsage: dependencies.getUserStorageUsage,
       },
       dependencies.onCleanupError,

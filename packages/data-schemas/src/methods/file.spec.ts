@@ -1765,6 +1765,28 @@ describe('File Methods', () => {
       expect(updated?.expiresAt).toBeUndefined();
     });
 
+    it('can return the immediately replaced revision for storage cleanup', async () => {
+      const fileId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'output.txt',
+        filepath: '/uploads/revision-a.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      const replaced = await fileMethods.updateFile(
+        { file_id: fileId, filepath: '/uploads/revision-b.txt', bytes: 200 },
+        undefined,
+        { returnPrevious: true },
+      );
+
+      expect(replaced?.filepath).toBe('/uploads/revision-a.txt');
+      expect((await fileMethods.findFileById(fileId))?.filepath).toBe('/uploads/revision-b.txt');
+    });
+
     /* The optional `extraFilter` enables conditional updates — used by
      * the deferred-preview render's `finalizePreview` to guard against
      * an older render of the same `file_id` overwriting a newer turn's

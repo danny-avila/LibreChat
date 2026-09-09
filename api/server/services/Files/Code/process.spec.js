@@ -594,6 +594,7 @@ describe('Code Process', () => {
             },
           ],
         },
+        { returnPrevious: true },
       );
       expect(deleteStoredFile).toHaveBeenCalledWith(
         mockReq,
@@ -625,6 +626,7 @@ describe('Code Process', () => {
       expect(mockUpdateFile).toHaveBeenCalledWith(
         expect.objectContaining({ file_id: 'mock-uuid-1234' }),
         { 'metadata.outputClaimRevision': 'mock-uuid-1234' },
+        { returnPrevious: true },
       );
       expect(deleteStoredFile).toHaveBeenCalled();
       expect(mockDeleteFileByFilter).toHaveBeenCalledWith({
@@ -664,6 +666,12 @@ describe('Code Process', () => {
       mockClaimCodeFile.mockResolvedValue({
         file_id: 'existing-file-id',
         filename: 'test-file.txt',
+        filepath: '/old/object.txt',
+        source: 's3',
+        bytes: 50,
+      });
+      mockUpdateFile.mockResolvedValue({
+        file_id: 'existing-file-id',
         filepath: '/old/object.txt',
         source: 's3',
         bytes: 50,
@@ -795,6 +803,7 @@ describe('Code Process', () => {
         expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
           expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -910,6 +919,7 @@ describe('Code Process', () => {
             storageRegion: 'us-east-2',
           }),
           expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
         expect(typeof finalize).toBe('function');
       });
@@ -942,6 +952,7 @@ describe('Code Process', () => {
         expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ tenantId: 'tenantA' }),
           expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -1076,6 +1087,7 @@ describe('Code Process', () => {
         expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ text: 'hello world\n' }),
           expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
@@ -1430,6 +1442,7 @@ describe('Code Process', () => {
             context: FileContext.execute_code,
           }),
           { 'metadata.outputClaimRevision': expect.any(String) },
+          { returnPrevious: true },
         );
       });
     });
@@ -1758,6 +1771,7 @@ describe('Code Process', () => {
         expect(mockUpdateFile).toHaveBeenCalledWith(
           expect.objectContaining({ status: 'pending', text: null, textFormat: null }),
           expect.objectContaining({ 'metadata.outputClaimRevision': expect.any(String) }),
+          { returnPrevious: true },
         );
       });
 
