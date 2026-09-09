@@ -14,6 +14,7 @@ const {
     const committed = await db.getSkillFileByPath(row.skillId, row.relativePath);
     return committed?.file_id === row.file_id ? committed : null;
   },
+  repairCommittedSkillFile: async (row) => db.reconcileSkillFileCount(row.skillId),
   getUserStorageUsage: db.getUserStorageUsage,
   onCleanupError: (error) => logger.error('[upsertSkillFileWithQuota] Cleanup failed:', error),
 });

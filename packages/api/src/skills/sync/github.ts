@@ -154,6 +154,12 @@ type RestorableSkillFile = {
   tenantId?: string;
 };
 
+type SkillFileReplacement = {
+  author?: unknown;
+  tenantId?: string | null;
+  bytes?: number | null;
+};
+
 type DeletedSyncedSkillJournal = {
   skill: ISkill & { _id: Types.ObjectId };
   files: Array<ISkillFile & { _id: Types.ObjectId }>;
@@ -224,7 +230,7 @@ export type GitHubSkillSyncDeps = {
   ) => Promise<(ISkillFile & { _id: Types.ObjectId }) | null>;
   upsertSkillFile: (
     row: UpsertSkillFileInput,
-    replacing: (ISkillFile & { _id: Types.ObjectId }) | null,
+    replacing: SkillFileReplacement | null,
   ) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   /** Restores rows that already existed before this run without admitting new storage. */
   restoreSkillFile: (row: RestorableSkillFile) => Promise<void>;
@@ -1309,6 +1315,13 @@ async function deleteNameConflictingStaleSkill(params: {
     throw makeStaleDeletionFailure(error);
   });
   const staleSkillId = staleSkill._id.toString();
+  for (const file of deletedSkill.files) {
+    try {
+      await params.deps.invalidateQuotaScope?.({ author: file.author, tenantId: file.tenantId });
+    } catch (error) {
+      logger.error('[GitHubSkillSync] Failed to invalidate deleted skill quota scope:', error);
+    }
+  }
 
   return {
     remainingSkills: params.existingSyncedSkills.filter(

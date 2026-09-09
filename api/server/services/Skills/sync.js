@@ -111,9 +111,12 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     upsertSkillFile: async (row, replacing) =>
       upsertSkillFileWithQuota(await getQuotaReq(row), row, replacing),
     restoreSkillFile: async (row) => {
-      const req = await getQuotaReq(row);
       await db.upsertSkillFile(row);
-      invalidateSharedQuotaScope(req);
+      try {
+        invalidateSharedQuotaScope(await getQuotaReq(row));
+      } catch (error) {
+        logger.error('[GitHubSkillSync] Failed to invalidate restored quota scope:', error);
+      }
     },
     deleteSkillFile: db.deleteSkillFile,
     invalidateQuotaScope: async (owner) => invalidateSharedQuotaScope(await getQuotaReq(owner)),

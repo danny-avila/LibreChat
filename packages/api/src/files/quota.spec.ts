@@ -1146,12 +1146,14 @@ describe('createSkillFileQuotaPersistence', () => {
   it('keeps the quota charge when an ambiguous upsert failure already committed the row', async () => {
     const row = { bytes: 10, skillId: 'skill-a', relativePath: 'scripts/a.sh', file_id: 'file-a' };
     const committed = { ...row, _id: 'mongo-id' };
+    const repairCommittedSkillFile = jest.fn(async () => undefined);
     const persistence = createSkillFileQuotaPersistence({
       resolveScope: resolveStorageScope,
       upsertSkillFile: jest.fn(async () => {
         throw new Error('parent version update failed');
       }),
       recoverCommittedSkillFile: jest.fn(async () => committed),
+      repairCommittedSkillFile,
       getUserStorageUsage: usageOf(0),
       onCleanupError: noRollbackErrors,
     });
@@ -1159,6 +1161,9 @@ describe('createSkillFileQuotaPersistence', () => {
     await expect(
       persistence.persistSkillFile(makeReq({ storageLimitMb: 1 }), row, null),
     ).resolves.toBe(committed);
+    expect(repairCommittedSkillFile).toHaveBeenCalledWith(
+      expect.objectContaining({ skillId: 'skill-a', file_id: 'file-a' }),
+    );
   });
 
   it('caches effective configuration promises only inside the explicit run scope', async () => {

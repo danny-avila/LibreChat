@@ -542,6 +542,8 @@ export type SkillFileQuotaPersistenceDependencies<TRequest, TResult> = {
    *  row committed before a later side effect failed, returning it prevents
    *  quota release and blob rollback for storage Mongo now references. */
   recoverCommittedSkillFile?: (row: SkillFileRow) => Promise<TResult | null>;
+  /** Repairs parent metadata whose side effect may have failed after the row commit. */
+  repairCommittedSkillFile?: (row: SkillFileRow) => Promise<void>;
   getUserStorageUsage: GetUserStorageUsage;
   onCleanupError: (error: unknown) => void;
 };
@@ -606,6 +608,7 @@ export function createSkillFileQuotaPersistence<TRequest, TResult>(
             } catch (error) {
               const committed = await dependencies.recoverCommittedSkillFile?.(scopedRow);
               if (committed != null) {
+                await dependencies.repairCommittedSkillFile?.(scopedRow);
                 return committed;
               }
               throw error;
