@@ -13,6 +13,7 @@ export interface FinalizeMCPAuthorizationMutationDeps {
   clearLocalRecovery?: (userId: string, serverName: string) => void;
   disconnectUserConnection: (userId: string, serverName: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
+  attemptTimeoutMs?: number;
   afterDisconnect?: () => Promise<void>;
   onDisconnectError?: (error: unknown) => void;
 }
@@ -38,6 +39,7 @@ export async function finalizeMCPAuthorizationMutation(
       invalidateRecoveryGeneration: deps.invalidateRecoveryGeneration,
       clearLocalRecovery: deps.clearLocalRecovery,
       retryDelaysMs: deps.retryDelaysMs,
+      attemptTimeoutMs: deps.attemptTimeoutMs,
     });
   } catch (error) {
     publicationFailed = true;

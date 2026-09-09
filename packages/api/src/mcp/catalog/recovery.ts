@@ -26,6 +26,7 @@ const DEFAULT_RECOVERY_POLICY: MCPServerCatalogRecoveryPolicy = {
   maxStateEntries: 10_000,
   generationReadTimeoutMs: 500,
   authorizationFenceRetryMs: [0, 50, 200],
+  authorizationFenceTimeoutMs: 1_000,
 };
 
 export interface MCPServerCatalogRecoveryInput {
@@ -65,6 +66,7 @@ export async function publishMCPAuthorizationMutation(
     invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
     clearLocalRecovery?: (userId: string, serverName: string) => void;
     retryDelaysMs?: readonly number[];
+    attemptTimeoutMs?: number;
   },
 ): Promise<void> {
   let lastError: unknown;
@@ -73,7 +75,22 @@ export async function publishMCPAuthorizationMutation(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     try {
-      await deps.invalidateRecoveryGeneration(scope);
+      const attemptTimeoutMs =
+        deps.attemptTimeoutMs ?? DEFAULT_RECOVERY_POLICY.authorizationFenceTimeoutMs;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          deps.invalidateRecoveryGeneration(scope),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error('MCP authorization generation publication timed out')),
+              attemptTimeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timeoutId != null) clearTimeout(timeoutId);
+      }
       deps.clearLocalRecovery?.(scope.userId, scope.serverName);
       return;
     } catch (error) {
@@ -93,6 +110,7 @@ export interface MCPServerCatalogRecoveryPolicy {
   maxStateEntries: number;
   generationReadTimeoutMs: number;
   authorizationFenceRetryMs: readonly number[];
+  authorizationFenceTimeoutMs: number;
 }
 
 export interface MCPServerCatalogSnapshot {

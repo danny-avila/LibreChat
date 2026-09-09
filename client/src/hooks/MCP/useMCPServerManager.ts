@@ -209,7 +209,7 @@ export function useMCPServerManager({
   const pollIntervalsRef = useRef<PollIntervals>({});
 
   const { connectionStatus: polledConnectionStatus } = useMCPConnectionStatus({
-    enabled: !isLoading && availableMCPServers.length > 0,
+    enabled: observeToolAuthorization && !isLoading && availableMCPServers.length > 0,
   });
   const connectionStatus = useMemo(() => {
     if (!polledConnectionStatus) {

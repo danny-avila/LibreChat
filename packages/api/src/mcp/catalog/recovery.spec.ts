@@ -100,6 +100,19 @@ describe('publishMCPAuthorizationMutation', () => {
     expect(invalidateRecoveryGeneration).toHaveBeenCalledTimes(2);
     expect(clearLocalRecovery).toHaveBeenCalledWith(user.id, 'oauth');
   });
+
+  it('bounds each shared fence attempt', async () => {
+    const invalidateRecoveryGeneration = jest.fn(() => new Promise(() => undefined));
+
+    await expect(
+      publishMCPAuthorizationMutation(
+        { userId: user.id, serverName: 'oauth' },
+        { invalidateRecoveryGeneration, retryDelaysMs: [0], attemptTimeoutMs: 5 },
+      ),
+    ).rejects.toThrow('MCP authorization generation publication timed out');
+
+    expect(invalidateRecoveryGeneration).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('MCPServerCatalogRecoveryTracker capacity', () => {
@@ -109,6 +122,7 @@ describe('MCPServerCatalogRecoveryTracker capacity', () => {
     maxStateEntries: 2,
     generationReadTimeoutMs: 500,
     authorizationFenceRetryMs: [0],
+    authorizationFenceTimeoutMs: 1_000,
   };
 
   const candidate = (serverName: string) => ({

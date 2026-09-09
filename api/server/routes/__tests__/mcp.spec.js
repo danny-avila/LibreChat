@@ -949,6 +949,7 @@ describe('MCP Routes', () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
           getFlowState: jest.fn().mockResolvedValue({
+            type: 'mcp_get_tokens',
             status: 'PENDING',
             createdAt: Date.now(),
           }),
@@ -1004,9 +1005,17 @@ describe('MCP Routes', () => {
           userId: 'test-user-id',
           serverName: 'test-server',
         });
-        expect(mockFlowManager.deleteFlow.mock.invocationCallOrder[0]).toBeLessThan(
-          mockFlowManager.completeFlow.mock.invocationCallOrder[0],
+        const oauthCompletionIndex = mockFlowManager.completeFlow.mock.calls.findIndex(
+          ([, type]) => type === 'mcp_oauth',
         );
+        const tokenCompletionIndex = mockFlowManager.completeFlow.mock.calls.findIndex(
+          ([, type]) => type === 'mcp_get_tokens',
+        );
+        expect(oauthCompletionIndex).toBeGreaterThanOrEqual(0);
+        expect(tokenCompletionIndex).toBeGreaterThanOrEqual(0);
+        expect(
+          mockFlowManager.completeFlow.mock.invocationCallOrder[oauthCompletionIndex],
+        ).toBeLessThan(mockFlowManager.completeFlow.mock.invocationCallOrder[tokenCompletionIndex]);
       });
 
       it('should use the merged server config to defer request-scoped post-OAuth reconnect', async () => {

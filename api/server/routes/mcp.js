@@ -85,13 +85,13 @@ const canAccessOAuthFlow = (flowId, userId) => {
   return parsed.userId === userId || parsed.userId === 'system';
 };
 
-const clearGetTokensFlow = async ({ flowManager, flowId, tokens }) => {
+const prepareGetTokensFlow = async ({ flowManager, flowId }) => {
   const state = await flowManager.getFlowState(flowId, 'mcp_get_tokens');
   if (state?.type === 'mcp_get_tokens' && state.status === 'PENDING') {
-    await flowManager.completeFlow(flowId, 'mcp_get_tokens', tokens);
-    return;
+    return true;
   }
   await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+  return false;
 };
 
 const checkMCPUsePermissions = generateCheckAccess({
@@ -516,31 +516,26 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             return exchangedTokens;
           }
 
-          const clearCachedTokenFlows = async (committedTokens) => {
+          const prepareCachedTokenFlows = async () => {
             if (typeof flowManager?.deleteFlow !== 'function') {
-              return;
+              return [];
             }
+            const pendingFlowIds = [];
             try {
               const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(
                 flowState.userId,
                 serverName,
                 flowState.tenantId,
               );
-              await clearGetTokensFlow({
-                flowManager,
-                flowId: tokenFlowId,
-                tokens: committedTokens,
-              });
-              if (tokenFlowId !== flowId) {
-                await clearGetTokensFlow({
-                  flowManager,
-                  flowId,
-                  tokens: committedTokens,
-                });
+              for (const candidateFlowId of new Set([tokenFlowId, flowId])) {
+                if (await prepareGetTokensFlow({ flowManager, flowId: candidateFlowId })) {
+                  pendingFlowIds.push(candidateFlowId);
+                }
               }
             } catch (error) {
               logger.warn('[MCP OAuth] Failed to clear cached token flow state', error);
             }
+            return pendingFlowIds;
           };
 
           let storedTokens;
@@ -575,10 +570,23 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                         getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
                       retryDelaysMs:
                         req.config?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
+                      attemptTimeoutMs:
+                        req.config?.mcpSettings?.catalogRecovery?.authorizationFenceTimeoutMs,
                     },
                   );
-                  await clearCachedTokenFlows(committedTokens);
+                  const pendingTokenFlowIds = await prepareCachedTokenFlows();
                   await completePersistedFlow(committedTokens);
+                  for (const pendingFlowId of pendingTokenFlowIds) {
+                    try {
+                      await flowManager.completeFlow(
+                        pendingFlowId,
+                        'mcp_get_tokens',
+                        committedTokens,
+                      );
+                    } catch (error) {
+                      logger.warn('[MCP OAuth] Failed to wake a pending token flow', error);
+                    }
+                  }
                 },
               })) ?? exchangedTokens;
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
@@ -673,6 +681,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                       getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
                     retryDelaysMs:
                       req.config?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
+                    attemptTimeoutMs:
+                      req.config?.mcpSettings?.catalogRecovery?.authorizationFenceTimeoutMs,
                   }),
               },
               async (userConnection) => {

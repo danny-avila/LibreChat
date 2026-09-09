@@ -335,6 +335,7 @@ const updateUserPluginsController = async (req, res) => {
             disconnectUserConnection: (changedUserId, changedServerName) =>
               mcpManager?.disconnectUserConnection(changedUserId, changedServerName),
             retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
+            attemptTimeoutMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceTimeoutMs,
             onDisconnectError: (error) =>
               logger.error(
                 `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,

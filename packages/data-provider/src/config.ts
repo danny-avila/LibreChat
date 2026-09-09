@@ -2713,6 +2713,7 @@ export const configSchema = z.object({
             .min(1)
             .max(8)
             .default([0, 50, 200]),
+          authorizationFenceTimeoutMs: z.number().int().positive().max(30_000).default(1_000),
         })
         .default({}),
     })

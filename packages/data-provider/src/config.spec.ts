@@ -872,6 +872,7 @@ describe('allowedAddressesSchema', () => {
         maxStateEntries: 10_000,
         generationReadTimeoutMs: 500,
         authorizationFenceRetryMs: [0, 50, 200],
+        authorizationFenceTimeoutMs: 1_000,
       });
 
       expect(
@@ -884,6 +885,12 @@ describe('allowedAddressesSchema', () => {
         configSchema.safeParse({
           version: '1.0',
           mcpSettings: { catalogRecovery: { authorizationFenceRetryMs: [-1] } },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          mcpSettings: { catalogRecovery: { authorizationFenceTimeoutMs: 0 } },
         }).success,
       ).toBe(false);
     });

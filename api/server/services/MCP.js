@@ -946,7 +946,7 @@ async function createMCPTools({
       configServers,
       streamId,
       jobCreatedAt,
-      authorizationFenceRetryMs: recoveryPolicy?.authorizationFenceRetryMs,
+      recoveryPolicy,
       availableTools: result.availableTools,
       serverName,
       /** Model-facing key: matches the normalized `availableTools` keys and
@@ -1010,7 +1010,7 @@ async function createMCPTool({
   onAvailableTools,
   streamId = null,
   jobCreatedAt,
-  authorizationFenceRetryMs,
+  recoveryPolicy,
 }) {
   /** `loadTools` already resolved the server for this key; parsing is the fallback. */
   const [parsedToolName, parsedServerName] = splitMCPToolKey(
@@ -1055,8 +1055,7 @@ async function createMCPTool({
       tenantId: user?.tenantId,
       userId: user?.id,
     });
-    authorizationFenceRetryMs ??=
-      appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs;
+    recoveryPolicy ??= appConfig?.mcpSettings?.catalogRecovery;
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
     const isDomainAllowed = await isEarlyDomainAllowed({
@@ -1141,6 +1140,7 @@ async function createMCPTool({
       oboIdentityContext,
       streamId,
       jobCreatedAt,
+      ...(recoveryPolicy && { recoveryPolicy }),
     });
     if (result?.availableTools) {
       onAvailableTools?.(result.availableTools);
@@ -1185,7 +1185,7 @@ async function createMCPTool({
     oboIdentityContext,
     streamId,
     jobCreatedAt,
-    authorizationFenceRetryMs,
+    recoveryPolicy,
   });
 }
 
@@ -1206,7 +1206,7 @@ function createToolInstance({
   oboIdentityContext: capturedOboIdentityContext = null,
   streamId = null,
   jobCreatedAt,
-  authorizationFenceRetryMs,
+  recoveryPolicy,
 }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
@@ -1322,7 +1322,8 @@ function createToolInstance({
             invalidateRecoveryGeneration: invalidateCachedTools,
             clearLocalRecovery: (userId, changedServerName) =>
               mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
-            retryDelaysMs: authorizationFenceRetryMs,
+            retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
+            attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
           }),
         oauthStart,
         oauthEnd,

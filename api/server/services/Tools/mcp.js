@@ -70,6 +70,7 @@ async function loadMCPServerCatalogs({
       clearLocalRecovery: (userId, serverName) =>
         mcpManager.clearCatalogRecoveryState?.(userId, serverName),
       retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
+      attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
     });
   return loadCatalogs(
     { user, servers, signal, recoveryPolicy },
@@ -254,6 +255,7 @@ async function reinitMCPServer({
         clearLocalRecovery: (userId, changedServerName) =>
           mcpManager.clearCatalogRecoveryState?.(userId, changedServerName),
         retryDelaysMs: recoveryPolicy?.authorizationFenceRetryMs,
+        attemptTimeoutMs: recoveryPolicy?.authorizationFenceTimeoutMs,
       });
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
 

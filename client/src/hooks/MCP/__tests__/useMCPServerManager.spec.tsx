@@ -10,6 +10,7 @@ const mockShowToast = jest.fn();
 const mockSetMCPValues = jest.fn();
 const mockReinitialize = jest.fn();
 const mockUseMCPToolsQuery = jest.fn((_options?: unknown) => ({ data: undefined }));
+const mockUseMCPConnectionStatus = jest.fn((_options?: unknown) => ({ connectionStatus: {} }));
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
@@ -20,7 +21,7 @@ jest.mock('~/hooks', () => ({
   useHasAccess: () => true,
   useCatalogReady: () => true,
   useMCPSelect: () => ({ mcpValues: [], setMCPValues: mockSetMCPValues }),
-  useMCPConnectionStatus: () => ({ connectionStatus: {} }),
+  useMCPConnectionStatus: (options: unknown) => mockUseMCPConnectionStatus(options),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -60,6 +61,7 @@ describe('useMCPServerManager initialization', () => {
     });
 
     expect(mockUseMCPToolsQuery).toHaveBeenLastCalledWith({ enabled: false });
+    expect(mockUseMCPConnectionStatus).toHaveBeenLastCalledWith({ enabled: false });
     unmount();
     queryClient.clear();
   });

@@ -25,6 +25,7 @@ async function initializeOAuthReconnectManager() {
         clearLocalRecovery: (userId, serverName) =>
           getMCPManager()?.clearCatalogRecoveryState?.(userId, serverName),
         retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
+        attemptTimeoutMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceTimeoutMs,
       }),
     );
     logger.info(`OAuth reconnect manager initialized successfully.`);
