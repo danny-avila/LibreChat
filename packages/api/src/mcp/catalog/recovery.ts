@@ -293,8 +293,8 @@ export class MCPServerCatalogRecoveryTracker {
           return { serverName: candidate.serverName, tools: null };
         }
         entry.lastTouchedAt = Date.now();
+        outcome.recoveryGeneration = entry.recoveryGeneration;
         if (outcome.state === 'reauth_required') {
-          outcome.recoveryGeneration = entry.recoveryGeneration;
           entry.failureCount = 0;
           entry.nextRetryAt = entry.lastTouchedAt + policy.reauthRetryMs;
           /** Keep the authorization decision, but never promote an unfenced discovery catalog
@@ -593,10 +593,11 @@ async function recoverMCPServerCatalogsWithState(
         deps.getRecoveryGeneration,
         { timeoutMs: policy.generationReadTimeoutMs, signal },
       );
+      const outcomeGeneration = outcome.recoveryGeneration ?? recoveryGeneration;
       if (
-        recoveryGeneration != null &&
+        outcomeGeneration != null &&
         finalGeneration != null &&
-        recoveryGeneration !== finalGeneration
+        outcomeGeneration !== finalGeneration
       ) {
         tracker.clear(user.id, candidate.serverName);
         results[index] = { serverName: candidate.serverName, tools: null };
