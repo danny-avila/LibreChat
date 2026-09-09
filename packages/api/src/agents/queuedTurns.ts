@@ -356,20 +356,10 @@ function timestamp(message: IMessage): number {
  * the turn was queued. Unrelated branch activity can never retarget the turn. */
 function latestAssistantDescendant(messages: IMessage[], anchorId: string): IMessage | undefined {
   const byId = new Map(messages.map((message) => [message.messageId, message]));
-  const placeholderBaseId = anchorId.replace(/_+$/, '');
-  let resolvedAnchorId = byId.has(anchorId) ? anchorId : undefined;
-  if (
-    resolvedAnchorId == null &&
-    placeholderBaseId.length > 0 &&
-    placeholderBaseId !== anchorId &&
-    byId.has(placeholderBaseId)
-  ) {
-    resolvedAnchorId = placeholderBaseId;
-  }
-  if (resolvedAnchorId == null) {
+  if (!byId.has(anchorId)) {
     return;
   }
-  const memo = new Map<string, boolean>([[resolvedAnchorId, true]]);
+  const memo = new Map<string, boolean>([[anchorId, true]]);
   const reachesAnchor = (message: IMessage, visiting = new Set<string>()): boolean => {
     const known = memo.get(message.messageId);
     if (known != null) {

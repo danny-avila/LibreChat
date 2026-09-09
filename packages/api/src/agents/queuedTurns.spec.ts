@@ -492,7 +492,7 @@ describe('Agent queued-turn continuation', () => {
     );
   });
 
-  it('resolves an optimistic response placeholder from its persisted user message', async () => {
+  it('does not reinterpret a missing underscore-suffixed anchor', async () => {
     const { methods, spies } = resolverMethods();
     const queued = claim();
     queued.parentMessageId = 'user-1_';
@@ -518,42 +518,41 @@ describe('Agent queued-turn continuation', () => {
       claimBy: 'worker-1',
     });
 
-    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
-      status: 'ready',
-      parentMessageId: 'assistant-1',
+    await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).rejects.toMatchObject({
+      code: 'PARENT_NOT_FOUND',
     });
-    expect(spies.releaseAgentQueuedTurn).not.toHaveBeenCalled();
+    expect(spies.releaseAgentQueuedTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuedTurnId: queued.queuedTurnId,
+        disposition: 'dead',
+        failure: expect.objectContaining({ code: 'PARENT_NOT_FOUND' }),
+      }),
+    );
   });
 
-  it('prefers an exact persisted anchor over placeholder normalization', async () => {
+  it('continues after the newest regenerated response under a durable user anchor', async () => {
     const { methods, spies } = resolverMethods();
     const queued = claim();
-    queued.parentMessageId = 'user-1_';
+    queued.parentMessageId = 'user-1';
     spies.claimNextAgentQueuedTurn.mockResolvedValueOnce({ outcome: 'acquired', claim: queued });
     spies.getMessages.mockResolvedValueOnce([
       persistedMessage({
         messageId: 'user-1',
         parentMessageId: 'root',
         isCreatedByUser: true,
+        createdAt: new Date(NOW - 3_000),
+      }),
+      persistedMessage({
+        messageId: 'old-assistant',
+        parentMessageId: 'user-1',
+        isCreatedByUser: false,
         createdAt: new Date(NOW - 2_000),
       }),
       persistedMessage({
-        messageId: 'stripped-branch',
+        messageId: 'regenerated-assistant',
         parentMessageId: 'user-1',
         isCreatedByUser: false,
         createdAt: new Date(NOW),
-      }),
-      persistedMessage({
-        messageId: 'user-1_',
-        parentMessageId: 'root',
-        isCreatedByUser: true,
-        createdAt: new Date(NOW - 1_000),
-      }),
-      persistedMessage({
-        messageId: 'exact-branch',
-        parentMessageId: 'user-1_',
-        isCreatedByUser: false,
-        createdAt: new Date(NOW - 500),
       }),
     ]);
     const resolve = createAgentQueuedTurnResolver({
@@ -565,7 +564,7 @@ describe('Agent queued-turn continuation', () => {
 
     await expect(resolve(envelope(), { idempotencyKey: 'trigger-1' })).resolves.toMatchObject({
       status: 'ready',
-      parentMessageId: 'exact-branch',
+      parentMessageId: 'regenerated-assistant',
     });
   });
 

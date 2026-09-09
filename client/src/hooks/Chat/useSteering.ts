@@ -146,11 +146,29 @@ interface LiveMessageState {
   parentMessageId?: string;
 }
 
+function optimisticAssistantParent(message: TMessage): string | undefined {
+  const parentMessageId = message.parentMessageId;
+  /** Hydrated message rows always receive both timestamps from the message
+   * schema. Their joint absence is the client-only proof that this suffixed
+   * assistant is the placeholder built by `useChatFunctions`. */
+  if (
+    message.isCreatedByUser === false &&
+    typeof message.messageId === 'string' &&
+    message.messageId.endsWith('_') &&
+    message.createdAt == null &&
+    message.updatedAt == null &&
+    typeof parentMessageId === 'string' &&
+    parentMessageId.length > 0
+  ) {
+    return parentMessageId;
+  }
+}
+
 function selectLiveMessageState(message: TMessage | null): LiveMessageState {
-  const parentMessageId =
-    message?.isCreatedByUser === false && typeof message.messageId === 'string'
-      ? message.messageId
-      : undefined;
+  let parentMessageId: string | undefined;
+  if (message?.isCreatedByUser === false && typeof message.messageId === 'string') {
+    parentMessageId = optimisticAssistantParent(message) ?? message.messageId;
+  }
   return { approval: hasLiveToolApproval(message), parentMessageId };
 }
 
@@ -695,8 +713,9 @@ export default function useSteering({
     }
   }, [pendingSteers, queueKey]);
 
-  /** The exact visible assistant tail is captured into a server queued turn,
-   * while the approval bit keeps the steering controls honest. */
+  /** Capture a durable branch anchor into a server queued turn. Optimistic
+   * assistant placeholders are siblings of their eventual persisted response,
+   * so they anchor through their stable user parent. */
   const latestMessage = useLatestMessage(index, hasRealConvoId ? conversationId : null);
   const liveMessageState = useMemo(() => selectLiveMessageState(latestMessage), [latestMessage]);
   /** Both approval cards and `ask_user_question` suspend the current
