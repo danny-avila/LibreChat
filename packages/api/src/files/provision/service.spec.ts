@@ -270,13 +270,27 @@ describe('createProvisionService', () => {
       expect(alive.has('f-agent')).toBe(true);
     });
 
-    it('sends the legacy key alongside minted headers', async () => {
+    it('prefers bearer auth when a legacy key is also configured', async () => {
+      mockGetCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer jwt' });
+      mockAxios.mockResolvedValue({ data: [] });
+      const { service } = buildService();
+
+      await service.checkSessionsAlive({ files: [staleFile('f2')], apiKey: 'legacy-key' });
+
+      expect(mockAxios.mock.calls[0][0].headers).toEqual(
+        expect.objectContaining({ Authorization: 'Bearer jwt' }),
+      );
+      expect(mockAxios.mock.calls[0][0].headers['X-API-Key']).toBeUndefined();
+    });
+
+    it('uses the legacy key when managed bearer auth is unavailable', async () => {
       mockAxios.mockResolvedValue({ data: [] });
       const { service } = buildService();
 
       await service.checkSessionsAlive({ files: [staleFile('f2')], apiKey: 'legacy-key' });
 
       expect(mockAxios.mock.calls[0][0].headers['X-API-Key']).toBe('legacy-key');
+      expect(mockAxios.mock.calls[0][0].headers.Authorization).toBeUndefined();
     });
 
     it('preserves references when the probe itself fails', async () => {

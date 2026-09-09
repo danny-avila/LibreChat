@@ -180,7 +180,7 @@ export function createProvisionService({
     return stream;
   }
 
-  /** Composes code-API auth: legacy X-API-Key when configured, plus JWT bearer when enabled. */
+  /** Uses managed bearer auth when available, otherwise the configured legacy API key. */
   async function buildCodeApiHeaders({
     apiKey,
     req,
@@ -188,10 +188,11 @@ export function createProvisionService({
     apiKey?: string;
     req?: ServerRequest;
   }): Promise<Record<string, string>> {
+    const authHeaders = await getCodeApiAuthHeaders(req);
     return {
       'User-Agent': 'LibreChat/1.0',
-      ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-      ...(await getCodeApiAuthHeaders(req)),
+      ...(authHeaders.Authorization == null && apiKey ? { 'X-API-Key': apiKey } : {}),
+      ...authHeaders,
     };
   }
 

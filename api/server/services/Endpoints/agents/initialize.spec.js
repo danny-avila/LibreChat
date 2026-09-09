@@ -308,17 +308,45 @@ describe('initializeClient — processAgent ACL gate', () => {
   it('binds foreground tool execution to the host-owned run signal', async () => {
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
     const controller = new AbortController();
+    const req = makeReq();
+    req.body.messageId = 'user-message-1';
 
     await initializeClient({
-      req: makeReq(),
+      req,
       res: {},
       signal: controller.signal,
       endpointOption: makeEndpointOption(),
+      foregroundRunId: 'response-1',
       requestBody: { messageId: 'response-1', conversationId: 'conv_1' },
     });
 
     expect(capturedToolExecuteOptions.runSignal).toBe(controller.signal);
     expect(capturedToolExecuteOptions.foregroundRunId).toBe('response-1');
+  });
+
+  it('threads the deployment ordinary-tool cancellation gate into execution', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const disabledReq = makeReq();
+
+    await initializeClient({
+      req: disabledReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    expect(capturedToolExecuteOptions.ordinaryToolCancellation).toBe(false);
+
+    const enabledReq = makeReq();
+    enabledReq.config.endpoints.agents = {
+      backgroundTasks: { ordinaryToolCancellation: true },
+    };
+    await initializeClient({
+      req: enabledReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    expect(capturedToolExecuteOptions.ordinaryToolCancellation).toBe(true);
   });
 
   it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {

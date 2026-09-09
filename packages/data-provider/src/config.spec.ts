@@ -237,6 +237,7 @@ describe('attached code environment user config schema', () => {
                     fileWrite: { allowed: ['allow', 'ask', 'deny'], default: 'ask' },
                     commandExecution: { allowed: ['ask', 'deny'], default: 'ask' },
                   },
+                  limits: { maxCommandTimeoutMs: 120000 },
                 },
               },
             ],
@@ -249,6 +250,30 @@ describe('attached code environment user config schema', () => {
       throw new Error(result.error.toString());
     }
     expect(result.success).toBe(true);
+  });
+
+  it('rejects an attached command timeout above the protocol hard cap', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            environments: [
+              {
+                id: 'personal-vm',
+                name: 'Personal VM',
+                type: 'attached',
+                baseURL: 'https://code.example.com/v1',
+                configSchema: { limits: { maxCommandTimeoutMs: 300001 } },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('rejects a permission default the administrator did not expose', () => {
@@ -347,7 +372,10 @@ describe('agent background task config', () => {
     if (!result.success) {
       return;
     }
-    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: true });
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionWakeups: true,
+      ordinaryToolCancellation: false,
+    });
   });
 
   it('accepts an administrator poll-only policy', () => {
@@ -360,7 +388,26 @@ describe('agent background task config', () => {
     if (!result.success) {
       return;
     }
-    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: false });
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionWakeups: false,
+      ordinaryToolCancellation: false,
+    });
+  });
+
+  it('accepts administrator-enabled ordinary tool cancellation', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { ordinaryToolCancellation: true } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionWakeups: true,
+      ordinaryToolCancellation: true,
+    });
   });
 });
 

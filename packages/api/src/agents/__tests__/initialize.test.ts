@@ -2520,6 +2520,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
                   baseURL: 'https://code.example.com/v1',
                   owner: 'deployment',
                   workerId: 'worker-a',
+                  configSchema: {
+                    limits: { maxCommandTimeoutMs: 120_000 },
+                  },
                 },
               ],
             },
@@ -2543,10 +2546,13 @@ describe('initializeAgent — execute_code capability expansion', () => {
         environmentId: 'personal-vm',
         environmentType: 'attached',
         bridgeWorkerId: 'worker-a',
+        codeEnvironmentConfigSchema: {
+          limits: { maxCommandTimeoutMs: 120_000 },
+        },
         codeWorkspace: {
           environmentId: 'personal-vm',
           workspaceId: 'project-a',
-          operations: ['read_file', 'list_files'],
+          operations: ['read_file', 'list_files', 'execute_command'],
         },
       };
       if (protectedEdit) codeExecutionContext.codeWorkspace!.operations.push('edit_file');
@@ -2576,9 +2582,15 @@ describe('initializeAgent — execute_code capability expansion', () => {
 
       expect(result.codeExecutionContext).toBe(codeExecutionContext);
       expect(result.toolDefinitions?.map(({ name }) => name).sort()).toEqual([
+        'bash_tool',
         'list_workspace_files',
         'read_file',
       ]);
+      const bashTool = result.toolDefinitions?.find(({ name }) => name === 'bash_tool');
+      expect(
+        (bashTool?.parameters as { properties?: { timeoutMs?: { maximum?: number } } })?.properties
+          ?.timeoutMs?.maximum,
+      ).toBe(120_000);
     },
   );
 
