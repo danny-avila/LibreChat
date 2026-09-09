@@ -89,6 +89,26 @@ const mockGetSafeErrorMetadata = jest.fn((error) => {
     ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
   };
 });
+const mockCreateModelErrorTracker = jest.fn(() => {
+  const tracked = new WeakSet();
+  return {
+    callback: {
+      name: 'librechat-upstream-model-error-tracker',
+      awaitHandlers: true,
+      handleLLMError: (error) => {
+        if (error != null && typeof error === 'object') tracked.add(error);
+      },
+    },
+    getUpstreamModelError: (error) => {
+      let current = error;
+      for (let depth = 0; depth < 8 && current != null && typeof current === 'object'; depth++) {
+        if (tracked.has(current)) return current;
+        current = current.cause;
+      }
+      return null;
+    },
+  };
+});
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -228,6 +248,8 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
+  createModelErrorTracker: (...args) => mockCreateModelErrorTracker(...args),
+  traceIdForMessage: (messageId) => `trace:${messageId}`,
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
@@ -1669,6 +1691,50 @@ describe('createResponse controller', () => {
       );
       expect(JSON.stringify(api.sendResponsesErrorResponse.mock.calls)).not.toContain(rawValue);
     });
+
+    it.each([false, true])(
+      'classifies a terminal model callback failure and correlates its trace: stream=%s',
+      async (stream) => {
+        const api = require('@librechat/api');
+        const { logger } = require('@librechat/data-schemas');
+        const rawValue = 'PRIVATE-RESPONSES-UPSTREAM-PAYLOAD';
+        const providerError = Object.assign(new Error(`Provider echoed ${rawValue}`), {
+          code: 'ERR_REMOTE',
+          response: { status: 503, data: { prompt: rawValue } },
+        });
+        req.config.filters = { messages: { pii: {} } };
+        api.validateResponseRequest.mockReturnValueOnce({
+          request: { model: 'agent-123', input: 'Hello', stream },
+        });
+        api.createRun.mockImplementationOnce(async (options) => ({
+          processStream: jest.fn(async () => {
+            options.modelCallbacks
+              .find(({ name }) => name === 'librechat-upstream-model-error-tracker')
+              .handleLLMError(providerError);
+            throw new Error('graph failed', { cause: providerError });
+          }),
+        }));
+
+        await createResponse(req, res);
+
+        const errorLog = logger.error.mock.calls.find(
+          ([message]) => message === '[Responses API] Upstream model error',
+        );
+        expect(errorLog).toEqual([
+          '[Responses API] Upstream model error',
+          {
+            type: 'Error',
+            status: 503,
+            errorCode: 'UPSTREAM_MODEL_ERROR',
+            errorOrigin: 'model_provider',
+            errorType: '503',
+            traceId: 'trace:resp_mock-123',
+          },
+        ]);
+        expect(JSON.stringify(errorLog)).not.toContain(rawValue);
+        expect(JSON.stringify(errorLog)).not.toContain('ERR_REMOTE');
+      },
+    );
 
     it('preserves the legacy provider error when protection is inactive', async () => {
       const api = require('@librechat/api');

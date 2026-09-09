@@ -67,6 +67,7 @@ const {
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
 } = require('@librechat/api');
+const { createTerminalRunErrorObserver } = require('./terminalRunError');
 const {
   buildSummarizationHandlers,
   contextualizeModelUsage,
@@ -231,7 +232,6 @@ function sendErrorResponse(res, statusCode, message, type = 'invalid_request_err
 }
 
 function handleExecutionError({ error, res, context, appConfig }) {
-  logger.error('[OpenAI API] Error:', getSafeErrorMetadata(error));
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
     appConfig?.messageFilter?.pii,
@@ -377,6 +377,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
   }
 
   const responseId = `chatcmpl-${nanoid()}`;
+  const terminalRunError = createTerminalRunErrorObserver({
+    responseMessageId: responseId,
+    source: '[OpenAI API]',
+  });
   const created = Math.floor(Date.now() / 1000);
 
   /** @type {import('@librechat/api').OpenAIResponseContext} — key must be `requestId` to match the type used by createChunk/buildNonStreamingResponse */
@@ -429,7 +433,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     onSettlementError: (error) => {
       logger.error('[OpenAI API] Failed to settle execution:', getSafeErrorMetadata(error));
     },
-    handleExecutionError: (error) => handleExecutionError({ error, res, context, appConfig }),
+    handleExecutionError: (error) => {
+      terminalRunError.log(error);
+      return handleExecutionError({ error, res, context, appConfig });
+    },
     execute: async (execution) => {
       if (request.conversation_id != null) {
         if (typeof request.conversation_id !== 'string') {
@@ -1118,6 +1125,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         user: { ...createSafeUser(req.user), id: userId },
         traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: principal.tenantId,
+        modelCallbacks: [terminalRunError.modelCallback],
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),

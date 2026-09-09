@@ -55,6 +55,26 @@ const mockGetSafeErrorMetadata = jest.fn((error) => {
     ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
   };
 });
+const mockCreateModelErrorTracker = jest.fn(() => {
+  const tracked = new WeakSet();
+  return {
+    callback: {
+      name: 'librechat-upstream-model-error-tracker',
+      awaitHandlers: true,
+      handleLLMError: (error) => {
+        if (error != null && typeof error === 'object') tracked.add(error);
+      },
+    },
+    getUpstreamModelError: (error) => {
+      let current = error;
+      for (let depth = 0; depth < 8 && current != null && typeof current === 'object'; depth++) {
+        if (tracked.has(current)) return current;
+        current = current.cause;
+      }
+      return null;
+    },
+  };
+});
 const mockHasActivePiiPatterns = (config) =>
   config != null &&
   (config.starterPatterns == null ||
@@ -204,6 +224,8 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: mockProcessStream,
   }),
+  createModelErrorTracker: (...args) => mockCreateModelErrorTracker(...args),
+  traceIdForMessage: (messageId) => `trace:${messageId}`,
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
   buildInlineMemoryContext: (...args) => mockBuildInlineMemoryContext(...args),
@@ -1050,15 +1072,31 @@ describe('OpenAIChatCompletionController', () => {
         },
       });
       req.config.filters = { messages: { pii: {} } };
-      mockProcessStream.mockRejectedValueOnce(providerError);
+      mockProcessStream.mockImplementationOnce(async () => {
+        const modelCallback = api.createRun.mock.calls
+          .at(-1)[0]
+          .modelCallbacks.find(({ name }) => name === 'librechat-upstream-model-error-tracker');
+        modelCallback.handleLLMError(providerError);
+        throw new Error('graph failed', { cause: providerError });
+      });
 
       await OpenAIChatCompletionController(req, res);
 
       expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(providerError);
       const errorLog = logger.error.mock.calls.find(
-        ([message]) => message === '[OpenAI API] Error:',
+        ([message]) => message === '[OpenAI API] Upstream model error',
       );
-      expect(errorLog).toEqual(['[OpenAI API] Error:', { type: 'Error', status: 502 }]);
+      expect(errorLog).toEqual([
+        '[OpenAI API] Upstream model error',
+        {
+          type: 'Error',
+          status: 502,
+          errorCode: 'UPSTREAM_MODEL_ERROR',
+          errorOrigin: 'model_provider',
+          errorType: '502',
+          traceId: 'trace:chatcmpl-mock-nanoid-123',
+        },
+      ]);
       expect(JSON.stringify(errorLog)).not.toContain(rawValue);
       expect(api.createErrorResponse).toHaveBeenCalledWith(
         'An error occurred while processing the request',
@@ -1071,7 +1109,9 @@ describe('OpenAIChatCompletionController', () => {
 
     it('streams a raw-free provider error after headers are sent', async () => {
       const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
       const rawValue = 'PRIVATE-OPENAI-STREAM-PAYLOAD';
+      const providerError = new Error(`Provider echoed ${rawValue}`);
       api.validateRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -1083,7 +1123,13 @@ describe('OpenAIChatCompletionController', () => {
       res.flushHeaders.mockImplementationOnce(() => {
         res.headersSent = true;
       });
-      mockProcessStream.mockRejectedValueOnce(new Error(`Provider echoed ${rawValue}`));
+      mockProcessStream.mockImplementationOnce(async () => {
+        api.createRun.mock.calls
+          .at(-1)[0]
+          .modelCallbacks.find(({ name }) => name === 'librechat-upstream-model-error-tracker')
+          .handleLLMError(providerError);
+        throw providerError;
+      });
 
       await OpenAIChatCompletionController(req, res);
 
@@ -1094,6 +1140,13 @@ describe('OpenAIChatCompletionController', () => {
       );
       expect(JSON.stringify(api.createChunk.mock.calls)).not.toContain(rawValue);
       expect(JSON.stringify(api.writeSSE.mock.calls)).not.toContain(rawValue);
+      expect(logger.error).toHaveBeenCalledWith(
+        '[OpenAI API] Upstream model error',
+        expect.objectContaining({
+          errorCode: 'UPSTREAM_MODEL_ERROR',
+          traceId: 'trace:chatcmpl-mock-nanoid-123',
+        }),
+      );
     });
 
     it('preserves the legacy provider error when protection is inactive', async () => {
