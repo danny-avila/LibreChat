@@ -26,6 +26,13 @@ jest.mock('@librechat/api', () => {
     sanitizeArtifactPath: mockSanitizeArtifactPath,
     flattenArtifactPath: mockFlattenArtifactPath,
     createAxiosInstance: jest.fn(() => mockAxios),
+    resolveStorageScope: jest.fn((req) => ({
+      userId: req.user.id,
+      tenantId: req.user.tenantId ?? null,
+      storageLimitBytes: null,
+    })),
+    createFileQuotaCommitter: () => async (_req, row, write) => write(row),
+    isFilePersistenceNotCommittedError: jest.fn(() => false),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
     codeExecutionHeaders: jest.fn(() => ({})),
     getCodeExecutionBaseUrl: jest.fn(() => 'http://localhost:8000'),
@@ -78,6 +85,8 @@ jest.mock('~/models', () => ({
   getFiles: jest.fn().mockResolvedValue([]),
   updateFile: jest.fn(),
   claimCodeFile: jest.fn().mockResolvedValue({ file_id: 'mock-uuid', usage: 0 }),
+  getUserStorageUsage: jest.fn().mockResolvedValue(0),
+  deleteFileByFilter: jest.fn().mockResolvedValue(null),
 }));
 
 const mockSaveBuffer = jest.fn().mockResolvedValue('/uploads/user123/mock-uuid__output.csv');
@@ -105,7 +114,7 @@ jest.mock('~/server/services/Files/retention', () => ({
 }));
 
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
-const { createFile } = require('~/models');
+const { updateFile } = require('~/models');
 const { processCodeOutput } = require('../process');
 
 const baseParams = {
@@ -144,14 +153,14 @@ describe('processCodeOutput path traversal protection', () => {
     const call = mockSaveBuffer.mock.calls[0][0];
     /* `flattenArtifactPath` is identity for already-flat names; the assert
      * is against the storage-key composition (`<file_id>__<flat>`). */
-    expect(call.fileName).toBe('mock-uuid__sanitized-name.txt');
+    expect(call.fileName).toBe('mock-uuid-mock-uuid__sanitized-name.txt');
   });
 
   test('sanitized name is stored as filename in the file record', async () => {
     mockSanitizeArtifactPath.mockReturnValueOnce('safe-output.csv');
     await processCodeOutput({ ...baseParams, name: 'unsafe/../../output.csv' });
 
-    const fileArg = createFile.mock.calls[0][0];
+    const fileArg = updateFile.mock.calls[0][0];
     expect(fileArg.filename).toBe('safe-output.csv');
     expect(fileArg.tenantId).toBe('tenantA');
   });
@@ -173,7 +182,7 @@ describe('processCodeOutput path traversal protection', () => {
     await processCodeOutput({ ...baseParams, name: '../../../chart.png' });
 
     expect(mockSanitizeArtifactPath).toHaveBeenCalledWith('../../../chart.png');
-    const fileArg = createFile.mock.calls[0][0];
+    const fileArg = updateFile.mock.calls[0][0];
     expect(fileArg.filename).toBe('safe-chart.png');
     expect(fileArg.tenantId).toBe('tenantA');
   });
