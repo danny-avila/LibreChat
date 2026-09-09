@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import type { Connection } from 'mongoose';
+import type { Connection, mongo } from 'mongoose';
 import { buildIndexWithRetry } from '~/utils/retry';
 
 const migrationId = 'conversation-tag-identity-v1';
@@ -124,20 +124,32 @@ export async function migrateConversationTags(
   }
   result.createdTags = missing.size;
   if (dryRun) return result;
+  let catalogBatch: mongo.AnyBulkWriteOperation<CatalogRow>[] = [];
   for (const [key, tag] of missing) {
-    await catalog.updateOne(
-      { user: tag.user, tenantId: tag.tenantId ?? { $exists: false }, tag: tag.tag },
-      {
-        $setOnInsert: {
-          ...tag,
-          count: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+    catalogBatch.push({
+      updateOne: {
+        filter: { user: tag.user, tenantId: tag.tenantId ?? { $exists: false }, tag: tag.tag },
+        update: {
+          $setOnInsert: {
+            ...tag,
+            count: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
         },
+        upsert: true,
       },
-      { upsert: true },
-    );
+    });
     byName.set(key, String(tag._id));
+    if (catalogBatch.length === 500) {
+      // eslint-disable-next-line no-restricted-syntax -- quiesced offline migration preserves exact scopes across tenants
+      await catalog.bulkWrite(catalogBatch, { ordered: true });
+      catalogBatch = [];
+    }
+  }
+  if (catalogBatch.length) {
+    // eslint-disable-next-line no-restricted-syntax -- quiesced offline migration preserves exact scopes across tenants
+    await catalog.bulkWrite(catalogBatch, { ordered: true });
   }
   let batch: Array<{
     updateOne: {

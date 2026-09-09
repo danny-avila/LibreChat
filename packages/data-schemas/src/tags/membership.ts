@@ -63,6 +63,7 @@ export async function resolveTagNames(
   const last = create
     ? await Tag.findOne(scope).sort({ position: -1 }).select('position').lean()
     : null;
+  let nextPosition = (last?.position ?? -1) + 1;
   for (let offset = 0; offset < uniqueNames.length; offset += 500) {
     const batch = uniqueNames.slice(offset, offset + 500);
     const existing = await Tag.find({ ...scope, tag: { $in: batch } }).lean();
@@ -81,7 +82,7 @@ export async function resolveTagNames(
               $setOnInsert: {
                 tag,
                 user,
-                position: (last?.position ?? -1) + offset + index + 1,
+                position: nextPosition + index,
                 ...Tag.prepareMeiliInsert?.(),
               },
             },
@@ -113,6 +114,7 @@ export async function resolveTagNames(
     if (missing.some((name) => !byName.has(name))) {
       throw new Error('Tag catalog changed during name resolution; retry the operation');
     }
+    nextPosition += missing.length;
   }
   return uniqueNames.flatMap((name) => {
     const id = byName.get(name);

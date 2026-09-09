@@ -82,11 +82,15 @@ it('leaves no marker after partial writes and resumes without replacing tag iden
   await conversations.insertMany(
     Array.from({ length: 501 }, () => ({ user: 'owner', tags: ['label'] })),
   );
-  const original = conversations.bulkWrite.bind(conversations);
+  const original = conversations.bulkWrite;
+  let conversationBatches = 0;
   const write = jest
     .spyOn(Object.getPrototypeOf(conversations) as typeof conversations, 'bulkWrite')
-    .mockImplementationOnce((...args) => original(...args))
-    .mockRejectedValueOnce(new Error('interrupted batch'));
+    .mockImplementation(function (this: typeof conversations, ...args) {
+      if (this.collectionName === 'conversations' && ++conversationBatches === 2)
+        return Promise.reject(new Error('interrupted batch'));
+      return original.apply(this, args);
+    });
   await expect(migrateConversationTags(mongoose.connection, { dryRun: false })).rejects.toThrow(
     'interrupted batch',
   );
@@ -201,14 +205,15 @@ it('resumes partial catalog insertion without changing committed positions or ID
   await db()
     .collection('conversations')
     .insertOne({ user: 'owner', tags: ['first', 'second'] });
-  const original = catalog.updateOne;
-  let inserts = 0;
+  const original = catalog.bulkWrite;
   const write = jest
-    .spyOn(Object.getPrototypeOf(catalog) as typeof catalog, 'updateOne')
-    .mockImplementation(function (this: typeof catalog, ...args) {
-      if (this.collectionName === 'conversationtags' && ++inserts === 2)
-        return Promise.reject(new Error('catalog interrupted'));
-      return original.apply(this, args);
+    .spyOn(Object.getPrototypeOf(catalog) as typeof catalog, 'bulkWrite')
+    .mockImplementation(async function (this: typeof catalog, operations, options) {
+      if (this.collectionName === 'conversationtags') {
+        await original.call(this, operations.slice(0, 1), options);
+        throw new Error('catalog interrupted');
+      }
+      return original.call(this, operations, options);
     });
   await expect(migrateConversationTags(mongoose.connection, { dryRun: false })).rejects.toThrow(
     'catalog interrupted',
@@ -282,4 +287,104 @@ it('uses the schema default for absent legacy positions and refuses exhausted po
     'cannot allocate a safe catalog position',
   );
   expect(await catalog.findOne({ user: 'other', tag: 'overflow' })).toBeNull();
+});
+
+it('writes 1001 missing names in three bounded catalog commands across exact scopes', async () => {
+  const scopes = [
+    { user: 'owner' },
+    { user: 'owner', tenantId: 'a' },
+    { user: 'other', tenantId: 'a' },
+  ];
+  const timestamp = new Date('2020-01-01');
+  await db()
+    .collection('conversations')
+    .insertMany(
+      Array.from({ length: 1001 }, (_, index) => ({
+        ...scopes[index % scopes.length],
+        tags: [`label-${index}`],
+        updatedAt: timestamp,
+      })),
+    );
+  const commandSizes: number[] = [];
+  const listener = (event: {
+    commandName: string;
+    command: { update?: string; updates?: object[] };
+  }) => {
+    if (event.commandName === 'update' && event.command.update === 'conversationtags') {
+      commandSizes.push(event.command.updates!.length);
+    }
+  };
+  const client = mongoose.connection.getClient();
+  client.on('commandStarted', listener);
+  try {
+    await migrateConversationTags(mongoose.connection, { dryRun: false });
+  } finally {
+    client.off('commandStarted', listener);
+  }
+  expect(commandSizes).toEqual([500, 500, 1]);
+  for (const scope of scopes) {
+    const rows = await db()
+      .collection('conversationtags')
+      .find({ ...scope, tenantId: scope.tenantId ?? { $exists: false } })
+      .sort({ position: 1 })
+      .toArray();
+    expect(rows.map((row) => row.position)).toEqual(rows.map((_, index) => index));
+    const conversations = await db()
+      .collection('conversations')
+      .find({ ...scope, tenantId: scope.tenantId ?? { $exists: false } })
+      .toArray();
+    const ids = new Set(rows.map((row) => String(row._id)));
+    expect(conversations.every((row) => row.tagIds.length === 1 && ids.has(row.tagIds[0]))).toBe(
+      true,
+    );
+  }
+  expect(await db().collection('conversations').countDocuments({ updatedAt: timestamp })).toBe(
+    1001,
+  );
+});
+
+it('retries a partly committed second catalog batch before writing any membership', async () => {
+  const catalog = db().collection('conversationtags');
+  await db()
+    .collection('conversations')
+    .insertOne({
+      user: 'owner',
+      tags: Array.from({ length: 750 }, (_, index) => `label-${index}`),
+    });
+  const original = catalog.bulkWrite;
+  let batches = 0;
+  const write = jest
+    .spyOn(Object.getPrototypeOf(catalog) as typeof catalog, 'bulkWrite')
+    .mockImplementation(async function (this: typeof catalog, operations, options) {
+      if (this.collectionName === 'conversationtags' && ++batches === 2) {
+        await original.call(this, operations.slice(0, 100), options);
+        throw new Error('partial catalog batch');
+      }
+      return original.call(this, operations, options);
+    });
+  await expect(migrateConversationTags(mongoose.connection, { dryRun: false })).rejects.toThrow(
+    'partial catalog batch',
+  );
+  write.mockRestore();
+  const committed = await catalog.find({}).sort({ position: 1 }).toArray();
+  expect(committed).toHaveLength(600);
+  expect(
+    await db()
+      .collection('conversations')
+      .countDocuments({ tagIds: { $exists: true } }),
+  ).toBe(0);
+  expect(await marker()).toBeNull();
+  await migrateConversationTags(mongoose.connection, { dryRun: false });
+  expect(
+    await catalog
+      .find({ _id: { $in: committed.map((row) => row._id) } })
+      .sort({ position: 1 })
+      .toArray(),
+  ).toEqual(committed);
+  const rows = await catalog.find({}).sort({ position: 1 }).toArray();
+  expect(rows.map((row) => row.position)).toEqual(Array.from({ length: 750 }, (_, index) => index));
+  expect((await db().collection('conversations').findOne({ user: 'owner' }))?.tagIds).toEqual(
+    rows.map((row) => String(row._id)),
+  );
+  expect(await marker()).not.toBeNull();
 });

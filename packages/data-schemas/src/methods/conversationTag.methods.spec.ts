@@ -303,11 +303,15 @@ it('resumes an interrupted offline batch without allocating replacement identiti
   }));
   await Conversations.collection.insertMany(rows);
   const collection = mongoose.connection.db!.collection('conversations');
-  const original = collection.bulkWrite.bind(collection);
+  const original = collection.bulkWrite;
+  let conversationBatches = 0;
   const write = jest
     .spyOn(Object.getPrototypeOf(collection) as typeof collection, 'bulkWrite')
-    .mockImplementationOnce((...args) => original(...args))
-    .mockRejectedValueOnce(new Error('interrupted batch'));
+    .mockImplementation(function (this: typeof collection, ...args) {
+      if (this.collectionName === 'conversations' && ++conversationBatches === 2)
+        return Promise.reject(new Error('interrupted batch'));
+      return original.apply(this, args);
+    });
   await expect(migrateConversationTags(mongoose.connection, { dryRun: false })).rejects.toThrow(
     'interrupted batch',
   );
@@ -504,4 +508,45 @@ it('preserves tenant sidebar IDs and hydrates queried full documents in their te
     });
     expect(queried.convoMap.convo).toBe(queried.conversations[0]);
   });
+});
+
+it.each([null, 'tenant-a'])(
+  'appends after an all-existing import batch and supports moving a bookmark to the end (%s)',
+  async (tenantId) => {
+    const names = Array.from({ length: 500 }, (_, index) => `existing-${index}`);
+    await Catalog.insertMany(
+      names.map((tag, position) => ({
+        user: 'owner',
+        ...(tenantId === null ? {} : { tenantId }),
+        tag,
+        position,
+      })),
+    );
+    const ids = await resolveTagNames(mongoose, 'owner', [...names, 'new'], tenantId);
+    expect(await Catalog.findById(ids[500]).lean()).toMatchObject({ position: 500 });
+    await methods.updateConversationTag('owner', ids[0], { position: 500 }, tenantId, true);
+    const ordered = await methods.getConversationTags('owner', tenantId);
+    expect(ordered.map((tag) => tag.tag)).toEqual([...names.slice(1), 'new', names[0]]);
+    expect(ordered.map((tag) => tag.position)).toEqual(
+      Array.from({ length: 501 }, (_, index) => index),
+    );
+  },
+);
+
+it('allocates only missing positions across mixed import batches and preserves them on retry', async () => {
+  const names = Array.from({ length: 1002 }, (_, index) => `mixed-${index}`);
+  const existing = names.filter((_, index) => index % 2 === 0);
+  await Catalog.insertMany(
+    existing.map((tag, position) => ({ user: 'owner', tag, position, description: 'kept' })),
+  );
+  const ids = await resolveTagNames(mongoose, 'owner', names);
+  const rows = await Catalog.find({ user: 'owner' }).sort({ position: 1 }).lean();
+  expect(rows.map((row) => row.position)).toEqual(names.map((_, index) => index));
+  expect(rows.map((row) => row.tag)).toEqual([
+    ...existing,
+    ...names.filter((_, index) => index % 2 === 1),
+  ]);
+  expect(rows.slice(0, existing.length).every((row) => row.description === 'kept')).toBe(true);
+  expect(await resolveTagNames(mongoose, 'owner', names)).toEqual(ids);
+  expect(await Catalog.find({ user: 'owner' }).sort({ position: 1 }).lean()).toEqual(rows);
 });
