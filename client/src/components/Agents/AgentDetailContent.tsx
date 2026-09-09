@@ -37,9 +37,15 @@ interface AgentDetailContentProps {
    * when there is no source card to morph from and the dialog should just fade.
    */
   morph?: 'open' | 'closing';
+  /**
+   * The theme's surface radius in pixels, supplied with `morph` so the shared
+   * surface holds the same corner as the card it came from while it scales. At
+   * rest the stylesheet's `rounded-theme-surface` governs.
+   */
+  surfaceRadius?: number;
 }
 
-const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph }) => {
+const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph, surfaceRadius }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
   const reducedMotion = useReducedMotion();
@@ -131,8 +137,8 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent, morph })
     >
       <motion.div
         layoutId={morphing ? agentMorphId('surface', agent.id) : undefined}
-        style={{ borderRadius: 16 }}
-        className="relative flex max-h-[88dvh] w-full flex-col overflow-hidden bg-surface-dialog shadow-lg high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none"
+        style={surfaceRadius == null ? undefined : { borderRadius: surfaceRadius }}
+        className="relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-theme-surface bg-surface-dialog shadow-lg high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none"
         {...shared}
       >
         {/* Card-coloured wash so the surface interpolates its fill and border

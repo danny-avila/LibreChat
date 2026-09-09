@@ -24,13 +24,19 @@ interface AgentCardProps {
    * home again rather than framing an empty hole.
    */
   morphing?: boolean;
+  /**
+   * The theme's surface radius in pixels, supplied while this card takes part
+   * in a morph so the projection can hold the corner steady as it scales. At
+   * rest the stylesheet's `rounded-theme-surface` governs.
+   */
+  surfaceRadius?: number;
   className?: string;
 }
 
 /** The list owns preview state so recycling a card cannot dismiss its dialog. */
 const AgentCard = memo(
   forwardRef<HTMLButtonElement, AgentCardProps>(function AgentCard(
-    { agent, onSelect, expanded = false, morphing = false, className = '' },
+    { agent, onSelect, expanded = false, morphing = false, surfaceRadius, className = '' },
     ref,
   ) {
     const localize = useLocalize();
@@ -56,15 +62,15 @@ const AgentCard = memo(
         className={cn(
           /* The article keeps a plain resting fill so the grid slot still reads as a
              card while the surface layer is away being the dialog. */
-          'group relative flex h-full min-h-[17.5rem] min-w-0 flex-col rounded-2xl bg-surface-secondary p-5',
+          'group relative flex h-full min-h-[17.5rem] min-w-0 flex-col rounded-theme-surface bg-surface-secondary p-5',
           className,
         )}
       >
         <motion.div
           aria-hidden="true"
           layoutId={agentMorphId('surface', agent.id)}
-          style={{ borderRadius: 16 }}
-          className="pointer-events-none absolute inset-0 z-0 border border-border-light bg-surface-secondary transition-colors duration-150 group-hover:border-border-medium group-hover:bg-surface-tertiary"
+          style={surfaceRadius == null ? undefined : { borderRadius: surfaceRadius }}
+          className="pointer-events-none absolute inset-0 z-0 rounded-theme-surface border border-border-light bg-surface-secondary transition-colors duration-150 group-hover:border-border-medium group-hover:bg-surface-tertiary"
           {...shared}
         />
 
@@ -72,7 +78,7 @@ const AgentCard = memo(
           ref={ref}
           type="button"
           className={cn(
-            'absolute inset-0 z-10 cursor-pointer rounded-2xl border-0 bg-transparent p-0 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
+            'absolute inset-0 z-10 cursor-pointer rounded-theme-surface border-0 bg-transparent p-0 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
             morphing && 'focus-visible:ring-0',
           )}
           aria-label={expanded ? name : undefined}

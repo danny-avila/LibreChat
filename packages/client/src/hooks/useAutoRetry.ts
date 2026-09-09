@@ -42,7 +42,14 @@ export default function useAutoRetry({
   onRetry,
   delaysMs = DEFAULT_AUTO_RETRY_DELAYS_MS,
 }: UseAutoRetryOptions): AutoRetryState {
-  const [attempt, setAttempt] = useState(0);
+  /**
+   * `attempt` alone cannot drive the schedule: resetting it to 0 while it is
+   * already 0 is a no-op, so the backoff effect never re-runs, its pending
+   * timer is never cleared, and the automatic attempt still fires after a
+   * manual or connectivity-driven retry has already gone out. `restarts`
+   * changes on every retry, so each one cancels the pending schedule.
+   */
+  const [schedule, setSchedule] = useState({ attempt: 0, restarts: 0 });
   const [countdown, setCountdown] = useState<number | null>(null);
   /** Kept in refs so the listeners below survive a new `onRetry` identity. */
   const onRetryRef = useRef(onRetry);
@@ -53,18 +60,24 @@ export default function useAutoRetry({
     isRetryingRef.current = isRetrying;
   }, [onRetry, isRetrying]);
 
-  const retryNow = useCallback(() => {
+  const requestRetry = useCallback(() => {
     setCountdown(null);
     onRetryRef.current?.();
   }, []);
 
+  /** Retries now and restarts the backoff from its first step. */
+  const restart = useCallback(() => {
+    setSchedule((current) => ({ attempt: 0, restarts: current.restarts + 1 }));
+    requestRetry();
+  }, [requestRetry]);
+
   useEffect(() => {
-    if (!enabled || isRetrying || attempt >= delaysMs.length) {
+    if (!enabled || isRetrying || schedule.attempt >= delaysMs.length) {
       setCountdown(null);
       return;
     }
 
-    const delay = delaysMs[attempt];
+    const delay = delaysMs[schedule.attempt];
     let remaining = Math.round(delay / 1000);
     setCountdown(remaining);
 
@@ -73,15 +86,15 @@ export default function useAutoRetry({
       setCountdown(remaining > 0 ? remaining : null);
     }, 1000);
     const timeout = setTimeout(() => {
-      setAttempt((value) => value + 1);
-      retryNow();
+      setSchedule((current) => ({ ...current, attempt: current.attempt + 1 }));
+      requestRetry();
     }, delay);
 
     return () => {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [enabled, isRetrying, attempt, delaysMs, retryNow]);
+  }, [enabled, isRetrying, schedule, delaysMs, requestRetry]);
 
   /**
    * Connectivity returning is the strongest signal available, so it resets the
@@ -95,10 +108,11 @@ export default function useAutoRetry({
     }
 
     const recover = () => {
-      setAttempt(0);
-      if (!isRetryingRef.current) {
-        retryNow();
+      if (isRetryingRef.current) {
+        setSchedule((current) => ({ attempt: 0, restarts: current.restarts + 1 }));
+        return;
       }
+      restart();
     };
     const recoverWhenVisible = () => {
       if (document.visibilityState === 'visible') {
@@ -112,16 +126,11 @@ export default function useAutoRetry({
       window.removeEventListener('online', recover);
       document.removeEventListener('visibilitychange', recoverWhenVisible);
     };
-  }, [enabled, retryNow]);
-
-  const retryManually = useCallback(() => {
-    setAttempt(0);
-    retryNow();
-  }, [retryNow]);
+  }, [enabled, restart]);
 
   return {
     countdown,
-    isExhausted: enabled && attempt >= delaysMs.length,
-    retryManually,
+    isExhausted: enabled && schedule.attempt >= delaysMs.length,
+    retryManually: restart,
   };
 }

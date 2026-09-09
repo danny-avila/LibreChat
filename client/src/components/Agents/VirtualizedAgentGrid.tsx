@@ -1,13 +1,19 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { OGDialog } from '@librechat/client';
+import { DIALOG_SCRIM_CLASS, OGDialog } from '@librechat/client';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import type { Range } from '@tanstack/react-virtual';
 import type t from 'librechat-data-provider';
-import { BACKDROP_ENTER_TRANSITION, BACKDROP_EXIT_TRANSITION, MORPH_HANDOFF_MS } from './morph';
+import {
+  BACKDROP_ENTER_TRANSITION,
+  BACKDROP_EXIT_TRANSITION,
+  MORPH_HANDOFF_MS,
+  readSurfaceRadius,
+} from './morph';
 import AgentDetailContent from './AgentDetailContent';
 import AgentCard from './AgentCard';
+import { cn } from '~/utils';
 
 interface VirtualizedAgentGridProps {
   agents: t.Agent[];
@@ -57,6 +63,8 @@ export default function VirtualizedAgentGrid({
    * surface back, and it has to stay above its neighbours until then.
    */
   const [liftedAgentId, setLiftedAgentId] = useState<string | null>(null);
+  /** Resolved once per morph, so neither endpoint restates the radius token. */
+  const [surfaceRadius, setSurfaceRadius] = useState<number | null>(null);
   const reducedMotion = useReducedMotion();
   const closeTimerRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(closeTimerRef.current), []);
@@ -188,6 +196,7 @@ export default function VirtualizedAgentGrid({
       setSelection({ agent, phase: 'open' });
       if (reducedMotion !== true) {
         setLiftedAgentId(agent.id);
+        setSurfaceRadius(readSurfaceRadius());
       }
       onSelectAgent?.(agent);
     },
@@ -319,6 +328,9 @@ export default function VirtualizedAgentGrid({
                   onSelect={handleSelect}
                   expanded={selected}
                   morphing={agent.id === liftedAgentId}
+                  surfaceRadius={
+                    agent.id === liftedAgentId && surfaceRadius != null ? surfaceRadius : undefined
+                  }
                   ref={selected ? selectedTriggerRef : undefined}
                 />
               </div>,
@@ -347,12 +359,17 @@ export default function VirtualizedAgentGrid({
         })}
       </div>
       {createPortal(
-        <AnimatePresence onExitComplete={() => setLiftedAgentId(null)}>
+        <AnimatePresence
+          onExitComplete={() => {
+            setLiftedAgentId(null);
+            setSurfaceRadius(null);
+          }}
+        >
           {morphing && (
             <motion.div
               key="agent-detail-backdrop"
               aria-hidden="true"
-              className="pointer-events-none fixed inset-0 bg-black/80"
+              className={cn('pointer-events-none fixed inset-0', DIALOG_SCRIM_CLASS)}
               style={{ zIndex: BACKDROP_Z_INDEX }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1, transition: BACKDROP_ENTER_TRANSITION }}
@@ -368,6 +385,7 @@ export default function VirtualizedAgentGrid({
           /* Without a mounted source card — the filters or the search moved on
              — there is nothing to morph from, so the dialog just fades. */
           morph={morphing ? selection.phase : undefined}
+          surfaceRadius={morphing && surfaceRadius != null ? surfaceRadius : undefined}
         />
       )}
     </OGDialog>

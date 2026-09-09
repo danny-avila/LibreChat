@@ -258,6 +258,28 @@ describe('ErrorDisplay', () => {
       expect(mockRetry).toHaveBeenCalledTimes(1);
     });
 
+    /** Axios delivers failures as `Error` subclasses, which is how the
+     *  marketplace queries report them: classification has to read through the
+     *  instance rather than reducing it to its message. */
+    it('recovers from a server failure delivered as an Axios error instance', () => {
+      const mockRetry = jest.fn();
+      const error = Object.assign(new Error('Request failed with status code 500'), {
+        code: 'ERR_BAD_RESPONSE',
+        response: { status: 500, data: {} },
+      });
+
+      render(<ErrorDisplay error={error} onRetry={mockRetry} />);
+
+      expect(screen.getByText('Server Error')).toBeInTheDocument();
+      expect(screen.getByText('Retrying automatically in 2s')).toBeInTheDocument();
+
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+
     it('retries at once when the browser reconnects', () => {
       const mockRetry = jest.fn();
 
