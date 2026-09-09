@@ -18,6 +18,8 @@ const {
   createAgentRunEnvelope,
   createAgentExecutionContext,
   createMCPRuntimeRequestBody,
+  getCodeWorkspaceSelections,
+  collectReachableAgents,
   buildAgentScopedContext,
   buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
@@ -83,9 +85,11 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  resolveChatProjectContext,
   resolveConversationCodeEnvironmentDecision,
   resolvePersistableCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
+  CHAT_PROJECT_CONTEXT_UNAVAILABLE,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -523,16 +527,14 @@ const executeResponse = async (envelope, { req, res }) => {
   // Request-backed tool adapters still observe the validated envelope payload;
   // shared initialization receives the transport-free runtime below.
   req.body = request;
-  req.turnStartedAt = envelope.receivedAt;
-  const agentRuntime = createAgentExecutionContext({
-    user: req.user,
-    appConfig,
-    requestBody: request,
-    turnStartedAt: envelope.receivedAt,
-    conversationCreatedAt: req.conversationCreatedAt,
-    resolvedConversation: req.resolvedConversation,
-    hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
-  });
+  if (request.previous_response_id != null && typeof request.previous_response_id !== 'string') {
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      'previous_response_id must be a string',
+      'invalid_request',
+    );
+  }
   const agentId = request.model;
   const manualSkills = extractManualSkills(req.body);
   const isStreaming = request.stream === true;
@@ -614,18 +616,6 @@ const executeResponse = async (envelope, { req, res }) => {
     );
   }
 
-  // Look up the agent
-  const agent = await db.getAgent({ id: agentId });
-  if (!agent) {
-    return sendResponsesErrorResponse(
-      res,
-      404,
-      `Agent not found: ${agentId}`,
-      'not_found',
-      'model_not_found',
-    );
-  }
-
   // Generate IDs
   const responseId = generateResponseId();
   const terminalRunError = createTerminalRunErrorObserver({
@@ -688,41 +678,80 @@ const executeResponse = async (envelope, { req, res }) => {
       return handleExecutionError({ error, res, appConfig });
     },
     execute: async (execution) => {
+      const agentPromise = db.getAgent({ id: agentId });
+      // Validation may return before this promise is awaited; preserve the original
+      // promise for the later await while avoiding an unhandled speculative rejection.
+      agentPromise.catch(() => {});
+      let resolvedConversation;
       if (request.previous_response_id != null) {
-        if (typeof request.previous_response_id !== 'string') {
-          return sendResponsesErrorResponse(
-            res,
-            400,
-            'previous_response_id must be a string',
-            'invalid_request',
+        try {
+          resolvedConversation = await db.getConvo(principal.userId, request.previous_response_id);
+          if (!resolvedConversation) {
+            return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+          }
+          if (resolvedConversation.subagentThread != null) {
+            return sendResponsesErrorResponse(
+              res,
+              409,
+              CHILD_THREAD_READ_ONLY_ERROR,
+              'invalid_request',
+              'conversation_read_only',
+            );
+          }
+          req.resolvedConversation = resolvedConversation;
+          req.chatProjectContext = await resolveChatProjectContext(
+            {
+              userId: principal.userId,
+              tenantId: principal.tenantId,
+              conversationId: request.previous_response_id,
+              resolvedConversation,
+            },
+            { getConvo: db.getConvo, getChatProject: db.getChatProject, getFiles: db.getFiles },
           );
-        }
-        const previousConversation = await db.getConvo(
-          principal.userId,
-          request.previous_response_id,
-        );
-        if (!previousConversation) {
-          return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
-        }
-        req.resolvedConversation = previousConversation;
-        if (previousConversation.subagentThread != null) {
+        } catch (error) {
+          logger.error(
+            '[Responses API] Conversation context resolution failed',
+            getSafeErrorMetadata(error),
+          );
           return sendResponsesErrorResponse(
             res,
-            409,
-            CHILD_THREAD_READ_ONLY_ERROR,
-            'invalid_request',
-            'conversation_read_only',
+            error?.message === CHAT_PROJECT_CONTEXT_UNAVAILABLE ? 404 : 500,
+            'Conversation context unavailable',
+            error?.message === CHAT_PROJECT_CONTEXT_UNAVAILABLE ? 'not_found' : 'server_error',
           );
         }
       }
 
+      const agent = await agentPromise;
+      if (!agent) {
+        return sendResponsesErrorResponse(
+          res,
+          404,
+          `Agent not found: ${agentId}`,
+          'not_found',
+          'model_not_found',
+        );
+      }
+
+      req.turnStartedAt = envelope.receivedAt;
+      const agentRuntime = createAgentExecutionContext({
+        user: req.user,
+        appConfig,
+        requestBody: request,
+        turnStartedAt: envelope.receivedAt,
+        conversationCreatedAt: req.conversationCreatedAt,
+        resolvedConversation: req.resolvedConversation,
+        hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
+        chatProjectContext: req.chatProjectContext,
+      });
+
+      const parentMessageId = null;
       const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
         conversationId,
         requestedMode: request.code_environment_mode,
         requestedSelections: request.code_workspaces,
         conversation: req.resolvedConversation,
       });
-      const parentMessageId = null;
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
@@ -867,6 +896,7 @@ const executeResponse = async (envelope, { req, res }) => {
           endpointOption,
           allowedProviders,
           isInitialAgent: true,
+          useChatProjectContext: true,
           accessibleSkillIds: primaryScopedSkillIds,
           skillAuthoringAvailable: canAuthorSkillFiles({
             agent,
@@ -934,6 +964,7 @@ const executeResponse = async (envelope, { req, res }) => {
           requestFiles: [],
           conversationId,
           parentMessageId,
+          useChatProjectContext: true,
           requestBody: mcpRequestBody,
           resourceType: ResourceType.REMOTE_AGENT,
           computeAccessibleSkillIds: (handoffAgent) =>
@@ -1284,10 +1315,10 @@ const executeResponse = async (envelope, { req, res }) => {
           customHandlers: handlers,
           initialSessions,
           requestBody: mcpRequestBody,
+          modelCallbacks: [terminalRunError.modelCallback],
           user: { ...createSafeUser(req.user), id: userId },
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
-          modelCallbacks: [terminalRunError.modelCallback],
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
           subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -1513,9 +1544,9 @@ const executeResponse = async (envelope, { req, res }) => {
           initialSessions,
           requestBody: mcpRequestBody,
           user: { ...createSafeUser(req.user), id: userId },
+          modelCallbacks: [terminalRunError.modelCallback],
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
-          modelCallbacks: [terminalRunError.modelCallback],
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
           subagentUsageSink: createSubagentUsageSink(collectedUsage),

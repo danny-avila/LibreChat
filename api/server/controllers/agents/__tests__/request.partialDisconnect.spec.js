@@ -69,6 +69,11 @@ jest.mock('@librechat/api', () => ({
     jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
+  resolveChatProjectContext: jest.requireActual('@librechat/api').resolveChatProjectContext,
+  assertModelBoundContent: jest.requireActual('@librechat/api').assertModelBoundContent,
+  isContentFilterError: jest.requireActual('@librechat/api').isContentFilterError,
+  CHAT_PROJECT_CONTEXT_UNAVAILABLE:
+    jest.requireActual('@librechat/api').CHAT_PROJECT_CONTEXT_UNAVAILABLE,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn(() => null),
   cleanupMCPRequestContext: jest.fn(),
@@ -158,6 +163,12 @@ describe('ResumableAgentController tenant context', () => {
     user,
     jobRecord = { createdAt: 1000, contextMeta: partialContextMeta },
   ) => {
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'conversation-123',
+      user: user.id,
+      tenantId: user.tenantId,
+      createdAt: '2026-07-31T00:00:00.000Z',
+    });
     let allSubscribersLeftHandler;
     mockGenerationJobManager.getJobStore.mockReturnValue({
       getJob: jest.fn().mockResolvedValue(jobRecord),

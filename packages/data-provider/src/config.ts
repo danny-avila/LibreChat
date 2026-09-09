@@ -46,6 +46,8 @@ export {
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
   DEFAULT_RETAINED_ANSWER_TOKENS,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
+  MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
+  MAX_CHAT_PROJECT_FILES,
 } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
@@ -2322,6 +2324,8 @@ export type TStartupConfig = {
   rum?: TRumConfig;
   bundlerURL?: string;
   staticBundlerURL?: string;
+  /** Whether the deployment has a configured RAG service. */
+  ragEnabled?: boolean;
   sharePointFilePickerEnabled?: boolean;
   sharePointBaseUrl?: string;
   sharePointPickerGraphScope?: string;

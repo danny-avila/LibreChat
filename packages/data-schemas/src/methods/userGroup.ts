@@ -336,11 +336,6 @@ export function createUserGroupMethods(
     }
 
     const cacheKey = scopedCacheKey(memberId);
-    const fastPath = await readCachedGroupIds(cache, cacheKey);
-    if (fastPath) {
-      return fastPath;
-    }
-
     const pending = pendingGroupLookups.get(cacheKey);
     if (pending) {
       return pending.promise;
@@ -356,6 +351,10 @@ export function createUserGroupMethods(
     const lookup = (async (): Promise<Types.ObjectId[]> => {
       let lockToken: string | null | undefined;
       try {
+        const fastPath = await readCachedGroupIds(cache, cacheKey);
+        if (fastPath) {
+          return fastPath;
+        }
         if (cache.acquireLock) {
           let lockFailed = false;
           try {
@@ -419,8 +418,8 @@ export function createUserGroupMethods(
     })();
 
     /**
-     * Registered synchronously (no await between the pending check and this set) so every
-     * concurrent same-process caller attaches to this single flow instead of starting its own.
+     * Register before the first cache read. Otherwise a fast cache miss can finish
+     * its complete build before another overlapping caller's miss resolves.
      */
     pendingGroupLookups.set(cacheKey, {
       promise: lookup,
