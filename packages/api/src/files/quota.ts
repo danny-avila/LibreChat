@@ -356,7 +356,7 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   const replacementKey =
-    params.replacedBytes && params.row.file_id ? `file:${params.row.file_id}` : undefined;
+    params.replacedBytes != null && params.row.file_id ? `file:${params.row.file_id}` : undefined;
   return serializeReplacement(params.scope, replacementKey, () =>
     persistWithQuota(params, 'user', replacementKey, onRollbackError),
   );
@@ -378,7 +378,7 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   const replacedByRequester =
     replacing != null && idsMatch(replacing.author as string, params.scope.userId);
   const replacementKey =
-    replacedByRequester && rest.replacedBytes && rest.row.skillId && rest.row.relativePath
+    replacedByRequester && rest.replacedBytes != null && rest.row.skillId && rest.row.relativePath
       ? `skill:${rest.row.skillId.toString()}:${rest.row.relativePath}`
       : undefined;
 

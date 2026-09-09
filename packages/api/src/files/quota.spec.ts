@@ -428,6 +428,38 @@ describe('persistFileWithQuota', () => {
     ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
   });
 
+  it('serializes concurrent replacements of a zero-byte row', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte - 60);
+
+    const results = await Promise.allSettled([
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'empty-file' },
+          replacedBytes: 0,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'empty-file' },
+          replacedBytes: 0,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+  });
+
   it('releases the reservation when the write itself fails', async () => {
     const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
     const getUserStorageUsage = usageOf(megabyte - 10);
