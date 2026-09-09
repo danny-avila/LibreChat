@@ -165,7 +165,7 @@
     "rate-limit-redis": "^4.2.0",
     "re2js": "^2.8.6",
     "sanitize-html": "^2.17.7",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "undici": "^7.29.0",
     "yauzl": "^3.2.1",
     "zod": "^3.22.4"
