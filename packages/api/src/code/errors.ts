@@ -1,7 +1,4 @@
-import {
-  ErrorTypes,
-  isCodeWorkspaceSelectionErrorReason,
-} from 'librechat-data-provider';
+import { ErrorTypes, isCodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 import type { CodeWorkspaceSelectionErrorReason } from 'librechat-data-provider';
 
 interface CodeWorkspaceErrorLike {
