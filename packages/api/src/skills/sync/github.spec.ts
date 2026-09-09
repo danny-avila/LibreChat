@@ -2933,6 +2933,7 @@ describe('createGitHubSkillSyncRunner', () => {
       filepath: '/uploads/old.sh',
     };
     const deleteSkillFile = jest.fn(async () => ({ deleted: true }));
+    const invalidateQuotaScope = jest.fn(async () => {});
     const saveBuffer = jest.fn(async () => ({
       filepath: '/uploads/file-id__run.sh',
       source: 'local',
@@ -2942,6 +2943,7 @@ describe('createGitHubSkillSyncRunner', () => {
       getSkillById: jest.fn(async () => existing),
       listSkillFiles: jest.fn(async () => [staleFile]),
       deleteSkillFile,
+      invalidateQuotaScope,
       saveBuffer,
       updateSkill: jest.fn(async () => ({
         status: 'updated' as const,
@@ -2954,6 +2956,10 @@ describe('createGitHubSkillSyncRunner', () => {
 
     expect(result.status).toBe('completed');
     expect(deps.deleteSkillFile).toHaveBeenCalledWith(existing._id, 'scripts/old.sh');
+    expect(invalidateQuotaScope).toHaveBeenCalledWith({
+      author: staleFile.author,
+      tenantId: staleFile.tenantId,
+    });
     expect(deleteSkillFile.mock.invocationCallOrder[0]).toBeLessThan(
       saveBuffer.mock.invocationCallOrder[0],
     );

@@ -11,6 +11,7 @@ const mockCreateSkillFileQuotaPersistence = jest.fn((dependencies) => {
 const mockResolveStorageScope = jest.fn();
 const mockUpsertSkillFile = jest.fn();
 const mockGetUserStorageUsage = jest.fn();
+const mockGetSkillFileByPath = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   createSkillFileQuotaPersistence: (...args) => mockCreateSkillFileQuotaPersistence(...args),
@@ -22,6 +23,7 @@ jest.mock('@librechat/data-schemas', () => ({ logger: { error: jest.fn() } }));
 jest.mock('~/models', () => ({
   upsertSkillFile: mockUpsertSkillFile,
   getUserStorageUsage: mockGetUserStorageUsage,
+  getSkillFileByPath: mockGetSkillFileByPath,
 }));
 
 const { upsertSkillFileWithQuota, runWithSharedScope } = require('./quota');
@@ -39,9 +41,18 @@ describe('upsertSkillFileWithQuota', () => {
         resolveScope: mockResolveStorageScope,
         upsertSkillFile: mockUpsertSkillFile,
         getUserStorageUsage: mockGetUserStorageUsage,
+        recoverCommittedSkillFile: expect.any(Function),
       }),
     );
     expect(mockPersistSkillFile).toHaveBeenCalledWith(req, row, replacing);
+    mockGetSkillFileByPath.mockResolvedValueOnce({ file_id: 'committed-file' });
+    await expect(
+      capturedDependencies.recoverCommittedSkillFile({
+        skillId: 'skill-1',
+        relativePath: 'references/a.txt',
+        file_id: 'committed-file',
+      }),
+    ).resolves.toEqual({ file_id: 'committed-file' });
     expect(runWithSharedScope).toBe(mockRunWithSharedScope);
   });
 });

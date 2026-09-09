@@ -232,6 +232,7 @@ export type GitHubSkillSyncDeps = {
     skillId: string | Types.ObjectId,
     relativePath: string,
   ) => Promise<{ deleted: boolean }>;
+  invalidateQuotaScope?: (owner: { author: unknown; tenantId?: string | null }) => Promise<void>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   saveBuffer: (params: {
     userId: string;
@@ -1359,6 +1360,7 @@ async function syncSkillFiles(params: {
     if (result.deleted) {
       deletedFileCount++;
       journal.staleFiles.push(file);
+      await deps.invalidateQuotaScope?.({ author: file.author, tenantId: file.tenantId });
     }
   }
 

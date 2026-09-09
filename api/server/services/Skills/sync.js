@@ -116,6 +116,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
       invalidateSharedQuotaScope(req);
     },
     deleteSkillFile: db.deleteSkillFile,
+    invalidateQuotaScope: async (owner) => invalidateSharedQuotaScope(await getQuotaReq(owner)),
     deleteSkill: db.deleteSkill,
     grantPermission: async ({
       principalType,

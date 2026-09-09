@@ -538,6 +538,10 @@ export type SkillFileReplacement = {
 export type SkillFileQuotaPersistenceDependencies<TRequest, TResult> = {
   resolveScope: (req: TRequest) => StorageScope;
   upsertSkillFile: (row: SkillFileRow) => Promise<TResult>;
+  /** Re-read an exact attempted row after an ambiguous upsert failure. If the
+   *  row committed before a later side effect failed, returning it prevents
+   *  quota release and blob rollback for storage Mongo now references. */
+  recoverCommittedSkillFile?: (row: SkillFileRow) => Promise<TResult | null>;
   getUserStorageUsage: GetUserStorageUsage;
   onCleanupError: (error: unknown) => void;
 };
@@ -596,7 +600,17 @@ export function createSkillFileQuotaPersistence<TRequest, TResult>(
         {
           scope: getScope(req),
           row,
-          write: dependencies.upsertSkillFile,
+          write: async (scopedRow) => {
+            try {
+              return await dependencies.upsertSkillFile(scopedRow);
+            } catch (error) {
+              const committed = await dependencies.recoverCommittedSkillFile?.(scopedRow);
+              if (committed != null) {
+                return committed;
+              }
+              throw error;
+            }
+          },
           rollback: null,
           getUserStorageUsage: dependencies.getUserStorageUsage,
           replacing,
