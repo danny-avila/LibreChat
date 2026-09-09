@@ -18,6 +18,65 @@ export interface FinalizeMCPAuthorizationMutationDeps {
   onDisconnectError?: (error: unknown) => void;
 }
 
+export interface CompleteMCPAuthorizationWithTokenWaitersParams<TTokens> {
+  flowIds: readonly string[];
+  tokens: TTokens;
+  completeAuthorization: (tokens: TTokens) => Promise<void>;
+}
+
+export interface CompleteMCPAuthorizationWithTokenWaitersDeps<TTokens> {
+  flowManager: {
+    getFlowState?: (flowId: string, type: 'mcp_get_tokens') => Promise<unknown>;
+    deleteFlow?: (flowId: string, type: 'mcp_get_tokens') => Promise<unknown>;
+    completeFlow?: (flowId: string, type: 'mcp_get_tokens', tokens: TTokens) => Promise<unknown>;
+  };
+  onTokenFlowError?: (phase: 'prepare' | 'complete', error: unknown) => void;
+}
+
+/**
+ * Settles the guarded OAuth flow before exposing its tokens to connection-factory waiters. Stale
+ * token-flow results are removed before settlement, while live waiters are retained and woken only
+ * after the authorization completion can no longer roll the credential write back.
+ */
+export async function completeMCPAuthorizationWithTokenWaiters<TTokens>(
+  params: CompleteMCPAuthorizationWithTokenWaitersParams<TTokens>,
+  deps: CompleteMCPAuthorizationWithTokenWaitersDeps<TTokens>,
+): Promise<void> {
+  const pendingFlowIds: string[] = [];
+  const { flowManager } = deps;
+  if (
+    typeof flowManager.getFlowState === 'function' &&
+    typeof flowManager.deleteFlow === 'function' &&
+    typeof flowManager.completeFlow === 'function'
+  ) {
+    for (const flowId of new Set(params.flowIds)) {
+      try {
+        const state = (await flowManager.getFlowState(flowId, 'mcp_get_tokens')) as
+          | { type?: string; status?: string }
+          | null
+          | undefined;
+        if (state?.type === 'mcp_get_tokens' && state.status === 'PENDING') {
+          pendingFlowIds.push(flowId);
+        } else {
+          await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+        }
+      } catch (error) {
+        deps.onTokenFlowError?.('prepare', error);
+      }
+    }
+  }
+
+  await params.completeAuthorization(params.tokens);
+
+  for (const flowId of pendingFlowIds) {
+    try {
+      await flowManager.completeFlow?.(flowId, 'mcp_get_tokens', params.tokens);
+    } catch (error) {
+      deps.onTokenFlowError?.('complete', error);
+    }
+  }
+}
+
 /**
  * Publishes every committed credential batch before disconnecting its live connection. Partial
  * batches still advance the generation, and teardown runs the same sequence even when its

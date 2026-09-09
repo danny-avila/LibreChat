@@ -4099,13 +4099,36 @@ describe('MCPManager', () => {
       expect(discoveryConnection.dispose).toHaveBeenCalledTimes(1);
     });
 
-    it('classifies an authentication challenge from a plain server separately from OAuth', async () => {
+    it('classifies a dynamically detected authentication challenge as OAuth', async () => {
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
       });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
         type: 'streamable-http',
         url: 'https://api.example.com/mcp',
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: null,
+        connection: null,
+        oauthRequired: true,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result.oauthRequired).toBe(true);
+      expect(result.authenticationKind).toBe('oauth');
+    });
+
+    it('keeps an authentication challenge server-managed when OAuth is explicitly disabled', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        requiresOAuth: false,
       });
       (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
         tools: null,

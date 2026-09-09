@@ -35,7 +35,7 @@ export default function MCPBuilderPanel() {
   }, [panelVisible]);
   const { user } = useAuthContext();
   const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
-    useMCPServerManager();
+    useMCPServerManager({ observeToolAuthorization: panelVisible });
   useMCPRefresh({ enabled: panelVisible && !isLoading && availableMCPServers.length > 0 });
 
   const hasCreateAccess = useHasAccess({

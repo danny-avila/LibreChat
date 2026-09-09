@@ -33,6 +33,7 @@ const mockRegistryInstance = {
   }),
 };
 let mockMCPUseAllowed = true;
+let mockRequestConfig = {};
 const mockLoadMCPServerCatalogs = jest.fn().mockResolvedValue({
   serverTools: new Map(),
   serversWithoutTools: [],
@@ -181,6 +182,10 @@ jest.mock('~/cache', () => ({
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  configMiddleware: (req, res, next) => {
+    req.config = mockRequestConfig;
+    next();
+  },
   canAccessMCPServerResource: () => (req, res, next) => next(),
 }));
 
@@ -253,6 +258,7 @@ describe('MCP Routes', () => {
     currentUser = undefined;
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
+    mockRequestConfig = {};
     // `clearAllMocks` preserves queued `mockReturnValueOnce` entries. A callback
     // test can legitimately leave one unconsumed, which then masks a later test's
     // default implementation when this file shares a CI shard with other suites.
@@ -3553,6 +3559,8 @@ describe('MCP Routes', () => {
         },
       };
       const serverConfig = { type: 'sse', url: 'https://user.example.com/sse' };
+      const recoveryPolicy = { discoveryBackoffMs: [125, 250] };
+      mockRequestConfig = { mcpSettings: { catalogRecovery: recoveryPolicy } };
       mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'user-server': serverConfig });
       mockLoadMCPServerCatalogs.mockResolvedValueOnce({
         serverTools: new Map([['user-server', serverTools]]),
@@ -3571,6 +3579,7 @@ describe('MCP Routes', () => {
         upstreamTokenProvider: expect.any(Function),
         oboIdentityContext: expect.any(Object),
         signal: expect.any(AbortSignal),
+        recoveryPolicy,
       });
     });
 

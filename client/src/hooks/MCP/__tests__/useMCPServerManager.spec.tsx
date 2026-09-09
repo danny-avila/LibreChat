@@ -48,7 +48,7 @@ function deferred<T>() {
 }
 
 describe('useMCPServerManager initialization', () => {
-  it('lets a host suppress the passive tools observer', () => {
+  it('keeps passive authorization observers opt-in for shared hook callers', () => {
     const queryClient = new QueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <Provider>
@@ -56,9 +56,7 @@ describe('useMCPServerManager initialization', () => {
       </Provider>
     );
 
-    const { unmount } = renderHook(() => useMCPServerManager({ observeToolAuthorization: false }), {
-      wrapper,
-    });
+    const { unmount } = renderHook(() => useMCPServerManager(), { wrapper });
 
     expect(mockUseMCPToolsQuery).toHaveBeenLastCalledWith({ enabled: false });
     expect(mockUseMCPConnectionStatus).toHaveBeenLastCalledWith({ enabled: false });

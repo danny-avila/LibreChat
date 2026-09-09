@@ -65,7 +65,7 @@ export function useMCPServerManager({
   storageContextKey,
   specName,
   ownsChatSelection = false,
-  observeToolAuthorization = true,
+  observeToolAuthorization = false,
 }: {
   conversationId?: string | null;
   storageContextKey?: string;

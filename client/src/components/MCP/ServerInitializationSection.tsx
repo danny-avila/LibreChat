@@ -33,7 +33,11 @@ export default function ServerInitializationSection({
     availableMCPServersMap,
     connectionStatus,
     revokeOAuthForServer,
-  } = useMCPServerManager({ conversationId, storageContextKey });
+  } = useMCPServerManager({
+    conversationId,
+    storageContextKey,
+    observeToolAuthorization: true,
+  });
 
   useMCPRefresh({ enabled: availableMCPServers.length > 0 });
 

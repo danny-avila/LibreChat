@@ -75,11 +75,15 @@ const OAUTH_RECOVERY_RECONNECT_DELAY_MS = 2000;
 
 function getDiscoveryAuthenticationKind(
   serverConfig: t.ParsedServerConfig,
+  observedOAuthRequired = false,
 ): 'oauth' | 'obo' | 'server' {
   if (serverConfig.obo != null) {
     return 'obo';
   }
-  return isOAuthServer(serverConfig) ? 'oauth' : 'server';
+  return isOAuthServer(serverConfig) ||
+    (observedOAuthRequired && serverConfig.requiresOAuth !== false)
+    ? 'oauth'
+    : 'server';
 }
 
 /**
@@ -473,7 +477,7 @@ export class MCPManager extends UserConnectionManager {
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
         ...(result.oauthRequired && {
-          authenticationKind: getDiscoveryAuthenticationKind(serverConfig),
+          authenticationKind: getDiscoveryAuthenticationKind(serverConfig, true),
         }),
       };
     };
