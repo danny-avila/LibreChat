@@ -349,7 +349,14 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
           charge = bytes - normalizeBytes(currentReplacedBytes);
         }
         await reserveWithinLimit(scope, getUserStorageUsage, charge);
-        await assertHeld();
+        try {
+          await assertHeld();
+        } catch (leaseError) {
+          /** The row is already committed. Surfacing this as a failed write would make
+           * callers delete its blob and create dangling metadata; report the lease
+           * anomaly while preserving the committed result. */
+          onRollbackError(leaseError);
+        }
       } catch (error) {
         await runRollback(rollback, onRollbackError);
         throw error;
