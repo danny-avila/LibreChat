@@ -117,6 +117,45 @@ describe('MCP cache freshness', () => {
     unmount();
   });
 
+  it('shares the polling cadence across staggered surfaces and keeps polling after one closes', async () => {
+    mockRefreshConfig.toolsRefreshInterval = 60_000;
+    const { rerender, unmount } = renderHook(
+      ({ panel, dialog }) => {
+        useMCPRefresh({ enabled: panel, tools: true });
+        useMCPRefresh({ enabled: dialog, tools: true });
+      },
+      { wrapper, initialProps: { panel: true, dialog: false } },
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    rerender({ panel: true, dialog: true });
+    await act(async () => {
+      jest.advanceTimersByTime(25_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(25_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(2);
+    expect(dataService.getMCPTools).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(2);
+    expect(dataService.getMCPTools).toHaveBeenCalledTimes(1);
+    rerender({ panel: false, dialog: true });
+    await act(async () => {
+      jest.advanceTimersByTime(25_000);
+    });
+    expect(dataService.getMCPConnectionStatus).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
   it('honors configured polling intervals and zero to disable', async () => {
     mockRefreshConfig.statusRefreshInterval = 60_000;
     mockRefreshConfig.toolsRefreshInterval = 0;
