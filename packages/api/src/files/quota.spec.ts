@@ -384,6 +384,50 @@ describe('persistFileWithQuota', () => {
     await replacement;
   });
 
+  it('credits an existing row only once across concurrent replacements', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+    const getUserStorageUsage = usageOf(megabyte);
+
+    const replacements = await Promise.all([
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'same-file' },
+          replacedBytes: 100,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 60, file_id: 'same-file' },
+          replacedBytes: 100,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ]);
+
+    expect(replacements).toHaveLength(2);
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 41 },
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
   it('releases the reservation when the write itself fails', async () => {
     const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
     const getUserStorageUsage = usageOf(megabyte - 10);

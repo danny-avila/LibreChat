@@ -1,5 +1,4 @@
 import { megabyte, mergeFileConfig } from 'librechat-data-provider';
-import type { UserStorageUsageParams } from '@librechat/data-schemas';
 
 export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
 
@@ -54,6 +53,10 @@ export type StorageScope = {
   currentUsage?: number;
   /** In-flight ledger read, shared by concurrent writes in this request. */
   pendingRead?: Promise<number>;
+  /** Last size committed for each replacement identity during this request. */
+  replacementBytes?: Map<string, number>;
+  /** Serializes writes that replace the same row identity. */
+  replacementLocks?: Map<string, Promise<void>>;
 };
 
 type ScopeSource = {
@@ -142,7 +145,10 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
   return scope;
 }
 
-export type GetUserStorageUsage = (params: UserStorageUsageParams) => Promise<number>;
+export type GetUserStorageUsage = (params: {
+  userId: string;
+  tenantId?: string | null;
+}) => Promise<number>;
 
 function idsMatch(
   left?: { toString(): string } | string | null,
@@ -165,7 +171,7 @@ async function reserveWithinLimit(
     return;
   }
 
-  const params: UserStorageUsageParams = {
+  const params = {
     userId: scope.userId,
     tenantId: scope.tenantId,
   };
@@ -251,6 +257,7 @@ async function runRollback(rollback: StorageRollback, onError: (error: unknown) 
 async function persistWithQuota<TRow extends LedgerRow, TResult>(
   { scope, row, write, rollback, getUserStorageUsage, replacedBytes }: PersistParams<TRow, TResult>,
   ownerField: OwnerField,
+  replacementKey: string | undefined,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   try {
@@ -265,7 +272,9 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
    * queried ledger and the written ledger are made the same by construction. */
   const scopedRow: TRow = { ...row, [ownerField]: scope.userId, tenantId: scope.tenantId };
   const bytes = normalizeBytes(scopedRow.bytes);
-  const replaced = normalizeBytes(replacedBytes);
+  const replaced = normalizeBytes(
+    replacementKey ? (scope.replacementBytes?.get(replacementKey) ?? replacedBytes) : replacedBytes,
+  );
 
   /* The charge is reserved as part of the check, so a batch running under `Promise.all`
    * cannot have both writes observe the same headroom and both take it. The reservation
@@ -284,12 +293,44 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
     if (scope.storageLimit !== undefined && charge < 0) {
       scope.currentUsage = Math.max(0, (scope.currentUsage as number) + charge);
     }
+    if (replacementKey) {
+      scope.replacementBytes ??= new Map();
+      scope.replacementBytes.set(replacementKey, bytes);
+    }
     return result;
   } catch (error) {
     if (scope.storageLimit !== undefined && charge > 0) {
       scope.currentUsage = (scope.currentUsage as number) - charge;
     }
     throw error;
+  }
+}
+
+async function serializeReplacement<TResult>(
+  scope: StorageScope,
+  replacementKey: string | undefined,
+  operation: () => Promise<TResult>,
+): Promise<TResult> {
+  if (!replacementKey) {
+    return operation();
+  }
+
+  scope.replacementLocks ??= new Map();
+  const previous = scope.replacementLocks.get(replacementKey) ?? Promise.resolve();
+  let release = () => {};
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  scope.replacementLocks.set(replacementKey, current);
+  await previous;
+
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (scope.replacementLocks.get(replacementKey) === current) {
+      scope.replacementLocks.delete(replacementKey);
+    }
   }
 }
 
@@ -314,7 +355,11 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
   params: PersistParams<TRow, TResult>,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
-  return persistWithQuota(params, 'user', onRollbackError);
+  const replacementKey =
+    params.replacedBytes && params.row.file_id ? `file:${params.row.file_id}` : undefined;
+  return serializeReplacement(params.scope, replacementKey, () =>
+    persistWithQuota(params, 'user', replacementKey, onRollbackError),
+  );
 }
 
 /**
@@ -332,16 +377,23 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   const { replacing, ...rest } = params;
   const replacedByRequester =
     replacing != null && idsMatch(replacing.author as string, params.scope.userId);
+  const replacementKey =
+    replacedByRequester && rest.replacedBytes && rest.row.skillId && rest.row.relativePath
+      ? `skill:${rest.row.skillId.toString()}:${rest.row.relativePath}`
+      : undefined;
 
-  return persistWithQuota(
-    {
-      ...rest,
-      /* Only a row already on this ledger may be netted off. Overwriting a file another
-       * author owns leaves their bytes on their ledger, so subtracting them here would
-       * understate — and could drive negative — the requester's own usage. */
-      replacedBytes: replacedByRequester ? rest.replacedBytes : 0,
-    },
-    'author',
-    onRollbackError,
+  return serializeReplacement(params.scope, replacementKey, () =>
+    persistWithQuota(
+      {
+        ...rest,
+        /* Only a row already on this ledger may be netted off. Overwriting a file another
+         * author owns leaves their bytes on their ledger, so subtracting them here would
+         * understate — and could drive negative — the requester's own usage. */
+        replacedBytes: replacedByRequester ? rest.replacedBytes : 0,
+      },
+      'author',
+      replacementKey,
+      onRollbackError,
+    ),
   );
 }
