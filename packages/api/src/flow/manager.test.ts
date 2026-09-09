@@ -170,6 +170,27 @@ describe('FlowStateManager', () => {
       });
     });
 
+    it('settles a fresher result over a failure from the same observed attempt', async () => {
+      await flowManager.initFlow('token-flow', 'mcp_get_tokens');
+      const flow = await flowManager.getFlowState('token-flow', 'mcp_get_tokens');
+      await flowManager.failFlow('token-flow', 'mcp_get_tokens', new Error('stale failure'));
+
+      await expect(
+        flowManager.settleFlowIfCurrent(
+          'token-flow',
+          'mcp_get_tokens',
+          flow!.createdAt,
+          '',
+          'fresh-token',
+        ),
+      ).resolves.toBe('updated');
+
+      expect(await flowManager.getFlowState('token-flow', 'mcp_get_tokens')).toMatchObject({
+        status: 'COMPLETED',
+        result: 'fresh-token',
+      });
+    });
+
     it('does not settle a replacement token-flow attempt', async () => {
       await flowManager.initFlow('token-flow', 'mcp_get_tokens');
 
@@ -241,6 +262,18 @@ describe('FlowStateManager', () => {
           result: 'fresh-result',
         }),
       );
+    });
+
+    it('should return the externally completed result when handler loses failure race', async () => {
+      const flowId = 'failure-race-flow';
+      const type = 'test-type';
+
+      const result = await flowManager.createFlowWithHandler(flowId, type, async () => {
+        await flowManager.completeFlow(flowId, type, 'fresh-result');
+        throw new Error('stale failure');
+      });
+
+      expect(result).toBe('fresh-result');
     });
 
     it('should handle flow timeout correctly', async () => {
