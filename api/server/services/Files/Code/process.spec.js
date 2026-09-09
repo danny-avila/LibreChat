@@ -2614,6 +2614,7 @@ describe('Code Process', () => {
     }
 
     it('recovers a throttled stale-file reupload with a fresh stream', async () => {
+      const controller = new AbortController();
       const dbFile = {
         file_id: 'rate-limited-file',
         filename: 'report.csv',
@@ -2653,9 +2654,17 @@ describe('Code Process', () => {
         req: { user: { id: 'user-123', role: 'USER' } },
         tool_resources: { execute_code: { file_ids: [dbFile.file_id], files: [] } },
         agentId: 'agent-id',
+        signal: controller.signal,
       });
 
+      const { withCodeApiUploadRecovery } = require('@librechat/api');
+      expect(withCodeApiUploadRecovery).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
       expect(handleFileUpload).toHaveBeenCalledTimes(2);
+      expect(handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
       expect(getDownloadStream).toHaveBeenCalledTimes(2);
       expect(handleFileUpload.mock.calls.map(([args]) => args.stream)).toEqual([
         'first-stream',

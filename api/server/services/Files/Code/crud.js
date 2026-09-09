@@ -184,6 +184,7 @@ async function deleteCodeEnvFile(req, file) {
  * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
  * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @param {string} [params.bridgeWorkerId] - Trusted worker selected for this execution.
+ * @param {AbortSignal} [params.signal] - Effective cancellation signal.
  * @returns {Promise<{ storage_session_id: string; file_id: string }>}
  *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
@@ -277,6 +278,7 @@ async function batchUploadCodeEnvFiles({
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
+  signal,
 }) {
   const form = new FormData();
   appendCodeEnvFileIdentity(form, { kind, id, version });
@@ -304,6 +306,7 @@ async function batchUploadCodeEnvFiles({
     timeout: 120000,
     maxContentLength: MAX_FILE_SIZE,
     maxBodyLength: MAX_FILE_SIZE,
+    signal,
   };
 
   const response = await axios.post(`${baseURL}/upload/batch`, form, options);

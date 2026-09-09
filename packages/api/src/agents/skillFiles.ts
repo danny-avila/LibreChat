@@ -22,6 +22,7 @@ import {
   createCodeApiRateLimitBudget,
   getCodeApiUploadOptions,
   getSafeErrorMetadata,
+  isAbortError,
   type CodeApiRateLimitBudget,
   withCodeApiUploadRecovery,
 } from '~/utils';
@@ -63,6 +64,8 @@ export interface PrimeSkillFilesParams {
   req: ServerRequest;
   /** Optional operation-wide wait allowance shared by sibling skill primes. */
   rateLimitBudget?: CodeApiRateLimitBudget;
+  /** Effective foreground cancellation signal for acquisition, waits, and transport. */
+  signal?: AbortSignal;
   getStrategyFunctions: (source: string) => {
     getDownloadStream?: (req: ServerRequest, filepath: string) => Promise<NodeJS.ReadableStream>;
     [key: string]: unknown;
@@ -84,6 +87,7 @@ export interface PrimeSkillFilesParams {
     codeApiBaseUrl?: string;
     executionProfile?: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
+    signal?: AbortSignal;
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
@@ -136,6 +140,20 @@ export interface PrimeSkillFilesResult {
 }
 
 const inflightPrimes = new Map<string, Promise<PrimeSkillFilesResult | null>>();
+const signalIds = new WeakMap<AbortSignal, number>();
+let nextSignalId = 1;
+
+function getSignalScope(signal?: AbortSignal): string {
+  if (!signal) {
+    return 'unscoped';
+  }
+  let id = signalIds.get(signal);
+  if (id == null) {
+    id = nextSignalId++;
+    signalIds.set(signal, id);
+  }
+  return String(id);
+}
 
 type SkillUploadFiles = Array<{ stream: NodeJS.ReadableStream; filename: string }>;
 type SkillCodeEnvRef = Extract<CodeEnvRef, { kind: 'skill' }>;
@@ -154,7 +172,8 @@ async function collectSkillUploadFiles(
   params: PrimeSkillFilesParams,
   inspectedBuffers: ReadonlyMap<SkillFileRecord, Buffer>,
 ): Promise<SkillUploadFiles> {
-  const { skill, skillFiles, req, getStrategyFunctions } = params;
+  const { skill, skillFiles, req, getStrategyFunctions, signal } = params;
+  signal?.throwIfAborted();
   const filesToUpload: SkillUploadFiles = [];
 
   // SKILL.md from the skill body
@@ -167,6 +186,7 @@ async function collectSkillUploadFiles(
   // Bundled files from storage (parallel stream acquisition)
   const streamResults = await Promise.allSettled(
     skillFiles.map(async (file) => {
+      signal?.throwIfAborted();
       const inspected = inspectedBuffers.get(file);
       if (inspected != null) {
         return {
@@ -182,6 +202,7 @@ async function collectSkillUploadFiles(
         return null;
       }
       const stream = await strategy.getDownloadStream(req, resolveDownloadPath(file));
+      signal?.throwIfAborted();
       return { stream, filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}` };
     }),
   );
@@ -331,7 +352,9 @@ export async function primeSkillFiles(
   const executionRouteKey = params.codeExecutionContext
     ? getCodeExecutionRouteKey(params.codeExecutionContext)
     : 'default';
-  const flightKey = `${executionRouteKey}:${params.skill._id}:v:${params.skill.version}`;
+  /* A flight may share cancellation only with callers from the same run.
+   * Cross-run sharing would let one user's Stop abort another live request. */
+  const flightKey = `${executionRouteKey}:${params.skill._id}:v:${params.skill.version}:run:${getSignalScope(params.signal)}`;
   const inflight = inflightPrimes.get(flightKey);
   if (inflight) {
     return inflight;
@@ -357,7 +380,9 @@ async function executePrimeSkillFiles(
     updateSkillFileCodeEnvIds,
     codeExecutionContext,
     rateLimitBudget,
+    signal,
   } = params;
+  signal?.throwIfAborted();
   const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
   const executionRouteKey = codeExecutionContext
     ? getCodeExecutionRouteKey(codeExecutionContext)
@@ -370,12 +395,14 @@ async function executePrimeSkillFiles(
 
   if (inspectStoredMetadata) {
     for (const file of skillFiles) {
+      signal?.throwIfAborted();
       assertStoredSkillFileNameAllowed(file, req);
     }
   }
 
   if (inspectBundledFileContent) {
     for (const file of skillFiles) {
+      signal?.throwIfAborted();
       if (file.bytes > MAX_INSPECTABLE_SKILL_FILE_BYTES) {
         throwIfStoredSkillFileMustBeInspectable(req);
         continue;
@@ -396,6 +423,9 @@ async function executePrimeSkillFiles(
         assertStoredSkillFileAllowed(file, buffer, req);
         inspectedBuffers.set(file, buffer);
       } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
         if (isContentFilterError(error)) {
           throw error;
         }
@@ -479,6 +509,7 @@ async function executePrimeSkillFiles(
       concurrency: uploadOptions.concurrency,
       label: `priming skill "${skill.name}"`,
       budget: rateLimitBudget ?? createCodeApiRateLimitBudget(uploadOptions.retryWaitMs),
+      signal,
       onWait: (waitMs) =>
         logger.warn(
           `[primeSkillFiles] Rate-limited priming skill "${skill.name}"; retrying in ${waitMs}ms`,
@@ -509,6 +540,7 @@ async function executePrimeSkillFiles(
           codeApiBaseUrl: codeExecutionContext?.baseUrl,
           executionProfile: codeExecutionContext?.executionProfile,
           bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
+          signal,
         });
         return { filesToUpload, result };
       },
@@ -599,6 +631,9 @@ async function executePrimeSkillFiles(
 
     return { storage_session_id: result.storage_session_id, files };
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     logger.error('[primeSkillFiles] Batch upload failed', getSafeErrorMetadata(error));
     return null;
   }
@@ -606,6 +641,8 @@ async function executePrimeSkillFiles(
 
 export interface PrimeInvokedSkillsDeps {
   req: ServerRequest;
+  /** Effective cancellation signal for the historical priming operation. */
+  signal?: AbortSignal;
   /** Raw message payload (before formatAgentMessages). Used to extract invoked skill names. */
   payload?: Array<Partial<{ role: string; content: unknown }>>;
   /** Explicit durable names used by a validated event-actor preflight. */
@@ -633,6 +670,7 @@ export interface PrimeInvokedSkillsDeps {
   checkIfActive?: PrimeSkillFilesParams['checkIfActive'];
   updateSkillFileCodeEnvIds?: PrimeSkillFilesParams['updateSkillFileCodeEnvIds'];
   codeExecutionContext?: PrimeSkillFilesParams['codeExecutionContext'];
+  rateLimitBudget?: CodeApiRateLimitBudget;
 }
 
 export interface PrimeInvokedSkillsResult {
@@ -836,7 +874,8 @@ export async function primeInvokedSkills(
       version: number;
     }> = [];
     const uploadOptions = getCodeApiUploadOptions(deps.req, executionRouteKey);
-    const rateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
+    const rateLimitBudget =
+      deps.rateLimitBudget ?? createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
     const primeResults = await Promise.allSettled(
       fileListResults.map(async ({ skill, files }) => {
         const result = await primeSkillFiles({
@@ -850,6 +889,7 @@ export async function primeInvokedSkills(
           updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
           codeExecutionContext: deps.codeExecutionContext,
           rateLimitBudget,
+          signal: deps.signal,
         });
         return { skill, result };
       }),
@@ -870,7 +910,7 @@ export async function primeInvokedSkills(
           });
         }
       } else if (r.status === 'rejected') {
-        if (isContentFilterError(r.reason)) {
+        if (isContentFilterError(r.reason) || isAbortError(r.reason)) {
           throw r.reason;
         }
         logger.warn(
@@ -915,6 +955,10 @@ export async function primeInvokedSkillsForProfiles(
     return primeInvokedSkills({ ...deps, codeEnvAvailable: false });
   }
 
+  const rateLimitBudget = createCodeApiRateLimitBudget(
+    deps.req.config?.endpoints?.agents?.codeApiMaxRetryWaitMs,
+  );
+
   const profileResults = await Promise.all(
     deps.executionProfiles.map(async (profile) => ({
       profile,
@@ -923,6 +967,8 @@ export async function primeInvokedSkillsForProfiles(
         codeEnvAvailable: true,
         codeExecutionContext: profile.codeExecutionContext,
         updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
+        rateLimitBudget,
+        signal: deps.signal,
       }),
     })),
   );

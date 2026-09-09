@@ -1290,6 +1290,7 @@ const getReuploadFailureCategory = (error) => {
  * @param {Agent['tool_resources']} options.tool_resources
  * @param {string} [options.agentId] - The agent ID for file access control
  * @param {string} [options.agentResourceType] - Permission resource type for the authorized agent route
+ * @param {AbortSignal} [options.signal] - Effective run cancellation signal
  * @returns {Promise<{
  * files: Array<{ id: string; session_id: string; name: string }>,
  * toolContext: string,
@@ -1305,6 +1306,7 @@ const primeFiles = async (options) => {
     executionProfile = 'default',
     executionRouteKey = executionProfile,
     bridgeWorkerId,
+    signal,
   } = options;
   const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile, bridgeWorkerId };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
@@ -1461,12 +1463,18 @@ const primeFiles = async (options) => {
           concurrency: uploadOptions.concurrency,
           label: `re-uploading file ${file.file_id} to the code environment`,
           budget: uploadRateLimitBudget,
+          signal,
           onWait: (waitMs) =>
             logger.warn(
               `[primeCodeFiles] Rate-limited reupload requestId=${getPrimingCorrelation(req).requestId} ` +
                 `runId=${getPrimingCorrelation(req).runId}; retrying in ${waitMs}ms`,
             ),
-          openSource: () => getDownloadStream(options.req, resolveDownloadPath(file)),
+          openSource: async () => {
+            signal?.throwIfAborted();
+            const stream = await getDownloadStream(options.req, resolveDownloadPath(file));
+            signal?.throwIfAborted();
+            return stream;
+          },
           upload: (stream) =>
             uploadCodeEnvFile({
               req: options.req,
@@ -1478,6 +1486,7 @@ const primeFiles = async (options) => {
               codeApiBaseUrl,
               executionProfile,
               bridgeWorkerId,
+              signal,
             }),
         });
 

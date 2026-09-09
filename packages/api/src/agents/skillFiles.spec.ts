@@ -763,6 +763,82 @@ describe('primeInvokedSkillsForProfiles', () => {
     ).toEqual(['stateful:first', 'stateful:second']);
   });
 
+  it('shares one retry-wait budget across execution profiles', async () => {
+    const file = {
+      relativePath: 'references/style.md',
+      filename: 'style.md',
+      filepath: '/storage/style.md',
+      source: 's3',
+      bytes: 5,
+    };
+    const attempts = new Map<string, number>();
+    const batchUploadCodeEnvFiles = jest.fn(
+      async ({ executionProfile }: { executionProfile?: string }) => {
+        const profile = executionProfile ?? 'default';
+        const attempt = (attempts.get(profile) ?? 0) + 1;
+        attempts.set(profile, attempt);
+        if (attempt === 1) {
+          if (profile === 'stateful') {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+          const error = Object.assign(new Error('Request failed with status code 429'), {
+            isAxiosError: true,
+            response: { status: 429, headers: { 'retry-after': '0' } },
+          });
+          throw error;
+        }
+        return {
+          storage_session_id: `${profile}-session`,
+          files: [
+            {
+              fileId: `${profile}-file`,
+              filename: 'skills/brand-guidelines/references/style.md',
+            },
+          ],
+        };
+      },
+    );
+    const { codeEnvAvailable: _codeEnvAvailable, ...baseDeps } = makeDeps({
+      listSkillFiles: jest.fn().mockResolvedValue([file]),
+      getStrategyFunctions: jest.fn().mockReturnValue({
+        getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from('style'))),
+      }),
+      batchUploadCodeEnvFiles,
+    });
+    baseDeps.req.config = {
+      endpoints: { agents: { codeApiMaxRetryWaitMs: 1_000 } },
+    } as never;
+
+    const result = await primeInvokedSkillsForProfiles({
+      ...baseDeps,
+      executionProfiles: [
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://default.example.com/v1',
+            codeSessionKey: 'execute_code',
+            executionProfile: 'default',
+            statefulSessions: false,
+          },
+          codeSessionKeys: ['execute_code'],
+        },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://stateful.example.com/v1',
+            codeSessionKey: 'execute_code:stateful',
+            executionProfile: 'stateful',
+            executionRouteKey: 'stateful:one',
+            statefulSessions: true,
+          },
+          codeSessionKeys: ['execute_code:stateful'],
+        },
+      ],
+    });
+
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(3);
+    expect(result.initialSessions?.has('execute_code')).toBe(true);
+    expect(result.initialSessions?.has('execute_code:stateful')).toBe(false);
+  });
+
   it('keeps a successful profile Skill body and identity after another profile lookup fails', async () => {
     const {
       codeEnvAvailable: _codeEnvAvailable,

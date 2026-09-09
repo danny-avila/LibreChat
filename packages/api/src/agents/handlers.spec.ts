@@ -416,6 +416,35 @@ describe('createToolExecuteHandler', () => {
       expect(results[0].status).toBe('error');
     });
 
+    it('forwards the effective batch signal into deferred tool loading', async () => {
+      const controller = new AbortController();
+      const tool = {
+        name: 'loaded_tool',
+        invoke: jest.fn(async () => ({ content: 'done' })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-load', name: tool.name, args: {} }],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(loadTools).toHaveBeenCalledWith(
+        [tool.name],
+        undefined,
+        undefined,
+        undefined,
+        controller.signal,
+      );
+    });
+
     it('uses the host-owned run signal when an SDK event omits its signal', async () => {
       const controller = new AbortController();
       const tool = abortingTool();
@@ -804,7 +833,13 @@ describe('createToolExecuteHandler', () => {
       );
 
       expect(loadTools).toHaveBeenCalledTimes(1);
-      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined, configurable, undefined);
+      expect(loadTools).toHaveBeenCalledWith(
+        ['allowed_tool'],
+        undefined,
+        configurable,
+        undefined,
+        undefined,
+      );
       expect(JSON.stringify(jest.mocked(loadTools).mock.calls)).not.toContain(protectedName);
       expect(results[0]).toEqual(
         expect.objectContaining({
@@ -1334,6 +1369,7 @@ describe('createToolExecuteHandler', () => {
         undefined,
         undefined,
         callerCapabilityProjection,
+        undefined,
       );
       expect(capturedConfigs[0].toolDefs).toEqual([
         { name: 'active_programmatic_tool', allowed_callers: ['code_execution'] },
@@ -1833,12 +1869,17 @@ describe('createToolExecuteHandler', () => {
           req: {
             user: { id: 'user-1', tenantId: 'tenant-1' },
             app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+            config: {
+              endpoints: {
+                agents: { codeApiUploadConcurrency: 1, codeApiMaxRetryWaitMs: 1_000 },
+              },
+            },
           },
         },
       }));
-      const getSkillByName: ToolExecuteOptions['getSkillByName'] = jest.fn(async () => ({
-        _id: `${skillName}-id` as unknown as never,
-        name: skillName,
+      const getSkillByName: ToolExecuteOptions['getSkillByName'] = jest.fn(async (name) => ({
+        _id: `${name ?? skillName}-id` as unknown as never,
+        name: name ?? skillName,
         body: 'skill body',
         fileCount: 1,
         version: 1,
@@ -2177,6 +2218,7 @@ describe('createToolExecuteHandler', () => {
     });
 
     it('omits the unavailability note when file priming succeeds', async () => {
+      const controller = new AbortController();
       const batchUploadCodeEnvFiles = jest.fn(async () => ({
         storage_session_id: 'session-ok',
         files: [
@@ -2186,14 +2228,24 @@ describe('createToolExecuteHandler', () => {
       }));
       const handler = createPrimingSkillHandler('note-ok-skill', batchUploadCodeEnvFiles);
 
-      const [result] = await invokeHandler(handler, [
-        {
-          id: 'call_prime_ok',
-          name: Constants.SKILL_TOOL,
-          args: { skillName: 'note-ok-skill' },
-        },
-      ]);
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_prime_ok',
+              name: Constants.SKILL_TOOL,
+              args: { skillName: 'note-ok-skill' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
 
+      expect(batchUploadCodeEnvFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
       expect(result.status).toBe('success');
       expect(result.content).not.toContain('could not be loaded');
       expect(result.artifact).toEqual(
@@ -2208,6 +2260,43 @@ describe('createToolExecuteHandler', () => {
           ],
         }),
       );
+    });
+
+    it('shares one retry-wait budget across skill calls in a tool batch', async () => {
+      const attempts = new Map<string, number>();
+      const batchUploadCodeEnvFiles = jest.fn(async ({ id }: { id: string }) => {
+        const attempt = (attempts.get(id) ?? 0) + 1;
+        attempts.set(id, attempt);
+        if (attempt === 1) {
+          const error = Object.assign(new Error('Request failed with status code 429'), {
+            isAxiosError: true,
+            response: { status: 429, headers: { 'retry-after': '0' } },
+          });
+          throw error;
+        }
+        const name = id.replace(/-id$/, '');
+        return {
+          storage_session_id: `session-${name}`,
+          files: [{ fileId: `file-${name}`, filename: `skills/${name}/references/style.md` }],
+        };
+      });
+      const handler = createPrimingSkillHandler('fallback-skill', batchUploadCodeEnvFiles);
+
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_first_skill',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'first-skill' },
+        },
+        {
+          id: 'call_second_skill',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'second-skill' },
+        },
+      ]);
+
+      expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(3);
+      expect(results.filter((result) => result.artifact != null)).toHaveLength(1);
     });
 
     it("read_file pins lookup to the primed skill's _id when manually invoked this turn (no shadowing on collision)", async () => {
