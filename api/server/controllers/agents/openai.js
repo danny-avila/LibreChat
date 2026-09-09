@@ -92,6 +92,8 @@ const {
   resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
+const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
+const { checkSessionsAlive, loadCodeApiKey } = require('~/server/services/Files/provision');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers } = require('~/server/services/MCP');
@@ -438,9 +440,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             'invalid_request_error',
           );
         }
-        if (!(await db.getConvo(principal.userId, request.conversation_id))) {
+        const conversation = await db.getConvo(principal.userId, request.conversation_id);
+        if (!conversation) {
           return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
         }
+        req.resolvedConversation = conversation;
       }
 
       const parentMessageId = request.parent_message_id ?? null;
@@ -456,6 +460,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
+        codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
         parentMessageId: mcpParentMessageId,
       });
 
@@ -482,6 +487,9 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getUserCodeFiles: db.getUserCodeFiles,
+        getDeferredProvisionFiles: db.getDeferredProvisionFiles,
+        checkSessionsAlive,
+        loadCodeApiKey,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
@@ -793,6 +801,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
       const toolExecuteOptions = {
+        provisionFiles: createProvisionFilesCallback({
+          req,
+          agentToolContexts,
+          resolvePrimaryAgentId: () => primaryConfig.id,
+        }),
         loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};

@@ -17,6 +17,9 @@ const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
+/** Matches Code API's bounded admission wait and command settlement allowance. */
+const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
+const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 4096;
 const ERROR_BODY_TIMEOUT_MS = 1000;
@@ -653,8 +656,11 @@ function isValidResult(
 }
 
 function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
-  if (request.operation !== 'execute_command') return WORKSPACE_TOOL_TIMEOUT_MS;
-  return (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
+  const executionBudgetMs =
+    request.operation === 'execute_command'
+      ? (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS
+      : WORKSPACE_TOOL_TIMEOUT_MS;
+  return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
 export async function executeWorkspaceTool({

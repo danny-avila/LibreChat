@@ -2,8 +2,12 @@ import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
+import {
+  backgroundTaskRegistry,
+  runCheckBackgroundTask,
+  CHECK_BACKGROUND_TASK_NAME,
+} from './background';
 import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
-import { backgroundTaskRegistry, CHECK_BACKGROUND_TASK_NAME } from './background';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
 
@@ -110,7 +114,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       backgroundToolCompletion: {
         preregister,
         persist,
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -173,7 +177,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
           retire: jest.fn(async () => true),
         })),
         persist,
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -205,7 +209,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       backgroundToolCompletion: {
         preregister,
         persist: jest.fn(async () => true),
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -240,7 +244,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       backgroundToolCompletion: {
         preregister,
         persist,
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -272,7 +276,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       backgroundToolCompletion: {
         preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
         persist: jest.fn(async () => false),
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -293,6 +297,79 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
 
     expect(retire).toHaveBeenCalledWith('background tool result was not persisted', undefined);
+  });
+
+  it('falls back to the settled local result when a poll retired delivery before persistence failed', async () => {
+    let finishPersistence: ((persisted: boolean) => void) | undefined;
+    const persist = jest.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishPersistence = resolve;
+        }),
+    );
+    const retire = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const tool = makeSearchTool({ calls: 0 });
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
+        persist,
+        claim: jest.fn(async () => ({ status: 'not_ready' as const })),
+      },
+    });
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-poll-before-failure',
+          name: tool.name,
+          args: { q: 'settle', run_in_background: true },
+          stepId: 'step-poll-before-failure',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-poll-before-failure' },
+    });
+    await flushMicrotasks();
+    const taskId = JSON.parse(dispatch.content).background_task_id as string;
+
+    const waiting = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'exec_user',
+        conversationId: 'exec_convo',
+        args: { background_task_id: taskId },
+        toolCallId: 'manual-poll-1',
+        runId: 'response-poll-before-failure',
+        claimBackgroundToolResult: async () => ({ status: 'not_ready' }),
+      }),
+    );
+    expect(waiting.status).toBe('result_persisting');
+    expect(
+      backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId)?.resultClaim,
+    ).toBeUndefined();
+
+    finishPersistence?.(false);
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(
+      backgroundTaskRegistry.get('exec_user', 'exec_convo', taskId)?.completionPersistenceFailed,
+    ).toBe(true);
+
+    const recovered = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'exec_user',
+        conversationId: 'exec_convo',
+        args: { background_task_id: taskId },
+        toolCallId: 'manual-poll-2',
+        runId: 'response-poll-before-failure',
+        claimBackgroundToolResult: async () => ({ status: 'not_ready' }),
+      }),
+    );
+    expect(recovered).toMatchObject({
+      status: 'completed',
+      result: 'RESULT for settle',
+    });
   });
 
   it('keeps durable ownership active when an ambiguous persistence failure cannot retire a lease', async () => {
@@ -356,7 +433,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
       backgroundToolCompletion: {
         preregister,
         persist,
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -404,7 +481,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
           retire,
         })),
         persist,
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -450,7 +527,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
           retire: jest.fn(async () => true),
         })),
         persist,
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
 
@@ -505,7 +582,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
             retire: jest.fn(async () => true),
           })),
           persist,
-          claim: jest.fn(async () => ({ status: 'acquired' as const })),
+          claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
         },
       });
 
@@ -561,7 +638,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
             retire,
           })),
           persist,
-          claim: jest.fn(async () => ({ status: 'acquired' as const })),
+          claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
         },
       });
 
@@ -1772,7 +1849,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       backgroundToolCompletion: {
         preregister,
         persist: jest.fn(async () => true),
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
     const configurable = buildConfig(['execute_code']);
@@ -2168,7 +2245,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       backgroundToolCompletion: {
         preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
         persist: jest.fn(async () => true),
-        claim: jest.fn(async () => ({ status: 'acquired' as const })),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
     });
     const configurable = buildConfig(['execute_code']);

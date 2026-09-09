@@ -20,6 +20,86 @@ function response() {
 }
 
 describe('code environment HTTP handlers', () => {
+  test.each(['allowed', 'denied', 'unpaired', 'changed-worker'])(
+    'resolves deployment worker status only through effective authorization: %s',
+    async (policy) => {
+      const deploymentEnvironment = {
+        id: 'deployment-vm',
+        name: 'Deployment VM',
+        type: 'attached' as const,
+        owner: 'deployment' as const,
+        baseURL: 'https://code.example.com/v1',
+        pairing: { workerId: 'configured-worker', tokenEnv: 'CODE_ADMIN_TOKEN' },
+      };
+      let effectiveWorkerId: string | undefined = 'configured-worker';
+      if (policy === 'unpaired') effectiveWorkerId = undefined;
+      if (policy === 'changed-worker') effectiveWorkerId = 'replacement';
+      const effectiveEnvironment = {
+        ...deploymentEnvironment,
+        pairing: {
+          ...deploymentEnvironment.pairing,
+          workerId: effectiveWorkerId,
+        },
+      };
+      const fetchImpl = jest.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            workerId: 'configured-worker',
+            online: true,
+            ready: true,
+            leaseExpiresInMs: 50_000,
+            capabilities: {
+              statefulWorkspace: true,
+              sandboxProfile: 'native-srt',
+              runtimes: ['bash'],
+            },
+          }),
+        ),
+      );
+      const effectiveEnvironments = policy === 'denied' ? [] : [effectiveEnvironment];
+      const handlers = createCodeEnvironmentHttpHandlers({
+        getAppConfig: jest.fn().mockImplementation(async ({ baseOnly }) => ({
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              statefulCodeSessions: {
+                environments: baseOnly ? [deploymentEnvironment] : effectiveEnvironments,
+              },
+            },
+          },
+        })),
+        registry: {
+          register: jest.fn(),
+          listAccessible: jest.fn(),
+          remove: jest.fn(),
+          listAccessibleConfigurations: jest.fn().mockResolvedValue([]),
+        },
+        readSecret: () => 'administrator-token',
+        fetchImpl,
+      });
+      const res = response();
+      await handlers.status(
+        {
+          user: { id: 'user-1', role: 'USER' },
+          params: { environmentId: 'deployment-vm' },
+        } as never,
+        res as never,
+      );
+      expect(res.statusCode).toBe(policy === 'allowed' ? 200 : 404);
+      if (policy !== 'allowed') {
+        expect(fetchImpl).not.toHaveBeenCalled();
+        return;
+      }
+      expect(res.body).toEqual(
+        expect.objectContaining({ environmentId: 'deployment-vm', statefulWorkspace: true }),
+      );
+      expect(fetchImpl).toHaveBeenCalledWith(
+        'https://code.example.com/v1/bridge/workers/configured-worker/status',
+        expect.any(Object),
+      );
+    },
+  );
+
   test('reports status only for an accessible worker through its current control plane', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(
@@ -29,7 +109,21 @@ describe('code environment HTTP handlers', () => {
           online: true,
           ready: true,
           leaseExpiresInMs: 50_000,
-          capabilities: { sandboxProfile: 'native-srt', runtimes: ['bash'] },
+          capabilities: {
+            sandboxProfile: 'native-srt',
+            runtimes: ['bash'],
+            workspaceTools: {
+              protocolVersion: 1,
+              operations: ['read_file', 'execute_command'],
+              workspaces: [
+                {
+                  id: 'project-a',
+                  name: 'Project A',
+                  operations: ['read_file', 'execute_command'],
+                },
+              ],
+            },
+          },
         }),
       ),
     );
@@ -93,6 +187,14 @@ describe('code environment HTTP handlers', () => {
       leaseExpiresInMs: 50_000,
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],
+      operations: ['read_file', 'execute_command'],
+      workspaces: [
+        {
+          id: 'project-a',
+          name: 'Project A',
+          operations: ['read_file', 'execute_command'],
+        },
+      ],
     });
     expect(coalescedRes.body).toEqual(res.body);
     expect(fetchImpl).toHaveBeenCalledTimes(1);

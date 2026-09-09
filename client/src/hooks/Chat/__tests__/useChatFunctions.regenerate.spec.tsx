@@ -1,6 +1,11 @@
 import { renderHook, act } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation, TMessage, TSubmission } from 'librechat-data-provider';
+import type {
+  CodeWorkspaceSelection,
+  TConversation,
+  TMessage,
+  TSubmission,
+} from 'librechat-data-provider';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -14,6 +19,14 @@ const mockGetExpiry = jest.fn(() => 'expiry-key');
 const mockGetQueryData = jest.fn(() => ({}));
 const mockLoggerWarn = jest.fn();
 const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
+const mockResolveCodeWorkspace = jest.fn<
+  CodeWorkspaceSelection[] | undefined,
+  [CodeWorkspaceSelection[]?]
+>(() => undefined);
+const mockCodeWorkspace = {
+  required: false,
+  resolveSelections: mockResolveCodeWorkspace,
+};
 
 jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
@@ -45,6 +58,7 @@ jest.mock('~/hooks/Agents/useCodeApprovalMode', () => () => ({
   modes: ['ask', 'acceptEdits'],
   selected: 'ask',
 }));
+jest.mock('~/hooks/Agents/useCodeWorkspace', () => () => mockCodeWorkspace);
 jest.mock('~/hooks/Conversations/useGetConversation', () => () => mockGetLatestConversation);
 jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
@@ -136,6 +150,8 @@ describe('useChatFunctions ask', () => {
     jest.clearAllMocks();
     mockGetQueryData.mockReturnValue({});
     mockGetLatestConversation.mockReturnValue(null);
+    mockCodeWorkspace.required = false;
+    mockResolveCodeWorkspace.mockReturnValue(undefined);
   });
 
   it('reads an approval-mode selection made immediately before send', () => {
@@ -151,6 +167,36 @@ describe('useChatFunctions ask', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.codeApprovalMode).toBe('acceptEdits');
+  });
+
+  it('submits the latest validated workspace selection', () => {
+    const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+    mockCodeWorkspace.required = true;
+    mockResolveCodeWorkspace.mockReturnValue([selection]);
+    mockGetLatestConversation.mockReturnValue({
+      ...conversation('conversation-1'),
+      codeWorkspaces: [selection],
+    });
+    const { result, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(mockResolveCodeWorkspace).toHaveBeenCalledWith([selection]);
+    expect(submission.codeWorkspaces).toEqual([selection]);
+  });
+
+  it('refuses to send while the required workspace is unavailable', () => {
+    mockCodeWorkspace.required = true;
+    mockResolveCodeWorkspace.mockReturnValue(undefined);
+    const { result, setSubmission } = renderAsk([]);
+
+    expect(result.current.ask({ text: 'Edit the file', conversationId: 'conversation-1' })).toBe(
+      false,
+    );
+    expect(setSubmission).not.toHaveBeenCalled();
   });
 
   it('refuses to send to an existing conversation before its history loads', () => {

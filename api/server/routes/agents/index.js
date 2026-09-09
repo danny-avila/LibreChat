@@ -773,6 +773,9 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               // Source from the job: the stop request does not carry the
               // original temporary-chat flag.
               isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
+              expiredAt: jobData?.retentionExpiresAt
+                ? new Date(jobData.retentionExpiresAt)
+                : undefined,
               interfaceConfig: req?.config?.interfaceConfig,
             };
             const requestMessage = {

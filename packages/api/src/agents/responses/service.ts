@@ -4,6 +4,7 @@
  * Core service for processing Open Responses API requests.
  * Handles input conversion, message formatting, and request validation.
  */
+import { isCodeWorkspaceSelections } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
 import type {
   RequestValidationResult,
@@ -80,6 +81,15 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
   }
 
   const request = body as Record<string, unknown>;
+  if (
+    request.code_workspaces !== undefined &&
+    !isCodeWorkspaceSelections(request.code_workspaces)
+  ) {
+    return {
+      valid: false,
+      error: 'code_workspaces must contain unique environment/workspace selections',
+    };
+  }
 
   // Required: model
   if (!request.model || typeof request.model !== 'string') {

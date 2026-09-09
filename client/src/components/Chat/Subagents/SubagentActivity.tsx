@@ -141,7 +141,7 @@ export function SubagentActivityScrollSurface({
   const scrollButtonRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isSettled, setIsSettled] = useState(false);
-  const { showScrollButton: scrollButtonPreference } = useChatSurface();
+  const { showScrollButton: scrollButtonPreference, maximizeChatSpace } = useChatSurface();
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -194,6 +194,7 @@ export function SubagentActivityScrollSurface({
         <ScrollToBottom
           ref={scrollButtonRef}
           scrollHandler={scrollToBottom}
+          maximizeChatSpace={maximizeChatSpace}
           interactive={isSettled}
         />
       </CSSTransition>

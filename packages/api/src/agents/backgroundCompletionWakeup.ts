@@ -82,6 +82,7 @@ interface GenerationState {
   status?: unknown;
   metadata?: {
     idempotencyClientRequestId?: unknown;
+    responseMessageId?: unknown;
     terminalPersistencePending?: unknown;
   };
 }
@@ -329,6 +330,12 @@ export function createBackgroundToolCompletionWakeupResolver({
     if (claim.status === 'claimed') {
       return { status: 'settled' };
     }
+    if (claim.status === 'outcome_unknown') {
+      throw executionError('The process-local background tool outcome is unknown.', {
+        code: 'BACKGROUND_TOOL_OUTCOME_UNKNOWN',
+        retryable: false,
+      });
+    }
     if (claim.status !== 'acquired') {
       let producerLease: AgentTriggerProducerLeaseStatus;
       try {
@@ -463,7 +470,25 @@ export function createBackgroundToolDeadClaimRecovery(
     claimId: string;
   }) => Promise<'fenced' | 'started' | 'unavailable'>,
 ): BackgroundToolDeadClaimRecovery {
-  return async ({ userId, conversationId, messageId, claimId }) => {
+  return async ({ userId, conversationId, messageId, claimId, kind, generationId }) => {
+    if (kind === 'manual') {
+      if (generationId == null || generationId.length === 0) {
+        return false;
+      }
+      const generation = await getGenerationJob(conversationId);
+      if (generation?.metadata?.responseMessageId === generationId && isParentActive(generation)) {
+        return false;
+      }
+      /** Releasing a dead manual DELIVERY only re-presents an already durable
+       * terminal result. It never retries the completed tool mutation. */
+      return releaseClaims({
+        userId,
+        conversationId,
+        messageId,
+        kind: 'manual',
+        claimId,
+      });
+    }
     const claimGenerationIsActive = async (): Promise<boolean> => {
       const generation = await getGenerationJob(conversationId);
       return (

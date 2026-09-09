@@ -601,7 +601,8 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
     const dbResponse = await db.saveConvo(
       {
         userId: req?.user?.id,
-        isTemporary: req?.body?.isTemporary,
+        isTemporary: req?.resolvedConversation?.isTemporary,
+        expiredAt: req?.resolvedConversation?.expiredAt,
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { conversationId, isArchived },
@@ -702,7 +703,8 @@ router.post('/update', validateConvoAccess, configMiddleware, async (req, res) =
     const dbResponse = await db.saveConvo(
       {
         userId: req?.user?.id,
-        isTemporary: req?.body?.isTemporary,
+        isTemporary: req?.resolvedConversation?.isTemporary,
+        expiredAt: req?.resolvedConversation?.expiredAt,
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { conversationId, title: sanitizedTitle },

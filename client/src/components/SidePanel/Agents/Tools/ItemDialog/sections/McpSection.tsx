@@ -26,6 +26,7 @@ import { getStatusColor, getStatusTextKey } from '~/components/MCP/mcpServerUtil
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
+import { useMCPRefresh } from '~/hooks/MCP/useMCPRefresh';
 import { useAgentPanelContext } from '~/Providers';
 import { getIconForItem } from '../../items/icons';
 import OptionToggle from '../../../OptionToggle';
@@ -79,6 +80,7 @@ export default function McpSection({ item }: Props) {
   const [prevReadyForAgent, setPrevReadyForAgent] = useState(false);
   const [autoSelectPending, setAutoSelectPending] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
+  useMCPRefresh({ enabled: true, tools: true });
   const { agentsConfig } = useGetAgentsConfig();
   const {
     codeEnabled,

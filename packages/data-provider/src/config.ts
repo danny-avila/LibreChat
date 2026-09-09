@@ -1656,6 +1656,33 @@ const sttSchema = z.object({
   azureOpenAI: sttAzureOpenAISchema.optional(),
 });
 
+/**
+ * The speech providers a schema actually configures. `allowedAddresses` is transport
+ * policy rather than a provider, and a provider key present but empty configures
+ * nothing. The speech services accept a schema only when exactly one survives here, so
+ * the upload router reads availability from the same list and never routes audio to a
+ * transcription that cannot run.
+ */
+export function listConfiguredSpeechProviders(
+  schema?: Record<string, unknown> | null,
+): Array<[string, Record<string, unknown>]> {
+  if (schema == null) {
+    return [];
+  }
+  return Object.entries(schema).filter(
+    ([key, value]) =>
+      key !== 'allowedAddresses' &&
+      value != null &&
+      typeof value === 'object' &&
+      Object.keys(value).length > 0,
+  ) as Array<[string, Record<string, unknown>]>;
+}
+
+/** Whether a speech schema names exactly one usable provider. */
+export function isSpeechProviderConfigured(schema?: Record<string, unknown> | null): boolean {
+  return listConfiguredSpeechProviders(schema).length === 1;
+}
+
 const speechTab = z
   .object({
     conversationMode: z.boolean().optional(),
@@ -1762,8 +1789,16 @@ export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
 export type LocalizedString = z.infer<typeof localizedStringSchema>;
 
+export const mcpRefreshDefaults = {
+  toolsRefreshInterval: 5 * 60 * 1000,
+  statusRefreshInterval: 30 * 1000,
+};
+
 const mcpServersSchema = z
   .object({
+    /** Foreground polling intervals in milliseconds; 0 disables polling. */
+    toolsRefreshInterval: z.number().int().nonnegative().max(2_147_483_647).optional(),
+    statusRefreshInterval: z.number().int().nonnegative().max(2_147_483_647).optional(),
     placeholder: z.string().optional(),
     use: z.boolean().optional(),
     create: z.boolean().optional(),
@@ -1827,6 +1862,7 @@ export const interfaceSchema = z
       .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
+    generalChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
     retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
     retainAgentFiles: z.boolean().optional(),
@@ -3349,6 +3385,10 @@ export enum ErrorTypes {
    * Agent selected a stateful Code API workspace scope disabled by the deployment.
    */
   STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
+  /**
+   * A conversation's selected attached workspace cannot be used as requested.
+   */
+  CODE_WORKSPACE_UNAVAILABLE = 'code_workspace_unavailable',
   /**
    * Invalid Agent Provider (excluded by Admin)
    */

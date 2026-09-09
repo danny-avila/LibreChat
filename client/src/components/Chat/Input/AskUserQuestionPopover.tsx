@@ -6,6 +6,7 @@ import AskUserQuestions from '~/components/Chat/Messages/Content/AskUserQuestion
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
 import { useChatFormContext } from '~/Providers';
+import { useComposerOverlay } from './overlay';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -19,7 +20,9 @@ import { useLocalize } from '~/hooks';
  * free-form answer box. The chevron moves the question to the chat card and
  * releases the composer (the card's chevron moves it back). Pure rendering
  * off {@link useAskAnswerMode}; disappears the moment an answer submits from
- * any surface, and locks while one is in flight.
+ * any surface, and locks while one is in flight. Registers as an open composer
+ * panel for as long as it shows, so the thread's scroll-to-bottom control
+ * stands down instead of landing on its footer.
  */
 function AskUserQuestionPopoverContent({
   conversationId,
@@ -29,6 +32,7 @@ function AskUserQuestionPopoverContent({
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
 }) {
   const ask = useAskAnswerMode(conversationId);
+  useComposerOverlay(conversationId, ask.popoverVisible);
 
   if (!ask.popoverVisible || !ask.liveAsk) {
     return null;

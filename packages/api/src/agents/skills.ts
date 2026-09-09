@@ -3,8 +3,8 @@ import { HumanMessage } from '@librechat/agents/langchain/messages';
 import { SkillsScope, isEphemeralAgentId, resolveAgentSkillsScope } from 'librechat-data-provider';
 import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
+import type { Agent, CodeWorkspaceOperation } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
-import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import { createSkillContentDigest } from './compatibility';
 import { registerCodeExecutionTools } from './tools';
@@ -432,6 +432,8 @@ export interface InjectSkillCatalogParams {
   statefulSessions?: boolean;
   /** When true, read_file exposes the attached worker's workspace namespace. */
   workspaceTools?: boolean;
+  /** Live operation ceiling for the selected attached workspace. */
+  workspaceOperations?: ReadonlySet<CodeWorkspaceOperation>;
   /** Current user ID — used to determine skill ownership for active-state resolution. */
   userId?: string;
   /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
@@ -659,6 +661,7 @@ export async function injectSkillCatalog(
     codeEnvAvailable,
     statefulSessions,
     workspaceTools,
+    workspaceOperations,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -817,6 +820,7 @@ export async function injectSkillCatalog(
     enableToolOutputReferences: codeEnvAvailable === true,
     statefulSessions: statefulSessions === true,
     workspaceTools: workspaceTools === true,
+    workspaceOperations,
   });
   workingDefs = codeExecResult.toolDefinitions;
 
