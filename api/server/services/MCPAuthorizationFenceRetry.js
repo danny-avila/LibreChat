@@ -3,6 +3,7 @@ const { getTenantId, runAsSystem, tenantStorage } = require('@librechat/data-sch
 const { createMCPAuthorizationFenceRetryService } = require('@librechat/api');
 
 const COLLECTION_NAME = 'mcp_authorization_fence_retries';
+let retryIndexPromise;
 
 function collection() {
   return mongoose.connection.collection(COLLECTION_NAME);
@@ -10,6 +11,16 @@ function collection() {
 
 function retryId({ userId, serverName }, tenantId) {
   return JSON.stringify([tenantId ?? '', String(userId), serverName]);
+}
+
+function ensureRetryIndex() {
+  retryIndexPromise ??= collection()
+    .createIndex({ updatedAt: 1 })
+    .catch((error) => {
+      retryIndexPromise = undefined;
+      throw error;
+    });
+  return retryIndexPromise;
 }
 
 const retryService = createMCPAuthorizationFenceRetryService({
@@ -34,7 +45,14 @@ const retryService = createMCPAuthorizationFenceRetryService({
     async deleteVersion({ scope, tenantId, version }) {
       await collection().deleteOne({ _id: retryId(scope, tenantId), version });
     },
+    async deferVersion({ scope, tenantId, version, updatedAt }) {
+      await collection().updateOne(
+        { _id: retryId(scope, tenantId), version },
+        { $set: { updatedAt } },
+      );
+    },
     async list(limit) {
+      await ensureRetryIndex();
       return runAsSystem(async () =>
         collection().find({}).sort({ updatedAt: 1 }).limit(limit).toArray(),
       );

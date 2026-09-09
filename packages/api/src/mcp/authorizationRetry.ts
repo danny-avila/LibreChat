@@ -5,6 +5,7 @@ import { registerShutdownTask } from '~/app/shutdown';
 
 const DEFAULT_RETRY_INTERVAL_MS = 30_000;
 const DEFAULT_RETRY_BATCH_SIZE = 100;
+const DEFAULT_ATTEMPT_TIMEOUT_MS = 1_000;
 
 export interface MCPAuthorizationFenceRetryRecord extends MCPRecoveryGenerationScope {
   tenantId?: string | null;
@@ -24,6 +25,12 @@ export interface MCPAuthorizationFenceRetryStorage {
     tenantId?: string | null;
     version: string;
   }): Promise<void>;
+  deferVersion(input: {
+    scope: MCPRecoveryGenerationScope;
+    tenantId?: string | null;
+    version: string;
+    updatedAt: Date;
+  }): Promise<void>;
   list(limit: number): Promise<readonly MCPAuthorizationFenceRetryRecord[]>;
 }
 
@@ -40,6 +47,7 @@ export interface MCPAuthorizationFenceRetryServiceDeps {
 export interface MCPAuthorizationFenceRetryWorkerPolicy {
   intervalMs?: number;
   batchSize?: number;
+  attemptTimeoutMs?: number;
 }
 
 export interface MCPAuthorizationFenceRetryService {
@@ -57,12 +65,52 @@ export interface MCPAuthorizationFenceRetryService {
 export function createMCPAuthorizationFenceRetryService(
   deps: MCPAuthorizationFenceRetryServiceDeps,
 ): MCPAuthorizationFenceRetryService {
+  type RetryAttemptResult = { succeeded: true } | { succeeded: false; error: unknown };
   let retryTimer: ReturnType<typeof setInterval> | undefined;
   let drainPromise: Promise<void> | undefined;
+  const activeAttempts = new Map<string, Promise<RetryAttemptResult>>();
   let invalidateRecoveryGeneration:
     | ((scope: MCPRecoveryGenerationScope) => Promise<unknown>)
     | undefined;
   let retryBatchSize = DEFAULT_RETRY_BATCH_SIZE;
+  let attemptTimeoutMs = DEFAULT_ATTEMPT_TIMEOUT_MS;
+
+  const attemptKey = (retry: MCPAuthorizationFenceRetryRecord): string =>
+    JSON.stringify([retry.tenantId ?? '', retry.userId, retry.serverName, retry.version]);
+
+  const getOrStartAttempt = (
+    retry: MCPAuthorizationFenceRetryRecord,
+  ): Promise<RetryAttemptResult> => {
+    const key = attemptKey(retry);
+    const activeAttempt = activeAttempts.get(key);
+    if (activeAttempt != null) {
+      return activeAttempt;
+    }
+
+    const attempt = deps
+      .runInRetryScope(retry, async () => {
+        await invalidateRecoveryGeneration?.({
+          userId: retry.userId,
+          serverName: retry.serverName,
+        });
+      })
+      .then(async () => {
+        await deps.storage.deleteVersion({
+          scope: { userId: retry.userId, serverName: retry.serverName },
+          tenantId: retry.tenantId,
+          version: retry.version,
+        });
+        return { succeeded: true } as const;
+      })
+      .catch((error: unknown) => ({ succeeded: false, error }) as const)
+      .finally(() => {
+        if (activeAttempts.get(key) === attempt) {
+          activeAttempts.delete(key);
+        }
+      });
+    activeAttempts.set(key, attempt);
+    return attempt;
+  };
 
   const persist = async (scope: MCPRecoveryGenerationScope): Promise<string> => {
     const version = randomUUID();
@@ -90,23 +138,42 @@ export function createMCPAuthorizationFenceRetryService(
     drainPromise = (async () => {
       const retries = await deps.storage.list(retryBatchSize);
       for (const retry of retries) {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
-          await deps.runInRetryScope(retry, async () => {
-            await invalidateRecoveryGeneration?.({
-              userId: retry.userId,
-              serverName: retry.serverName,
-            });
-          });
-          await deps.storage.deleteVersion({
-            scope: { userId: retry.userId, serverName: retry.serverName },
-            tenantId: retry.tenantId,
-            version: retry.version,
-          });
+          const result = await Promise.race([
+            getOrStartAttempt(retry),
+            new Promise<never>((_, reject) => {
+              timeoutId = setTimeout(
+                () => reject(new Error('MCP authorization generation replay timed out')),
+                attemptTimeoutMs,
+              );
+            }),
+          ]);
+          if (!result.succeeded) {
+            throw result.error;
+          }
         } catch (error) {
           logger.warn(
             `[MCP authorization] Durable generation retry failed for ${retry.serverName}`,
             error,
           );
+          try {
+            await deps.storage.deferVersion({
+              scope: { userId: retry.userId, serverName: retry.serverName },
+              tenantId: retry.tenantId,
+              version: retry.version,
+              updatedAt: new Date(Math.max(Date.now(), retry.updatedAt.getTime() + 1)),
+            });
+          } catch (deferError) {
+            logger.warn(
+              `[MCP authorization] Could not defer generation retry for ${retry.serverName}`,
+              deferError,
+            );
+          }
+        } finally {
+          if (timeoutId != null) {
+            clearTimeout(timeoutId);
+          }
         }
       }
     })().finally(() => {
@@ -135,6 +202,7 @@ export function createMCPAuthorizationFenceRetryService(
   ): void => {
     invalidateRecoveryGeneration = invalidator;
     retryBatchSize = policy.batchSize ?? DEFAULT_RETRY_BATCH_SIZE;
+    attemptTimeoutMs = policy.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
     if (retryTimer != null) {
       return;
     }

@@ -25,7 +25,18 @@ function createHarness() {
         records.delete(recordKey);
       }
     }),
-    list: jest.fn(async (limit) => [...records.values()].slice(0, limit)),
+    deferVersion: jest.fn(async ({ scope: inputScope, tenantId, version, updatedAt }) => {
+      const recordKey = key(tenantId, inputScope.userId, inputScope.serverName);
+      const record = records.get(recordKey);
+      if (record?.version === version) {
+        record.updatedAt = updatedAt;
+      }
+    }),
+    list: jest.fn(async (limit) =>
+      [...records.values()]
+        .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+        .slice(0, limit),
+    ),
   };
   const runInRetryScope = jest.fn(async (_retry, operation) => operation());
   const registerShutdown = jest.fn();
@@ -95,6 +106,46 @@ describe('MCP authorization fence retry service', () => {
       'MCP authorization fence retry worker',
       expect.any(Function),
     );
+    await service.stop();
+  });
+
+  it('times out and defers a failed oldest record so later retries are not starved', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const { records, service, storage } = createHarness();
+    await service.persist({ userId: 'user-1', serverName: 'first' });
+    jest.setSystemTime(new Date('2026-01-01T00:00:00.001Z'));
+    await service.persist({ userId: 'user-1', serverName: 'second' });
+    let finishFirst: (() => void) | undefined;
+    const firstAttempt = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    });
+    const invalidate = jest.fn(({ serverName }: typeof scope) =>
+      serverName === 'first' ? firstAttempt : Promise.resolve(),
+    );
+
+    service.start(invalidate, { intervalMs: 10_000, batchSize: 1, attemptTimeoutMs: 5 });
+    const firstDrain = service.drain();
+    await jest.advanceTimersByTimeAsync(5);
+    await firstDrain;
+    await service.drain();
+    const thirdDrain = service.drain();
+    await jest.advanceTimersByTimeAsync(5);
+    await thirdDrain;
+
+    expect(invalidate).toHaveBeenNthCalledWith(1, { userId: 'user-1', serverName: 'first' });
+    expect(invalidate).toHaveBeenNthCalledWith(2, { userId: 'user-1', serverName: 'second' });
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(storage.deferVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: { userId: 'user-1', serverName: 'first' },
+        updatedAt: new Date('2026-01-01T00:00:00.006Z'),
+      }),
+    );
+    expect([...records.values()].map(({ serverName }) => serverName)).toEqual(['first']);
+    finishFirst?.();
+    await firstAttempt;
+    await service.drain();
+    expect(records.size).toBe(0);
     await service.stop();
   });
 });

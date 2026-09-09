@@ -4,10 +4,12 @@ const mockToArray = jest.fn();
 const mockLimit = jest.fn(() => ({ toArray: mockToArray }));
 const mockSort = jest.fn(() => ({ limit: mockLimit }));
 const mockFind = jest.fn(() => ({ sort: mockSort }));
+const mockCreateIndex = jest.fn();
 const mockCollection = {
   updateOne: mockUpdateOne,
   deleteOne: mockDeleteOne,
   find: mockFind,
+  createIndex: mockCreateIndex,
 };
 const mockGetTenantId = jest.fn();
 const mockTenantRun = jest.fn((_context, fn) => fn());
@@ -43,6 +45,7 @@ describe('MCPAuthorizationFenceRetry adapter', () => {
     mockUpdateOne.mockResolvedValue({ acknowledged: true });
     mockDeleteOne.mockResolvedValue({ deletedCount: 1 });
     mockToArray.mockResolvedValue([]);
+    mockCreateIndex.mockResolvedValue('updatedAt_1');
   });
 
   it('exports the package-owned retry lifecycle', () => {
@@ -64,6 +67,13 @@ describe('MCPAuthorizationFenceRetry adapter', () => {
       tenantId: 'tenant-a',
       version: 'v1',
     });
+    const deferredAt = new Date(now.getTime() + 1);
+    await capturedDeps.storage.deferVersion({
+      scope,
+      tenantId: 'tenant-a',
+      version: 'v2',
+      updatedAt: deferredAt,
+    });
 
     expect(mockUpdateOne).toHaveBeenCalledWith(
       { _id: JSON.stringify(['tenant-a', 'user-1', 'github']) },
@@ -83,6 +93,10 @@ describe('MCPAuthorizationFenceRetry adapter', () => {
       _id: JSON.stringify(['tenant-a', 'user-1', 'github']),
       version: 'v1',
     });
+    expect(mockUpdateOne).toHaveBeenLastCalledWith(
+      { _id: JSON.stringify(['tenant-a', 'user-1', 'github']), version: 'v2' },
+      { $set: { updatedAt: deferredAt } },
+    );
   });
 
   it('reads retry batches globally and restores tenant context for replay', async () => {
@@ -99,6 +113,7 @@ describe('MCPAuthorizationFenceRetry adapter', () => {
     await capturedDeps.runInRetryScope(retry, operation);
 
     expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
+    expect(mockCreateIndex).toHaveBeenCalledWith({ updatedAt: 1 });
     expect(mockLimit).toHaveBeenCalledWith(7);
     expect(mockTenantRun).toHaveBeenCalledWith(
       { tenantId: 'tenant-a', userId: 'user-1' },

@@ -265,6 +265,7 @@ describe('initializeMCPs', () => {
             maxStateEntries: 2500,
             authorizationFenceRetryIntervalMs: 15_000,
             authorizationFenceRetryBatchSize: 250,
+            authorizationFenceTimeoutMs: 750,
           },
         },
       });
@@ -279,7 +280,7 @@ describe('initializeMCPs', () => {
       );
       expect(mockStartMCPAuthorizationFenceRetryWorker).toHaveBeenCalledWith(
         mockInvalidateCachedTools,
-        { intervalMs: 15_000, batchSize: 250 },
+        { intervalMs: 15_000, batchSize: 250, attemptTimeoutMs: 750 },
       );
     });
 
