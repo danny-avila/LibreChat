@@ -1,4 +1,4 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, AGENT_OWNER_CONTACT_RESOLVED_FIELD } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const { hasSupportContact, resolveAgentOwnerContact } = require('@librechat/api');
 const db = require('~/models');
@@ -46,10 +46,14 @@ const attachOwnerContacts = async (agents) => {
     return agents;
   }
 
-  const ownerIdsByResource = await getFirstOwnerIdsByResource(agents);
+  /* A list query that had to join the owner in order to sort by it hands the resolved
+     contact over on the row. Re-resolving those rows would repeat the ACL aggregation
+     and the owner user query for a page the database already answered. */
+  const unresolved = agents.filter((agent) => agent?.[AGENT_OWNER_CONTACT_RESOLVED_FIELD] !== true);
+  const ownerIdsByResource = await getFirstOwnerIdsByResource(unresolved);
   const ownerIds = [
     ...new Set(
-      agents
+      unresolved
         .filter((agent) => !hasSupportContact(agent))
         .map((agent) => ownerIdsByResource.get(agent?._id?.toString()) ?? agent?.author?.toString())
         .filter(Boolean),
@@ -67,6 +71,13 @@ const attachOwnerContacts = async (agents) => {
   }
 
   return agents.map((agent) => {
+    if (agent?.[AGENT_OWNER_CONTACT_RESOLVED_FIELD] === true) {
+      delete agent[AGENT_OWNER_CONTACT_RESOLVED_FIELD];
+      if (hasSupportContact(agent)) {
+        delete agent.owner_contact;
+      }
+      return agent;
+    }
     if (hasSupportContact(agent)) {
       delete agent.owner_contact;
       return agent;

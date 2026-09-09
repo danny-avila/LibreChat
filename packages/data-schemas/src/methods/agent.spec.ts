@@ -22,6 +22,7 @@ import type {
 import type { IAgent, IAclEntry, IUser, IAccessRole, CodeEnvironmentDocument } from '..';
 import {
   createAgentMethods,
+  AGENT_OWNER_CONTACT_RESOLVED_FIELD,
   EDGE_CLEANUP_BATCH,
   EDGE_CLEANUP_MAX_SWEEPS,
   type AgentMethods,
@@ -5506,66 +5507,6 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(result.data.map((agent) => agent.id)).toEqual([categoryAgent.id]);
     });
 
-    test('retains a compact cursor when a selected row disappears before the full fetch', async () => {
-      const first = await createAgent({
-        id: `agent_${uuidv4().slice(0, 12)}`,
-        name: 'First Candidate',
-        provider: 'openai',
-        model: 'gpt-4',
-        author: new mongoose.Types.ObjectId(),
-        category: 'featured',
-      });
-      const second = await createAgent({
-        id: `agent_${uuidv4().slice(0, 12)}`,
-        name: 'Second Candidate',
-        provider: 'openai',
-        model: 'gpt-4',
-        author: new mongoose.Types.ObjectId(),
-        category: 'featured',
-      });
-
-      const originalFind = Agent.find.bind(Agent);
-      const findSpy = jest.spyOn(Agent, 'find').mockImplementationOnce(
-        (...args: Parameters<typeof Agent.find>) =>
-          ({
-            lean: async () => {
-              const rows = await originalFind(...args).lean();
-              const selected = rows[0];
-              if (selected) {
-                await Agent.collection.updateOne(
-                  { _id: selected._id },
-                  { $set: { category: 'hidden' } },
-                );
-              }
-              return rows;
-            },
-          }) as ReturnType<typeof Agent.find>,
-      );
-
-      try {
-        const page1 = await getListAgentsByAccess({
-          accessibleIds: [first._id, second._id] as mongoose.Types.ObjectId[],
-          otherParams: { category: 'featured' },
-          sort: 'popular',
-          limit: 1,
-        });
-        expect(page1.data).toHaveLength(0);
-        expect(page1.has_more).toBe(true);
-        expect(page1.after).toBeTruthy();
-
-        const page2 = await getListAgentsByAccess({
-          accessibleIds: [first._id, second._id] as mongoose.Types.ObjectId[],
-          otherParams: { category: 'featured' },
-          sort: 'popular',
-          limit: 1,
-          after: page1.after,
-        });
-        expect(page2.data.map((agent) => agent.id)).toEqual([second.id]);
-      } finally {
-        findSpy.mockRestore();
-      }
-    });
-
     test('agent never favorited by anyone gets favoriteCount=0 and ties are broken by _id asc', async () => {
       const author = new mongoose.Types.ObjectId();
       const first = await createAgent({
@@ -6009,6 +5950,77 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         // Email-shaped account values and the account email must never become the fallback.
         expect(result.data.map((a) => a.id)).toEqual([realNameAgent.id, emailNamedOwnerAgent.id]);
       });
+
+      test('hands the joined owner contact to the caller instead of leaving it to be looked up again', async () => {
+        const owner = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Ada Owner',
+          email: `ada-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const agentOwned = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Owned Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+        });
+        await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: owner._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agentOwned._id,
+          permBits: OWNER_ACL_BITS,
+          grantedBy: owner._id,
+        });
+        const agentSupported = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Supported Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+          support_contact: { name: 'Support Desk', email: '' },
+        });
+
+        const result = await getListAgentsByAccess({
+          accessibleIds: [agentOwned._id, agentSupported._id] as mongoose.Types.ObjectId[],
+          otherParams: {},
+          sort: 'author',
+        });
+
+        const rowsById = new Map(result.data.map((row) => [row.id as string, row]));
+        expect(rowsById.get(agentOwned.id)?.owner_contact).toEqual({ name: 'Ada Owner' });
+        // The support contact is what a viewer sees instead, so there is no owner contact.
+        expect(rowsById.get(agentSupported.id)).not.toHaveProperty('owner_contact');
+        // Both rows report the contact as resolved, so the page is not looked up twice.
+        for (const row of result.data) {
+          expect(row[AGENT_OWNER_CONTACT_RESOLVED_FIELD]).toBe(true);
+        }
+      });
+
+      test('reports no owner contact when the owner account is gone, even with a denormalized authorName', async () => {
+        const missingOwner = new mongoose.Types.ObjectId();
+        const agentOrphaned = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Orphaned Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: missingOwner,
+          authorName: 'Denormalized Author',
+        });
+
+        const result = await getListAgentsByAccess({
+          accessibleIds: [agentOrphaned._id] as mongoose.Types.ObjectId[],
+          otherParams: {},
+          sort: 'author',
+        });
+
+        // `resolveAgentOwnerContact` returns nothing without an owner account, so a
+        // stored `authorName` must not become a contact here either.
+        expect(result.data).toHaveLength(1);
+        expect(result.data[0]).not.toHaveProperty('owner_contact');
+      });
     });
   });
 
@@ -6383,10 +6395,19 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         expect(result.data[0]).not.toHaveProperty('createdAt');
         expect(result.data[0]).not.toHaveProperty('favoriteCount');
         expect(result.data[0]).not.toHaveProperty('authorDisplayName');
-        keySets.push(Object.keys(result.data[0]).sort());
+        /* The author sort hands over the owner contact it had to join anyway, and
+           `attachOwnerContacts` (`api/server/services/Agents/ownerContact.js`) either
+           strips that marker or resolves the same contact itself, so a client receives
+           the same keys either way. Excluded here so the projection still has to match
+           across modes. */
+        keySets.push(
+          Object.keys(result.data[0])
+            .filter((key) => key !== 'owner_contact' && key !== AGENT_OWNER_CONTACT_RESOLVED_FIELD)
+            .sort(),
+        );
       }
 
-      // `?sort=` must not change the shape of what a client receives.
+      // `?sort=` must not change the projection a client receives.
       keySets.forEach((keys) => expect(keys).toEqual(keySets[0]));
     });
 

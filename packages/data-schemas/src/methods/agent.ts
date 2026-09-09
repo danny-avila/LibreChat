@@ -128,6 +128,23 @@ const AGENT_SORT_CONFIG: Record<
 const INTERNAL_SORT_FIELDS = ['createdAt', 'favoriteCount', 'authorDisplayName'] as const;
 
 /**
+ * Favourite counts are keyed per tenant because agent ids collide across tenants,
+ * and a missing `tenantId` is the same tenant as an explicitly null one — the
+ * separator is a code point no tenant id or agent id can contain.
+ */
+const FAVORITE_COUNT_KEY_SEPARATOR = '\u0000';
+function favoriteCountKey(tenantId: string | null | undefined, agentId: string): string {
+  return `${tenantId ?? ''}${FAVORITE_COUNT_KEY_SEPARATOR}${agentId}`;
+}
+
+/**
+ * Marks a list row whose owner contact the list query already resolved, so
+ * `attachOwnerContacts` (`api/server/services/Agents/ownerContact.js`) skips the ACL
+ * aggregation and the user lookup for it and strips this field from the response.
+ */
+export const AGENT_OWNER_CONTACT_RESOLVED_FIELD = '_ownerContactResolved';
+
+/**
  * A stringified ObjectId is always exactly 24 hex characters. Checked explicitly rather
  * than with `ObjectId.isValid`, which also accepts any 12-character string — so
  * `'not-an-objec'` would pass and produce a garbage query instead of being rejected.
@@ -1721,20 +1738,14 @@ export function createAgentMethods(
     };
 
     if (sort === 'popular') {
-      const candidates = (await Agent.find(baseQuery, {
-        _id: 1,
-        id: 1,
-        tenantId: 1,
-      }).lean()) as Array<{ _id: Types.ObjectId; id: string; tenantId?: string | null }>;
-
-      if (candidates.length === 0) {
-        return buildEnvelope([], false, null);
-      }
-
-      const candidateIds = [...new Set(candidates.map((candidate) => candidate.id))];
       const User = mongoose.models.User as Model<IUser>;
+      /* Favourites live on user documents, so popularity has to be counted there. The
+         group is keyed by tenant as well as agent id because ids collide across
+         tenants, and the tenant plugin scopes the aggregation, so the result is
+         bounded by the favourited agents in the caller's tenant rather than by the
+         size of the marketplace. */
       const countRows = (await User.aggregate([
-        { $match: { 'favorites.agentId': { $in: candidateIds } } },
+        { $match: { 'favorites.agentId': { $exists: true } } },
         {
           $project: {
             tenantId: 1,
@@ -1744,7 +1755,6 @@ export function createAgentMethods(
           },
         },
         { $unwind: '$favoriteAgentIds' },
-        { $match: { favoriteAgentIds: { $in: candidateIds } } },
         {
           $group: {
             _id: {
@@ -1759,76 +1769,122 @@ export function createAgentMethods(
         favoriteCount: number;
       }>;
 
-      const counts = new Map<string | null | undefined, Map<string, number>>();
+      const favoriteCounts = new Map<string, number>();
+      const favoritedAgentIds = new Set<string>();
       for (const row of countRows) {
-        let tenantCounts = counts.get(row._id.tenantId);
-        if (!tenantCounts) {
-          tenantCounts = new Map<string, number>();
-          counts.set(row._id.tenantId, tenantCounts);
+        const agentId = row?._id?.agentId;
+        if (typeof agentId !== 'string' || !(row.favoriteCount > 0)) {
+          continue;
         }
-        tenantCounts.set(row._id.agentId, row.favoriteCount);
+        favoriteCounts.set(favoriteCountKey(row._id.tenantId, agentId), row.favoriteCount);
+        favoritedAgentIds.add(agentId);
       }
-      const orderedCandidates = candidates
-        .map((candidate) => ({
-          ...candidate,
-          _idString: candidate._id.toString(),
-          favoriteCount: counts.get(candidate.tenantId)?.get(candidate.id) ?? 0,
+
+      /* Only favourited agents need ordering by count, and there are at most as many
+         of them as there are favourites. Every other accessible agent has count 0 and
+         is therefore ordered by `_id` alone, which the index serves as a range scan —
+         so a page costs the favourited set plus one page, never the whole corpus. */
+      const favoritedRows =
+        favoritedAgentIds.size > 0
+          ? ((await Agent.find(
+              { $and: [baseQuery, { id: { $in: [...favoritedAgentIds] } }] },
+              { _id: 1, id: 1, tenantId: 1 },
+            ).lean()) as Array<{ _id: Types.ObjectId; id: string; tenantId?: string | null }>)
+          : [];
+      const favorited = favoritedRows
+        .map((row) => ({
+          _id: row._id,
+          idHex: row._id.toString(),
+          favoriteCount: favoriteCounts.get(favoriteCountKey(row.tenantId, row.id)) ?? 0,
         }))
+        // The `$in` matches by agent id, so a row whose own tenant never favourited it
+        // belongs to the count-0 tail instead.
+        .filter((row) => row.favoriteCount > 0)
         .sort((a, b) => {
-          const countDifference = b.favoriteCount - a.favoriteCount;
-          if (countDifference !== 0) {
-            return countDifference;
+          if (a.favoriteCount !== b.favoriteCount) {
+            return b.favoriteCount - a.favoriteCount;
           }
-          if (a._idString === b._idString) {
+          if (a.idHex === b.idHex) {
             return 0;
           }
-          return a._idString < b._idString ? -1 : 1;
+          return a.idHex < b.idHex ? -1 : 1;
         });
 
       const decodedCursor = readCursor();
       const cursorCount = decodedCursor ? Number(decodedCursor.primary) : null;
-      const cursorId = decodedCursor?.secondary.toLowerCase();
-      const startIndex =
-        cursorCount !== null && cursorId
-          ? orderedCandidates.findIndex((candidate) =>
-              candidate.favoriteCount !== cursorCount
-                ? candidate.favoriteCount < cursorCount
-                : candidate._idString > cursorId,
-            )
-          : 0;
-      if (startIndex < 0) {
-        return buildEnvelope([], false, null);
+      const cursorIdHex = decodedCursor ? decodedCursor.secondary.toLowerCase() : null;
+      /* A cursor carrying count 0 was minted inside the count-0 tail, so the
+         favourited segment is already spent for this page. */
+      let startIndex = favorited.length;
+      if (cursorCount === null) {
+        startIndex = 0;
+      } else if (cursorCount > 0 && cursorIdHex) {
+        const found = favorited.findIndex((row) =>
+          row.favoriteCount !== cursorCount
+            ? row.favoriteCount < cursorCount
+            : row.idHex > cursorIdHex,
+        );
+        startIndex = found < 0 ? favorited.length : found;
       }
-      const endIndex =
-        isPaginated && normalizedLimit
-          ? Math.min(startIndex + normalizedLimit, orderedCandidates.length)
-          : orderedCandidates.length;
-      const hasMore = isPaginated && endIndex < orderedCandidates.length;
-      const selectedCandidates = orderedCandidates.slice(startIndex, endIndex);
-      const pageIds = selectedCandidates.map((candidate) => candidate._id);
-      const fullAgents =
-        pageIds.length > 0
+
+      const pageFavorited =
+        normalizedLimit == null
+          ? favorited.slice(startIndex)
+          : favorited.slice(startIndex, startIndex + normalizedLimit);
+      const favoritedHasMore =
+        normalizedLimit != null && favorited.length > startIndex + normalizedLimit;
+
+      const favoritedDocs =
+        pageFavorited.length > 0
           ? ((await Agent.find(
-              { $and: [baseQuery, { _id: { $in: pageIds } }] },
+              { $and: [baseQuery, { _id: { $in: pageFavorited.map((row) => row._id) } }] },
               projection,
             ).lean()) as Array<Record<string, unknown>>)
           : [];
-      const fullById = new Map(fullAgents.map((agent) => [String(agent._id), agent]));
-      const data = selectedCandidates
-        .map((candidate) => {
-          const agent = fullById.get(candidate._idString);
-          if (!agent) {
-            return null;
-          }
-          return finalizeAgent(agent);
-        })
-        .filter((agent): agent is Record<string, unknown> => agent != null);
+      const favoritedById = new Map(favoritedDocs.map((agent) => [String(agent._id), agent]));
+      const data = pageFavorited
+        .map((row) => favoritedById.get(row.idHex))
+        .filter((agent): agent is Record<string, unknown> => agent != null)
+        .map(finalizeAgent);
 
-      const cursorCandidate = selectedCandidates[selectedCandidates.length - 1];
-      const nextCursor =
-        isPaginated && hasMore && cursorCandidate
-          ? encodeAgentSortCursor(sort, cursorCandidate)
-          : null;
+      /* The count-0 tail is ordered by `_id` alone, so the database applies both the
+         cursor predicate and the limit to it. */
+      let tailHasMore = false;
+      let tailLastId: Types.ObjectId | null = null;
+      if (!favoritedHasMore) {
+        const remaining = normalizedLimit == null ? null : normalizedLimit - pageFavorited.length;
+        const conditions: Record<string, unknown>[] = [baseQuery];
+        if (favorited.length > 0) {
+          conditions.push({ _id: { $nin: favorited.map((row) => row._id) } });
+        }
+        if (cursorCount === 0 && decodedCursor) {
+          conditions.push({
+            _id: { $gt: new mongoose.Types.ObjectId(decodedCursor.secondary) },
+          });
+        }
+        let tailQuery = Agent.find({ $and: conditions }, projection).sort({ _id: 1 });
+        if (remaining != null) {
+          // One extra row answers `has_more` without a second query.
+          tailQuery = tailQuery.limit(remaining + 1);
+        }
+        const tailRows = (await tailQuery.lean()) as Array<Record<string, unknown>>;
+        tailHasMore = remaining != null && tailRows.length > remaining;
+        const tailPage = remaining != null ? tailRows.slice(0, remaining) : tailRows;
+        for (const agent of tailPage) {
+          data.push(finalizeAgent(agent));
+        }
+        const tailCursorRow = tailPage[tailPage.length - 1];
+        tailLastId = tailCursorRow ? (tailCursorRow._id as Types.ObjectId) : null;
+      }
+
+      const hasMore = favoritedHasMore || tailHasMore;
+      const favoritedCursorRow = pageFavorited[pageFavorited.length - 1];
+      let nextCursor: string | null = null;
+      if (hasMore && tailLastId) {
+        nextCursor = encodeAgentSortCursor(sort, { favoriteCount: 0, _id: tailLastId });
+      } else if (hasMore && favoritedCursorRow) {
+        nextCursor = encodeAgentSortCursor(sort, favoritedCursorRow);
+      }
       return buildEnvelope(data, hasMore, nextCursor);
     }
 
@@ -1890,48 +1946,74 @@ export function createAgentMethods(
       });
       pipeline.push({
         $addFields: {
+          /* Trimmed once so the sort key and the owner contact below read exactly the
+             same values. `$trim` is null-safe (it returns `null` for a missing or null
+             input), and the support fields go through `$ifNull` first, so they are
+             always strings while the owner tiers are either `null` or a trimmed
+             string by the time `isValidDisplayName` runs on them. */
+          _supportName: { $trim: { input: { $ifNull: ['$support_contact.name', ''] } } },
+          _supportEmail: { $trim: { input: { $ifNull: ['$support_contact.email', ''] } } },
+          _ownerName: { $trim: { input: { $arrayElemAt: ['$_ownerUser.name', 0] } } },
+          _ownerUsername: { $trim: { input: { $arrayElemAt: ['$_ownerUser.username', 0] } } },
+          // Dead on Agent documents in practice (only Prompts/Skills write it) —
+          // kept as the final real-value tier for exact parity with
+          // `resolveAgentOwnerContact`, which checks it too.
+          _authorName: { $trim: { input: '$authorName' } },
+          _hasOwnerUser: { $gt: [{ $size: { $ifNull: ['$_ownerUser', []] } }, 0] },
+        },
+      });
+      pipeline.push({
+        $addFields: {
           authorDisplayName: {
-            $let: {
-              vars: {
-                supportName: {
-                  $trim: { input: { $ifNull: ['$support_contact.name', ''] } },
-                },
-                supportEmail: {
-                  $trim: { input: { $ifNull: ['$support_contact.email', ''] } },
-                },
-                // `$trim` is null-safe (returns `null` for missing/null input), so these
-                // are always either `null` or a trimmed string by the time `isValidDisplayName`
-                // runs on them.
-                ownerName: { $trim: { input: { $arrayElemAt: ['$_ownerUser.name', 0] } } },
-                ownerUsername: {
-                  $trim: { input: { $arrayElemAt: ['$_ownerUser.username', 0] } },
-                },
-                // Dead on Agent documents in practice (only Prompts/Skills write it) —
-                // kept as the final real-value tier for exact parity with
-                // `resolveAgentOwnerContact`, which checks it too.
-                authorName: { $trim: { input: '$authorName' } },
-              },
-              in: {
-                $switch: {
-                  branches: [
-                    {
-                      case: { $ne: ['$$supportName', ''] },
-                      then: '$$supportName',
-                    },
-                    {
-                      case: {
-                        $and: [{ $ne: ['$$supportEmail', null] }, { $ne: ['$$supportEmail', ''] }],
-                      },
-                      then: '$$supportEmail',
-                    },
-                    { case: isValidDisplayName('$$ownerName'), then: '$$ownerName' },
-                    { case: isValidDisplayName('$$ownerUsername'), then: '$$ownerUsername' },
-                    { case: isValidDisplayName('$$authorName'), then: '$$authorName' },
-                  ],
-                  default: AUTHOR_SORT_SENTINEL,
-                },
-              },
+            $switch: {
+              branches: [
+                { case: { $ne: ['$_supportName', ''] }, then: '$_supportName' },
+                { case: { $ne: ['$_supportEmail', ''] }, then: '$_supportEmail' },
+                { case: isValidDisplayName('$_ownerName'), then: '$_ownerName' },
+                { case: isValidDisplayName('$_ownerUsername'), then: '$_ownerUsername' },
+                { case: isValidDisplayName('$_authorName'), then: '$_authorName' },
+              ],
+              default: AUTHOR_SORT_SENTINEL,
             },
+          },
+          /* This pipeline joined the owner in order to sort by it, and that is the same
+             owner `attachOwnerContacts` would resolve again — an ACL aggregation plus a
+             user query per page. Resolved here instead, on exactly the tiers
+             `resolveAgentOwnerContact` applies: a support contact means no owner
+             contact at all, and without a joined owner user there is none either, even
+             when the agent carries a denormalized `authorName`. `$$REMOVE` is rejected
+             by DocumentDB, so "no contact" is an explicit null the caller drops. */
+          owner_contact: {
+            $cond: [
+              { $or: [{ $ne: ['$_supportName', ''] }, { $ne: ['$_supportEmail', ''] }] },
+              null,
+              {
+                $let: {
+                  vars: {
+                    ownerDisplayName: {
+                      $switch: {
+                        branches: [
+                          { case: isValidDisplayName('$_ownerName'), then: '$_ownerName' },
+                          {
+                            case: isValidDisplayName('$_ownerUsername'),
+                            then: '$_ownerUsername',
+                          },
+                          { case: isValidDisplayName('$_authorName'), then: '$_authorName' },
+                        ],
+                        default: null,
+                      },
+                    },
+                  },
+                  in: {
+                    $cond: [
+                      { $and: ['$_hasOwnerUser', { $ne: ['$$ownerDisplayName', null] }] },
+                      { name: '$$ownerDisplayName' },
+                      null,
+                    ],
+                  },
+                },
+              },
+            ],
           },
         },
       });
@@ -1953,6 +2035,7 @@ export function createAgentMethods(
         $project: {
           ...projection,
           authorDisplayName: 1,
+          owner_contact: 1,
         },
       });
 
@@ -1971,7 +2054,13 @@ export function createAgentMethods(
 
       const hasMore = isPaginated && normalizedLimit ? agents.length > normalizedLimit : false;
       const trimmed = isPaginated && normalizedLimit ? agents.slice(0, normalizedLimit) : agents;
-      const data = trimmed.map(finalizeAgent);
+      const data = trimmed.map((agent) => {
+        if (agent.owner_contact == null) {
+          delete agent.owner_contact;
+        }
+        agent[AGENT_OWNER_CONTACT_RESOLVED_FIELD] = true;
+        return finalizeAgent(agent);
+      });
 
       let nextCursor: string | null = null;
       if (isPaginated && hasMore && data.length > 0 && normalizedLimit) {
