@@ -244,6 +244,8 @@ export interface ToolExecuteOptions {
   }>;
   /** Trusted detached-subagent task scope for polling and parent controls. */
   subagentTasks?: SubagentTaskConfig;
+  /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
+  ordinaryToolCancellation?: boolean;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
@@ -5209,6 +5211,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
+    ordinaryToolCancellation = false,
     provisionFiles,
   } = options;
 
@@ -6114,13 +6117,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         backgroundConversationId,
                         task.id,
                       )?.cancellationRequestedAt != null;
-                    const detachedTerminalStatus =
-                      manualCancellationRequested ||
-                      (toolError instanceof Error &&
-                        (toolError.name === 'AbortError' ||
-                          (toolError as Error & { code?: string }).code === 'ABORT_ERR'))
-                        ? 'cancelled'
-                        : 'failed';
+                    /** Only an owner-authorized request is cancellation evidence.
+                     * Providers and timeout controllers also use AbortError, so
+                     * classifying by error shape would turn failures into a false
+                     * claim that the owner cancelled the task. */
+                    const detachedTerminalStatus = manualCancellationRequested
+                      ? 'cancelled'
+                      : 'failed';
                     if (
                       !(await persistDetachedTerminal({
                         status: detachedTerminalStatus,
@@ -6218,6 +6221,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
+                    ordinaryToolCancellation,
                   });
                   const taskSnapshot = getBackgroundTaskSnapshot({
                     userId: backgroundUserId,
@@ -6385,12 +6389,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
                     if (persistBackgroundCodeResult && delivery.messageId) {
-                      /** Error tasks carry their message in `error`, not
+                      /** Error/cancelled tasks carry their message in `error`, not
                        *  `result`; abort-confirmed timeouts store it raw, so
                        *  wrap here — `toBackgroundToolFailure` is a no-op for
                        *  already-wrapped detached failures. */
                       const reapplyOutput =
-                        delivery.status === 'error'
+                        delivery.status === 'error' || delivery.status === 'cancelled'
                           ? toBackgroundToolFailure(
                               delivery.toolName,
                               delivery.error ?? delivery.result ?? 'Background task failed',
@@ -6405,6 +6409,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         agentId: delivery.agentId,
                         output: reapplyOutput,
                         attachments: delivery.attachments,
+                        ...(delivery.backgroundTask == null
+                          ? {}
+                          : { backgroundTask: delivery.backgroundTask }),
                         reapply: true,
                       }).catch((reapplyError) => {
                         logger.warn(

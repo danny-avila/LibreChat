@@ -347,7 +347,10 @@ describe('agent background task config', () => {
     if (!result.success) {
       return;
     }
-    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: true });
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionWakeups: true,
+      ordinaryToolCancellation: false,
+    });
   });
 
   it('accepts an administrator poll-only policy', () => {
@@ -360,7 +363,26 @@ describe('agent background task config', () => {
     if (!result.success) {
       return;
     }
-    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({ completionWakeups: false });
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionWakeups: false,
+      ordinaryToolCancellation: false,
+    });
+  });
+
+  it('accepts administrator-enabled ordinary tool cancellation', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { ordinaryToolCancellation: true } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionWakeups: true,
+      ordinaryToolCancellation: true,
+    });
   });
 });
 

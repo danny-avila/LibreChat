@@ -2065,6 +2065,10 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
         messageId: 'dispatch-msg',
         result: 'stdout',
         attachments: [{ file_id: 'f1' }],
+        backgroundTask: expect.objectContaining({
+          taskId: created.task.id,
+          status: 'completed',
+        }),
       }),
     );
     /** Not one-shot: a later poll can still re-emit / re-anchor. */
@@ -2110,6 +2114,84 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.parse(content)).toEqual(
       expect.objectContaining({ status: 'not_found', background_task_id: 'nope' }),
     );
+  });
+
+  it('keeps ordinary cancellation disabled unless the deployment opts in', async () => {
+    const requestCancellation = jest.fn();
+    const created = backgroundTaskRegistry.create({
+      userId: 'disabled-cancel-user',
+      conversationId: 'disabled-cancel-conversation',
+      toolCallId: 'disabled-cancel-call',
+      toolName: 'bash_tool',
+      requestCancellation,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'disabled-cancel-user',
+        conversationId: 'disabled-cancel-conversation',
+        args: { background_task_id: created.task.id, action: 'cancel' },
+      }),
+    );
+    expect(result).toMatchObject({ status: 'invalid', background_task_id: created.task.id });
+    expect(requestCancellation).not.toHaveBeenCalled();
+    backgroundTaskRegistry.fail(
+      'disabled-cancel-user',
+      'disabled-cancel-conversation',
+      created.task.id,
+      'test cleanup',
+    );
+  });
+
+  it('uses normal durable claim arbitration when cancellation loses the settlement race', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'cancel-race-user',
+      conversationId: 'cancel-race-conversation',
+      toolCallId: 'cancel-race-call',
+      toolName: 'bash_tool',
+      messageId: 'cancel-race-message',
+      requestCancellation: jest.fn(),
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.markCompletionWakeup(
+      'cancel-race-user',
+      'cancel-race-conversation',
+      created.task.id,
+      {
+        renew: jest.fn(async () => true),
+        retire: jest.fn(async () => true),
+      },
+    );
+    backgroundTaskRegistry.complete(
+      'cancel-race-user',
+      'cancel-race-conversation',
+      created.task.id,
+      { content: 'settled result' },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'claimed' as const,
+      claim: { kind: 'wakeup' as const, claimId: 'automatic-delivery' },
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'cancel-race-user',
+        conversationId: 'cancel-race-conversation',
+        args: { background_task_id: created.task.id, action: 'cancel' },
+        ordinaryToolCancellation: true,
+        claimBackgroundToolResult,
+      }),
+    );
+    expect(result).toMatchObject({
+      status: 'delivery_scheduled',
+      background_task_id: created.task.id,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an oversized task id before local or cross-replica lookup', async () => {

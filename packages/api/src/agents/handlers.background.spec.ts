@@ -977,7 +977,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(eventActorDetachedAction.wake).toHaveBeenCalledTimes(1);
   });
 
-  it('records an aborted detached expected action as cancelled', async () => {
+  it('does not claim an unrequested provider abort was owner cancellation', async () => {
     const abortError = Object.assign(new Error('operation aborted'), { name: 'AbortError' });
     const tool = {
       name: 'submit_move_mcp_chess',
@@ -1018,7 +1018,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
 
     expect(eventActorDetachedAction.settle).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'cancelled', error: 'operation aborted' }),
+      expect.objectContaining({ status: 'failed', error: 'operation aborted' }),
     );
   });
 
@@ -1113,6 +1113,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const persistBackgroundCodeResult = jest.fn(async () => ({ attachments: [] }));
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [bashTool] }),
+      ordinaryToolCancellation: true,
       persistBackgroundCodeResult,
       backgroundToolCompletion: {
         preregister: async () => ({
@@ -1166,11 +1167,20 @@ describe('createToolExecuteHandler — background tool calls', () => {
     await flushMicrotasks();
     await new Promise((resolve) => setTimeout(resolve, 75));
     const terminal = JSON.parse(
-      await runCheckBackgroundTask({
-        userId: 'exec_user',
-        conversationId: 'cancel_bash_conversation',
-        args: { background_task_id: taskId },
-      }),
+      (
+        await runBatch(handler, {
+          toolCalls: [
+            {
+              id: 'call_poll_cancelled_bash',
+              name: CHECK_BACKGROUND_TASK_NAME,
+              args: { background_task_id: taskId },
+            },
+          ],
+          agentId: 'agent_cancel_bash',
+          configurable,
+          metadata,
+        })
+      )[0].content,
     );
     expect(terminal).toMatchObject({
       status: 'cancelled',
@@ -1179,6 +1189,17 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(persistBackgroundCodeResult).toHaveBeenCalledWith(
       expect.objectContaining({
         backgroundTask: expect.objectContaining({ taskId, status: 'error', cancelled: true }),
+      }),
+    );
+    expect(persistBackgroundCodeResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reapply: true,
+        output: expect.stringContaining('cancellation requested'),
+        backgroundTask: expect.objectContaining({
+          taskId,
+          status: 'error',
+          cancelled: true,
+        }),
       }),
     );
     expect(delayedWrites).toBe(0);

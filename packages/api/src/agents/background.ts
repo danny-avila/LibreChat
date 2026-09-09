@@ -52,6 +52,7 @@ import type {
   BackgroundToolResultClaim,
   BackgroundToolResultRecord,
 } from '@librechat/data-schemas';
+import type { BackgroundToolResultState } from './harvest';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CapabilityToolNames } from './selection';
 import {
@@ -353,7 +354,7 @@ export function stripBackgroundFromToolRegistry(
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. The cancel action applies to any running task; steer, queue, interrupt, and cancel_message apply only to subagents. Live controls route to process-local executors and do not survive an owning-process restart. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. The cancel action applies to subagents and to ordinary tools when enabled by the deployment; steer, queue, interrupt, and cancel_message apply only to subagents. Live controls route to process-local executors and do not survive an owning-process restart. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
@@ -400,7 +401,7 @@ const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParame
       type: 'string',
       enum: ['poll', 'steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
       description:
-        'Defaults to poll. Cancel applies to any running task; other controls apply only to subagents.',
+        'Defaults to poll. Cancel applies to subagents and may apply to ordinary tools when enabled by the deployment; other controls apply only to subagents.',
     },
     message: {
       type: 'string',
@@ -2063,6 +2064,8 @@ export async function runCheckBackgroundTask(params: {
     allowUnfinished?: boolean;
   }) => Promise<BackgroundToolResultClaim>;
   recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
+  /** Trusted deployment policy. Defaults false for backward compatibility. */
+  ordinaryToolCancellation?: boolean;
 }): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
@@ -2082,15 +2085,25 @@ export async function runCheckBackgroundTask(params: {
     if (task != null) {
       if (action !== 'poll') {
         if (action === 'cancel') {
+          if (params.ordinaryToolCancellation !== true) {
+            return JSON.stringify({
+              status: 'invalid',
+              background_task_id: taskId,
+              message: 'Cancellation is not enabled for ordinary background tools.',
+            });
+          }
           const cancellation = backgroundTaskRegistry.requestCancellation(
             userId,
             conversationId,
             taskId,
           );
           if (cancellation.status === 'settled') {
-            return JSON.stringify(serializeTask(cancellation.task, { includeResult: true }));
-          }
-          if (cancellation.status === 'requested' || cancellation.status === 'already_requested') {
+            /** Settlement won the race. Fall through to the ordinary poll path
+             * so durable result-claim arbitration still elects one consumer. */
+          } else if (
+            cancellation.status === 'requested' ||
+            cancellation.status === 'already_requested'
+          ) {
             return JSON.stringify({
               ...serializeTask(cancellation.task, { includeResult: false }),
               status: 'cancellation_requested',
@@ -2098,19 +2111,21 @@ export async function runCheckBackgroundTask(params: {
               message:
                 'Cancellation was requested. The task remains active until its executor settles; poll again for a terminal result.',
             });
+          } else {
+            return JSON.stringify({
+              status: 'unavailable',
+              background_task_id: taskId,
+              message:
+                'This server no longer owns a live cancellation handle for the task. Poll for its outcome; do not assume execution stopped.',
+            });
           }
+        } else {
           return JSON.stringify({
-            status: 'unavailable',
+            status: 'invalid',
             background_task_id: taskId,
-            message:
-              'This server no longer owns a live cancellation handle for the task. Poll for its outcome; do not assume execution stopped.',
+            message: 'This control action is supported only for subagent tasks.',
           });
         }
-        return JSON.stringify({
-          status: 'invalid',
-          background_task_id: taskId,
-          message: 'This control action is supported only for subagent tasks.',
-        });
       }
       if (task.status !== 'running') {
         if (
@@ -2651,6 +2666,7 @@ export function getBackgroundCodeDelivery(params: {
       result?: string;
       error?: string;
       attachments?: unknown[];
+      backgroundTask?: BackgroundToolResultState;
     }
   | undefined {
   const rawId = coerceArgsObject(params.args)?.background_task_id;
@@ -2678,6 +2694,30 @@ export function getBackgroundCodeDelivery(params: {
     result: task.result,
     error: task.error,
     attachments: task.attachments,
+    ...(task.status === 'running'
+      ? {}
+      : {
+          backgroundTask: {
+            taskId: task.id,
+            toolName: task.toolName,
+            status: task.status === 'cancelled' ? 'error' : task.status,
+            ...(task.status === 'cancelled' ? { cancelled: true } : {}),
+            settledAt: new Date(task.updatedAt),
+            ...(task.completionWakeup === true ? { completionWakeup: true } : {}),
+            ...(task.resultClaim == null
+              ? {}
+              : {
+                  resultClaim: {
+                    kind: task.resultClaim.kind,
+                    claimId: task.resultClaim.claimId,
+                    claimedAt: new Date(task.resultClaim.claimedAt),
+                    ...(task.resultClaim.generationId == null
+                      ? {}
+                      : { generationId: task.resultClaim.generationId }),
+                  },
+                }),
+          },
+        }),
   };
 }
 
