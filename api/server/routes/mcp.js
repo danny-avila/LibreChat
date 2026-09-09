@@ -31,7 +31,7 @@ const {
   MCPAuthenticationRefreshError,
   OpenIDReauthRequiredError,
   readMCPRecoveryGenerationAround,
-  publishMCPAuthorizationMutation,
+  prepareMCPAuthorizationMutation,
   persistMCPAuthorizationTransaction,
 } = require('@librechat/api');
 const {
@@ -656,8 +656,8 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                   createToken: db.createToken,
                   deleteTokens: db.deleteTokens,
                 },
-                onOAuthCredentialsChanged: (scope) =>
-                  publishMCPAuthorizationMutation(scope, {
+                onOAuthCredentialsChanging: (scope) =>
+                  prepareMCPAuthorizationMutation(scope, {
                     invalidateRecoveryGeneration: invalidateCachedTools,
                     persistPublicationRetry: persistMCPAuthorizationFenceRetry,
                     clearPublicationRetry: clearMCPAuthorizationFenceRetry,

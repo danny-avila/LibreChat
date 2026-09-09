@@ -263,6 +263,11 @@ export interface UserConnectionContext {
   deadlineMs?: number;
   /** Advances application authorization state after OAuth token persistence succeeds. */
   onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
+  /** Persists authorization-fence intent before OAuth token rows change and returns its publisher. */
+  onOAuthCredentialsChanging?: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<() => Promise<void>>;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -327,6 +332,7 @@ export interface ToolDiscoveryOptions {
   /** Absolute epoch-ms bound on the whole discovery operation; see `UserConnectionContext`. */
   deadlineMs?: number;
   onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>;
+  onOAuthCredentialsChanging?: UserConnectionContext['onOAuthCredentialsChanging'];
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;

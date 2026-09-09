@@ -45,7 +45,7 @@ const {
   OpenIDReauthRequiredError,
   MCPAuthenticationRefreshError,
   MCPAuthenticationRejectedError,
-  publishMCPAuthorizationMutation,
+  prepareMCPAuthorizationMutation,
 } = require('@librechat/api');
 const {
   Time,
@@ -1321,8 +1321,8 @@ function createToolInstance({
           updateToken,
           deleteTokens,
         },
-        onOAuthCredentialsChanged: (scope) =>
-          publishMCPAuthorizationMutation(scope, {
+        onOAuthCredentialsChanging: (scope) =>
+          prepareMCPAuthorizationMutation(scope, {
             invalidateRecoveryGeneration: invalidateCachedTools,
             persistPublicationRetry: persistMCPAuthorizationFenceRetry,
             clearPublicationRetry: clearMCPAuthorizationFenceRetry,

@@ -40,11 +40,11 @@ describe('MCP authorization fence retry storage', () => {
     await expect(storage.list(7)).resolves.toEqual([{ version: 'v2' }]);
 
     expect(deleteOne).toHaveBeenCalledWith({
-      _id: JSON.stringify(['tenant-a', 'user-1', 'github']),
+      _id: JSON.stringify(['tenant-a', 'user-1', 'github', 'v1']),
       version: 'v1',
     });
     expect(updateOne).toHaveBeenLastCalledWith(
-      { _id: JSON.stringify(['tenant-a', 'user-1', 'github']), version: 'v2' },
+      { _id: JSON.stringify(['tenant-a', 'user-1', 'github', 'v2']), version: 'v2' },
       { $set: { updatedAt: new Date(now.getTime() + 1) } },
     );
     expect(mockBuildIndexWithRetry).toHaveBeenCalledWith(

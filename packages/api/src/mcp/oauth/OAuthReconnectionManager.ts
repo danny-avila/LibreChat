@@ -23,6 +23,11 @@ export class OAuthReconnectionManager {
     serverName: string;
   }) => Promise<void>;
 
+  private readonly onOAuthCredentialsChanging?: (scope: {
+    userId: string;
+    serverName: string;
+  }) => Promise<() => Promise<void>>;
+
   private readonly reconnectionsTracker: OAuthReconnectionTracker;
 
   public static getInstance(): OAuthReconnectionManager {
@@ -37,6 +42,10 @@ export class OAuthReconnectionManager {
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
     onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>,
+    onOAuthCredentialsChanging?: (scope: {
+      userId: string;
+      serverName: string;
+    }) => Promise<() => Promise<void>>,
   ): Promise<OAuthReconnectionManager> {
     if (OAuthReconnectionManager.instance != null) {
       throw new Error('OAuthReconnectionManager already initialized');
@@ -47,6 +56,7 @@ export class OAuthReconnectionManager {
       tokenMethods,
       reconnections,
       onOAuthCredentialsChanged,
+      onOAuthCredentialsChanging,
     );
     OAuthReconnectionManager.instance = manager;
 
@@ -58,11 +68,16 @@ export class OAuthReconnectionManager {
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
     onOAuthCredentialsChanged?: (scope: { userId: string; serverName: string }) => Promise<void>,
+    onOAuthCredentialsChanging?: (scope: {
+      userId: string;
+      serverName: string;
+    }) => Promise<() => Promise<void>>,
   ) {
     this.flowManager = flowManager;
     this.tokenMethods = tokenMethods;
     this.reconnectionsTracker = reconnections ?? new OAuthReconnectionTracker();
     this.onOAuthCredentialsChanged = onOAuthCredentialsChanged;
+    this.onOAuthCredentialsChanging = onOAuthCredentialsChanging;
 
     try {
       this.mcpManager = MCPManager.getInstance();
@@ -210,6 +225,9 @@ export class OAuthReconnectionManager {
         tokenMethods: this.tokenMethods,
         ...(this.onOAuthCredentialsChanged && {
           onOAuthCredentialsChanged: this.onOAuthCredentialsChanged,
+        }),
+        ...(this.onOAuthCredentialsChanging && {
+          onOAuthCredentialsChanging: this.onOAuthCredentialsChanging,
         }),
         // don't force new connection, let it reuse existing or create new as needed
         forceNew: false,

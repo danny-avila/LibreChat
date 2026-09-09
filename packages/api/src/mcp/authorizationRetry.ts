@@ -167,12 +167,27 @@ export function createMCPAuthorizationFenceRetryService(
             activeAttempts.delete(key);
           }
           try {
-            await deps.storage.deferVersion({
-              scope: { userId: retry.userId, serverName: retry.serverName },
-              tenantId: retry.tenantId,
-              version: retry.version,
-              updatedAt: new Date(Math.max(Date.now(), retry.updatedAt.getTime() + 1)),
-            });
+            let deferTimeoutId: ReturnType<typeof setTimeout> | undefined;
+            try {
+              await Promise.race([
+                deps.storage.deferVersion({
+                  scope: { userId: retry.userId, serverName: retry.serverName },
+                  tenantId: retry.tenantId,
+                  version: retry.version,
+                  updatedAt: new Date(Math.max(Date.now(), retry.updatedAt.getTime() + 1)),
+                }),
+                new Promise<never>((_, reject) => {
+                  deferTimeoutId = setTimeout(
+                    () => reject(new Error('MCP authorization retry deferral timed out')),
+                    attemptTimeoutMs,
+                  );
+                }),
+              ]);
+            } finally {
+              if (deferTimeoutId != null) {
+                clearTimeout(deferTimeoutId);
+              }
+            }
           } catch (deferError) {
             logger.warn(
               `[MCP authorization] Could not defer generation retry for ${retry.serverName}`,

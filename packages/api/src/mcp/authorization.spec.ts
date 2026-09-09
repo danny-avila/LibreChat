@@ -94,6 +94,8 @@ describe('persistMCPAuthorizationTransaction', () => {
     const completeAuthorization = jest.fn().mockResolvedValue(undefined);
     const invalidateRecoveryGeneration = jest.fn().mockResolvedValue(undefined);
     const ensureServerActive = jest.fn().mockResolvedValue(true);
+    const persistPublicationRetry = jest.fn().mockResolvedValue('prepared-v1');
+    const clearPublicationRetry = jest.fn().mockResolvedValue(undefined);
     const flowManager = {
       getFlowState: jest.fn().mockResolvedValue(null),
       deleteFlow: jest.fn().mockResolvedValue(true),
@@ -113,12 +115,17 @@ describe('persistMCPAuthorizationTransaction', () => {
           ensureServerActive,
           inactiveServerError: () => new Error('deleted'),
           invalidateRecoveryGeneration,
+          persistPublicationRetry,
+          clearPublicationRetry,
           flowManager,
           retryDelaysMs: [0],
         },
       ),
     ).resolves.toBe(tokens);
 
+    expect(persistPublicationRetry.mock.invocationCallOrder[0]).toBeLessThan(
+      persistTokens.mock.invocationCallOrder[0],
+    );
     expect(ensureServerActive.mock.invocationCallOrder[0]).toBeLessThan(
       invalidateRecoveryGeneration.mock.invocationCallOrder[0],
     );
@@ -182,6 +189,44 @@ describe('finalizeMCPAuthorizationMutation', () => {
 
     expect(onDisconnectError).toHaveBeenCalledWith(expect.any(Error));
     expect(afterDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes a second durable intent before teardown token cleanup and fences it afterward', async () => {
+    const invalidateRecoveryGeneration = jest.fn().mockResolvedValue(undefined);
+    const persistPublicationRetry = jest.fn().mockResolvedValue('cleanup-v2');
+    const clearPublicationRetry = jest.fn().mockResolvedValue(undefined);
+    const disconnectUserConnection = jest.fn().mockResolvedValue(undefined);
+    const afterDisconnect = jest.fn().mockResolvedValue(undefined);
+
+    await finalizeMCPAuthorizationMutation(
+      {
+        scope,
+        mutationResults: [{}],
+        publicationRetryVersion: 'credentials-v1',
+        teardown: true,
+      },
+      {
+        invalidateRecoveryGeneration,
+        persistPublicationRetry,
+        clearPublicationRetry,
+        disconnectUserConnection,
+        afterDisconnect,
+        retryDelaysMs: [0],
+      },
+    );
+
+    expect(invalidateRecoveryGeneration).toHaveBeenCalledTimes(2);
+    expect(disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      persistPublicationRetry.mock.invocationCallOrder[0],
+    );
+    expect(persistPublicationRetry.mock.invocationCallOrder[0]).toBeLessThan(
+      afterDisconnect.mock.invocationCallOrder[0],
+    );
+    expect(afterDisconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      invalidateRecoveryGeneration.mock.invocationCallOrder[1],
+    );
+    expect(clearPublicationRetry).toHaveBeenNthCalledWith(1, scope, 'credentials-v1');
+    expect(clearPublicationRetry).toHaveBeenNthCalledWith(2, scope, 'cleanup-v2');
   });
 
   it('does nothing when every ordinary credential mutation failed', async () => {

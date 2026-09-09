@@ -280,6 +280,23 @@ describe('MCPTokenStorage', () => {
   });
 
   describe('storeTokens', () => {
+    it('persists fence intent before writing the first token row', async () => {
+      const onStorePreparing = jest.fn().mockResolvedValue(undefined);
+      const createToken = jest.fn(store.createToken);
+
+      await MCPTokenStorage.storeTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        tokens: { access_token: 'at1', token_type: 'Bearer' },
+        createToken,
+        onStorePreparing,
+      });
+
+      expect(onStorePreparing.mock.invocationCallOrder[0]).toBeLessThan(
+        createToken.mock.invocationCallOrder[0],
+      );
+    });
+
     it('keeps the trusted flow generation when provider metadata supplies a conflicting ID', async () => {
       const result = await MCPTokenStorage.storeTokens({
         userId: 'u1',
@@ -2583,6 +2600,32 @@ describe('MCPTokenStorage', () => {
           : storedAccess!.metadata?.credential_set_id;
       expect(callbackTokens.credential_set_id).toBe(storedCredentialSetId);
       expect(callbackTokens.credential_set_id).not.toBe(credentialSetId);
+    });
+
+    it('prepares a durable fence before persisting refreshed token rows', async () => {
+      await seedRefreshableTokens('prepared-srv');
+      const events: string[] = [];
+      const updateToken: TokenMethods['updateToken'] = async (...args) => {
+        events.push('write');
+        return store.updateToken(...args);
+      };
+      const onRefreshPreparing = jest.fn(async () => {
+        events.push('prepare');
+        return async () => {
+          events.push('publish');
+        };
+      });
+
+      await MCPTokenStorage.forceRefreshTokens({
+        ...refreshParams(jest.fn().mockResolvedValue(rotatedTokens(2)), 'prepared-srv'),
+        updateToken,
+        onRefreshPreparing,
+      });
+
+      expect(events[0]).toBe('prepare');
+      expect(events[events.length - 1]).toBe('publish');
+      expect(events).toContain('write');
+      expect(onRefreshPreparing).toHaveBeenCalledTimes(1);
     });
 
     it('removes refreshed credentials when their authorization fence cannot be published', async () => {

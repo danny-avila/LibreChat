@@ -9,7 +9,7 @@ const {
   MCPAuthenticationRejectedError,
   MCPAuthenticationRefreshError,
   OpenIDReauthRequiredError,
-  publishMCPAuthorizationMutation,
+  prepareMCPAuthorizationMutation,
 } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
@@ -68,8 +68,8 @@ async function loadMCPServerCatalogs({
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
   const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
   const mcpManager = getMCPManager();
-  const onOAuthCredentialsChanged = (scope) =>
-    publishMCPAuthorizationMutation(scope, {
+  const onOAuthCredentialsChanging = (scope) =>
+    prepareMCPAuthorizationMutation(scope, {
       invalidateRecoveryGeneration: invalidateCachedTools,
       persistPublicationRetry: persistMCPAuthorizationFenceRetry,
       clearPublicationRetry: clearMCPAuthorizationFenceRetry,
@@ -97,7 +97,7 @@ async function loadMCPServerCatalogs({
           oboTrustChecker: createOboTrustChecker(),
           upstreamTokenProvider,
           oboIdentityContext,
-          onOAuthCredentialsChanged,
+          onOAuthCredentialsChanging,
         }),
       formatServerTools: formatMCPServerTools,
       recoveryTracker: mcpManager.getCatalogRecoveryTracker?.(),
@@ -255,8 +255,8 @@ async function reinitMCPServer({
 
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
-    const onOAuthCredentialsChanged = (scope) =>
-      publishMCPAuthorizationMutation(scope, {
+    const onOAuthCredentialsChanging = (scope) =>
+      prepareMCPAuthorizationMutation(scope, {
         invalidateRecoveryGeneration: invalidateCachedTools,
         persistPublicationRetry: persistMCPAuthorizationFenceRetry,
         clearPublicationRetry: clearMCPAuthorizationFenceRetry,
@@ -297,7 +297,7 @@ async function reinitMCPServer({
         serverName,
         flowManager,
         tokenMethods,
-        onOAuthCredentialsChanged,
+        onOAuthCredentialsChanging,
         returnOnOAuth,
         oauthEnd,
         customUserVars,
@@ -340,7 +340,7 @@ async function reinitMCPServer({
             serverName,
             flowManager,
             tokenMethods,
-            onOAuthCredentialsChanged,
+            onOAuthCredentialsChanging,
             oauthStart,
             customUserVars,
             requestBody,

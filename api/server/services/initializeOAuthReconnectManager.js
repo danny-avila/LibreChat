@@ -1,5 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
-const { publishMCPAuthorizationMutation } = require('@librechat/api');
+const { logger, getTenantId } = require('@librechat/data-schemas');
+const { prepareMCPAuthorizationMutation } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
 const { createOAuthReconnectionManager, getFlowStateManager, getMCPManager } = require('~/config');
 const { findToken, updateToken, createToken, deleteTokens } = require('~/models');
@@ -16,23 +16,29 @@ const {
 async function initializeOAuthReconnectManager() {
   try {
     const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-    const appConfig = await getAppConfig({ baseOnly: true });
     const tokenMethods = {
       findToken,
       updateToken,
       createToken,
       deleteTokens,
     };
-    await createOAuthReconnectionManager(flowManager, tokenMethods, undefined, (scope) =>
-      publishMCPAuthorizationMutation(scope, {
-        invalidateRecoveryGeneration: invalidateCachedTools,
-        persistPublicationRetry: persistMCPAuthorizationFenceRetry,
-        clearPublicationRetry: clearMCPAuthorizationFenceRetry,
-        clearLocalRecovery: (userId, serverName) =>
-          getMCPManager()?.clearCatalogRecoveryState?.(userId, serverName),
-        retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
-        attemptTimeoutMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceTimeoutMs,
-      }),
+    await createOAuthReconnectionManager(
+      flowManager,
+      tokenMethods,
+      undefined,
+      undefined,
+      async (scope) => {
+        const appConfig = await getAppConfig({ tenantId: getTenantId(), userId: scope.userId });
+        return prepareMCPAuthorizationMutation(scope, {
+          invalidateRecoveryGeneration: invalidateCachedTools,
+          persistPublicationRetry: persistMCPAuthorizationFenceRetry,
+          clearPublicationRetry: clearMCPAuthorizationFenceRetry,
+          clearLocalRecovery: (userId, serverName) =>
+            getMCPManager()?.clearCatalogRecoveryState?.(userId, serverName),
+          retryDelaysMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceRetryMs,
+          attemptTimeoutMs: appConfig?.mcpSettings?.catalogRecovery?.authorizationFenceTimeoutMs,
+        });
+      },
     );
     logger.info(`OAuth reconnect manager initialized successfully.`);
   } catch (error) {

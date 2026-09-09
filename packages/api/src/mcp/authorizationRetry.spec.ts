@@ -8,11 +8,15 @@ const scope = { userId: 'user-1', serverName: 'server-1' };
 
 function createHarness() {
   const records = new Map<string, MCPAuthorizationFenceRetryRecord>();
-  const key = (tenantId: string | null | undefined, userId: string, serverName: string) =>
-    JSON.stringify([tenantId ?? '', userId, serverName]);
+  const key = (
+    tenantId: string | null | undefined,
+    userId: string,
+    serverName: string,
+    version: string,
+  ) => JSON.stringify([tenantId ?? '', userId, serverName, version]);
   const storage: MCPAuthorizationFenceRetryStorage = {
     upsert: jest.fn(async ({ scope: inputScope, tenantId, version, now }) => {
-      records.set(key(tenantId, inputScope.userId, inputScope.serverName), {
+      records.set(key(tenantId, inputScope.userId, inputScope.serverName, version), {
         ...inputScope,
         tenantId,
         version,
@@ -20,13 +24,10 @@ function createHarness() {
       });
     }),
     deleteVersion: jest.fn(async ({ scope: inputScope, tenantId, version }) => {
-      const recordKey = key(tenantId, inputScope.userId, inputScope.serverName);
-      if (records.get(recordKey)?.version === version) {
-        records.delete(recordKey);
-      }
+      records.delete(key(tenantId, inputScope.userId, inputScope.serverName, version));
     }),
     deferVersion: jest.fn(async ({ scope: inputScope, tenantId, version, updatedAt }) => {
-      const recordKey = key(tenantId, inputScope.userId, inputScope.serverName);
+      const recordKey = key(tenantId, inputScope.userId, inputScope.serverName, version);
       const record = records.get(recordKey);
       if (record?.version === version) {
         record.updatedAt = updatedAt;
@@ -66,6 +67,18 @@ describe('MCP authorization fence retry service', () => {
     });
     expect([...records.values()]).toEqual([
       expect.objectContaining({ ...scope, version: secondVersion }),
+    ]);
+  });
+
+  it('preserves every overlapping publication intent for the same scope', async () => {
+    const { records, service } = createHarness();
+    const firstVersion = await service.persist(scope);
+    const secondVersion = await service.persist(scope);
+
+    expect(records.size).toBe(2);
+    expect([...records.values()].map(({ version }) => version)).toEqual([
+      firstVersion,
+      secondVersion,
     ]);
   });
 
@@ -147,6 +160,31 @@ describe('MCP authorization fence retry service', () => {
     await firstAttempt;
     await service.drain();
     expect(records.size).toBe(0);
+    await service.stop();
+  });
+
+  it('bounds a stalled deferral so the worker can drain again', async () => {
+    jest.useFakeTimers();
+    const { service, storage } = createHarness();
+    await service.persist(scope);
+    (storage.deferVersion as jest.Mock).mockImplementationOnce(() => new Promise(() => undefined));
+    service.start(
+      jest.fn(() => new Promise(() => undefined)),
+      {
+        intervalMs: 10_000,
+        batchSize: 1,
+        attemptTimeoutMs: 5,
+      },
+    );
+
+    const firstDrain = service.drain();
+    await jest.advanceTimersByTimeAsync(10);
+    await firstDrain;
+    const secondDrain = service.drain();
+    await jest.advanceTimersByTimeAsync(10);
+    await secondDrain;
+
+    expect(storage.list).toHaveBeenCalledTimes(2);
     await service.stop();
   });
 });

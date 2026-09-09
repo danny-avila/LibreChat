@@ -1,6 +1,15 @@
 import type { MCPRecoveryGenerationScope } from './catalog/recovery';
 import { publishMCPAuthorizationMutation } from './catalog/recovery';
 
+export interface MCPAuthorizationPublicationDeps {
+  invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
+  clearLocalRecovery?: (userId: string, serverName: string) => void;
+  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
+  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
+  retryDelaysMs?: readonly number[];
+  attemptTimeoutMs?: number;
+}
+
 export interface FinalizeMCPAuthorizationMutationParams {
   scope: MCPRecoveryGenerationScope;
   mutationResults: readonly unknown[];
@@ -10,11 +19,7 @@ export interface FinalizeMCPAuthorizationMutationParams {
   teardown?: boolean;
 }
 
-export interface FinalizeMCPAuthorizationMutationDeps {
-  invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
-  clearLocalRecovery?: (userId: string, serverName: string) => void;
-  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
-  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
+export interface FinalizeMCPAuthorizationMutationDeps extends MCPAuthorizationPublicationDeps {
   disconnectUserConnection: (userId: string, serverName: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
   attemptTimeoutMs?: number;
@@ -123,15 +128,24 @@ export interface PersistMCPAuthorizationTransactionParams<TTokens> {
 }
 
 export interface PersistMCPAuthorizationTransactionDeps<TTokens>
-  extends CompleteMCPAuthorizationWithTokenWaitersDeps<TTokens> {
+  extends CompleteMCPAuthorizationWithTokenWaitersDeps<TTokens>,
+    MCPAuthorizationPublicationDeps {
   ensureServerActive: () => Promise<boolean>;
   inactiveServerError: () => Error;
-  invalidateRecoveryGeneration: (scope: MCPRecoveryGenerationScope) => Promise<unknown>;
-  clearLocalRecovery?: (userId: string, serverName: string) => void;
-  persistPublicationRetry?: (scope: MCPRecoveryGenerationScope) => Promise<string>;
-  clearPublicationRetry?: (scope: MCPRecoveryGenerationScope, version: string) => Promise<void>;
-  retryDelaysMs?: readonly number[];
-  attemptTimeoutMs?: number;
+}
+
+/** Writes a durable intent now and returns the exact publication that clears only that intent. */
+export async function prepareMCPAuthorizationMutation(
+  scope: MCPRecoveryGenerationScope,
+  deps: MCPAuthorizationPublicationDeps,
+): Promise<() => Promise<void>> {
+  const publicationRetryVersion = await deps.persistPublicationRetry?.(scope);
+  return () =>
+    publishMCPAuthorizationMutation(scope, {
+      ...deps,
+      persistPublicationRetry:
+        publicationRetryVersion != null ? async () => publicationRetryVersion : undefined,
+    });
 }
 
 /** Owns the OAuth authorization transaction while the token store's rollback journal is live. */
@@ -139,18 +153,15 @@ export async function persistMCPAuthorizationTransaction<TTokens>(
   params: PersistMCPAuthorizationTransactionParams<TTokens>,
   deps: PersistMCPAuthorizationTransactionDeps<TTokens>,
 ): Promise<TTokens> {
+  if (!(await deps.ensureServerActive())) {
+    throw deps.inactiveServerError();
+  }
+  const publishPreparedMutation = await prepareMCPAuthorizationMutation(params.scope, deps);
   return params.persistTokens(params.tokens, async (committedTokens) => {
     if (!(await deps.ensureServerActive())) {
       throw deps.inactiveServerError();
     }
-    await publishMCPAuthorizationMutation(params.scope, {
-      invalidateRecoveryGeneration: deps.invalidateRecoveryGeneration,
-      clearLocalRecovery: deps.clearLocalRecovery,
-      persistPublicationRetry: deps.persistPublicationRetry,
-      clearPublicationRetry: deps.clearPublicationRetry,
-      retryDelaysMs: deps.retryDelaysMs,
-      attemptTimeoutMs: deps.attemptTimeoutMs,
-    });
+    await publishPreparedMutation();
     await completeMCPAuthorizationWithTokenWaiters(
       {
         flowIds: params.flowIds,
@@ -164,8 +175,8 @@ export async function persistMCPAuthorizationTransaction<TTokens>(
 
 /**
  * Publishes every committed credential batch before disconnecting its live connection. Partial
- * batches still advance the generation, and teardown runs the same sequence even when its
- * credential delete did not commit so OAuth token cleanup cannot race an old connection.
+ * batches still advance the generation. Teardown fences the credential change, disconnects, then
+ * writes a second durable intent before OAuth cleanup and fences that cleanup independently.
  */
 export async function finalizeMCPAuthorizationMutation(
   params: FinalizeMCPAuthorizationMutationParams,
@@ -205,10 +216,22 @@ export async function finalizeMCPAuthorizationMutation(
     deps.onDisconnectError?.(error);
   }
 
-  await deps.afterDisconnect?.();
+  let cleanupPublicationError: unknown;
+  if (deps.afterDisconnect != null) {
+    try {
+      const publishCleanupMutation = await prepareMCPAuthorizationMutation(params.scope, deps);
+      await deps.afterDisconnect();
+      await publishCleanupMutation();
+    } catch (error) {
+      cleanupPublicationError = error;
+    }
+  }
 
   if (publicationFailed) {
     throw publicationError;
+  }
+  if (cleanupPublicationError != null) {
+    throw cleanupPublicationError;
   }
   return committed;
 }

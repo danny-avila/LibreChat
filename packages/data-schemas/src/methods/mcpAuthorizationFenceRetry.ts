@@ -32,8 +32,12 @@ interface RetryDeferInput extends RetryVersionInput {
   updatedAt: Date;
 }
 
-function retryId(scope: MCPAuthorizationFenceRetryScope, tenantId?: string | null): string {
-  return JSON.stringify([tenantId ?? '', String(scope.userId), scope.serverName]);
+function retryId(
+  scope: MCPAuthorizationFenceRetryScope,
+  tenantId: string | null | undefined,
+  version: string,
+): string {
+  return JSON.stringify([tenantId ?? '', String(scope.userId), scope.serverName, version]);
 }
 
 /** Owns the raw collection and guarded index lifecycle used by durable MCP fence replay. */
@@ -56,7 +60,7 @@ export function createMCPAuthorizationFenceRetryStorage(mongoose: typeof import(
   return {
     async upsert({ scope, tenantId, version, now }: RetryUpsertInput): Promise<void> {
       await collection().updateOne(
-        { _id: retryId(scope, tenantId) },
+        { _id: retryId(scope, tenantId, version) },
         {
           $set: {
             userId: String(scope.userId),
@@ -71,11 +75,11 @@ export function createMCPAuthorizationFenceRetryStorage(mongoose: typeof import(
       );
     },
     async deleteVersion({ scope, tenantId, version }: RetryVersionInput): Promise<void> {
-      await collection().deleteOne({ _id: retryId(scope, tenantId), version });
+      await collection().deleteOne({ _id: retryId(scope, tenantId, version), version });
     },
     async deferVersion({ scope, tenantId, version, updatedAt }: RetryDeferInput): Promise<void> {
       await collection().updateOne(
-        { _id: retryId(scope, tenantId), version },
+        { _id: retryId(scope, tenantId, version), version },
         { $set: { updatedAt } },
       );
     },

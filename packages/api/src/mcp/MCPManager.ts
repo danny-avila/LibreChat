@@ -519,6 +519,7 @@ export class MCPManager extends UserConnectionManager {
       connectionTimeout: args.connectionTimeout,
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
+      onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,
@@ -830,6 +831,7 @@ Please follow these instructions when using tools from the respective MCP server
     upstreamTokenProvider,
     oboIdentityContext,
     onOAuthCredentialsChanged,
+    onOAuthCredentialsChanging,
     signal,
     directBearerRecoveryState = { attempted: true },
   }: {
@@ -848,6 +850,7 @@ Please follow these instructions when using tools from the respective MCP server
     upstreamTokenProvider?: UpstreamTokenProvider;
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
+    onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
     signal?: AbortSignal;
     directBearerRecoveryState?: t.DirectBearerRecoveryState;
   }): Promise<void> {
@@ -906,6 +909,7 @@ Please follow these instructions when using tools from the respective MCP server
           upstreamTokenProvider,
           oboIdentityContext,
           onOAuthCredentialsChanged,
+          onOAuthCredentialsChanging,
           directBearerRecoveryState,
           directBearerResolvedConfig: refreshedConfig,
           signal: recoverySignal,
@@ -1079,6 +1083,7 @@ Please follow these instructions when using tools from the respective MCP server
     upstreamTokenProvider,
     oboIdentityContext,
     onOAuthCredentialsChanged,
+    onOAuthCredentialsChanging,
   }: {
     user?: IUser;
     serverName: string;
@@ -1101,6 +1106,7 @@ Please follow these instructions when using tools from the respective MCP server
     upstreamTokenProvider?: UpstreamTokenProvider;
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
+    onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -1164,6 +1170,7 @@ Please follow these instructions when using tools from the respective MCP server
             upstreamTokenProvider,
             oboIdentityContext,
             onOAuthCredentialsChanged,
+            onOAuthCredentialsChanging,
             graphTokenResolver,
             signal: options?.signal,
             customUserVars,
@@ -1357,6 +1364,7 @@ Please follow these instructions when using tools from the respective MCP server
                 customUserVars,
                 requestBody,
                 onOAuthCredentialsChanged,
+                onOAuthCredentialsChanging,
               },
               connection!,
             );
@@ -1407,6 +1415,7 @@ Please follow these instructions when using tools from the respective MCP server
             upstreamTokenProvider,
             oboIdentityContext,
             onOAuthCredentialsChanged,
+            onOAuthCredentialsChanging,
             signal: options?.signal,
             directBearerRecoveryState,
           });
@@ -1496,6 +1505,7 @@ Please follow these instructions when using tools from the respective MCP server
               upstreamTokenProvider,
               oboIdentityContext,
               onOAuthCredentialsChanged,
+              onOAuthCredentialsChanging,
               signal: options?.signal,
               directBearerRecoveryState,
             });

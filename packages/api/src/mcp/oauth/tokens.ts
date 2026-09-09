@@ -67,6 +67,8 @@ interface StoreTokensParams {
   };
   /** Runs after all token rows are written but while the rollback journal is still available. */
   onStoreCommitted?: (tokens: MCPOAuthTokens) => Promise<void>;
+  /** Runs after preflight reads and encryption, immediately before the first token-row write. */
+  onStorePreparing?: () => Promise<void>;
 }
 
 interface GetTokensParams {
@@ -100,6 +102,8 @@ interface GetTokensParams {
    * cache invalidation tied to the fresh tokens cannot be skipped by a timeout.
    */
   onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
+  /** Creates the exact post-write callback after durable fence intent is safely stored. */
+  onRefreshPreparing?: () => Promise<(tokens?: MCPOAuthTokens) => Promise<void>>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
   /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
@@ -393,6 +397,7 @@ export class MCPTokenStorage {
     expectedCredentialSetId,
     signal,
     onStoreCommitted,
+    onStorePreparing,
   }: StoreTokensParams): Promise<MCPOAuthTokens> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const rollbackWrites: Array<() => Promise<void>> = [];
@@ -730,6 +735,8 @@ export class MCPTokenStorage {
             ]
           : plannedWrites;
 
+      await onStorePreparing?.();
+
       for (const write of orderedWrites) {
         if (signal?.aborted) {
           throw new Error('Token storage aborted by OAuth teardown');
@@ -759,8 +766,6 @@ export class MCPTokenStorage {
             : Date.now(),
         expires_at: accessTokenExpiry.getTime(),
       };
-      await onStoreCommitted?.(storedTokens);
-
       /**
        * An interactive response without a refresh token must never bind an older refresh
        * secret to the new client. Remove that stale record after the committed writes. This
@@ -791,6 +796,8 @@ export class MCPTokenStorage {
           });
         }
       }
+
+      await onStoreCommitted?.(storedTokens);
 
       logger.debug(`${logPrefix} Stored OAuth tokens`, {
         client_id: clientInfo?.client_id,
@@ -995,6 +1002,7 @@ export class MCPTokenStorage {
     refreshTokens,
     existingAccessToken,
     onRefreshSuccess,
+    onRefreshPreparing,
     signal,
     flowManager,
     leaseId,
@@ -1133,6 +1141,7 @@ export class MCPTokenStorage {
       // Pass existing token state to avoid duplicate DB calls
       let storedTokens: MCPOAuthTokens;
       try {
+        let preparedRefreshCommit: ((tokens?: MCPOAuthTokens) => Promise<void>) | undefined;
         storedTokens = await this.storeTokens({
           userId,
           serverName,
@@ -1150,7 +1159,19 @@ export class MCPTokenStorage {
           metadata: storedClientMetadata,
           expectedCredentialSetId: refreshCredentialSetId,
           signal,
-          onStoreCommitted: onRefreshSuccess,
+          onStorePreparing:
+            onRefreshPreparing == null
+              ? undefined
+              : async () => {
+                  preparedRefreshCommit = await onRefreshPreparing();
+                },
+          onStoreCommitted: async (tokens) => {
+            if (preparedRefreshCommit != null) {
+              await preparedRefreshCommit(tokens);
+            } else {
+              await onRefreshSuccess?.(tokens);
+            }
+          },
         });
       } finally {
         try {
@@ -1194,6 +1215,7 @@ export class MCPTokenStorage {
           logger.info(
             `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
           );
+          const publishPreparedCleanup = await onRefreshPreparing?.();
           const results = await Promise.allSettled([
             MCPTokenStorage.deleteClientRegistration({
               userId,
@@ -1215,6 +1237,7 @@ export class MCPTokenStorage {
               logger.warn(`${logPrefix} Failed to clear stale token data`, r.reason);
             }
           }
+          await publishPreparedCleanup?.();
           throw new ReauthenticationRequiredError(serverName, 'invalid_client');
         }
         logger.warn(
@@ -1240,6 +1263,7 @@ export class MCPTokenStorage {
     singleFlightScope,
     flowManager,
     onRefreshSuccess,
+    onRefreshPreparing,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1290,6 +1314,7 @@ export class MCPTokenStorage {
           singleFlightScope,
           flowManager,
           onRefreshSuccess,
+          onRefreshPreparing,
           existingAccessToken: accessTokenData,
         });
       }

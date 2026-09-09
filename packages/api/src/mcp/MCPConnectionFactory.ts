@@ -91,6 +91,7 @@ export class MCPConnectionFactory {
   protected readonly connectionTimeout?: number;
   protected readonly deadlineMs?: number;
   protected readonly onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
+  protected readonly onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   protected upstreamTokenProvider?: UpstreamTokenProvider;
@@ -579,6 +580,7 @@ export class MCPConnectionFactory {
     this.connectionTimeout = options?.connectionTimeout;
     this.deadlineMs = options?.deadlineMs;
     this.onOAuthCredentialsChanged = options?.onOAuthCredentialsChanged;
+    this.onOAuthCredentialsChanging = options?.onOAuthCredentialsChanging;
     this.signal = options?.signal;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
@@ -896,6 +898,7 @@ export class MCPConnectionFactory {
               singleFlightScope: this.getOAuthBindingDigest(),
               flowManager: this.flowManager,
               onRefreshSuccess: (refreshed) => this.handleOAuthRefreshSuccess(refreshed),
+              onRefreshPreparing: () => this.prepareOAuthRefreshSuccess(),
             }),
           );
         },
@@ -1096,6 +1099,7 @@ export class MCPConnectionFactory {
            * timeout still invalidates the cache.
            */
           onRefreshSuccess: (refreshed) => this.handleOAuthRefreshSuccess(refreshed),
+          onRefreshPreparing: () => this.prepareOAuthRefreshSuccess(),
           flowManager: this.flowManager,
         }),
       );
@@ -1133,6 +1137,36 @@ export class MCPConnectionFactory {
       });
     }
     await this.invalidateGetTokensFlow(freshTokens);
+  }
+
+  private async prepareOAuthRefreshSuccess(): Promise<
+    (freshTokens?: MCPOAuthTokens) => Promise<void>
+  > {
+    const publishPreparedMutation =
+      this.userId == null
+        ? undefined
+        : await this.onOAuthCredentialsChanging?.({
+            userId: this.userId,
+            serverName: this.serverName,
+          });
+    return async (freshTokens) => {
+      if (publishPreparedMutation != null) {
+        await publishPreparedMutation();
+        await this.invalidateGetTokensFlow(freshTokens);
+        return;
+      }
+      if (freshTokens != null) {
+        await this.handleOAuthRefreshSuccess(freshTokens);
+      } else {
+        if (this.userId != null) {
+          await this.onOAuthCredentialsChanged?.({
+            userId: this.userId,
+            serverName: this.serverName,
+          });
+        }
+        await this.invalidateGetTokensFlow();
+      }
+    };
   }
 
   protected async invalidateGetTokensFlow(freshTokens?: MCPOAuthTokens): Promise<void> {
