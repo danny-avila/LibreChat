@@ -29,12 +29,15 @@ build:packages`).
    ```
 
    With Docker Compose, stop the API and run a one-off container from the updated
-   image while MongoDB remains running:
+   image while MongoDB remains running. Use the same Compose file flags as your
+   deployment (for example, `docker compose -f deploy-compose.yml`). Set the
+   working directory to `/app`, where the root npm scripts live; the production
+   API image otherwise defaults to `/app/api`:
 
    ```sh
    docker compose stop api
-   docker compose run --rm --no-deps api npm run migrate:tenant-indexes:dry-run
-   docker compose run --rm --no-deps api npm run migrate:tenant-indexes
+   docker compose run --rm --no-deps -w /app api npm run migrate:tenant-indexes:dry-run
+   docker compose run --rm --no-deps -w /app api npm run migrate:tenant-indexes
    docker compose up -d api
    ```
 
