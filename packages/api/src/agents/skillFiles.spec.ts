@@ -1826,6 +1826,59 @@ describe('primeSkillFiles — upload rate-limit resilience', () => {
     expect(result).toBeNull();
   });
 
+  it('does not upload a partial skill bundle when stream acquisition is canceled', async () => {
+    const controller = new AbortController();
+    const batchUploadCodeEnvFiles = jest.fn();
+    const getDownloadStream = jest.fn(async () => {
+      controller.abort();
+      return Readable.from(Buffer.from('style'));
+    });
+
+    await expect(
+      primeSkillFiles(
+        makeSkillFilesDeps({
+          signal: controller.signal,
+          skillFiles: [styleFileRecord()],
+          batchUploadCodeEnvFiles,
+          getStrategyFunctions: jest.fn().mockReturnValue({ getDownloadStream }),
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
+  it('does not return a cache hit when cancellation arrives during its liveness check', async () => {
+    const controller = new AbortController();
+    const batchUploadCodeEnvFiles = jest.fn();
+    const getSessionInfo = jest.fn(async () => {
+      controller.abort();
+      return '2026-05-06T00:00:00Z';
+    });
+    const cachedFile = {
+      ...styleFileRecord(),
+      codeEnvRef: {
+        kind: 'skill' as const,
+        id: SKILL_ID.toString(),
+        storage_session_id: 'session-cached',
+        file_id: 'file-cached',
+        version: SKILL_VERSION,
+      },
+    };
+
+    await expect(
+      primeSkillFiles(
+        makeSkillFilesDeps({
+          signal: controller.signal,
+          skillFiles: [cachedFile],
+          batchUploadCodeEnvFiles,
+          getSessionInfo,
+          checkIfActive: jest.fn().mockReturnValue(true),
+        }),
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+  });
+
   it('bounds concurrent batch uploads to 3 application-scoped slots', async () => {
     const gates = Array.from({ length: 5 }, () => deferred<ReturnType<typeof uploadResult>>());
     let uploadIndex = 0;

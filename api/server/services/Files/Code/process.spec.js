@@ -2675,6 +2675,47 @@ describe('Code Process', () => {
       ]);
     });
 
+    it('propagates cancellation from a stale-file reupload', async () => {
+      const controller = new AbortController();
+      const dbFile = {
+        file_id: 'canceled-file',
+        filename: 'report.csv',
+        filepath: '/uploads/report.csv',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+          },
+        },
+      };
+      const handleFileUpload = jest.fn(async () => {
+        controller.abort();
+        controller.signal.throwIfAborted();
+      });
+      getStrategyFunctions.mockImplementation((source) =>
+        source === 'execute_code'
+          ? { handleFileUpload }
+          : { getDownloadStream: jest.fn().mockResolvedValue('stream') },
+      );
+      getFiles.mockResolvedValue([dbFile]);
+      filterFilesByAgentAccess.mockImplementation(({ files }) => Promise.resolve(files));
+      mockAxios.mockResolvedValue({ data: null });
+
+      await expect(
+        primeFiles({
+          req: { user: { id: 'user-123', role: 'USER' } },
+          tool_resources: { execute_code: { file_ids: [dbFile.file_id], files: [] } },
+          agentId: 'agent-id',
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+    });
+
     it('uses the permission resource type established by the calling route', async () => {
       const files = [
         {

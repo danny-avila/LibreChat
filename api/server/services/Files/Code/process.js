@@ -1527,6 +1527,10 @@ const primeFiles = async (options) => {
             `oldSession=${session_id} newSession=${newRef.storage_session_id} newFileId=${newRef.file_id}`,
         );
       } catch (error) {
+        /* Cancellation is an operation outcome, not a recoverable per-file
+         * miss. Swallowing it here would keep walking and could dispatch more
+         * uploads after the foreground run has ended. */
+        signal?.throwIfAborted();
         reuploadFailures += 1;
         const failureCategory = getReuploadFailureCategory(error);
         reuploadFailureCategories.add(failureCategory);
@@ -1553,6 +1557,7 @@ const primeFiles = async (options) => {
       continue;
     }
     const uploadTime = await getSessionInfo(ref, req, codeApiRoute);
+    signal?.throwIfAborted();
     if (!uploadTime) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=no-uploadtime ` +

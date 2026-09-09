@@ -206,6 +206,10 @@ async function collectSkillUploadFiles(
       return { stream, filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}` };
     }),
   );
+  /* Do not let allSettled turn foreground cancellation into a skipped bundle
+   * member. A partial skill upload can look successful while leaving required
+   * files unavailable to the sandbox. */
+  signal?.throwIfAborted();
   for (const result of streamResults) {
     if (result.status === 'fulfilled' && result.value) {
       filesToUpload.push(result.value);
@@ -463,6 +467,7 @@ async function executePrimeSkillFiles(
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
+        signal?.throwIfAborted();
         const allActive = checkResults.every(Boolean);
 
         if (allActive) {
@@ -494,7 +499,10 @@ async function executePrimeSkillFiles(
             return { storage_session_id: files[0].storage_session_id, files };
           }
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
         // Session check failed — fall through to re-upload
       }
     }
@@ -811,12 +819,17 @@ export async function primeInvokedSkills(
                 deps.req,
                 deps.codeExecutionContext,
               );
+              deps.signal?.throwIfAborted();
               return !!(lastModified && deps.checkIfActive?.(lastModified));
-            } catch {
+            } catch (error) {
+              if (isAbortError(error)) {
+                throw error;
+              }
               return false;
             }
           }),
         );
+        deps.signal?.throwIfAborted();
         const allActive = checkResults.every(Boolean);
 
         if (allActive) {
