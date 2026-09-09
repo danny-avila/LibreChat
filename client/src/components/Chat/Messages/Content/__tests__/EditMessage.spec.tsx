@@ -305,6 +305,31 @@ describe('EditMessage', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
+  /** A rerun replays the parent as the turn's user message. A chained model turn —
+   *  a manual compaction, or an imported thread with no user message between two
+   *  replies — has no such parent, and submitting one would mint a user message
+   *  under an existing response's id and run the turn on empty text. */
+  it('submits nothing when the parent to replay is not a user turn', async () => {
+    const user = userEvent.setup();
+    const chainedAnswer = {
+      messageId: 'assistant-2',
+      parentMessageId: assistantMessage.messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      text: 'A second answer with no user turn behind it',
+    } as TMessage;
+    mockGetMessages.mockReturnValue([message, assistantMessage, chainedAnswer]);
+    const ask = jest.fn();
+    const { enterEdit, setSiblingIdx } = renderEditor({ ask, editedMessage: chainedAnswer });
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_rerun' }));
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(setSiblingIdx).not.toHaveBeenCalled();
+    expect(enterEdit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('message-text-editor')).toHaveValue(chainedAnswer.text);
+  });
+
   /** A response cancelled before its first token is exactly what needs rerunning, and
    *  the form marks text required so Save cannot blank a message. Routing the rerun
    *  through that validation left the enabled button inert. */
