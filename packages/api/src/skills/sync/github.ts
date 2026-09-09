@@ -155,9 +155,9 @@ type RestorableSkillFile = {
 };
 
 type SkillFileReplacement = {
-  skillId?: { toString(): string } | string;
-  relativePath?: string;
-  author?: unknown;
+  skillId: string;
+  relativePath: string;
+  author: string;
   tenantId?: string | null;
   bytes?: number | null;
 };
@@ -1425,7 +1425,15 @@ async function syncSkillFiles(params: {
           author: skill.author,
           tenantId: skill.tenantId,
         },
-        existing,
+        existing
+          ? {
+              skillId: existing.skillId.toString(),
+              relativePath: existing.relativePath,
+              author: existing.author.toString(),
+              tenantId: existing.tenantId,
+              bytes: existing.bytes,
+            }
+          : null,
       );
     } catch (error) {
       await cleanupFile(deps, savedFile).catch((cleanupError) => {
