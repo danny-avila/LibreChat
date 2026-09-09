@@ -10,6 +10,12 @@ const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+const {
+  getSharedQuotaValue,
+  invalidateSharedQuotaScope,
+  upsertSkillFileWithQuota,
+  runWithSharedScope,
+} = require('./quota');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 
@@ -46,7 +52,9 @@ async function resolveSkillStorage({ isImage = false, loadAppConfig = loadCurren
 }
 
 async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId, loadAppConfig } = {}) {
-  const appConfig = await (loadAppConfig ?? loadCurrentAppConfig)();
+  const appConfig = loadAppConfig
+    ? await loadAppConfig({ userId, tenantId })
+    : await getAppConfig({ userId, tenantId, failClosed: true });
   return {
     config: appConfig,
     user: {
@@ -76,6 +84,13 @@ function withBaseSkillSyncConfig(req, baseConfig) {
 function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true } = {}) {
   const resolveAppConfig = loadAppConfig ?? loadCurrentAppConfig;
   const resolveConfig = getConfig ?? (() => getSyncConfig(resolveAppConfig));
+  const getQuotaReq = (row) => {
+    const userId = row.author?.toString?.() ?? row.author ?? SYSTEM_USER_ID;
+    const tenantId = row.tenantId;
+    return getSharedQuotaValue(`${userId}\0${tenantId ?? ''}`, () =>
+      getSyntheticReq({ userId, tenantId }),
+    );
+  };
   const createdRunner = createGitHubSkillSyncRunner({
     getConfig: resolveConfig,
     getCredentialToken: db.getSkillSyncCredentialToken,
@@ -93,8 +108,18 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     listSkillsBySource: db.listSkillsBySource,
     listSkillFiles: db.listSkillFiles,
     getSkillFileByPath: db.getSkillFileByPath,
-    upsertSkillFile: db.upsertSkillFile,
+    upsertSkillFile: async (row, replacing) =>
+      upsertSkillFileWithQuota(await getQuotaReq(row), row, replacing),
+    restoreSkillFile: async (row) => {
+      await db.upsertSkillFile(row);
+      try {
+        invalidateSharedQuotaScope(await getQuotaReq(row));
+      } catch (error) {
+        logger.error('[GitHubSkillSync] Failed to invalidate restored quota scope:', error);
+      }
+    },
     deleteSkillFile: db.deleteSkillFile,
+    invalidateQuotaScope: async (owner) => invalidateSharedQuotaScope(await getQuotaReq(owner)),
     deleteSkill: db.deleteSkill,
     grantPermission: async ({
       principalType,
@@ -161,7 +186,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
   });
   return {
     getStatus: createdRunner.getStatus,
-    runOnce: createdRunner.runOnce,
+    runOnce: (...args) => runWithSharedScope(() => createdRunner.runOnce(...args)),
   };
 }
 

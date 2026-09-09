@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { megabyte, mergeFileConfig } from 'librechat-data-provider';
 
 export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
@@ -521,10 +522,144 @@ export function createFileQuotaPersistence<TRequest, TResult>(
 }
 
 export type SkillFileRow = LedgerRow & {
-  skillId?: { toString(): string } | string;
+  skillId?: string;
   relativePath?: string;
-  author?: { toString(): string } | string;
+  author?: string;
 };
+
+export type SkillFileReplacement = {
+  skillId?: string;
+  relativePath?: string;
+  author?: string;
+  tenantId?: string | null;
+  bytes?: number | null;
+};
+
+export type SkillFileQuotaPersistenceDependencies<TRequest, TResult> = {
+  resolveScope: (req: TRequest) => StorageScope;
+  upsertSkillFile: (row: SkillFileRow) => Promise<TResult>;
+  /** Re-read an exact attempted row after an ambiguous upsert failure. If the
+   *  row committed before a later side effect failed, returning it prevents
+   *  quota release and blob rollback for storage Mongo now references. */
+  recoverCommittedSkillFile?: (row: SkillFileRow) => Promise<TResult | null>;
+  /** Repairs parent metadata whose side effect may have failed after the row commit. */
+  repairCommittedSkillFile?: (row: SkillFileRow) => Promise<void>;
+  getUserStorageUsage: GetUserStorageUsage;
+  onCleanupError: (error: unknown) => void;
+};
+
+export type SkillFileQuotaPersistence<TRequest, TResult> = {
+  persistSkillFile: <TRow extends SkillFileRow>(
+    req: TRequest,
+    row: TRow,
+    replacing: SkillFileReplacement | null,
+  ) => Promise<TResult>;
+  getSharedValue: <T>(key: string, load: () => Promise<T>) => Promise<T>;
+  invalidateSharedScope: (req: TRequest) => void;
+  runWithSharedScope: <T>(operation: () => Promise<T>) => Promise<T>;
+};
+
+type SharedSkillFileQuotaState = {
+  scopes: Map<string, StorageScope>;
+  values: Map<string, Promise<unknown>>;
+};
+
+/**
+ * Builds the SkillFile write boundary. A sync run may opt into shared scopes so its
+ * serial file writes reuse one usage read per owner/tenant without leaking cached
+ * usage into later runs or concurrent async chains.
+ */
+export function createSkillFileQuotaPersistence<TRequest, TResult>(
+  dependencies: SkillFileQuotaPersistenceDependencies<TRequest, TResult>,
+): SkillFileQuotaPersistence<TRequest, TResult> {
+  const scopeStorage = new AsyncLocalStorage<SharedSkillFileQuotaState>();
+
+  const getScopeKey = (scope: StorageScope): string =>
+    `${scope.userId}\u0000${scope.tenantId ?? ''}\u0000${scope.storageLimit ?? ''}`;
+
+  const getScope = (req: TRequest): StorageScope => {
+    const resolved = dependencies.resolveScope(req);
+    const state = scopeStorage.getStore();
+    if (!state) {
+      return resolved;
+    }
+    const key = getScopeKey(resolved);
+    const existing = state.scopes.get(key);
+    if (existing) {
+      return existing;
+    }
+    state.scopes.set(key, resolved);
+    return resolved;
+  };
+
+  return {
+    persistSkillFile: <TRow extends SkillFileRow>(
+      req: TRequest,
+      row: TRow,
+      replacing: SkillFileReplacement | null,
+    ): Promise<TResult> =>
+      persistSkillFileWithQuota(
+        {
+          scope: getScope(req),
+          row,
+          write: async (scopedRow) => {
+            try {
+              return await dependencies.upsertSkillFile(scopedRow);
+            } catch (error) {
+              let committed: TResult | null | undefined;
+              try {
+                committed = await dependencies.recoverCommittedSkillFile?.(scopedRow);
+              } catch (recoveryError) {
+                /** The database cannot currently distinguish a rejected write from one
+                 * that committed before its parent side effect failed. Conservatively
+                 * preserve both the charge and blob until a later read can establish
+                 * the outcome; treating it as rejected would create a dangling row. */
+                dependencies.onCleanupError(recoveryError);
+                return scopedRow as unknown as TResult;
+              }
+              if (committed != null) {
+                await dependencies.repairCommittedSkillFile?.(scopedRow);
+                return committed;
+              }
+              throw error;
+            }
+          },
+          rollback: null,
+          getUserStorageUsage: dependencies.getUserStorageUsage,
+          replacing,
+          replacedBytes: replacing?.bytes,
+        },
+        dependencies.onCleanupError,
+      ),
+    getSharedValue: <T>(key: string, load: () => Promise<T>): Promise<T> => {
+      const state = scopeStorage.getStore();
+      if (!state) {
+        return load();
+      }
+      const existing = state.values.get(key) as Promise<T> | undefined;
+      if (existing) {
+        return existing;
+      }
+      const value = load();
+      state.values.set(key, value);
+      return value;
+    },
+    invalidateSharedScope: (req: TRequest): void => {
+      const state = scopeStorage.getStore();
+      if (!state) {
+        return;
+      }
+      const scope = dependencies.resolveScope(req);
+      scope.currentUsage = undefined;
+      scope.pendingRead = undefined;
+      scope.replacementBytes = undefined;
+      scope.replacementLocks = undefined;
+      state.scopes.delete(getScopeKey(scope));
+    },
+    runWithSharedScope: <T>(operation: () => Promise<T>): Promise<T> =>
+      scopeStorage.run({ scopes: new Map(), values: new Map() }, operation),
+  };
+}
 
 /**
  * Persists a `File` row under this request's storage scope.
@@ -573,12 +708,7 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
  */
 export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   params: PersistParams<TRow, TResult> & {
-    replacing?: {
-      skillId?: { toString(): string } | string;
-      relativePath?: string;
-      author?: unknown;
-      tenantId?: string | null;
-    } | null;
+    replacing?: SkillFileReplacement | null;
   },
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {

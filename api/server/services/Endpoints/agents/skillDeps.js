@@ -38,6 +38,7 @@ const {
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+const { upsertSkillFileWithQuota } = require('~/server/services/Skills/quota');
 const db = require('~/models');
 
 const deploymentSkillMethods = createDeploymentSkillMethods({
@@ -101,20 +102,32 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
 
   let result;
   try {
-    result = await db.upsertSkillFile({
-      skillId,
-      relativePath,
-      file_id: fileId,
-      filename,
-      filepath,
-      ...storageMetadata,
-      source: storage.source,
-      mimeType,
-      bytes: buffer.length,
-      isExecutable: false,
-      author: req.user._id ?? req.user.id,
-      tenantId,
-    });
+    result = await upsertSkillFileWithQuota(
+      req,
+      {
+        skillId,
+        relativePath,
+        file_id: fileId,
+        filename,
+        filepath,
+        ...storageMetadata,
+        source: storage.source,
+        mimeType,
+        bytes: buffer.length,
+        isExecutable: false,
+        author: String(req.user._id ?? req.user.id),
+        tenantId,
+      },
+      existingFile
+        ? {
+            skillId: String(existingFile.skillId),
+            relativePath: existingFile.relativePath,
+            author: String(existingFile.author),
+            tenantId: existingFile.tenantId,
+            bytes: existingFile.bytes,
+          }
+        : null,
+    );
     if (!result) {
       const error = new Error('Skill file save failed to persist metadata');
       error.code = 'SKILL_FILE_UPSERT_NOT_FOUND';

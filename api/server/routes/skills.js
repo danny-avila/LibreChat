@@ -22,7 +22,6 @@ const {
   createSkill,
   getSkillById,
   deleteSkill,
-  upsertSkillFile,
   getSkillFileByPath,
   getRoleByName,
 } = require('~/models');
@@ -31,6 +30,7 @@ const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
 const { maybeRunGitHubSkillSyncForRequest } = require('~/server/services/Skills/sync');
+const { upsertSkillFileWithQuota } = require('~/server/services/Skills/quota');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
@@ -117,34 +117,35 @@ function resolveSkillStorage(req, { isImage = false } = {}) {
 // ---------------------------------------------------------------------------
 // Import handler (zip/md/skill → create skill + files)
 // ---------------------------------------------------------------------------
-const importHandler = createImportHandler({
-  limits: (req) => ({
-    maxZipBytes: getSkillImportSizeLimit(req),
-  }),
-  createSkill,
-  getSkillById,
-  deleteSkill,
-  upsertSkillFile,
-  saveBuffer: (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
-    const requestTenantId = tenantId ?? resolveRequestTenantId(req);
-    const storage = resolveSkillStorage(req, { isImage });
-    return storage
-      .saveBuffer({ userId, buffer, fileName, basePath, tenantId: requestTenantId })
-      .then((filepath) => ({
-        filepath,
-        source: storage.source,
-        ...getStorageMetadata({ filepath, source: storage.source }),
-      }));
-  },
-  deleteFile: (req, file) => {
-    const { deleteFile } = getStrategyFunctions(file.source);
-    if (deleteFile) {
-      return deleteFile(req, file);
-    }
-    return Promise.resolve();
-  },
-  grantPermission,
-});
+const importHandler = (req, res, next) =>
+  createImportHandler({
+    limits: (req) => ({
+      maxZipBytes: getSkillImportSizeLimit(req),
+    }),
+    createSkill,
+    getSkillById,
+    deleteSkill,
+    upsertSkillFile: (row) => upsertSkillFileWithQuota(req, row, null),
+    saveBuffer: (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
+      const requestTenantId = tenantId ?? resolveRequestTenantId(req);
+      const storage = resolveSkillStorage(req, { isImage });
+      return storage
+        .saveBuffer({ userId, buffer, fileName, basePath, tenantId: requestTenantId })
+        .then((filepath) => ({
+          filepath,
+          source: storage.source,
+          ...getStorageMetadata({ filepath, source: storage.source }),
+        }));
+    },
+    deleteFile: (req, file) => {
+      const { deleteFile } = getStrategyFunctions(file.source);
+      if (deleteFile) {
+        return deleteFile(req, file);
+      }
+      return Promise.resolve();
+    },
+    grantPermission,
+  })(req, res, next);
 
 // ---------------------------------------------------------------------------
 // Per-file upload handler (add a single file to an existing skill)
@@ -205,20 +206,32 @@ async function uploadFileHandler(req, res) {
 
     let result;
     try {
-      result = await upsertSkillFile({
-        skillId,
-        relativePath,
-        file_id: fileId,
-        filename,
-        filepath,
-        ...storageMetadata,
-        source: storage.source,
-        mimeType: file.mimetype || 'application/octet-stream',
-        bytes: file.size,
-        isExecutable: false,
-        author: req.user._id,
-        tenantId,
-      });
+      result = await upsertSkillFileWithQuota(
+        req,
+        {
+          skillId,
+          relativePath,
+          file_id: fileId,
+          filename,
+          filepath,
+          ...storageMetadata,
+          source: storage.source,
+          mimeType: file.mimetype || 'application/octet-stream',
+          bytes: file.size,
+          isExecutable: false,
+          author: String(req.user._id ?? req.user.id),
+          tenantId,
+        },
+        existingFile
+          ? {
+              skillId: String(existingFile.skillId),
+              relativePath: existingFile.relativePath,
+              author: String(existingFile.author),
+              tenantId: existingFile.tenantId,
+              bytes: existingFile.bytes,
+            }
+          : null,
+      );
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
       try {

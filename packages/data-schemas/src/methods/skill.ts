@@ -1071,6 +1071,7 @@ export function createSkillMethods(
     skillId: Types.ObjectId | string,
   ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  reconcileSkillFileCount: (skillId: Types.ObjectId | string) => Promise<void>;
   deleteSkillFile: (
     skillId: Types.ObjectId | string,
     relativePath: string,
@@ -1867,6 +1868,19 @@ export function createSkillMethods(
     return current;
   }
 
+  async function reconcileSkillFileCount(skillId: Types.ObjectId | string): Promise<void> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const fileCount = await SkillFile.countDocuments({ skillId });
+    const updated = await Skill.findByIdAndUpdate(skillId, {
+      $set: { fileCount },
+      $inc: { version: 1 },
+    });
+    if (!updated) {
+      throw new Error('Cannot reconcile files for a missing skill');
+    }
+  }
+
   async function deleteSkillFile(
     skillId: Types.ObjectId | string,
     relativePath: string,
@@ -1953,6 +1967,7 @@ export function createSkillMethods(
     listSkillsBySource,
     listSkillFiles,
     upsertSkillFile,
+    reconcileSkillFileCount,
     deleteSkillFile,
     getSkillFileByPath,
     updateSkillFileContent,

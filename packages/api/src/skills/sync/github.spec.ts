@@ -305,6 +305,7 @@ function createDeps(
         author: new Types.ObjectId(),
       } as ISkillFile & { _id: Types.ObjectId };
     }),
+    restoreSkillFile: jest.fn(async () => undefined),
     deleteSkillFile: jest.fn(async () => ({ deleted: true })),
     deleteSkill: jest.fn(async () => ({ deleted: true })),
     saveBuffer: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
@@ -354,6 +355,7 @@ describe('createGitHubSkillSyncRunner', () => {
           commitSha: 'commit-sha',
         }),
       }),
+      null,
     );
     expect(deps.grantPermission).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1249,6 +1251,7 @@ describe('createGitHubSkillSyncRunner', () => {
           path: 'skills/engineering/tdd/tests.md',
         }),
       }),
+      null,
     );
   });
 
@@ -2905,6 +2908,63 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.updateSkill).not.toHaveBeenCalled();
   });
 
+  it('deletes stale paths before admitting newly added paths', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      body: 'Old body',
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const staleFile = {
+      ...makeSkillFile(existing),
+      relativePath: 'scripts/old.sh',
+      filename: 'old.sh',
+      filepath: '/uploads/old.sh',
+    };
+    const deleteSkillFile = jest.fn(async () => ({ deleted: true }));
+    const invalidateQuotaScope = jest.fn(async () => {});
+    const saveBuffer = jest.fn(async () => ({
+      filepath: '/uploads/file-id__run.sh',
+      source: 'local',
+    }));
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => existing),
+      listSkillFiles: jest.fn(async () => [staleFile]),
+      deleteSkillFile,
+      invalidateQuotaScope,
+      saveBuffer,
+      updateSkill: jest.fn(async () => ({
+        status: 'updated' as const,
+        skill: { ...existing, version: existing.version + 1 },
+        warnings: [],
+      })),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.deleteSkillFile).toHaveBeenCalledWith(existing._id, 'scripts/old.sh');
+    expect(invalidateQuotaScope).toHaveBeenCalledWith({
+      author: staleFile.author,
+      tenantId: staleFile.tenantId,
+    });
+    expect(deleteSkillFile.mock.invocationCallOrder[0]).toBeLessThan(
+      saveBuffer.mock.invocationCallOrder[0],
+    );
+  });
+
   it('restores existing skill files when the skill update fails after file sync', async () => {
     const existing = makeSkill({
       name: 'research',
@@ -2962,6 +3022,12 @@ describe('createGitHubSkillSyncRunner', () => {
       ),
       listSkillFiles: jest.fn(async () => Array.from(files.values())),
       upsertSkillFile,
+      restoreSkillFile: jest.fn(async (row) => {
+        await upsertSkillFile({
+          ...row,
+          author: new Types.ObjectId(row.author),
+        });
+      }),
       deleteSkillFile: jest.fn(async (_skillId, relativePath) => ({
         deleted: files.delete(relativePath),
       })),
@@ -3470,10 +3536,28 @@ describe('repository adapter seam', () => {
           blobSha: 'skills/research/scripts/run.sh@1',
         }),
       }),
+      null,
     );
   });
 
   it('re-downloads a file only when the adapter reports a new content id', async () => {
+    const existingFile = {
+      _id: new Types.ObjectId(),
+      skillId: new Types.ObjectId(),
+      relativePath: 'scripts/run.sh',
+      file_id: 'existing-file-id',
+      filename: 'run.sh',
+      filepath: '/uploads/existing-file-id__run.sh',
+      source: 'local',
+      sourceMetadata: { blobSha: 'skills/research/scripts/run.sh@1' },
+      mimeType: 'application/x-sh',
+      bytes: 7,
+      category: 'script' as const,
+      isExecutable: false,
+      author: new Types.ObjectId(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     const deps = createDeps({
       createAdapter: () =>
         createFakeAdapter({
@@ -3481,23 +3565,7 @@ describe('repository adapter seam', () => {
             '---\nname: research\ndescription: Research things\n---\nBody',
           'skills/research/scripts/run.sh': 'echo hi',
         }),
-      getSkillFileByPath: jest.fn(async () => ({
-        _id: new Types.ObjectId(),
-        skillId: new Types.ObjectId(),
-        relativePath: 'scripts/run.sh',
-        file_id: 'existing-file-id',
-        filename: 'run.sh',
-        filepath: '/uploads/existing-file-id__run.sh',
-        source: 'local',
-        sourceMetadata: { blobSha: 'skills/research/scripts/run.sh@1' },
-        mimeType: 'application/x-sh',
-        bytes: 7,
-        category: 'script' as const,
-        isExecutable: false,
-        author: new Types.ObjectId(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })),
+      listSkillFiles: jest.fn(async () => [existingFile]),
     });
 
     const result = await createGitHubSkillSyncRunner(deps).runOnce();
@@ -3526,6 +3594,7 @@ describe('files whose paths cannot be mirrored', () => {
     expect(deps.createSkill).toHaveBeenCalledTimes(1);
     expect(deps.upsertSkillFile).toHaveBeenCalledWith(
       expect.objectContaining({ relativePath: 'scripts/run.sh' }),
+      null,
     );
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({

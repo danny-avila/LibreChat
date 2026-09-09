@@ -24,7 +24,11 @@ import type {
   SkillSyncCredentialSummary,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
-import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
+import type {
+  SkillSyncConfig,
+  SkillSourceMetadata,
+  SkillSyncGitHubSourceConfig,
+} from 'librechat-data-provider';
 import type {
   RepoCommit,
   RepoTreeEntry,
@@ -133,6 +137,31 @@ type StoredSkillFileRef = {
   tenantId?: string;
 };
 
+type RestorableSkillFile = {
+  skillId: string;
+  relativePath: string;
+  file_id: string;
+  filename: string;
+  filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
+  source: string;
+  sourceMetadata?: SkillSourceMetadata;
+  mimeType: string;
+  bytes: number;
+  isExecutable?: boolean;
+  author: string;
+  tenantId?: string;
+};
+
+type SkillFileReplacement = {
+  skillId: string;
+  relativePath: string;
+  author: string;
+  tenantId?: string | null;
+  bytes?: number | null;
+};
+
 type DeletedSyncedSkillJournal = {
   skill: ISkill & { _id: Types.ObjectId };
   files: Array<ISkillFile & { _id: Types.ObjectId }>;
@@ -201,11 +230,17 @@ export type GitHubSkillSyncDeps = {
     skillId: string | Types.ObjectId,
     relativePath: string,
   ) => Promise<(ISkillFile & { _id: Types.ObjectId }) | null>;
-  upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  upsertSkillFile: (
+    row: UpsertSkillFileInput,
+    replacing: SkillFileReplacement | null,
+  ) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  /** Restores rows that already existed before this run without admitting new storage. */
+  restoreSkillFile: (row: RestorableSkillFile) => Promise<void>;
   deleteSkillFile: (
     skillId: string | Types.ObjectId,
     relativePath: string,
   ) => Promise<{ deleted: boolean }>;
+  invalidateQuotaScope?: (owner: { author: unknown; tenantId?: string | null }) => Promise<void>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   saveBuffer: (params: {
     userId: string;
@@ -963,9 +998,9 @@ function toStoredFileRef(params: {
   };
 }
 
-function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSkillFileInput {
+function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): RestorableSkillFile {
   return {
-    skillId: file.skillId,
+    skillId: file.skillId.toString(),
     relativePath: file.relativePath,
     file_id: file.file_id,
     filename: file.filename,
@@ -973,11 +1008,11 @@ function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSki
     storageKey: file.storageKey,
     storageRegion: file.storageRegion,
     source: file.source,
-    sourceMetadata: file.sourceMetadata,
+    sourceMetadata: file.sourceMetadata as SkillSourceMetadata | undefined,
     mimeType: file.mimeType,
     bytes: file.bytes,
     isExecutable: file.isExecutable,
-    author: file.author,
+    author: file.author.toString(),
     tenantId: file.tenantId,
   };
 }
@@ -1057,7 +1092,7 @@ async function restoreExistingSkillFiles(params: {
     await deps.deleteSkillFile(skill._id, file.relativePath);
   }
   for (const file of previousFiles) {
-    await deps.upsertSkillFile(toSkillFileInput(file));
+    await deps.restoreSkillFile(toSkillFileInput(file));
   }
   await cleanupStoredFiles({
     deps,
@@ -1085,9 +1120,9 @@ async function restoreDeletedSyncedSkill(
 ): Promise<void> {
   const restored = await deps.createSkill(toCreateSkillInput(deleted.skill));
   for (const file of deleted.files) {
-    await deps.upsertSkillFile({
+    await deps.restoreSkillFile({
       ...toSkillFileInput(file),
-      skillId: restored.skill._id,
+      skillId: restored.skill._id.toString(),
     });
   }
   await ensurePublicViewer(deps, restored.skill._id);
@@ -1282,6 +1317,13 @@ async function deleteNameConflictingStaleSkill(params: {
     throw makeStaleDeletionFailure(error);
   });
   const staleSkillId = staleSkill._id.toString();
+  for (const file of deletedSkill.files) {
+    try {
+      await params.deps.invalidateQuotaScope?.({ author: file.author, tenantId: file.tenantId });
+    } catch (error) {
+      logger.error('[GitHubSkillSync] Failed to invalidate deleted skill quota scope:', error);
+    }
+  }
 
   return {
     remainingSkills: params.existingSyncedSkills.filter(
@@ -1306,12 +1348,12 @@ async function syncSkillFiles(params: {
   const { deps, adapter, commit, source, skill, discovered, assertNotCancelled } = params;
   const journal = params.journal ?? { staleFiles: [], savedFiles: [] };
   const remotePaths = new Set<string>();
+  const syncEntries: Array<{ entry: RepoTreeEntry; relativePath: string }> = [];
   let syncedFileCount = 0;
   let deletedFileCount = 0;
   let totalFileBytes = 0;
 
   for (const entry of discovered.files) {
-    assertNotCancelled();
     const relativePath = getDiscoveredRelativePath(discovered, entry);
     if (!isSafeRelativePath(relativePath) || relativePath.toUpperCase() === 'SKILL.MD') {
       continue;
@@ -1319,7 +1361,27 @@ async function syncSkillFiles(params: {
     totalFileBytes += assertGitHubBlobSize(entry, relativePath);
     assertCumulativeGitHubFileSize(totalFileBytes);
     remotePaths.add(relativePath);
-    const existing = await deps.getSkillFileByPath(skill._id, relativePath);
+    syncEntries.push({ entry, relativePath });
+  }
+
+  const existingFiles = await deps.listSkillFiles(skill._id);
+  const existingByPath = new Map(existingFiles.map((file) => [file.relativePath, file]));
+  for (const file of existingFiles) {
+    assertNotCancelled();
+    if (remotePaths.has(file.relativePath)) {
+      continue;
+    }
+    const result = await deps.deleteSkillFile(skill._id, file.relativePath);
+    if (result.deleted) {
+      deletedFileCount++;
+      journal.staleFiles.push(file);
+      await deps.invalidateQuotaScope?.({ author: file.author, tenantId: file.tenantId });
+    }
+  }
+
+  for (const { entry, relativePath } of syncEntries) {
+    assertNotCancelled();
+    const existing = existingByPath.get(relativePath) ?? null;
     if (existing && getSourceMetadataString(existing, 'blobSha') === entry.id) {
       continue;
     }
@@ -1339,29 +1401,40 @@ async function syncSkillFiles(params: {
     });
     const savedFile = toStoredFileRef({ saved, author: skill.author, tenantId: skill.tenantId });
     try {
-      await deps.upsertSkillFile({
-        skillId: skill._id,
-        relativePath,
-        file_id: fileId,
-        filename,
-        filepath: saved.filepath,
-        storageKey: saved.storageKey,
-        storageRegion: saved.storageRegion,
-        source: saved.source,
-        sourceMetadata: {
-          provider: PROVIDER,
-          sourceId: source.id,
-          upstreamId: makeUpstreamId(source, discovered.rootPath),
-          commitSha: commit.id,
-          blobSha: entry.id,
-          path: entry.path,
+      await deps.upsertSkillFile(
+        {
+          skillId: skill._id,
+          relativePath,
+          file_id: fileId,
+          filename,
+          filepath: saved.filepath,
+          storageKey: saved.storageKey,
+          storageRegion: saved.storageRegion,
+          source: saved.source,
+          sourceMetadata: {
+            provider: PROVIDER,
+            sourceId: source.id,
+            upstreamId: makeUpstreamId(source, discovered.rootPath),
+            commitSha: commit.id,
+            blobSha: entry.id,
+            path: entry.path,
+          },
+          mimeType,
+          bytes: buffer.length,
+          isExecutable: false,
+          author: skill.author,
+          tenantId: skill.tenantId,
         },
-        mimeType,
-        bytes: buffer.length,
-        isExecutable: false,
-        author: skill.author,
-        tenantId: skill.tenantId,
-      });
+        existing
+          ? {
+              skillId: existing.skillId.toString(),
+              relativePath: existing.relativePath,
+              author: existing.author.toString(),
+              tenantId: existing.tenantId,
+              bytes: existing.bytes,
+            }
+          : null,
+      );
     } catch (error) {
       await cleanupFile(deps, savedFile).catch((cleanupError) => {
         logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError);
@@ -1373,19 +1446,6 @@ async function syncSkillFiles(params: {
     journal.savedFiles.push(savedFile);
     if (existing && existing.filepath !== saved.filepath) {
       journal.staleFiles.push(existing);
-    }
-  }
-
-  const existingFiles = await deps.listSkillFiles(skill._id);
-  for (const file of existingFiles) {
-    assertNotCancelled();
-    if (remotePaths.has(file.relativePath)) {
-      continue;
-    }
-    const result = await deps.deleteSkillFile(skill._id, file.relativePath);
-    if (result.deleted) {
-      deletedFileCount++;
-      journal.staleFiles.push(file);
     }
   }
   return { syncedFileCount, deletedFileCount, ...journal };
