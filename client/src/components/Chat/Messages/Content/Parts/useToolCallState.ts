@@ -37,6 +37,10 @@ export interface UseToolCallStateInput {
    * every other card instead of patching the result afterwards.
    */
   extraError?: boolean;
+  /** A terminal verdict carried outside the dispatch run step, such as a
+   * cancelled ordinary background tool. Cancellation outranks error-shaped
+   * output so the card never relabels an intentional stop as failure. */
+  extraCancelled?: boolean;
 }
 
 export default function useToolCallState({
@@ -47,6 +51,7 @@ export default function useToolCallState({
   onExpand,
   runStepStatus,
   extraError = false,
+  extraCancelled = false,
 }: UseToolCallStateInput): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
@@ -86,7 +91,7 @@ export default function useToolCallState({
    * for why the cancellation inference must not read the animated one.
    */
   const phase = resolveToolCallPhase({
-    runStepStatus,
+    runStepStatus: extraCancelled ? 'cancelled' : runStepStatus,
     displayProgress: rawProgress,
     reportedProgress: initialProgress,
     isSubmitting,

@@ -244,6 +244,8 @@ export interface ToolExecuteOptions {
   }>;
   /** Trusted detached-subagent task scope for polling and parent controls. */
   subagentTasks?: SubagentTaskConfig;
+  /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
+  ordinaryToolCancellation?: boolean;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
@@ -5209,6 +5211,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     emitAttachment,
     emitPtcProgress,
     subagentTasks,
+    ordinaryToolCancellation = false,
     provisionFiles,
   } = options;
 
@@ -5516,12 +5519,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }),
                 };
               }
+              const backgroundAbortController = new AbortController();
+              let backgroundAbortSource: 'manual' | 'timeout' | undefined;
               const created = backgroundTaskRegistry.create({
                 ...(detachedReservation?.status === 'reserved'
                   ? { taskId: detachedReservation.taskId }
                   : {}),
                 ...registration,
                 ...(capacityPermit == null ? {} : { capacityPermit }),
+                requestCancellation: () => {
+                  if (backgroundAbortSource != null || backgroundAbortController.signal.aborted) {
+                    return false;
+                  }
+                  backgroundAbortSource = 'manual';
+                  backgroundAbortController.abort(
+                    new DOMException('Background task cancellation requested', 'AbortError'),
+                  );
+                  return true;
+                },
               });
               if ('atCapacity' in created) {
                 if (detachedReservation?.status === 'reserved') {
@@ -5587,7 +5602,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 const persistBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
-                  status: 'completed' | 'error';
+                  status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
                   /** A provider id alone is not a durable part identity: it may
                    * repeat in later turns of the same response. New automatic
@@ -5610,7 +5625,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     return {
                       taskId: task.id,
                       toolName: tc.name,
-                      status: params.status,
+                      status: params.status === 'cancelled' ? 'error' : params.status,
+                      ...(params.status === 'cancelled' ? { cancelled: true } : {}),
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
                       ...(completionPreregistered ? { completionWakeup: true } : {}),
                       ...(current?.resultClaim != null
@@ -5743,7 +5759,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                        *  overwrite it. */
                       dispatchedAt: task.createdAt,
                       codeExecutionContext,
-                      ...(detachedReservation?.status === 'reserved' || !completionPreregistered
+                      ...(detachedReservation?.status === 'reserved' ||
+                      (!completionPreregistered && params.status !== 'cancelled')
                         ? {}
                         : { backgroundTask, resolveBackgroundTask }),
                       output: params.output ?? localTask?.result,
@@ -5816,7 +5833,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 const persistSettledBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
-                  status: 'completed' | 'error';
+                  status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
                   if (harvestEnabled) {
                     await persistBackgroundResult(params);
@@ -5838,7 +5855,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
-                const backgroundAbortController = new AbortController();
                 try {
                   invokePromise = Promise.resolve(
                     tool.invoke(normalizedArgs, {
@@ -5966,6 +5982,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 };
                 let producerRetirementTimeout: ReturnType<typeof setTimeout> | undefined;
                 const requestBackgroundAbort = (): void => {
+                  backgroundAbortSource ??= 'timeout';
                   backgroundAbortController.abort(
                     new DOMException('Background task timed out', 'AbortError'),
                   );
@@ -6103,12 +6120,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
                     const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
                     const registryError = isCodeCall ? deliveredError : neutralizedError;
+                    /** Only an owner-authorized request is cancellation evidence.
+                     * Providers and timeout controllers also use AbortError, so
+                     * classifying by error shape would turn failures into a false
+                     * claim that the owner cancelled the task. */
                     const detachedTerminalStatus =
-                      toolError instanceof Error &&
-                      (toolError.name === 'AbortError' ||
-                        (toolError as Error & { code?: string }).code === 'ABORT_ERR')
-                        ? 'cancelled'
-                        : 'failed';
+                      backgroundAbortSource === 'manual' ? 'cancelled' : 'failed';
                     if (
                       !(await persistDetachedTerminal({
                         status: detachedTerminalStatus,
@@ -6117,19 +6134,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       return;
                     }
-                    backgroundTaskRegistry.fail(
-                      backgroundUserId,
-                      backgroundConversationId,
-                      task.id,
-                      registryError,
-                      /** Failed code tasks join the heal path too: without this,
-                       *  a full-row save reverting the error patch would leave
-                       *  the dispatch card on the handle JSON forever. */
-                      { harvestStarted: harvestEnabled },
-                    );
+                    const settleOptions = { harvestStarted: harvestEnabled };
+                    if (detachedTerminalStatus === 'cancelled') {
+                      backgroundTaskRegistry.cancel(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        registryError,
+                        settleOptions,
+                      );
+                    } else {
+                      backgroundTaskRegistry.fail(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        registryError,
+                        /** Failed code tasks join the heal path too: without this,
+                         *  a full-row save reverting the error patch would leave
+                         *  the dispatch card on the handle JSON forever. */
+                        settleOptions,
+                      );
+                    }
                     await persistSettledBackgroundResult({
                       output: deliveredError,
-                      status: 'error',
+                      status: detachedTerminalStatus === 'cancelled' ? 'cancelled' : 'error',
                     });
                     await wakeDetachedActor();
                   } finally {
@@ -6195,6 +6223,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
+                    ordinaryToolCancellation,
                   });
                   const taskSnapshot = getBackgroundTaskSnapshot({
                     userId: backgroundUserId,
@@ -6362,12 +6391,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
                     if (persistBackgroundCodeResult && delivery.messageId) {
-                      /** Error tasks carry their message in `error`, not
+                      /** Error/cancelled tasks carry their message in `error`, not
                        *  `result`; abort-confirmed timeouts store it raw, so
                        *  wrap here — `toBackgroundToolFailure` is a no-op for
                        *  already-wrapped detached failures. */
                       const reapplyOutput =
-                        delivery.status === 'error'
+                        delivery.status === 'error' || delivery.status === 'cancelled'
                           ? toBackgroundToolFailure(
                               delivery.toolName,
                               delivery.error ?? delivery.result ?? 'Background task failed',
@@ -6382,6 +6411,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         agentId: delivery.agentId,
                         output: reapplyOutput,
                         attachments: delivery.attachments,
+                        ...(delivery.backgroundTask == null
+                          ? {}
+                          : { backgroundTask: delivery.backgroundTask }),
                         reapply: true,
                       }).catch((reapplyError) => {
                         logger.warn(

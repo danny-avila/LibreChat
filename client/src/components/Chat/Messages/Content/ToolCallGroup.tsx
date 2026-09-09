@@ -148,20 +148,23 @@ function getToolMeta(
      *  reported no failed action beside a card showing failure. Correlated the
      *  same way the child is, since provider tool-call ids repeat across agents
      *  and execution steps in handoff responses. */
-    const backgroundFailed =
-      parseBackgroundHandle(tc.output) != null &&
-      splitBackgroundAttachments(
-        filterAttachmentsForPart(
-          attachmentsByToolCallId?.[tc.id ?? ''],
-          tc.agentId,
-          toolCall.stepId,
-        ),
-        tc.id,
-      ).backgroundStatus === 'error';
+    const backgroundHandle = parseBackgroundHandle(tc.output);
+    const backgroundStatus = splitBackgroundAttachments(
+      filterAttachmentsForPart(attachmentsByToolCallId?.[tc.id ?? ''], tc.agentId, toolCall.stepId),
+      tc.id,
+    ).backgroundStatus;
+    const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
+    const backgroundCancelled =
+      tc.backgroundTask?.cancelled === true ||
+      (backgroundHandle != null && backgroundStatus === 'cancelled');
     return {
       name,
       iconName,
-      ...resolveOutcome(runStepStatus, completed, failedOutput || backgroundFailed),
+      ...resolveOutcome(
+        backgroundCancelled ? 'cancelled' : runStepStatus,
+        completed,
+        failedOutput || backgroundFailed,
+      ),
     };
   }
 

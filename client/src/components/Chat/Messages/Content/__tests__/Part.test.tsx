@@ -57,7 +57,9 @@ jest.mock('../WebSearch', () => ({
 
 jest.mock('../ToolCall', () => ({
   __esModule: true,
-  default: () => <div data-testid="tool-call" />,
+  default: ({ runStepStatus }: { runStepStatus?: string }) => (
+    <div data-testid="tool-call" data-run-step-status={runStepStatus} />
+  ),
 }));
 
 jest.mock('../Image', () => ({
@@ -133,6 +135,21 @@ describe('Part tool renderer selection', () => {
       'edit_file',
     );
     expect(screen.queryByTestId('tool-call')).not.toBeInTheDocument();
+  });
+
+  it('renders a cancelled generic background tool as cancelled', () => {
+    const part = toolCallPart('search_mcp_docs') as Extract<
+      TMessageContentParts,
+      { type: typeof ContentTypes.TOOL_CALL }
+    >;
+    Object.assign(part[ContentTypes.TOOL_CALL], {
+      runStepStatus: 'failed',
+      backgroundTask: { cancelled: true },
+    });
+
+    renderPart(part);
+
+    expect(screen.getByTestId('tool-call')).toHaveAttribute('data-run-step-status', 'cancelled');
   });
 
   it('routes an unavailable reasoning marker to the marker renderer', () => {
