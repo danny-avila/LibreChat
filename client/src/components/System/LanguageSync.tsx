@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import Cookies from 'js-cookie';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useAtomValue, useSetAtom } from 'jotai';
 import i18n, { changeLanguageSafely, normalizeLocale } from '~/locales/i18n';
 import { useGetStartupConfig } from '~/data-provider';
 import store from '~/store';
@@ -20,7 +20,7 @@ import store from '~/store';
  */
 function useDefaultLanguage() {
   const { data: startupConfig } = useGetStartupConfig();
-  const setLang = useSetRecoilState(store.lang);
+  const setLang = useSetAtom(store.lang);
 
   useEffect(() => {
     const serverDefault = startupConfig?.interface?.defaultLanguage;
@@ -31,13 +31,17 @@ function useDefaultLanguage() {
     if (userChoseLanguage) {
       return;
     }
-    setLang(normalizeLocale(serverDefault));
+    // Store the selector-conform value as-is (e.g. 'de-DE'), like the language
+    // selector does. Normalization stays at the i18n boundary (the effect below,
+    // via normalizeLocale/changeLanguageSafely) — persisting a normalized 'de'
+    // would diverge from what the selector writes for the same language.
+    setLang(serverDefault);
   }, [startupConfig, setLang]);
 }
 
 export default function LanguageSync() {
-  const lang = useRecoilValue(store.lang);
-  const setLanguageLoading = useSetRecoilState(store.languageLoading);
+  const lang = useAtomValue(store.lang);
+  const setLanguageLoading = useSetAtom(store.languageLoading);
   useDefaultLanguage();
 
   useEffect(() => {
