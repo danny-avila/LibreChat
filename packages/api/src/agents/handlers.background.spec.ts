@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
+import type { ToolExecuteOptions } from './handlers';
 import {
   backgroundTaskRegistry,
   runCheckBackgroundTask,
@@ -10,7 +11,6 @@ import {
 import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
-import type { ToolExecuteOptions } from './handlers';
 
 interface BatchInput {
   toolCalls: Array<{
@@ -696,7 +696,9 @@ describe('createToolExecuteHandler — background tool calls', () => {
       await flushMicrotasks();
 
       const persisted =
-        persistBackgroundCodeResult.mock.calls[persistBackgroundCodeResult.mock.calls.length - 1]?.[0];
+        persistBackgroundCodeResult.mock.calls[
+          persistBackgroundCodeResult.mock.calls.length - 1
+        ]?.[0];
       expect(persisted).toEqual(
         expect.objectContaining({ output: expect.stringContaining('Background task timed out') }),
       );
