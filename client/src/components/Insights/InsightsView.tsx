@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, Info, Search } from 'lucide-react';
 import { Navigate, useSearchParams } from 'react-router-dom';
+import { AlertCircle, Check, Info, Minus, Search } from 'lucide-react';
 import {
   Button,
   Input,
@@ -565,6 +565,7 @@ export default function InsightsView() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [pendingAgentIds, setPendingAgentIds] = useState<string[] | null>(null);
   const dateRangeSelectionTimeout = useRef<number>();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
@@ -621,6 +622,7 @@ export default function InsightsView() {
     () => (selectedAgentIds.length > 0 ? selectedAgentIds : agentItems.map((agent) => agent.value)),
     [agentItems, selectedAgentIds],
   );
+  const displayedAgentIds = pendingAgentIds ?? effectiveAgentIds;
 
   useDocumentTitle(`${localize('com_insights_title')} | LibreChat`);
 
@@ -699,9 +701,14 @@ export default function InsightsView() {
   };
 
   const handleAgentSelection = (agentIds: string[]) => {
-    if (agentIds.length === 0 || !data) {
+    if (!data) {
       return;
     }
+    if (agentIds.length === 0) {
+      setPendingAgentIds([]);
+      return;
+    }
+    setPendingAgentIds(null);
     const normalizedIds = [...new Set(agentIds)].sort();
     const allAgentIds = data.agents.map((agent) => agent.id).sort();
     const nextParams = new URLSearchParams(urlSearchParams);
@@ -717,6 +724,8 @@ export default function InsightsView() {
     setUrlSearchParams(nextParams, { replace: true });
     setPage(1);
   };
+  const allAgentsDisplayed = displayedAgentIds.length === agentItems.length;
+  const someAgentsDisplayed = displayedAgentIds.length > 0;
 
   if (
     configLoading ||
@@ -743,15 +752,49 @@ export default function InsightsView() {
           {data && (
             <MultiSelect
               items={agentItems}
-              selectedValues={effectiveAgentIds}
+              selectedValues={displayedAgentIds}
               setSelectedValues={handleAgentSelection}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setPendingAgentIds(null);
+                }
+              }}
               disabled={agentItems.length === 1}
               showSelectedValues
+              showItemCheckboxes
               className="w-full min-w-0 sm:w-56"
               selectClassName="h-8 w-full rounded border border-border-medium bg-surface-tertiary px-3 py-1 shadow-none hover:border-border-heavy data-[state=open]:border-border-heavy dark:hover:bg-chart-widget-stroke dark:data-[state=open]:bg-chart-widget-stroke"
-              itemClassName="rounded-none px-4 py-1.5"
+              itemClassName="group rounded-none px-4 py-1.5"
               popoverClassName="max-h-80 rounded border-border-medium bg-surface-primary px-0 py-2 dark:bg-chart-widget-surface"
+              renderItemContent={(value, defaultContent) => {
+                const agentLabel =
+                  agentItems.find((agent) => agent.value === value)?.label ?? value;
+                return (
+                  <>
+                    <span className="flex min-w-0 flex-1 items-center gap-2">{defaultContent}</span>
+                    <button
+                      type="button"
+                      aria-label={localize('com_insights_select_only_agent', {
+                        name: agentLabel,
+                      })}
+                      className="invisible ml-auto shrink-0 rounded px-1.5 py-0.5 text-xs font-medium uppercase text-text-secondary hover:text-text-primary focus:visible focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:visible group-hover:visible group-data-[active-item]:visible"
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleAgentSelection([value]);
+                      }}
+                    >
+                      {localize('com_insights_only')}
+                    </button>
+                  </>
+                );
+              }}
               renderSelectedValues={(values) => {
+                if (values.length === 0) {
+                  return localize('com_insights_no_agents_selected');
+                }
                 if (values.length === agentItems.length) {
                   return localize('com_insights_all_agents', { count: agentItems.length });
                 }
@@ -761,16 +804,40 @@ export default function InsightsView() {
                 return localize('com_insights_agents_selected', { count: values.length });
               }}
               popoverHeader={
-                <div className="border-b border-border-light pb-2">
+                <div className="border-b border-border-light">
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="h-8 w-full justify-start rounded-none px-4 font-normal text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-                    disabled={effectiveAgentIds.length === agentItems.length}
-                    onClick={() => handleAgentSelection(agentItems.map((agent) => agent.value))}
+                    aria-label={
+                      displayedAgentIds.length > 0
+                        ? localize('com_ui_clear_all')
+                        : localize('com_insights_select_all_agents')
+                    }
+                    className="h-10 w-full justify-start gap-2 rounded-none px-4 font-medium text-text-primary hover:bg-surface-hover"
+                    onClick={() =>
+                      handleAgentSelection(
+                        displayedAgentIds.length > 0 ? [] : agentItems.map((agent) => agent.value),
+                      )
+                    }
                   >
-                    {localize('com_insights_select_all_agents')}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'flex size-4 shrink-0 items-center justify-center rounded-sm border border-border-xheavy',
+                        displayedAgentIds.length > 0 && 'bg-surface-inverted text-text-inverted',
+                      )}
+                    >
+                      {allAgentsDisplayed && <Check className="size-3.5" strokeWidth={2} />}
+                      {someAgentsDisplayed && !allAgentsDisplayed && (
+                        <Minus className="size-3.5" strokeWidth={2} />
+                      )}
+                    </span>
+                    <span>{localize('com_ui_agents')}</span>
+                    {displayedAgentIds.length > 0 &&
+                      displayedAgentIds.length < agentItems.length && (
+                        <span className="text-text-secondary">({displayedAgentIds.length})</span>
+                      )}
                   </Button>
                 </div>
               }

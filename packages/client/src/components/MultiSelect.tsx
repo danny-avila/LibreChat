@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Check } from 'lucide-react';
 import {
   Select,
   SelectArrow,
@@ -49,6 +50,8 @@ interface MultiSelectProps<T extends string> {
   popoverHeader?: React.ReactNode;
   disabled?: boolean;
   showSelectedValues?: boolean;
+  showItemCheckboxes?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function defaultRender<T extends string>(
@@ -91,6 +94,8 @@ export default function MultiSelect<T extends string>({
   popoverHeader,
   disabled = false,
   showSelectedValues = false,
+  showItemCheckboxes = false,
+  onOpenChange,
 }: MultiSelectProps<T>): JSX.Element {
   const selectRef = useRef<HTMLButtonElement>(null);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -102,13 +107,20 @@ export default function MultiSelect<T extends string>({
     }
   };
 
+  const handleOpenChange = (open: boolean) => {
+    setIsPopoverOpen(open);
+    if (onOpenChange) {
+      onOpenChange(open);
+    }
+  };
+
   return (
     <div className={className}>
       <SelectProvider
         value={selectedValues}
         setValue={handleValueChange}
         open={isPopoverOpen}
-        setOpen={setIsPopoverOpen}
+        setOpen={handleOpenChange}
       >
         {label && (
           <SelectLabel className={cn('mb-1 block text-sm text-text-primary', labelClassName)}>
@@ -160,17 +172,30 @@ export default function MultiSelect<T extends string>({
           {items.map((item) => {
             const value = getItemValue(item);
             const label = getItemLabel(item);
+            const isCurrentItemSelected = selectedValues.includes(value);
             const defaultContent = (
               <>
-                <SelectItemCheck className="mr-0.5 text-text-primary" />
+                {showItemCheckboxes ? (
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center rounded-sm border border-border-xheavy',
+                      isCurrentItemSelected && 'bg-surface-inverted text-text-inverted',
+                    )}
+                  >
+                    {isCurrentItemSelected && <Check className="size-3.5" strokeWidth={2} />}
+                  </span>
+                ) : (
+                  <SelectItemCheck className="mr-0.5 text-text-primary" />
+                )}
                 <span className="truncate">{label}</span>
               </>
             );
-            const isCurrentItemSelected = selectedValues.includes(value);
             return (
               <SelectItem
                 key={value}
                 value={value}
+                aria-label={label}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
                   'scroll-m-1 outline-none transition-colors',
