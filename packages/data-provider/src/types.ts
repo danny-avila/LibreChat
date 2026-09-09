@@ -638,6 +638,7 @@ export type TConfig = {
     reasoningKey?: ReasoningResponseKey;
     includeReasoningContent?: boolean;
     includeReasoningHistory?: boolean;
+    showEndpointInModelName?: boolean;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
 };
