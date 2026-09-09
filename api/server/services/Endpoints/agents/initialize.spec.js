@@ -14,6 +14,11 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const mockInitializeAgent = jest.fn();
 const mockValidateAgentModel = jest.fn();
+const mockGetAppConfig = jest.fn();
+jest.mock('~/server/services/Config', () => ({
+  ...jest.requireActual('~/server/services/Config'),
+  getAppConfig: (...args) => mockGetAppConfig(...args),
+}));
 
 function deferred() {
   let resolve;
@@ -69,6 +74,7 @@ jest.mock('~/server/services/ToolService', () => ({
       'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
       'resource_recovery_required',
       'stateful_code_environment_not_allowed',
+      'code_workspace_unavailable',
     ].includes(error?.code),
 }));
 
@@ -1426,59 +1432,106 @@ describe('initializeClient — subagent loading', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
-  it('retains a configured Code API route on lazy subagent descriptors', async () => {
-    const subAgent = await createAgent({
-      id: SUBAGENT_ID,
-      name: 'Attached Stateful Subagent',
-      provider: 'openai',
-      model: 'gpt-4',
-      author: new mongoose.Types.ObjectId(),
-      tools: ['execute_code'],
-      stateful_code_sessions: true,
-      stateful_code_environment: 'agent-user',
-      code_environment_id: 'attached-vm',
-    });
-    await grantView(subAgent);
-    mockInitializeAgent.mockResolvedValue(
-      makePrimaryConfig({
-        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
-      }),
-    );
-    const req = makeSubagentReq();
-    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
-    req.config.endpoints.agents.statefulCodeSessions = {
-      allowedEnvironments: ['agent-user'],
-      environments: [
-        {
-          id: 'attached-vm',
-          name: 'Attached VM',
-          type: 'attached',
-          baseURL: 'https://bridge.example.com/v1/',
-          default: true,
-        },
-      ],
-    };
-
-    await initializeClient({
-      req,
-      res: {},
-      signal: new AbortController().signal,
-      endpointOption: makeEndpointOption(),
-    });
-
-    expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
-      expect.objectContaining({
-        codeSessionKey: expect.stringMatching(/^execute_code:stateful:[a-f0-9]{32}:v3:/),
-        codeExecutionContext: expect.objectContaining({
-          baseUrl: 'https://bridge.example.com/v1',
-          environmentId: 'attached-vm',
-          environmentType: 'attached',
-          executionProfile: 'stateful',
-          executionRouteKey: expect.stringMatching(/^stateful:[a-f0-9]{32}$/),
+  it.each([true, false])(
+    'validates the lazy subagent workspace before exposure: registered=%s',
+    async (registered) => {
+      const subAgent = await createAgent({
+        id: SUBAGENT_ID,
+        name: 'Attached Stateful Subagent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        tools: ['execute_code'],
+        stateful_code_sessions: true,
+        stateful_code_environment: 'agent-user',
+        code_environment_id: 'attached-vm',
+      });
+      await grantView(subAgent);
+      mockInitializeAgent.mockResolvedValue(
+        makePrimaryConfig({
+          subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
         }),
-      }),
-    );
-  });
+      );
+      const req = makeSubagentReq();
+      req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+      req.config.endpoints.agents.statefulCodeSessions = {
+        allowedEnvironments: ['agent-user'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            owner: 'deployment',
+            pairing: { workerId: 'lazy-worker', tokenEnv: 'TEST_LAZY_WORKSPACE_TOKEN' },
+            baseURL: 'https://bridge.example.com/v1/',
+            default: true,
+          },
+        ],
+      };
+      req.body.codeWorkspaces = [{ environmentId: 'attached-vm', workspaceId: 'project-b' }];
+      if (!registered) req.body.codeWorkspaces[0].workspaceId = 'removed-project';
+      mockGetAppConfig.mockResolvedValue(req.config);
+      process.env.TEST_LAZY_WORKSPACE_TOKEN = 'test-token';
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            workerId: 'lazy-worker',
+            online: true,
+            ready: true,
+            leaseExpiresInMs: 45000,
+            capabilities: {
+              statefulWorkspace: true,
+              sandboxProfile: 'native-srt',
+              runtimes: ['bash'],
+              workspaceTools: {
+                protocolVersion: 1,
+                operations: ['read_file'],
+                workspaces: [{ id: 'project-b' }],
+              },
+            },
+          }),
+        ),
+      );
+      try {
+        const initialization = initializeClient({
+          req,
+          res: {},
+          signal: new AbortController().signal,
+          endpointOption: makeEndpointOption(),
+        });
+        if (!registered) {
+          await expect(initialization).rejects.toMatchObject({
+            code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+          });
+          expect(agentClientArgs).toBeUndefined();
+          return;
+        }
+        await initialization;
+      } finally {
+        fetchSpy.mockRestore();
+        delete process.env.TEST_LAZY_WORKSPACE_TOKEN;
+      }
+
+      expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
+        expect.objectContaining({
+          codeSessionKey: expect.stringMatching(/^execute_code:stateful:[a-f0-9]{32}:v3:/),
+          codeExecutionContext: expect.objectContaining({
+            baseUrl: 'https://bridge.example.com/v1',
+            environmentId: 'attached-vm',
+            environmentType: 'attached',
+            codeWorkspace: {
+              environmentId: 'attached-vm',
+              workspaceId: 'project-b',
+              operations: ['read_file'],
+            },
+            executionProfile: 'stateful',
+            executionRouteKey: expect.stringMatching(/^stateful:[a-f0-9]{32}$/),
+          }),
+        }),
+      );
+    },
+  );
 
   it('omits a descriptor when its metadata lookup fails without aborting the primary run', async () => {
     const primaryConfig = makePrimaryConfig({

@@ -21,6 +21,7 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   resolveCodeExecutionContext,
+  resolveCodeExecutionWorkspaceContext,
   createStatefulCodeEnvironmentPolicyError,
   buildSubagentThreadTaskConfig,
   backgroundCompletionWakeupsEnabled,
@@ -83,6 +84,7 @@ const {
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
 
@@ -1010,7 +1012,7 @@ const initializeClient = async ({
     const hasConfiguredCodeEnvironment =
       agent.code_environment_id != null ||
       configuredCodeEnvironments?.some((environment) => environment.default === true) === true;
-    const codeExecutionContext =
+    const baseCodeExecutionContext =
       lazyCodeEnvAvailable && (!statefulCodeSessions || hasConfiguredCodeEnvironment)
         ? resolveCodeExecutionContext({
             statefulSessions: statefulCodeSessions,
@@ -1022,6 +1024,15 @@ const initializeClient = async ({
             conversationId,
           })
         : undefined;
+    const codeExecutionContext = baseCodeExecutionContext
+      ? await resolveCodeExecutionWorkspaceContext({
+          context: baseCodeExecutionContext,
+          requestedSelections: runtimeRequestBody?.codeWorkspaces,
+          persistedSelections: req.resolvedConversation?.codeWorkspaces,
+          environments: configuredCodeEnvironments,
+          getAppConfig,
+        })
+      : undefined;
     const {
       alwaysApplySkillPrimes,
       historicalToolNames,
