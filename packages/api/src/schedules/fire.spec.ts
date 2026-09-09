@@ -15,6 +15,7 @@ const LIMITS: ScheduleLimits = {
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
+  mcpPreflightTimeoutMs: 30_000,
   requireProject: false,
 };
 
@@ -873,7 +874,7 @@ it('does not invent a server outcome for infrastructure preflight failures', asy
 
 it('bounds MCP preflight by the claim lease and the stricter concurrency config', async () => {
   const { methods } = makeMethods();
-  const leaseUntil = new Date(Date.now() + 240_000);
+  const leaseUntil = new Date(Date.now() + 10_000);
   const failure = new ScheduleMCPError([{ server: 'Notion', status: 'mcp_unavailable' }]);
   const preflightMCP = jest.fn(async () => {
     throw failure;
@@ -893,6 +894,33 @@ it('bounds MCP preflight by the claim lease and the stricter concurrency config'
     OWNER,
     expect.objectContaining({ concurrency: 2, deadlineMs: leaseUntil.getTime() }),
   );
+});
+
+it('bounds MCP preflight by the stricter owner and deployment timeout', async () => {
+  const { methods } = makeMethods();
+  const startedAt = Date.now();
+  let deadlineMs: number | undefined;
+  const preflightMCP: ScheduleEngineDeps['preflightMCP'] = async (_agentId, _user, options) => {
+    deadlineMs = options?.deadlineMs;
+    return [];
+  };
+  const deps = makeDeps(methods, {
+    preflightMCP,
+    getLimits: async (user) => ({
+      ...LIMITS,
+      mcpPreflightTimeoutMs: user == null ? 12_000 : 20_000,
+    }),
+  });
+
+  await fireSchedule(
+    deps,
+    makeSchedule({ leaseUntil: new Date(startedAt + 240_000) }),
+    LIMITS,
+    new Date('2026-09-09T12:00:00Z'),
+  );
+
+  expect(deadlineMs).toBeGreaterThanOrEqual(startedAt + 11_900);
+  expect(deadlineMs).toBeLessThanOrEqual(Date.now() + 12_000);
 });
 
 it('rolls back without recording a failure when MCP preflight is cancelled', async () => {

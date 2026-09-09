@@ -18,6 +18,8 @@ export interface ScheduleLimits {
   fireConcurrency: number;
   /** Maximum MCP readiness probes active during one schedule admission. */
   mcpPreflightConcurrency: number;
+  /** Maximum wall-clock time for one unattended MCP readiness admission. */
+  mcpPreflightTimeoutMs: number;
   /** Every schedule must be filed under a chat project. A pinned `projectId`
    *  implies this, so callers only ever have to read one flag. */
   requireProject: boolean;
@@ -34,6 +36,7 @@ export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
+  mcpPreflightTimeoutMs: 30_000,
   requireProject: false,
 };
 

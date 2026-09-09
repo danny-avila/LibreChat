@@ -17,6 +17,7 @@ const BASE_LIMITS: ScheduleLimits = {
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
   mcpPreflightConcurrency: 3,
+  mcpPreflightTimeoutMs: 30_000,
   requireProject: false,
 };
 

@@ -377,7 +377,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     req.once?.('aborted', abort);
     res.once?.('close', abort);
     res.once?.('finish', detach);
-    if (req.aborted === true || req.destroyed === true || res.destroyed === true) abort();
+    if (req.aborted === true || res.destroyed === true) abort();
     return controller.signal;
   }
 
@@ -392,6 +392,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       await deps.preflightMCP(agentId, requestUser(req), {
         signal,
         concurrency: limits.mcpPreflightConcurrency,
+        deadlineMs: Date.now() + limits.mcpPreflightTimeoutMs,
       });
       return true;
     } catch (error) {

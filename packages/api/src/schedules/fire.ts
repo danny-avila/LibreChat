@@ -572,13 +572,17 @@ export async function fireSchedule(
 
     let mcp: Awaited<ReturnType<ScheduleEngineDeps['preflightMCP']>>;
     try {
+      const leaseDeadline = schedule.leaseUntil?.getTime() ?? Number.POSITIVE_INFINITY;
+      const preflightDeadline =
+        Date.now() +
+        Math.min(ownerLimits.mcpPreflightTimeoutMs, deploymentLimits.mcpPreflightTimeoutMs);
       mcp = await deps.preflightMCP(schedule.agent_id, user, {
         signal: options?.signal,
         concurrency: Math.min(
           ownerLimits.mcpPreflightConcurrency,
           deploymentLimits.mcpPreflightConcurrency,
         ),
-        ...(schedule.leaseUntil != null ? { deadlineMs: schedule.leaseUntil.getTime() } : {}),
+        deadlineMs: Math.min(leaseDeadline, preflightDeadline),
       });
     } catch (error) {
       if (options?.signal?.aborted) {

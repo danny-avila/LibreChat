@@ -35,6 +35,27 @@ describe('scheduled MCP preflight config', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('bounds the aggregate readiness timeout', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 120000 } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 120001 } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, mcpPreflightTimeoutMs: 999 } },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('excludedKeys', () => {

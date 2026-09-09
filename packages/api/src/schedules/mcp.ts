@@ -39,6 +39,7 @@ import {
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
+import { detachOnAbort } from '../utils/promises';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
 import { resolveReachableGraph } from '../agents/edges';
 import { formatMCPServerTools } from '../mcp/tools';
@@ -91,9 +92,8 @@ interface ScheduleMCPDeps {
 
 /** Probes only persisted identity and credentials, with isolated user connections and no OAuth wait. */
 export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPreflight {
-  return async (agentId, principal, options) => {
-    const callerSignal = options.signal;
-    const signal = createDeadlineAbortSignal(options.deadlineMs, callerSignal);
+  const runPreflight: ScheduleMCPPreflight = async (agentId, principal, options) => {
+    const signal = options.signal;
     const throwIfAborted = () => {
       if (signal?.aborted) throw signal.reason ?? new Error('MCP preflight aborted');
     };
@@ -370,5 +370,9 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     }
     if (outcomes.some((item) => item.status !== 'ready')) throw new ScheduleMCPError(outcomes);
     return outcomes;
+  };
+  return (agentId, principal, options) => {
+    const signal = createDeadlineAbortSignal(options.deadlineMs, options.signal);
+    return detachOnAbort(runPreflight(agentId, principal, { ...options, signal }), signal);
   };
 }

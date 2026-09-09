@@ -585,3 +585,12 @@ it('passes the aggregate lease deadline to tool discovery', async () => {
 
   expect(fetchToolsSnapshot).toHaveBeenCalledWith(deadlineMs, expect.any(AbortSignal));
 });
+
+it('enforces the aggregate deadline while loading the agent graph', async () => {
+  const { check, deps } = setup([]);
+  deps.getAgentGraphNodes = jest.fn(() => new Promise<AgentGraphNode[]>(() => undefined));
+
+  await expect(check('agent', principal, { deadlineMs: Date.now() + 20 })).rejects.toMatchObject({
+    name: 'TimeoutError',
+  });
+});

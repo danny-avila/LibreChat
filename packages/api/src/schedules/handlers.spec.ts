@@ -181,6 +181,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
       autoDisableAfterFailures: 5,
       fireConcurrency: 5,
       mcpPreflightConcurrency: 3,
+      mcpPreflightTimeoutMs: 30_000,
       requireProject: false,
     }),
     preflightMCP: jest.fn().mockResolvedValue([]),
@@ -446,6 +447,7 @@ describe('create with a cron cadence', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 30_000,
         requireProject: false,
       }),
     });
@@ -469,6 +471,7 @@ describe('create with a cron cadence', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 30_000,
         requireProject: false,
       }),
     });
@@ -495,6 +498,7 @@ describe('create with a cron cadence', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 30_000,
         requireProject: false,
       }),
     });
@@ -1048,6 +1052,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 30_000,
         requireProject: false,
       }),
     });
@@ -1073,6 +1078,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 30_000,
         requireProject: false,
       }),
     });
@@ -1106,6 +1112,7 @@ describe('updateSchedule cadence timezone resolution', () => {
         autoDisableAfterFailures: 5,
         fireConcurrency: 5,
         mcpPreflightConcurrency: 3,
+        mcpPreflightTimeoutMs: 30_000,
         requireProject: false,
       }),
     });
@@ -1240,6 +1247,21 @@ describe('late-create compensation with a live manual run', () => {
 });
 
 describe('unattended MCP admission', () => {
+  it('does not treat a consumed request stream as a client disconnect', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: async () => false });
+    const req = Object.assign(makeCreateReq(), { destroyed: true });
+    (req as unknown as { body: Record<string, unknown> }).body = {
+      ...(req.body as unknown as Record<string, unknown>),
+      enabled: false,
+    };
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(req, res);
+
+    expect(captured.status).toBe(201);
+    expect(deps.methods.createScheduleWithSlot).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     'mcp_reauth_required',
     'mcp_configuration_missing',
