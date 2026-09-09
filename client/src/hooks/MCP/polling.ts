@@ -22,6 +22,11 @@ export function applyMCPDiscoveryAuthorizationState(
     const discoveryGeneration = discoveredTools?.servers[serverName]?.authorizationGeneration;
     const current = nextStatus?.[serverName];
     const statusGeneration = current?.authorizationGeneration;
+    const statusIsActive =
+      current?.connectionState === 'connecting' || current?.authorizationState === 'authorizing';
+    if (statusIsActive) {
+      continue;
+    }
     const statusAuthorizes =
       current?.connectionState === 'connected' || current?.authorizationState === 'authorized';
     if (statusAuthorizes && (discoveryGeneration == null || statusGeneration == null)) {

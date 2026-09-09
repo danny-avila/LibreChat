@@ -96,6 +96,32 @@ describe('applyMCPDiscoveryAuthorizationState', () => {
 
     expect(result).toBe(currentStatus);
   });
+
+  it('preserves an active OAuth flow over cached reauthorization state', () => {
+    const currentStatus = {
+      oauth: {
+        requiresOAuth: true,
+        connectionState: 'connecting' as const,
+        authorizationState: 'authorizing' as const,
+        authorizationGeneration: 'generation-1',
+      },
+    };
+    const result = applyMCPDiscoveryAuthorizationState(currentStatus, {
+      servers: {
+        oauth: {
+          name: 'oauth',
+          icon: '',
+          authenticated: false,
+          authorizationState: 'reauth_required',
+          authorizationGeneration: 'generation-1',
+          authConfig: [],
+          tools: [],
+        },
+      },
+    });
+
+    expect(result).toBe(currentStatus);
+  });
 });
 
 describe('getMCPOAuthTimeout', () => {

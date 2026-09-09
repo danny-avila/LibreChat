@@ -193,8 +193,15 @@ const mockOAuthCompletion = (tokens) => {
   const { MCPOAuthHandler } = require('@librechat/api');
   MCPOAuthHandler.completeOAuthFlow.mockImplementation(
     async (flowId, _code, flowManager, _headers, persistBeforeComplete) => {
-      const storedTokens = await persistBeforeComplete(tokens);
-      await flowManager.completeFlow(flowId, 'mcp_oauth', storedTokens);
+      let completed = false;
+      const completePersistedFlow = async (storedTokens) => {
+        await flowManager.completeFlow(flowId, 'mcp_oauth', storedTokens);
+        completed = true;
+      };
+      const storedTokens = await persistBeforeComplete(tokens, completePersistedFlow);
+      if (!completed) {
+        await completePersistedFlow(storedTokens);
+      }
       return storedTokens;
     },
   );
@@ -957,7 +964,11 @@ describe('MCP Routes', () => {
         mockOAuthCompletion({
           access_token: 'test-token',
         });
-        MCPTokenStorage.storeTokens.mockResolvedValue();
+        MCPTokenStorage.storeTokens.mockImplementation(async (params) => {
+          const storedTokens = { ...params.tokens, credential_set_id: 'callback-generation' };
+          await params.onStoreCommitted(storedTokens);
+          return storedTokens;
+        });
         mockRegistryInstance.getServerConfig.mockResolvedValue({
           url: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
         });
@@ -1913,7 +1924,7 @@ describe('MCP Routes', () => {
       expect(mockMcpManager.withUserConnectionLease).not.toHaveBeenCalled();
     });
 
-    it('rolls back stored callback tokens when their shared generation cannot advance', async () => {
+    it('keeps generation publication inside the token-store rollback boundary', async () => {
       const flowId = 'test-user-id:test-server';
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
@@ -1934,8 +1945,10 @@ describe('MCP Routes', () => {
         codeVerifier: 'test-verifier',
       });
       mockOAuthCompletion(storedTokens);
-      MCPTokenStorage.storeTokens.mockResolvedValue(storedTokens);
-      MCPTokenStorage.deleteUserTokens.mockResolvedValue(undefined);
+      MCPTokenStorage.storeTokens.mockImplementation(async (params) => {
+        await params.onStoreCommitted(storedTokens);
+        return storedTokens;
+      });
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         url: 'https://mcp.example.com/mcp',
       });
@@ -1951,8 +1964,8 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.location).toContain('/oauth/error?error=callback_failed');
-      expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'test-user-id', serverName: 'test-server' }),
+      expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ onStoreCommitted: expect.any(Function) }),
       );
       expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
     });
@@ -3037,7 +3050,7 @@ describe('MCP Routes', () => {
         requiresOAuth: true,
         authorizationState: 'needs_authorization',
       });
-      require('~/server/services/Config').getMCPToolsCacheGeneration.mockResolvedValueOnce(
+      require('~/server/services/Config').getMCPToolsCacheGeneration.mockResolvedValue(
         'generation-2',
       );
 

@@ -208,7 +208,9 @@ export class OAuthReconnectionManager {
         serverConfig: config,
         flowManager: this.flowManager,
         tokenMethods: this.tokenMethods,
-        onOAuthCredentialsChanged: this.onOAuthCredentialsChanged,
+        ...(this.onOAuthCredentialsChanged && {
+          onOAuthCredentialsChanged: this.onOAuthCredentialsChanged,
+        }),
         // don't force new connection, let it reuse existing or create new as needed
         forceNew: false,
         // set a reasonable timeout for reconnection attempts

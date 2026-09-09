@@ -2312,6 +2312,37 @@ describe('MCPManager', () => {
       requiresOAuth: false,
     };
 
+    it('forwards the OAuth credential mutation callback to the connection factory', async () => {
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        refreshToolList: jest.fn().mockResolvedValue({ tools: [] }),
+        on: jest.fn(),
+      } as unknown as MCPConnection;
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(connection);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const onOAuthCredentialsChanged = jest.fn().mockResolvedValue(undefined);
+      const oauthConfig = { ...serverConfig, requiresOAuth: true };
+
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        serverConfig: oauthConfig,
+        flowManager: {} as Parameters<typeof manager.getUserConnection>[0]['flowManager'],
+        onOAuthCredentialsChanged,
+      });
+
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName }),
+        expect.objectContaining({
+          useOAuth: true,
+          onOAuthCredentialsChanged,
+        }),
+      );
+    });
+
     it('waits for an active recovery before reusing a cached connection', async () => {
       mockAppConnections({
         has: jest.fn().mockResolvedValue(false),

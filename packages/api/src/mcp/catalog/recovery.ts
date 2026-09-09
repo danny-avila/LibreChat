@@ -219,6 +219,21 @@ export async function readMCPRecoveryGeneration(
   }
 }
 
+export async function readMCPRecoveryGenerationAround<T>(
+  scope: MCPRecoveryGenerationScope,
+  reader: MCPRecoveryGenerationReader | undefined,
+  operation: () => Promise<T>,
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<{ value: T; generation?: string }> {
+  const before = await readMCPRecoveryGeneration(scope, reader, options);
+  const value = await operation();
+  const after = await readMCPRecoveryGeneration(scope, reader, options);
+  return {
+    value,
+    ...(before != null && before === after && { generation: before }),
+  };
+}
+
 /** Bounds one server's discovery, honouring a shorter operator `initTimeout`. */
 function resolveBudget(serverConfig: ParsedServerConfig): number {
   const { initTimeout } = serverConfig;
@@ -282,7 +297,8 @@ export class MCPServerCatalogRecoveryTracker {
 
     const entry: RecoveryStateEntry = {
       configFingerprint,
-      recoveryGeneration,
+      recoveryGeneration:
+        recoveryGeneration ?? (sameObservedState ? existing?.recoveryGeneration : undefined),
       failureCount: sameObservedState ? existing.failureCount : 0,
       nextRetryAt: 0,
       lastTouchedAt: now,
@@ -575,10 +591,12 @@ async function recoverMCPServerCatalogsWithState(
         { timeoutMs: policy.generationReadTimeoutMs, signal },
       );
       const snapshotGeneration = generationSnapshots.get(candidate.serverName);
+      const requiresCredentialSnapshotFence = hasCustomUserVars(candidate.serverConfig);
       if (
-        snapshotGeneration != null &&
-        observedGeneration != null &&
-        snapshotGeneration !== observedGeneration
+        requiresCredentialSnapshotFence &&
+        (snapshotGeneration == null ||
+          observedGeneration == null ||
+          snapshotGeneration !== observedGeneration)
       ) {
         tracker.clear(user.id, candidate.serverName);
         results[index] = { serverName: candidate.serverName, tools: null };

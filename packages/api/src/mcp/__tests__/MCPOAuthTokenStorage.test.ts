@@ -2583,6 +2583,15 @@ describe('MCPTokenStorage', () => {
           return storedId === rejectedCredentialSetId;
         }),
       ).toBe(false);
+      expect(
+        store.getAll().some((token) => {
+          const storedId =
+            token.metadata instanceof Map
+              ? token.metadata.get('credential_set_id')
+              : token.metadata?.credential_set_id;
+          return token.type === 'mcp_oauth' && storedId === credentialSetId;
+        }),
+      ).toBe(true);
     });
 
     it("an initiator's abort resolves only its own wait, not the shared redemption", async () => {

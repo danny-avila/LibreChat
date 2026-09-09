@@ -48,6 +48,8 @@ interface StoreTokensParams {
     refreshToken?: IToken | null;
     clientInfoToken?: IToken | null;
   };
+  /** Runs after all token rows are written but while the rollback journal is still available. */
+  onStoreCommitted?: (tokens: MCPOAuthTokens) => Promise<void>;
 }
 
 interface GetTokensParams {
@@ -373,6 +375,7 @@ export class MCPTokenStorage {
     metadata,
     expectedCredentialSetId,
     signal,
+    onStoreCommitted,
   }: StoreTokensParams): Promise<MCPOAuthTokens> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const rollbackWrites: Array<() => Promise<void>> = [];
@@ -730,6 +733,17 @@ export class MCPTokenStorage {
         }
       }
 
+      const storedTokens: MCPOAuthTokens = {
+        ...tokens,
+        credential_set_id: credentialSetId,
+        obtained_at:
+          'obtained_at' in tokens && typeof tokens.obtained_at === 'number'
+            ? tokens.obtained_at
+            : Date.now(),
+        expires_at: accessTokenExpiry.getTime(),
+      };
+      await onStoreCommitted?.(storedTokens);
+
       /**
        * An interactive response without a refresh token must never bind an older refresh
        * secret to the new client. Remove that stale record after the committed writes. This
@@ -766,15 +780,7 @@ export class MCPTokenStorage {
         has_refresh_token: !!tokens.refresh_token,
         expires_at: 'expires_at' in tokens ? tokens.expires_at : 'N/A',
       });
-      return {
-        ...tokens,
-        credential_set_id: credentialSetId,
-        obtained_at:
-          'obtained_at' in tokens && typeof tokens.obtained_at === 'number'
-            ? tokens.obtained_at
-            : Date.now(),
-        expires_at: accessTokenExpiry.getTime(),
-      };
+      return storedTokens;
     } catch (error) {
       for (const rollback of rollbackWrites.reverse()) {
         try {
@@ -1127,6 +1133,7 @@ export class MCPTokenStorage {
           metadata: storedClientMetadata,
           expectedCredentialSetId: refreshCredentialSetId,
           signal,
+          onStoreCommitted: onRefreshSuccess,
         });
       } finally {
         try {
@@ -1135,27 +1142,6 @@ export class MCPTokenStorage {
           logger.warn(`${logPrefix} Failed to release OAuth refresh persistence lease`, {
             error: releaseError,
           });
-        }
-      }
-
-      if (onRefreshSuccess) {
-        try {
-          await onRefreshSuccess(storedTokens);
-        } catch (hookError) {
-          logger.warn(`${logPrefix} onRefreshSuccess callback failed`, hookError);
-          if (deleteTokens != null) {
-            await this.deleteUserTokens({
-              userId,
-              serverName,
-              deleteToken: async (filter) => {
-                await deleteTokens({
-                  ...filter,
-                  metadataCredentialSetId: storedTokens.credential_set_id,
-                });
-              },
-            });
-          }
-          throw hookError;
         }
       }
 

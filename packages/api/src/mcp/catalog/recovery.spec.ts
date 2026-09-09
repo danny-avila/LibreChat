@@ -9,6 +9,7 @@ import {
   loadMCPServerCatalogs,
   publishMCPAuthorizationMutation,
   readMCPRecoveryGeneration,
+  readMCPRecoveryGenerationAround,
   recoverMCPServerCatalogs,
 } from './recovery';
 
@@ -65,6 +66,24 @@ describe('readMCPRecoveryGeneration', () => {
   });
 });
 
+describe('readMCPRecoveryGenerationAround', () => {
+  it('returns a generation only when both reads coherently bracket the operation', async () => {
+    const operation = jest.fn().mockResolvedValue('authorized');
+    const changedReader = jest
+      .fn()
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-2');
+
+    await expect(
+      readMCPRecoveryGenerationAround(
+        { userId: user.id, serverName: 'oauth' },
+        changedReader,
+        operation,
+      ),
+    ).resolves.toEqual({ value: 'authorized' });
+  });
+});
+
 describe('publishMCPAuthorizationMutation', () => {
   it('retries the shared fence and clears local suppression only after it advances', async () => {
     const invalidateRecoveryGeneration = jest
@@ -116,6 +135,37 @@ describe('recoverMCPServerCatalogs', () => {
     expect(discoverServerTools).not.toHaveBeenCalled();
   });
 
+  it('does not discover custom credentials when either bracketing generation is unknown', async () => {
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: [] });
+    const getRecoveryGeneration = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('cache unavailable'))
+      .mockResolvedValueOnce('generation-2');
+
+    await recoverMCPServerCatalogs(
+      {
+        user,
+        servers: [
+          {
+            serverName: 'guarded',
+            serverConfig: withUserVars(serverConfig('guarded')),
+          },
+        ],
+      },
+      {
+        loadUserMCPAuthMap: jest.fn().mockResolvedValue({
+          [`${Constants.mcp_prefix}guarded`]: { API_KEY: 'possibly-stale' },
+        }),
+        discoverServerTools,
+        formatServerTools: jest.fn().mockReturnValue({}),
+        getRecoveryGeneration,
+        recoveryTracker,
+      },
+    );
+
+    expect(discoverServerTools).not.toHaveBeenCalled();
+  });
+
   it('discards discovery completed after its authorization generation was superseded', async () => {
     const getRecoveryGeneration = jest
       .fn()
@@ -162,6 +212,36 @@ describe('recoverMCPServerCatalogs', () => {
     expect(discoverServerTools).toHaveBeenCalledTimes(1);
   });
 
+  it('retains a known generation when a due retry runs during a cache outage', async () => {
+    let now = 1_800_000_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const discoverServerTools = jest.fn().mockResolvedValue({ tools: null });
+    const getRecoveryGeneration = jest
+      .fn()
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-1')
+      .mockResolvedValueOnce('generation-1');
+    const deps = {
+      loadUserMCPAuthMap: jest.fn().mockResolvedValue({}),
+      discoverServerTools,
+      formatServerTools: jest.fn().mockReturnValue({}),
+      getRecoveryGeneration,
+      recoveryTracker,
+    };
+    const servers = [{ serverName: 'offline', serverConfig: serverConfig('offline') }];
+    const recoveryPolicy = { discoveryBackoffMs: [10, 20] };
+
+    await recoverMCPServerCatalogs({ user, servers, recoveryPolicy }, deps);
+    now += 10;
+    getRecoveryGeneration.mockRejectedValue(new Error('cache unavailable'));
+    await recoverMCPServerCatalogs({ user, servers, recoveryPolicy }, deps);
+    now += 1;
+    getRecoveryGeneration.mockResolvedValue('generation-1');
+    await recoverMCPServerCatalogs({ user, servers, recoveryPolicy }, deps);
+
+    expect(discoverServerTools).toHaveBeenCalledTimes(2);
+  });
+
   it('loads user auth once and preserves config-only lookup context for each server', async () => {
     const servers = [
       { serverName: 'alpha', serverConfig: withUserVars(serverConfig('alpha')) },
@@ -180,7 +260,12 @@ describe('recoverMCPServerCatalogs', () => {
 
     const result = await recoverMCPServerCatalogs(
       { user, servers },
-      { loadUserMCPAuthMap, discoverServerTools, formatServerTools },
+      {
+        loadUserMCPAuthMap,
+        discoverServerTools,
+        formatServerTools,
+        getRecoveryGeneration: jest.fn().mockResolvedValue('generation-1'),
+      },
     );
 
     expect(loadUserMCPAuthMap).toHaveBeenCalledTimes(1);
@@ -617,6 +702,7 @@ describe('recoverMCPServerCatalogs — bounded, skippable discovery', () => {
     loadUserMCPAuthMap: jest.fn().mockResolvedValue(userMCPAuthMap),
     discoverServerTools,
     formatServerTools: jest.fn().mockReturnValue({}),
+    getRecoveryGeneration: jest.fn().mockResolvedValue('generation-1'),
   });
 
   it('bounds each server discovery end to end rather than per attempt', async () => {

@@ -30,7 +30,7 @@ const {
   MCPAuthenticationRejectedError,
   MCPAuthenticationRefreshError,
   OpenIDReauthRequiredError,
-  readMCPRecoveryGeneration,
+  readMCPRecoveryGenerationAround,
   publishMCPAuthorizationMutation,
 } = require('@librechat/api');
 const {
@@ -511,13 +511,12 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         code,
         flowManager,
         oauthHeaders,
-        async (exchangedTokens) => {
+        async (exchangedTokens, completePersistedFlow) => {
           if (!flowState?.userId) {
             return exchangedTokens;
           }
 
           let storedTokens;
-          let rolledBack = false;
           try {
             storedTokens =
               (await MCPTokenStorage.storeTokens({
@@ -535,35 +534,28 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                   flowState.serverUrl,
                   flowState.clientSource,
                 ),
+                onStoreCommitted: async (committedTokens) => {
+                  if (!(await resolveActiveServer())) {
+                    throw new Error(
+                      `MCP server ${serverName} was deleted during OAuth authorization`,
+                    );
+                  }
+                  await publishMCPAuthorizationMutation(
+                    { userId: flowState.userId, serverName },
+                    {
+                      invalidateRecoveryGeneration: invalidateCachedTools,
+                      clearLocalRecovery: (userId, changedServerName) =>
+                        getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
+                    },
+                  );
+                  await completePersistedFlow(committedTokens);
+                },
               })) ?? exchangedTokens;
-            if (!(await resolveActiveServer())) {
-              await rollbackStoredTokens(storedTokens);
-              rolledBack = true;
-              throw new Error(`MCP server ${serverName} was deleted during OAuth authorization`);
-            }
-            await publishMCPAuthorizationMutation(
-              { userId: flowState.userId, serverName },
-              {
-                invalidateRecoveryGeneration: invalidateCachedTools,
-                clearLocalRecovery: (userId, changedServerName) =>
-                  getMCPManager()?.clearCatalogRecoveryState?.(userId, changedServerName),
-              },
-            );
             logger.debug('[MCP OAuth] Stored OAuth tokens before completing callback flow', {
               serverName,
               userId: flowState.userId,
             });
           } catch (error) {
-            if (storedTokens != null && !rolledBack) {
-              try {
-                await rollbackStoredTokens(storedTokens);
-              } catch (rollbackError) {
-                logger.error(
-                  '[MCP OAuth] Failed to roll back unfenced OAuth tokens',
-                  rollbackError,
-                );
-              }
-            }
             logger.error('[MCP OAuth] Failed to store OAuth tokens before flow completion', error);
             throw error;
           }
@@ -1065,24 +1057,24 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
       await Promise.all(
         Object.entries(mcpConfig).map(async ([serverName, config]) => {
           try {
-            const [status, authorizationGeneration] = await Promise.all([
-              getServerConnectionStatus(
-                user.id,
-                serverName,
-                config,
-                appConnections,
-                userConnections,
-                oauthServers,
-                runtimeContext,
-              ),
-              readMCPRecoveryGeneration(
+            const { value: status, generation: authorizationGeneration } =
+              await readMCPRecoveryGenerationAround(
                 { userId: user.id, serverName },
                 getMCPToolsCacheGeneration,
+                () =>
+                  getServerConnectionStatus(
+                    user.id,
+                    serverName,
+                    config,
+                    appConnections,
+                    userConnections,
+                    oauthServers,
+                    runtimeContext,
+                  ),
                 {
                   timeoutMs: req.config?.mcpSettings?.catalogRecovery?.generationReadTimeoutMs,
                 },
-              ),
-            ]);
+              );
             return [serverName, { ...status, authorizationGeneration }];
           } catch (error) {
             const message = `Failed to get status for server "${serverName}"`;
@@ -1141,20 +1133,24 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
 
     const runtimeContext = createMCPStatusRuntimeContext(user, mcpConfig, [serverName]);
 
-    const [serverStatus, authorizationGeneration] = await Promise.all([
-      getServerConnectionStatus(
-        user.id,
-        serverName,
-        mcpConfig[serverName],
-        appConnections,
-        userConnections,
-        oauthServers,
-        runtimeContext,
-      ),
-      readMCPRecoveryGeneration({ userId: user.id, serverName }, getMCPToolsCacheGeneration, {
-        timeoutMs: req.config?.mcpSettings?.catalogRecovery?.generationReadTimeoutMs,
-      }),
-    ]);
+    const { value: serverStatus, generation: authorizationGeneration } =
+      await readMCPRecoveryGenerationAround(
+        { userId: user.id, serverName },
+        getMCPToolsCacheGeneration,
+        () =>
+          getServerConnectionStatus(
+            user.id,
+            serverName,
+            mcpConfig[serverName],
+            appConnections,
+            userConnections,
+            oauthServers,
+            runtimeContext,
+          ),
+        {
+          timeoutMs: req.config?.mcpSettings?.catalogRecovery?.generationReadTimeoutMs,
+        },
+      );
 
     res.json({
       success: true,
