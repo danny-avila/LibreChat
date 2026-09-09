@@ -122,6 +122,8 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const explicitSeeds = new Set<string>([agentId]);
     const attempted = new Set<string>();
     const expanded = new Set<string>();
+    const expandedHandoffs = new Set<string>();
+    const expandedSubagents = new Set<string>();
     const accessibleById = new Map<string, AgentGraphNode>();
     const attemptedGraphMemberIds = new Set<string>();
     const accessIdentity = {
@@ -131,8 +133,16 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     };
     let accessContext: AgentGraphAccessContext | undefined;
     let modelsConfig: TModelsConfig | undefined;
-    type PendingGroup = { ids: string[]; requireAll: boolean; explicitSeed: boolean };
-    let pending: PendingGroup[] = [{ ids: [agentId], requireAll: true, explicitSeed: true }];
+    type Expansion = 'handoff' | 'subagent' | 'graph';
+    type PendingGroup = {
+      ids: string[];
+      requireAll: boolean;
+      explicitSeed: boolean;
+      expansion: Expansion;
+    };
+    let pending: PendingGroup[] = [
+      { ids: [agentId], requireAll: true, explicitSeed: true, expansion: 'handoff' },
+    ];
     while (pending.length > 0) {
       const groups = pending;
       pending = [];
@@ -182,7 +192,8 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
           accessibleById.set(agent.id, agent);
         }
       }
-      const runnableIds = new Set<string>();
+      const runnableIds = new Map<string, Expansion>();
+      const expansionRank: Record<Expansion, number> = { graph: 0, subagent: 1, handoff: 2 };
       for (const group of groups) {
         const memberIds = group.ids.filter(
           (id) => id !== '__start__' && id !== '__end__' && id.length > 0,
@@ -190,50 +201,80 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         if (group.requireAll && memberIds.some((id) => !accessibleById.has(id))) continue;
         for (const id of memberIds) {
           if (!accessibleById.has(id)) continue;
-          runnableIds.add(id);
+          const current = runnableIds.get(id);
+          if (current == null || expansionRank[group.expansion] > expansionRank[current]) {
+            runnableIds.set(id, group.expansion);
+          }
           if (group.explicitSeed) explicitSeeds.add(id);
         }
       }
-      for (const id of runnableIds) {
-        if (expanded.has(id)) continue;
+      for (const [id, expansion] of runnableIds) {
         expanded.add(id);
         const agent = accessibleById.get(id);
         if (!agent) continue;
-        graphEdges.push(...(agent.edges ?? []));
-        if (agent.id === agentId) {
-          let previousId = agent.id;
-          for (const childId of agent.agent_ids ?? []) {
-            if (childId === agent.id || childId.length === 0) continue;
-            graphEdges.push({ from: previousId, to: childId });
-            pending.push({ ids: [childId], requireAll: false, explicitSeed: false });
-            previousId = childId;
+        if (expansion === 'handoff' && !expandedHandoffs.has(id)) {
+          expandedHandoffs.add(id);
+          graphEdges.push(...(agent.edges ?? []));
+          if (agent.id === agentId) {
+            let previousId = agent.id;
+            for (const childId of agent.agent_ids ?? []) {
+              if (childId === agent.id || childId.length === 0) continue;
+              graphEdges.push({ from: previousId, to: childId });
+              pending.push({
+                ids: [childId],
+                requireAll: false,
+                explicitSeed: false,
+                expansion: 'handoff',
+              });
+              previousId = childId;
+            }
+          }
+          for (const edge of agent.edges ?? []) {
+            for (const childId of [edge.from, edge.to].flat()) {
+              pending.push({
+                ids: [childId],
+                requireAll: false,
+                explicitSeed: false,
+                expansion: 'handoff',
+              });
+            }
           }
         }
-        for (const edge of agent.edges ?? []) {
-          for (const childId of [edge.from, edge.to].flat()) {
-            pending.push({ ids: [childId], requireAll: false, explicitSeed: false });
-          }
-        }
+        if (expansion === 'graph' || expandedSubagents.has(id)) continue;
+        expandedSubagents.add(id);
         if (!agent.subagents?.enabled) continue;
         const config = await loadAppConfig();
         const capabilities = config?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
         if (!capabilities.includes(AgentCapabilities.subagents)) continue;
-        const directTargets = (agent.subagents.agent_ids ?? []).filter((id) => id !== agentId);
+        const directTargets = [...new Set(agent.subagents.agent_ids ?? [])].filter(
+          (childId) => childId !== agent.id,
+        );
+        for (const childId of directTargets) {
+          if (childId !== agentId) attemptedGraphMemberIds.add(childId);
+        }
         const graphGroups: PendingGroup[] = [];
         for (const graph of agent.subagents.graphs ?? []) {
-          const ids = [...new Set(graph.agent_ids)].filter((memberId) => memberId !== agentId);
+          const ids = [...new Set(graph.agent_ids)].filter(
+            (memberId) => memberId !== agentId && memberId !== agent.id,
+          );
           const newMemberIds = ids.filter((memberId) => !attemptedGraphMemberIds.has(memberId));
           if (attemptedGraphMemberIds.size + newMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
             continue;
           }
           newMemberIds.forEach((memberId) => attemptedGraphMemberIds.add(memberId));
-          graphGroups.push({ ids, requireAll: true, explicitSeed: true });
+          graphGroups.push({
+            ids,
+            requireAll: true,
+            explicitSeed: true,
+            expansion: 'graph',
+          });
         }
         pending.push(
           ...directTargets.map((childId) => ({
             ids: [childId],
             requireAll: false,
             explicitSeed: true,
+            expansion: 'subagent' as const,
           })),
           ...graphGroups,
         );

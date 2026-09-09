@@ -226,6 +226,75 @@ it('skips only a subagent graph definition that exceeds the runtime member budge
   );
 });
 
+it('charges direct subagents before admitting graph definitions', async () => {
+  const graphIds = Array.from({ length: 50 }, (_, index) => `graph-${index}`);
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? graphNode(id, {
+            tools: [],
+            subagents: {
+              enabled: true,
+              agent_ids: ['direct'],
+              graphs: [{ agent_ids: graphIds }, { agent_ids: ['accepted'] }],
+            } as never,
+          })
+        : graphNode(id, { tools: ['search_mcp_docs'] }),
+    ),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(['direct', 'accepted'], expect.any(Object));
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
+    expect.arrayContaining([graphIds[0]]),
+    expect.anything(),
+  );
+});
+
+it('does not expand persisted handoffs from graph-only members', async () => {
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          tools: [],
+          subagents: { enabled: true, graphs: [{ agent_ids: ['member'] }] } as never,
+        });
+      }
+      if (id === 'member') {
+        return graphNode(id, {
+          tools: ['search_mcp_docs'],
+          edges: [{ from: 'member', to: 'downstream' }],
+        });
+      }
+      return graphNode(id, { tools: ['read_mcp_private'] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
+    expect.arrayContaining(['downstream']),
+    expect.anything(),
+  );
+});
+
 it('skips MCP tools on graph agents the owner cannot view', async () => {
   const { check, deps } = setup();
   deps.getAgentGraphNodes = jest.fn(async (ids, access) =>

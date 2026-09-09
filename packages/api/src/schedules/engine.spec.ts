@@ -178,6 +178,45 @@ describe('runTick misfire skip-forward', () => {
 });
 
 describe('runTick error handling', () => {
+  it('starts later admissions while an earlier schedule is still in preflight', async () => {
+    const first = makeClaimedSchedule();
+    const second = makeClaimedSchedule({
+      id: 'sched-2',
+      user: 'user-2' as never,
+      claimToken: 'ct-2',
+      leaseBy: 'inst-2',
+    });
+    const methods = makeMethods(first);
+    const claims = [first, second, null];
+    methods.claimDueSchedule.mockImplementation(async () => claims.shift() ?? null);
+    let releaseFirst!: () => void;
+    const firstPreflight = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markSecondStarted!: () => void;
+    const secondStarted = new Promise<void>((resolve) => {
+      markSecondStarted = resolve;
+    });
+    const getUserContext = jest.fn(
+      async (userId: Parameters<ScheduleEngineDeps['getUserContext']>[0]) => {
+        if (String(userId) === 'user-1') {
+          await firstPreflight;
+        } else {
+          markSecondStarted();
+        }
+        return null;
+      },
+    );
+    const engine = startScheduleEngine(makeDeps(methods, { getUserContext }));
+
+    const tick = engine.runTick();
+    await secondStarted;
+    expect(getUserContext).toHaveBeenCalledWith('user-2');
+    releaseFirst();
+    await expect(tick).resolves.toBe(0);
+    engine.stop();
+  });
+
   it('retains the due occurrence when a preflight query throws', async () => {
     const schedule = makeClaimedSchedule();
     const methods = makeMethods(schedule);
