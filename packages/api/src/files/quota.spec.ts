@@ -723,7 +723,11 @@ describe('persistSkillFileWithQuota', () => {
       {
         scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
         row: skillRow,
-        replacing: { author: userId },
+        replacing: {
+          skillId: skillRow.skillId,
+          relativePath: skillRow.relativePath,
+          author: userId,
+        },
         write: async (row) => row,
         rollback: null,
         getUserStorageUsage,
@@ -743,7 +747,11 @@ describe('persistSkillFileWithQuota', () => {
       {
         scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
         row: skillRow,
-        replacing: { author: '64f0000000000000000000ff' },
+        replacing: {
+          skillId: skillRow.skillId,
+          relativePath: skillRow.relativePath,
+          author: '64f0000000000000000000ff',
+        },
         write: async (row) => row,
         rollback: null,
         getUserStorageUsage,
@@ -780,7 +788,11 @@ describe('persistSkillFileWithQuota', () => {
       {
         scope,
         row: { ...skillRow, bytes: 6 },
-        replacing: { author: '64f0000000000000000000ff' },
+        replacing: {
+          skillId: skillRow.skillId,
+          relativePath: skillRow.relativePath,
+          author: '64f0000000000000000000ff',
+        },
         replacedBytes: 6,
         write: async (row) => row,
         rollback: null,
@@ -806,6 +818,27 @@ describe('persistSkillFileWithQuota', () => {
     ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
   });
 
+  it('does not credit a different skill file from the same ledger', async () => {
+    await expect(
+      persistSkillFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { ...skillRow, bytes: 11 },
+          replacing: {
+            skillId: skillRow.skillId,
+            relativePath: 'scripts/other.sh',
+            author: userId,
+          },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+  });
+
   it('does not net off bytes owned by the requester in another tenant', async () => {
     const scope = resolveStorageScope(
       makeReq({ storageLimitMb: 1, requestTenantId: 'request-tenant' }),
@@ -817,7 +850,12 @@ describe('persistSkillFileWithQuota', () => {
         {
           scope,
           row: { ...skillRow, bytes: 11 },
-          replacing: { author: userId, tenantId: 'different-tenant' },
+          replacing: {
+            skillId: skillRow.skillId,
+            relativePath: skillRow.relativePath,
+            author: userId,
+            tenantId: 'different-tenant',
+          },
           replacedBytes: 20,
           write: async (row) => row,
           rollback: null,

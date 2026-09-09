@@ -140,10 +140,14 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
   }
 
   const resolvedTenantId = req.tenantId ?? req.user?.tenantId;
+  const mergedFileConfig = mergeFileConfig(req.config?.fileConfig);
+  const configuredStorageLimit = req.config?.fileConfig?.storageLimit;
   const scope = {
     userId,
     tenantId: resolvedTenantId === '' ? undefined : resolvedTenantId,
-    storageLimit: mergeFileConfig(req.config?.fileConfig).storageLimit,
+    storageLimit:
+      mergedFileConfig.storageLimit ??
+      (configuredStorageLimit === undefined ? undefined : configuredStorageLimit * megabyte),
   } as StorageScope;
 
   scopesByRequest.set(req, scope);
@@ -400,13 +404,20 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
  */
 export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   params: PersistParams<TRow, TResult> & {
-    replacing?: { author?: unknown; tenantId?: string | null } | null;
+    replacing?: {
+      skillId?: { toString(): string } | string;
+      relativePath?: string;
+      author?: unknown;
+      tenantId?: string | null;
+    } | null;
   },
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   const { replacing, ...rest } = params;
   const replacedByRequester =
     replacing != null &&
+    replacing.skillId?.toString() === rest.row.skillId?.toString() &&
+    replacing.relativePath === rest.row.relativePath &&
     idsMatch(replacing.author as string, params.scope.userId) &&
     tenantsMatch(replacing.tenantId, params.scope.tenantId);
   const replacementKey =
