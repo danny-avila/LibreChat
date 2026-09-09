@@ -42,17 +42,9 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
 
 type ObjectIdInput = string | Types.ObjectId;
 
-export type SkillFileStorageExclusion = {
-  id?: ObjectIdInput;
-  skillId?: ObjectIdInput;
-  relativePath?: string;
-};
-
 export type UserStorageUsageParams = {
   userId: ObjectIdInput;
   tenantId?: string | null;
-  excludeFileId?: string | null;
-  excludeSkillFile?: SkillFileStorageExclusion | null;
 };
 
 /** Factory function that takes mongoose instance and returns the file methods */
@@ -174,8 +166,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function getUserStorageUsage({
     userId,
     tenantId,
-    excludeFileId,
-    excludeSkillFile,
   }: UserStorageUsageParams): Promise<number> {
     const userObjectId = toObjectId(userId, 'userId');
     const scopedTenantId = tenantId ?? null;
@@ -189,21 +179,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       tenantId: scopedTenantId,
       bytes: { $gt: 0 },
     };
-
-    if (excludeFileId) {
-      fileMatch.file_id = { $ne: excludeFileId };
-    }
-
-    if (excludeSkillFile?.id) {
-      skillFileMatch._id = { $ne: toObjectId(excludeSkillFile.id, 'excludeSkillFile.id') };
-    } else if (excludeSkillFile?.skillId && excludeSkillFile.relativePath) {
-      skillFileMatch.$nor = [
-        {
-          skillId: toObjectId(excludeSkillFile.skillId, 'excludeSkillFile.skillId'),
-          relativePath: excludeSkillFile.relativePath,
-        },
-      ];
-    }
 
     const [fileBytes, skillFileBytes] = await runAsSystem(() =>
       Promise.all([sumFileBytes(fileMatch), sumSkillFileBytes(skillFileMatch)]),

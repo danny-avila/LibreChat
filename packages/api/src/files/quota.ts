@@ -50,15 +50,10 @@ export type StorageScope = {
   readonly tenantId: string | undefined;
   /** Cap in bytes; `undefined` disables enforcement entirely. */
   readonly storageLimit: number | undefined;
-  /** Usage per exclusion scope, so one request re-reads the ledger at most once each. */
-  readonly usageByScope: Map<string, StorageUsageEntry>;
-  /** In-flight ledger reads, so concurrent writes share one query per scope. */
-  readonly pendingReads: Map<string, Promise<number>>;
-};
-
-type StorageUsageEntry = {
-  params: UserStorageUsageParams;
-  currentUsage: number;
+  /** Unexcluded ledger total, loaded once and adjusted as this request commits writes. */
+  currentUsage?: number;
+  /** In-flight ledger read, shared by concurrent writes in this request. */
+  pendingRead?: Promise<number>;
 };
 
 type ScopeSource = {
@@ -78,7 +73,11 @@ const scopesByRequest: WeakMap<ScopeSource, StorageScope> = new WeakMap();
 
 function formatBytes(bytes: number): string {
   if (bytes >= megabyte) {
-    return `${Math.floor(bytes / megabyte)}MB`;
+    const megabytes = bytes / megabyte;
+    if (Number.isInteger(megabytes)) {
+      return `${megabytes}MB`;
+    }
+    return `${megabytes.toFixed(2)}MB (${bytes} bytes)`;
   }
 
   return `${bytes} bytes`;
@@ -137,8 +136,6 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
     userId,
     tenantId: req.tenantId ?? req.user?.tenantId,
     storageLimit: mergeFileConfig(req.config?.fileConfig).storageLimit,
-    usageByScope: new Map<string, StorageUsageEntry>(),
-    pendingReads: new Map<string, Promise<number>>(),
   } as StorageScope;
 
   scopesByRequest.set(req, scope);
@@ -147,44 +144,11 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
 
 export type GetUserStorageUsage = (params: UserStorageUsageParams) => Promise<number>;
 
-type UsageExclusion = Pick<UserStorageUsageParams, 'excludeFileId' | 'excludeSkillFile'>;
-
-function getUsageCacheKey(params: UserStorageUsageParams): string {
-  return JSON.stringify({
-    tenantId: params.tenantId ?? null,
-    excludeFileId: params.excludeFileId ?? null,
-    excludeSkillFile: params.excludeSkillFile
-      ? {
-          id: params.excludeSkillFile.id?.toString() ?? null,
-          skillId: params.excludeSkillFile.skillId?.toString() ?? null,
-          relativePath: params.excludeSkillFile.relativePath ?? null,
-        }
-      : null,
-  });
-}
-
 function idsMatch(
   left?: { toString(): string } | string | null,
   right?: { toString(): string } | string | null,
 ): boolean {
   return left != null && right != null && left.toString() === right.toString();
-}
-
-function skillFilesMatch(
-  excluded: UserStorageUsageParams['excludeSkillFile'],
-  written: UserStorageUsageParams['excludeSkillFile'],
-): boolean {
-  if (!excluded || !written) {
-    return false;
-  }
-  if (idsMatch(excluded.id, written.id)) {
-    return true;
-  }
-  return (
-    idsMatch(excluded.skillId, written.skillId) &&
-    excluded.relativePath != null &&
-    excluded.relativePath === written.relativePath
-  );
 }
 
 /**
@@ -194,10 +158,7 @@ function skillFilesMatch(
  */
 async function reserveWithinLimit(
   scope: StorageScope,
-  incomingBytes: number,
-  exclusion: UsageExclusion,
   getUserStorageUsage: GetUserStorageUsage,
-  excludedBytes: number,
   charge: number,
 ): Promise<void> {
   if (scope.storageLimit === undefined) {
@@ -207,59 +168,32 @@ async function reserveWithinLimit(
   const params: UserStorageUsageParams = {
     userId: scope.userId,
     tenantId: scope.tenantId,
-    ...exclusion,
   };
-  const cacheKey = getUsageCacheKey(params);
 
-  if (!scope.usageByScope.has(cacheKey)) {
-    /* Concurrent writes on one scope share a single read rather than each issuing their
-     * own and then all deciding against the same pre-write total. */
-    let inflight = scope.pendingReads.get(cacheKey);
-    if (inflight === undefined) {
-      inflight = getUserStorageUsage(params);
-      scope.pendingReads.set(cacheKey, inflight);
-    }
+  if (scope.currentUsage === undefined) {
+    scope.pendingRead ??= getUserStorageUsage(params);
+    const inflight = scope.pendingRead;
     try {
       const currentUsage = await inflight;
-      if (!scope.usageByScope.has(cacheKey)) {
-        scope.usageByScope.set(cacheKey, { params, currentUsage });
-      }
+      scope.currentUsage ??= currentUsage;
     } finally {
-      scope.pendingReads.delete(cacheKey);
+      if (scope.pendingRead === inflight) {
+        scope.pendingRead = undefined;
+      }
     }
   }
 
-  /* Nothing may await between reading the total and charging it: that gap is what lets
-   * two writes in one batch each observe the same headroom and both take it. */
-  const entry = scope.usageByScope.get(cacheKey) as StorageUsageEntry;
-  if (entry.currentUsage + incomingBytes > scope.storageLimit) {
-    /* The total omits the row being replaced, so reporting it verbatim would tell an
-     * over-limit user they are under the cap. Add the excluded row back for the message. */
-    throw new FileStorageLimitError(scope.storageLimit, entry.currentUsage + excludedBytes);
+  const currentUsage = scope.currentUsage;
+  if (currentUsage === undefined) {
+    throw new Error('Storage usage was not initialized');
+  }
+  if (Math.max(0, currentUsage + charge) > scope.storageLimit) {
+    throw new FileStorageLimitError(scope.storageLimit, currentUsage);
   }
 
-  adjustCommittedBytes(scope, charge, exclusion);
-}
-
-/**
- * Charges bytes this request has committed onto every cached scope that would count
- * them, so a second write in the same request sees the first without re-querying.
- * Scopes excluding the row just written are left alone — their totals already omit it.
- */
-function adjustCommittedBytes(scope: StorageScope, bytes: number, written: UsageExclusion): void {
-  if (bytes === 0) {
-    return;
-  }
-
-  scope.usageByScope.forEach((entry) => {
-    const excludesThisRow =
-      idsMatch(entry.params.excludeFileId, written.excludeFileId) ||
-      skillFilesMatch(entry.params.excludeSkillFile, written.excludeSkillFile);
-    if (excludesThisRow) {
-      return;
-    }
-    entry.currentUsage += bytes;
-  });
+  /* Do not expose a replacement's negative delta until its write commits: another
+   * concurrent addition must not spend space that has not actually been freed yet. */
+  scope.currentUsage += Math.max(charge, 0);
 }
 
 /**
@@ -287,10 +221,8 @@ export type PersistParams<TRow extends LedgerRow, TResult> = {
   rollback: StorageRollback;
   getUserStorageUsage: GetUserStorageUsage;
   /**
-   * Size of the row this write replaces, when replacing one. Cached usage totals that
-   * do not exclude the replaced row already contain its old bytes, so only the
-   * difference may be added to them — charging the full new size would count both
-   * versions and reject later writes that actually fit.
+   * Size of the row this write replaces, when replacing one. The ledger total already
+   * contains its old bytes, so only the difference is charged.
    */
   replacedBytes?: number | null;
 };
@@ -318,18 +250,21 @@ async function runRollback(rollback: StorageRollback, onError: (error: unknown) 
  */
 async function persistWithQuota<TRow extends LedgerRow, TResult>(
   { scope, row, write, rollback, getUserStorageUsage, replacedBytes }: PersistParams<TRow, TResult>,
-  exclusionFor: (row: TRow) => UsageExclusion,
   ownerField: OwnerField,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
-  assertChargeableBytes(row.bytes, `${ownerField === 'author' ? 'skill file' : 'file'} row`);
+  try {
+    assertChargeableBytes(row.bytes, `${ownerField === 'author' ? 'skill file' : 'file'} row`);
+  } catch (error) {
+    await runRollback(rollback, onRollbackError);
+    throw error;
+  }
 
   /* Owner and tenant both come from the scope. A row written to a different owner's
    * ledger than the one just checked would leave that owner's usage unenforced, so the
    * queried ledger and the written ledger are made the same by construction. */
   const scopedRow: TRow = { ...row, [ownerField]: scope.userId, tenantId: scope.tenantId };
   const bytes = normalizeBytes(scopedRow.bytes);
-  const exclusion = exclusionFor(scopedRow);
   const replaced = normalizeBytes(replacedBytes);
 
   /* The charge is reserved as part of the check, so a batch running under `Promise.all`
@@ -338,18 +273,22 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
    * rest of the request. */
   const charge = bytes - replaced;
   try {
-    await reserveWithinLimit(scope, bytes, exclusion, getUserStorageUsage, replaced, charge);
+    await reserveWithinLimit(scope, getUserStorageUsage, charge);
   } catch (error) {
-    if (isFileStorageLimitError(error)) {
-      await runRollback(rollback, onRollbackError);
-    }
+    await runRollback(rollback, onRollbackError);
     throw error;
   }
 
   try {
-    return await write(scopedRow);
+    const result = await write(scopedRow);
+    if (scope.storageLimit !== undefined && charge < 0) {
+      scope.currentUsage = Math.max(0, (scope.currentUsage as number) + charge);
+    }
+    return result;
   } catch (error) {
-    adjustCommittedBytes(scope, -charge, exclusion);
+    if (scope.storageLimit !== undefined && charge > 0) {
+      scope.currentUsage = (scope.currentUsage as number) - charge;
+    }
     throw error;
   }
 }
@@ -359,10 +298,8 @@ export type FileRow = LedgerRow & {
   user?: string;
 };
 
-type SkillFileExclusion = NonNullable<UserStorageUsageParams['excludeSkillFile']>;
-
 export type SkillFileRow = LedgerRow & {
-  skillId?: SkillFileExclusion['skillId'];
+  skillId?: { toString(): string } | string;
   relativePath?: string;
   author?: { toString(): string } | string;
 };
@@ -370,27 +307,23 @@ export type SkillFileRow = LedgerRow & {
 /**
  * Persists a `File` row under this request's storage scope.
  *
- * The row replacing an existing `file_id` is excluded from its own usage total, so
- * re-uploading over a file is charged the difference rather than the full size twice.
+ * Re-uploading over a file is charged by the supplied replacement delta rather than
+ * by adding the new size to the unexcluded ledger total.
  */
 export function persistFileWithQuota<TRow extends FileRow, TResult>(
   params: PersistParams<TRow, TResult>,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
-  return persistWithQuota(
-    params,
-    (row) => ({ excludeFileId: row.file_id }),
-    'user',
-    onRollbackError,
-  );
+  return persistWithQuota(params, 'user', onRollbackError);
 }
 
 /**
  * Persists a `SkillFile` row under this request's storage scope.
  *
  * Skill files are charged to their author, not to everyone who runs the skill, and a
- * file replacing one the requester already authored is excluded from its own total.
- * A row authored by somebody else stays on that author's ledger and is not discounted.
+ * file replacing one the requester already authored is charged by its replacement
+ * delta. A row authored by somebody else stays on that author's ledger and is not
+ * discounted.
  */
 export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   params: PersistParams<TRow, TResult> & { replacing?: { author?: unknown } | null },
@@ -407,14 +340,6 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
        * author owns leaves their bytes on their ledger, so subtracting them here would
        * understate — and could drive negative — the requester's own usage. */
       replacedBytes: replacedByRequester ? rest.replacedBytes : 0,
-    },
-    (row) => {
-      if (!replacedByRequester || row.skillId == null || row.relativePath == null) {
-        return {};
-      }
-      return {
-        excludeSkillFile: { skillId: row.skillId, relativePath: row.relativePath },
-      };
     },
     'author',
     onRollbackError,

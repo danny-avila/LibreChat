@@ -385,45 +385,10 @@ describe('File Methods', () => {
       await expect(fileMethods.getUserStorageUsage({ userId })).resolves.toBe(10);
     });
 
-    it('excludes replacement File and SkillFile rows', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const skillId = new mongoose.Types.ObjectId();
-
-      await createStoredFile({ user: userId, file_id: 'replace-me', bytes: 100 });
-      await createStoredFile({ user: userId, file_id: 'keep-me', bytes: 30 });
-      await createSkillFile({
-        author: userId,
-        skillId,
-        relativePath: 'replace.txt',
-        bytes: 40,
-      });
-      await createSkillFile({
-        author: userId,
-        skillId,
-        relativePath: 'keep.txt',
-        bytes: 20,
-      });
-
-      await expect(
-        fileMethods.getUserStorageUsage({
-          userId,
-          excludeFileId: 'replace-me',
-          excludeSkillFile: { skillId, relativePath: 'replace.txt' },
-        }),
-      ).resolves.toBe(50);
-    });
-
     it('rejects invalid ObjectId inputs instead of under-counting usage', async () => {
       await expect(fileMethods.getUserStorageUsage({ userId: 'not-an-object-id' })).rejects.toThrow(
         'Invalid userId',
       );
-
-      await expect(
-        fileMethods.getUserStorageUsage({
-          userId: new mongoose.Types.ObjectId(),
-          excludeSkillFile: { skillId: 'not-an-object-id', relativePath: 'replace.txt' },
-        }),
-      ).rejects.toThrow('Invalid excludeSkillFile.skillId');
     });
   });
 
