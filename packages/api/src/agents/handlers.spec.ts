@@ -20,6 +20,7 @@ import {
 import { markSandboxReady } from './prewarm';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { WorkspaceToolHttpError } from '../code/workspace';
+import { createCodeApiUploadRegistry } from '~/utils';
 
 function createMockTool(
   name: string,
@@ -1829,7 +1830,10 @@ describe('createToolExecuteHandler', () => {
         configurable: {
           accessibleSkillIds: skillsInScope(),
           codeEnvAvailable: true,
-          req: { user: { id: 'user-1' } },
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-1' },
+            app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+          },
         },
       }));
       const getSkillByName: ToolExecuteOptions['getSkillByName'] = jest.fn(async () => ({
