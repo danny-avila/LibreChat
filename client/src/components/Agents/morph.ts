@@ -13,6 +13,29 @@ import type { TargetAndTransition, Transition } from 'framer-motion';
 /** iOS-style ease: immediate pickup, long settle, no overshoot. */
 const EASE: [number, number, number, number] = [0.32, 0.72, 0, 1];
 
+/** `--theme-surface-radius`'s own default, for a root that has not set it. */
+const FALLBACK_SURFACE_RADIUS_REM = 1;
+
+/**
+ * The theme's surface radius in pixels.
+ *
+ * A scaling projection can only keep a corner from distorting if it owns the
+ * radius as a number, which a `rounded-theme-surface` class cannot give it. So
+ * the token is resolved once per morph — never per card, never per frame — and
+ * both endpoints animate the same value the stylesheet would have painted.
+ */
+export const readSurfaceRadius = (): number => {
+  const root = document.documentElement;
+  const styles = getComputedStyle(root);
+  const rootFontSize = parseFloat(styles.fontSize) || 16;
+  const token = styles.getPropertyValue('--theme-surface-radius').trim();
+  const value = parseFloat(token);
+  if (!Number.isFinite(value)) {
+    return FALLBACK_SURFACE_RADIUS_REM * rootFontSize;
+  }
+  return token.endsWith('px') ? value : value * rootFontSize;
+};
+
 /** Card surface to dialog surface. */
 export const MORPH_OPEN_TRANSITION: Transition = { duration: 0.45, ease: EASE };
 
