@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+import mongoose from 'mongoose';
 import { megabyte, mergeFileConfig } from 'librechat-data-provider';
 
 export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
@@ -77,6 +79,71 @@ type ScopeSource = {
 
 /** Keyed by request identity so the scope neither mutates the request nor outlives it. */
 const scopesByRequest: WeakMap<ScopeSource, StorageScope> = new WeakMap();
+const localQuotaLocks = new Map<string, Promise<void>>();
+
+async function withStorageQuotaLock<T>(
+  scope: StorageScope,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (scope.storageLimit === undefined) {
+    return operation();
+  }
+  const key = JSON.stringify([scope.userId, scope.tenantId ?? null]);
+  if (mongoose.connection.readyState !== 1) {
+    const previous = localQuotaLocks.get(key) ?? Promise.resolve();
+    let release = () => {};
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    localQuotaLocks.set(key, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (localQuotaLocks.get(key) === current) {
+        localQuotaLocks.delete(key);
+      }
+    }
+  }
+
+  const token = randomUUID();
+  const collection = mongoose.connection.collection<{
+    _id: string;
+    token: string;
+    expiresAt: Date;
+  }>('storage_quota_locks');
+  const deadline = Date.now() + 30_000;
+  let acquired = false;
+  while (!acquired && Date.now() < deadline) {
+    const now = new Date();
+    try {
+      const lock = await collection.findOneAndUpdate(
+        { _id: key, $or: [{ expiresAt: { $lte: now } }, { token }] },
+        { $set: { token, expiresAt: new Date(now.getTime() + 120_000) } },
+        { upsert: true, returnDocument: 'after' },
+      );
+      acquired = lock?.token === token;
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) {
+        throw error;
+      }
+    }
+    if (!acquired) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  if (!acquired) {
+    throw new Error('Timed out waiting for the storage quota ledger lock');
+  }
+  try {
+    return await operation();
+  } finally {
+    /* A release failure must not turn a committed metadata write into an apparent
+     * failure whose caller deletes its blob. The lease is self-expiring. */
+    await collection.deleteOne({ _id: key, token }).catch(() => undefined);
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (bytes >= megabyte) {
@@ -190,18 +257,9 @@ async function reserveWithinLimit(
     tenantId: scope.tenantId,
   };
 
-  if (scope.currentUsage === undefined) {
-    scope.pendingRead ??= getUserStorageUsage(params);
-    const inflight = scope.pendingRead;
-    try {
-      const currentUsage = await inflight;
-      scope.currentUsage ??= currentUsage;
-    } finally {
-      if (scope.pendingRead === inflight) {
-        scope.pendingRead = undefined;
-      }
-    }
-  }
+  /* Re-read while holding the cross-process lock. A request-local cached total can
+   * become stale after a different request commits between this request's writes. */
+  scope.currentUsage = await getUserStorageUsage(params);
 
   const currentUsage = scope.currentUsage;
   if (currentUsage === undefined) {
@@ -295,29 +353,39 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
    * is released if the write fails, so a failed row does not consume the cap for the
    * rest of the request. */
   const charge = bytes - replaced;
+  let enteredQuotaLock = false;
   try {
-    await reserveWithinLimit(scope, getUserStorageUsage, charge);
+    return await withStorageQuotaLock(scope, async () => {
+      enteredQuotaLock = true;
+      try {
+        await reserveWithinLimit(scope, getUserStorageUsage, charge);
+      } catch (error) {
+        await runRollback(rollback, onRollbackError);
+        throw error;
+      }
+      try {
+        const result = await write(scopedRow);
+        if (result == null) {
+          throw new Error('Quota-bearing persistence callback completed without committing a row');
+        }
+        if (scope.storageLimit !== undefined && charge < 0) {
+          scope.currentUsage = Math.max(0, (scope.currentUsage as number) + charge);
+        }
+        if (replacementKey) {
+          scope.replacementBytes ??= new Map();
+          scope.replacementBytes.set(replacementKey, bytes);
+        }
+        return result;
+      } catch (error) {
+        if (scope.storageLimit !== undefined && charge > 0) {
+          scope.currentUsage = (scope.currentUsage as number) - charge;
+        }
+        throw error;
+      }
+    });
   } catch (error) {
-    await runRollback(rollback, onRollbackError);
-    throw error;
-  }
-
-  try {
-    const result = await write(scopedRow);
-    if (result == null) {
-      throw new Error('Quota-bearing persistence callback completed without committing a row');
-    }
-    if (scope.storageLimit !== undefined && charge < 0) {
-      scope.currentUsage = Math.max(0, (scope.currentUsage as number) + charge);
-    }
-    if (replacementKey) {
-      scope.replacementBytes ??= new Map();
-      scope.replacementBytes.set(replacementKey, bytes);
-    }
-    return result;
-  } catch (error) {
-    if (scope.storageLimit !== undefined && charge > 0) {
-      scope.currentUsage = (scope.currentUsage as number) - charge;
+    if (!enteredQuotaLock) {
+      await runRollback(rollback, onRollbackError);
     }
     throw error;
   }
