@@ -63,6 +63,7 @@ export function isAbortError(error: unknown): boolean {
     if (
       name === 'AbortError' ||
       code === 'ABORT_ERR' ||
+      code === 'ERR_CANCELED' ||
       message.includes('AbortError') ||
       /(?:operation|request|stream) was aborted/i.test(message)
     ) {
