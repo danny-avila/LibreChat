@@ -653,6 +653,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  */
 const processFileUpload = async ({ req, res, metadata, sseStream, openai: providedOpenAI }) => {
   const retentionExpiryPromise = getRetentionExpiry(req);
+  const storageScope = resolveStorageScope(req);
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
   const assistantSource =
@@ -780,7 +781,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       metadata: secondaryStorageSource ? { secondaryStorageSource } : undefined,
       height,
       width,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     },
     isAssistantUpload
       ? async () => {
@@ -1443,7 +1444,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       source: storedSource,
       height,
       width,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
       llmDeliveryPath,
     }),
     ...retentionExpiry,

@@ -1922,7 +1922,6 @@ describe('processAgentFileUpload', () => {
         },
       });
       const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
-
       await processAgentFileUpload({
         req,
         res: mockRes,
@@ -2244,6 +2243,8 @@ describe('processAgentFileUpload', () => {
         makeFileConfig({ textSupportedMimeTypes: ['text/markdown'] }),
       );
       const req = makeReq({ mimetype: 'text/markdown', ocrConfig: null });
+      req.tenantId = 'request-tenant';
+      req.user.tenantId = 'stale-user-tenant';
 
       try {
         await expect(
@@ -2255,7 +2256,10 @@ describe('processAgentFileUpload', () => {
 
       expect(deleteFile).toHaveBeenCalledWith(
         req,
-        expect.objectContaining({ filepath: '/uploads/user-123/upload.bin' }),
+        expect.objectContaining({
+          filepath: '/uploads/user-123/upload.bin',
+          tenantId: 'request-tenant',
+        }),
       );
       expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
         agent_id: 'agent-abc',

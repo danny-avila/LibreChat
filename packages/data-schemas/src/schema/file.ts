@@ -161,6 +161,12 @@ const file: Schema<IMongoFile> = new Schema(
         type: String,
         default: undefined,
       },
+      /** Backing-store strategy for a second retained copy, when the provider-facing
+       * source remains the primary File identity. */
+      secondaryStorageSource: {
+        type: String,
+        default: undefined,
+      },
     },
     llmDeliveryPath: {
       /* What upload time inferred about delivery, from the endpoint and MIME type it saw.

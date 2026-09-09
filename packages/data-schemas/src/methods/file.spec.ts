@@ -116,11 +116,13 @@ describe('File Methods', () => {
         metadata: {
           codeEnvRef: defaultRef,
           codeEnvRefs: { default: defaultRef, stateful: statefulRef },
+          secondaryStorageSource: 's3',
         },
       });
 
       expect(file?.metadata?.codeEnvRefs?.default?.file_id).toBe('default-file');
       expect(file?.metadata?.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
+      expect(file?.metadata?.secondaryStorageSource).toBe('s3');
     });
   });
 

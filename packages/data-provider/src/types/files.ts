@@ -190,6 +190,8 @@ export type TFile = {
     destinationChosen?: boolean;
     /** The type the delivery route was resolved against, when conversion changed it. */
     routingMimeType?: string;
+    /** Backing-store strategy for an additional retained copy. */
+    secondaryStorageSource?: string;
   };
   llmDeliveryPath?: 'provider' | 'text' | 'none';
   createdAt?: string | Date;
