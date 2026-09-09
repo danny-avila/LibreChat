@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model, Types } from 'mongoose';
 import type { CodeEnvRef } from 'librechat-data-provider';
@@ -150,7 +151,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const [result] = await File.aggregate<{ total: number }>([
       { $match: match },
       { $group: { _id: null, total: { $sum: '$bytes' } } },
-    ]);
+    ]).read('primary');
     return result?.total ?? 0;
   }
 
@@ -159,7 +160,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const [result] = await SkillFile.aggregate<{ total: number }>([
       { $match: match },
       { $group: { _id: null, total: { $sum: '$bytes' } } },
-    ]);
+    ]).read('primary');
     return result?.total ?? 0;
   }
 
@@ -185,6 +186,109 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     );
     return fileBytes + skillFileBytes;
   }
+
+  type StorageUsageExtensions = {
+    withLock: <T>(
+      params: UserStorageUsageParams,
+      operation: (assertHeld: () => Promise<void>) => Promise<T>,
+    ) => Promise<T>;
+    getReplacementBytes: (
+      params: UserStorageUsageParams &
+        (
+          | { kind: 'file'; fileId: string }
+          | { kind: 'skill'; skillId: string; relativePath: string }
+        ),
+    ) => Promise<number | null>;
+  };
+  const storageUsage = getUserStorageUsage as typeof getUserStorageUsage & StorageUsageExtensions;
+
+  storageUsage.withLock = async <T>(params, operation): Promise<T> => {
+    const key = JSON.stringify([params.userId.toString(), params.tenantId || null]);
+    const token = randomUUID();
+    const collection = mongoose.connection.collection<{
+      _id: string;
+      token: string;
+      expiresAt: Date;
+    }>('storage_quota_locks');
+    const deadline = Date.now() + 30_000;
+    let acquired = false;
+    while (!acquired && Date.now() < deadline) {
+      const now = new Date();
+      try {
+        const lock = await collection.findOneAndUpdate(
+          { _id: key, $or: [{ expiresAt: { $lte: now } }, { token }] },
+          { $set: { token, expiresAt: new Date(now.getTime() + 120_000) } },
+          { upsert: true, returnDocument: 'after', readPreference: 'primary' },
+        );
+        acquired = lock?.token === token;
+      } catch (error) {
+        if ((error as { code?: number }).code !== 11000) {
+          throw error;
+        }
+      }
+      if (!acquired) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    if (!acquired) {
+      throw new Error('Timed out waiting for the storage quota ledger lock');
+    }
+
+    let leaseError: unknown;
+    const renew = async (): Promise<void> => {
+      if (leaseError) {
+        throw leaseError;
+      }
+      const renewed = await collection.updateOne(
+        { _id: key, token },
+        { $set: { expiresAt: new Date(Date.now() + 120_000) } },
+      );
+      if (renewed.matchedCount !== 1) {
+        leaseError = new Error('Storage quota ledger lock was lost');
+        throw leaseError;
+      }
+    };
+    const heartbeat = setInterval(() => {
+      void renew().catch((error) => {
+        leaseError = error;
+      });
+    }, 30_000);
+    heartbeat.unref();
+    try {
+      return await operation(renew);
+    } finally {
+      clearInterval(heartbeat);
+      /** Do not turn a committed row into an apparent failure whose caller removes
+       * its blob. A failed release remains bounded by the renewed lease. */
+      await collection.deleteOne({ _id: key, token }).catch(() => undefined);
+    }
+  };
+
+  storageUsage.getReplacementBytes = async (params): Promise<number | null> => {
+    const owner = toObjectId(params.userId, 'userId');
+    const tenantId = params.tenantId ? params.tenantId : { $in: [null, ''] };
+    return runAsSystem(async () => {
+      if (params.kind === 'file') {
+        const File = mongoose.models.File as Model<IMongoFile>;
+        const row = await File.findOne({ file_id: params.fileId, user: owner, tenantId })
+          .read('primary')
+          .select({ bytes: 1 })
+          .lean<{ bytes?: number | null }>();
+        return row?.bytes ?? null;
+      }
+      const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+      const row = await SkillFile.findOne({
+        skillId: toObjectId(params.skillId, 'skillId'),
+        relativePath: params.relativePath,
+        author: owner,
+        tenantId,
+      })
+        .read('primary')
+        .select({ bytes: 1 })
+        .lean<{ bytes?: number | null }>();
+      return row?.bytes ?? null;
+    });
+  };
 
   /**
    * Finds a file by its file_id with additional query options.

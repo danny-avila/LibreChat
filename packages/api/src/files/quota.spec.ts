@@ -302,6 +302,32 @@ describe('persistFileWithQuota', () => {
     expect(write).toHaveBeenCalled();
   });
 
+  it('refreshes replacement bytes while holding the owner ledger lock', async () => {
+    const getUserStorageUsage = usageOf(megabyte - 5);
+    getUserStorageUsage.getReplacementBytes = jest.fn(async () => 2);
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+          row: { bytes: 8, file_id: 'file-1' },
+          replacing: { file_id: 'file-1', user: userId },
+          replacedBytes: 8,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage,
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
+    expect(getUserStorageUsage.getReplacementBytes).toHaveBeenCalledWith({
+      userId,
+      tenantId: undefined,
+      kind: 'file',
+      fileId: 'file-1',
+    });
+  });
+
   it('does not credit a replaced file outside the charged ledger', async () => {
     const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
 

@@ -1,5 +1,3 @@
-import { randomUUID } from 'crypto';
-import mongoose from 'mongoose';
 import { megabyte, mergeFileConfig } from 'librechat-data-provider';
 
 export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
@@ -83,13 +81,14 @@ const localQuotaLocks = new Map<string, Promise<void>>();
 
 async function withStorageQuotaLock<T>(
   scope: StorageScope,
-  operation: () => Promise<T>,
+  getUserStorageUsage: GetUserStorageUsage,
+  operation: (assertHeld: () => Promise<void>) => Promise<T>,
 ): Promise<T> {
   if (scope.storageLimit === undefined) {
-    return operation();
+    return operation(async () => undefined);
   }
   const key = JSON.stringify([scope.userId, scope.tenantId ?? null]);
-  if (mongoose.connection.readyState !== 1) {
+  if (!getUserStorageUsage.withLock) {
     const previous = localQuotaLocks.get(key) ?? Promise.resolve();
     let release = () => {};
     const current = new Promise<void>((resolve) => {
@@ -98,7 +97,7 @@ async function withStorageQuotaLock<T>(
     localQuotaLocks.set(key, current);
     await previous;
     try {
-      return await operation();
+      return await operation(async () => undefined);
     } finally {
       release();
       if (localQuotaLocks.get(key) === current) {
@@ -107,42 +106,10 @@ async function withStorageQuotaLock<T>(
     }
   }
 
-  const token = randomUUID();
-  const collection = mongoose.connection.collection<{
-    _id: string;
-    token: string;
-    expiresAt: Date;
-  }>('storage_quota_locks');
-  const deadline = Date.now() + 30_000;
-  let acquired = false;
-  while (!acquired && Date.now() < deadline) {
-    const now = new Date();
-    try {
-      const lock = await collection.findOneAndUpdate(
-        { _id: key, $or: [{ expiresAt: { $lte: now } }, { token }] },
-        { $set: { token, expiresAt: new Date(now.getTime() + 120_000) } },
-        { upsert: true, returnDocument: 'after' },
-      );
-      acquired = lock?.token === token;
-    } catch (error) {
-      if ((error as { code?: number }).code !== 11000) {
-        throw error;
-      }
-    }
-    if (!acquired) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-  }
-  if (!acquired) {
-    throw new Error('Timed out waiting for the storage quota ledger lock');
-  }
-  try {
-    return await operation();
-  } finally {
-    /* A release failure must not turn a committed metadata write into an apparent
-     * failure whose caller deletes its blob. The lease is self-expiring. */
-    await collection.deleteOne({ _id: key, token }).catch(() => undefined);
-  }
+  return getUserStorageUsage.withLock(
+    { userId: scope.userId, tenantId: scope.tenantId },
+    operation,
+  );
 }
 
 function formatBytes(bytes: number): string {
@@ -221,10 +188,20 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
   return scope;
 }
 
-export type GetUserStorageUsage = (params: {
-  userId: string;
-  tenantId?: string | null;
-}) => Promise<number>;
+export type StorageReplacementIdentity =
+  | { kind: 'file'; fileId: string }
+  | { kind: 'skill'; skillId: string; relativePath: string };
+
+export type GetUserStorageUsage = {
+  (params: { userId: string; tenantId?: string | null }): Promise<number>;
+  withLock?: <T>(
+    params: { userId: string; tenantId?: string | null },
+    operation: (assertHeld: () => Promise<void>) => Promise<T>,
+  ) => Promise<T>;
+  getReplacementBytes?: (
+    params: { userId: string; tenantId?: string | null } & StorageReplacementIdentity,
+  ) => Promise<number | null>;
+};
 
 function idsMatch(
   left?: { toString(): string } | string | null,
@@ -330,6 +307,7 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
   { scope, row, write, rollback, getUserStorageUsage, replacedBytes }: PersistParams<TRow, TResult>,
   ownerField: OwnerField,
   replacementKey: string | undefined,
+  replacementIdentity: StorageReplacementIdentity | undefined,
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
   try {
@@ -344,7 +322,7 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
    * queried ledger and the written ledger are made the same by construction. */
   const scopedRow: TRow = { ...row, [ownerField]: scope.userId, tenantId: scope.tenantId };
   const bytes = normalizeBytes(scopedRow.bytes);
-  const replaced = normalizeBytes(
+  const suppliedReplaced = normalizeBytes(
     replacementKey ? (scope.replacementBytes?.get(replacementKey) ?? replacedBytes) : replacedBytes,
   );
 
@@ -352,13 +330,22 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
    * cannot have both writes observe the same headroom and both take it. The reservation
    * is released if the write fails, so a failed row does not consume the cap for the
    * rest of the request. */
-  const charge = bytes - replaced;
+  let charge = bytes - suppliedReplaced;
   let enteredQuotaLock = false;
   try {
-    return await withStorageQuotaLock(scope, async () => {
+    return await withStorageQuotaLock(scope, getUserStorageUsage, async (assertHeld) => {
       enteredQuotaLock = true;
       try {
+        if (replacementIdentity && getUserStorageUsage.getReplacementBytes) {
+          const currentReplacedBytes = await getUserStorageUsage.getReplacementBytes({
+            userId: scope.userId,
+            tenantId: scope.tenantId,
+            ...replacementIdentity,
+          });
+          charge = bytes - normalizeBytes(currentReplacedBytes);
+        }
         await reserveWithinLimit(scope, getUserStorageUsage, charge);
+        await assertHeld();
       } catch (error) {
         await runRollback(rollback, onRollbackError);
         throw error;
@@ -461,6 +448,7 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
       { ...rest, replacedBytes: replacedByRequester ? rest.replacedBytes : 0 },
       'user',
       replacementKey,
+      replacementKey && rest.row.file_id ? { kind: 'file', fileId: rest.row.file_id } : undefined,
       onRollbackError,
     ),
   );
@@ -518,6 +506,9 @@ export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
       },
       'author',
       replacementKey,
+      replacementKey && rowSkillId && rest.row.relativePath
+        ? { kind: 'skill', skillId: rowSkillId, relativePath: rest.row.relativePath }
+        : undefined,
       onRollbackError,
     ),
   );

@@ -403,6 +403,63 @@ describe('File Methods', () => {
         'Invalid userId',
       );
     });
+
+    it('serializes owner ledger operations through the injected Mongo connection', async () => {
+      const usage = fileMethods.getUserStorageUsage as typeof fileMethods.getUserStorageUsage & {
+        withLock: <T>(
+          params: { userId: string; tenantId?: string },
+          operation: (assertHeld: () => Promise<void>) => Promise<T>,
+        ) => Promise<T>;
+      };
+      const userId = new mongoose.Types.ObjectId().toString();
+      let releaseFirst: (() => void) | undefined;
+      const firstCanFinish = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let markFirstEntered: (() => void) | undefined;
+      const firstEntered = new Promise<void>((resolve) => {
+        markFirstEntered = resolve;
+      });
+      const entries: string[] = [];
+      const first = usage.withLock({ userId, tenantId: 't1' }, async (assertHeld) => {
+        entries.push('first');
+        markFirstEntered?.();
+        await firstCanFinish;
+        await assertHeld();
+      });
+      await firstEntered;
+      const second = usage.withLock({ userId, tenantId: 't1' }, async () => {
+        entries.push('second');
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(entries).toEqual(['first']);
+      releaseFirst?.();
+      await Promise.all([first, second]);
+      expect(entries).toEqual(['first', 'second']);
+    });
+
+    it('refreshes replacement bytes from the primary owner ledger', async () => {
+      const usage = fileMethods.getUserStorageUsage as typeof fileMethods.getUserStorageUsage & {
+        getReplacementBytes: (params: {
+          userId: string;
+          tenantId?: string;
+          kind: 'file';
+          fileId: string;
+        }) => Promise<number | null>;
+      };
+      const userId = new mongoose.Types.ObjectId();
+      await createStoredFile({ user: userId, file_id: 'replacement', bytes: 321, tenantId: 't1' });
+
+      await expect(
+        usage.getReplacementBytes({
+          userId: userId.toString(),
+          tenantId: 't1',
+          kind: 'file',
+          fileId: 'replacement',
+        }),
+      ).resolves.toBe(321);
+    });
   });
 
   describe('findFileById', () => {
