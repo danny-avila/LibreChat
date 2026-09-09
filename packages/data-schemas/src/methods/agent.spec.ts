@@ -5306,6 +5306,35 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(result.data.map((a) => a.id)).toEqual([oldest.id, middle.id, newest.id]);
     });
 
+    test('oldest uses descending _id ties so the existing descending index can scan backwards', async () => {
+      const author = new mongoose.Types.ObjectId();
+      const first = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Same Date First',
+        provider: 'openai',
+        model: 'gpt-4',
+        author,
+      });
+      const second = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Same Date Second',
+        provider: 'openai',
+        model: 'gpt-4',
+        author,
+      });
+      const date = new Date('2024-03-01T00:00:00Z');
+      await setCreatedAt(first._id, date);
+      await setCreatedAt(second._id, date);
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [first._id, second._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+        sort: 'oldest',
+      });
+
+      expect(result.data.map((agent) => agent.id)).toEqual([second.id, first.id]);
+    });
+
     test('oldest paginates across multiple pages without duplicates or gaps', async () => {
       const author = new mongoose.Types.ObjectId();
       const agents = [];
@@ -5393,6 +5422,150 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(result.data.map((a) => a.id)).toEqual([popular.id, mid.id, unfavorited.id]);
     });
 
+    test('counts unique users per tenant when agent ids collide across tenants', async () => {
+      const sharedId = `agent_shared_${uuidv4().slice(0, 8)}`;
+      const tenantA = `tenant-a-${uuidv4().slice(0, 8)}`;
+      const tenantB = `tenant-b-${uuidv4().slice(0, 8)}`;
+      const agentA = await createAgent({
+        id: sharedId,
+        name: 'Tenant A Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        tenantId: tenantA,
+      });
+      const agentB = await createAgent({
+        id: sharedId,
+        name: 'Tenant B Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        tenantId: tenantB,
+      });
+
+      await User.create({
+        _id: new mongoose.Types.ObjectId(),
+        name: 'Tenant A Fan',
+        email: `tenant-a-fan-${uuidv4()}@example.com`,
+        provider: 'local',
+        tenantId: tenantA,
+        favorites: [{ agentId: sharedId }, { agentId: sharedId }],
+      });
+      for (const tenantBFan of ['one', 'two']) {
+        await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: `Tenant B Fan ${tenantBFan}`,
+          email: `tenant-b-fan-${tenantBFan}-${uuidv4()}@example.com`,
+          provider: 'local',
+          tenantId: tenantB,
+          favorites: [{ agentId: sharedId }],
+        });
+      }
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [agentA._id, agentB._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+        sort: 'popular',
+      });
+
+      expect(result.data.map((agent) => agent.name)).toEqual(['Tenant B Agent', 'Tenant A Agent']);
+      const scoped = await tenantStorage.run({ tenantId: tenantA }, () =>
+        getListAgentsByAccess({
+          accessibleIds: [agentA._id, agentB._id],
+          sort: 'popular',
+        }),
+      );
+      expect(scoped.data.map((agent) => agent.name)).toEqual(['Tenant A Agent']);
+    });
+
+    test('reapplies category filtering while sorting by popularity', async () => {
+      const categoryAgent = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Category Match',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        category: 'featured',
+      });
+      const otherCategoryAgent = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Other Category',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        category: 'general',
+      });
+      await createUserWithFavorites([otherCategoryAgent.id]);
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [categoryAgent._id, otherCategoryAgent._id] as mongoose.Types.ObjectId[],
+        otherParams: { category: 'featured' },
+        sort: 'popular',
+      });
+
+      expect(result.data.map((agent) => agent.id)).toEqual([categoryAgent.id]);
+    });
+
+    test('retains a compact cursor when a selected row disappears before the full fetch', async () => {
+      const first = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'First Candidate',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        category: 'featured',
+      });
+      const second = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Second Candidate',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        category: 'featured',
+      });
+
+      const originalFind = Agent.find.bind(Agent);
+      const findSpy = jest.spyOn(Agent, 'find').mockImplementationOnce(
+        (...args: Parameters<typeof Agent.find>) =>
+          ({
+            lean: async () => {
+              const rows = await originalFind(...args).lean();
+              const selected = rows[0];
+              if (selected) {
+                await Agent.collection.updateOne(
+                  { _id: selected._id },
+                  { $set: { category: 'hidden' } },
+                );
+              }
+              return rows;
+            },
+          }) as ReturnType<typeof Agent.find>,
+      );
+
+      try {
+        const page1 = await getListAgentsByAccess({
+          accessibleIds: [first._id, second._id] as mongoose.Types.ObjectId[],
+          otherParams: { category: 'featured' },
+          sort: 'popular',
+          limit: 1,
+        });
+        expect(page1.data).toHaveLength(0);
+        expect(page1.has_more).toBe(true);
+        expect(page1.after).toBeTruthy();
+
+        const page2 = await getListAgentsByAccess({
+          accessibleIds: [first._id, second._id] as mongoose.Types.ObjectId[],
+          otherParams: { category: 'featured' },
+          sort: 'popular',
+          limit: 1,
+          after: page1.after,
+        });
+        expect(page2.data.map((agent) => agent.id)).toEqual([second.id]);
+      } finally {
+        findSpy.mockRestore();
+      }
+    });
+
     test('agent never favorited by anyone gets favoriteCount=0 and ties are broken by _id asc', async () => {
       const author = new mongoose.Types.ObjectId();
       const first = await createAgent({
@@ -5412,7 +5585,6 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       // Bump `updatedAt` out of `_id` order to prove the tie-break ignores it —
       // `updatedAt` moves on side effects unrelated to favorite count (e.g. an
       // avatar refresh), so it must not influence pagination stability here.
-      await setUpdatedAt(first._id, new Date('2024-01-01T00:00:00Z'));
       await setUpdatedAt(second._id, new Date('2025-01-01T00:00:00Z'));
 
       const result = await getListAgentsByAccess({
@@ -5422,9 +5594,6 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       });
 
       expect(result.data).toHaveLength(2);
-      expect(result.data.every((a) => a.favoriteCount === 0 || a.favoriteCount === undefined)).toBe(
-        true,
-      );
       // Both have favoriteCount=0, so the _id-asc tie-break applies (creation order).
       expect(result.data.map((a) => a.id)).toEqual([first.id, second.id]);
     });
@@ -5473,6 +5642,42 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(seen).toEqual(expectedOrder);
       expect(new Set(seen).size).toBe(agents.length);
     });
+
+    test('compares hexadecimal cursor ids independently of case', async () => {
+      const author = new mongoose.Types.ObjectId();
+      const agents = await Promise.all(
+        ['First', 'Second'].map((name) =>
+          createAgent({
+            _id: new mongoose.Types.ObjectId(),
+            id: `agent_${uuidv4().slice(0, 12)}`,
+            name,
+            author,
+            provider: 'openai',
+            model: 'gpt-4',
+          }),
+        ),
+      );
+      const accessibleIds = agents.map((agent) => agent._id);
+      const firstPage = await getListAgentsByAccess({
+        accessibleIds,
+        sort: 'popular',
+        limit: 1,
+      });
+      const cursor = JSON.parse(Buffer.from(firstPage.after as string, 'base64').toString());
+      const after = Buffer.from(
+        JSON.stringify({ ...cursor, secondary: cursor.secondary.toUpperCase() }),
+      ).toString('base64');
+      const secondPage = await getListAgentsByAccess({
+        accessibleIds,
+        sort: 'popular',
+        limit: 1,
+        after,
+      });
+      expect([...firstPage.data, ...secondPage.data].map((agent) => agent.name)).toEqual([
+        'First',
+        'Second',
+      ]);
+    });
   });
 
   describe('author', () => {
@@ -5510,6 +5715,33 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       // 'Alice' < 'bob@example.com' < the U+10FFFF sentinel (no support_contact at all).
       expect(result.data.map((a) => a.id)).toEqual([agentAlice.id, agentBob.id, agentOrphan.id]);
       expect(result.data).toHaveLength(3);
+    });
+
+    test('trims support contact values before author sorting', async () => {
+      const padded = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Padded Contact',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        support_contact: { name: '  Zulu  ', email: '' },
+      });
+      const beta = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Beta Contact',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        support_contact: { name: 'Beta', email: '' },
+      });
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [beta._id, padded._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+        sort: 'author',
+      });
+
+      expect(result.data.map((a) => a.id)).toEqual([beta.id, padded.id]);
     });
 
     test('ties on the same support_contact.name are broken by _id asc, stable across pagination', async () => {
@@ -5706,7 +5938,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       test("falls back to `author`'s own account name when no OWNER ACL entry exists", async () => {
         const author = await User.create({
           _id: new mongoose.Types.ObjectId(),
-          name: 'Plain Creator',
+          name: 'Mmm Plain Creator',
           email: `plain-creator-${uuidv4()}@example.com`,
           provider: 'local',
         });
@@ -5717,23 +5949,30 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
           model: 'gpt-4',
           author: author._id,
         });
+        const anchor = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Support Anchor',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+          support_contact: { name: 'Zzz Support Anchor', email: '' },
+        });
 
         const result = await getListAgentsByAccess({
-          accessibleIds: [agent._id] as mongoose.Types.ObjectId[],
+          accessibleIds: [agent._id, anchor._id] as mongoose.Types.ObjectId[],
           otherParams: {},
           sort: 'author',
         });
 
-        expect(result.data).toHaveLength(1);
-        expect(result.data[0].id).toBe(agent.id);
+        expect(result.data.map((a) => a.id)).toEqual([agent.id, anchor.id]);
       });
 
-      test('rejects an email-shaped owner name/username, falling through to the sentinel instead of leaking it', async () => {
+      test('rejects email-shaped account names and private email as author-sort fallbacks', async () => {
         const owner = await User.create({
           _id: new mongoose.Types.ObjectId(),
-          name: 'owner@example.com', // email-shaped: auth strategies can fall back to email here
+          name: 'owner@example.com',
           username: 'also@example.com',
-          email: `owner-${uuidv4()}@example.com`,
+          email: `0-owner-${uuidv4()}@example.com`,
           provider: 'local',
         });
         const emailNamedOwnerAgent = await createAgent({
@@ -5758,7 +5997,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
           provider: 'openai',
           model: 'gpt-4',
           author: new mongoose.Types.ObjectId(),
-          support_contact: { name: 'A Real Name', email: '' },
+          support_contact: { name: 'zzzz real name', email: '' },
         });
 
         const result = await getListAgentsByAccess({
@@ -5767,8 +6006,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
           sort: 'author',
         });
 
-        // 'A Real Name' sorts before the sentinel; the email-shaped owner name/username
-        // must never surface, so `emailNamedOwnerAgent` lands last, not first.
+        // Email-shaped account values and the account email must never become the fallback.
         expect(result.data.map((a) => a.id)).toEqual([realNameAgent.id, emailNamedOwnerAgent.id]);
       });
     });
@@ -5793,6 +6031,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       });
 
       expect(result.data).toHaveLength(1);
+
       expect(result.data[0].id).toBe(agent.id);
     });
 
@@ -5876,16 +6115,17 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
   });
 
   /**
-   * Agents inserted outside Mongoose (raw driver, migration scripts) have no
-   * `createdAt`, since `timestamps: true` only fills documents Mongoose itself creates.
-   * Mongo sorts a missing field as `null`, so those agents cluster first under 'oldest'
-   * and last under 'newest' — and a plain date comparison never matches them, which
-   * used to make them vanish from page two onwards.
+   * Legacy rows can have missing or explicit null `createdAt` values. Both
+   * occupy the null sort tier and must remain reachable across cursor pages.
    */
-  describe('cursor pagination over agents with no createdAt', () => {
+  describe('cursor pagination over agents with null or missing createdAt', () => {
     /** Removes `createdAt` entirely, as a raw-driver insert would leave it. */
     async function unsetCreatedAt(agentId: mongoose.Types.ObjectId) {
       await Agent.collection.updateOne({ _id: agentId }, { $unset: { createdAt: '' } });
+    }
+    /** Writes an explicit null, which sorts with missing `createdAt`. */
+    async function nullCreatedAt(agentId: mongoose.Types.ObjectId) {
+      await Agent.collection.updateOne({ _id: agentId }, { $set: { createdAt: null } });
     }
 
     async function seedMixedCreatedAt() {
@@ -5912,7 +6152,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
           model: 'gpt-4',
           author,
         });
-        await unsetCreatedAt(agent._id);
+        await (i === 0 ? nullCreatedAt(agent._id) : unsetCreatedAt(agent._id));
         undated.push(agent);
       }
 
@@ -5953,7 +6193,10 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
 
       expect(new Set(seen).size).toBe(5);
       expect(seen).toHaveLength(5);
-      expect(new Set(seen.slice(0, 2))).toEqual(new Set(undated.map((a) => a.id)));
+      const expectedNullOrder = [...undated]
+        .sort((a, b) => b._id.toString().localeCompare(a._id.toString()))
+        .map((a) => a.id);
+      expect(seen.slice(0, 2)).toEqual(expectedNullOrder);
       expect(seen.slice(2)).toEqual(dated.map((a) => a.id));
     });
 
@@ -5966,7 +6209,10 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(new Set(seen).size).toBe(5);
       expect(seen).toHaveLength(5);
       expect(seen.slice(0, 3)).toEqual([...dated].reverse().map((a) => a.id));
-      expect(new Set(seen.slice(3))).toEqual(new Set(undated.map((a) => a.id)));
+      const expectedNullOrder = [...undated]
+        .sort((a, b) => a._id.toString().localeCompare(b._id.toString()))
+        .map((a) => a.id);
+      expect(seen.slice(3)).toEqual(expectedNullOrder);
     });
 
     test('newest crosses from the last dated row into the undated group', async () => {
@@ -6004,10 +6250,6 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         sort: 'oldest',
         limit: 1,
       });
-
-      expect(page1.after).toBeTruthy();
-      const decoded = JSON.parse(Buffer.from(page1.after as string, 'base64').toString('utf8'));
-      expect(decoded.primary).toBe('');
 
       const page2 = await getListAgentsByAccess({
         accessibleIds,

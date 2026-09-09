@@ -150,13 +150,29 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
   showCloseButton?: boolean;
   disableScroll?: boolean;
   overlayClassName?: string;
+  /**
+   * Drop the default centering, surface and enter/exit classes so the caller owns the
+   * dialog's geometry and animation (e.g. a shared-layout morph). Dialog semantics —
+   * focus trap, Escape, scroll lock, aria wiring — are unchanged.
+   */
+  bare?: boolean;
+  /** Keep the portal mounted while closed so the caller can animate the exit itself. */
+  forceMount?: true;
 };
+
+/** Positioning and appearance a `bare` content opts out of. */
+const DIALOG_SURFACE_CLASSES =
+  /** `shadow-lg` is a black shadow, which carries no separation against
+   *  a pure black surface, so high contrast trades it for a real edge. */
+  'max-w-11/12 left-[50%] top-[50%] grid max-h-[90vh] w-full translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-2xl bg-surface-dialog p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none';
 
 const DialogContent: React.ForwardRefExoticComponent<
   Omit<DialogPrimitive.DialogContentProps & React.RefAttributes<HTMLDivElement>, 'ref'> & {
     showCloseButton?: boolean;
     disableScroll?: boolean;
     overlayClassName?: string;
+    bare?: boolean;
+    forceMount?: true;
   } & React.RefAttributes<HTMLDivElement>
 > = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
   (
@@ -164,6 +180,8 @@ const DialogContent: React.ForwardRefExoticComponent<
       className,
       overlayClassName,
       showCloseButton = true,
+      bare = false,
+      forceMount,
       children,
       style,
       onEscapeKeyDown: propsOnEscapeKeyDown,
@@ -294,18 +312,13 @@ const DialogContent: React.ForwardRefExoticComponent<
     );
 
     return (
-      <DialogPortal>
+      <DialogPortal forceMount={forceMount}>
         <DialogOverlay className={overlayClassName} />
         <DialogPrimitive.Content
           ref={composedRef}
           style={{ ...style, zIndex: contentZIndex }}
           onEscapeKeyDown={handleEscapeKeyDown}
-          className={cn(
-            /** `shadow-lg` is a black shadow, which carries no separation against
-             *  a pure black surface, so high contrast trades it for a real edge. */
-            'max-w-11/12 fixed left-[50%] top-[50%] grid max-h-[90vh] w-full translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-2xl bg-surface-dialog p-6 text-text-primary shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none',
-            className,
-          )}
+          className={cn('fixed text-text-primary', !bare && DIALOG_SURFACE_CLASSES, className)}
           {...props}
         >
           {children}

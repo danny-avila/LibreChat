@@ -11,7 +11,7 @@ import {
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'mongoose';
 import type { AgentSortOption, AgentToolResources } from 'librechat-data-provider';
-import type { IAgent, IAclEntry, ActionQuery } from '~/types';
+import type { IAgent, IAclEntry, IUser, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { filterExistingSkillIds } from './skill';
@@ -96,25 +96,27 @@ function isValidDisplayName(varRef: string): Record<string, unknown> {
  * How each marketplace sort mode orders the agent list, and how a cursor taken from
  * that ordering has to be read back.
  *
- * `createdAt` is a stored field, so 'newest'/'oldest' run as a plain `.find()`.
- * `favoriteCount` and `authorDisplayName` only exist once the aggregation has computed
- * them, so their cursor condition has to be applied as a later pipeline stage — but the
- * comparison itself is identical in both cases, which is why one table covers all four.
+ * `createdAt` is stored, while popularity counts and author display names are
+ * computed for their respective paths. Each mode applies its cursor predicate
+ * before selecting the next page.
  *
- * The `_id` tie-break is always ascending (`$gt`), independently of `direction`.
+ * The `_id` tie-break is ascending for every mode except 'oldest'. The latter
+ * reverses both keys so MongoDB can scan the existing `{ createdAt: -1, _id: 1 }`
+ * index backwards without requiring a second ascending index.
  */
 const AGENT_SORT_CONFIG: Record<
   AgentSortOption,
   {
     field: 'createdAt' | 'favoriteCount' | 'authorDisplayName';
     direction: 1 | -1;
+    tieBreakDirection: 1 | -1;
     valueType: 'date' | 'number' | 'string';
   }
 > = {
-  newest: { field: 'createdAt', direction: -1, valueType: 'date' },
-  oldest: { field: 'createdAt', direction: 1, valueType: 'date' },
-  popular: { field: 'favoriteCount', direction: -1, valueType: 'number' },
-  author: { field: 'authorDisplayName', direction: 1, valueType: 'string' },
+  newest: { field: 'createdAt', direction: -1, tieBreakDirection: 1, valueType: 'date' },
+  oldest: { field: 'createdAt', direction: 1, tieBreakDirection: -1, valueType: 'date' },
+  popular: { field: 'favoriteCount', direction: -1, tieBreakDirection: 1, valueType: 'number' },
+  author: { field: 'authorDisplayName', direction: 1, tieBreakDirection: 1, valueType: 'string' },
 };
 
 /**
@@ -179,7 +181,7 @@ function decodeAgentSortCursor(after: string, sort: AgentSortOption): AgentSortC
       if (primary !== '' && Number.isNaN(new Date(primary).getTime())) {
         return null;
       }
-    } else if (valueType === 'number' && !Number.isFinite(Number(primary))) {
+    } else if (valueType === 'number' && (primary === '' || !Number.isFinite(Number(primary)))) {
       return null;
     }
     return { primary, secondary: decoded.secondary };
@@ -195,13 +197,10 @@ function decodeAgentSortCursor(after: string, sort: AgentSortOption): AgentSortC
  * field is stored (`createdAt`) or computed by an aggregation
  * (`favoriteCount`/`authorDisplayName`).
  *
- * Agents inserted outside Mongoose (raw driver, migration scripts) can genuinely lack
- * `createdAt`, since `timestamps: true` only fills documents Mongoose itself creates.
- * Mongo sorts a missing field as `null`, the smallest possible value, so those agents
- * cluster at one end: first under 'oldest' (ascending), last under 'newest'
- * (descending). Plain `{createdAt: {$lt: <Date>}}` never matches a document that lacks
- * the field at all, so without the two `$exists` branches below they would silently
- * vanish from page two onwards.
+ * Agents inserted outside Mongoose can lack `createdAt`, and legacy rows can
+ * contain an explicit null. Mongo sorts both as the same null tier. Cursor
+ * predicates therefore use a null equality branch so neither form disappears
+ * between pages.
  */
 function buildAgentSortCursorCondition(
   sort: AgentSortOption,
@@ -213,18 +212,17 @@ function buildAgentSortCursorCondition(
    */
   secondaryId: Types.ObjectId,
 ): Record<string, unknown> {
-  const { field, direction, valueType } = AGENT_SORT_CONFIG[sort];
-  const tieBreak = { _id: { $gt: secondaryId } };
+  const { field, direction, tieBreakDirection, valueType } = AGENT_SORT_CONFIG[sort];
+  const tieBreakOperator = tieBreakDirection === 1 ? '$gt' : '$lt';
+  const tieBreak = { _id: { [tieBreakOperator]: secondaryId } };
 
-  // The previous page ended inside the group that has no `createdAt`.
+  // Missing and explicit null dates occupy the same MongoDB sort tier.
   if (valueType === 'date' && decoded.primary === '') {
-    const stillMissing = { [field]: { $exists: false }, ...tieBreak };
+    const stillNull = { [field]: null, ...tieBreak };
     if (direction === 1) {
-      // 'oldest': that group sorts first, so everything with a real date is still ahead.
-      return { $or: [stillMissing, { [field]: { $exists: true } }] };
+      return { $or: [stillNull, { [field]: { $exists: true, $ne: null } }] };
     }
-    // 'newest': that group sorts last, so only the rest of it remains.
-    return stillMissing;
+    return stillNull;
   }
 
   const op = direction === -1 ? '$lt' : '$gt';
@@ -234,11 +232,8 @@ function buildAgentSortCursorCondition(
     { [field]: primaryValue, ...tieBreak },
   ];
 
-  // 'newest' only: the previous page ended on the last row that *has* a date, so the
-  // whole missing-`createdAt` group is still ahead and must stay reachable. 'oldest'
-  // needs no equivalent — there, that group was exhausted by an earlier page.
   if (valueType === 'date' && direction === -1) {
-    branches.push({ [field]: { $exists: false } });
+    branches.push({ [field]: null });
   }
 
   return { $or: branches };
@@ -258,8 +253,19 @@ function encodeAgentSortCursor(sort: AgentSortOption, lastAgent: Record<string, 
 
   let primary: string;
   if (valueType === 'date') {
-    const asDate = rawValue instanceof Date ? rawValue : new Date(rawValue as string);
-    primary = Number.isNaN(asDate.getTime()) ? '' : asDate.toISOString();
+    if (rawValue == null) {
+      primary = '';
+    } else {
+      let asDate: Date;
+      if (rawValue instanceof Date) {
+        asDate = rawValue;
+      } else if (typeof rawValue === 'string' || typeof rawValue === 'number') {
+        asDate = new Date(rawValue);
+      } else {
+        asDate = new Date(Number.NaN);
+      }
+      primary = Number.isNaN(asDate.getTime()) ? '' : asDate.toISOString();
+    }
   } else if (valueType === 'number') {
     primary = String(rawValue ?? 0);
   } else {
@@ -1598,21 +1604,12 @@ export function createAgentMethods(
   }
 
   /**
-   * Get agents by accessible IDs with cursor pagination. Defaults to a 100-page
-   * limit (max 1000); pass `limit: null` to opt out entirely.
+   * Get accessible agents with cursor pagination. Pages default to 100 items and
+   * the default sort is newest; pass `limit: null` to opt out of pagination.
    *
-   * `sort` picks the branch: 'newest'/'oldest' (the default) reuse the original
-   * `.find()` path, which has an index to sort on. 'popular'/'author' need data
-   * that only `users` has (favorite counts, display names), so they run an
-   * aggregation instead. That pipeline must stay Amazon DocumentDB-compatible
-   * (see `documentdb.spec.ts`, which statically scans this file): equality-form
-   * `$lookup` only (no `let`/sub-pipeline), and never `allowDiskUse` — both
-   * forbidden constructs. Tenant safety for the joined `users` doc is enforced
-   * with `$filter`/`$let` on the array *after* the join, not inside the lookup.
-   *
-   * The response shape is the same for every mode: whichever key the chosen mode
-   * sorts and paginates on is stripped before returning, so `?sort=` cannot change
-   * the field set a client receives.
+   * All modes preserve the same projected response shape. Popularity counts are
+   * computed from compact candidate rows and unique tenant-scoped users before
+   * the selected page is fetched.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
@@ -1686,16 +1683,7 @@ export function createAgentMethods(
       return agent;
     };
 
-    /**
-     * Strips the internal sort keys and wraps the page in the response envelope.
-     *
-     * Taking `nextCursor` as an argument is what keeps the stripping safe: the rows in
-     * `data` are the same objects the cursor is encoded from (`.map()` mutates in place
-     * and `slice()` shares references), so deleting a sort key before the cursor exists
-     * would leave the encoder reading `undefined` and silently emit a cursor that
-     * restarts the traversal instead of continuing it. Requiring the cursor up front
-     * makes that ordering impossible to get wrong.
-     */
+    /** Removes internal sort fields after the mode-specific cursor is built. */
     const buildEnvelope = (
       data: Array<Record<string, unknown>>,
       hasMore: boolean,
@@ -1732,157 +1720,221 @@ export function createAgentMethods(
       return decoded;
     };
 
-    if (sort === 'popular' || sort === 'author') {
-      const pipeline: PipelineStage[] = [{ $match: baseQuery }];
+    if (sort === 'popular') {
+      const candidates = (await Agent.find(baseQuery, {
+        _id: 1,
+        id: 1,
+        tenantId: 1,
+      }).lean()) as Array<{ _id: Types.ObjectId; id: string; tenantId?: string | null }>;
 
-      if (sort === 'popular') {
-        pipeline.push({
-          $lookup: {
-            from: 'users',
-            localField: 'id',
-            foreignField: 'favorites.agentId',
-            as: '_joinedUsers',
-          },
-        });
-        // Count only favorites from users in the same tenant as the agent — the
-        // join can't cross tenants in practice (ids are tenant-unique), but this
-        // validates it explicitly rather than trusting that invariant silently.
-        pipeline.push({
-          $addFields: {
-            favoriteCount: {
-              $size: {
-                $filter: {
-                  input: '$_joinedUsers',
-                  as: 'u',
-                  cond: { $eq: ['$$u.tenantId', '$tenantId'] },
-                },
-              },
+      if (candidates.length === 0) {
+        return buildEnvelope([], false, null);
+      }
+
+      const candidateIds = [...new Set(candidates.map((candidate) => candidate.id))];
+      const User = mongoose.models.User as Model<IUser>;
+      const countRows = (await User.aggregate([
+        { $match: { 'favorites.agentId': { $in: candidateIds } } },
+        {
+          $project: {
+            tenantId: 1,
+            favoriteAgentIds: {
+              $setUnion: [{ $ifNull: ['$favorites.agentId', []] }, []],
             },
           },
-        });
-      } else {
-        // author — matches the card's own contact formula end to end (support_contact,
-        // then the ACL-resolved owner), not just the same-document support_contact half
-        // of it. The card's owner fallback (`attachOwnerContacts` /
-        // `resolveAgentOwnerContact`, `api/server/services/Agents/ownerContact.js` +
-        // `packages/api/src/agents/contact.ts`) doesn't read `author` directly — it reads
-        // whichever user holds the OWNER ACL entry on this agent, falling back to
-        // `author` only when no such entry exists (sharing can grant ownership to someone
-        // other than the original creator). Reproducing just the `author`-join half here
-        // would sort by the wrong person whenever those two differ, and reproducing
-        // neither (support_contact only) is exactly the mismatch this replaces: most
-        // agents have no support_contact, so they all tied at the sentinel while the card
-        // still showed a real owner name next to them.
-        //
-        // Equality `$lookup`s (indexed on `_id`/`resourceId`, then on `_ownerId`/`_id`),
-        // not correlated sub-pipelines — same reasoning as the `popular` sort's
-        // uncorrelated join above: a correlated per-agent lookup re-scans `aclentries`/
-        // `users` once per row instead of joining through the index.
-        pipeline.push({
-          $lookup: {
-            from: 'aclentries',
-            localField: '_id',
-            foreignField: 'resourceId',
-            as: '_ownerAclEntries',
+        },
+        { $unwind: '$favoriteAgentIds' },
+        { $match: { favoriteAgentIds: { $in: candidateIds } } },
+        {
+          $group: {
+            _id: {
+              tenantId: '$tenantId',
+              agentId: '$favoriteAgentIds',
+            },
+            favoriteCount: { $sum: 1 },
           },
+        },
+      ])) as Array<{
+        _id: { tenantId?: string | null; agentId: string };
+        favoriteCount: number;
+      }>;
+
+      const counts = new Map<string | null | undefined, Map<string, number>>();
+      for (const row of countRows) {
+        let tenantCounts = counts.get(row._id.tenantId);
+        if (!tenantCounts) {
+          tenantCounts = new Map<string, number>();
+          counts.set(row._id.tenantId, tenantCounts);
+        }
+        tenantCounts.set(row._id.agentId, row.favoriteCount);
+      }
+      const orderedCandidates = candidates
+        .map((candidate) => ({
+          ...candidate,
+          _idString: candidate._id.toString(),
+          favoriteCount: counts.get(candidate.tenantId)?.get(candidate.id) ?? 0,
+        }))
+        .sort((a, b) => {
+          const countDifference = b.favoriteCount - a.favoriteCount;
+          if (countDifference !== 0) {
+            return countDifference;
+          }
+          if (a._idString === b._idString) {
+            return 0;
+          }
+          return a._idString < b._idString ? -1 : 1;
         });
-        pipeline.push({
-          $addFields: {
-            // Resource-scoped by `_id`/`resourceId`, both tenant-unique ObjectIds, so —
-            // unlike the `popular` sort's join on the application-level `id` string —
-            // there is no cross-tenant collision to guard against here.
-            _ownerId: {
-              $let: {
-                vars: {
-                  ownerEntry: {
-                    $reduce: {
-                      input: {
-                        $filter: {
-                          input: '$_ownerAclEntries',
-                          as: 'e',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$e.principalType', PrincipalType.USER] },
-                              { $eq: ['$$e.permBits', OWNER_ACL_PERMISSION_BITS] },
-                            ],
-                          },
+
+      const decodedCursor = readCursor();
+      const cursorCount = decodedCursor ? Number(decodedCursor.primary) : null;
+      const cursorId = decodedCursor?.secondary.toLowerCase();
+      const startIndex =
+        cursorCount !== null && cursorId
+          ? orderedCandidates.findIndex((candidate) =>
+              candidate.favoriteCount !== cursorCount
+                ? candidate.favoriteCount < cursorCount
+                : candidate._idString > cursorId,
+            )
+          : 0;
+      if (startIndex < 0) {
+        return buildEnvelope([], false, null);
+      }
+      const endIndex =
+        isPaginated && normalizedLimit
+          ? Math.min(startIndex + normalizedLimit, orderedCandidates.length)
+          : orderedCandidates.length;
+      const hasMore = isPaginated && endIndex < orderedCandidates.length;
+      const selectedCandidates = orderedCandidates.slice(startIndex, endIndex);
+      const pageIds = selectedCandidates.map((candidate) => candidate._id);
+      const fullAgents =
+        pageIds.length > 0
+          ? ((await Agent.find(
+              { $and: [baseQuery, { _id: { $in: pageIds } }] },
+              projection,
+            ).lean()) as Array<Record<string, unknown>>)
+          : [];
+      const fullById = new Map(fullAgents.map((agent) => [String(agent._id), agent]));
+      const data = selectedCandidates
+        .map((candidate) => {
+          const agent = fullById.get(candidate._idString);
+          if (!agent) {
+            return null;
+          }
+          return finalizeAgent(agent);
+        })
+        .filter((agent): agent is Record<string, unknown> => agent != null);
+
+      const cursorCandidate = selectedCandidates[selectedCandidates.length - 1];
+      const nextCursor =
+        isPaginated && hasMore && cursorCandidate
+          ? encodeAgentSortCursor(sort, cursorCandidate)
+          : null;
+      return buildEnvelope(data, hasMore, nextCursor);
+    }
+
+    if (sort === 'author') {
+      const pipeline: PipelineStage[] = [{ $match: baseQuery }];
+      // Resolve the same owner contact used by the agent card before sorting.
+      pipeline.push({
+        $lookup: {
+          from: 'aclentries',
+          localField: '_id',
+          foreignField: 'resourceId',
+          as: '_ownerAclEntries',
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          _ownerId: {
+            $let: {
+              vars: {
+                ownerEntry: {
+                  $reduce: {
+                    input: {
+                      $filter: {
+                        input: '$_ownerAclEntries',
+                        as: 'e',
+                        cond: {
+                          $and: [
+                            { $eq: ['$$e.principalType', PrincipalType.USER] },
+                            { $eq: ['$$e.permBits', OWNER_ACL_PERMISSION_BITS] },
+                          ],
                         },
                       },
-                      initialValue: null,
-                      in: {
-                        $cond: [
-                          { $eq: ['$$value', null] },
-                          '$$this',
-                          {
-                            $cond: [earlierAclEntry('$$this', '$$value'), '$$this', '$$value'],
-                          },
-                        ],
-                      },
+                    },
+                    initialValue: null,
+                    in: {
+                      $cond: [
+                        { $eq: ['$$value', null] },
+                        '$$this',
+                        {
+                          $cond: [earlierAclEntry('$$this', '$$value'), '$$this', '$$value'],
+                        },
+                      ],
                     },
                   },
                 },
-                in: { $ifNull: ['$$ownerEntry.principalId', '$author'] },
+              },
+              in: { $ifNull: ['$$ownerEntry.principalId', '$author'] },
+            },
+          },
+        },
+      });
+      pipeline.push({
+        $lookup: {
+          from: 'users',
+          localField: '_ownerId',
+          foreignField: '_id',
+          as: '_ownerUser',
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          authorDisplayName: {
+            $let: {
+              vars: {
+                supportName: {
+                  $trim: { input: { $ifNull: ['$support_contact.name', ''] } },
+                },
+                supportEmail: {
+                  $trim: { input: { $ifNull: ['$support_contact.email', ''] } },
+                },
+                // `$trim` is null-safe (returns `null` for missing/null input), so these
+                // are always either `null` or a trimmed string by the time `isValidDisplayName`
+                // runs on them.
+                ownerName: { $trim: { input: { $arrayElemAt: ['$_ownerUser.name', 0] } } },
+                ownerUsername: {
+                  $trim: { input: { $arrayElemAt: ['$_ownerUser.username', 0] } },
+                },
+                // Dead on Agent documents in practice (only Prompts/Skills write it) —
+                // kept as the final real-value tier for exact parity with
+                // `resolveAgentOwnerContact`, which checks it too.
+                authorName: { $trim: { input: '$authorName' } },
+              },
+              in: {
+                $switch: {
+                  branches: [
+                    {
+                      case: { $ne: ['$$supportName', ''] },
+                      then: '$$supportName',
+                    },
+                    {
+                      case: {
+                        $and: [{ $ne: ['$$supportEmail', null] }, { $ne: ['$$supportEmail', ''] }],
+                      },
+                      then: '$$supportEmail',
+                    },
+                    { case: isValidDisplayName('$$ownerName'), then: '$$ownerName' },
+                    { case: isValidDisplayName('$$ownerUsername'), then: '$$ownerUsername' },
+                    { case: isValidDisplayName('$$authorName'), then: '$$authorName' },
+                  ],
+                  default: AUTHOR_SORT_SENTINEL,
+                },
               },
             },
           },
-        });
-        pipeline.push({
-          $lookup: {
-            from: 'users',
-            localField: '_ownerId',
-            foreignField: '_id',
-            as: '_ownerUser',
-          },
-        });
-        pipeline.push({
-          $addFields: {
-            authorDisplayName: {
-              $let: {
-                vars: {
-                  supportName: { $ifNull: ['$support_contact.name', null] },
-                  supportEmail: { $ifNull: ['$support_contact.email', null] },
-                  // `$trim` is null-safe (returns `null` for missing/null input), so these
-                  // are always either `null` or a trimmed string by the time `isValidDisplayName`
-                  // runs on them.
-                  ownerName: { $trim: { input: { $arrayElemAt: ['$_ownerUser.name', 0] } } },
-                  ownerUsername: {
-                    $trim: { input: { $arrayElemAt: ['$_ownerUser.username', 0] } },
-                  },
-                  // Dead on Agent documents in practice (only Prompts/Skills write it) —
-                  // kept as the final real-value tier for exact parity with
-                  // `resolveAgentOwnerContact`, which checks it too.
-                  authorName: { $trim: { input: '$authorName' } },
-                },
-                in: {
-                  $switch: {
-                    branches: [
-                      {
-                        case: {
-                          $and: [{ $ne: ['$$supportName', null] }, { $ne: ['$$supportName', ''] }],
-                        },
-                        then: '$$supportName',
-                      },
-                      {
-                        case: {
-                          $and: [
-                            { $ne: ['$$supportEmail', null] },
-                            { $ne: ['$$supportEmail', ''] },
-                          ],
-                        },
-                        then: '$$supportEmail',
-                      },
-                      { case: isValidDisplayName('$$ownerName'), then: '$$ownerName' },
-                      { case: isValidDisplayName('$$ownerUsername'), then: '$$ownerUsername' },
-                      { case: isValidDisplayName('$$authorName'), then: '$$authorName' },
-                    ],
-                    default: AUTHOR_SORT_SENTINEL,
-                  },
-                },
-              },
-            },
-          },
-        });
-      }
+        },
+      });
 
       // Applied after the `$addFields` above, since it compares against the computed
       // sort key rather than a stored field.
@@ -1897,20 +1949,18 @@ export function createAgentMethods(
         } as PipelineStage);
       }
 
-      // Inclusion-only projection: `_joinedUsers` is simply not listed, so it is
-      // dropped along with everything else the pipeline doesn't need. Mixing an
-      // explicit exclusion into an inclusion projection (other than `_id`) is
-      // invalid MongoDB/DocumentDB syntax, which an earlier draft of this pipeline
-      // got wrong by trying to exclude `_joinedUsers` explicitly.
       pipeline.push({
         $project: {
           ...projection,
-          ...(sort === 'popular' ? { favoriteCount: 1 } : { authorDisplayName: 1 }),
+          authorDisplayName: 1,
         },
       });
 
       pipeline.push({
-        $sort: { [AGENT_SORT_CONFIG[sort].field]: AGENT_SORT_CONFIG[sort].direction, _id: 1 },
+        $sort: {
+          authorDisplayName: AGENT_SORT_CONFIG[sort].direction,
+          _id: AGENT_SORT_CONFIG[sort].tieBreakDirection,
+        },
       });
 
       if (isPaginated && normalizedLimit) {
@@ -1931,12 +1981,8 @@ export function createAgentMethods(
       return buildEnvelope(data, hasMore, nextCursor);
     }
 
-    // 'newest' (default) / 'oldest': unchanged `.find()` path with an existing
-    // index, only parametrized by direction. Sorts/cursors on `createdAt`
-    // (immutable) rather than `updatedAt`, which advances on side effects
-    // unrelated to content — e.g. the S3 avatar refresh in the list
-    // controller — and would otherwise reorder an agent out from under a
-    // user mid-scroll.
+    // These modes sort by immutable `createdAt`; the descending compound index
+    // supports both directions by reversing the scan for 'oldest'.
     const dir = AGENT_SORT_CONFIG[sort].direction;
 
     let finalQuery: Record<string, unknown> = baseQuery;
@@ -1953,7 +1999,10 @@ export function createAgentMethods(
           : { ...cursorCondition };
     }
 
-    let query = Agent.find(finalQuery, projection).sort({ createdAt: dir, _id: 1 });
+    let query = Agent.find(finalQuery, projection).sort({
+      createdAt: dir,
+      _id: AGENT_SORT_CONFIG[sort].tieBreakDirection,
+    });
 
     if (isPaginated && normalizedLimit) {
       query = query.limit(normalizedLimit + 1);

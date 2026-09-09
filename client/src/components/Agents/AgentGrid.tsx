@@ -1,25 +1,23 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
+import type { ApiError } from './ErrorDisplay';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize, TranslationKeys } from '~/hooks';
-import { useInfiniteScroll } from '~/hooks/useInfiniteScroll';
-import { useHasData } from './SmartLoader';
+import VirtualizedAgentGrid from './VirtualizedAgentGrid';
+import GridSkeleton from './GridSkeleton';
 import ErrorDisplay from './ErrorDisplay';
-import AgentCard from './AgentCard';
 
 interface AgentGridProps {
   category: string;
   searchQuery: string;
-  onSelectAgent: (agent: t.Agent) => void;
-  scrollElementRef?: React.RefObject<HTMLElement>;
+  onSelectAgent?: (agent: t.Agent) => void;
+  scrollElementRef: React.RefObject<HTMLElement>;
   /** Sort mode applied to the marketplace list; server defaults to 'newest' when omitted. */
   sort?: t.AgentSortOption;
   /** When 1, restrict the list to agents authored by the current user. */
   mine?: 0 | 1;
-  /** Reports the number of agents currently loaded, so a parent header can show a live count. */
-  onCountChange?: (count: number) => void;
 }
 
 /**
@@ -32,51 +30,36 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   scrollElementRef,
   sort,
   mine,
-  onCountChange,
 }) => {
   const localize = useLocalize();
 
   // Get category data from API
   const { categories } = useAgentCategories();
 
-  // Build query parameters based on current state
-  const queryParams = useMemo(() => {
-    const params: {
-      requiredPermission: number;
-      category?: string;
-      search?: string;
-      limit: number;
-      promoted?: 0 | 1;
-      sort?: t.AgentSortOption;
-      mine?: 0 | 1;
-    } = {
-      requiredPermission: PermissionBits.VIEW, // View permission for marketplace viewing
-      limit: 8,
+  // Build query parameters based on current state. Keep this aligned with the
+  // shared request type so additions to the API contract are checked here.
+  const queryParams = useMemo<t.AgentListParams>(() => {
+    const params: t.AgentListParams = {
+      requiredPermission: PermissionBits.VIEW,
+      limit: 32,
     };
 
-    // Handle search
     if (searchQuery) {
       params.search = searchQuery;
-      // Include category filter for search if it's not 'all' or 'promoted'
       if (category !== 'all' && category !== 'promoted') {
         params.category = category;
       }
-    } else {
-      // Handle category-based queries
-      if (category === 'promoted') {
-        params.promoted = 1;
-      } else if (category !== 'all') {
-        params.category = category;
-      }
-      // For 'all' category, no additional filters needed
+    } else if (category === 'promoted') {
+      params.promoted = 1;
+    } else if (category !== 'all') {
+      params.category = category;
     }
 
-    // Only set sort/mine when a non-default value is given, so requests that
-    // don't use this feature keep the same cache key as before.
-    if (sort) {
+    // Leave defaults implicit so equivalent requests share a cache entry.
+    if (sort && sort !== 'newest') {
       params.sort = sort;
     }
-    if (mine) {
+    if (mine === 1) {
       params.mine = mine;
     }
 
@@ -93,57 +76,61 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     hasNextPage,
     refetch,
     isFetchingNextPage,
+    isPreviousData,
   } = useMarketplaceAgentsInfiniteQuery(queryParams);
 
-  // Flatten all pages into a single array of agents, deduping by id. The
-  // 'popular' sort recomputes favoriteCount on every request, so an agent can
-  // be pinned/unpinned between two consecutive page loads and drift across
-  // the page boundary, appearing in both — the server does not guarantee
-  // adjacent pages are disjoint in that mode. Keep the first occurrence so an
-  // agent stays where it was originally seen while scrolling.
+  // Deduplicate as pages are traversed rather than creating a second flattened
+  // collection first. This preserves page order while handling popular-sort
+  // drift at a page boundary.
   const currentAgents = useMemo(() => {
     if (!data?.pages) return [];
-    const flattened = data.pages.flatMap((page) => page.data || []);
     const seenIds = new Set<string>();
-    const deduped: t.Agent[] = [];
-    for (const agent of flattened) {
-      if (seenIds.has(agent.id)) {
-        continue;
+    const agents: t.Agent[] = [];
+    for (const page of data.pages) {
+      for (const agent of page.data || []) {
+        if (!seenIds.has(agent.id)) {
+          seenIds.add(agent.id);
+          agents.push(agent);
+        }
       }
-      seenIds.add(agent.id);
-      deduped.push(agent);
     }
-    return deduped;
+    return agents;
   }, [data?.pages]);
 
-  // Check if we have meaningful data to prevent unnecessary loading states
-  const hasData = useHasData(data?.pages?.[0]);
-
-  // Set up infinite scroll
-  const { setScrollElement } = useInfiniteScroll({
-    hasNextPage,
-    isLoading: isFetching || isFetchingNextPage,
-    fetchNextPage: () => {
-      if (hasNextPage && !isFetching) {
-        fetchNextPage();
-      }
-    },
-    threshold: 0.8, // Trigger when 80% scrolled
-    throttleMs: 200,
-  });
-
-  // Connect the scroll element when it's provided
-  useEffect(() => {
-    const scrollElement = scrollElementRef?.current;
-    if (scrollElement) {
-      setScrollElement(scrollElement);
+  const hasData = currentAgents.length > 0;
+  const scopeKey = useMemo(() => JSON.stringify(queryParams), [queryParams]);
+  /**
+   * react-query drops `error` for the duration of a retry, so rendering
+   * straight off it would swap the error state for a skeleton on every
+   * attempt — remounting the card and resetting its backoff, which turned the
+   * automatic recovery into an endless two-second poll. Hold the failure until
+   * a page actually arrives, and forget it when the query scope changes.
+   */
+  const failureRef = useRef<{ scope: string; error: unknown } | null>(null);
+  if (error) {
+    failureRef.current = { scope: scopeKey, error };
+  } else if (data) {
+    failureRef.current = null;
+  }
+  const failure = failureRef.current?.scope === scopeKey ? failureRef.current.error : null;
+  const isPendingResults = isPreviousData || (!hasData && (isLoading || isFetching || hasNextPage));
+  useLayoutEffect(() => {
+    if (isPendingResults && scrollElementRef.current) {
+      scrollElementRef.current.scrollTop = 0;
     }
-  }, [scrollElementRef, setScrollElement]);
+  }, [isPendingResults, scopeKey, scrollElementRef]);
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetching) {
+      void fetchNextPage({ cancelRefetch: false });
+    }
+  }, [fetchNextPage, hasNextPage, isFetching]);
 
-  // Report the loaded count upward so a parent header can show a live total.
+  // An empty cursor page can occur when its selected agents change during the request.
   useEffect(() => {
-    onCountChange?.(currentAgents.length);
-  }, [currentAgents.length, onCountChange]);
+    if (data && !hasData && hasNextPage && !isFetching && !error) {
+      loadMore();
+    }
+  }, [data, hasData, hasNextPage, isFetching, error, loadMore]);
 
   /**
    * Get category display name from API data or use fallback
@@ -151,53 +138,56 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   const getCategoryDisplayName = (categoryValue: string) => {
     const categoryData = categories.find((cat) => cat.value === categoryValue);
     if (categoryData) {
-      return categoryData.label;
+      return categoryData.label?.startsWith('com_')
+        ? localize(categoryData.label as TranslationKeys)
+        : categoryData.label;
     }
 
-    // Fallback for special categories or unknown categories
     if (categoryValue === 'promoted') {
       return localize('com_agents_top_picks');
     }
     if (categoryValue === 'all') {
-      return 'All';
+      return localize('com_agents_all_category');
     }
 
-    // Simple capitalization for unknown categories
     return categoryValue.charAt(0).toUpperCase() + categoryValue.slice(1);
   };
 
   /**
-   * "You haven't created any agents yet" reads better than "No agents found" once the
-   * user has explicitly filtered to their own agents — but it would be untrue on the
-   * promoted tab, which is empty of own agents by construction (`is_promoted` has no
-   * write path in the app). That pair is only reachable by direct URL or history
-   * navigation; the toggle itself moves off `promoted`. A search always wins, since
-   * "no matches for this query" is the more specific explanation.
+   * Search is the most specific empty state. Mine is account-wide only for
+   * "all"; category-scoped mine results use the existing category translation.
    */
-  const getEmptyStateHeadingKey = (): TranslationKeys => {
-    if (!mine || searchQuery) {
-      return 'com_agents_empty_state_heading';
+  const getEmptyStateHeading = (): { key: TranslationKeys; values?: Record<string, string> } => {
+    if (searchQuery) {
+      return { key: 'com_agents_search_empty_heading' };
     }
-    if (category === 'promoted') {
-      return 'com_agents_mine_promoted_empty_state_heading';
+    if (mine && category === 'all') {
+      return { key: 'com_agents_mine_empty_state_heading' };
     }
-    return 'com_agents_mine_empty_state_heading';
+    if (category !== 'all') {
+      return {
+        key: 'com_agents_category_empty',
+        values: { category: getCategoryDisplayName(category) },
+      };
+    }
+    return { key: 'com_agents_empty_state_heading' };
   };
-  const emptyStateHeadingKey = getEmptyStateHeadingKey();
+  const emptyState = getEmptyStateHeading();
 
-  // Simple loading spinner
-  const loadingSpinner = (
-    <div className="flex justify-center py-12">
-      <Spinner className="h-8 w-8 text-text-primary" />
-    </div>
-  );
+  const loadingSkeleton = isPendingResults ? (
+    <GridSkeleton scrollElementRef={scrollElementRef} label={localize('com_agents_loading')} />
+  ) : null;
 
   // Handle error state with enhanced error display
-  if (error) {
+  if (failure) {
     return (
       <ErrorDisplay
-        error={error || 'Unknown error occurred'}
-        onRetry={() => refetch()}
+        error={(failure as ApiError) || 'Unknown error occurred'}
+        // `cancelRefetch: false` so a click, the card's backoff and the query's
+        // own reconnect refetch coalesce into one request instead of each
+        // restarting the previous one.
+        onRetry={() => void refetch({ cancelRefetch: false })}
+        isRetrying={isFetching}
         context={{
           searchQuery,
           category,
@@ -209,30 +199,28 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   // Main content component with proper semantic structure
   const mainContent = (
     <div
-      className="space-y-6"
+      className="min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
       role="tabpanel"
       id={`category-panel-${category}`}
       aria-labelledby={`category-tab-${category}`}
-      aria-live="polite"
-      aria-busy={isLoading && !hasData}
+      aria-busy={isPendingResults || (isFetching && !isFetchingNextPage)}
+      tabIndex={isPendingResults ? 0 : undefined}
     >
-      {/* Handle empty results with enhanced accessibility */}
-      {(!currentAgents || currentAgents.length === 0) && !isLoading && !isFetching ? (
+      {loadingSkeleton}
+      {!isPendingResults && !hasData && (
         <div
           className="py-12 text-center text-text-secondary"
           role="status"
           aria-live="polite"
-          aria-label={
-            searchQuery
-              ? localize('com_agents_search_empty_heading')
-              : localize(emptyStateHeadingKey)
-          }
+          aria-label={localize(emptyState.key, emptyState.values)}
         >
-          <h3 className="mb-2 text-lg font-medium">{localize(emptyStateHeadingKey)}</h3>
+          <h3 className="mb-2 text-lg font-medium">
+            {localize(emptyState.key, emptyState.values)}
+          </h3>
         </div>
-      ) : (
+      )}
+      {!isPendingResults && hasData && (
         <>
-          {/* Announcement for screen readers */}
           <div id="search-results-count" className="sr-only" aria-live="polite" aria-atomic="true">
             {localize('com_agents_grid_announcement', {
               count: currentAgents?.length || 0,
@@ -240,25 +228,22 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             })}
           </div>
 
-          {/* Agent grid - column count auto-adjusts to available width */}
-          {currentAgents && currentAgents.length > 0 && (
-            <div
-              className="grid grid-cols-[repeat(auto-fill,minmax(288px,1fr))] items-stretch gap-6"
-              role="grid"
-              aria-label={localize('com_agents_grid_announcement', {
+          {hasData && (
+            <VirtualizedAgentGrid
+              key={scopeKey}
+              agents={currentAgents}
+              scrollElementRef={scrollElementRef}
+              label={localize('com_agents_grid_announcement', {
                 count: currentAgents.length,
                 category: getCategoryDisplayName(category),
               })}
-            >
-              {currentAgents.map((agent: t.Agent) => (
-                <div key={agent.id} role="gridcell" className="h-full">
-                  <AgentCard agent={agent} onSelect={onSelectAgent} />
-                </div>
-              ))}
-            </div>
+              hasNextPage={hasNextPage ?? false}
+              isFetching={isFetching}
+              onLoadMore={loadMore}
+              onSelectAgent={onSelectAgent}
+            />
           )}
 
-          {/* Loading indicator when fetching more with accessibility */}
           {isFetchingNextPage && (
             <div
               className="flex justify-center py-8"
@@ -271,9 +256,8 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             </div>
           )}
 
-          {/* End of results indicator */}
           {!hasNextPage && currentAgents && currentAgents.length > 0 && (
-            <div className="mt-8 text-center">
+            <div className="mt-6 text-center">
               <p className="text-sm text-text-secondary">
                 {localize('com_agents_no_more_results')}
               </p>
@@ -284,9 +268,6 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     </div>
   );
 
-  if ((isLoading || (isFetching && !isFetchingNextPage)) && !hasData) {
-    return loadingSpinner;
-  }
   return mainContent;
 };
 

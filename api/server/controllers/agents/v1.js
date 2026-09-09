@@ -1786,25 +1786,9 @@ const getListAgentsHandler = async (req, res) => {
       cachedRefreshEntry.urlCache != null;
 
     /**
-     * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
-     * This addresses page-size limits preventing refresh of agents beyond the first page.
-     *
-     * Scoped to agents that actually carry an S3 avatar so the `MAX_AVATAR_REFRESH_AGENTS`
-     * budget is spent on agents that can do work. Unfiltered, that budget is the most
-     * recently updated accessible agents regardless of avatar, and because a refresh writes
-     * through `updateAgent` and advances `updatedAt`, the window is self-reinforcing: an
-     * S3-avatar agent ranked past the budget never enters it and its presigned URL is never
-     * regenerated. The predicate is not indexed (`avatar` is `Mixed`), so this trades docs
-     * examined for that coverage.
-     *
-     * Must settle BEFORE the list query below, and is deliberately not parallelized with
-     * it. `updateAgent` writes through `findOneAndUpdate` on a `timestamps: true` schema,
-     * so refreshing an avatar advances `updatedAt`, the very field
-     * `getListAgentsByAccess` sorts and cursors on. A refresh landing after the first
-     * page's snapshot would move that agent ahead of the returned cursor, dropping it
-     * from every later page and silently truncating the caller's flattened list.
-     * Serializing costs nothing on the common path: a cache hit returns below without
-     * issuing any query, so only the once-per-30-minutes miss pays for the ordering.
+     * Refresh accessible S3 avatars before returning their cached URLs. The warm-up
+     * budget is restricted to agents with S3 avatars and ordered by immutable creation
+     * time, so refresh writes cannot change which agents fall inside the budget.
      */
     const resolveAvatarRefresh = async () => {
       if (isValidCachedRefresh) {
@@ -1817,10 +1801,7 @@ const getListAgentsHandler = async (req, res) => {
           otherParams: { 'avatar.source': FileSources.s3 },
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
-          // Pin the warm-up set to newest-created explicitly, rather than
-          // implicitly riding getListAgentsByAccess's own default — this set
-          // must stay stable regardless of what sort mode the client-facing
-          // call below is currently serving.
+          // Keep the warm-up set independent of the requested marketplace ordering.
           sort: 'newest',
         });
         const { urlCache } = await refreshListAvatars({
