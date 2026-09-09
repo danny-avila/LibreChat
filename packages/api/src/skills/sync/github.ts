@@ -155,6 +155,8 @@ type RestorableSkillFile = {
 };
 
 type SkillFileReplacement = {
+  skillId?: { toString(): string } | string;
+  relativePath?: string;
   author?: unknown;
   tenantId?: string | null;
   bytes?: number | null;
