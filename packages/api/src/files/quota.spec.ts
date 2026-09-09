@@ -2,6 +2,7 @@ import type { UserStorageUsageParams } from '@librechat/data-schemas';
 import type { StorageScope } from './quota';
 import {
   FILE_STORAGE_LIMIT_ERROR_CODE,
+  FileStorageLimitError,
   isFileStorageLimitError,
   persistFileWithQuota,
   persistSkillFileWithQuota,
@@ -63,6 +64,11 @@ describe('resolveStorageScope', () => {
     expect(resolveStorageScope(makeReq({ requestTenantId: 'request-tenant' })).tenantId).toBe(
       'request-tenant',
     );
+  });
+
+  it('normalizes the legacy empty tenant ID into the no-tenant ledger', () => {
+    expect(resolveStorageScope(makeReq({ userTenantId: '' })).tenantId).toBeUndefined();
+    expect(resolveStorageScope(makeReq({ requestTenantId: '' })).tenantId).toBeUndefined();
   });
 
   it('memoizes per request so one request reads the ledger at most once per scope', () => {
@@ -797,6 +803,16 @@ describe('persistSkillFileWithQuota', () => {
 });
 
 describe('isFileStorageLimitError', () => {
+  it('implements the upload and controller error response contracts', () => {
+    const error = new FileStorageLimitError(100, 101);
+    expect(error).toMatchObject({
+      status: 413,
+      statusCode: 413,
+      userErrorStatusCode: 413,
+      body: { message: error.message },
+    });
+  });
+
   it('rejects errors that are not quota rejections', () => {
     expect(isFileStorageLimitError(new Error('plain'))).toBe(false);
     expect(isFileStorageLimitError(null)).toBe(false);

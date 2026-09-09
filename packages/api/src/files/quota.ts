@@ -5,6 +5,9 @@ export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
 export class FileStorageLimitError extends Error {
   readonly code: typeof FILE_STORAGE_LIMIT_ERROR_CODE = FILE_STORAGE_LIMIT_ERROR_CODE;
   readonly status = 413 as const;
+  readonly statusCode = 413 as const;
+  readonly userErrorStatusCode = 413 as const;
+  readonly body: { message: string };
   readonly storageLimit: number;
   readonly currentUsage: number;
 
@@ -18,6 +21,7 @@ export class FileStorageLimitError extends Error {
       `storage limit exceeded. You are using ${formatBytes(currentUsage)} of your ${formatBytes(storageLimit)} storage limit. Delete files or ask an admin to raise the limit.`,
     );
     this.name = 'FileStorageLimitError';
+    this.body = { message: this.message };
     this.storageLimit = storageLimit;
     this.currentUsage = currentUsage;
   }
@@ -135,9 +139,10 @@ export function resolveStorageScope(req: ScopeSource): StorageScope {
     );
   }
 
+  const resolvedTenantId = req.tenantId ?? req.user?.tenantId;
   const scope = {
     userId,
-    tenantId: req.tenantId ?? req.user?.tenantId,
+    tenantId: resolvedTenantId === '' ? undefined : resolvedTenantId,
     storageLimit: mergeFileConfig(req.config?.fileConfig).storageLimit,
   } as StorageScope;
 
