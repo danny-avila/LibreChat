@@ -10,6 +10,7 @@ const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+const { upsertSkillFileWithQuota } = require('./quota');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 
@@ -93,7 +94,15 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     listSkillsBySource: db.listSkillsBySource,
     listSkillFiles: db.listSkillFiles,
     getSkillFileByPath: db.getSkillFileByPath,
-    upsertSkillFile: db.upsertSkillFile,
+    upsertSkillFile: async (row) =>
+      upsertSkillFileWithQuota(
+        await getSyntheticReq({
+          userId: row.author?.toString?.() ?? row.author ?? SYSTEM_USER_ID,
+          tenantId: row.tenantId,
+          loadAppConfig: resolveAppConfig,
+        }),
+        row,
+      ),
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: db.deleteSkill,
     grantPermission: async ({

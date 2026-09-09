@@ -38,6 +38,7 @@ const {
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+const { upsertSkillFileWithQuota } = require('~/server/services/Skills/quota');
 const db = require('~/models');
 
 const deploymentSkillMethods = createDeploymentSkillMethods({
@@ -101,7 +102,7 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
 
   let result;
   try {
-    result = await db.upsertSkillFile({
+    result = await upsertSkillFileWithQuota(req, {
       skillId,
       relativePath,
       file_id: fileId,

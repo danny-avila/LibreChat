@@ -3,12 +3,17 @@ const mockGetStrategyFunctions = jest.fn();
 const mockGetFileStrategy = jest.fn();
 const mockFindRoleByIdentifier = jest.fn();
 const mockGrantPermission = jest.fn();
+const mockUpsertSkillFileWithQuota = jest.fn();
 let mockRunnerDeps;
 let mockRunnerStatus;
 const mockCreatedRunners = [];
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: mockGetAppConfig,
+}));
+
+jest.mock('./quota', () => ({
+  upsertSkillFileWithQuota: (...args) => mockUpsertSkillFileWithQuota(...args),
 }));
 
 jest.mock('@librechat/api', () => {

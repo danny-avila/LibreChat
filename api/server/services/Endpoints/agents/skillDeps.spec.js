@@ -11,6 +11,7 @@ const mockListWorkspaceFiles = jest.fn();
 const mockWriteWorkspaceFile = jest.fn();
 const mockPreviewWorkspaceEdit = jest.fn();
 const mockEditWorkspaceFile = jest.fn();
+const mockUpsertSkillFileWithQuota = jest.fn((_req, row) => mockDb.upsertSkillFile(row));
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: (...args) => mockGetStrategyFunctions(...args),
@@ -62,6 +63,10 @@ jest.mock('~/server/services/PermissionService', () => ({
 
 jest.mock('~/server/utils/getFileStrategy', () => ({
   getFileStrategy: (...args) => mockGetFileStrategy(...args),
+}));
+
+jest.mock('~/server/services/Skills/quota', () => ({
+  upsertSkillFileWithQuota: (...args) => mockUpsertSkillFileWithQuota(...args),
 }));
 
 const mockDb = {
