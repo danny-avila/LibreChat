@@ -1,6 +1,8 @@
 import http from 'http';
 import https from 'https';
+import { setTimeout as delay } from 'node:timers/promises';
 import { isAxiosError } from 'axios';
+import { createConcurrencyLimiter } from './promise';
 
 /**
  * Dedicated agents for code-server requests, preventing socket pool contamination.
@@ -44,6 +46,16 @@ export function getCodeApiRetryAfterMs(error: unknown): number | null {
  *  Sized to cover a single limiter window without stalling a chat turn. */
 export const MAX_CODE_API_RATE_LIMIT_WAIT_MS = 20_000;
 
+/** Code API's upload limiter is shared by skill priming, eager recovery,
+ *  and lazy attachment provisioning. Bound all three through one process-
+ *  wide queue so one path cannot stampede the others into 429 responses. */
+const CODE_API_UPLOAD_CONCURRENCY = 3;
+const codeApiUploadSlots = createConcurrencyLimiter(CODE_API_UPLOAD_CONCURRENCY);
+
+export function withCodeApiUploadSlot<T>(task: () => Promise<T>): Promise<T> {
+  return codeApiUploadSlots(task);
+}
+
 /** Remaining wait allowance, shared by every request of one operation. */
 export interface CodeApiRateLimitBudget {
   remainingMs: number;
@@ -69,9 +81,11 @@ export async function withCodeApiRateLimit<T>(params: {
   label: string;
   budget?: CodeApiRateLimitBudget;
   onWait?: (waitMs: number) => void;
+  signal?: AbortSignal;
 }): Promise<T> {
-  const { attempt, label, budget, onWait } = params;
+  const { attempt, label, budget, onWait, signal } = params;
   for (;;) {
+    signal?.throwIfAborted();
     try {
       return await attempt();
     } catch (error) {
@@ -92,7 +106,7 @@ export async function withCodeApiRateLimit<T>(params: {
       }
       budget.remainingMs -= waitMs;
       onWait?.(waitMs);
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      await delay(waitMs, undefined, signal ? { signal } : undefined);
     }
   }
 }

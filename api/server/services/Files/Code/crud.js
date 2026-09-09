@@ -237,12 +237,21 @@ async function uploadCodeEnvFile({
       file_id: result.files[0].fileId,
     };
   } catch (error) {
-    throw new Error(
+    const wrapped = new Error(
       logAxiosError({
         message: `Error uploading code environment file: ${error.message}`,
         error,
       }),
+      { cause: error },
     );
+    /* Recovery callers need the status and Retry-After fields after this
+     * logging boundary. Preserve the minimal Axios shape on the contextual
+     * wrapper instead of reducing a recoverable 429 to a plain error. */
+    if (error?.isAxiosError === true) {
+      wrapped.isAxiosError = true;
+      wrapped.response = error.response;
+    }
+    throw wrapped;
   }
 }
 

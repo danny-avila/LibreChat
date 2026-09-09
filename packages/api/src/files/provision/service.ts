@@ -18,9 +18,13 @@ import type { ServerRequest } from '~/types';
 import {
   logAxiosError,
   createAxiosInstance,
+  createCodeApiRateLimitBudget,
   codeServerHttpAgent,
   codeServerHttpsAgent,
+  withCodeApiRateLimit,
+  withCodeApiUploadSlot,
 } from '~/utils';
+import type { CodeApiRateLimitBudget } from '~/utils';
 import { buildCodeEnvIdentityParams } from '~/files/code/identity';
 import { getCodeApiAuthHeaders } from '~/auth/codeapi';
 import { resolveDownloadPath } from '~/storage/path';
@@ -89,6 +93,7 @@ export interface ProvisionService {
     route?: CodeExecutionRoute;
     sandboxFilename?: string;
     signal?: AbortSignal;
+    rateLimitBudget?: CodeApiRateLimitBudget;
   }) => Promise<{
     referenceSet: CodeEnvReferenceSetResult;
     refUpdate: CodeEnvRefUpdate;
@@ -237,6 +242,7 @@ export function createProvisionService({
     route,
     sandboxFilename: requestedSandboxFilename,
     signal,
+    rateLimitBudget = createCodeApiRateLimitBudget(),
   }: {
     req: ServerRequest;
     file: TFile;
@@ -244,20 +250,13 @@ export function createProvisionService({
     route?: CodeExecutionRoute;
     sandboxFilename?: string;
     signal?: AbortSignal;
+    rateLimitBudget?: CodeApiRateLimitBudget;
   }) {
     signal?.throwIfAborted();
     const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
     if (!uploadCodeEnvFile) {
       throw new Error('Code environment upload strategy is unavailable');
     }
-    const stream = await getStorageStream(file, req, signal);
-    signal?.throwIfAborted();
-    if (!stream) {
-      throw new Error(
-        `Cannot provision file "${file.filename}" to code env: storage source "${file.source}" does not support download streams`,
-      );
-    }
-
     const kind: 'agent' | 'user' = entity_id ? 'agent' : 'user';
     const id = entity_id ?? (req.user?.id as string);
 
@@ -268,16 +267,39 @@ export function createProvisionService({
     const executionProfile = route?.executionProfile ?? 'default';
     const sandboxFilename =
       requestedSandboxFilename ?? resolveSandboxFilename(file.filename, file.type);
-    const uploaded = await uploadCodeEnvFile({
-      req,
-      stream,
-      filename: sandboxFilename,
-      kind,
-      id,
-      ...(route?.baseUrl ? { codeApiBaseUrl: route.baseUrl } : {}),
-      executionProfile,
-      signal,
-    });
+    const uploaded = await withCodeApiUploadSlot(() =>
+      withCodeApiRateLimit({
+        label: `uploading "${file.filename}" to the code environment`,
+        budget: rateLimitBudget,
+        signal,
+        onWait: (waitMs) =>
+          logger.warn(
+            `[provisionToCodeEnv] Rate-limited uploading file ${file.file_id}; retrying in ${waitMs}ms`,
+          ),
+        /* An upload attempt consumes its stream even when Code API rejects it.
+         * Open a new storage stream on every retry so recovery never submits
+         * an exhausted body. */
+        attempt: async () => {
+          const stream = await getStorageStream(file, req, signal);
+          signal?.throwIfAborted();
+          if (!stream) {
+            throw new Error(
+              `Cannot provision file "${file.filename}" to code env: storage source "${file.source}" does not support download streams`,
+            );
+          }
+          return uploadCodeEnvFile({
+            req,
+            stream,
+            filename: sandboxFilename,
+            kind,
+            id,
+            ...(route?.baseUrl ? { codeApiBaseUrl: route.baseUrl } : {}),
+            executionProfile,
+            signal,
+          });
+        },
+      }),
+    );
     signal?.throwIfAborted();
 
     /* Merge rather than overwrite: the eager upload path persists the same shape via

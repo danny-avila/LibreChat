@@ -18,7 +18,12 @@ import {
   inspectContent,
   UninspectableFileError,
 } from '~/protection';
-import { createConcurrencyLimiter, getCodeApiRetryAfterMs, getSafeErrorMetadata } from '~/utils';
+import {
+  createCodeApiRateLimitBudget,
+  getSafeErrorMetadata,
+  withCodeApiRateLimit,
+  withCodeApiUploadSlot,
+} from '~/utils';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { getCodeExecutionRouteKey, type CodeExecutionContext } from './execution';
@@ -127,15 +132,6 @@ export interface PrimeSkillFilesResult {
   }>;
 }
 
-/** Cap on concurrent skill batch uploads per process. Bounds burst pressure
- *  on codeapi's per-user upload limiter (default 30 requests / 5 min). */
-const SKILL_UPLOAD_CONCURRENCY = 3;
-
-/** Retry a 429'd upload only when the server's Retry-After fits under this
- *  cap; a longer wait would stall a live chat turn worse than degrading. */
-const MAX_RETRY_AFTER_MS = 15_000;
-
-const uploadSlots = createConcurrencyLimiter(SKILL_UPLOAD_CONCURRENCY);
 const inflightPrimes = new Map<string, Promise<PrimeSkillFilesResult | null>>();
 
 type SkillUploadFiles = Array<{ stream: NodeJS.ReadableStream; filename: string }>;
@@ -146,22 +142,6 @@ function isCurrentSkillRef(
   skillVersion: number,
 ): ref is SkillCodeEnvRef {
   return ref?.kind === 'skill' && ref.version === skillVersion;
-}
-
-/** Single retry on 429, honoring Retry-After up to MAX_RETRY_AFTER_MS.
- *  Runs inside an upload slot so the wait also brakes queued uploads. */
-async function retryOn429<T>(attempt: () => Promise<T>, label: string): Promise<T> {
-  try {
-    return await attempt();
-  } catch (error) {
-    const retryAfterMs = getCodeApiRetryAfterMs(error);
-    if (retryAfterMs == null || retryAfterMs > MAX_RETRY_AFTER_MS) {
-      throw error;
-    }
-    logger.warn(`[primeSkillFiles] Rate-limited priming ${label}; retrying in ${retryAfterMs}ms`);
-    await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
-    return attempt();
-  }
 }
 
 /** Opens SKILL.md and bundled-file streams for one upload attempt. Called
@@ -333,8 +313,8 @@ async function bufferSkillFileStream(stream: NodeJS.ReadableStream): Promise<Buf
  * documents for future freshness checks.
  *
  * Rate-limit resilience: concurrent primes of the same (skill, version)
- * share one flight, uploads are bounded process-wide, and a 429 retries
- * once per the server's Retry-After.
+ * share one flight, all Code API uploads are bounded process-wide, and
+ * 429 responses retry within a capped wait budget.
  */
 export async function primeSkillFiles(
   params: PrimeSkillFilesParams,
@@ -491,36 +471,44 @@ async function executePrimeSkillFiles(
     /* Streams open inside the slot (not while queued) and inside the retry
      * closure (a failed attempt consumes them). The slot bounds concurrent
      * uploads process-wide across both prime call sites. */
-    const uploaded = await uploadSlots(() =>
-      retryOn429(async () => {
-        const filesToUpload = await collectSkillUploadFiles(params, inspectedBuffers);
-        if (filesToUpload.length === 0) {
-          return null;
-        }
-        const result = await batchUploadCodeEnvFiles({
-          req,
-          files: filesToUpload,
-          /* Resource identity for codeapi's sessionKey: skill files share
-           * cross-user-within-tenant under `<tenant>:skill:<id>:v:<version>`.
-           * Bumping `skill.version` on edit naturally invalidates the prior
-           * cache entry under the new sessionKey. */
-          kind: 'skill',
-          id: entityId,
-          version: skill.version,
-          /* Skill files are infrastructure: SKILL.md + bundled scripts/schemas/
-           * docs that the agent reads but should never edit. Tag the upload as
-           * read-only so codeapi seals the inputs (chmod 444 in-sandbox) and
-           * walker echoes the original refs as `inherited: true` even if some
-           * sandboxed code path mutates bytes on disk. Without this, modified
-           * skill files surface as ghost generated artifacts the user has no
-           * authority to download. */
-          read_only: true,
-          codeApiBaseUrl: codeExecutionContext?.baseUrl,
-          executionProfile: codeExecutionContext?.executionProfile,
-          bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
-        });
-        return { filesToUpload, result };
-      }, `skill "${skill.name}"`),
+    const uploaded = await withCodeApiUploadSlot(() =>
+      withCodeApiRateLimit({
+        label: `priming skill "${skill.name}"`,
+        budget: createCodeApiRateLimitBudget(),
+        onWait: (waitMs) =>
+          logger.warn(
+            `[primeSkillFiles] Rate-limited priming skill "${skill.name}"; retrying in ${waitMs}ms`,
+          ),
+        attempt: async () => {
+          const filesToUpload = await collectSkillUploadFiles(params, inspectedBuffers);
+          if (filesToUpload.length === 0) {
+            return null;
+          }
+          const result = await batchUploadCodeEnvFiles({
+            req,
+            files: filesToUpload,
+            /* Resource identity for codeapi's sessionKey: skill files share
+             * cross-user-within-tenant under `<tenant>:skill:<id>:v:<version>`.
+             * Bumping `skill.version` on edit naturally invalidates the prior
+             * cache entry under the new version's sessionKey. */
+            kind: 'skill',
+            id: entityId,
+            version: skill.version,
+            /* Skill files are infrastructure: SKILL.md + bundled scripts/schemas/
+             * docs that the agent reads but should never edit. Tag the upload as
+             * read-only so codeapi seals the inputs (chmod 444 in-sandbox) and
+             * walker echoes the original refs as `inherited: true` even if some
+             * sandboxed code path mutates bytes on disk. Without this, modified
+             * skill files surface as ghost generated artifacts the user has no
+             * authority to download. */
+            read_only: true,
+            codeApiBaseUrl: codeExecutionContext?.baseUrl,
+            executionProfile: codeExecutionContext?.executionProfile,
+            bridgeWorkerId: codeExecutionContext?.bridgeWorkerId,
+          });
+          return { filesToUpload, result };
+        },
+      }),
     );
     if (uploaded == null) {
       return null;

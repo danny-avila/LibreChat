@@ -8,6 +8,7 @@ import type { ProvisionState } from '~/agents/resources';
 import type { ServerRequest } from '~/types';
 import { claimCodeDestination, createCodeDestinationSet } from '~/files/code/destinations';
 import { isCodeFileToolName } from '~/agents/tools';
+import { createCodeApiRateLimitBudget } from '~/utils';
 
 /** Deferred database write produced by a successful provisioning call. */
 interface FileUpdate {
@@ -248,6 +249,9 @@ export function createProvisionFilesCallback({
       : [];
     if (needsCode && provisionState.codeEnvFiles.length > 0) {
       const queuedCodeFiles = provisionState.codeEnvFiles;
+      /** Every file in this tool-load batch shares one wait allowance. This
+       *  prevents a large recovery set from multiplying the live-turn delay. */
+      const codeApiRateLimitBudget = createCodeApiRateLimitBudget();
       const destinations = createCodeDestinationSet();
       const existingCodeFiles = (
         ctx.tool_resources as Record<string, { files?: TFile[] } | undefined>
@@ -287,6 +291,7 @@ export function createProvisionFilesCallback({
                 route: ctx.codeExecutionContext,
                 sandboxFilename,
                 signal,
+                rateLimitBudget: codeApiRateLimitBudget,
               });
               signal?.throwIfAborted();
               /* primeCodeFiles re-reads the database and skips files without a stored

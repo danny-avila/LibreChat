@@ -561,6 +561,20 @@ describe('Code CRUD', () => {
 
       await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toThrow();
     });
+
+    it('preserves rate-limit metadata through the upload logging boundary', async () => {
+      const rateLimit = Object.assign(new Error('Too Many Requests'), {
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '7' } },
+      });
+      mockAxios.post.mockRejectedValue(rateLimit);
+
+      await expect(uploadCodeEnvFile(baseUploadParams)).rejects.toMatchObject({
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '7' } },
+        cause: rateLimit,
+      });
+    });
   });
 
   describe('batchUploadCodeEnvFiles', () => {

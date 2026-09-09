@@ -147,4 +147,22 @@ describe('withCodeApiRateLimit', () => {
       'Request failed',
     );
   });
+
+  it('stops waiting when the calling operation is cancelled', async () => {
+    const controller = new AbortController();
+    const attempt = jest.fn(async () => {
+      throw rateLimited({ headers: { 'retry-after': '10' } });
+    });
+
+    const pending = withCodeApiRateLimit({
+      attempt,
+      label: 'uploading',
+      budget: createCodeApiRateLimitBudget(20_000),
+      signal: controller.signal,
+      onWait: () => controller.abort(),
+    });
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(attempt).toHaveBeenCalledTimes(1);
+  });
 });

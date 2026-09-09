@@ -96,7 +96,17 @@ jest.mock('@librechat/api', () => {
      * passthroughs — they assert nothing about that behavior, so the
      * transport tests below cover only what this file still owns. */
     createCodeApiRateLimitBudget: jest.fn(() => ({ remainingMs: 20_000 })),
-    withCodeApiRateLimit: jest.fn(({ attempt }) => attempt()),
+    withCodeApiRateLimit: jest.fn(async ({ attempt }) => {
+      try {
+        return await attempt();
+      } catch (error) {
+        if (error?.response?.status !== 429) {
+          throw error;
+        }
+        return attempt();
+      }
+    }),
+    withCodeApiUploadSlot: jest.fn((task) => task()),
     buildSandboxImageReaderCode: jest.fn(
       ({ filePath, limit, offset, chunkBytes }) =>
         `read ${filePath} ${limit} ${offset} ${chunkBytes}`,
@@ -2584,6 +2594,59 @@ describe('Code Process', () => {
       mockAxios.mockResolvedValue({ data: null });
       return { handleFileUpload, getDownloadStream };
     }
+
+    it('recovers a throttled stale-file reupload with a fresh stream', async () => {
+      const dbFile = {
+        file_id: 'rate-limited-file',
+        filename: 'report.csv',
+        filepath: '/uploads/report.csv',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+          },
+        },
+      };
+      const rateLimit = Object.assign(new Error('Request failed with status code 429'), {
+        isAxiosError: true,
+        response: { status: 429, headers: { 'retry-after': '0' } },
+      });
+      const handleFileUpload = jest
+        .fn()
+        .mockRejectedValueOnce(rateLimit)
+        .mockResolvedValueOnce({ storage_session_id: 'NEW_SESSION', file_id: 'NEW_ID' });
+      const getDownloadStream = jest
+        .fn()
+        .mockResolvedValueOnce('first-stream')
+        .mockResolvedValueOnce('second-stream');
+      getStrategyFunctions.mockImplementation((source) =>
+        source === 'execute_code' ? { handleFileUpload } : { getDownloadStream },
+      );
+      getFiles.mockResolvedValue([dbFile]);
+      filterFilesByAgentAccess.mockImplementation(({ files }) => Promise.resolve(files));
+      mockAxios.mockResolvedValue({ data: null });
+      updateFile.mockResolvedValue({});
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: [dbFile.file_id], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(handleFileUpload).toHaveBeenCalledTimes(2);
+      expect(getDownloadStream).toHaveBeenCalledTimes(2);
+      expect(handleFileUpload.mock.calls.map(([args]) => args.stream)).toEqual([
+        'first-stream',
+        'second-stream',
+      ]);
+      expect(result.files).toEqual([
+        expect.objectContaining({ id: 'NEW_ID', storage_session_id: 'NEW_SESSION' }),
+      ]);
+    });
 
     it('uses the permission resource type established by the calling route', async () => {
       const files = [
