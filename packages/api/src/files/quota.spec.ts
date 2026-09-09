@@ -1078,7 +1078,7 @@ describe('persistSkillFileWithQuota', () => {
 });
 
 describe('createSkillFileQuotaPersistence', () => {
-  it('reuses one ledger read only inside an explicit sync scope', async () => {
+  it('refreshes ledger usage for every write inside an explicit sync scope', async () => {
     const row = {
       bytes: 10,
       skillId: '64f000000000000000000002',
@@ -1106,14 +1106,14 @@ describe('createSkillFileQuotaPersistence', () => {
       );
     });
 
-    expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
 
     await persistence.persistSkillFile(
       makeReq({ storageLimitMb: 1, requestTenantId: 'tenant-a' }),
       { ...row, relativePath: 'scripts/c.sh' },
       null,
     );
-    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(3);
   });
 
   it('reloads ledger usage after a compensating restore invalidates the shared scope', async () => {
