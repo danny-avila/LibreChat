@@ -3632,6 +3632,7 @@ describe('Code Process', () => {
     });
 
     it('forwards the sandbox session, runtime hint and profile header', async () => {
+      const controller = new AbortController();
       mockAxios.mockResolvedValue({ data: { stdout: '{}' } });
 
       await readSandboxImage({
@@ -3641,6 +3642,7 @@ describe('Code Process', () => {
         files: [{ id: 'file-1', name: 'seed.csv' }],
         codeApiBaseUrl: 'https://code-stateful.example.com',
         executionProfile: 'stateful',
+        signal: controller.signal,
       });
 
       expect(mockAxios).toHaveBeenCalledTimes(1);
@@ -3653,6 +3655,11 @@ describe('Code Process', () => {
         files: [{ id: 'file-1', name: 'seed.csv' }],
       });
       expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+      expect(call.signal).toBe(controller.signal);
+      const { withCodeApiRateLimit } = require('@librechat/api');
+      expect(withCodeApiRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ signal: controller.signal }),
+      );
     });
 
     it('omits the profile header and optional session fields when unset', async () => {

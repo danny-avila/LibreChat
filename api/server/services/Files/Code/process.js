@@ -1948,6 +1948,7 @@ async function previewWorkspaceEdit({
  * @param {string} [params.runtime_session_hint] - Per-conversation stateful runtime-session hint.
  * @param {number} [params.maxBytes] - In-sandbox size cap; larger files return `{ tooLarge, bytes }`.
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
+ * @param {AbortSignal} [params.signal] - Foreground run cancellation.
  * @param {string} [params.executionRouteKey] - Trusted deployment-local route identity.
  * @param {string} [params.bridgeWorkerId] - Trusted bridge worker selected for this execution.
  * @returns {Promise<{base64: string, bytes: number}
@@ -1965,6 +1966,7 @@ async function readSandboxImage({
   executionRouteKey,
   maxBytes,
   req,
+  signal,
 }) {
   const limit = typeof maxBytes === 'number' && maxBytes > 0 ? maxBytes : 5 * megabyte;
   const preparedBuffer = getPreparedCodeOutputBuffer({
@@ -2010,6 +2012,7 @@ async function readSandboxImage({
         files,
         req,
         rateLimit,
+        signal,
       }),
   });
 }
@@ -2032,6 +2035,7 @@ async function execSandboxImageChunk({
   files,
   req,
   rateLimit,
+  signal,
 }) {
   /** @type {Record<string, unknown>} */
   const postData = { lang: 'bash', code };
@@ -2049,6 +2053,7 @@ async function execSandboxImageChunk({
     const response = await withCodeApiRateLimit({
       label: `reading "${file_path}" from the sandbox`,
       budget: rateLimit,
+      signal,
       onWait: (waitMs) =>
         logger.warn(
           `[readSandboxImage] Rate-limited reading "${file_path}"; retrying in ${waitMs}ms`,
@@ -2068,6 +2073,7 @@ async function execSandboxImageChunk({
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
           timeout: 15000,
+          signal,
         });
       },
     });

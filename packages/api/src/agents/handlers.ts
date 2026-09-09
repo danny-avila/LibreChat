@@ -626,6 +626,7 @@ export interface ToolExecuteOptions {
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
+    signal?: AbortSignal;
   }) => Promise<
     | { base64: string; bytes: number }
     /** `size`: over `maxBytes`. `round_trips`: within the byte cap, but more
@@ -2153,6 +2154,7 @@ async function handleSandboxImageRead(
       session_id: ctx?.session_id,
       files: ctx?.files,
       maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
+      ...(options.runSignal ? { signal: options.runSignal } : {}),
       ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });

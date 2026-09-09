@@ -5248,6 +5248,7 @@ describe('createToolExecuteHandler', () => {
       listWorkspaceFiles?: ToolExecuteOptions['listWorkspaceFiles'];
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
+      runSignal?: AbortSignal;
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
       getAuthorSkillByName?: ToolExecuteOptions['getAuthorSkillByName'];
     }) {
@@ -5265,6 +5266,7 @@ describe('createToolExecuteHandler', () => {
       }));
       return createToolExecuteHandler({
         loadTools,
+        runSignal: params.runSignal,
         getSkillByName: params.getSkillByName,
         getAuthorSkillByName: params.getAuthorSkillByName,
         readWorkspaceFile: params.readWorkspaceFile,
@@ -6900,6 +6902,7 @@ describe('createToolExecuteHandler', () => {
        * bytes, which was the matplotlib-shape mojibake regression.
        */
       it('returns a sandbox image as an image_url artifact the model can see', async () => {
+        const controller = new AbortController();
         const readSandboxFile = jest.fn();
         const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes }));
         const handler = makeReadFileHandler({
@@ -6907,6 +6910,7 @@ describe('createToolExecuteHandler', () => {
           accessibleSkillIds: skillsInScope(),
           readSandboxFile,
           readSandboxImage,
+          runSignal: controller.signal,
         });
 
         const [result] = await invokeHandler(handler, [
@@ -6924,6 +6928,7 @@ describe('createToolExecuteHandler', () => {
             file_path: '/mnt/data/simple_graph.png',
             session_id: 'sess-Z',
             maxBytes: expect.any(Number),
+            signal: controller.signal,
           }),
         );
         expect(result.status).toBe('success');

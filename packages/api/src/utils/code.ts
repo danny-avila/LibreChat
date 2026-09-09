@@ -1,7 +1,6 @@
 import http from 'http';
 import https from 'https';
 import { isAxiosError } from 'axios';
-import { getTenantId } from '@librechat/data-schemas';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { ServerRequest } from '~/types';
 
@@ -83,7 +82,7 @@ export function getCodeApiUploadOptions(
       principalId,
       tenantId:
         user.tenantId == null && user.orgId == null
-          ? (getTenantId() ?? undefined)
+          ? undefined
           : String(user.tenantId ?? user.orgId),
     }),
     concurrency:
