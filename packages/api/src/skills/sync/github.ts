@@ -201,7 +201,12 @@ export type GitHubSkillSyncDeps = {
     skillId: string | Types.ObjectId,
     relativePath: string,
   ) => Promise<(ISkillFile & { _id: Types.ObjectId }) | null>;
-  upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  upsertSkillFile: (
+    row: UpsertSkillFileInput,
+    replacing: (ISkillFile & { _id: Types.ObjectId }) | null,
+  ) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  /** Restores rows that already existed before this run without admitting new storage. */
+  restoreSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   deleteSkillFile: (
     skillId: string | Types.ObjectId,
     relativePath: string,
@@ -1057,7 +1062,7 @@ async function restoreExistingSkillFiles(params: {
     await deps.deleteSkillFile(skill._id, file.relativePath);
   }
   for (const file of previousFiles) {
-    await deps.upsertSkillFile(toSkillFileInput(file));
+    await deps.restoreSkillFile(toSkillFileInput(file));
   }
   await cleanupStoredFiles({
     deps,
@@ -1085,7 +1090,7 @@ async function restoreDeletedSyncedSkill(
 ): Promise<void> {
   const restored = await deps.createSkill(toCreateSkillInput(deleted.skill));
   for (const file of deleted.files) {
-    await deps.upsertSkillFile({
+    await deps.restoreSkillFile({
       ...toSkillFileInput(file),
       skillId: restored.skill._id,
     });
@@ -1339,29 +1344,32 @@ async function syncSkillFiles(params: {
     });
     const savedFile = toStoredFileRef({ saved, author: skill.author, tenantId: skill.tenantId });
     try {
-      await deps.upsertSkillFile({
-        skillId: skill._id,
-        relativePath,
-        file_id: fileId,
-        filename,
-        filepath: saved.filepath,
-        storageKey: saved.storageKey,
-        storageRegion: saved.storageRegion,
-        source: saved.source,
-        sourceMetadata: {
-          provider: PROVIDER,
-          sourceId: source.id,
-          upstreamId: makeUpstreamId(source, discovered.rootPath),
-          commitSha: commit.id,
-          blobSha: entry.id,
-          path: entry.path,
+      await deps.upsertSkillFile(
+        {
+          skillId: skill._id,
+          relativePath,
+          file_id: fileId,
+          filename,
+          filepath: saved.filepath,
+          storageKey: saved.storageKey,
+          storageRegion: saved.storageRegion,
+          source: saved.source,
+          sourceMetadata: {
+            provider: PROVIDER,
+            sourceId: source.id,
+            upstreamId: makeUpstreamId(source, discovered.rootPath),
+            commitSha: commit.id,
+            blobSha: entry.id,
+            path: entry.path,
+          },
+          mimeType,
+          bytes: buffer.length,
+          isExecutable: false,
+          author: skill.author,
+          tenantId: skill.tenantId,
         },
-        mimeType,
-        bytes: buffer.length,
-        isExecutable: false,
-        author: skill.author,
-        tenantId: skill.tenantId,
-      });
+        existing,
+      );
     } catch (error) {
       await cleanupFile(deps, savedFile).catch((cleanupError) => {
         logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError);

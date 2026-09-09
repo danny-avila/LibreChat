@@ -125,7 +125,7 @@ const importHandler = (req, res, next) =>
     createSkill,
     getSkillById,
     deleteSkill,
-    upsertSkillFile: (row) => upsertSkillFileWithQuota(req, row),
+    upsertSkillFile: (row) => upsertSkillFileWithQuota(req, row, null),
     saveBuffer: (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
       const requestTenantId = tenantId ?? resolveRequestTenantId(req);
       const storage = resolveSkillStorage(req, { isImage });
@@ -206,20 +206,24 @@ async function uploadFileHandler(req, res) {
 
     let result;
     try {
-      result = await upsertSkillFileWithQuota(req, {
-        skillId,
-        relativePath,
-        file_id: fileId,
-        filename,
-        filepath,
-        ...storageMetadata,
-        source: storage.source,
-        mimeType: file.mimetype || 'application/octet-stream',
-        bytes: file.size,
-        isExecutable: false,
-        author: req.user._id,
-        tenantId,
-      });
+      result = await upsertSkillFileWithQuota(
+        req,
+        {
+          skillId,
+          relativePath,
+          file_id: fileId,
+          filename,
+          filepath,
+          ...storageMetadata,
+          source: storage.source,
+          mimeType: file.mimetype || 'application/octet-stream',
+          bytes: file.size,
+          isExecutable: false,
+          author: req.user._id,
+          tenantId,
+        },
+        existingFile,
+      );
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure
       try {

@@ -305,6 +305,22 @@ function createDeps(
         author: new Types.ObjectId(),
       } as ISkillFile & { _id: Types.ObjectId };
     }),
+    restoreSkillFile: jest.fn(async () => {
+      return {
+        _id: new Types.ObjectId(),
+        skillId: new Types.ObjectId(),
+        relativePath: 'scripts/run.sh',
+        file_id: 'file-id',
+        filename: 'run.sh',
+        filepath: '/uploads/file-id__run.sh',
+        source: 'local',
+        mimeType: 'application/x-sh',
+        bytes: 7,
+        category: 'script',
+        isExecutable: false,
+        author: new Types.ObjectId(),
+      } as ISkillFile & { _id: Types.ObjectId };
+    }),
     deleteSkillFile: jest.fn(async () => ({ deleted: true })),
     deleteSkill: jest.fn(async () => ({ deleted: true })),
     saveBuffer: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
@@ -354,6 +370,7 @@ describe('createGitHubSkillSyncRunner', () => {
           commitSha: 'commit-sha',
         }),
       }),
+      null,
     );
     expect(deps.grantPermission).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1249,6 +1266,7 @@ describe('createGitHubSkillSyncRunner', () => {
           path: 'skills/engineering/tdd/tests.md',
         }),
       }),
+      null,
     );
   });
 
@@ -2962,6 +2980,7 @@ describe('createGitHubSkillSyncRunner', () => {
       ),
       listSkillFiles: jest.fn(async () => Array.from(files.values())),
       upsertSkillFile,
+      restoreSkillFile: upsertSkillFile,
       deleteSkillFile: jest.fn(async (_skillId, relativePath) => ({
         deleted: files.delete(relativePath),
       })),
@@ -3470,6 +3489,7 @@ describe('repository adapter seam', () => {
           blobSha: 'skills/research/scripts/run.sh@1',
         }),
       }),
+      null,
     );
   });
 
@@ -3526,6 +3546,7 @@ describe('files whose paths cannot be mirrored', () => {
     expect(deps.createSkill).toHaveBeenCalledTimes(1);
     expect(deps.upsertSkillFile).toHaveBeenCalledWith(
       expect.objectContaining({ relativePath: 'scripts/run.sh' }),
+      null,
     );
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({

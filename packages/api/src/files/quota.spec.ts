@@ -1,6 +1,7 @@
 import type { UserStorageUsageParams } from '@librechat/data-schemas';
 import type { GetUserStorageUsage, StorageScope } from './quota';
 import {
+  createSkillFileQuotaPersistence,
   FILE_STORAGE_LIMIT_ERROR_CODE,
   FileStorageLimitError,
   isFileStorageLimitError,
@@ -1073,6 +1074,46 @@ describe('persistSkillFileWithQuota', () => {
     );
 
     expect(write).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'request-tenant' }));
+  });
+});
+
+describe('createSkillFileQuotaPersistence', () => {
+  it('reuses one ledger read only inside an explicit sync scope', async () => {
+    const row = {
+      bytes: 10,
+      skillId: '64f000000000000000000002',
+      relativePath: 'scripts/a.sh',
+    };
+    const getUserStorageUsage = usageOf(0);
+    const upsertSkillFile = jest.fn(async (row) => row);
+    const persistence = createSkillFileQuotaPersistence({
+      resolveScope: resolveStorageScope,
+      upsertSkillFile,
+      getUserStorageUsage,
+      onCleanupError: noRollbackErrors,
+    });
+
+    await persistence.runWithSharedScope(async () => {
+      await persistence.persistSkillFile(
+        makeReq({ storageLimitMb: 1, requestTenantId: 'tenant-a' }),
+        row,
+        null,
+      );
+      await persistence.persistSkillFile(
+        makeReq({ storageLimitMb: 1, requestTenantId: 'tenant-a' }),
+        { ...row, relativePath: 'scripts/b.sh' },
+        null,
+      );
+    });
+
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
+
+    await persistence.persistSkillFile(
+      makeReq({ storageLimitMb: 1, requestTenantId: 'tenant-a' }),
+      { ...row, relativePath: 'scripts/c.sh' },
+      null,
+    );
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
   });
 });
 

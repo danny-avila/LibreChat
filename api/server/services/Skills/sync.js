@@ -10,7 +10,7 @@ const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
-const { upsertSkillFileWithQuota } = require('./quota');
+const { upsertSkillFileWithQuota, runWithSharedScope } = require('./quota');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 
@@ -47,7 +47,9 @@ async function resolveSkillStorage({ isImage = false, loadAppConfig = loadCurren
 }
 
 async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId, loadAppConfig } = {}) {
-  const appConfig = await (loadAppConfig ?? loadCurrentAppConfig)();
+  const appConfig = loadAppConfig
+    ? await loadAppConfig({ userId, tenantId })
+    : await getAppConfig({ userId, tenantId, failClosed: true });
   return {
     config: appConfig,
     user: {
@@ -94,15 +96,16 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     listSkillsBySource: db.listSkillsBySource,
     listSkillFiles: db.listSkillFiles,
     getSkillFileByPath: db.getSkillFileByPath,
-    upsertSkillFile: async (row) =>
+    upsertSkillFile: async (row, replacing) =>
       upsertSkillFileWithQuota(
         await getSyntheticReq({
           userId: row.author?.toString?.() ?? row.author ?? SYSTEM_USER_ID,
           tenantId: row.tenantId,
-          loadAppConfig: resolveAppConfig,
         }),
         row,
+        replacing,
       ),
+    restoreSkillFile: db.upsertSkillFile,
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: db.deleteSkill,
     grantPermission: async ({
@@ -170,7 +173,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
   });
   return {
     getStatus: createdRunner.getStatus,
-    runOnce: createdRunner.runOnce,
+    runOnce: (...args) => runWithSharedScope(() => createdRunner.runOnce(...args)),
   };
 }
 

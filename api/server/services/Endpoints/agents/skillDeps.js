@@ -102,20 +102,24 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
 
   let result;
   try {
-    result = await upsertSkillFileWithQuota(req, {
-      skillId,
-      relativePath,
-      file_id: fileId,
-      filename,
-      filepath,
-      ...storageMetadata,
-      source: storage.source,
-      mimeType,
-      bytes: buffer.length,
-      isExecutable: false,
-      author: req.user._id ?? req.user.id,
-      tenantId,
-    });
+    result = await upsertSkillFileWithQuota(
+      req,
+      {
+        skillId,
+        relativePath,
+        file_id: fileId,
+        filename,
+        filepath,
+        ...storageMetadata,
+        source: storage.source,
+        mimeType,
+        bytes: buffer.length,
+        isExecutable: false,
+        author: req.user._id ?? req.user.id,
+        tenantId,
+      },
+      existingFile,
+    );
     if (!result) {
       const error = new Error('Skill file save failed to persist metadata');
       error.code = 'SKILL_FILE_UPSERT_NOT_FOUND';

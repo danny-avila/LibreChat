@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { megabyte, mergeFileConfig } from 'librechat-data-provider';
 
 export const FILE_STORAGE_LIMIT_ERROR_CODE = 'FILE_STORAGE_LIMIT_EXCEEDED';
@@ -526,6 +527,78 @@ export type SkillFileRow = LedgerRow & {
   author?: { toString(): string } | string;
 };
 
+export type SkillFileReplacement = {
+  skillId?: { toString(): string } | string;
+  relativePath?: string;
+  author?: unknown;
+  tenantId?: string | null;
+  bytes?: number | null;
+};
+
+export type SkillFileQuotaPersistenceDependencies<TRequest, TResult> = {
+  resolveScope: (req: TRequest) => StorageScope;
+  upsertSkillFile: (row: SkillFileRow) => Promise<TResult>;
+  getUserStorageUsage: GetUserStorageUsage;
+  onCleanupError: (error: unknown) => void;
+};
+
+export type SkillFileQuotaPersistence<TRequest, TResult> = {
+  persistSkillFile: <TRow extends SkillFileRow>(
+    req: TRequest,
+    row: TRow,
+    replacing: SkillFileReplacement | null,
+  ) => Promise<TResult>;
+  runWithSharedScope: <T>(operation: () => Promise<T>) => Promise<T>;
+};
+
+/**
+ * Builds the SkillFile write boundary. A sync run may opt into shared scopes so its
+ * serial file writes reuse one usage read per owner/tenant without leaking cached
+ * usage into later runs or concurrent async chains.
+ */
+export function createSkillFileQuotaPersistence<TRequest, TResult>(
+  dependencies: SkillFileQuotaPersistenceDependencies<TRequest, TResult>,
+): SkillFileQuotaPersistence<TRequest, TResult> {
+  const scopeStorage = new AsyncLocalStorage<Map<string, StorageScope>>();
+
+  const getScope = (req: TRequest): StorageScope => {
+    const resolved = dependencies.resolveScope(req);
+    const scopes = scopeStorage.getStore();
+    if (!scopes) {
+      return resolved;
+    }
+    const key = `${resolved.userId}\u0000${resolved.tenantId ?? ''}\u0000${resolved.storageLimit ?? ''}`;
+    const existing = scopes.get(key);
+    if (existing) {
+      return existing;
+    }
+    scopes.set(key, resolved);
+    return resolved;
+  };
+
+  return {
+    persistSkillFile: <TRow extends SkillFileRow>(
+      req: TRequest,
+      row: TRow,
+      replacing: SkillFileReplacement | null,
+    ): Promise<TResult> =>
+      persistSkillFileWithQuota(
+        {
+          scope: getScope(req),
+          row,
+          write: dependencies.upsertSkillFile,
+          rollback: null,
+          getUserStorageUsage: dependencies.getUserStorageUsage,
+          replacing,
+          replacedBytes: replacing?.bytes,
+        },
+        dependencies.onCleanupError,
+      ),
+    runWithSharedScope: <T>(operation: () => Promise<T>): Promise<T> =>
+      scopeStorage.run(new Map(), operation),
+  };
+}
+
 /**
  * Persists a `File` row under this request's storage scope.
  *
@@ -573,12 +646,7 @@ export function persistFileWithQuota<TRow extends FileRow, TResult>(
  */
 export function persistSkillFileWithQuota<TRow extends SkillFileRow, TResult>(
   params: PersistParams<TRow, TResult> & {
-    replacing?: {
-      skillId?: { toString(): string } | string;
-      relativePath?: string;
-      author?: unknown;
-      tenantId?: string | null;
-    } | null;
+    replacing?: SkillFileReplacement | null;
   },
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {

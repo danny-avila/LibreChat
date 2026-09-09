@@ -14,6 +14,7 @@ jest.mock('~/server/services/Config', () => ({
 
 jest.mock('./quota', () => ({
   upsertSkillFileWithQuota: (...args) => mockUpsertSkillFileWithQuota(...args),
+  runWithSharedScope: (operation) => operation(),
 }));
 
 jest.mock('@librechat/api', () => {
@@ -162,6 +163,32 @@ describe('GitHub skill sync service', () => {
 
     expect(result).toBeUndefined();
     expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+  });
+
+  it('resolves effective author config and forwards the loaded replacement for quota writes', async () => {
+    const baseConfig = { skillSync: { github: { enabled: false, sources: [] } } };
+    const effectiveConfig = { ...baseConfig, fileConfig: { storageLimit: 5 } };
+    mockGetAppConfig.mockImplementation(async (options) =>
+      options?.baseOnly ? baseConfig : effectiveConfig,
+    );
+    mockUpsertSkillFileWithQuota.mockResolvedValue({ file_id: 'file-1' });
+
+    const service = require('./sync');
+    service.initializeGitHubSkillSync(baseConfig);
+    const row = { author: 'user-1', tenantId: 'tenant-a', file_id: 'file-1' };
+    const replacing = { file_id: 'old-file', bytes: 10 };
+    await mockRunnerDeps.upsertSkillFile(row, replacing);
+
+    expect(mockGetAppConfig).toHaveBeenCalledWith({
+      userId: 'user-1',
+      tenantId: 'tenant-a',
+      failClosed: true,
+    });
+    expect(mockUpsertSkillFileWithQuota).toHaveBeenCalledWith(
+      expect.objectContaining({ config: effectiveConfig }),
+      row,
+      replacing,
+    );
   });
 
   it('does not let user skill-list sync use server credentials from resolved config', async () => {
@@ -315,7 +342,7 @@ describe('GitHub skill sync service', () => {
     });
     const config = await mockCreatedRunners[0].deps.getConfig();
 
-    expect(runner.runOnce).toBe(mockCreatedRunners[0].runner.runOnce);
+    expect(runner.runOnce).toEqual(expect.any(Function));
     expect(runner.getStatus).toBe(mockCreatedRunners[0].runner.getStatus);
     expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(true);
     expect(config.github.runOnStartup).toBe(true);

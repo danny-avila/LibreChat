@@ -1,46 +1,47 @@
-const mockPersistSkillFileWithQuota = jest.fn();
+const mockPersistSkillFile = jest.fn();
+const mockRunWithSharedScope = jest.fn();
+let capturedDependencies;
+const mockCreateSkillFileQuotaPersistence = jest.fn((dependencies) => {
+  capturedDependencies = dependencies;
+  return {
+    persistSkillFile: mockPersistSkillFile,
+    runWithSharedScope: mockRunWithSharedScope,
+  };
+});
 const mockResolveStorageScope = jest.fn();
-const mockGetSkillFileByPath = jest.fn();
 const mockUpsertSkillFile = jest.fn();
 const mockGetUserStorageUsage = jest.fn();
 
 jest.mock('@librechat/api', () => ({
-  persistSkillFileWithQuota: (...args) => mockPersistSkillFileWithQuota(...args),
-  resolveStorageScope: (...args) => mockResolveStorageScope(...args),
+  createSkillFileQuotaPersistence: (...args) => mockCreateSkillFileQuotaPersistence(...args),
+  resolveStorageScope: mockResolveStorageScope,
 }));
 
 jest.mock('@librechat/data-schemas', () => ({ logger: { error: jest.fn() } }));
 
 jest.mock('~/models', () => ({
-  getSkillFileByPath: (...args) => mockGetSkillFileByPath(...args),
-  upsertSkillFile: (...args) => mockUpsertSkillFile(...args),
-  getUserStorageUsage: (...args) => mockGetUserStorageUsage(...args),
+  upsertSkillFile: mockUpsertSkillFile,
+  getUserStorageUsage: mockGetUserStorageUsage,
 }));
 
-const { upsertSkillFileWithQuota } = require('./quota');
+const { upsertSkillFileWithQuota, runWithSharedScope } = require('./quota');
 
 describe('upsertSkillFileWithQuota', () => {
-  it('charges only the replacement delta on the requester scope', async () => {
+  it('keeps the CJS service as dependency wiring for the package boundary', async () => {
     const req = { user: { id: 'user-1' } };
     const row = { skillId: 'skill-1', relativePath: 'references/a.txt', bytes: 120 };
     const replacing = { author: 'user-1', bytes: 40 };
-    const scope = { userId: 'user-1' };
-    mockGetSkillFileByPath.mockResolvedValueOnce(replacing);
-    mockResolveStorageScope.mockReturnValueOnce(scope);
-    mockPersistSkillFileWithQuota.mockResolvedValueOnce({ ...row, author: 'user-1' });
 
-    await upsertSkillFileWithQuota(req, row);
+    await upsertSkillFileWithQuota(req, row, replacing);
 
-    expect(mockPersistSkillFileWithQuota).toHaveBeenCalledWith(
+    expect(capturedDependencies).toEqual(
       expect.objectContaining({
-        scope,
-        row,
-        write: expect.any(Function),
-        rollback: null,
-        replacing,
-        replacedBytes: 40,
+        resolveScope: mockResolveStorageScope,
+        upsertSkillFile: mockUpsertSkillFile,
+        getUserStorageUsage: mockGetUserStorageUsage,
       }),
-      expect.any(Function),
     );
+    expect(mockPersistSkillFile).toHaveBeenCalledWith(req, row, replacing);
+    expect(runWithSharedScope).toBe(mockRunWithSharedScope);
   });
 });
