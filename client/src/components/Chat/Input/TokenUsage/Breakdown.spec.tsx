@@ -280,6 +280,36 @@ describe('TokenUsage Breakdown', () => {
       expect(estimate).toBeInTheDocument();
       expect(estimate.querySelector('[class*="bg-series-"]')).toBeNull();
     });
+
+    it('keeps the estimate rows summing to used tokens when a tool share is known', async () => {
+      const estimateWithTools = {
+        ...view,
+        usedTokens: 600,
+        maxTokens: 2000,
+        branchTotals: { ...view.branchTotals, input: 300, output: 200 },
+        estimatedTokens: 100,
+        messageTokens: 600,
+        toolCallTokens: 150,
+      } as TokenUsageView;
+
+      renderBreakdown({ view: estimateWithTools });
+      await userEvent.click(toggle());
+
+      const estimate = screen.getByTestId('context-estimate');
+      const peerTotal = Array.from(estimate.children)
+        .filter((child) => !child.className.includes('pl-6'))
+        .reduce((sum, child) => sum + Number(child.lastElementChild?.textContent ?? 0), 0);
+
+      /** 300 input + 200 output + 100 estimated = 600 used. The tool share is a
+       *  subset of those rows, so it may only appear as an indented subtotal —
+       *  as a peer row the visible rows would claim 750 of a 600-token window. */
+      expect(peerTotal).toBe(600);
+
+      const toolRow = within(estimate).getByText('com_ui_context_tool_calls').parentElement
+        ?.parentElement as HTMLElement;
+      expect(toolRow.parentElement?.className).toContain('pl-6');
+      expect(toolRow.textContent).toContain('150');
+    });
     it('splits tool-call usage out of the messages row when reported', async () => {
       renderBreakdown({ view: toolSplitView });
       await userEvent.click(toggle());

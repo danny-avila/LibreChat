@@ -106,7 +106,9 @@ export const defaultTheme: IThemeRGB = {
 
   /** Categorical series scale. Steps clear 3:1 against BOTH the popover surface
    *  and the #ececec meter track, with worst adjacent CVD ΔE 12.4 and worst
-   *  adjacent normal-vision ΔE 19.0. Slot order is the CVD-safety mechanism. */
+   *  adjacent normal-vision ΔE 19.0. Slot order is the CVD-safety mechanism:
+   *  indigo(8) sits beside green(7) because blue separates from green under
+   *  protanopia/deuteranopia where red would not. */
   'rgb-series-1': '5 110 189', // #056ebd (cerulean)
   'rgb-series-2': '233 86 13', // #e9560d (orange)
   'rgb-series-3': '0 148 142', // #00948e (aqua)
@@ -114,8 +116,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-series-5': '216 90 142', // #d85a8e (magenta)
   'rgb-series-6': '126 35 205', // #7e23cd (violet)
   'rgb-series-7': '1 131 1', // #018301 (green)
-  'rgb-series-8': '63 81 181', // #3f51b5 (indigo) — beside green(7), blue vs
-  /** green separates under protanopia/deuteranopia where red would not. */
+  'rgb-series-8': '63 81 181', // #3f51b5 (indigo)
 
   /** Unchecked switch track. 3.03:1 against the white page and the
    *  `surface-primary` thumb, 5.91:1 against the checked `surface-inverted`

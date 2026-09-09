@@ -1,8 +1,9 @@
 import { getDefaultStore } from 'jotai';
+import { Constants } from 'librechat-data-provider';
 import { renderHook } from '@testing-library/react';
 import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
+import { contextSnapshotFamily, subagentUsageFamily } from '~/store/usage';
 import useUsageHandler from '~/hooks/SSE/useUsageHandler';
-import { contextSnapshotFamily } from '~/store/usage';
 
 /** Mirrors a real web-search + summarization turn: calibration pinned at 5
  *  inflated messageTokens to 187471 (used 213375), while the call's true prompt
@@ -112,5 +113,36 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     result.current.usageHandler(primaryUsage({ usage_type: 'summarization', seq: 2 }), submission);
 
     expect(store.get(contextSnapshotFamily(convo))?.breakdown.messageTokens).toBe(187471);
+  });
+
+  it('carries subagent totals through the new-conversation id handoff', () => {
+    /** The first turn of a new chat accumulates under `new`; `finalizeUsage`
+     *  migrates the usage atoms to the persisted id and drops the temporary
+     *  ones, so a subagent total left behind would vanish on completion. */
+    const newConvo: string = Constants.NEW_CONVO;
+    const submission = {
+      userMessage: { messageId: 'u-sub', conversationId: newConvo },
+      conversation: { conversationId: newConvo },
+    };
+    const { result } = renderHook(() => useUsageHandler());
+    const store = getDefaultStore();
+
+    result.current.usageHandler(
+      primaryUsage({ usage_type: 'subagent', runId: 'run-sub', seq: 11 }),
+      submission,
+    );
+    expect(store.get(subagentUsageFamily(newConvo)).output).toBe(3780);
+
+    result.current.finalizeUsage(
+      {
+        conversation: { conversationId: 'convo-sub-real' },
+        responseMessage: { messageId: 'r-sub', conversationId: 'convo-sub-real' },
+      },
+      submission,
+    );
+
+    const migrated = store.get(subagentUsageFamily('convo-sub-real'));
+    expect(migrated.input).toBe(53702);
+    expect(migrated.output).toBe(3780);
   });
 });

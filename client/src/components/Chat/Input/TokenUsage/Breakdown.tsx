@@ -540,12 +540,20 @@ export default function Breakdown({
                       )}
                     </>
                   )}
+                  {/** Retained tool traffic is already inside the message rows above
+                   *  (their clamped tool-content share), so it renders as an indented
+                   *  subtotal — as a peer row the visible rows would sum past
+                   *  `usedTokens`. The snapshot path instead subtracts it from
+                   *  Messages, which is exact there; here the counted Input/Output
+                   *  rows are provider counts and this share is a char estimate, so
+                   *  subtracting it would corrupt them. */}
                   {normalizeTokenCount(view.toolCallTokens) > 0 && (
-                    <Row
-                      label={localize('com_ui_context_tool_calls')}
-                      value={normalizeTokenCount(view.toolCallTokens)}
-                      max={maxTokens}
-                    />
+                    <div className="pl-6">
+                      <Row
+                        label={localize('com_ui_context_tool_calls')}
+                        value={normalizeTokenCount(view.toolCallTokens)}
+                      />
+                    </div>
                   )}
                   {view.overheadTokens > 0 && (
                     <Row label={localize('com_ui_context_system')} value={view.overheadTokens} />
@@ -571,22 +579,26 @@ export default function Breakdown({
                   </h3>
                   <Row label={localize('com_ui_input')} value={branchUsage.input} />
                   <Row label={localize('com_ui_output')} value={branchUsage.output} />
-                  {normalizeTokenCount(view.subagentUsage?.input) +
-                    normalizeTokenCount(view.subagentUsage?.output) >
-                    0 && (
-                    <Row
-                      label={localize('com_ui_context_subagents')}
-                      value={
-                        normalizeTokenCount(view.subagentUsage?.input) +
-                        normalizeTokenCount(view.subagentUsage?.output)
-                      }
-                    />
-                  )}
                   {normalizeTokenCount(branchUsage.cacheRead) > 0 && (
                     <Row label={localize('com_ui_cache_read')} value={branchUsage.cacheRead} />
                   )}
                   {normalizeTokenCount(branchUsage.cacheWrite) > 0 && (
                     <Row label={localize('com_ui_cache_write')} value={branchUsage.cacheWrite} />
+                  )}
+                  {/** Subagent calls are accumulated per conversation for the session
+                   *  and are not attributed to a response, so they cannot be scoped to
+                   *  the viewed branch like the rows above; label them all-branches
+                   *  rather than imply branch scope. */}
+                  {normalizeTokenCount(view.subagentUsage?.input) +
+                    normalizeTokenCount(view.subagentUsage?.output) >
+                    0 && (
+                    <Row
+                      label={localize('com_ui_context_subagents_all')}
+                      value={
+                        normalizeTokenCount(view.subagentUsage?.input) +
+                        normalizeTokenCount(view.subagentUsage?.output)
+                      }
+                    />
                   )}
                 </div>
               </>

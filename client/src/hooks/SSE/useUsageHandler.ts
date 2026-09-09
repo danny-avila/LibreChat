@@ -373,6 +373,7 @@ export default function useUsageHandler(): UsageHandlers {
         jotai.set(snapshotsByAnchorFamily(realId), jotai.get(snapshotsByAnchorFamily(fromKey)));
         jotai.set(pendingUsageFamily(realId), jotai.get(pendingUsageFamily(fromKey)));
         jotai.set(calibrationFamily(realId), jotai.get(calibrationFamily(fromKey)));
+        jotai.set(subagentUsageFamily(realId), jotai.get(subagentUsageFamily(fromKey)));
         removeUsageAtoms(fromKey);
       }
 

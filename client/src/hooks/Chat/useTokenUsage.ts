@@ -255,9 +255,17 @@ export default function useTokenUsage({
     const tailId = branchTotals.tailId;
     const anchorSeries =
       effective != null ? collectAnchorSeries(conversationKey, tailId, snapshotsByAnchor) : [];
+    /** The snapshot is pre-invoke, so its `remainingContextTokens` predates the
+     *  last call's finalized output and any in-flight output. Both already ate
+     *  that headroom (`usedTokens` adds them), so the projection must too. */
+    const completedOutput = normalizeTokenCount(effective?.completedOutputTokens);
+    const liveOutput = normalizeTokenCount(liveTokens);
     const remainingForRunway =
       effective?.remainingContextTokens != null
-        ? normalizeTokenCount(effective.remainingContextTokens)
+        ? Math.max(
+            0,
+            normalizeTokenCount(effective.remainingContextTokens) - completedOutput - liveOutput,
+          )
         : null;
     let runwayTurns: number | undefined;
     if (anchorSeries.length >= 2 && remainingForRunway != null) {
@@ -284,11 +292,7 @@ export default function useTokenUsage({
       /** The snapshot is pre-invoke: in-flight output rides on `liveTokens` (0
        *  unless streaming this branch), the last call's finalized output on
        *  `completedOutputTokens`. */
-      const usedTokens = normalizeTokenCount(
-        Math.max(0, baseUsed) +
-          normalizeTokenCount(liveTokens) +
-          normalizeTokenCount(effective.completedOutputTokens),
-      );
+      const usedTokens = normalizeTokenCount(Math.max(0, baseUsed) + liveOutput + completedOutput);
       return {
         usedTokens,
         maxTokens,
@@ -302,7 +306,7 @@ export default function useTokenUsage({
         hasUsage,
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
-        liveTokens: normalizeTokenCount(liveTokens),
+        liveTokens: liveOutput,
         estimatedTokens: 0,
         overheadTokens: 0,
         messageTokens: 0,
@@ -318,9 +322,15 @@ export default function useTokenUsage({
         cacheWrite: normalizeTokenCount(effective.cacheWrite),
         toolMessageTokenCounts: breakdown.toolMessageTokenCounts,
         runwayTurns,
+        /** Both sides are measured after the tail call: `breakdown.messageTokens`
+         *  is pre-invoke, so add the finalized output that `latestExchangeTokens`
+         *  already counts in the exchange a summarization would keep. While a
+         *  response streams, `completedOutput` is 0 and the in-flight tail is
+         *  excluded from both sides (it rides on `liveTokens`). */
         compactionReclaim: Math.max(
           0,
-          normalizeTokenCount(breakdown.messageTokens) -
+          normalizeTokenCount(breakdown.messageTokens) +
+            completedOutput -
             latestExchangeTokens(conversationKey, tailId, liveTokens > 0),
         ),
         subagentUsage,
