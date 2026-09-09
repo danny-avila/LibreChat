@@ -50,31 +50,47 @@ const TERMINAL_CARD_STATUSES: ScheduleRunStatus[] = [
   'skipped_balance',
 ];
 
-type DuplicateKeyError = { code?: number; keyPattern?: Record<string, unknown> };
+type DuplicateKeyError = {
+  code?: number;
+  keyPattern?: Record<string, number>;
+  errmsg?: string;
+  message?: string;
+};
+
+/** DocumentDB can omit keyPattern; retain the deployed default index names as a fallback. */
+function matchesRunDuplicate(
+  error: unknown,
+  fields: readonly string[],
+  indexName: string,
+): boolean {
+  const err = error as DuplicateKeyError;
+  if (err?.code !== DUPLICATE_KEY) {
+    return false;
+  }
+  const keyPattern = err.keyPattern;
+  if (keyPattern != null) {
+    return (
+      Object.keys(keyPattern).length === fields.length &&
+      fields.every((field) => Object.prototype.hasOwnProperty.call(keyPattern, field))
+    );
+  }
+  const message = err.errmsg || err.message;
+  return typeof message === 'string' && /\bindex:\s+(\S+)/.exec(message)?.[1] === indexName;
+}
 
 /** A duplicate-key error whose conflict is the {scheduleId, scheduledFor} occurrence index. */
 function isOccurrenceDuplicate(error: unknown): boolean {
-  const err = error as DuplicateKeyError;
-  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'scheduledFor' in err.keyPattern;
+  return matchesRunDuplicate(error, ['scheduleId', 'scheduledFor'], 'scheduleId_1_scheduledFor_1');
 }
 
-/** A duplicate-key error whose conflict is the single-active-run partial index
- *  ({scheduleId} where status:'started'). Matched EXACTLY on scheduleId so the
- *  global {capacitySlot} index below is never misread as a per-schedule overlap. */
+/** A duplicate-key error whose conflict is the single-active-run partial index. */
 function isActiveRunConflict(error: unknown): boolean {
-  const err = error as DuplicateKeyError;
-  return (
-    err?.code === DUPLICATE_KEY &&
-    err.keyPattern != null &&
-    'scheduleId' in err.keyPattern &&
-    !('scheduledFor' in err.keyPattern)
-  );
+  return matchesRunDuplicate(error, ['scheduleId'], 'scheduleId_1');
 }
 
 /** A duplicate-key error whose conflict is the GLOBAL {capacitySlot} cap index. */
 function isCapacitySlotConflict(error: unknown): boolean {
-  const err = error as DuplicateKeyError;
-  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'capacitySlot' in err.keyPattern;
+  return matchesRunDuplicate(error, ['capacitySlot'], 'capacitySlot_1');
 }
 
 /** A duplicate-key error whose conflict is the per-user {user, slot} cap index. */
@@ -104,6 +120,7 @@ export interface RecordRunOutcomeParams {
     'success' | 'error' | 'requires_action' | 'interrupted' | 'skipped_balance' | 'skipped_overlap'
   >;
   conversationId?: string;
+  checkpointNamespace?: string;
   /** Erase the run row's RESERVED conversationId in the same terminal write: a
    *  pre-start abort reserved an id but never created the conversation, and any
    *  recovery replay that reads the row would otherwise project a dead link. */
@@ -273,7 +290,10 @@ export type ScheduleMethods = {
   ) => Promise<void>;
   markScheduleDeleting: (id: string, userId: string | Types.ObjectId) => Promise<ISchedule | null>;
   getActiveRunsForSchedule: (scheduleId: string) => Promise<IScheduleRun[]>;
-  getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
+  getActiveRunsForUser: (
+    userId: string | Types.ObjectId,
+    statuses?: readonly ScheduleRunStatus[],
+  ) => Promise<IScheduleRun[]>;
   suspendUserSchedulesForDeletion: (
     userId: string | Types.ObjectId,
     token: string,
@@ -1395,6 +1415,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           $set: {
             status: 'requires_action',
             ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+            ...(params.checkpointNamespace != null
+              ? { checkpointNamespace: params.checkpointNamespace }
+              : {}),
           },
           // Leaving `started` frees the global capacity slot; the resume claims a
           // fresh one from the allocator rather than re-adopting a possibly-taken slot.
@@ -1737,13 +1760,23 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function getActiveRunsForSchedule(scheduleId: string): Promise<IScheduleRun[]> {
     return ScheduleRun()
       .find({ scheduleId, status: { $in: ACTIVE_RUN_STATUSES } })
+      .select('+checkpointNamespace')
       .lean<IScheduleRun[]>();
   }
 
-  /** In-flight runs across all of a user's schedules — for account-deletion quiescing. */
-  async function getActiveRunsForUser(userId: string | Types.ObjectId): Promise<IScheduleRun[]> {
+  /**
+   * In-flight runs across all of a user's schedules — for account-deletion quiescing,
+   * and, narrowed to `started`, for the schedules list. The narrowing matters there:
+   * this collection is indexed by status, not by user, and `started` rows are bounded
+   * globally by the capacity slots while `requires_action` rows can accumulate for as
+   * long as an approval waits.
+   */
+  async function getActiveRunsForUser(
+    userId: string | Types.ObjectId,
+    statuses: readonly ScheduleRunStatus[] = ACTIVE_RUN_STATUSES,
+  ): Promise<IScheduleRun[]> {
     return ScheduleRun()
-      .find({ user: userId, status: { $in: ACTIVE_RUN_STATUSES } })
+      .find({ user: userId, status: { $in: statuses } })
       .lean<IScheduleRun[]>();
   }
 

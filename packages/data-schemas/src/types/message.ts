@@ -4,6 +4,7 @@ import type {
   UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
 import type { Document } from 'mongoose';
+import type { IAgentEventActorContextMeta } from './convo';
 
 export type SubagentTaskControlAction =
   | 'steer'
@@ -113,14 +114,13 @@ export interface IMessage extends Document {
       kind: 'manual' | 'wakeup';
       claimId: string;
       claimedAt: Date;
+      /** Response generation that owns a manual delivery claim. */
+      generationId?: string;
     };
     controlReceipts?: ISubagentTaskControlReceipt[];
   };
   subagentTriggerProjection?: SubagentTriggerProjection;
-  contextMeta?: {
-    calibrationRatio?: number;
-    encoding?: string;
-  };
+  contextMeta?: Partial<IAgentEventActorContextMeta>;
   attachments?: unknown[];
   /** Skills the user invoked manually via the `$` popover on this turn. UI-only metadata for `SkillPills`. */
   manualSkills?: string[];

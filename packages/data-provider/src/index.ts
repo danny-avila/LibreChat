@@ -6,6 +6,7 @@ export * from './config';
 export * from './langchain';
 export * from './filters';
 export * from './file-config';
+export * from './resolve-llm-delivery-path';
 /* messages  */
 export * from './messages';
 /* run steps */
@@ -57,6 +58,8 @@ export { dataService };
 import * as dataService from './data-service';
 /* provider identity */
 export * from './providers';
+/* icon sanitization policy */
+export * from './svg';
 /* general helpers */
 export * from './utils';
 export * from './actions';
@@ -69,3 +72,6 @@ export * from './parameterSettings';
 export * from './agentToolOptions';
 /* code-execution sandbox */
 export * from './codeEnvRef';
+export * from './code/worker';
+export * from './code/approval';
+export * from './code/workspace';

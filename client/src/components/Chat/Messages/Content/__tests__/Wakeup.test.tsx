@@ -1,8 +1,10 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
+import { RecoilRoot } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
-import { activeSubagentPanel } from '~/store/subagents';
+import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
+import { ChatSurfaceHarness } from 'test/harness';
 import Wakeup from '../Wakeup';
 
 /** The hooks barrel drags the full data-provider graph into jsdom, so only
@@ -67,7 +69,7 @@ jest.mock('~/components/Chat/Subagents/ParentSubagentsProvider', () => ({
 }));
 
 function SelectionProbe() {
-  const selection = useRecoilValue(activeSubagentPanel);
+  const selection = useAtomValue(activeSubagentPanel);
   return <div data-testid="selection">{selection == null ? '' : selection.durable?.taskId}</div>;
 }
 
@@ -87,10 +89,12 @@ const subagentDisplay = {
 describe('Wakeup', () => {
   it('renders a collapsible subagent completion card with the result and panel affordance', () => {
     render(
-      <RecoilRoot>
-        <Wakeup display={subagentDisplay} conversationId="conversation-1" />
-        <SelectionProbe />
-      </RecoilRoot>,
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Wakeup display={subagentDisplay} conversationId="conversation-1" />
+          <SelectionProbe />
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
     );
 
     const header = screen.getByRole('button', { name: 'com_ui_wakeup_subagent_completed' });
@@ -109,24 +113,26 @@ describe('Wakeup', () => {
 
   it('keeps the panel affordance for a thread omitted from the bounded index', () => {
     render(
-      <RecoilRoot>
-        <Wakeup
-          display={{
-            kind: 'subagent',
-            tasks: [
-              {
-                taskId: 'task-9',
-                status: 'completed',
-                result: 'ok',
-                threadId: 'thread-9',
-                subagentType: 'self',
-              },
-            ],
-          }}
-          conversationId="conversation-1"
-        />
-        <SelectionProbe />
-      </RecoilRoot>,
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Wakeup
+            display={{
+              kind: 'subagent',
+              tasks: [
+                {
+                  taskId: 'task-9',
+                  status: 'completed',
+                  result: 'ok',
+                  threadId: 'thread-9',
+                  subagentType: 'self',
+                },
+              ],
+            }}
+            conversationId="conversation-1"
+          />
+          <SelectionProbe />
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_wakeup_subagent_completed' }));
@@ -136,30 +142,32 @@ describe('Wakeup', () => {
 
   it('renders a failed background tool batch with per-task statuses and no panel affordance', () => {
     render(
-      <RecoilRoot>
-        <Wakeup
-          display={{
-            kind: 'background_tool',
-            tasks: [
-              {
-                taskId: 'bg-1',
-                status: 'completed',
-                result: 'ok',
-                toolCallId: 'call-1',
-                toolName: 'web_search',
-              },
-              {
-                taskId: 'bg-2',
-                status: 'error',
-                result: 'boom',
-                toolCallId: 'call-2',
-                toolName: 'execute_code',
-              },
-            ],
-          }}
-          conversationId="conversation-1"
-        />
-      </RecoilRoot>,
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Wakeup
+            display={{
+              kind: 'background_tool',
+              tasks: [
+                {
+                  taskId: 'bg-1',
+                  status: 'completed',
+                  result: 'ok',
+                  toolCallId: 'call-1',
+                  toolName: 'web_search',
+                },
+                {
+                  taskId: 'bg-2',
+                  status: 'error',
+                  result: 'boom',
+                  toolCallId: 'call-2',
+                  toolName: 'execute_code',
+                },
+              ],
+            }}
+            conversationId="conversation-1"
+          />
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
     );
 
     const header = screen.getByRole('button', { name: 'com_ui_wakeup_tasks_finished:2' });

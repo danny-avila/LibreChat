@@ -13,6 +13,7 @@ import {
   MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
   MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
 } from '~/types/convo';
+import { agentFadingContextDefinition } from './fading';
 import { conversationPreset } from './defaults';
 import { IConversation } from '~/types';
 
@@ -42,6 +43,11 @@ const convoSchema: Schema<IConversation> = new Schema(
     ...conversationPreset,
     agent_id: {
       type: String,
+    },
+    initial_agent_id: {
+      type: String,
+      default: undefined,
+      select: false,
     },
     subagentThread: {
       type: {
@@ -147,6 +153,7 @@ const convoSchema: Schema<IConversation> = new Schema(
               maxlength: MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
               default: undefined,
             },
+            ...agentFadingContextDefinition,
           },
           _id: false,
           default: undefined,
@@ -229,6 +236,18 @@ const convoSchema: Schema<IConversation> = new Schema(
     /** Fail-closed invocation proof. Active records block later turns through checkpoint,
      * history, and outcome settlement; settled receipts no longer block new IDs but keep
      * delayed owners from reacquiring an invocation that already applied its action. */
+    agentEventActorCleanup: {
+      type: [
+        {
+          threadId: { type: String, required: true },
+          checkpointId: { type: String, required: true },
+          checkpointNs: { type: String, required: true },
+          _id: false,
+        },
+      ],
+      default: undefined,
+      select: false,
+    },
     agentEventActorReconciliations: {
       type: [
         {
@@ -317,7 +336,11 @@ const convoSchema: Schema<IConversation> = new Schema(
         handlingGenerationCreatedAt: { type: Number, min: 0, default: undefined },
         actionId: { type: String, required: true },
         jobCreatedAt: { type: Number, required: true },
-        status: { type: String, enum: ['pending', 'claimed', 'closed'], required: true },
+        status: {
+          type: String,
+          enum: ['pending', 'claimed', 'pending_owned', 'claimed_owned', 'closed'],
+          required: true,
+        },
         resumeAttemptId: { type: String, default: undefined },
         outcome: {
           type: String,
@@ -369,6 +392,10 @@ convoSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1, tenantId: 1 }, { unique: true });
 convoSchema.index({ tenantId: 1, isTemporary: 1, createdAt: -1, _id: -1 });
+/** Insights attributes new conversations by an immutable primary agent and falls back
+ * to the mutable agent field only for legacy rows where the primary field is absent. */
+convoSchema.index({ tenantId: 1, isTemporary: 1, initial_agent_id: 1, createdAt: -1, _id: -1 });
+convoSchema.index({ tenantId: 1, isTemporary: 1, agent_id: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ user: 1, _id: 1 });
 convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });

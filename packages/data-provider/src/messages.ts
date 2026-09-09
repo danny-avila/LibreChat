@@ -155,3 +155,29 @@ export function buildTree({
   }
   return tree;
 }
+
+/**
+ * True when a message is a finished manual compaction: every content part is a
+ * summary and at least one of them carries text. A summary still streaming or
+ * one that failed does not count, so an interrupted compaction can be retried.
+ */
+export function isCompactedLeaf(message?: Pick<TMessage, 'content'> | null): boolean {
+  const content = message?.content;
+  if (!Array.isArray(content) || content.length === 0) {
+    return false;
+  }
+  let usable = false;
+  for (const part of content) {
+    if (part?.type !== ContentTypes.SUMMARY) {
+      return false;
+    }
+    if (part.summarizing === true || part.failed === true) {
+      continue;
+    }
+    const hasText = (part.content ?? []).some(
+      (block) => typeof block?.text === 'string' && block.text.trim().length > 0,
+    );
+    usable = usable || hasText;
+  }
+  return usable;
+}

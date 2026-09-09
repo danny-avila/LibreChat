@@ -148,9 +148,10 @@ export default function ToolsMarketplaceDialog({
         }
         case 'mcp-add': {
           if (item.kind !== 'mcp') break;
-          const toolIds = item.server.requestScoped
-            ? [mcpAllToken(item.id)]
-            : (item.server.tools ?? []).map((t) => t.tool_id);
+          const toolIds =
+            item.server.requestScoped || !item.server.tools?.length
+              ? [mcpAllToken(item.id)]
+              : (item.server.tools ?? []).map((t) => t.tool_id);
           const current = (getValues('tools') ?? []) as string[];
           setValue(
             'tools',
@@ -190,14 +191,14 @@ export default function ToolsMarketplaceDialog({
         return;
       }
       const wasSelected = selectedIds.has(itemKey(item));
-      /** An unselected, toolless MCP server normally needs its setup dialog.
-       *  An authorized request-scoped server is already ready and attaches via
-       *  its runtime wildcard; a selected toolless server must remain removable. */
+      /** Ready servers can resolve their tools with user credentials at runtime,
+       * even when the instance catalog is empty. Unready servers still need setup;
+       * a selected toolless server must remain removable. */
       if (
         item.kind === 'mcp' &&
         item.toolCount === 0 &&
         !wasSelected &&
-        !(item.server.requestScoped === true && item.server.isReadyForAgent === true)
+        !(item.server.isReadyForAgent ?? item.server.isConnected)
       ) {
         setDetailItem(item);
         return;

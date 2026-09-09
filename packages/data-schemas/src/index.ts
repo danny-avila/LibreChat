@@ -80,9 +80,9 @@ export {
   AUDIT_ACTION_CATEGORY,
 } from './types/admin';
 export { GENESIS_HASH, PLATFORM_CHAIN_KEY } from './schema/auditLog';
-export { default as logger } from './config/winston';
+export { default as logger, baseLogFormat } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';
-export { redactMessage } from './config/parsers';
+export { jsonTruncateFormat, redactMessage } from './config/parsers';
 export {
   tenantStorage,
   getTenantId,
@@ -99,6 +99,7 @@ export {
   MCPServerNameMigrationError,
   createMCPAuthorityLookupIndexes,
   dropSupersededTenantIndexes,
+  migrateTenantIndexes,
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,
 } from './migrations';

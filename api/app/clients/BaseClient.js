@@ -18,12 +18,15 @@ const {
   assertModelBoundProviderContent,
   collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
+  isModelBoundAttachmentFile,
 } = require('@librechat/api');
 const {
   Constants,
   FileSources,
   Tools,
+  ErrorTypes,
   ContentTypes,
+  isCompactedLeaf,
   excludedKeys,
   EModelEndpoint,
   mergeFileConfig,
@@ -35,6 +38,9 @@ const {
   HITL_MESSAGE_FILTER_FIELDS,
   getEndpointFileConfig,
   stripReasoningLabelMetadata,
+  resolveUploadLLMDeliveryPath,
+  isSpeechProviderConfigured,
+  resolveUseResponsesApi,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -437,6 +443,10 @@ class BaseClient {
 
     const [overrideConvoId, overrideUserMessageId] = this.processOverideIds();
     const { isEdited, isContinued } = opts;
+    if (opts.isCompaction === true) {
+      /** The leaf stands in for the user message and is already persisted. */
+      this.skipSaveUserMessage = true;
+    }
     const user = opts.user ?? null;
     this.user = user;
     const saveOptions = this.getSaveOptions();
@@ -496,6 +506,64 @@ class BaseClient {
     };
   }
 
+  /**
+   * The message a compaction turn hangs off: the branch's leaf, presented in
+   * the user-message slot so the response parents onto it and every consumer
+   * of `userMessage` (progress, job metadata, the abort path) keeps working.
+   * Identity fields only: the row stays in history untouched, and the object
+   * mirrored into job metadata must not carry the leaf's full content.
+   * @param {string} parentMessageId
+   * @returns {TMessage}
+   */
+  getCompactionAnchor(parentMessageId) {
+    const leaf = this.currentMessages[this.currentMessages.length - 1];
+    if (leaf == null || leaf.messageId !== parentMessageId) {
+      throw Object.assign(new Error('The message to compact up to was not found.'), {
+        statusCode: 404,
+        code: 'COMPACTION_ANCHOR_NOT_FOUND',
+      });
+    }
+    if (isCompactedLeaf(leaf)) {
+      /** Typed so a stream that already started renders localized copy. */
+      throw Object.assign(
+        new Error(
+          JSON.stringify({
+            type: ErrorTypes.COMPACTION_SKIPPED,
+            reason: 'nothing_to_summarize',
+          }),
+        ),
+        { statusCode: 409, code: 'NOTHING_TO_COMPACT' },
+      );
+    }
+    return {
+      messageId: leaf.messageId,
+      parentMessageId: leaf.parentMessageId,
+      conversationId: leaf.conversationId,
+      isCreatedByUser: leaf.isCreatedByUser === true,
+      text: '',
+    };
+  }
+
+  /**
+   * The message the turn hangs off: a fresh user message, the edited message
+   * already in history, or (for a compaction) the branch's leaf.
+   * @returns {TMessage}
+   */
+  resolveStartUserMessage({ opts, message, userMessageId, parentMessageId, conversationId }) {
+    if (opts.isCompaction) {
+      return this.getCompactionAnchor(parentMessageId);
+    }
+    if (opts.isEdited) {
+      return this.currentMessages[this.currentMessages.length - 2];
+    }
+    return this.createUserMessage({
+      messageId: userMessageId,
+      parentMessageId,
+      conversationId,
+      text: message,
+    });
+  }
+
   async handleStartMethods(message, opts) {
     const {
       user,
@@ -509,14 +577,13 @@ class BaseClient {
     } = await this.setMessageOptions(opts);
     this.options.startupTelemetry?.mark('history_loaded');
 
-    const userMessage = opts.isEdited
-      ? this.currentMessages[this.currentMessages.length - 2]
-      : this.createUserMessage({
-          messageId: userMessageId,
-          parentMessageId,
-          conversationId,
-          text: message,
-        });
+    const userMessage = this.resolveStartUserMessage({
+      opts,
+      message,
+      userMessageId,
+      parentMessageId,
+      conversationId,
+    });
 
     /**
      * Attach quoted excerpts (the "Add to chat" selections from `req.body.quotes`)
@@ -526,7 +593,7 @@ class BaseClient {
      * merged into the model-facing text later, per message, in `buildMessages`,
      * keeping the stored `text` clean while the count stays consistent.
      */
-    if (!opts.isEdited) {
+    if (!opts.isEdited && !opts.isCompaction) {
       const referencedQuotes = getReferencedQuotes(this.options.req?.body?.quotes);
       if (referencedQuotes != null) {
         userMessage.quotes = referencedQuotes;
@@ -728,7 +795,7 @@ class BaseClient {
         }
       }
       this.continued = true;
-    } else {
+    } else if (opts.isCompaction !== true) {
       this.currentMessages.push(userMessage);
     }
 
@@ -770,7 +837,8 @@ class BaseClient {
     this.assertBuiltModelBoundContent(payload);
     this.options.startupTelemetry?.mark('messages_built');
 
-    if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
+    /** A compaction anchor is the persisted leaf, whose own count must stay. */
+    if (tokenCountMap && tokenCountMap[userMessage.messageId] && opts.isCompaction !== true) {
       userMessage.tokenCount = tokenCountMap[userMessage.messageId];
       logger.debug('[BaseClient] userMessage', {
         messageId: userMessage.messageId,
@@ -1091,6 +1159,7 @@ class BaseClient {
     }
 
     if (
+      opts.isCompaction !== true &&
       this.contextMeta?.calibrationRatio > 0 &&
       this.contextMeta.calibrationRatio !== 1 &&
       userMessage.tokenCount > 0
@@ -1173,46 +1242,48 @@ class BaseClient {
       parentMessageId,
       mapMethod,
     });
+    if (this.shouldSummarize) {
+      for (let i = _messages.length - 1; i >= 0; i--) {
+        const msg = _messages[i];
+        if (!msg) {
+          continue;
+        }
 
-    _messages = await this.addPreviousAttachments(_messages);
+        const summaryBlock = BaseClient.findSummaryContentBlock(msg);
+        if (summaryBlock) {
+          this.previous_summary = {
+            ...msg,
+            summary: BaseClient.getSummaryText(summaryBlock),
+            summaryTokenCount: summaryBlock.tokenCount,
+          };
+          break;
+        }
 
-    if (!this.shouldSummarize) {
-      return _messages;
-    }
-
-    for (let i = _messages.length - 1; i >= 0; i--) {
-      const msg = _messages[i];
-      if (!msg) {
-        continue;
+        if (msg.summary) {
+          this.previous_summary = msg;
+          break;
+        }
       }
 
-      const summaryBlock = BaseClient.findSummaryContentBlock(msg);
-      if (summaryBlock) {
-        this.previous_summary = {
-          ...msg,
-          summary: BaseClient.getSummaryText(summaryBlock),
-          summaryTokenCount: summaryBlock.tokenCount,
-        };
-        break;
-      }
-
-      if (msg.summary) {
-        this.previous_summary = msg;
-        break;
-      }
-    }
-
-    if (this.previous_summary) {
-      const { messageId, summary, tokenCount, summaryTokenCount } = this.previous_summary;
-      logger.debug('[BaseClient] Previous summary:', {
-        messageId,
-        summary,
-        tokenCount,
-        summaryTokenCount,
+      _messages = this.constructor.getMessagesForConversation({
+        messages,
+        parentMessageId,
+        mapMethod,
+        summary: true,
       });
+
+      if (this.previous_summary) {
+        const { messageId, summary, tokenCount, summaryTokenCount } = this.previous_summary;
+        logger.debug('[BaseClient] Previous summary:', {
+          messageId,
+          summary,
+          tokenCount,
+          summaryTokenCount,
+        });
+      }
     }
 
-    return _messages;
+    return this.addPreviousAttachments(_messages);
   }
 
   /**
@@ -1236,12 +1307,25 @@ class BaseClient {
     }
 
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
+    const req = options?.req;
+    if (
+      req?.config?.interfaceConfig?.retentionMode === 'all' &&
+      req?.config?.interfaceConfig?.generalChatRetention !== undefined &&
+      !Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
+    ) {
+      req.resolvedConversation = await db.getConvo(req.user.id, message.conversationId);
+    }
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    const resolvedRetention = hasResolvedConversation ? req.resolvedConversation : null;
     const reqCtx = {
-      userId: options?.req?.user?.id,
+      userId: req?.user?.id,
       isTemporary:
-        options?.req?._agentEventBindingRetention?.isTemporary ?? options?.req?.body?.isTemporary,
-      expiredAt: options?.req?._agentEventBindingRetention?.expiredAt,
-      interfaceConfig: options?.req?.config?.interfaceConfig,
+        req?._agentEventBindingRetention?.isTemporary ??
+        resolvedRetention?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
+      interfaceConfig: req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
       reqCtx,
@@ -1273,19 +1357,15 @@ class BaseClient {
         ? createdAtOnInsert
         : undefined;
 
-    const req = options?.req;
     const skippedExistingConvoLookup = this.fetchedConvo === true;
-    const hasResolvedConversation =
-      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
     let existingConvo = null;
     if (!skippedExistingConvoLookup && hasResolvedConversation) {
       existingConvo = req.resolvedConversation;
     } else if (!skippedExistingConvoLookup) {
       existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
     }
-    if (hasResolvedConversation) {
-      delete req.resolvedConversation;
-    }
+    // Keep the authenticated conversation available for response, abort, and retry saves.
+    // fetchedConvo already prevents repeating the conversation initialization work.
     const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
 
     const unsetFields = {};
@@ -1317,9 +1397,14 @@ class BaseClient {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
+      initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
       ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
+
+    if (req != null && conversation != null) {
+      req.resolvedConversation = conversation;
+    }
 
     return { message: savedMessage, conversation };
   }
@@ -1638,6 +1723,16 @@ class BaseClient {
     return await this.sendCompletion(payload, opts);
   }
 
+  /** Whether this turn talks to the Responses API, which is what lets Azure carry a
+   *  document natively. A saved agent holds it in its parameters and a plain conversation
+   *  in its model options, and both readers of it have been wrong by consulting one. */
+  usesResponsesApi() {
+    return resolveUseResponsesApi(
+      this.options.agent?.model_parameters?.useResponsesApi,
+      this.modelOptions?.useResponsesApi,
+    );
+  }
+
   async addDocuments(message, attachments) {
     const documentResult = await encodeAndFormatDocuments(
       this.options.req,
@@ -1645,7 +1740,7 @@ class BaseClient {
       {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
-        useResponsesApi: this.options.agent?.model_parameters?.useResponsesApi,
+        useResponsesApi: this.usesResponsesApi(),
         model: this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
@@ -1695,8 +1790,9 @@ class BaseClient {
    * @returns {Promise<void>}
    */
   async addFileContextToMessage(message, attachments) {
+    const textAttachments = this.getTextContextAttachments(attachments);
     const fileContext = await extractFileContext({
-      attachments,
+      attachments: textAttachments,
       req: this.options?.req,
       tokenCountFn: (text) => countTokens(text),
     });
@@ -1704,6 +1800,44 @@ class BaseClient {
     if (fileContext) {
       message.fileContext = fileContext;
     }
+  }
+
+  getTextContextAttachments(attachments) {
+    return attachments.filter((file) => {
+      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      /* Records predating delivery paths keep legacy extraction. Current routing is
+       * authoritative for inferred uploads, so native provider bytes are not also
+       * injected as extracted text after a provider handoff. */
+      return deliveryPath == null || deliveryPath === 'text';
+    });
+  }
+
+  /** Re-resolves an inferred upload route against the provider handling this turn. */
+  getAttachmentDeliveryPath(file) {
+    if (!this._mergedFileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
+      /* Agent file policy is configured under the endpoint it names, not the client
+       * family initialization may rewrite it to. */
+      const agentEndpoint = this.options.agent?.endpoint ?? this.options.agent?.provider;
+      this._deliveryEndpoint = agentEndpoint ?? this.options.endpoint;
+      this._endpointFileConfig = getEndpointFileConfig({
+        fileConfig: this._mergedFileConfig,
+        endpoint: this._deliveryEndpoint,
+        endpointType: agentEndpoint != null ? undefined : this.options.endpointType,
+      });
+    }
+
+    return file.llmDeliveryPath == null || file.metadata?.destinationChosen === true
+      ? file.llmDeliveryPath
+      : resolveUploadLLMDeliveryPath({
+          /* Conversion changes the stored type, so use the type routing originally saw. */
+          mimeType: file.metadata?.routingMimeType ?? file.type,
+          endpointConfig: this._endpointFileConfig,
+          fileConfig: this._mergedFileConfig,
+          endpoint: this._deliveryEndpoint,
+          useResponsesApi: this.usesResponsesApi(),
+          sttConfigured: isSpeechProviderConfigured(this.options.req?.config?.speech?.stt),
+        });
   }
 
   async processAttachments(message, attachments) {
@@ -1715,20 +1849,14 @@ class BaseClient {
     };
 
     const allFiles = [];
-
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
-    if (!this._mergedFileConfig) {
-      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
-      const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
-      this._endpointFileConfig = getEndpointFileConfig({
-        fileConfig: this._mergedFileConfig,
-        endpoint,
-        endpointType: this.options.endpointType,
-      });
-    }
-
+    /* The stored path records what upload time inferred from the endpoint it saw, and this
+     * turn may be running somewhere else: audio stored as `provider` under Google reaches
+     * an encoder that emits nothing for OpenAI, delivering neither media nor text. An
+     * explicit chooser decision is the user's and survives, and a record predating the
+     * field keeps its legacy handling. */
     for (const file of attachments) {
       /** @type {FileSources} */
       const source = file.source ?? FileSources.local;
@@ -1736,11 +1864,20 @@ class BaseClient {
         allFiles.push(file);
         continue;
       }
+      const deliveryPath = this.getAttachmentDeliveryPath(file);
+      if (deliveryPath === 'text' || deliveryPath === 'none') {
+        allFiles.push(file);
+        continue;
+      }
+      /* An explicit `provider` path is authoritative: lazy provisioning stamps
+       * `embedded`/`codeEnvRef` on files that are still meant for the model, so the
+       * legacy tool-provisioning exclusion only applies to records without one. */
       if (
-        file.embedded === true ||
-        file.metadata?.codeEnvRef != null ||
-        file.metadata?.codeEnvRefs != null ||
-        file.metadata?.fileIdentifier != null
+        deliveryPath !== 'provider' &&
+        (file.embedded === true ||
+          file.metadata?.codeEnvRef != null ||
+          file.metadata?.codeEnvRefs != null ||
+          file.metadata?.fileIdentifier != null)
       ) {
         allFiles.push(file);
         continue;
@@ -1830,14 +1967,66 @@ class BaseClient {
       historicalFileState.fileIds,
       this.options.req?.user,
     );
+    const nonSteerReplayFileIds = collectModelBoundHistoricalFileIdState(
+      _messages.map((message) => ({
+        files: message.files,
+        content: Array.isArray(message.content)
+          ? message.content.filter((part) => part?.type !== ContentTypes.STEER)
+          : message.content,
+      })),
+    ).fileIds.filter((fileId) => !contextSeen.has(fileId));
+    const steerReplayFileIds = [];
+    for (const message of _messages) {
+      if (!Array.isArray(message?.content)) {
+        continue;
+      }
+      for (const part of message.content) {
+        if (part?.type !== ContentTypes.STEER || !Array.isArray(part.files)) {
+          continue;
+        }
+        for (const file of part.files) {
+          if (typeof file?.file_id === 'string' && file.file_id.length > 0) {
+            steerReplayFileIds.push(file.file_id);
+          }
+        }
+      }
+    }
     for (const file of files) {
       if (file?.file_id) {
         authorizedFilesById.set(file.file_id, file);
       }
     }
+    let admittedHistoricalFileIds;
+    if (typeof this.assertHistoricalAttachmentLimits === 'function') {
+      const admittedHistoricalFiles = await this.assertHistoricalAttachmentLimits(
+        [...nonSteerReplayFileIds, ...steerReplayFileIds]
+          .map((fileId) => authorizedFilesById.get(fileId))
+          .filter((file) => file != null && isModelBoundAttachmentFile(file)),
+      );
+      admittedHistoricalFileIds = new Set(
+        (admittedHistoricalFiles ?? []).map((file) => file?.file_id).filter(Boolean),
+      );
+    }
+    this.modelBoundHistoricalSteerFiles = steerReplayFileIds
+      .map((fileId) => authorizedFilesById.get(fileId))
+      .filter(
+        (file) =>
+          file != null &&
+          isModelBoundAttachmentFile(file) &&
+          (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id)),
+      );
     /** Owner-scoped docs for THIS turn, including steer-part refs — the steer
      *  replay stamp consumes this instead of issuing a second query. */
     this.authorizedHistoricalFiles = authorizedFilesById;
+    this.authorizedHistoricalReplayFiles = new Map(
+      files
+        .filter(
+          (file) =>
+            file?.file_id &&
+            (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id)),
+        )
+        .map((file) => [file.file_id, file]),
+    );
 
     /**
      *
@@ -1858,7 +2047,10 @@ class BaseClient {
             continue;
           }
           const authorizedFile = authorizedFilesById.get(file.file_id);
-          if (authorizedFile) {
+          if (
+            authorizedFile &&
+            (!admittedHistoricalFileIds || admittedHistoricalFileIds.has(file.file_id))
+          ) {
             contextFiles.push(authorizedFile);
             contextSeen.add(file.file_id);
           }
@@ -1889,12 +2081,17 @@ class BaseClient {
         return message;
       }
 
-      await Promise.all([
+      const [, processedFiles] = await Promise.all([
         this.addFileContextToMessage(message, contextFiles),
         this.processAttachments(message, contextFiles),
       ]);
 
-      this.message_file_map[message.messageId] = contextFiles;
+      const processedFileIds = new Set(
+        (processedFiles ?? []).map((file) => file?.file_id).filter(Boolean),
+      );
+      this.message_file_map[message.messageId] = contextFiles.filter(
+        (file) => processedFileIds.has(file?.file_id) && isModelBoundAttachmentFile(file),
+      );
       return message;
     };
 

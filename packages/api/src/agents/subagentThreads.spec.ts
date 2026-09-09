@@ -351,6 +351,40 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('inherits the parent retention deadline across the child transcript lifecycle', async () => {
+    const userId = 'retained-subagent-user';
+    const parentConversationId = randomUUID();
+    const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+    await methods.saveConvo(
+      { userId, isTemporary: true, expiredAt },
+      {
+        conversationId: parentConversationId,
+        endpoint: EModelEndpoint.agents,
+        title: 'Retained parent thread',
+        agent_id: 'parent-agent',
+      },
+    );
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+
+    const started = store.start(taskRequest(config.scopeId));
+    await waitForSettled(store, config.scopeId, started);
+    const threadId = requireThreadId(started);
+    const [conversation, messages] = await Promise.all([
+      methods.getConvo(userId, threadId),
+      methods.getMessages({ user: userId, conversationId: threadId }),
+    ]);
+
+    expect(conversation).toMatchObject({ isTemporary: true, expiredAt });
+    expect(messages).toHaveLength(2);
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+      ]),
+    );
+  });
+
   it('registers a host-safe wakeup before child provider work begins', async () => {
     const userId = 'wakeup-user';
     const parentConversationId = randomUUID();
@@ -1224,7 +1258,12 @@ describe('SubagentThreadTaskStore', () => {
         return methods.getMessages(...args);
       }),
     };
-    const options = { leaseTtlMs: 500, leaseHeartbeatMs: 50 };
+    /** The heartbeat fences itself when a renewal commits after the deadline it was
+     * issued against, so the TTL is this test's tolerance for runner jitter, not just
+     * its pace. Keep it well above the scheduling stalls a loaded shard produces: a
+     * half-second lease turns an ordinary pause into a lapse and the prepared run is
+     * refused instead of executed. */
+    const options = { leaseTtlMs: 2_000, leaseHeartbeatMs: 50 };
     const firstWorker = new SubagentThreadTaskStore(slowMethods, options);
     const secondWorker = new SubagentThreadTaskStore(methods, options);
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
@@ -1250,8 +1289,9 @@ describe('SubagentThreadTaskStore', () => {
     const heartbeatIndex =
       heartbeatCall == null ? -1 : intervalSpy.mock.calls.indexOf(heartbeatCall);
     const heartbeat = intervalSpy.mock.results[heartbeatIndex]?.value as NodeJS.Timeout | undefined;
-    const warningIndex = timeoutSpy.mock.calls.length - 1;
-    expect(timeoutSpy.mock.calls[warningIndex]?.[1]).toBe(5_000);
+    const warningCall = [...timeoutSpy.mock.calls].reverse().find(([, delay]) => delay === 5_000);
+    const warningIndex = warningCall == null ? -1 : timeoutSpy.mock.calls.lastIndexOf(warningCall);
+    expect(warningCall?.[1]).toBe(5_000);
     const warning = timeoutSpy.mock.results[warningIndex]?.value as NodeJS.Timeout | undefined;
     expect(heartbeat?.hasRef()).toBe(true);
     expect(warning?.hasRef()).toBe(true);

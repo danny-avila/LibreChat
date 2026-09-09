@@ -1,5 +1,6 @@
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
@@ -8,6 +9,16 @@ export type FileOwnerScope = {
   userId: string;
   tenantId?: string | null;
 };
+
+export type ExpiredFileQueryOptions = {
+  now?: Date;
+};
+
+function assertValidCodeEnvironmentRouteKey(routeKey: string): void {
+  if (routeKey.length === 0 || routeKey.includes('.') || routeKey.startsWith('$')) {
+    throw new Error(`Invalid code environment route key "${routeKey}"`);
+  }
+}
 
 function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   filter: T,
@@ -35,7 +46,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     _sortOptions?: Record<string, SortOrder> | null,
     selectFields?: Record<string, 0 | 1> | string | null,
   ) => Promise<IMongoFile[] | null>;
-  getExpiredFiles: (limit?: number, now?: Date) => Promise<IMongoFile[]>;
+  getExpiredFiles: (limit?: number, options?: ExpiredFileQueryOptions) => Promise<IMongoFile[]>;
+  incrementFileDeletionAttempts: (file_id: string) => Promise<number>;
+  deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
   getToolFilesByIds: (
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
@@ -47,6 +60,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     ownerScope?: FileOwnerScope,
   ) => Promise<IMongoFile[]>;
   getUserCodeFiles: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<IMongoFile[]>;
+  getDeferredProvisionFiles: (
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+    resources?: {
+      code?: boolean;
+      search?: boolean;
+      codeRouteKey?: string;
+      searchNamespaces?: string[];
+      hydrateProvisioned?: boolean;
+    },
+  ) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
     filename: string;
     conversationId: string;
@@ -60,6 +84,16 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     data: Partial<IMongoFile> & { file_id: string },
     extraFilter?: FilterQuery<IMongoFile>,
   ) => Promise<IMongoFile | null>;
+  updateFileCodeEnvRef: (data: {
+    file_id: string;
+    routeKey: string;
+    ref: CodeEnvRef;
+    legacyRef?: CodeEnvRef;
+  }) => Promise<IMongoFile | null>;
+  addFileEmbeddedEntity: (data: {
+    file_id: string;
+    entityId: string;
+  }) => Promise<IMongoFile | null>;
   updateFileUsage: (data: {
     file_id: string;
     inc?: number;
@@ -130,12 +164,78 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
 
-  async function getExpiredFiles(limit = 100, now: Date = new Date()): Promise<IMongoFile[]> {
+  /**
+   * Expired files the sweep may attempt right now, oldest deadline first.
+   *
+   * `deletionRetryAt` is the only thing holding a file back: one that keeps
+   * failing is deferred on a growing backoff, and one that exhausts its
+   * attempts is parked far enough out to stop crowding the batch. Without
+   * it a permanently undeletable file sorts to the front of this bounded
+   * batch on every pass and starves every file that expired after it.
+   *
+   * The deferral is deliberately a deadline rather than a flag, so nothing
+   * here is ever excluded for good. File records are reused across content
+   * lifecycles — a code-output row is repurposed for a repeated
+   * `(filename, conversationId)`, keeping fields it was not asked to change
+   * — so bookkeeping that permanently excluded a row would eventually
+   * strand a *different* object than the one it was recorded against. A
+   * deadline can only ever delay that; it cannot lose it.
+   *
+   * An absent field means "never attempted", so records written before it
+   * existed remain eligible.
+   */
+  async function getExpiredFiles(
+    limit = 100,
+    { now = new Date() }: ExpiredFileQueryOptions = {},
+  ): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return await File.find({ expiredAt: { $ne: null, $lte: now } })
+    return await File.find({
+      expiredAt: { $ne: null, $lte: now },
+      $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }],
+    })
       .sort({ expiredAt: 1 })
       .limit(limit)
       .lean<IMongoFile[]>();
+  }
+
+  /**
+   * Records one failed sweep deletion and returns the file's resulting
+   * consecutive-failure count.
+   *
+   * The count comes back from the increment itself rather than being
+   * re-derived from the caller's snapshot. Two nodes sweeping the same file
+   * would otherwise each read the same value and each believe itself to be
+   * the same attempt, pushing the stored count past the give-up cap while
+   * both still think it is below — so the give-up would never be reported.
+   * Returning it here gives every caller a distinct attempt number.
+   */
+  async function incrementFileDeletionAttempts(file_id: string): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const file = await File.findOneAndUpdate(
+      { file_id },
+      { $inc: { deletionAttempts: 1 } },
+      /** `timestamps: false`: sweep bookkeeping is not a content write.
+       *  `processCodeOutput` falls back to `updatedAt` as the writer-order
+       *  stamp for records predating `metadata.sourceDispatchedAt`, so
+       *  bumping it here would make a failed sweep look like a newer writer
+       *  and a background harvest would drop its attachment. Same reasoning
+       *  as `claimCodeFile`. */
+      { new: true, projection: { deletionAttempts: 1 }, timestamps: false },
+    ).lean<Pick<IMongoFile, 'deletionAttempts'> | null>();
+
+    return file?.deletionAttempts ?? 0;
+  }
+
+  /**
+   * Holds a file back from the sweep until `deletionRetryAt`.
+   *
+   * Written with `$max` so a deferral can only ever move later. A node that
+   * computed a shorter backoff from a lower attempt count cannot pull the
+   * file forward past a longer one another node already committed.
+   */
+  async function deferExpiredFile(file_id: string, deletionRetryAt: Date): Promise<void> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    await File.updateOne({ file_id }, { $max: { deletionRetryAt } }, { timestamps: false }).exec();
   }
 
   /**
@@ -264,6 +364,136 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     } catch (error) {
       logger.error('[getCodeGeneratedFiles] Error retrieving code generated files:', error);
       return [];
+    }
+  }
+
+  /**
+   * Retrieves conversation attachments that were accepted but never provisioned, so a
+   * later turn can still queue them.
+   *
+   * Lazy provisioning defers the upload to the sandbox or vector store until a tool
+   * actually runs. The other hydration queries only return files that already carry
+   * the result of that work: `getToolFilesByIds` matches `embedded: true` for
+   * file_search, and `getUserCodeFiles` requires an existing `codeEnvRef`. A file
+   * whose tool was never called on its upload turn therefore satisfies neither and
+   * disappears. This fills exactly that gap: attachments with no code reference and
+   * no embedding.
+   *
+   * Kept separate from delivery hydration deliberately. These records are candidates
+   * for provisioning only; feeding them back into the model's attachments would
+   * re-send earlier uploads on every subsequent turn.
+   *
+   * Selection is per requested resource, not per file. A file embedded for an earlier
+   * file_search agent still has no code reference, so a later execute_code agent must
+   * see it; requiring both results to be absent would hide exactly that case.
+   *
+   * @param fileIds - Candidate file IDs from the current thread
+   * @param ownerScope - Authenticated owner scope
+   * @param resources - Which provisioning results the current agent needs
+   * @returns Attachments still awaiting a result the current agent needs
+   */
+  async function getDeferredProvisionFiles(
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+    resources: {
+      code?: boolean;
+      search?: boolean;
+      codeRouteKey?: string;
+      searchNamespaces?: string[];
+      /** Set when no other query hydrates already-provisioned files this turn. */
+      hydrateProvisioned?: boolean;
+    } = {
+      code: true,
+      search: true,
+    },
+  ): Promise<IMongoFile[]> {
+    if (!fileIds || fileIds.length === 0) {
+      return [];
+    }
+
+    const missingConditions: FilterQuery<IMongoFile>[] = [];
+    /* When no other query hydrates this turn's files, every eligible record has to be
+     * loaded, not only the unprovisioned ones: priming adds the provisioned ones to the
+     * tool resources, and the code probe screens a default-route session for liveness.
+     * Left behind, a file the previous turn provisioned successfully is the one that
+     * goes missing, while one that failed is retried. This holds for search as much as
+     * for code: an attachment embedded on an earlier turn is hydrated by nothing else,
+     * so the next search runs with no reference to it. */
+    const hydrateEverything =
+      resources.hydrateProvisioned === true &&
+      (resources.code === true || resources.search === true);
+    if (resources.code && !hydrateEverything) {
+      /* A reference for another deployment does not make the file usable here, and with
+       * resendFiles off nothing downstream re-reads the record to notice, so eligibility
+       * is judged against the route this turn will actually execute on. The legacy
+       * pointer counts only when it resolves to that same route, mirroring how
+       * mergeCodeEnvRef keys it: executionRouteKey, then executionProfile, then default. */
+      const routeKey = resources.codeRouteKey ?? 'default';
+      assertValidCodeEnvironmentRouteKey(routeKey);
+      const usableForRoute: FilterQuery<IMongoFile>[] = [
+        { [`metadata.codeEnvRefs.${routeKey}`]: { $exists: true } },
+        { 'metadata.codeEnvRef.executionRouteKey': routeKey },
+        {
+          'metadata.codeEnvRef': { $exists: true },
+          'metadata.codeEnvRef.executionRouteKey': { $exists: false },
+          'metadata.codeEnvRef.executionProfile': routeKey,
+        },
+      ];
+      if (routeKey === 'default') {
+        usableForRoute.push({
+          'metadata.codeEnvRef': { $exists: true },
+          'metadata.codeEnvRef.executionRouteKey': { $exists: false },
+          'metadata.codeEnvRef.executionProfile': { $in: [null, 'default'] },
+        });
+      }
+      missingConditions.push({ $nor: usableForRoute });
+    }
+    if (resources.search && !hydrateEverything) {
+      /* The record-wide flag only says the file was embedded somewhere, so for a record
+       * whose vectors live in an agent namespace it cannot answer whether the namespace
+       * this turn searches has them. Membership is not known here, so a record missing
+       * from any candidate namespace is loaded and judged later, where it is. */
+      const namespaces = resources.searchNamespaces ?? [];
+      if (namespaces.length === 0) {
+        missingConditions.push({ embedded: { $ne: true } });
+      } else {
+        missingConditions.push({
+          $or: [
+            { context: { $ne: FileContext.agents }, embedded: { $ne: true } },
+            ...namespaces.map((namespace) => ({
+              context: FileContext.agents,
+              'metadata.embeddedEntities': { $ne: namespace },
+            })),
+          ],
+        });
+      }
+    }
+    if (!hydrateEverything && missingConditions.length === 0) {
+      return [];
+    }
+
+    try {
+      const filter = withOwnerScope(
+        {
+          file_id: { $in: fileIds },
+          context: { $ne: FileContext.execute_code },
+          ...(hydrateEverything ? {} : { $or: missingConditions }),
+        },
+        ownerScope,
+      );
+
+      const selectFields: SelectProjection = { text: 0 };
+      const sortOptions = { createdAt: 1 as SortOrder };
+
+      const results = await getFiles(filter, sortOptions, selectFields);
+      return results ?? [];
+    } catch (error) {
+      /* An empty list here is indistinguishable from nothing needing provisioning, so the
+       * turn would build no provisioning state and let the tool run without the
+       * attachment. The callback aborts on missing inputs precisely to avoid that, so a
+       * read failure has to surface rather than be flattened into a benign answer. */
+      logger.error('[getDeferredProvisionFiles] Error retrieving deferred files:', error);
+      throw error;
     }
   }
 
@@ -412,6 +642,64 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
+  }
+
+  /**
+   * Records one code-environment route pointer without rewriting the rest of `metadata`.
+   * Agents provisioning the same file to different deployments write concurrently, and a
+   * whole-object `$set` built from each caller's pre-provisioning snapshot would drop the
+   * sibling route that landed in between.
+   *
+   * @param data - The file, its route key, the pointer to store, and an optional legacy pointer
+   * @returns A promise that resolves to the updated file document, or null when absent
+   */
+  async function updateFileCodeEnvRef(data: {
+    file_id: string;
+    routeKey: string;
+    ref: CodeEnvRef;
+    legacyRef?: CodeEnvRef;
+  }): Promise<IMongoFile | null> {
+    const { file_id, routeKey, ref, legacyRef } = data;
+    /* Route keys become dotted update paths, so a key carrying `.` or a leading `$` would
+     * write somewhere other than the intended entry. They come from server config, which
+     * makes a malformed one a configuration error worth surfacing. */
+    assertValidCodeEnvironmentRouteKey(routeKey);
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const update: Record<string, CodeEnvRef> = {
+      [`metadata.codeEnvRefs.${routeKey}`]: ref,
+    };
+    if (legacyRef) {
+      update['metadata.codeEnvRef'] = legacyRef;
+    }
+    return File.findOneAndUpdate(
+      { file_id },
+      { $set: update, $unset: { expiresAt: '' } },
+      { new: true },
+    ).lean<IMongoFile>();
+  }
+
+  /**
+   * Records that a file has been embedded into one vector namespace, without disturbing
+   * the namespaces already recorded. Agents that share a file record, as a duplicate does
+   * with its source, each need their own embedding.
+   *
+   * @param data - The file and the entity whose namespace now holds its vectors
+   * @returns A promise that resolves to the updated file document, or null when absent
+   */
+  async function addFileEmbeddedEntity(data: {
+    file_id: string;
+    entityId: string;
+  }): Promise<IMongoFile | null> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    return File.findOneAndUpdate(
+      { file_id: data.file_id },
+      {
+        $set: { embedded: true },
+        $addToSet: { 'metadata.embeddedEntities': data.entityId },
+        $unset: { expiresAt: '' },
+      },
+      { new: true },
+    ).lean<IMongoFile>();
   }
 
   /**
@@ -679,12 +967,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     findFileById,
     getFiles,
     getExpiredFiles,
+    incrementFileDeletionAttempts,
+    deferExpiredFile,
     getToolFilesByIds,
     getCodeGeneratedFiles,
     getUserCodeFiles,
+    getDeferredProvisionFiles,
     claimCodeFile,
     createFile,
     updateFile,
+    updateFileCodeEnvRef,
+    addFileEmbeddedEntity,
     updateFileUsage,
     deleteFile,
     deleteFiles,

@@ -9,19 +9,21 @@ const mockGetFlowStateManager = jest.fn();
 const mockGetMCPServersRegistry = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() },
   getTenantId: jest.fn(),
   webSearchKeys: [],
 }));
 
 jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
   Tools: {},
-  CacheKeys: { FLOWS: 'flows' },
   Constants: { mcp_delimiter: '_mcp_', mcp_prefix: 'mcp_' },
   FileSources: {},
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   MCPOAuthHandler: {
     generateFlowId: jest.fn((userId, serverName, tenantId) => {
       const flowId = `${userId}:${serverName}`;
@@ -139,6 +141,10 @@ function createRequest() {
 
 function setupMCPMocks() {
   const flowManager = {
+    acquireLease: jest.fn().mockResolvedValue({
+      generation: 1,
+      release: jest.fn().mockResolvedValue(undefined),
+    }),
     deleteFlow: jest.fn().mockResolvedValue(true),
   };
   const mcpManager = {
@@ -182,6 +188,10 @@ const storedOAuthBinding = {
 beforeEach(() => {
   jest.clearAllMocks();
   getTenantId.mockReturnValue(undefined);
+  mockFindToken.mockImplementation(async ({ type }) => ({
+    token: `encrypted-${type}`,
+    metadata: { credential_set_id: credentialSetId },
+  }));
 });
 
 describe('updateUserPluginsController MCP OAuth cleanup', () => {
@@ -228,8 +238,11 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(MCPTokenStorage.getClientInfoAndMetadata).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
-      findToken: mockFindToken,
+      findToken: expect.any(Function),
     });
+    expect(mcpManager.disconnectUserConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      MCPTokenStorage.getClientInfoAndMetadata.mock.invocationCallOrder[0],
+    );
     expect(MCPTokenStorage.deleteUserTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
@@ -401,7 +414,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
-      findToken: mockFindToken,
+      findToken: expect.any(Function),
     });
     expect(logger.warn).toHaveBeenCalledWith(
       '[maybeUninstallOAuthMCP] Unable to load OAuth tokens for test-server; clearing local token state.',
@@ -443,7 +456,7 @@ describe('updateUserPluginsController MCP OAuth cleanup', () => {
     expect(MCPTokenStorage.getTokens).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'test-server',
-      findToken: mockFindToken,
+      findToken: expect.any(Function),
     });
     expect(MCPTokenStorage.assertCredentialSetBinding).toHaveBeenCalledWith(
       'test-server',

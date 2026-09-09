@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { ChevronDown, CornerDownRight, Radio } from 'lucide-react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
 import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@librechat/client';
@@ -14,10 +14,11 @@ import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import { ElapsedTimer } from '~/components/Chat/Messages/Elapsed';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { showThinkingAtom } from '~/store/showThinking';
 import { useAgentsMapContext } from '~/Providers';
+import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import store from '~/store';
 
 const TRIGGER_LABELS = {
   parent_dispatch: 'com_ui_subagent_trigger_parent_dispatch',
@@ -114,6 +115,7 @@ function ExternalEventTrigger({
 }
 
 function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; fullWidth: boolean }) {
+  const showThinking = useAtomValue(showThinkingAtom);
   const localize = useLocalize();
   const label = localize(TRIGGER_LABELS[turn.trigger.kind]);
   const content = useMemo<TMessageContentParts[]>(
@@ -153,6 +155,7 @@ function TriggerMessage({ turn, fullWidth }: { turn: ChildConversationTurn; full
           messageId={`${turn.taskId}:trigger`}
           conversationId={null}
           isCreatedByUser={true}
+          showThinking={showThinking}
           isLast={false}
           isSubmitting={false}
           isLatestMessage={false}
@@ -277,7 +280,7 @@ export default function SubagentConversation({
   detailStateByTask?: ReadonlyMap<string, 'idle' | 'loading' | 'unavailable' | 'error'>;
   onLoadTurnDetails?: (taskId: string) => void;
 }) {
-  const fullWidth = useRecoilValue(store.maximizeChatSpace);
+  const { maximizeChatSpace: fullWidth } = useChatSurface();
   return (
     <div className="flex flex-col gap-6 py-4" data-subagent-conversation>
       {turns.map((turn) => (

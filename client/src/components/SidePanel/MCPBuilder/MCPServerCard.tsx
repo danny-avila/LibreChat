@@ -5,6 +5,7 @@ import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusI
 import type { MCPServerDefinition } from '~/hooks';
 import { useMCPServerManager, useLocalize } from '~/hooks';
 import { getStatusDotColor } from './MCPStatusBadge';
+import CustomIcon from '~/components/ui/CustomIcon';
 import MCPServerDialog from './MCPServerDialog';
 import MCPCardActions from './MCPCardActions';
 import { cn } from '~/utils';
@@ -99,11 +100,10 @@ export default function MCPServerCard({
         {/* Server Icon with Status Dot */}
         <div className="relative flex-shrink-0">
           {server.config?.iconPath ? (
-            <img
+            <CustomIcon
               src={server.config.iconPath}
-              className="size-8 rounded-lg object-cover"
+              className="size-8 rounded-lg object-cover text-text-primary"
               alt=""
-              aria-hidden="true"
             />
           ) : (
             <div className="flex size-8 items-center justify-center rounded-lg bg-surface-tertiary">

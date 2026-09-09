@@ -50,6 +50,52 @@ describe('theme registry', () => {
     expect(dark.appearance).toEqual(defaultAppearance);
   });
 
+  it('derives omitted code surfaces from the mode-specific legacy canvas', () => {
+    const theme = fromLegacyTheme(
+      {
+        'rgb-surface-primary-alt': '12 34 56',
+        'rgb-presentation': '210 211 212',
+      },
+      'legacy-code-reference',
+    );
+
+    expect(resolveTheme(theme, 'light').colors['rgb-surface-code']).toBe('12 34 56');
+    expect(resolveTheme(theme, 'dark').colors['rgb-surface-code']).toBe('210 211 212');
+  });
+
+  it('preserves explicit code surfaces instead of deriving them', () => {
+    const theme: ThemeDefinition = {
+      version: 1,
+      name: 'explicit-code-reference',
+      modes: {
+        light: {
+          colors: {
+            'rgb-surface-primary-alt': '12 34 56',
+            'rgb-surface-code': '65 43 21',
+          },
+        },
+        dark: {
+          colors: {
+            'rgb-presentation': '210 211 212',
+            'rgb-surface-code': '98 76 54',
+          },
+        },
+      },
+    };
+
+    expect(resolveTheme(theme, 'light').colors['rgb-surface-code']).toBe('65 43 21');
+    expect(resolveTheme(theme, 'dark').colors['rgb-surface-code']).toBe('98 76 54');
+  });
+
+  it('keeps the bundled code surfaces unchanged for the default appearances', () => {
+    expect(resolveTheme(libreChatTheme, 'light').colors['rgb-surface-code']).toBe(
+      defaultTheme['rgb-surface-code'],
+    );
+    expect(resolveTheme(libreChatTheme, 'dark').colors['rgb-surface-code']).toBe(
+      darkTheme['rgb-surface-code'],
+    );
+  });
+
   /** Themes predate the shimmer stops, so an omission means "not written yet",
    *  not "wants LibreChat's sweep". Filling it from the bundled base would light
    *  a white-text theme's in-flight labels in the stock near-black. */
@@ -86,6 +132,83 @@ describe('theme registry', () => {
     expect(resolveTheme(compactTheme, 'dark').colors['rgb-shimmer-base']).toBe(
       darkTheme['rgb-shimmer-base'],
     );
+  });
+
+  it('derives omitted muted text from a theme that restates tertiary text', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-muted-reference',
+        modes: { dark: { colors: { 'rgb-text-tertiary': '120 121 122' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-text-muted']).toBe('120 121 122');
+  });
+
+  it('preserves an explicit muted text color', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-muted-reference',
+        modes: {
+          light: {
+            colors: {
+              'rgb-text-tertiary': '120 121 122',
+              'rgb-text-muted': '90 91 92',
+            },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-text-muted']).toBe('90 91 92');
+  });
+
+  it('derives omitted chart widget colors from the previous panel roles', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-chart-widget-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-surface-primary': '20 21 22',
+              'rgb-border-light': '30 31 32',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-chart-widget-surface']).toBe('20 21 22');
+    expect(resolved.colors['rgb-chart-widget-stroke']).toBe('30 31 32');
+  });
+
+  it('preserves explicit chart widget colors', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-chart-widget-reference',
+        modes: {
+          dark: {
+            colors: {
+              'rgb-surface-primary': '20 21 22',
+              'rgb-border-light': '30 31 32',
+              'rgb-chart-widget-surface': '40 41 42',
+              'rgb-chart-widget-stroke': '50 51 52',
+            },
+          },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-chart-widget-surface']).toBe('40 41 42');
+    expect(resolved.colors['rgb-chart-widget-stroke']).toBe('50 51 52');
   });
 
   it('resolves provider brand tokens and lets a theme override them', () => {

@@ -16,6 +16,7 @@ export * from './Subagents';
 export * from './Tools';
 export * from './connection';
 export * from './Favorites';
+export * from './CodeEnvironments';
 export * from './mutations';
 export * from './prompts';
 export * from './queries';

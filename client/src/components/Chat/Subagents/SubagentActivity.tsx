@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
@@ -18,9 +18,10 @@ import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
+import { showThinkingAtom } from '~/store/showThinking';
+import { useChatSurface } from './surface';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import store from '~/store';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
 const CONTROL_ACTION_LABELS = {
@@ -140,7 +141,7 @@ export function SubagentActivityScrollSurface({
   const scrollButtonRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isSettled, setIsSettled] = useState(false);
-  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
+  const { showScrollButton: scrollButtonPreference, maximizeChatSpace } = useChatSurface();
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -193,6 +194,7 @@ export function SubagentActivityScrollSurface({
         <ScrollToBottom
           ref={scrollButtonRef}
           scrollHandler={scrollToBottom}
+          maximizeChatSpace={maximizeChatSpace}
           interactive={isSettled}
         />
       </CSSTransition>
@@ -323,6 +325,7 @@ export function SubagentActivityContent({
   onCancelControl?: (controlId: string) => void;
 }) {
   const localize = useLocalize();
+  const showThinking = useAtomValue(showThinkingAtom);
   const isSubmitting = isLiveSubagentStatus(activity.status);
   const parts = useMemo(() => activity.items.map(toContentPart), [activity.items]);
 
@@ -354,6 +357,7 @@ export function SubagentActivityContent({
         isCreatedByUser={false}
         isLast
         isSubmitting={isSubmitting}
+        showThinking={showThinking}
         isLatestMessage={isSubmitting}
       />
     );

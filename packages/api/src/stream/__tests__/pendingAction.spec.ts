@@ -279,6 +279,44 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(paused?.metadata.compactionSemanticIndex).toEqual(compactionSemanticIndex);
     });
 
+    test('persists context meta in the same transition as the pause', async () => {
+      const streamId = 'stream-pause-context-meta';
+      await manager.createJob(streamId, 'user-1');
+      const contextMeta = {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1 as const, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1 as const, budgetTokens: 50_000, masked: true }],
+      };
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId), { contextMeta })).toBe(
+        true,
+      );
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.metadata.contextMeta).toEqual(contextMeta);
+    });
+
+    test('clears the previous pause context meta when a re-pause has none', async () => {
+      const streamId = 'stream-pause-context-meta-cleared';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      const contextMeta = {
+        calibrationRatio: 1.25,
+        encoding: 'claude',
+        fading: { v: 1 as const, budgetTokens: 50_000, masked: true },
+        fadingTiers: [{ agentId: 'agent-123', v: 1 as const, budgetTokens: 50_000, masked: true }],
+      };
+
+      expect(await manager.approvals.pause(streamId, firstAction, { contextMeta })).toBe(true);
+      expect(await manager.approvals.resolve(streamId, firstAction.actionId)).toBe(true);
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      const repaused = await manager.getJob(streamId);
+      expect(repaused?.status).toBe('requires_action');
+      expect(repaused?.metadata.contextMeta).toBeUndefined();
+    });
+
     test('does not write a stale pause or discoveries onto a replacement job', async () => {
       const streamId = 'stream-pause-replaced';
       const original = await manager.createJob(streamId, 'user-1');
@@ -619,6 +657,20 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 
     test('returns false when the job does not exist', async () => {
       expect(await manager.approvals.pause('nonexistent', buildAction('nonexistent'))).toBe(false);
+    });
+
+    test('replacing a paused generation removes its approval and rejects a late decision', async () => {
+      const streamId = 'stream-replace-paused-generation';
+      const predecessor = await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId);
+      await manager.approvals.pause(streamId, action);
+      const replacement = await manager.createJob(streamId, 'user-1');
+
+      expect(replacement.createdAt).not.toBe(predecessor.createdAt);
+      expect(await manager.approvals.peek(streamId)).toBeNull();
+      expect((await manager.getResumeState(streamId))?.pendingAction).toBeUndefined();
+      expect(await manager.approvals.resolve(streamId, action.actionId)).toBe(false);
+      expect(await manager.getJobStatus(streamId)).toBe('running');
     });
 
     test('a predecessor interrupt cannot pause a replacement generation', async () => {

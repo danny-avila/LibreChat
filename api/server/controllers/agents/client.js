@@ -9,13 +9,14 @@ const {
   createRun,
   isEnabled,
   checkAccess,
-  buildToolSet,
+  buildRunToolSet,
   logToolError,
   sanitizeTitle,
   payloadParser,
   createSafeUser,
   initializeAgent,
   resolveConfigHeaders,
+  resolveRequestTenantId,
   countTokens,
   getBalanceConfig,
   omitTitleOptions,
@@ -41,6 +42,8 @@ const {
   resolveRecursionLimit,
   buildPendingAction,
   toClientPendingAction,
+  captureCodeExecutionApprovalBinding,
+  getCodeWorkspaceSelections,
   computeAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
@@ -49,15 +52,27 @@ const {
   getAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint,
   isHITLEnabled,
+  resolveToolApprovalPolicy,
   buildToolApprovalHooks,
+  buildToolApprovalExecutionConfig,
+  collectAttachedCodeEnvironmentAgentIds,
+  collectAttachedCodeEnvironmentPolicySettings,
+  buildAttachedCodeEnvironmentAdmissionHooks,
+  resolveAttachedCodeApprovalMode,
+  markNativeCodeToolApprovalRequests,
   agentRunUsesCheckpointer,
   canAgentGraphPause,
   getPluginHookSource,
   captureAgentCheckpointGeneration,
   isContentFilterError,
+  isStepLimitError,
   deleteAgentCheckpoint,
   LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY,
+  LIBRECHAT_CHECKPOINT_OWNER_KEY,
+  LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY,
+  LIBRECHAT_LEGACY_CHECKPOINT_KEY,
+  checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
   hydrateResumeRunSteps,
@@ -109,7 +124,15 @@ const {
   isSkillPrimeMessage,
   collectFileIds,
   processTextWithTokenLimit,
+  logAgentMemorySnapshot,
+  createAgentMemoryCallback,
+  assertAgentAttachmentLimits,
+  assertAgentAttachmentTopology,
+  isModelBoundAttachmentFile,
+  isAgentAttachmentLimitError,
+  isAttachmentObjectNotFoundError,
   buildAgentScopedContext,
+  buildAgentScopedAttachmentMap,
   buildAgentContextAttachmentsByAgentId,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
@@ -122,11 +145,14 @@ const {
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
   assertModelBoundContent,
+  filterFilesByEndpointRuntimeConfig,
   createModelBoundChatModelCallback: createModelBoundContentCallback,
   createInitialModelBoundAdmissionCallback,
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
+  isStatefulCodeEnvironmentToolName,
+  stampMcpServerIdentities,
   getDynamicToolContexts,
   getSafeErrorMetadata,
   createInitializedAgentContextFingerprint,
@@ -135,6 +161,13 @@ const {
   createCompactionSemanticIndexProjection,
   restoreCompactionSemanticIndexSnapshot,
   MAX_AGENT_CONTEXT_SKILLS,
+  isAgentFadingTier,
+  isAgentFadingTierEntries,
+  resolveRunContextMeta,
+  resolveRunFadingTiers,
+  createContextMetaPublisher,
+  selectRunContextMetaToPublish,
+  resolveToolRoleGrants,
 } = require('@librechat/api');
 const {
   Run,
@@ -152,7 +185,9 @@ const {
   UsageEvents,
   Permissions,
   VisionModes,
+  ErrorTypes,
   ContentTypes,
+  FileSources,
   ApprovalEvents,
   EModelEndpoint,
   PermissionTypes,
@@ -169,11 +204,17 @@ const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
+const { getAccessibleMCPServers } = require('~/server/services/MCP');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
-const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+const loadAgent = (params) =>
+  loadAgentFn(params, {
+    getAgent: db.getAgent,
+    getMCPServerTools,
+    getAccessibleMCPServers,
+  });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
@@ -197,7 +238,7 @@ function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
     return undefined;
   }
-  const { calibrationRatio, encoding } = contextMeta;
+  const { calibrationRatio, encoding, fading, fadingTiers } = contextMeta;
   if (
     !Number.isFinite(calibrationRatio) ||
     calibrationRatio < 0.5 ||
@@ -209,7 +250,117 @@ function normalizeEventActorContextMeta(contextMeta) {
   ) {
     throw new RangeError('Event actor context calibration is invalid');
   }
-  return { calibrationRatio, ...(encoding == null ? {} : { encoding }) };
+  if (fading != null && !isAgentFadingTier(fading)) {
+    throw new RangeError('Event actor context fading tier is invalid');
+  }
+  if (fadingTiers != null && !isAgentFadingTierEntries(fadingTiers)) {
+    throw new RangeError('Event actor context fading tiers are invalid');
+  }
+  return {
+    calibrationRatio,
+    ...(encoding == null ? {} : { encoding }),
+    ...(fading == null ? {} : { fading }),
+    ...(fadingTiers == null ? {} : { fadingTiers }),
+  };
+}
+
+/**
+ * Seeds for a new run from the previous run's contextMeta: the calibration
+ * ratio when the tokenizer encoding still matches, and the fading tiers, which
+ * are character-based and so seed regardless of encoding. The default agent's
+ * tier and the per-agent map are both passed; the SDK restores each agent from
+ * its own entry and falls back to the default tier for the first agent.
+ */
+/**
+ * Request values `langfuse.trace.conversationMetadataFields` may export.
+ * The model label rides the trace-only `options.traceContext`: the
+ * initialized agent's `model_parameters` drop it (`extractLibreChatParams`),
+ * and a top-level `modelLabel` option would also rename the assistant in
+ * formatted messages. A module function rather than a method so partial
+ * client contexts (tests, resume) need no prototype.
+ * @param {AgentClient['options'] | undefined} options
+ */
+function buildTraceContext(options) {
+  return {
+    endpoint: options?.endpoint,
+    endpointType: options?.endpointType,
+    modelLabel: options?.traceContext?.modelLabel ?? options?.modelLabel,
+    spec: options?.spec,
+  };
+}
+
+function resolveRunSeeds(client) {
+  const prevMeta = client.contextMeta;
+  if (prevMeta == null) {
+    return {};
+  }
+  const currentEncoding = client.getEncoding();
+  const encodingMatch = prevMeta.encoding === currentEncoding;
+  const calibrationRatio =
+    encodingMatch && prevMeta.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
+  const fadingTier = isAgentFadingTier(prevMeta.fading) ? prevMeta.fading : undefined;
+  const fadingTiers = resolveRunFadingTiers(prevMeta.fadingTiers);
+  logger.debug(
+    `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}, fading=${fadingTier ? `${fadingTier.budgetTokens}/${fadingTier.masked}` : 'none'}, agents=${fadingTiers ? Object.keys(fadingTiers).length : 0}`,
+  );
+  return { calibrationRatio, fadingTier, fadingTiers };
+}
+
+/**
+ * Captures the compact context state of a run for persistence on the response
+ * message: calibration plus the latched fading tiers, never message content.
+ * Called from `finally`, so values survive an abort. The tier getters are
+ * optional so SDK versions without them persist calibration alone, and they
+ * already return only tiers that carry information; the encoding is only
+ * resolved when there is something to persist.
+ */
+function captureRunContextMeta(client) {
+  const run = client.run;
+  /** `Run` refreshes its own getters only after `processStream` settles, so a
+   * capture taken mid-run (a HITL pause, a Stop) reads the live graph state. */
+  const graph = run?.Graph;
+  const source = graph ?? run;
+  return resolveRunContextMeta({
+    calibrationRatio: source?.getCalibrationRatio?.() ?? 0,
+    fadingTier: source?.getFadingTier?.(),
+    fadingTiers: source?.getFadingTiers?.(),
+    getEncoding: () => client.getEncoding(),
+  });
+}
+
+/** Text of a summary content part; empty for anything else. */
+function getSummaryPartText(part) {
+  if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
+    return '';
+  }
+  return part.content
+    .map((block) => (typeof block?.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * A compaction turn's response is its summary. The run emits no text, so a
+ * completion without a usable summary part means the summarizer produced
+ * nothing. A run that already recorded why (an error part, e.g. a skipped
+ * compaction) persists with that explanation; one that ended with neither
+ * fails as a typed error instead of persisting an empty assistant message.
+ * @param {Array<import('librechat-data-provider').TMessageContentParts>} contentParts
+ */
+function markCompactionSummary(contentParts) {
+  const summary = contentParts.find(
+    (part) => part?.failed !== true && getSummaryPartText(part).length > 0,
+  );
+  if (summary != null) {
+    summary.initiatedBy = 'user';
+    return;
+  }
+  if (contentParts.some((part) => part?.type === ContentTypes.ERROR)) {
+    return;
+  }
+  throw Object.assign(new Error(JSON.stringify({ type: ErrorTypes.COMPACTION_FAILED })), {
+    code: 'COMPACTION_FAILED',
+  });
 }
 
 function getLatestEventActorSummary(contentParts) {
@@ -218,13 +369,7 @@ function getLatestEventActorSummary(contentParts) {
   }
   for (let index = contentParts.length - 1; index >= 0; index -= 1) {
     const part = contentParts[index];
-    if (part?.type !== ContentTypes.SUMMARY || !Array.isArray(part.content)) {
-      continue;
-    }
-    const text = part.content
-      .map((block) => (typeof block?.text === 'string' ? block.text : ''))
-      .join('')
-      .trim();
+    const text = getSummaryPartText(part);
     if (text.length === 0) {
       continue;
     }
@@ -243,6 +388,10 @@ function getLatestEventActorSummary(contentParts) {
  * still reaches the logs through `getSafeErrorMetadata`.
  */
 function getUserFacingRequestError(baseMessage, error, appConfig) {
+  /** Carries no model or user content, so it is safe under every filter. */
+  if (error?.name === 'ManualSummarizationSkippedError') {
+    return JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason: error.reason });
+  }
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
     appConfig?.messageFilter?.pii,
@@ -262,6 +411,175 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
 }
 
 class AgentClient extends BaseClient {
+  getModelBoundAttachmentsForEndpoint(attachments) {
+    return filterFilesByEndpointRuntimeConfig(this.options.req.config, {
+      files: (attachments ?? []).filter(isModelBoundAttachmentFile),
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint ?? EModelEndpoint.agents,
+      endpointType: this.options.endpointType,
+      skipTotalSizeLimit: true,
+      preserveTextSources: true,
+    });
+  }
+
+  getProcessableAttachmentsForEndpoint(attachments, modelBoundAttachments) {
+    const admittedModelAttachments =
+      modelBoundAttachments ?? this.getModelBoundAttachmentsForEndpoint(attachments);
+    const admittedObjects = new Set(admittedModelAttachments);
+    const admittedFileIds = collectFileIds(admittedModelAttachments);
+    return (attachments ?? []).filter(
+      (file) =>
+        !isModelBoundAttachmentFile(file) ||
+        admittedObjects.has(file) ||
+        (file?.file_id && admittedFileIds.has(file.file_id)),
+    );
+  }
+
+  async addDocuments(message, attachments) {
+    const memoryContext = {
+      req: this.options.req,
+      conversationId: this.conversationId,
+      messageId: message.messageId,
+      attachments,
+    };
+    logAgentMemorySnapshot('before_encode_documents', memoryContext);
+    try {
+      return await super.addDocuments(message, attachments);
+    } finally {
+      logAgentMemorySnapshot('after_encode_documents', memoryContext);
+    }
+  }
+
+  async processAttachments(message, attachments) {
+    const modelBoundAttachments = this.getModelBoundAttachmentsForEndpoint(attachments);
+    const processableAttachments = this.getProcessableAttachmentsForEndpoint(
+      attachments,
+      modelBoundAttachments,
+    );
+    assertAgentAttachmentLimits({
+      attachments: modelBoundAttachments,
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+    });
+    const memoryContext = {
+      req: this.options.req,
+      conversationId: this.conversationId,
+      messageId: message.messageId,
+      attachments: modelBoundAttachments,
+    };
+    logAgentMemorySnapshot('before_process_attachments', memoryContext);
+    try {
+      return await super.processAttachments(message, processableAttachments);
+    } finally {
+      logAgentMemorySnapshot('after_process_attachments', memoryContext);
+    }
+  }
+
+  getFilteredScopedAttachmentMap(
+    sharedAttachmentIds,
+    attachmentsByAgentId = this.options.agentContextAttachmentsByAgentId,
+    agents = collectReachableAgents([this.options.agent, ...(this.agentConfigs?.values() ?? [])]),
+  ) {
+    const identifiedAgents = agents.filter((agent) => agent?.id);
+    const endpointsByAgentId = new Map(
+      identifiedAgents.map((agent) => [
+        agent.id,
+        {
+          endpoint: agent.endpoint,
+          endpointType: agent === this.options.agent ? this.options.endpointType : undefined,
+        },
+      ]),
+    );
+    return buildAgentScopedAttachmentMap({
+      agentIds: identifiedAgents.map((agent) => agent.id),
+      attachmentsByAgentId,
+      sharedRunAttachmentIds: sharedAttachmentIds,
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint ?? EModelEndpoint.agents,
+      endpointType: this.options.endpointType,
+      endpointsByAgentId,
+    });
+  }
+
+  assertTurnAttachmentLimits(sharedAttachments, scopedAttachmentInjections) {
+    assertAgentAttachmentLimits({
+      attachments: [...sharedAttachments, ...scopedAttachmentInjections],
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+      countRepeatedExtractedText: true,
+      enforceAttachmentCount: false,
+      useGlobalContextSizeLimit: true,
+    });
+  }
+
+  admitSteerAttachments(files, steerId) {
+    const modelBoundFiles = files.filter(isModelBoundAttachmentFile);
+    assertModelBoundContent({
+      filters: this.options.req?.config?.filters,
+      files: modelBoundFiles,
+    });
+    const sharedAttachments = [...(this.turnSharedAttachmentFiles ?? []), ...modelBoundFiles];
+    const scopedAttachmentsByAgentId = this.turnScopedAttachmentsByAgentId ?? new Map();
+    assertAgentAttachmentTopology({
+      sharedAttachments,
+      scopedAttachmentsByAgentId,
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+      endpointsByAgentId: this.turnAttachmentEndpointsByAgentId,
+    });
+    this.assertTurnAttachmentLimits(
+      [...sharedAttachments, ...(this.turnAggregateOnlyAttachmentFiles ?? [])],
+      [...scopedAttachmentsByAgentId.values()].flat(),
+    );
+    this.turnSharedAttachmentFiles = sharedAttachments;
+    this.attachmentMemoryContext?.attachments?.push(...modelBoundFiles);
+    if (steerId && modelBoundFiles.length > 0) {
+      this.admittedSteerAttachments.set(steerId, modelBoundFiles);
+    }
+  }
+
+  async assertHistoricalAttachmentLimits(historicalAttachments) {
+    const currentAttachments = this.options.attachments ? await this.options.attachments : [];
+    const compatibleHistoricalAttachments =
+      this.getModelBoundAttachmentsForEndpoint(historicalAttachments);
+    const compatibleCurrentAttachments =
+      this.getModelBoundAttachmentsForEndpoint(currentAttachments);
+    const sharedAttachments = [...compatibleHistoricalAttachments, ...compatibleCurrentAttachments];
+    const sharedAttachmentIds = collectFileIds(sharedAttachments);
+    const agents = collectReachableAgents([
+      this.options.agent,
+      ...(this.agentConfigs?.values() ?? []),
+    ]);
+    const scopedAttachmentMap = this.getFilteredScopedAttachmentMap(
+      sharedAttachmentIds,
+      this.options.agentContextAttachmentsByAgentId,
+      agents,
+    );
+    const endpointsByAgentId = new Map(
+      agents
+        .filter((agent) => agent?.id)
+        .map((agent) => [
+          agent.id,
+          {
+            endpoint: agent.endpoint,
+            endpointType: agent === this.options.agent ? this.options.endpointType : undefined,
+          },
+        ]),
+    );
+    assertAgentAttachmentTopology({
+      sharedAttachments,
+      scopedAttachmentsByAgentId: scopedAttachmentMap,
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+      endpointsByAgentId,
+    });
+    this.assertTurnAttachmentLimits(sharedAttachments, [...scopedAttachmentMap.values()].flat());
+    return compatibleHistoricalAttachments;
+  }
+
   /** Mirrors the SDK's `MultiAgentGraph.analyzeGraph`: every loaded agent
    * without an incoming edge starts in the first graph wave, falling back to
    * the first agent for a cycle. */
@@ -343,6 +661,9 @@ class AgentClient extends BaseClient {
      *  ON_CONTEXT_USAGE handler; persisted on `metadata.contextUsage`.
      *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null } | undefined} */
     this.contextUsageSink = contextUsageSink;
+    if (this.contextUsageSink != null) {
+      this.contextUsageSink.onSnapshot = () => this.publishRunContextMeta({ live: true });
+    }
     /** Every emitted `on_token_usage` payload for this response (primary,
      *  summarization, sequential, and subagent); aggregated into the rollup
      *  persisted on `metadata.usage`.
@@ -380,6 +701,11 @@ class AgentClient extends BaseClient {
      *  these before returning — otherwise job cleanup can race the persist.
      *  @type {Promise<void>[]} */
     this.pendingSubagentEmits = [];
+    /** Set when the graph exhausted its per-turn step budget (`recursionLimit`).
+     *  Read by `request.js`/`resume.js` to persist the row as `unfinished` with
+     *  `Constants.TOOL_CALL_LIMIT_FINISH_REASON` instead of publishing an error.
+     *  @type {boolean} */
+    this.stepLimitReached = false;
     /** Stable per-generation sequence for subagent usage events. Detached
      * usage is billed outside `collectedUsage`, so array length is no longer
      * a valid sequence source. @type {number} */
@@ -428,6 +754,8 @@ class AgentClient extends BaseClient {
             subagents: agent.subagents,
             memory_scope: agent.memory_scope,
             skills_enabled: agent.skills_enabled,
+            skill_authoring_enabled: agent.skill_authoring_enabled,
+            skills_scope: agent.skills_scope,
             skills: agent.skills,
             backgroundToolNames: agent.backgroundToolNames,
             intentToolNames: agent.intentToolNames,
@@ -456,6 +784,8 @@ class AgentClient extends BaseClient {
      *  SDK-emitted indices that arrive after an injection land past it.
      *  @type {import('@librechat/api').SteerOffsetState} */
     this.steerOffsetState = { offset: 0 };
+    this.appliedSteerParts = new Map();
+    this.admittedSteerAttachments = new Map();
     /** @type {(messages: BaseMessage[], inspectionMessages?: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -505,6 +835,15 @@ class AgentClient extends BaseClient {
       }
     }
     buffer.clear();
+  }
+
+  /** Stamps host-resolved MCP identities onto persisted calls so future replay
+   * can distinguish delimiter-bearing tool names from longer server names. */
+  stampMcpServerIdentities() {
+    stampMcpServerIdentities({
+      contentParts: this.contentParts,
+      roots: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+    });
   }
 
   /**
@@ -560,6 +899,7 @@ class AgentClient extends BaseClient {
           deliveredSteer: item,
         },
       );
+      this.appliedSteerParts.set(item.steerId, { index, part });
       /** Only a COMMITTED steer is a hard semantic boundary. If its durable
        *  append failed, the drain restores the queue item and the current
        *  phase evidence must remain intact for the eventual retry. */
@@ -572,8 +912,60 @@ class AgentClient extends BaseClient {
         this.contentParts.splice(index, 1);
         this.steerOffsetState.offset -= 1;
       }
+      this.appliedSteerParts.delete(item.steerId);
       throw error;
     }
+  }
+
+  async stripSteerAttachmentRefs(streamId, item) {
+    this.rollbackSteerAttachmentAdmission(item.steerId);
+    const applied = this.appliedSteerParts.get(item.steerId);
+    if (!applied?.part?.files?.length) {
+      return;
+    }
+    const part = { ...applied.part };
+    delete part.files;
+    this.contentParts[applied.index] = part;
+    this.appliedSteerParts.set(item.steerId, { index: applied.index, part });
+    await GenerationJobManager.emitChunk(
+      streamId,
+      {
+        event: SteerEvents.ON_STEER_APPLIED,
+        data: {
+          steerId: item.steerId,
+          ...(item.clientSteerId && { clientSteerId: item.clientSteerId }),
+          index: applied.index,
+          part,
+          responseMessageId: this.responseMessageId,
+          conversationId: this.conversationId,
+        },
+      },
+      {
+        durable: true,
+        expectedCreatedAt: this.jobCreatedAt,
+      },
+    );
+  }
+
+  rollbackSteerAttachmentAdmission(steerId) {
+    const admitted = this.admittedSteerAttachments.get(steerId);
+    this.admittedSteerAttachments.delete(steerId);
+    if (!admitted?.length) {
+      return;
+    }
+    const removeOccurrences = (files) => {
+      if (!Array.isArray(files)) {
+        return;
+      }
+      for (let index = admitted.length - 1; index >= 0; index--) {
+        const occurrence = files.lastIndexOf(admitted[index]);
+        if (occurrence >= 0) {
+          files.splice(occurrence, 1);
+        }
+      }
+    };
+    removeOccurrences(this.turnSharedAttachmentFiles);
+    removeOccurrences(this.attachmentMemoryContext?.attachments);
   }
 
   /**
@@ -594,24 +986,24 @@ class AgentClient extends BaseClient {
       streamId,
       jobCreatedAt: this.jobCreatedAt,
       applySteer: (item) => this.applySteerPart(streamId, item),
-      buildMedia: (item) =>
-        buildSteerMedia({
+      onMediaError: (item) => this.stripSteerAttachmentRefs(streamId, item),
+      buildMedia: async (item) => {
+        const media = await buildSteerMedia({
           client: this,
           user: this.options.req?.user,
           item,
           getFiles: db.getFiles,
-          assertFilesAllowed: (files) =>
-            assertModelBoundContent({
-              filters: this.options.req?.config?.filters,
-              files,
-            }),
-        }),
+          assertFilesAllowed: (files) => this.admitSteerAttachments(files, item.steerId),
+        });
+        this.admittedSteerAttachments.delete(item.steerId);
+        return media;
+      },
     };
     return {
       hook: createSteerDrainHook(drainOptions),
       ...(isSteerPreemptSupported() && {
         preemptHook: createSteerPreemptBoundaryHook(drainOptions),
-        preemption: createSteerPreemptPoll(streamId),
+        preemption: createSteerPreemptPoll(streamId, this.jobCreatedAt),
       }),
       ...(isSteerTerminalContinuationSupported() && {
         terminalHook: createSteerTerminalContinuationHook(drainOptions),
@@ -1593,6 +1985,14 @@ class AgentClient extends BaseClient {
       );
     }
 
+    const agentsEConfig = this.options.req.config?.endpoints?.[EModelEndpoint.agents];
+    const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+    const codeApprovalMode = resolveAttachedCodeApprovalMode(
+      this.options.req.body.codeApprovalMode,
+      collectAttachedCodeEnvironmentPolicySettings(topLevelAgents),
+      agentsEConfig?.toolApproval?.enabled !== false,
+    );
+
     return removeNullishValues(
       Object.assign(
         {
@@ -1605,6 +2005,10 @@ class AgentClient extends BaseClient {
           resendFiles: this.options.resendFiles,
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
+          codeApprovalMode,
+          codeWorkspaces: getCodeWorkspaceSelections(
+            collectReachableAgents(topLevelAgents).map((agent) => agent?.codeExecutionContext),
+          ),
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,
@@ -1622,9 +2026,12 @@ class AgentClient extends BaseClient {
   }
 
   shouldDeferUserMessagePersistence() {
-    return hasModelBoundContentProtection(
-      this.options.req?.config?.filters,
-      this.options.req?.config?.messageFilter?.pii,
+    return (
+      (Array.isArray(this.modelBoundCurrentFiles) && this.modelBoundCurrentFiles.length > 0) ||
+      hasModelBoundContentProtection(
+        this.options.req?.config?.filters,
+        this.options.req?.config?.messageFilter?.pii,
+      )
     );
   }
 
@@ -1837,6 +2244,56 @@ class AgentClient extends BaseClient {
     };
   }
 
+  /**
+   * Seeds context meta captured at a pause (or from a parent response) into a
+   * rebuilt client. Malformed values are dropped rather than trusted.
+   * @param {unknown} contextMeta
+   */
+  /**
+   * Publishes the run's compact context state onto the job: the inherited seed
+   * before the run starts, then the live state after each pre-invoke context
+   * snapshot. A Stop or disconnect persists the response from job data alone, on
+   * whichever replica handles it, so callers await the publish ahead of the
+   * model call it describes. Ordering, deduplication, retries and failure
+   * handling live in the `packages/api` publisher; this is only the wiring.
+   * @param {{ live?: boolean }} [options] `live` marks a snapshot from the running
+   *   graph; the pre-run call publishes the inherited seed instead.
+   * @returns {Promise<void>}
+   */
+  publishRunContextMeta({ live = false } = {}) {
+    const streamId = this.options?.req?._resumableStreamId;
+    if (!streamId) {
+      return Promise.resolve();
+    }
+    this.contextMetaPublisher ??= createContextMetaPublisher({
+      write: (contextMeta) =>
+        GenerationJobManager.updateMetadata(streamId, { contextMeta }, this.jobCreatedAt),
+      onFailure: (err) =>
+        logger.warn(
+          `[AgentClient] Failed to publish context meta for ${streamId}`,
+          getSafeErrorMetadata(err),
+        ),
+    });
+    const contextMeta = selectRunContextMetaToPublish({
+      live,
+      captured: captureRunContextMeta(this),
+      inherited: this.contextMeta,
+      hasPublished: this.contextMetaPublisher.hasPublished,
+      getEncoding: () => this.getEncoding(),
+    });
+    return contextMeta == null ? Promise.resolve() : this.contextMetaPublisher.publish(contextMeta);
+  }
+
+  seedContextMeta(contextMeta) {
+    try {
+      this.contextMeta = normalizeEventActorContextMeta(contextMeta);
+    } catch (err) {
+      logger.warn('[AgentClient] Ignoring malformed context meta', getSafeErrorMetadata(err));
+      this.contextMeta = undefined;
+    }
+    void this.publishRunContextMeta?.();
+  }
+
   async loadHistory(conversationId, parentMessageId = null) {
     if (this.eventActorContinuation === 'warm') {
       logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
@@ -1894,6 +2351,15 @@ class AgentClient extends BaseClient {
       }
     }
     const allAgents = [...agentsById].map(([agentId, agent]) => ({ agent, agentId }));
+    const endpointsByAgentId = new Map(
+      allAgents.map(({ agent, agentId }) => [
+        agentId,
+        {
+          endpoint: agent.endpoint,
+          endpointType: agent === this.options.agent ? this.options.endpointType : undefined,
+        },
+      ]),
+    );
     const dynamicToolContexts = getDynamicToolContexts(allAgents.map(({ agent }) => agent));
     for (const context of dynamicToolContexts) {
       modelBoundFileContexts.add(context);
@@ -1929,7 +2395,54 @@ class AgentClient extends BaseClient {
       agents: allAgents.map(({ agent }) => agent),
       files: [...modelBoundFileContexts],
     });
-    const sharedRunAttachmentIds = new Set();
+    const requestAttachmentsSource = this.options.attachments;
+    const requestAttachments = requestAttachmentsSource ? await requestAttachmentsSource : [];
+    const modelBoundRequestAttachments =
+      this.getModelBoundAttachmentsForEndpoint(requestAttachments);
+    const retainedHistoricalFileContexts =
+      this.options.resendFiles === false
+        ? orderedMessages
+            .filter((message) => typeof message?.fileContext === 'string' && message.fileContext)
+            .map((message, index) => ({
+              file_id: `retained-file-context:${message.messageId ?? message.id ?? index}`,
+              source: FileSources.text,
+              type: 'text/plain',
+              text: message.fileContext,
+              bytes: Buffer.byteLength(message.fileContext, 'utf8'),
+            }))
+        : [];
+    const sharedAttachmentFiles = [
+      ...Object.values(this.message_file_map ?? {}).flat(),
+      ...(this.modelBoundHistoricalSteerFiles ?? []),
+      ...modelBoundRequestAttachments,
+    ];
+    const sharedRunAttachmentIds = collectFileIds(sharedAttachmentFiles);
+    const scopedAttachmentMap = buildAgentScopedAttachmentMap({
+      agentIds: allAgents.map(({ agentId }) => agentId),
+      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+      sharedRunAttachmentIds,
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint ?? EModelEndpoint.agents,
+      endpointType: this.options.endpointType,
+      endpointsByAgentId,
+    });
+    this.turnSharedAttachmentFiles = sharedAttachmentFiles;
+    this.turnAggregateOnlyAttachmentFiles = retainedHistoricalFileContexts;
+    this.turnScopedAttachmentsByAgentId = scopedAttachmentMap;
+    this.turnAttachmentEndpointsByAgentId = endpointsByAgentId;
+    assertAgentAttachmentTopology({
+      sharedAttachments: sharedAttachmentFiles,
+      scopedAttachmentsByAgentId: scopedAttachmentMap,
+      req: this.options.req,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+      endpointsByAgentId,
+    });
+    const attachmentContextInjections = [...scopedAttachmentMap.values()].flat();
+    this.assertTurnAttachmentLimits(
+      [...sharedAttachmentFiles, ...retainedHistoricalFileContexts],
+      attachmentContextInjections,
+    );
     /** @type {ReturnType<typeof buildAgentScopedContext>} */
     let agentScopedContextPromise;
     const startAgentScopedContext = () => {
@@ -1937,31 +2450,34 @@ class AgentClient extends BaseClient {
         agentIds: allAgents.map(({ agentId }) => agentId),
         attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
         sharedRunAttachmentIds,
+        sharedAttachments: sharedAttachmentFiles,
         req: this.options.req,
+        endpoint: this.options.agent?.endpoint ?? this.options.endpoint ?? EModelEndpoint.agents,
+        endpointType: this.options.endpointType,
+        endpointsByAgentId,
         tokenCountFn: (text) => countTokens(text),
       });
       void contextPromise.catch(() => {});
       return contextPromise;
     };
 
-    if (this.options.attachments) {
-      const attachments = await this.options.attachments;
+    if (requestAttachmentsSource) {
+      const attachments = this.getProcessableAttachmentsForEndpoint(
+        requestAttachments,
+        modelBoundRequestAttachments,
+      );
       const latestMessage = orderedMessages[orderedMessages.length - 1];
-      this.modelBoundCurrentFiles = [...attachments];
+      this.modelBoundCurrentFiles = [...modelBoundRequestAttachments];
 
       assertModelBoundContent({
         filters: this.options.req.config?.filters,
-        files: attachments,
+        files: modelBoundRequestAttachments,
       });
-      for (const attachment of attachments) {
+      for (const attachment of modelBoundRequestAttachments) {
         if (attachment) {
           modelBoundFileContexts.add(attachment);
         }
       }
-      for (const fileId of collectFileIds(attachments)) {
-        sharedRunAttachmentIds.add(fileId);
-      }
-
       /** Agent-scoped extraction only depends on the shared attachment IDs. */
       agentScopedContextPromise = startAgentScopedContext();
 
@@ -1974,7 +2490,7 @@ class AgentClient extends BaseClient {
       }
 
       const [, files] = await Promise.all([
-        this.addFileContextToMessage(latestMessage, attachments),
+        this.addFileContextToMessage(latestMessage, modelBoundRequestAttachments),
         this.processAttachments(latestMessage, attachments),
       ]);
 
@@ -1982,6 +2498,20 @@ class AgentClient extends BaseClient {
     } else {
       agentScopedContextPromise = startAgentScopedContext();
     }
+
+    const attachmentTelemetryFiles = [
+      ...sharedAttachmentFiles,
+      ...retainedHistoricalFileContexts,
+      ...attachmentContextInjections,
+    ];
+    this.attachmentMemoryContext = {
+      req: this.options.req,
+      conversationId: this.conversationId,
+      messageId: orderedMessages[orderedMessages.length - 1]?.messageId,
+      attachments: attachmentTelemetryFiles,
+      countRepeatedExtractedText: true,
+    };
+    logAgentMemorySnapshot('before_context_assembly', this.attachmentMemoryContext);
 
     /** Note: Bedrock uses legacy RAG API handling */
     if (this.message_file_map && !isAgentsEndpoint(this.options.endpoint)) {
@@ -2222,7 +2752,7 @@ class AgentClient extends BaseClient {
         targets: steerStampTargets,
         // addPreviousAttachments already fetched steer-part refs in its single
         // per-turn historical-files query — no second round trip.
-        docsById: this.authorizedHistoricalFiles,
+        docsById: this.authorizedHistoricalReplayFiles ?? this.authorizedHistoricalFiles,
         getFiles: db.getFiles,
         resendFiles: resendSteerFiles,
       });
@@ -2396,8 +2926,17 @@ class AgentClient extends BaseClient {
      *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
     const parentResponse =
       orderedMessages.length >= 2 ? orderedMessages[orderedMessages.length - 2] : undefined;
-    if (parentResponse?.contextMeta && !parentResponse.isCreatedByUser) {
+    /** Only a server-authored response may seed the run: a client-submitted
+     * row carries no trusted calibration or fading state. */
+    if (
+      parentResponse?.contextMeta &&
+      !parentResponse.isCreatedByUser &&
+      parentResponse.isUserSubmitted !== true
+    ) {
       this.contextMeta = parentResponse.contextMeta;
+      /** Start the seed publish as soon as the parent's state is known: a Stop
+       * during the rest of setup must already find it on the job. */
+      void this.publishRunContextMeta?.();
     }
 
     const result = {
@@ -2548,11 +3087,41 @@ class AgentClient extends BaseClient {
               (agent) => !runtimeAgentPreparations.has(agent),
             );
             if (unpreparedAgents.length > 0) {
+              const liveSharedAttachmentFiles =
+                this.turnSharedAttachmentFiles ?? sharedAttachmentFiles;
+              const liveSharedAttachmentIds = collectFileIds(liveSharedAttachmentFiles);
+              const lateAttachmentsByAgentId =
+                buildAgentContextAttachmentsByAgentId(unpreparedAgents);
+              const lateScopedAttachmentMap = this.getFilteredScopedAttachmentMap(
+                liveSharedAttachmentIds,
+                lateAttachmentsByAgentId,
+                unpreparedAgents,
+              );
+              const lateAttachmentInjections = [...lateScopedAttachmentMap.values()].flat();
+              attachmentContextInjections.push(...lateAttachmentInjections);
+              attachmentTelemetryFiles.push(...lateAttachmentInjections);
+              this.assertTurnAttachmentLimits(
+                [...liveSharedAttachmentFiles, ...(this.turnAggregateOnlyAttachmentFiles ?? [])],
+                attachmentContextInjections,
+              );
+              const lateEndpointsByAgentId = new Map(
+                unpreparedAgents.map((agent) => [agent.id, { endpoint: agent.endpoint }]),
+              );
+              for (const [agentId, attachments] of lateScopedAttachmentMap) {
+                this.turnScopedAttachmentsByAgentId.set(agentId, attachments);
+              }
+              for (const [agentId, agentEndpoint] of lateEndpointsByAgentId) {
+                this.turnAttachmentEndpointsByAgentId.set(agentId, agentEndpoint);
+              }
               const pending = buildAgentScopedContext({
                 agentIds: unpreparedAgents.map((agent) => agent.id),
-                attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(unpreparedAgents),
-                sharedRunAttachmentIds,
+                attachmentsByAgentId: lateAttachmentsByAgentId,
+                sharedRunAttachmentIds: liveSharedAttachmentIds,
+                sharedAttachments: liveSharedAttachmentFiles,
                 req: this.options.req,
+                endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+                endpointType: this.options.endpointType,
+                endpointsByAgentId: lateEndpointsByAgentId,
                 tokenCountFn: (text) => countTokens(text),
               }).then((lateScopedContext) =>
                 Promise.all(
@@ -2578,6 +3147,7 @@ class AgentClient extends BaseClient {
     };
     wrapLazyResolvers([this.options.agent, ...(this.agentConfigs?.values() ?? [])]);
 
+    logAgentMemorySnapshot('after_context_assembly', this.attachmentMemoryContext);
     return result;
   }
 
@@ -2698,6 +3268,19 @@ class AgentClient extends BaseClient {
      *  tool registered unconditionally; without this passthrough the
      *  memory path would silently lose code-execution tooling). */
     const memoryCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
+    const memoryCodeEnabled = memoryCapabilities.has(AgentCapabilities.execute_code);
+    /** Same pairing as the chat initializers: the capability is the deployment
+     *  switch, the grant is the role's. Skipped when the capability is off, so a
+     *  deployment without code execution adds no role read to the shared memory
+     *  context. Request-memoized otherwise, so it joins the lookup the tool
+     *  loader already made. */
+    const memoryToolGrants = memoryCodeEnabled
+      ? await resolveToolRoleGrants({
+          req: this.options.req,
+          getRoleByName: db.getRoleByName,
+          context: 'memoryAgent',
+        })
+      : null;
     const agent = await initializeAgent(
       {
         req: this.options.req,
@@ -2709,7 +3292,7 @@ class AgentClient extends BaseClient {
             ? EModelEndpoint.agents
             : memoryConfig.agent?.provider,
         },
-        codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
+        codeEnvAvailable: memoryCodeEnabled && memoryToolGrants?.runCode === true,
         statefulSessionsAvailable: memoryCapabilities.has(AgentCapabilities.stateful_code_sessions),
       },
       {
@@ -2769,6 +3352,7 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      tenantId: resolveRequestTenantId(this.options.req),
     });
 
     this.processMemory = processMemory;
@@ -2964,8 +3548,16 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    if (this.isCompactionTurn()) {
+      markCompactionSummary(completion);
+    }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
+  }
+
+  /** A manual compaction runs the graph summarize-only: the summary is the response. */
+  isCompactionTurn() {
+    return this.options?.req?.body?.compact === true;
   }
 
   /**
@@ -3485,6 +4077,7 @@ class AgentClient extends BaseClient {
       ...(staged.compactionSemanticIndex == null
         ? {}
         : { compactionSemanticIndex: staged.compactionSemanticIndex }),
+      ...(staged.contextMeta == null ? {} : { contextMeta: staged.contextMeta }),
       persistencePending: true,
       ...(eventActorSuspension == null
         ? {}
@@ -3671,7 +4264,23 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...stamped);
       }
     }
-    const pendingAction = buildPendingAction(interrupt.payload, {
+    const reachableAgents = collectReachableAgents([
+      this.options.agent,
+      ...(this.agentConfigs?.values() ?? []),
+    ]);
+    const interruptPayload =
+      interrupt.payload?.type === 'tool_approval'
+        ? markNativeCodeToolApprovalRequests(interrupt.payload, reachableAgents)
+        : interrupt.payload;
+    const codeExecutionBinding =
+      interrupt.payload?.type === 'tool_approval' &&
+      interrupt.payload.action_requests.some(
+        (action) =>
+          typeof action?.name === 'string' && isStatefulCodeEnvironmentToolName(action.name),
+      )
+        ? captureCodeExecutionApprovalBinding(reachableAgents)
+        : undefined;
+    const pendingAction = buildPendingAction(interruptPayload, {
       streamId,
       conversationId: this.conversationId,
       // runId mirrors the LangGraph checkpoint namespace when the SDK provides it
@@ -3692,6 +4301,7 @@ class AgentClient extends BaseClient {
       // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
       // so the server restores it and rebuilds the same graph (and the fingerprint matches).
       resumeContext,
+      codeExecutionBinding,
     });
 
     // Job-replacement guard: streamId == conversationId is reused per conversation, so a
@@ -3730,6 +4340,10 @@ class AgentClient extends BaseClient {
       compactionSemanticIndex: createCompactionSemanticIndexProjection(
         this.compactionSemanticIndexSnapshot,
       ),
+      // Calibration and fading state at the pause, so the resumed segment seeds
+      // its rebuilt pruner from the same tiers and its provider projection of
+      // history keeps the same bytes.
+      contextMeta: captureRunContextMeta({ run, getEncoding: () => this.getEncoding() }),
     };
     if (this.eventActorInvocationId != null) {
       return;
@@ -3740,6 +4354,9 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    /** The inherited state is on the job before any abortable setup begins; a
+     * publish already started while loading history is simply awaited. */
+    await this.publishRunContextMeta?.();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -3762,27 +4379,48 @@ class AgentClient extends BaseClient {
        * spending on provider work. */
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
-      const resolvedToolApprovalHooks = isHITLEnabled(agentsEConfig?.toolApproval)
+      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const attachedCodeEnvironmentAgentIds =
+        collectAttachedCodeEnvironmentAgentIds(topLevelAgents);
+      const attachedCodeEnvironmentSettings =
+        collectAttachedCodeEnvironmentPolicySettings(topLevelAgents);
+      const codeApprovalMode = resolveAttachedCodeApprovalMode(
+        this.options.req.body.codeApprovalMode,
+        attachedCodeEnvironmentSettings,
+        agentsEConfig?.toolApproval?.enabled !== false,
+      );
+      const effectiveToolApprovalPolicy = resolveToolApprovalPolicy({
+        endpoint: agentsEConfig?.toolApproval,
+        attachedCodeEnvironment: attachedCodeEnvironmentAgentIds.size > 0,
+      });
+      const resolvedToolApprovalHooks = isHITLEnabled(effectiveToolApprovalPolicy)
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
-            tenantId: this.options.req?.user?.tenantId,
+            tenantId: resolveRequestTenantId(this.options.req ?? {}),
             appConfig,
           })
         : undefined;
-      const topLevelAgents = [this.options.agent, ...(this.agentConfigs?.values() ?? [])];
+      const admissionToolApprovalHooks = [
+        ...(resolvedToolApprovalHooks ?? []),
+        ...buildAttachedCodeEnvironmentAdmissionHooks(
+          attachedCodeEnvironmentAgentIds,
+          attachedCodeEnvironmentSettings,
+          codeApprovalMode,
+        ),
+      ];
       const askUserQuestionAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
       const runCanPause = canAgentGraphPause({
-        policy: agentsEConfig?.toolApproval,
+        policy: effectiveToolApprovalPolicy,
         agents: topLevelAgents,
         hostGeneratedToolNames:
           this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
-        resolvedProgrammaticHooks: resolvedToolApprovalHooks,
+        resolvedProgrammaticHooks: admissionToolApprovalHooks,
         pluginHookSource: getPluginHookSource(),
         askUserQuestionAdminDisabled,
       });
       const runUsesCheckpointer = agentRunUsesCheckpointer({
-        policy: agentsEConfig?.toolApproval,
+        policy: effectiveToolApprovalPolicy,
         agents: topLevelAgents,
         askUserQuestionAdminDisabled,
       });
@@ -3819,11 +4457,19 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          ...buildToolApprovalExecutionConfig(this.responseMessageId, this.jobCreatedAt),
           // LangGraph owns `checkpoint_ns` and resets it to '' at every root
           // invocation. The saver maps this private immutable generation key
           // into its physical namespace while tools keep the conversation id.
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
+            (this.user ?? this.options.req.user?.id)
+              ? checkpointOwnerNamespacePrefix(
+                  this.user ?? this.options.req.user?.id,
+                  resolveRequestTenantId(this.options.req),
+                )
+              : undefined,
           ...(this.eventActorCheckpointId == null
             ? {}
             : { checkpoint_id: this.eventActorCheckpointId }),
@@ -3831,6 +4477,13 @@ class AgentClient extends BaseClient {
             ? {}
             : {
                 [LIBRECHAT_EVENT_ACTOR_INVOCATION_KEY]: this.eventActorInvocationId,
+                [LIBRECHAT_CHECKPOINT_OWNER_KEY]: checkpointOwnerNamespacePrefix(
+                  this.options.req.user.id,
+                  this.options.req._agentEventBindingTenantId,
+                ),
+                ...(this.eventActorCheckpointId == null
+                  ? {}
+                  : { [LIBRECHAT_LEGACY_CHECKPOINT_KEY]: this.eventActorCheckpointId }),
                 event_actor_invocation_id: this.eventActorInvocationId,
                 event_actor_depth: 1,
               }),
@@ -3843,6 +4496,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeWorkspaces:
+                this.options.req.body.codeWorkspaces ??
+                this.options.req.resolvedConversation?.codeWorkspaces,
             }),
           user: createSafeUser(this.options.req.user),
         },
@@ -3852,7 +4508,12 @@ class AgentClient extends BaseClient {
         version: 'v2',
       };
 
-      const toolSet = buildToolSet(this.options.agent);
+      const toolSet = buildRunToolSet(
+        this.options.agent,
+        this.agentConfigs?.values(),
+        this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
+        payload,
+      );
       const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
@@ -3894,8 +4555,16 @@ class AgentClient extends BaseClient {
        * synthetic prefix. Names NOT primed this turn still reconstruct from
        * history, preserving sticky manual re-priming across turns.
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      /** A compaction summarizes what was already said. No user turn was
+       *  submitted, so it primes no skills into the transcript it is about
+       *  to summarize and runs no memory pass over it. */
+      const isCompactionTurn = this.isCompactionTurn();
+      const manualSkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = isCompactionTurn
+        ? undefined
+        : this.options.agent?.alwaysApplySkillPrimes;
       const freshSkillPrimeNames = collectFreshSkillPrimeNames({
         manualSkillPrimes,
         alwaysApplySkillPrimes,
@@ -4030,7 +4699,7 @@ class AgentClient extends BaseClient {
       });
 
       const memoryMessages =
-        this.processMemory && this.memoryPayload
+        this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
               stripActivityLabelParts(this.memoryPayload),
               undefined,
@@ -4089,22 +4758,11 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        if (this.processMemory) {
+        if (this.processMemory && !isCompactionTurn) {
           memoryPromise = this.runMemory(memoryMessages);
         }
 
-        /** Seed calibration state from previous run if encoding matches */
-        const currentEncoding = this.getEncoding();
-        const prevMeta = this.contextMeta;
-        const encodingMatch = prevMeta?.encoding === currentEncoding;
-        const calibrationRatio =
-          encodingMatch && prevMeta?.calibrationRatio > 0 ? prevMeta.calibrationRatio : undefined;
-
-        if (prevMeta) {
-          logger.debug(
-            `[AgentClient] contextMeta from parent: ratio=${prevMeta.calibrationRatio}, encoding=${prevMeta.encoding}, current=${currentEncoding}, seeded=${calibrationRatio ?? 'none'}`,
-          );
-        }
+        const { calibrationRatio, fadingTier, fadingTiers } = resolveRunSeeds(this);
 
         const streamId = this.options.req?._resumableStreamId;
         // HITL: establish an empty checkpoint barrier for THIS immutable generation
@@ -4180,7 +4838,10 @@ class AgentClient extends BaseClient {
           messages,
           discoveredToolNames:
             this.eventActorContinuation === 'warm' ? this.eventActorDiscoveredToolNames : undefined,
-          modelCallbacks: [modelBoundCallback],
+          modelCallbacks: [
+            modelBoundCallback,
+            createAgentMemoryCallback(this.attachmentMemoryContext ?? {}),
+          ],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
@@ -4210,15 +4871,20 @@ class AgentClient extends BaseClient {
             : { compactionSemanticIndex: continuationCompactionSemanticIndex }),
           initialSessions,
           calibrationRatio,
+          fadingTier,
+          fadingTiers,
           runId: this.responseMessageId,
           signal: abortController.signal,
           /** The phase wrapper stays outermost: it claims and offsets the
            *  parent slot before the text step reaches the normal handlers. */
           customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
+          codeApprovalMode,
           user: createSafeUser(this.options.req?.user),
-          tenantId: this.options.req?.user?.tenantId,
+          traceContext: buildTraceContext(this.options),
+          tenantId: resolveRequestTenantId(this.options.req ?? {}),
           summarizationConfig: appConfig?.summarization,
+          summarizeOnly: this.isCompactionTurn(),
           appConfig,
           tokenCounter,
           /** Bills subagent child-run model calls — foreground usage joins
@@ -4278,6 +4944,8 @@ class AgentClient extends BaseClient {
         if (this.activityLabelsMarkedPromise != null) {
           await this.activityLabelsMarkedPromise;
         }
+        /** The inherited tier must be on the job before any Stop can read it. */
+        await this.publishRunContextMeta?.();
         try {
           const invocationMessages =
             this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
@@ -4379,10 +5047,44 @@ class AgentClient extends BaseClient {
         );
         throw err;
       }
-      if (abortController.signal.aborted) {
+      if (isAgentAttachmentLimitError(err) || isAttachmentObjectNotFoundError(err)) {
+        logger.warn(
+          '[api/server/controllers/agents/client.js #sendCompletion] Attachment rejected',
+          {
+            conversationId: this.conversationId,
+            ...getSafeErrorMetadata(err),
+          },
+        );
+        BaseClient.prototype.getModelBoundUserMessagePersistence.call(this)?.cancel();
+        this.options.attachments = [];
+        this.modelBoundCurrentFiles = [];
+        this.contentParts.push({
+          type: ContentTypes.ERROR,
+          [ContentTypes.ERROR]: err.message,
+        });
+      } else if (abortController.signal.aborted) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
           { conversationId: this.conversationId, ...getSafeErrorMetadata(err) },
+        );
+      } else if (isStepLimitError(err)) {
+        /**
+         * The graph ran out of supersteps. Everything already streamed is real work,
+         * so this terminates the turn as incomplete rather than failed: no ERROR part,
+         * and `request.js` persists the row `unfinished` with the tool-call-limit
+         * finish reason so the UI can offer to continue. Mirrors the abort contract:
+         * a turn that stopped early is not a turn that broke.
+         */
+        this.stepLimitReached = true;
+        logger.warn(
+          '[api/server/controllers/agents/client.js #sendCompletion] Tool call limit reached; ending the turn as incomplete',
+          {
+            conversationId: this.conversationId,
+            recursionLimit: resolveRecursionLimit(
+              this.options.req.config?.endpoints?.[EModelEndpoint.agents],
+              this.options.agent,
+            ),
+          },
         );
       } else {
         logger.error(
@@ -4410,19 +5112,13 @@ class AgentClient extends BaseClient {
        * the failure; retain that model-visible state for actor reconciliation. */
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      /** Capture calibration state from the run for persistence on the response message.
-       *  Runs in finally so values are captured even on abort. */
-      const ratio = this.run?.getCalibrationRatio() ?? 0;
-      if (ratio > 0 && ratio !== 1) {
-        this.contextMeta = {
-          calibrationRatio: Math.round(ratio * 1000) / 1000,
-          encoding: this.getEncoding(),
-        };
-      } else {
-        this.contextMeta = undefined;
-      }
+      /** A run that never came to exist has no state of its own: keep the
+       * inherited meta so the persisted error response still seeds the next
+       * turn. A created run's neutral state may still clear it. */
+      this.contextMeta = this.run == null ? this.contextMeta : captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
@@ -4521,6 +5217,9 @@ class AgentClient extends BaseClient {
     activityPhaseSnapshot,
     compactionSemanticIndex,
   }) {
+    /** The seeded state is on the job before the run is rebuilt, so a Stop
+     * during rebuild still persists it onto the stopped response. */
+    await this.publishRunContextMeta?.();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -4539,7 +5238,7 @@ class AgentClient extends BaseClient {
         ? buildToolApprovalHooks({
             userId: this.options.req?.user?.id,
             conversationId: this.conversationId,
-            tenantId: this.options.req?.user?.tenantId,
+            tenantId: resolveRequestTenantId(this.options.req ?? {}),
             appConfig,
           })
         : undefined;
@@ -4553,8 +5252,16 @@ class AgentClient extends BaseClient {
         runName: 'AgentRun',
         configurable: {
           thread_id: this.conversationId,
+          ...buildToolApprovalExecutionConfig(this.responseMessageId, this.jobCreatedAt),
           checkpoint_ns: '',
           [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: this.checkpointNamespace,
+          [LIBRECHAT_CHECKPOINT_STORAGE_OWNER_KEY]:
+            (this.user ?? this.options.req.user?.id)
+              ? checkpointOwnerNamespacePrefix(
+                  this.user ?? this.options.req.user?.id,
+                  resolveRequestTenantId(this.options.req),
+                )
+              : undefined,
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
@@ -4564,6 +5271,9 @@ class AgentClient extends BaseClient {
               messageId: this.responseMessageId,
               conversationId: this.conversationId,
               parentMessageId: this.parentMessageId,
+              codeWorkspaces:
+                this.options.req.body.codeWorkspaces ??
+                this.options.req.resolvedConversation?.codeWorkspaces,
             }),
           user: createSafeUser(this.options.req.user),
         },
@@ -4590,6 +5300,7 @@ class AgentClient extends BaseClient {
       const liveFiles = Array.isArray(this.options.attachments)
         ? [...this.options.attachments]
         : [];
+      const requestFiles = [...liveFiles];
       const modelBoundAgentFiles = [];
       const contextAttachmentLists =
         this.options.agentContextAttachmentsByAgentId instanceof Map
@@ -4640,7 +5351,199 @@ class AgentClient extends BaseClient {
         ...(Array.isArray(this.modelBoundCurrentFiles) ? this.modelBoundCurrentFiles : []),
         ...resumeContentProjection.resolvedFiles,
       ];
+      const checkpointFileIds = collectFileIds(resumeContentProjection.checkpointFiles);
+      const resumeSharedFiles = [
+        ...resumeContentProjection.checkpointFiles.filter(isModelBoundAttachmentFile),
+        ...AgentClient.prototype.getModelBoundAttachmentsForEndpoint
+          .call(this, requestFiles)
+          .filter((file) => !file?.file_id || !checkpointFileIds.has(file.file_id)),
+      ];
+      const resumeSharedFileIds = collectFileIds(resumeSharedFiles);
+      const resumeEndpointsByAgentId = new Map(
+        agents
+          .filter((agent) => agent?.id)
+          .map((agent) => [
+            agent.id,
+            {
+              endpoint: agent.endpoint,
+              endpointType: agent === this.options.agent ? this.options.endpointType : undefined,
+            },
+          ]),
+      );
+      const resumeMcpManager = getMCPManager();
+      const [resumeScopedContext, resumeConfigServers] = await Promise.all([
+        buildAgentScopedContext({
+          agentIds: agents.map((agent) => agent?.id).filter(Boolean),
+          attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+          sharedRunAttachmentIds: resumeSharedFileIds,
+          sharedAttachments: resumeSharedFiles,
+          req: this.options.req,
+          endpoint: this.options.agent?.endpoint ?? this.options.endpoint ?? EModelEndpoint.agents,
+          endpointType: this.options.endpointType,
+          endpointsByAgentId: resumeEndpointsByAgentId,
+          tokenCountFn: (text) => countTokens(text),
+        }),
+        resolveConfigServers(this.options.req),
+      ]);
+      const resumeScopedAttachmentMap = buildAgentScopedAttachmentMap({
+        agentIds: agents.map((agent) => agent?.id).filter(Boolean),
+        attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+        sharedRunAttachmentIds: resumeSharedFileIds,
+        req: this.options.req,
+        endpoint: this.options.agent?.endpoint ?? this.options.endpoint ?? EModelEndpoint.agents,
+        endpointType: this.options.endpointType,
+        endpointsByAgentId: resumeEndpointsByAgentId,
+      });
+      this.turnSharedAttachmentFiles = resumeSharedFiles;
+      this.turnAggregateOnlyAttachmentFiles = [];
+      this.turnScopedAttachmentsByAgentId = resumeScopedAttachmentMap;
+      this.turnAttachmentEndpointsByAgentId = resumeEndpointsByAgentId;
+      const resumeScopedAttachments = [...resumeScopedAttachmentMap.values()].flat();
+      AgentClient.prototype.assertTurnAttachmentLimits.call(
+        this,
+        resumeSharedFiles,
+        resumeScopedAttachments,
+      );
+      const resumeAttachmentTelemetryFiles = [...resumeSharedFiles, ...resumeScopedAttachments];
+      this.attachmentMemoryContext = {
+        req: this.options.req,
+        conversationId: this.conversationId,
+        messageId: this.responseMessageId,
+        attachments: resumeAttachmentTelemetryFiles,
+        countRepeatedExtractedText: true,
+      };
+      await Promise.all(
+        agents
+          .filter((agent) => agent?.id)
+          .map(async (agent) => {
+            agent.instructions = agent.instructions?.trim() || undefined;
+            agent.additional_instructions = agent.additional_instructions?.trim() || undefined;
+            const scopedContext = resumeScopedContext.get(agent.id);
+            await applyContextToAgent({
+              agent,
+              agentId: agent.id,
+              logger,
+              mcpManager: resumeMcpManager,
+              configServers: resumeConfigServers,
+              sharedRunContext: scopedContext ?? '',
+              ephemeralAgent:
+                agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
+            });
+            assertModelBoundContent({
+              filters: this.options.req.config?.filters,
+              legacyPii: this.options.req.config?.messageFilter?.pii,
+              agents: [agent],
+              files: scopedContext ? [scopedContext] : [],
+            });
+          }),
+      );
+      const wrappedResumeLazyDescriptors = new WeakSet();
+      const validatedResumeAgents = new WeakSet(agents.filter((agent) => agent != null));
+      const wrapResumeLazyAttachmentValidation = (configs) => {
+        const pending = [...configs];
+        const visitedConfigs = new WeakSet();
+        for (let index = 0; index < pending.length; index++) {
+          const config = pending[index];
+          if (!config || visitedConfigs.has(config)) {
+            continue;
+          }
+          visitedConfigs.add(config);
+          pending.push(...(config.subagentAgentConfigs ?? []));
+          for (const graph of config.subagentGraphConfigs ?? []) {
+            pending.push(...graph.memberConfigs);
+          }
+          for (const descriptor of config.lazySubagentConfigs ?? []) {
+            pending.push(descriptor);
+            if (
+              wrappedResumeLazyDescriptors.has(descriptor) ||
+              typeof descriptor?.resolve !== 'function'
+            ) {
+              continue;
+            }
+            wrappedResumeLazyDescriptors.add(descriptor);
+            const resolve = descriptor.resolve;
+            descriptor.resolve = async (context) => {
+              const resolved = await resolve(context);
+              const resolvedAgents = collectReachableAgents([resolved]);
+              const unvalidatedAgents = resolvedAgents.filter(
+                (agent) => agent != null && !validatedResumeAgents.has(agent),
+              );
+              if (unvalidatedAgents.length === 0) {
+                wrapResumeLazyAttachmentValidation(resolvedAgents);
+                return resolved;
+              }
+              const liveResumeSharedFiles = this.turnSharedAttachmentFiles ?? resumeSharedFiles;
+              const liveResumeSharedFileIds = collectFileIds(liveResumeSharedFiles);
+              const lateAttachmentsByAgentId =
+                buildAgentContextAttachmentsByAgentId(unvalidatedAgents);
+              const lateEndpointsByAgentId = new Map(
+                unvalidatedAgents
+                  .filter((agent) => agent?.id)
+                  .map((agent) => [agent.id, { endpoint: agent.endpoint }]),
+              );
+              const lateScopedAttachmentMap = buildAgentScopedAttachmentMap({
+                agentIds: unvalidatedAgents.map((agent) => agent?.id).filter(Boolean),
+                attachmentsByAgentId: lateAttachmentsByAgentId,
+                sharedRunAttachmentIds: liveResumeSharedFileIds,
+                req: this.options.req,
+                endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+                endpointType: this.options.endpointType,
+                endpointsByAgentId: lateEndpointsByAgentId,
+              });
+              for (const [agentId, attachments] of lateScopedAttachmentMap) {
+                this.turnScopedAttachmentsByAgentId.set(agentId, attachments);
+              }
+              for (const [agentId, agentEndpoint] of lateEndpointsByAgentId) {
+                this.turnAttachmentEndpointsByAgentId.set(agentId, agentEndpoint);
+              }
+              const lateScopedContext = await buildAgentScopedContext({
+                agentIds: unvalidatedAgents.map((agent) => agent?.id).filter(Boolean),
+                attachmentsByAgentId: lateAttachmentsByAgentId,
+                sharedRunAttachmentIds: liveResumeSharedFileIds,
+                sharedAttachments: liveResumeSharedFiles,
+                req: this.options.req,
+                endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+                endpointType: this.options.endpointType,
+                endpointsByAgentId: lateEndpointsByAgentId,
+                tokenCountFn: (text) => countTokens(text),
+              });
+              const lateScopedAttachments = [...lateScopedAttachmentMap.values()].flat();
+              resumeScopedAttachments.push(...lateScopedAttachments);
+              resumeAttachmentTelemetryFiles.push(...lateScopedAttachments);
+              AgentClient.prototype.assertTurnAttachmentLimits.call(
+                this,
+                liveResumeSharedFiles,
+                resumeScopedAttachments,
+              );
+              for (const agent of unvalidatedAgents) {
+                agent.instructions = agent.instructions?.trim() || undefined;
+                agent.additional_instructions = agent.additional_instructions?.trim() || undefined;
+                const scopedContext = lateScopedContext.get(agent.id);
+                await applyContextToAgent({
+                  agent,
+                  agentId: agent.id,
+                  logger,
+                  mcpManager: resumeMcpManager,
+                  configServers: resumeConfigServers,
+                  sharedRunContext: scopedContext ?? '',
+                });
+                assertModelBoundContent({
+                  filters: this.options.req.config?.filters,
+                  legacyPii: this.options.req.config?.messageFilter?.pii,
+                  agents: [agent],
+                  files: scopedContext ? [scopedContext] : [],
+                });
+                validatedResumeAgents.add(agent);
+              }
+              wrapResumeLazyAttachmentValidation(resolvedAgents);
+              return resolved;
+            };
+          }
+        }
+      };
+      wrapResumeLazyAttachmentValidation(agents);
       const modelBoundCallback = AgentClient.prototype.createModelBoundChatModelCallback.call(this);
+      const attachmentMemoryCallback = createAgentMemoryCallback(this.attachmentMemoryContext);
 
       // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
       // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the
@@ -4694,7 +5597,7 @@ class AgentClient extends BaseClient {
       run = await createRun({
         agents,
         conversationId: this.conversationId,
-        modelCallbacks: [modelBoundCallback],
+        modelCallbacks: [modelBoundCallback, attachmentMemoryCallback],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],
@@ -4721,6 +5624,7 @@ class AgentClient extends BaseClient {
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
         discoveredToolNames,
         initialSessions,
+        ...resolveRunSeeds(this),
         runId: this.responseMessageId,
         signal: abortController.signal,
         // The rebuilt graph numbers content indices from 0, but the aggregator was
@@ -4731,8 +5635,10 @@ class AgentClient extends BaseClient {
         // steer parts spliced in while the resumed segment streams.
         customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
+        codeApprovalMode: this.options.req.body.codeApprovalMode,
         user: createSafeUser(this.options.req?.user),
-        tenantId: this.options.req?.user?.tenantId,
+        traceContext: buildTraceContext(this.options),
+        tenantId: resolveRequestTenantId(this.options.req ?? {}),
         summarizationConfig: appConfig?.summarization,
         appConfig,
         tokenCounter,
@@ -4779,6 +5685,7 @@ class AgentClient extends BaseClient {
       if (this.activityLabelsMarkedPromise != null) {
         await this.activityLabelsMarkedPromise;
       }
+      await this.publishRunContextMeta?.();
       try {
         await run.resume(
           resumeValue,
@@ -4811,6 +5718,16 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (isAgentAttachmentLimitError(err) || isAttachmentObjectNotFoundError(err)) {
+        logger.warn(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Attachment rejected',
+          {
+            conversationId: this.conversationId,
+            ...getSafeErrorMetadata(err),
+          },
+        );
+        throw err;
+      }
       if (isContentFilterError(err)) {
         logger.warn(
           '[api/server/controllers/agents/client.js #resumeCompletion] Blocked by content policy',
@@ -4830,6 +5747,15 @@ class AgentClient extends BaseClient {
             ...getSafeErrorMetadata(err),
           },
         );
+      } else if (isStepLimitError(err)) {
+        /** Same contract as the initial turn: incomplete, not failed. A resumed run
+         *  inherits the budget of a turn that already spent steps before pausing, so
+         *  this boundary is if anything more likely to be reached here. */
+        this.stepLimitReached = true;
+        logger.warn(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Tool call limit reached; ending the resumed turn as incomplete',
+          { conversationId: this.conversationId },
+        );
       } else {
         logger.error(
           '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
@@ -4847,17 +5773,13 @@ class AgentClient extends BaseClient {
     } finally {
       this.eventActorSummary =
         getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
-      const ratio = this.run?.getCalibrationRatio() ?? 0;
-      if (ratio > 0 && ratio !== 1) {
-        this.contextMeta = {
-          calibrationRatio: Math.round(ratio * 1000) / 1000,
-          encoding: this.getEncoding(),
-        };
-      } else {
-        this.contextMeta = undefined;
-      }
+      /** A run that never came to exist has no state of its own: keep the
+       * inherited meta so the persisted error response still seeds the next
+       * turn. A created run's neutral state may still clear it. */
+      this.contextMeta = this.run == null ? this.contextMeta : captureRunContextMeta(this);
 
       this.finalizeSubagentContent();
+      this.stampMcpServerIdentities();
       await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {
@@ -5083,6 +6005,7 @@ class AgentClient extends BaseClient {
     resolveConfigHeaders({
       llmConfig: clientOptions,
       user: createSafeUser(req?.user),
+      tenantId: resolveRequestTenantId(req ?? {}),
       body: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,
@@ -5233,5 +6156,7 @@ class AgentClient extends BaseClient {
     return 'o200k_base';
   }
 }
+
+AgentClient.buildTraceContext = buildTraceContext;
 
 module.exports = AgentClient;

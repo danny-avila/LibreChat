@@ -25,6 +25,7 @@ import type {
   OAuthMetadata,
 } from './types';
 import type { FlowStateManager } from '~/flow/manager';
+import type { FlowState } from '~/flow/types';
 import {
   resolveTokenEndpointAuthMethod,
   getForcedTokenEndpointAuthMethod,
@@ -58,6 +59,7 @@ type PreconfiguredOAuthDiscoveryResult = {
 };
 
 const PRECONFIGURED_DISCOVERY_TIMEOUT_MS = 5_000;
+const OAUTH_REVOCATION_TIMEOUT_MS = 5_000;
 
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
@@ -1157,13 +1159,26 @@ export class MCPOAuthHandler {
     flowManager: FlowStateManager<MCPOAuthTokens>,
     oauthHeaders: Record<string, string>,
     persistBeforeComplete?: (tokens: MCPOAuthTokens) => Promise<MCPOAuthTokens>,
+    rollbackPersistedTokens?: (tokens: MCPOAuthTokens) => Promise<void>,
+    expectedAttempt?: { createdAt: number; state: string },
   ): Promise<MCPOAuthTokens> {
+    let observedFlowState: FlowState<MCPOAuthTokens> | null = null;
     try {
       /** Flow state which contains our metadata */
       const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
       if (!flowState) {
         throw new Error('OAuth flow not found');
       }
+      const currentState =
+        typeof flowState.metadata?.state === 'string' ? flowState.metadata.state : '';
+      if (
+        expectedAttempt &&
+        (flowState.createdAt !== expectedAttempt.createdAt ||
+          currentState !== expectedAttempt.state)
+      ) {
+        throw new Error('OAuth flow attempt was replaced before token exchange');
+      }
+      observedFlowState = flowState;
 
       const flowMetadata = flowState.metadata as MCPOAuthFlowMetadata;
       if (!flowMetadata) {
@@ -1231,12 +1246,32 @@ export class MCPOAuthHandler {
       }
 
       /** Now wake flow waiters with the persisted token snapshot. */
-      await flowManager.completeFlow(flowId, this.FLOW_TYPE, mcpTokens);
+      const observedState = typeof metadata.state === 'string' ? metadata.state : '';
+      const completionResult = await flowManager.completeFlowIfCurrent(
+        flowId,
+        this.FLOW_TYPE,
+        flowState.createdAt,
+        observedState,
+        mcpTokens,
+      );
+      if (completionResult !== 'updated') {
+        await rollbackPersistedTokens?.(mcpTokens);
+        throw new Error('OAuth flow was cancelled before completion');
+      }
 
       return mcpTokens;
     } catch (error) {
       logger.error('[MCPOAuth] Failed to complete OAuth flow', { error, flowId });
-      await flowManager.failFlow(flowId, this.FLOW_TYPE, error as Error);
+      if (observedFlowState) {
+        const observedMetadata = observedFlowState.metadata as MCPOAuthFlowMetadata | undefined;
+        await flowManager.failFlowIfCurrent(
+          flowId,
+          this.FLOW_TYPE,
+          observedFlowState.createdAt,
+          typeof observedMetadata?.state === 'string' ? observedMetadata.state : '',
+          error as Error,
+        );
+      }
       throw error;
     }
   }
@@ -1444,40 +1479,55 @@ export class MCPOAuthHandler {
     return flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
   }
 
+  /** Fails one observed OAuth attempt and makes its callback state unusable. */
+  static async failFlowAndDeleteStateMapping(
+    flowId: string,
+    flowState: FlowState<MCPOAuthTokens | null>,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+    error: Error | string,
+  ): Promise<void> {
+    const metadata = flowState.metadata as MCPOAuthFlowMetadata;
+    const state = typeof metadata.state === 'string' ? metadata.state : '';
+    await flowManager.failFlowIfCurrent(flowId, this.FLOW_TYPE, flowState.createdAt, state, error);
+    if (state) {
+      const mappingDeleted = await this.deleteStateMapping(state, flowManager);
+      if (!mappingDeleted) {
+        const mapping = await flowManager.getFlowState(state, this.STATE_MAP_TYPE);
+        if (mapping) {
+          throw new Error(`Failed to delete OAuth state mapping for ${flowId}`);
+        }
+      }
+    }
+  }
+
   /**
    * Deletes an OAuth flow together with its state mapping, for teardown paths
    * that don't already hold the flow (e.g. server uninstall). The flow is
-   * deleted first on purpose: it is what makes a provider callback
-   * completable, and teardown runs after the server's tokens were removed, so
-   * a surviving callback-capable flow could recreate credentials the user
-   * just revoked. A failure between the two deletes leaves at worst an
-   * orphaned mapping, which the callback's stored-state equality gates reduce
-   * to a clean invalid_state. Both deletes are attempted regardless of the
-   * other's outcome; any reported storage failure is surfaced as a rejection
-   * for the caller's best-effort logging.
+   * guarded by the observed attempt identity so stale teardown cannot remove
+   * a concurrently created replacement. The old opaque mapping remains safe
+   * to delete because every attempt receives a distinct state value.
    */
   static async deleteFlowAndStateMapping(
     flowId: string,
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
   ): Promise<void> {
-    /** A failed metadata read must not abort teardown: the flow is deleted
-     *  blindly and the unidentifiable mapping is left to the callback gates */
-    let state: string | null = null;
-    let metadataReadFailed = false;
-    try {
-      const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
-      const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
-      state = typeof metadata?.state === 'string' ? metadata.state : null;
-    } catch {
-      metadataReadFailed = true;
+    const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
+    if (!flowState) {
+      return;
     }
-
-    const flowDeleted = await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
+    const metadata = flowState.metadata as MCPOAuthFlowMetadata | undefined;
+    const state = typeof metadata?.state === 'string' ? metadata.state : '';
+    const flowResult = await flowManager.deleteFlowIfCurrent(
+      flowId,
+      this.FLOW_TYPE,
+      flowState.createdAt,
+      state,
+    );
     const mappingDeleted = state ? await this.deleteStateMapping(state, flowManager) : true;
 
-    if (metadataReadFailed || !flowDeleted || !mappingDeleted) {
+    if (flowResult === 'missing' || !mappingDeleted) {
       throw new Error(
-        `Failed to fully delete OAuth flow ${flowId} (metadata read ok: ${!metadataReadFailed}, flow deleted: ${flowDeleted}, state mapping deleted: ${mappingDeleted})`,
+        `Failed to fully delete OAuth flow ${flowId} (flow result: ${flowResult}, state mapping deleted: ${mappingDeleted})`,
       );
     }
   }
@@ -2049,6 +2099,7 @@ export class MCPOAuthHandler {
       method: 'POST',
       body: body.toString(),
       headers,
+      signal: AbortSignal.timeout(OAUTH_REVOCATION_TIMEOUT_MS),
     });
 
     if (!response.ok) {

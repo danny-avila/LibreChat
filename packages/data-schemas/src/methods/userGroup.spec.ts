@@ -1516,6 +1516,7 @@ describe('userGroup methods', () => {
           username: 'alice',
           password: 'password123',
           provider: 'local',
+          role: SystemRoles.ADMIN,
         },
         {
           name: 'Bob Jones',
@@ -1577,6 +1578,7 @@ describe('userGroup methods', () => {
       const userResults = results.filter((r) => r.type === PrincipalType.USER);
       expect(userResults.length).toBeGreaterThanOrEqual(1);
       expect(userResults[0].name).toBe('Alice Smith');
+      expect(userResults[0].isAdmin).toBe(true);
     });
 
     it('finds matching groups', async () => {
