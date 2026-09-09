@@ -345,7 +345,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
         type: 'attached',
         owner: 'deployment',
         baseURL: context.baseUrl,
-        pairing: { workerId, tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN' },
+        pairing: { workerId, tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN', allowPrincipalWorkers: false },
       };
       const pending = resolveCodeExecutionWorkspaceContext({
         context: { ...context, environmentId: 'fixed' },
@@ -353,7 +353,11 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
         environments: [
           {
             ...deploymentEnvironment,
-            pairing: { ...deploymentEnvironment.pairing, workerId: 'worker' },
+            pairing: {
+              workerId: 'worker',
+              tokenEnv: 'TEST_CODE_CAPABILITY_TOKEN',
+              allowPrincipalWorkers: false,
+            },
           },
         ],
         getAppConfig: jest.fn(
