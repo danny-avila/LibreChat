@@ -63,6 +63,7 @@ describe('useCodeWorkspace', () => {
         data: {
           environmentId: 'personal-vm',
           status: 'ready',
+          statefulWorkspace: true,
           workspaces: [{ id: 'project-a', name: 'Project A' }],
         },
         isLoading: false,
@@ -98,12 +99,23 @@ describe('useCodeWorkspace', () => {
     expect(mockStatus).toHaveBeenCalledWith(['personal-vm'], true);
   });
 
+  it.each([false, undefined])('rejects non-stateful worker support: %s', (statefulWorkspace) => {
+    const statuses = mockStatus();
+    statuses[0].data.statefulWorkspace = statefulWorkspace;
+    const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+    const { result } = renderHook(() => useCodeWorkspace(conversation([selection])));
+    expect(result.current.state).toBe('unavailable');
+    expect(result.current.selections).toBeUndefined();
+    expect(result.current.resolveSelections([selection])).toBeUndefined();
+  });
+
   it('requires an explicit choice when several workspaces are advertised', () => {
     mockStatus.mockReturnValue([
       {
         data: {
           environmentId: 'personal-vm',
           status: 'ready',
+          statefulWorkspace: true,
           workspaces: [{ id: 'project-a' }, { id: 'project-b' }],
         },
         isLoading: false,
@@ -140,6 +152,7 @@ describe('useCodeWorkspace', () => {
         data: {
           environmentId: 'another-vm',
           status: 'ready',
+          statefulWorkspace: true,
           workspaces: [{ id: 'project-a' }],
         },
         isLoading: false,
@@ -211,6 +224,7 @@ describe('useCodeWorkspace', () => {
         data: {
           environmentId: 'personal-vm',
           status: 'ready',
+          statefulWorkspace: true,
           workspaces: [{ id: 'project-a' }],
         },
         isLoading: false,
@@ -220,6 +234,7 @@ describe('useCodeWorkspace', () => {
         data: {
           environmentId: 'team-vm',
           status: 'ready',
+          statefulWorkspace: true,
           workspaces: [{ id: 'project-b' }],
         },
         isLoading: false,

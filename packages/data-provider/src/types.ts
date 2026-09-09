@@ -592,6 +592,7 @@ export type TCodeEnvironmentPairingResponse = {
 export type TCodeEnvironmentStatusResponse = {
   environmentId: string;
   status: 'offline' | 'starting' | 'ready';
+  statefulWorkspace?: boolean;
   leaseExpiresInMs?: number;
   sandboxProfile?: string;
   runtimes?: string[];
