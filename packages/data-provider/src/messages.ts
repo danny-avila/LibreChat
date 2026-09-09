@@ -157,6 +157,23 @@ export function buildTree({
 }
 
 /**
+ * True when every content part of a message is a summary, whatever state each
+ * part is in. That content shape is what a compaction turn persists, and it is
+ * the cheap half of identifying one: the other half is that its parent is the
+ * leaf it summarized rather than a user message, which only the thread can say.
+ * A turn that auto-summarized and was cancelled before its first answer token
+ * persists the same shape while still hanging off a user message.
+ * Whether a compaction finished is the narrower {@link isCompactedLeaf}.
+ */
+export function isSummaryOnlyContent(message?: Pick<TMessage, 'content'> | null): boolean {
+  const content = message?.content;
+  if (!Array.isArray(content) || content.length === 0) {
+    return false;
+  }
+  return content.every((part) => part?.type === ContentTypes.SUMMARY);
+}
+
+/**
  * True when a message is a finished manual compaction: every content part is a
  * summary and at least one of them carries text. A part that is still streaming
  * or that failed contributes no text of its own, so an interrupted compaction

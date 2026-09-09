@@ -304,26 +304,66 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.getByTestId('continue-generation-button')).toBeEnabled();
   });
 
-  /** A row rendered outside the messages view cannot resolve its parent. Withholding
-   *  on an unknown parent would strip the controls from every such row, so the gate
-   *  stays open and the rerun paths refuse a non-user parent on their own. */
-  it('keeps rerun controls when the thread is unavailable', () => {
-    const assistantMessage = {
+  /** An imported or restored conversation can chain one model turn onto another
+   *  without a user message between them. Those replies carry ordinary content,
+   *  stay editable, and keep the controls they had. */
+  it('keeps rerun controls on a model turn chained onto another model turn', () => {
+    const firstReply = {
       ...userMessage,
       messageId: 'assistant-1',
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      text: 'Complete answer',
+      text: 'The first half of the answer',
+    } as TMessage;
+    const chainedReply = {
+      ...userMessage,
+      messageId: 'assistant-2',
+      parentMessageId: firstReply.messageId,
+      isCreatedByUser: false,
+      text: 'The second half of the answer',
+      finish_reason: 'length',
     } as TMessage;
 
     const container = renderHoverButtons({
       isSubmitting: false,
-      message: assistantMessage,
+      message: chainedReply,
       isLast: true,
-      latestMessageId: assistantMessage.messageId,
+      latestMessageId: chainedReply.messageId,
+      thread: [userMessage, firstReply, chainedReply],
     });
 
-    expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).not.toBeNull();
+    expect(container.querySelector(`#edit-${chainedReply.messageId}`)).not.toBeNull();
+    expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
+    expect(screen.getByTestId('continue-generation-button')).toBeEnabled();
+  });
+
+  /** A row rendered outside the messages view cannot resolve its parent. Withholding
+   *  on an unknown parent would strip the controls from every such row, so the gate
+   *  stays open and the rerun paths refuse a non-user parent on their own. */
+  it('keeps rerun controls when the thread is unavailable', () => {
+    const compactionMessage = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: 'assistant-1',
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: compactionMessage,
+      isLast: true,
+      latestMessageId: compactionMessage.messageId,
+    });
+
+    expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).not.toBeNull();
     expect(screen.getByTestId('regenerate-generation-button')).toBeEnabled();
   });
 });
