@@ -553,7 +553,9 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
               !availableFiles.length &&
               !hasNextPage && (
                 <p className="py-6 text-center text-sm text-text-secondary">
-                  {localize('com_ui_project_no_eligible_files')}
+                  {deferredPickerSearch
+                    ? localize('com_ui_no_search_results')
+                    : localize('com_ui_project_no_eligible_files')}
                 </p>
               )}
             {!isFilesLoading && !isFilesError && availableFiles.length > 0 && (

@@ -2323,6 +2323,15 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockInitializeClient).toHaveBeenCalled();
     });
 
+    it('rejects a resume whose Project no longer exists', async () => {
+      withProject(3, 3);
+      mockGetChatProject.mockResolvedValue(null);
+      const res = await post(approveBody());
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
     it('terminalizes and prunes the claimed epoch when project context changes', async () => {
       withProject(4, 3);
       const res = await post(approveBody());
