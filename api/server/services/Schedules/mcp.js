@@ -1,7 +1,6 @@
 const { createScheduleMCPPreflight } = require('@librechat/api');
 const { CacheKeys } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
-const { userCanUseMCPServers } = require('~/server/services/MCP');
 const { getAppConfig } = require('~/server/services/Config/app');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
@@ -10,7 +9,7 @@ const { getLogStores } = require('~/cache');
 const methods = require('~/models');
 
 module.exports = createScheduleMCPPreflight({
-  canUseMCP: userCanUseMCPServers,
+  getRoleByName: methods.getRoleByName,
   getAgent: (id) => methods.getAgent({ id }),
   getUser: (id) => methods.findUser({ _id: id }),
   getAppConfig,

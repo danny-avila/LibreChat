@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
   Constants,
+  Permissions,
+  PermissionTypes,
   isActionTool,
   buildServerNameAliases,
   normalizeMCPToolKey,
@@ -9,6 +11,7 @@ import {
 import type { IAgent, IUser, AppConfig, PluginAuthMethods } from '@librechat/data-schemas';
 import type { ScheduleMCPStatus, ScheduleMCPOutcome } from 'librechat-data-provider';
 import type { ParsedServerConfig, UserMCPConnectionOptions } from '../mcp/types';
+import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
 import type { GetAppConfigOptions } from '../app/service';
 import type { ScheduleMCPPreflight } from './types';
@@ -19,6 +22,7 @@ import { getAppConfigOptionsFromUser } from '../app/service';
 import { isOAuthAuthenticationError } from '../mcp/errors';
 import { OpenIDReauthRequiredError } from '../utils/oidc';
 import { formatMCPServerTools } from '../mcp/tools';
+import { checkAccess } from '../middleware/access';
 import { getPluginAuthMap } from '../agents/auth';
 
 export class ScheduleMCPError extends Error {
@@ -37,7 +41,7 @@ export class ScheduleMCPError extends Error {
 
 interface ScheduleMCPDeps {
   getAgent: (id: string) => Promise<Pick<IAgent, 'tools' | 'agent_ids' | 'edges'> | null>;
-  canUseMCP: (user: IUser) => Promise<boolean>;
+  getRoleByName: CheckAccessParams['getRoleByName'];
   getUser: (id: string) => Promise<IUser | null>;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
   ensureConfigServers: (
@@ -98,7 +102,14 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       }
       selected.set(server, required);
     }
-    if (!(await deps.canUseMCP(user))) {
+    if (
+      !(await checkAccess({
+        user,
+        permissionType: PermissionTypes.MCP_SERVERS,
+        permissions: [Permissions.USE],
+        getRoleByName: deps.getRoleByName,
+      }))
+    ) {
       throw new ScheduleMCPError(
         [...selected.keys()].map((server) => ({ server, status: 'mcp_configuration_missing' })),
       );

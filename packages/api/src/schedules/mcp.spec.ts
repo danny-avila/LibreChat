@@ -1,4 +1,5 @@
-import type { IUser } from '@librechat/data-schemas';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import type { IUser, IRole } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '../mcp/types';
 import { createScheduleMCPPreflight, ScheduleMCPError } from './mcp';
 
@@ -9,8 +10,13 @@ function setup(tools = ['search_mcp_docs']) {
   const disconnect = jest.fn();
   const deps: Parameters<typeof createScheduleMCPPreflight>[0] = {
     getAgent: jest.fn(async () => ({ tools })),
-    canUseMCP: jest.fn(async () => true),
-    getUser: jest.fn(async () => ({ id: 'owner', email: 'owner@example.test' }) as IUser),
+    getRoleByName: jest.fn(
+      async () =>
+        ({ permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } } }) as IRole,
+    ),
+    getUser: jest.fn(
+      async () => ({ id: 'owner', role: 'USER', email: 'owner@example.test' }) as IUser,
+    ),
     getAppConfig: jest.fn(async () => undefined),
     ensureConfigServers: jest.fn(async () => ({})),
     getServerConfigs: jest.fn(async () => ({ docs: server })),
@@ -40,7 +46,7 @@ it('uses persisted identity with isolated connections and disposes them after di
   await expect(check('agent', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
   expect(deps.connect).toHaveBeenCalledWith(
     expect.objectContaining({
-      user: { id: 'owner', email: 'owner@example.test' },
+      user: { id: 'owner', role: 'USER', email: 'owner@example.test' },
       ephemeralConnection: true,
       returnOnOAuth: true,
       requestBody: expect.objectContaining({
@@ -141,9 +147,18 @@ it('preserves authentication failures reported by tools/list snapshots', async (
 
 it('does not connect when the owner loses MCP permission', async () => {
   const { check, deps } = setup();
-  deps.canUseMCP = async () => false;
+  deps.getRoleByName = async () => null;
   await expect(check('agent', principal)).rejects.toMatchObject({
     code: 'mcp_configuration_missing',
   });
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
+it('keeps a role-store outage retryable instead of disabling the schedule', async () => {
+  const { check, deps } = setup();
+  deps.getRoleByName = async () => {
+    throw new Error('role store unavailable');
+  };
+  await expect(check('agent', principal)).rejects.not.toBeInstanceOf(ScheduleMCPError);
   expect(deps.connect).not.toHaveBeenCalled();
 });
