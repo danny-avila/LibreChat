@@ -1,7 +1,7 @@
 import http from 'http';
 import https from 'https';
-import { setTimeout as delay } from 'node:timers/promises';
 import { isAxiosError } from 'axios';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createConcurrencyLimiter } from './promise';
 
 /**
