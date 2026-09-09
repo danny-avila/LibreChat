@@ -219,10 +219,18 @@ async function uploadFileHandler(req, res) {
           mimeType: file.mimetype || 'application/octet-stream',
           bytes: file.size,
           isExecutable: false,
-          author: req.user._id,
+          author: String(req.user._id ?? req.user.id),
           tenantId,
         },
-        existingFile,
+        existingFile
+          ? {
+              skillId: String(existingFile.skillId),
+              relativePath: existingFile.relativePath,
+              author: String(existingFile.author),
+              tenantId: existingFile.tenantId,
+              bytes: existingFile.bytes,
+            }
+          : null,
       );
     } catch (dbError) {
       // Clean up the stored blob so it doesn't leak on DB failure

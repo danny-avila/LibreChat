@@ -1166,6 +1166,28 @@ describe('createSkillFileQuotaPersistence', () => {
     );
   });
 
+  it('preserves an ambiguous write when its recovery read also fails', async () => {
+    const row = { bytes: 10, skillId: 'skill-a', relativePath: 'scripts/a.sh', file_id: 'file-a' };
+    const recoveryError = new Error('database unavailable during recovery');
+    const onCleanupError = jest.fn();
+    const persistence = createSkillFileQuotaPersistence({
+      resolveScope: resolveStorageScope,
+      upsertSkillFile: jest.fn(async () => {
+        throw new Error('ambiguous upsert failure');
+      }),
+      recoverCommittedSkillFile: jest.fn(async () => {
+        throw recoveryError;
+      }),
+      getUserStorageUsage: usageOf(0),
+      onCleanupError,
+    });
+
+    await expect(
+      persistence.persistSkillFile(makeReq({ storageLimitMb: 1 }), row, null),
+    ).resolves.toEqual(expect.objectContaining(row));
+    expect(onCleanupError).toHaveBeenCalledWith(recoveryError);
+  });
+
   it('caches effective configuration promises only inside the explicit run scope', async () => {
     const load = jest.fn(async () => ({ fileConfig: { storageLimit: 1 } }));
     const persistence = createSkillFileQuotaPersistence({

@@ -522,15 +522,15 @@ export function createFileQuotaPersistence<TRequest, TResult>(
 }
 
 export type SkillFileRow = LedgerRow & {
-  skillId?: { toString(): string } | string;
+  skillId?: string;
   relativePath?: string;
-  author?: { toString(): string } | string;
+  author?: string;
 };
 
 export type SkillFileReplacement = {
-  skillId?: { toString(): string } | string;
+  skillId?: string;
   relativePath?: string;
-  author?: unknown;
+  author?: string;
   tenantId?: string | null;
   bytes?: number | null;
 };
@@ -606,7 +606,17 @@ export function createSkillFileQuotaPersistence<TRequest, TResult>(
             try {
               return await dependencies.upsertSkillFile(scopedRow);
             } catch (error) {
-              const committed = await dependencies.recoverCommittedSkillFile?.(scopedRow);
+              let committed: TResult | null | undefined;
+              try {
+                committed = await dependencies.recoverCommittedSkillFile?.(scopedRow);
+              } catch (recoveryError) {
+                /** The database cannot currently distinguish a rejected write from one
+                 * that committed before its parent side effect failed. Conservatively
+                 * preserve both the charge and blob until a later read can establish
+                 * the outcome; treating it as rejected would create a dangling row. */
+                dependencies.onCleanupError(recoveryError);
+                return scopedRow as unknown as TResult;
+              }
               if (committed != null) {
                 await dependencies.repairCommittedSkillFile?.(scopedRow);
                 return committed;

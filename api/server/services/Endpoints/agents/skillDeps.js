@@ -115,10 +115,18 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
         mimeType,
         bytes: buffer.length,
         isExecutable: false,
-        author: req.user._id ?? req.user.id,
+        author: String(req.user._id ?? req.user.id),
         tenantId,
       },
-      existingFile,
+      existingFile
+        ? {
+            skillId: String(existingFile.skillId),
+            relativePath: existingFile.relativePath,
+            author: String(existingFile.author),
+            tenantId: existingFile.tenantId,
+            bytes: existingFile.bytes,
+          }
+        : null,
     );
     if (!result) {
       const error = new Error('Skill file save failed to persist metadata');
