@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, X } from 'lucide-react';
-import { Button, Input } from '@librechat/client';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { X } from 'lucide-react';
+import { Button, FilterInput } from '@librechat/client';
 import { useDebounce, useLocalize } from '~/hooks';
 
 /**
@@ -28,6 +28,7 @@ interface SearchBarProps {
 const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }) => {
   const localize = useLocalize();
   const [searchTerm, setSearchTerm] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounced search value (300ms delay)
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -63,29 +64,25 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
     onSearch('');
     // Also clear local state
     setSearchTerm('');
+    inputRef.current?.focus();
   }, [onSearch]);
 
   return (
     <div className={`relative w-full ${className}`} role="search">
-      <label htmlFor="agent-search" className="sr-only">
-        {localize('com_agents_search_instructions')}
-      </label>
-      <Input
-        id="agent-search"
+      <FilterInput
+        inputId="agent-search"
+        label={localize('com_agents_search_aria')}
+        surface="presentation"
         type="text"
+        ref={inputRef}
         value={searchTerm}
         onChange={handleChange}
-        placeholder={localize('com_agents_search_placeholder')}
-        className="h-[38px] rounded-[10px] border-border-light bg-surface-secondary pl-9 pr-9 text-sm text-text-primary transition-[border-color,background-color] duration-200 placeholder:text-text-tertiary focus:border-border-heavy focus:bg-surface-primary focus:ring-0"
-        aria-label={localize('com_agents_search_aria')}
+        className="pe-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
         aria-describedby="search-instructions search-results-count"
         autoComplete="off"
         spellCheck="false"
       />
 
-      <div className="absolute inset-y-0 left-0 flex items-center pl-3" aria-hidden="true">
-        <Search className="size-4 text-text-tertiary" />
-      </div>
       {/* Hidden instructions for screen readers */}
       <div id="search-instructions" className="sr-only">
         {localize('com_agents_search_instructions')}
@@ -94,18 +91,15 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
       {searchTerm && (
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           type="button"
           onClick={handleClear}
-          className="group absolute right-3 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
+          /* `ghost` only colours its hover state, so the glyph would inherit the
+             document's colour and disappear against a dark surface. */
+          className="absolute end-0.5 top-1/2 -translate-y-1/2 text-text-secondary transition-none"
           aria-label={localize('com_agents_clear_search')}
-          title={localize('com_agents_clear_search')}
         >
-          <X
-            className="size-4 text-text-secondary transition-colors duration-200 group-hover:text-text-primary"
-            strokeWidth={2.5}
-            aria-hidden="true"
-          />
+          <X className="size-4" aria-hidden="true" />
         </Button>
       )}
     </div>

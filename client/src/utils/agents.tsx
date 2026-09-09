@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Feather } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
@@ -27,39 +27,37 @@ const LazyAgentAvatar = ({
   url,
   alt,
   imgClass,
+  fallbackClass,
 }: {
   url: string;
   alt: string;
   imgClass: string;
+  fallbackClass: string;
 }) => {
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    setIsLoaded(false);
-  }, [url]);
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  if (status === 'error') {
+    return <Feather className={fallbackClass} strokeWidth={1.5} aria-hidden="true" />;
+  }
 
   return (
     <>
       <img
         src={url}
         alt={alt}
-        className={imgClass}
+        className={`${imgClass} transition-opacity duration-150 motion-reduce:transition-none ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
         loading="lazy"
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setIsLoaded(false)}
-        style={{
-          opacity: isLoaded ? 1 : 0,
-          transition: 'opacity 0.2s ease-in-out',
-        }}
+        onLoad={() => setStatus('loaded')}
+        onError={() => setStatus('error')}
       />
-      {!isLoaded && <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />}
+      {status === 'loading' && (
+        <Skeleton className="absolute inset-0 rounded-full" aria-hidden="true" />
+      )}
     </>
   );
 };
 
 /**
- * Renders an agent avatar with fallback to Bot icon
- * Consistent across all agent displays
+ * Renders a fixed-size avatar with an icon fallback for missing or failed images.
  *
  * `xs` fills the gap between `icon` (20px, meant to sit inline with a line of text)
  * and `sm` (48-56px): a compact card needs an avatar that reads as a picture without
@@ -104,9 +102,11 @@ export const renderAgentAvatar = (
         className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}
       >
         <LazyAgentAvatar
+          key={avatarUrl}
           url={avatarUrl}
           alt={`${agent?.name || 'Agent'} avatar`}
           imgClass={`${sizeClasses[size]} rounded-full object-cover shadow-lg ${borderClasses}`}
+          fallbackClass={`text-text-primary ${iconSizeClasses[size]}`}
         />
       </div>
     );
