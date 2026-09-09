@@ -24,7 +24,7 @@ stringData:
   MEILI_MASTER_KEY: <generated value>
 ```
 2. Add Credentials to the Secret
-Dependant of the Model you want to use, [create Credentials in your provider](https://docs.librechat.ai/install/configuration/ai_setup.html) and add them to the Secret:
+Dependant of the Model you want to use, [create Credentials in your provider](https://www.librechat.ai/docs/configuration/pre_configured_ai) and add them to the Secret:
 ```yaml
 apiVersion: v1
 kind: Secret
