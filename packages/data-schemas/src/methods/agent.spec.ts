@@ -5999,6 +5999,74 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         }
       });
 
+      test('ignores a stale REMOTE_AGENT owner entry left on the same agent id', async () => {
+        // Ownership transfer revokes the AGENT entry and grants a new one, but the
+        // separately stored REMOTE_AGENT entry for the previous owner can survive and is
+        // the older of the two. `attachOwnerContacts` only counts AGENT entries, so the
+        // author sort must ignore it or the row disagrees with the same agent's card.
+        const formerOwner = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Aaa Former Owner',
+          email: `former-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const currentOwner = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Nnn Current Owner',
+          email: `current-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const agentTransferred = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Remote Transferred Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+        });
+        await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: formerOwner._id,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agentTransferred._id,
+          permBits: OWNER_ACL_BITS,
+          grantedBy: formerOwner._id,
+          grantedAt: new Date('2020-01-01T00:00:00.000Z'),
+        });
+        await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: currentOwner._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agentTransferred._id,
+          permBits: OWNER_ACL_BITS,
+          grantedBy: currentOwner._id,
+          grantedAt: new Date('2024-01-01T00:00:00.000Z'),
+        });
+        const anchor = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Remote Anchor Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+          support_contact: { name: 'Mmm Middle Anchor', email: '' },
+        });
+
+        const result = await getListAgentsByAccess({
+          accessibleIds: [agentTransferred._id, anchor._id] as mongoose.Types.ObjectId[],
+          otherParams: {},
+          sort: 'author',
+        });
+
+        const rowsById = new Map(result.data.map((row) => [row.id as string, row]));
+        expect(rowsById.get(agentTransferred.id)?.owner_contact).toEqual({
+          name: 'Nnn Current Owner',
+        });
+        // 'Mmm Middle Anchor' < 'Nnn Current Owner' < 'Aaa Former Owner' would invert the
+        // order if the revoked remote entry still decided the sort key.
+        expect(result.data.map((row) => row.id)).toEqual([anchor.id, agentTransferred.id]);
+      });
+
       test('reports no owner contact when the owner account is gone, even with a denormalized authorName', async () => {
         const missingOwner = new mongoose.Types.ObjectId();
         const agentOrphaned = await createAgent({

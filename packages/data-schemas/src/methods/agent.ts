@@ -1890,7 +1890,11 @@ export function createAgentMethods(
 
     if (sort === 'author') {
       const pipeline: PipelineStage[] = [{ $match: baseQuery }];
-      // Resolve the same owner contact used by the agent card before sorting.
+      /* Resolve the same owner contact used by the agent card before sorting. The join
+         matches on `resourceId` alone because a compound `localField` is not a thing, so
+         the resource type is asserted in the filter below: `AGENT` and `REMOTE_AGENT`
+         entries share an agent's `_id`, and `attachOwnerContacts` counts only the
+         `AGENT` ones as ownership. */
       pipeline.push({
         $lookup: {
           from: 'aclentries',
@@ -1912,6 +1916,7 @@ export function createAgentMethods(
                         as: 'e',
                         cond: {
                           $and: [
+                            { $eq: ['$$e.resourceType', ResourceType.AGENT] },
                             { $eq: ['$$e.principalType', PrincipalType.USER] },
                             { $eq: ['$$e.permBits', OWNER_ACL_PERMISSION_BITS] },
                           ],
