@@ -1,5 +1,5 @@
 import type { UserStorageUsageParams } from '@librechat/data-schemas';
-import type { StorageScope } from './quota';
+import type { GetUserStorageUsage, StorageScope } from './quota';
 import {
   FILE_STORAGE_LIMIT_ERROR_CODE,
   FileStorageLimitError,
@@ -36,7 +36,9 @@ function makeReq({
 }
 
 function usageOf(bytes: number) {
-  return jest.fn<Promise<number>, [UserStorageUsageParams]>(async () => bytes);
+  return jest.fn<Promise<number>, [UserStorageUsageParams]>(
+    async () => bytes,
+  ) as jest.MockedFunction<GetUserStorageUsage> & GetUserStorageUsage;
 }
 
 const noRollbackErrors = () => {
