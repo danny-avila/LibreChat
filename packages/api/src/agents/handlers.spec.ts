@@ -463,7 +463,9 @@ describe('createToolExecuteHandler', () => {
       foregroundController.abort();
       const tool = {
         name: 'child_tool',
-        invoke: jest.fn(async () => ({ content: 'done' })),
+        invoke: jest.fn(async (_args: unknown, _config: Record<string, unknown>) => ({
+          content: 'done',
+        })),
       };
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [tool] as never[],
