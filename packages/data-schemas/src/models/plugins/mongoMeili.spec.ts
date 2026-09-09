@@ -2372,9 +2372,10 @@ describe('Meilisearch Mongoose plugin', () => {
       // Newer-stamped projection is left alone, not re-indexed nor downgraded.
       expect(futureDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION + 1);
       expect(futureDoc?._meiliIndex).toBe(true);
-      expect(mockAddDocumentsInBatches).not.toHaveBeenCalledWith(
-        expect.arrayContaining([expect.objectContaining({ conversationId: futureId })]),
+      const reindexedIds = mockAddDocumentsInBatches.mock.calls.flatMap((call) =>
+        (call[0] as Array<Record<string, unknown>>).map((doc) => String(doc.conversationId)),
       );
+      expect(reindexedIds).not.toContain(String(futureId));
 
       // Strictly older projection is re-indexed and stamped forward to the local version.
       expect(staleDoc?._meiliIndexSchemaVersion).toBe(MEILI_INDEX_SCHEMA_VERSION);
