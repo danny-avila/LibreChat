@@ -386,11 +386,12 @@ describe('createToolExecuteHandler', () => {
       tool: { name: string; invoke: jest.Mock },
       request: Partial<ToolExecuteBatchRequest>,
       controller: AbortController,
+      options: Partial<ToolExecuteOptions> = {},
     ): Promise<ToolExecuteResult[]> {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [tool] as never[],
       }));
-      const handler = createToolExecuteHandler({ loadTools });
+      const handler = createToolExecuteHandler({ loadTools, ...options });
       return new Promise<ToolExecuteResult[]>((resolve, reject) => {
         handler.handle('on_tool_execute', {
           toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
@@ -412,6 +413,79 @@ describe('createToolExecuteHandler', () => {
       expect(tool.invoke.mock.calls[0][1].signal).toBe(controller.signal);
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('error');
+    });
+
+    it('uses the host-owned run signal when an SDK event omits its signal', async () => {
+      const controller = new AbortController();
+      const tool = abortingTool();
+
+      const results = await runBatch(
+        tool,
+        { signal: undefined, metadata: { run_id: 'foreground-run' } },
+        controller,
+        {
+          runSignal: controller.signal,
+          foregroundRunId: 'foreground-run',
+        },
+      );
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(controller.signal);
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('error');
+    });
+
+    it('composes host cancellation with an SDK event circuit-breaker signal', async () => {
+      const controller = new AbortController();
+      const eventController = new AbortController();
+      const tool = abortingTool();
+
+      const results = await runBatch(
+        tool,
+        { signal: eventController.signal, metadata: { run_id: 'foreground-run' } },
+        controller,
+        {
+          runSignal: controller.signal,
+          foregroundRunId: 'foreground-run',
+        },
+      );
+
+      const invokedSignal = tool.invoke.mock.calls[0][1].signal as AbortSignal;
+      expect(invokedSignal).not.toBe(controller.signal);
+      expect(invokedSignal.aborted).toBe(true);
+      expect(eventController.signal.aborted).toBe(false);
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('error');
+    });
+
+    it('does not bind a detached child run to the foreground host signal', async () => {
+      const foregroundController = new AbortController();
+      const childController = new AbortController();
+      foregroundController.abort();
+      const tool = {
+        name: 'child_tool',
+        invoke: jest.fn(async () => ({ content: 'done' })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        runSignal: foregroundController.signal,
+        foregroundRunId: 'foreground-run',
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [{ id: 'call-1', name: tool.name, args: {} }] as ToolCallRequest[],
+          metadata: { run_id: 'detached-child-run' },
+          signal: childController.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(tool.invoke.mock.calls[0][1].signal).toBe(childController.signal);
+      expect(result.status).toBe('success');
     });
 
     it('logs a cancelled tool call as debug rather than a tool error', async () => {

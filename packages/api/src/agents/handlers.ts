@@ -221,6 +221,14 @@ export function createOwnedToolEndHandler(
 }
 
 export interface ToolExecuteOptions {
+  /**
+   * Host-owned signal for the foreground run. This is authoritative across
+   * graph reconstruction (including approval resume); the SDK event signal is
+   * composed with it below so circuit-breaker cancellation is preserved too.
+   */
+  runSignal?: AbortSignal;
+  /** Run id owned by `runSignal`; detached child runs carry a different id. */
+  foregroundRunId?: string;
   /** Loads tools by name, using agentId to look up agent-specific context */
   loadTools: (
     toolNames: string[],
@@ -5191,6 +5199,8 @@ function buildToolCallConfig(
 
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
   const {
+    runSignal: hostRunSignal,
+    foregroundRunId,
     loadTools,
     toolEndCallback,
     eventActorDetachedAction,
@@ -5209,10 +5219,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         agentId,
         configurable,
         metadata,
-        signal: runSignal,
+        signal: eventRunSignal,
         resolve,
         reject,
       } = data;
+      let eventRunId: string | undefined;
+      if (typeof metadata?.run_id === 'string') {
+        eventRunId = metadata.run_id;
+      } else if (typeof configurable?.run_id === 'string') {
+        eventRunId = configurable.run_id;
+      }
+      const foregroundHostSignal =
+        foregroundRunId == null || eventRunId == null || eventRunId === foregroundRunId
+          ? hostRunSignal
+          : undefined;
+      const runSignal =
+        foregroundHostSignal != null &&
+        eventRunSignal != null &&
+        foregroundHostSignal !== eventRunSignal
+          ? AbortSignal.any([foregroundHostSignal, eventRunSignal])
+          : (foregroundHostSignal ?? eventRunSignal);
       const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
         (
           data as ToolExecuteBatchRequest & {

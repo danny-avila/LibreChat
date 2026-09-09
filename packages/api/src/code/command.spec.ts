@@ -119,6 +119,46 @@ describe('createAttachedWorkspaceBashTool', () => {
     ).toBeUndefined();
   });
 
+  test('aborts an in-flight command without poisoning subsequent workspace reuse', async () => {
+    let requestCount = 0;
+    let markRequestStarted!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+    const fetchImpl: CodeBridgeFetch = jest.fn(async (_url, init) => {
+      requestCount += 1;
+      if (requestCount > 1) {
+        return commandResponse({ stdout: 'reused\n' });
+      }
+      markRequestStarted();
+      return await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal;
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+    const controller = new AbortController();
+
+    const cancelled = bashTool.invoke({ command: 'sleep 30' }, { signal: controller.signal });
+    await requestStarted;
+    controller.abort();
+
+    await expect(cancelled).rejects.toThrow('Aborted');
+    await expect(bashTool.invoke({ command: 'pwd' })).resolves.toBe(
+      'stdout:\nreused\n\n[exit code: 0]',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   test('preserves legacy positional args without interpolating shell metacharacters', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({

@@ -402,6 +402,11 @@ const initializeClient = async ({
 
   const invokedSkillIdentities = new Map();
   const toolExecuteOptions = {
+    // Keep foreground cancellation owned by this request even when the agents
+    // SDK rebuilds a graph for approval resume. The SDK event's breaker signal
+    // is composed with this authoritative job signal by the handler.
+    runSignal: signal,
+    foregroundRunId: runtimeRequestBody?.messageId,
     loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
