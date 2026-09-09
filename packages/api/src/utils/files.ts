@@ -120,9 +120,9 @@ export function resolveUploadErrorMessage(
 }
 
 export function resolveUploadErrorStatusCode(
-  error: { userErrorStatusCode?: number } | null | undefined,
+  error: { userErrorStatusCode?: number; status?: number; statusCode?: number } | null | undefined,
 ): number {
-  const statusCode = error?.userErrorStatusCode;
+  const statusCode = error?.userErrorStatusCode ?? error?.status ?? error?.statusCode;
   return Number.isInteger(statusCode) && statusCode! >= 400 && statusCode! <= 599
     ? statusCode!
     : 500;
