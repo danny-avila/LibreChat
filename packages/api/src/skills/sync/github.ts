@@ -24,7 +24,11 @@ import type {
   SkillSyncCredentialSummary,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
-import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
+import type {
+  SkillSyncConfig,
+  SkillSourceMetadata,
+  SkillSyncGitHubSourceConfig,
+} from 'librechat-data-provider';
 import type {
   RepoCommit,
   RepoTreeEntry,
@@ -133,6 +137,23 @@ type StoredSkillFileRef = {
   tenantId?: string;
 };
 
+type RestorableSkillFile = {
+  skillId: string;
+  relativePath: string;
+  file_id: string;
+  filename: string;
+  filepath: string;
+  storageKey?: string;
+  storageRegion?: string;
+  source: string;
+  sourceMetadata?: SkillSourceMetadata;
+  mimeType: string;
+  bytes: number;
+  isExecutable?: boolean;
+  author: string;
+  tenantId?: string;
+};
+
 type DeletedSyncedSkillJournal = {
   skill: ISkill & { _id: Types.ObjectId };
   files: Array<ISkillFile & { _id: Types.ObjectId }>;
@@ -206,7 +227,7 @@ export type GitHubSkillSyncDeps = {
     replacing: (ISkillFile & { _id: Types.ObjectId }) | null,
   ) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   /** Restores rows that already existed before this run without admitting new storage. */
-  restoreSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  restoreSkillFile: (row: RestorableSkillFile) => Promise<void>;
   deleteSkillFile: (
     skillId: string | Types.ObjectId,
     relativePath: string,
@@ -968,9 +989,9 @@ function toStoredFileRef(params: {
   };
 }
 
-function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSkillFileInput {
+function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): RestorableSkillFile {
   return {
-    skillId: file.skillId,
+    skillId: file.skillId.toString(),
     relativePath: file.relativePath,
     file_id: file.file_id,
     filename: file.filename,
@@ -978,11 +999,11 @@ function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSki
     storageKey: file.storageKey,
     storageRegion: file.storageRegion,
     source: file.source,
-    sourceMetadata: file.sourceMetadata,
+    sourceMetadata: file.sourceMetadata as SkillSourceMetadata | undefined,
     mimeType: file.mimeType,
     bytes: file.bytes,
     isExecutable: file.isExecutable,
-    author: file.author,
+    author: file.author.toString(),
     tenantId: file.tenantId,
   };
 }
@@ -1092,7 +1113,7 @@ async function restoreDeletedSyncedSkill(
   for (const file of deleted.files) {
     await deps.restoreSkillFile({
       ...toSkillFileInput(file),
-      skillId: restored.skill._id,
+      skillId: restored.skill._id.toString(),
     });
   }
   await ensurePublicViewer(deps, restored.skill._id);
@@ -1311,12 +1332,12 @@ async function syncSkillFiles(params: {
   const { deps, adapter, commit, source, skill, discovered, assertNotCancelled } = params;
   const journal = params.journal ?? { staleFiles: [], savedFiles: [] };
   const remotePaths = new Set<string>();
+  const syncEntries: Array<{ entry: RepoTreeEntry; relativePath: string }> = [];
   let syncedFileCount = 0;
   let deletedFileCount = 0;
   let totalFileBytes = 0;
 
   for (const entry of discovered.files) {
-    assertNotCancelled();
     const relativePath = getDiscoveredRelativePath(discovered, entry);
     if (!isSafeRelativePath(relativePath) || relativePath.toUpperCase() === 'SKILL.MD') {
       continue;
@@ -1324,7 +1345,26 @@ async function syncSkillFiles(params: {
     totalFileBytes += assertGitHubBlobSize(entry, relativePath);
     assertCumulativeGitHubFileSize(totalFileBytes);
     remotePaths.add(relativePath);
-    const existing = await deps.getSkillFileByPath(skill._id, relativePath);
+    syncEntries.push({ entry, relativePath });
+  }
+
+  const existingFiles = await deps.listSkillFiles(skill._id);
+  const existingByPath = new Map(existingFiles.map((file) => [file.relativePath, file]));
+  for (const file of existingFiles) {
+    assertNotCancelled();
+    if (remotePaths.has(file.relativePath)) {
+      continue;
+    }
+    const result = await deps.deleteSkillFile(skill._id, file.relativePath);
+    if (result.deleted) {
+      deletedFileCount++;
+      journal.staleFiles.push(file);
+    }
+  }
+
+  for (const { entry, relativePath } of syncEntries) {
+    assertNotCancelled();
+    const existing = existingByPath.get(relativePath) ?? null;
     if (existing && getSourceMetadataString(existing, 'blobSha') === entry.id) {
       continue;
     }
@@ -1381,19 +1421,6 @@ async function syncSkillFiles(params: {
     journal.savedFiles.push(savedFile);
     if (existing && existing.filepath !== saved.filepath) {
       journal.staleFiles.push(existing);
-    }
-  }
-
-  const existingFiles = await deps.listSkillFiles(skill._id);
-  for (const file of existingFiles) {
-    assertNotCancelled();
-    if (remotePaths.has(file.relativePath)) {
-      continue;
-    }
-    const result = await deps.deleteSkillFile(skill._id, file.relativePath);
-    if (result.deleted) {
-      deletedFileCount++;
-      journal.staleFiles.push(file);
     }
   }
   return { syncedFileCount, deletedFileCount, ...journal };

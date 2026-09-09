@@ -2,12 +2,21 @@ const { createSkillFileQuotaPersistence, resolveStorageScope } = require('@libre
 const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
 
-const { persistSkillFile: upsertSkillFileWithQuota, runWithSharedScope } =
-  createSkillFileQuotaPersistence({
-    resolveScope: resolveStorageScope,
-    upsertSkillFile: db.upsertSkillFile,
-    getUserStorageUsage: db.getUserStorageUsage,
-    onCleanupError: (error) => logger.error('[upsertSkillFileWithQuota] Cleanup failed:', error),
-  });
+const {
+  getSharedValue,
+  invalidateSharedScope,
+  persistSkillFile: upsertSkillFileWithQuota,
+  runWithSharedScope,
+} = createSkillFileQuotaPersistence({
+  resolveScope: resolveStorageScope,
+  upsertSkillFile: db.upsertSkillFile,
+  getUserStorageUsage: db.getUserStorageUsage,
+  onCleanupError: (error) => logger.error('[upsertSkillFileWithQuota] Cleanup failed:', error),
+});
 
-module.exports = { upsertSkillFileWithQuota, runWithSharedScope };
+module.exports = {
+  getSharedQuotaValue: getSharedValue,
+  invalidateSharedQuotaScope: invalidateSharedScope,
+  upsertSkillFileWithQuota,
+  runWithSharedScope,
+};

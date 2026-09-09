@@ -10,7 +10,12 @@ const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
-const { upsertSkillFileWithQuota, runWithSharedScope } = require('./quota');
+const {
+  getSharedQuotaValue,
+  invalidateSharedQuotaScope,
+  upsertSkillFileWithQuota,
+  runWithSharedScope,
+} = require('./quota');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 
@@ -79,6 +84,13 @@ function withBaseSkillSyncConfig(req, baseConfig) {
 function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true } = {}) {
   const resolveAppConfig = loadAppConfig ?? loadCurrentAppConfig;
   const resolveConfig = getConfig ?? (() => getSyncConfig(resolveAppConfig));
+  const getQuotaReq = (row) => {
+    const userId = row.author?.toString?.() ?? row.author ?? SYSTEM_USER_ID;
+    const tenantId = row.tenantId;
+    return getSharedQuotaValue(`${userId}\0${tenantId ?? ''}`, () =>
+      getSyntheticReq({ userId, tenantId }),
+    );
+  };
   const createdRunner = createGitHubSkillSyncRunner({
     getConfig: resolveConfig,
     getCredentialToken: db.getSkillSyncCredentialToken,
@@ -97,15 +109,12 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     listSkillFiles: db.listSkillFiles,
     getSkillFileByPath: db.getSkillFileByPath,
     upsertSkillFile: async (row, replacing) =>
-      upsertSkillFileWithQuota(
-        await getSyntheticReq({
-          userId: row.author?.toString?.() ?? row.author ?? SYSTEM_USER_ID,
-          tenantId: row.tenantId,
-        }),
-        row,
-        replacing,
-      ),
-    restoreSkillFile: db.upsertSkillFile,
+      upsertSkillFileWithQuota(await getQuotaReq(row), row, replacing),
+    restoreSkillFile: async (row) => {
+      const req = await getQuotaReq(row);
+      await db.upsertSkillFile(row);
+      invalidateSharedQuotaScope(req);
+    },
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: db.deleteSkill,
     grantPermission: async ({

@@ -4,6 +4,7 @@ const mockGetFileStrategy = jest.fn();
 const mockFindRoleByIdentifier = jest.fn();
 const mockGrantPermission = jest.fn();
 const mockUpsertSkillFileWithQuota = jest.fn();
+const mockInvalidateSharedQuotaScope = jest.fn();
 let mockRunnerDeps;
 let mockRunnerStatus;
 const mockCreatedRunners = [];
@@ -13,6 +14,8 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('./quota', () => ({
+  getSharedQuotaValue: (_key, load) => load(),
+  invalidateSharedQuotaScope: (...args) => mockInvalidateSharedQuotaScope(...args),
   upsertSkillFileWithQuota: (...args) => mockUpsertSkillFileWithQuota(...args),
   runWithSharedScope: (operation) => operation(),
 }));
@@ -188,6 +191,26 @@ describe('GitHub skill sync service', () => {
       expect.objectContaining({ config: effectiveConfig }),
       row,
       replacing,
+    );
+  });
+
+  it('invalidates cached quota usage after restoring a pre-sync file row', async () => {
+    const baseConfig = { skillSync: { github: { enabled: false, sources: [] } } };
+    const effectiveConfig = { ...baseConfig, fileConfig: { storageLimit: 5 } };
+    mockGetAppConfig.mockImplementation(async (options) =>
+      options?.baseOnly ? baseConfig : effectiveConfig,
+    );
+    const { upsertSkillFile } = require('~/models');
+    upsertSkillFile.mockResolvedValue({ file_id: 'file-1' });
+
+    const service = require('./sync');
+    service.initializeGitHubSkillSync(baseConfig);
+    const row = { author: 'user-1', tenantId: 'tenant-a', file_id: 'file-1' };
+    await mockRunnerDeps.restoreSkillFile(row);
+
+    expect(upsertSkillFile).toHaveBeenCalledWith(row);
+    expect(mockInvalidateSharedQuotaScope).toHaveBeenCalledWith(
+      expect.objectContaining({ config: effectiveConfig }),
     );
   });
 

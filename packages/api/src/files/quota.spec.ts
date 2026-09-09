@@ -1115,6 +1115,51 @@ describe('createSkillFileQuotaPersistence', () => {
     );
     expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
   });
+
+  it('reloads ledger usage after a compensating restore invalidates the shared scope', async () => {
+    const req = makeReq({ storageLimitMb: 1, requestTenantId: 'tenant-a' });
+    const getUserStorageUsage = usageOf(0);
+    const persistence = createSkillFileQuotaPersistence({
+      resolveScope: resolveStorageScope,
+      upsertSkillFile: jest.fn(async (row) => row),
+      getUserStorageUsage,
+      onCleanupError: noRollbackErrors,
+    });
+
+    await persistence.runWithSharedScope(async () => {
+      await persistence.persistSkillFile(
+        req,
+        { bytes: 10, skillId: 'skill-a', relativePath: 'scripts/a.sh' },
+        null,
+      );
+      persistence.invalidateSharedScope(req);
+      await persistence.persistSkillFile(
+        req,
+        { bytes: 10, skillId: 'skill-a', relativePath: 'scripts/b.sh' },
+        null,
+      );
+    });
+
+    expect(getUserStorageUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches effective configuration promises only inside the explicit run scope', async () => {
+    const load = jest.fn(async () => ({ fileConfig: { storageLimit: 1 } }));
+    const persistence = createSkillFileQuotaPersistence({
+      resolveScope: resolveStorageScope,
+      upsertSkillFile: jest.fn(async (row) => row),
+      getUserStorageUsage: usageOf(0),
+      onCleanupError: noRollbackErrors,
+    });
+
+    await persistence.runWithSharedScope(async () => {
+      await persistence.getSharedValue('user-a\0tenant-a', load);
+      await persistence.getSharedValue('user-a\0tenant-a', load);
+    });
+    await persistence.getSharedValue('user-a\0tenant-a', load);
+
+    expect(load).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('isFileStorageLimitError', () => {

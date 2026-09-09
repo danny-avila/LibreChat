@@ -548,7 +548,14 @@ export type SkillFileQuotaPersistence<TRequest, TResult> = {
     row: TRow,
     replacing: SkillFileReplacement | null,
   ) => Promise<TResult>;
+  getSharedValue: <T>(key: string, load: () => Promise<T>) => Promise<T>;
+  invalidateSharedScope: (req: TRequest) => void;
   runWithSharedScope: <T>(operation: () => Promise<T>) => Promise<T>;
+};
+
+type SharedSkillFileQuotaState = {
+  scopes: Map<string, StorageScope>;
+  values: Map<string, Promise<unknown>>;
 };
 
 /**
@@ -559,20 +566,23 @@ export type SkillFileQuotaPersistence<TRequest, TResult> = {
 export function createSkillFileQuotaPersistence<TRequest, TResult>(
   dependencies: SkillFileQuotaPersistenceDependencies<TRequest, TResult>,
 ): SkillFileQuotaPersistence<TRequest, TResult> {
-  const scopeStorage = new AsyncLocalStorage<Map<string, StorageScope>>();
+  const scopeStorage = new AsyncLocalStorage<SharedSkillFileQuotaState>();
+
+  const getScopeKey = (scope: StorageScope): string =>
+    `${scope.userId}\u0000${scope.tenantId ?? ''}\u0000${scope.storageLimit ?? ''}`;
 
   const getScope = (req: TRequest): StorageScope => {
     const resolved = dependencies.resolveScope(req);
-    const scopes = scopeStorage.getStore();
-    if (!scopes) {
+    const state = scopeStorage.getStore();
+    if (!state) {
       return resolved;
     }
-    const key = `${resolved.userId}\u0000${resolved.tenantId ?? ''}\u0000${resolved.storageLimit ?? ''}`;
-    const existing = scopes.get(key);
+    const key = getScopeKey(resolved);
+    const existing = state.scopes.get(key);
     if (existing) {
       return existing;
     }
-    scopes.set(key, resolved);
+    state.scopes.set(key, resolved);
     return resolved;
   };
 
@@ -594,8 +604,33 @@ export function createSkillFileQuotaPersistence<TRequest, TResult>(
         },
         dependencies.onCleanupError,
       ),
+    getSharedValue: <T>(key: string, load: () => Promise<T>): Promise<T> => {
+      const state = scopeStorage.getStore();
+      if (!state) {
+        return load();
+      }
+      const existing = state.values.get(key) as Promise<T> | undefined;
+      if (existing) {
+        return existing;
+      }
+      const value = load();
+      state.values.set(key, value);
+      return value;
+    },
+    invalidateSharedScope: (req: TRequest): void => {
+      const state = scopeStorage.getStore();
+      if (!state) {
+        return;
+      }
+      const scope = dependencies.resolveScope(req);
+      scope.currentUsage = undefined;
+      scope.pendingRead = undefined;
+      scope.replacementBytes = undefined;
+      scope.replacementLocks = undefined;
+      state.scopes.delete(getScopeKey(scope));
+    },
     runWithSharedScope: <T>(operation: () => Promise<T>): Promise<T> =>
-      scopeStorage.run(new Map(), operation),
+      scopeStorage.run({ scopes: new Map(), values: new Map() }, operation),
   };
 }
 
