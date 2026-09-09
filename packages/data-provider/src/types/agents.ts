@@ -92,7 +92,7 @@ export namespace Agents {
       version: 1;
       taskId: string;
       toolName: string;
-      status: 'completed' | 'error';
+      status: 'completed' | 'error' | 'cancelled';
       settledAt: Date;
       resultClaim?: {
         kind: 'manual' | 'wakeup';

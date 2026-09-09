@@ -1074,6 +1074,141 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(polled.result).toContain('RESULT for librechat');
   });
 
+  it('cancels a running background Bash mutation, reports settlement truthfully, and reuses the workspace', async () => {
+    let delayedWrites = 0;
+    let invocations = 0;
+    const bashTool = {
+      name: 'bash_tool',
+      description: 'runs a workspace command',
+      schema: z.object({ command: z.string() }),
+      invoke: jest.fn(
+        async (
+          input: { command: string },
+          config?: { signal?: AbortSignal },
+        ): Promise<{ content: string }> => {
+          invocations += 1;
+          if (input.command === 'pwd') {
+            return { content: '/workspace' };
+          }
+          return await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              delayedWrites += 1;
+              resolve({ content: 'late mutation completed' });
+            }, 50);
+            config?.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                reject(
+                  config.signal?.reason ??
+                    new DOMException('Background task cancellation requested', 'AbortError'),
+                );
+              },
+              { once: true },
+            );
+          });
+        },
+      ),
+    } as unknown as StructuredToolInterface;
+    const persistBackgroundCodeResult = jest.fn(async () => ({ attachments: [] }));
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [bashTool] }),
+      persistBackgroundCodeResult,
+      backgroundToolCompletion: {
+        preregister: async () => ({
+          renew: jest.fn(async () => true),
+          retire: jest.fn(async () => true),
+        }),
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+      },
+    });
+    const configurable = buildConfig(['bash_tool']);
+    const metadata = { thread_id: 'cancel_bash_conversation', run_id: 'cancel-bash-run' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_cancel_bash',
+          name: 'bash_tool',
+          stepId: 'step_cancel_bash',
+          args: { command: 'sleep-then-write', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_cancel_bash',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id as string;
+
+    const cancellation = JSON.parse(
+      (
+        await runBatch(handler, {
+          toolCalls: [
+            {
+              id: 'call_cancel_control',
+              name: CHECK_BACKGROUND_TASK_NAME,
+              args: { background_task_id: taskId, action: 'cancel' },
+            },
+          ],
+          agentId: 'agent_cancel_bash',
+          configurable,
+          metadata,
+        })
+      )[0].content,
+    );
+    expect(cancellation).toMatchObject({
+      status: 'cancellation_requested',
+      cancellation_requested: true,
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    const terminal = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'exec_user',
+        conversationId: 'cancel_bash_conversation',
+        args: { background_task_id: taskId },
+      }),
+    );
+    expect(terminal).toMatchObject({
+      status: 'cancelled',
+      background_task_id: taskId,
+    });
+    expect(persistBackgroundCodeResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundTask: expect.objectContaining({ taskId, status: 'cancelled' }),
+      }),
+    );
+    expect(delayedWrites).toBe(0);
+
+    const reused = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_reuse_bash',
+          name: 'bash_tool',
+          args: { command: 'pwd', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_cancel_bash',
+      configurable,
+      metadata: { ...metadata, run_id: 'reuse-run' },
+    });
+    const reusedTaskId = JSON.parse(reused[0].content).background_task_id as string;
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const reusedTerminal = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'exec_user',
+        conversationId: 'cancel_bash_conversation',
+        args: { background_task_id: reusedTaskId },
+      }),
+    );
+    expect(reusedTerminal).toMatchObject({ status: 'completed', result: '/workspace' });
+    expect(invocations).toBe(2);
+  });
+
   it('blocks normalized arguments before registering or dispatching a background task', async () => {
     const protectedValue = 'PROTECTED-BACKGROUND';
     const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };

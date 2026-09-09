@@ -33,7 +33,7 @@ export interface ProcessedCodeOutput {
 export interface BackgroundToolResultState {
   taskId: string;
   toolName: string;
-  status: 'completed' | 'error';
+  status: 'completed' | 'error' | 'cancelled';
   settledAt: Date;
   /** This exact task owns a pre-registered automatic continuation delivery. */
   completionWakeup?: true;

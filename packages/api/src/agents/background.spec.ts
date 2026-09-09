@@ -675,6 +675,101 @@ describe('selection policy at injection time', () => {
 });
 
 describe('BackgroundTaskRegistryClass', () => {
+  it('requests cancellation idempotently without settling or releasing running capacity', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const requestCancellation = jest.fn();
+    const created = registry.create({
+      userId: 'cancel-owner',
+      conversationId: 'cancel-conversation',
+      toolCallId: 'cancel-call',
+      toolName: 'bash_tool',
+      requestCancellation,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    expect(
+      registry.requestCancellation('other-owner', 'cancel-conversation', created.task.id),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      registry.requestCancellation('cancel-owner', 'other-conversation', created.task.id),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('requested');
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('already_requested');
+    expect(requestCancellation).toHaveBeenCalledTimes(1);
+    expect(created.task).toMatchObject({
+      status: 'running',
+      cancellationRequestedAt: expect.any(Number),
+    });
+
+    for (let index = 0; index < 9; index += 1) {
+      const admitted = registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: `other-call-${index}`,
+        toolName: 'background-tool',
+      });
+      expect('atCapacity' in admitted).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: 'blocked-until-settlement',
+        toolName: 'background-tool',
+      }),
+    ).toEqual({ atCapacity: true, scope: 'conversation_running' });
+
+    registry.cancel(
+      'cancel-owner',
+      'cancel-conversation',
+      created.task.id,
+      'Background task cancellation requested',
+    );
+    expect(created.task.status).toBe('cancelled');
+    expect(
+      registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: 'admitted-after-settlement',
+        toolName: 'background-tool',
+      }),
+    ).toMatchObject({ isNew: true });
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('settled');
+  });
+
+  it('lets actual completion win when an abort-resistant invocation settles successfully', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'race-owner',
+      conversationId: 'race-conversation',
+      toolCallId: 'race-call',
+      toolName: 'mutation',
+      requestCancellation: jest.fn(),
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    registry.requestCancellation('race-owner', 'race-conversation', created.task.id);
+    registry.complete('race-owner', 'race-conversation', created.task.id, {
+      content: 'completed despite cancellation request',
+    });
+    registry.cancel('race-owner', 'race-conversation', created.task.id, 'cancelled too late');
+
+    expect(created.task).toMatchObject({
+      status: 'completed',
+      result: 'completed despite cancellation request',
+    });
+  });
+
   it('creates, completes, and reads a task', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({

@@ -218,7 +218,7 @@ function buildWakeupInput(
     taskId: string;
     toolCallId: string;
     toolName: string;
-    status: 'completed' | 'error';
+    status: 'completed' | 'error' | 'cancelled';
     output: string;
   }>,
 ): string {

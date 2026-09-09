@@ -459,7 +459,7 @@ export interface BackgroundToolResultRecord {
   taskId: string;
   toolCallId: string;
   toolName: string;
-  status: 'completed' | 'error';
+  status: 'completed' | 'error' | 'cancelled';
   output: string;
   agentId?: string;
 }
@@ -646,7 +646,7 @@ export interface MessageMethods {
     backgroundTask?: {
       taskId: string;
       toolName: string;
-      status: 'completed' | 'error';
+      status: 'completed' | 'error' | 'cancelled';
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
@@ -1143,7 +1143,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     backgroundTask?: {
       taskId: string;
       toolName: string;
-      status: 'completed' | 'error';
+      status: 'completed' | 'error' | 'cancelled';
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
@@ -1411,7 +1411,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         typeof toolCall?.id !== 'string' ||
         typeof task?.taskId !== 'string' ||
         typeof task.toolName !== 'string' ||
-        (task.status !== 'completed' && task.status !== 'error') ||
+        (task.status !== 'completed' && task.status !== 'error' && task.status !== 'cancelled') ||
         task.resultClaim?.kind !== claim.kind ||
         task.resultClaim.claimId !== claim.claimId
       ) {
@@ -1653,7 +1653,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           $elemMatch: {
             type: 'tool_call',
             'tool_call.backgroundTask.taskId': taskId,
-            'tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
+            'tool_call.backgroundTask.status': { $in: ['completed', 'error', 'cancelled'] },
             ...(kind === 'wakeup' ? { 'tool_call.backgroundTask.completionWakeup': true } : {}),
             ...(replaying
               ? {
@@ -1713,7 +1713,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           {
             'part.type': 'tool_call',
             'part.tool_call.backgroundTask.taskId': { $in: candidates },
-            'part.tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
+            'part.tool_call.backgroundTask.status': { $in: ['completed', 'error', 'cancelled'] },
             ...(kind === 'wakeup'
               ? { 'part.tool_call.backgroundTask.completionWakeup': true }
               : {}),

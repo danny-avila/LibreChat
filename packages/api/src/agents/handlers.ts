@@ -5516,12 +5516,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }),
                 };
               }
+              const backgroundAbortController = new AbortController();
               const created = backgroundTaskRegistry.create({
                 ...(detachedReservation?.status === 'reserved'
                   ? { taskId: detachedReservation.taskId }
                   : {}),
                 ...registration,
                 ...(capacityPermit == null ? {} : { capacityPermit }),
+                requestCancellation: () =>
+                  backgroundAbortController.abort(
+                    new DOMException('Background task cancellation requested', 'AbortError'),
+                  ),
               });
               if ('atCapacity' in created) {
                 if (detachedReservation?.status === 'reserved') {
@@ -5587,7 +5592,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 const persistBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
-                  status: 'completed' | 'error';
+                  status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
                   /** A provider id alone is not a durable part identity: it may
                    * repeat in later turns of the same response. New automatic
@@ -5816,7 +5821,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 const persistSettledBackgroundResult = async (params: {
                   output?: string;
                   artifact?: unknown;
-                  status: 'completed' | 'error';
+                  status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
                   if (harvestEnabled) {
                     await persistBackgroundResult(params);
@@ -5838,7 +5843,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
                 let invokePromise: Promise<{ content?: unknown; artifact?: unknown }>;
-                const backgroundAbortController = new AbortController();
                 try {
                   invokePromise = Promise.resolve(
                     tool.invoke(normalizedArgs, {
@@ -6103,10 +6107,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
                     const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
                     const registryError = isCodeCall ? deliveredError : neutralizedError;
+                    const manualCancellationRequested =
+                      backgroundTaskRegistry.get(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                      )?.cancellationRequestedAt != null;
                     const detachedTerminalStatus =
-                      toolError instanceof Error &&
-                      (toolError.name === 'AbortError' ||
-                        (toolError as Error & { code?: string }).code === 'ABORT_ERR')
+                      manualCancellationRequested ||
+                      (toolError instanceof Error &&
+                        (toolError.name === 'AbortError' ||
+                          (toolError as Error & { code?: string }).code === 'ABORT_ERR'))
                         ? 'cancelled'
                         : 'failed';
                     if (
@@ -6117,19 +6128,30 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     ) {
                       return;
                     }
-                    backgroundTaskRegistry.fail(
-                      backgroundUserId,
-                      backgroundConversationId,
-                      task.id,
-                      registryError,
-                      /** Failed code tasks join the heal path too: without this,
-                       *  a full-row save reverting the error patch would leave
-                       *  the dispatch card on the handle JSON forever. */
-                      { harvestStarted: harvestEnabled },
-                    );
+                    const settleOptions = { harvestStarted: harvestEnabled };
+                    if (detachedTerminalStatus === 'cancelled') {
+                      backgroundTaskRegistry.cancel(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        registryError,
+                        settleOptions,
+                      );
+                    } else {
+                      backgroundTaskRegistry.fail(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        registryError,
+                        /** Failed code tasks join the heal path too: without this,
+                         *  a full-row save reverting the error patch would leave
+                         *  the dispatch card on the handle JSON forever. */
+                        settleOptions,
+                      );
+                    }
                     await persistSettledBackgroundResult({
                       output: deliveredError,
-                      status: 'error',
+                      status: detachedTerminalStatus === 'cancelled' ? 'cancelled' : 'error',
                     });
                     await wakeDetachedActor();
                   } finally {
