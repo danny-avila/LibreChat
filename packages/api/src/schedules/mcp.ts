@@ -3,6 +3,7 @@ import {
   AgentCapabilities,
   Constants,
   EModelEndpoint,
+  MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
   Permissions,
   PermissionTypes,
@@ -45,6 +46,11 @@ import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
 import { detachOnAbort } from '../utils/promises';
 import { getPluginAuthMap } from '../agents/auth';
+
+// The public schedule schema caps mcpPreflightConcurrency at 10. Keep the same
+// ceiling across every preflight owned by this process so concurrent schedules
+// cannot multiply that per-request fan-out into an unbounded connection burst.
+const MAX_SHARED_MCP_PREFLIGHT_CONCURRENCY = 10;
 
 export class ScheduleMCPError extends Error {
   readonly code: Exclude<ScheduleMCPStatus, 'ready'>;
@@ -98,6 +104,7 @@ interface ScheduleMCPDeps {
 
 /** Probes only persisted identity and credentials, with isolated user connections and no OAuth wait. */
 export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPreflight {
+  const sharedProbeLimit = createConcurrencyLimiter(MAX_SHARED_MCP_PREFLIGHT_CONCURRENCY);
   const runPreflight: ScheduleMCPPreflight = async (agentId, principal, options) => {
     const signal = options.signal;
     const throwIfAborted = () => {
@@ -123,9 +130,8 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const attempted = new Set<string>();
     const expanded = new Set<string>();
     const expandedHandoffs = new Set<string>();
-    const expandedSubagents = new Set<string>();
     const accessibleById = new Map<string, AgentGraphNode>();
-    const attemptedGraphMemberIds = new Set<string>();
+    const subagentGraphIds = new Set<string>();
     const accessIdentity = {
       userId: user.id,
       role: user.role,
@@ -133,28 +139,12 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     };
     let accessContext: AgentGraphAccessContext | undefined;
     let modelsConfig: TModelsConfig | undefined;
-    type Expansion = 'handoff' | 'subagent' | 'graph';
-    type PendingGroup = {
-      ids: string[];
-      requireAll: boolean;
-      explicitSeed: boolean;
-      expansion: Expansion;
-    };
-    let pending: PendingGroup[] = [
-      { ids: [agentId], requireAll: true, explicitSeed: true, expansion: 'handoff' },
-    ];
-    while (pending.length > 0) {
-      const groups = pending;
-      pending = [];
-      const frontier = Array.from(
-        new Set(
-          groups
-            .flatMap((group) => group.ids)
-            .filter(
-              (id) => !attempted.has(id) && id !== '__start__' && id !== '__end__' && id.length > 0,
-            ),
-        ),
+
+    const loadNodes = async (ids: string[]): Promise<void> => {
+      const frontier = [...new Set(ids)].filter(
+        (id) => !attempted.has(id) && id !== '__start__' && id !== '__end__' && id.length > 0,
       );
+      if (frontier.length === 0) return;
       frontier.forEach((id) => attempted.add(id));
       let loaded: AgentGraphNode[] = [];
       if (frontier.includes(agentId)) {
@@ -169,7 +159,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
               )
             : []),
         ];
-      } else if (frontier.length > 0) {
+      } else {
         loaded = await deps.getAgentGraphNodes(
           frontier,
           (accessContext ??= await deps.resolveAgentGraphAccess(accessIdentity)),
@@ -192,92 +182,141 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
           accessibleById.set(agent.id, agent);
         }
       }
-      const runnableIds = new Map<string, Expansion>();
-      const expansionRank: Record<Expansion, number> = { graph: 0, subagent: 1, handoff: 2 };
-      for (const group of groups) {
-        const memberIds = group.ids.filter(
-          (id) => id !== '__start__' && id !== '__end__' && id.length > 0,
-        );
-        if (group.requireAll && memberIds.some((id) => !accessibleById.has(id))) continue;
-        for (const id of memberIds) {
-          if (!accessibleById.has(id)) continue;
-          const current = runnableIds.get(id);
-          if (current == null || expansionRank[group.expansion] > expansionRank[current]) {
-            runnableIds.set(id, group.expansion);
-          }
-          if (group.explicitSeed) explicitSeeds.add(id);
-        }
-      }
-      for (const [id, expansion] of runnableIds) {
-        expanded.add(id);
+    };
+
+    // Match discoverConnectedAgents first: handoff agents are initialized and pruned
+    // before any isolated subagent descriptors or graph definitions are considered.
+    let handoffFrontier = [agentId];
+    while (handoffFrontier.length > 0) {
+      const frontier = handoffFrontier;
+      handoffFrontier = [];
+      await loadNodes(frontier);
+      for (const id of frontier) {
+        if (expandedHandoffs.has(id)) continue;
         const agent = accessibleById.get(id);
         if (!agent) continue;
-        if (expansion === 'handoff' && !expandedHandoffs.has(id)) {
-          expandedHandoffs.add(id);
-          graphEdges.push(...(agent.edges ?? []));
-          if (agent.id === agentId) {
-            let previousId = agent.id;
-            for (const childId of agent.agent_ids ?? []) {
-              if (childId === agent.id || childId.length === 0) continue;
-              graphEdges.push({ from: previousId, to: childId });
-              pending.push({
-                ids: [childId],
-                requireAll: false,
-                explicitSeed: false,
-                expansion: 'handoff',
-              });
-              previousId = childId;
-            }
-          }
-          for (const edge of agent.edges ?? []) {
-            for (const childId of [edge.from, edge.to].flat()) {
-              pending.push({
-                ids: [childId],
-                requireAll: false,
-                explicitSeed: false,
-                expansion: 'handoff',
-              });
-            }
+        expandedHandoffs.add(id);
+        expanded.add(id);
+        graphEdges.push(...(agent.edges ?? []));
+        if (agent.id === agentId) {
+          let previousId = agent.id;
+          for (const childId of agent.agent_ids ?? []) {
+            if (childId === agent.id || childId.length === 0) continue;
+            graphEdges.push({ from: previousId, to: childId });
+            handoffFrontier.push(childId);
+            previousId = childId;
           }
         }
-        if (expansion === 'graph' || expandedSubagents.has(id)) continue;
-        expandedSubagents.add(id);
-        if (!agent.subagents?.enabled) continue;
-        const config = await loadAppConfig();
-        const capabilities = config?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
-        if (!capabilities.includes(AgentCapabilities.subagents)) continue;
-        const directTargets = [...new Set(agent.subagents.agent_ids ?? [])].filter(
-          (childId) => childId !== agent.id,
+        for (const edge of agent.edges ?? []) {
+          handoffFrontier.push(...[edge.from, edge.to].flat());
+        }
+      }
+    }
+
+    const handoffSkippedIds = new Set(
+      [...attempted].filter((id) => id !== agentId && !accessibleById.has(id)),
+    );
+    const { reachable: reachableHandoffIds } = resolveReachableGraph(
+      new Set([agentId]),
+      expandedHandoffs,
+      graphEdges,
+      handoffSkippedIds,
+    );
+    const rootConfigs = [...reachableHandoffIds]
+      .map((id) => accessibleById.get(id))
+      .filter((agent): agent is AgentGraphNode => agent != null);
+    const rootConfigIds = new Set(rootConfigs.map((agent) => agent.id));
+    let subagentsAvailable: boolean | undefined;
+    const canUseSubagents = async (): Promise<boolean> => {
+      if (subagentsAvailable != null) return subagentsAvailable;
+      const config = await loadAppConfig();
+      subagentsAvailable = (
+        config?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
+      ).includes(AgentCapabilities.subagents);
+      return subagentsAvailable;
+    };
+    const addGraphBudgetMember = (id: string): void => {
+      if (id === agentId || subagentGraphIds.has(id)) return;
+      if (subagentGraphIds.size >= MAX_SUBAGENT_GRAPH_NODES) {
+        throw new Error(
+          `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents.`,
         );
-        for (const childId of directTargets) {
-          if (childId !== agentId) attemptedGraphMemberIds.add(childId);
-        }
-        const graphGroups: PendingGroup[] = [];
-        for (const graph of agent.subagents.graphs ?? []) {
-          const ids = [...new Set(graph.agent_ids)].filter(
-            (memberId) => memberId !== agentId && memberId !== agent.id,
-          );
-          const newMemberIds = ids.filter((memberId) => !attemptedGraphMemberIds.has(memberId));
-          if (attemptedGraphMemberIds.size + newMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
-            continue;
-          }
-          newMemberIds.forEach((memberId) => attemptedGraphMemberIds.add(memberId));
-          graphGroups.push({
-            ids,
-            requireAll: true,
-            explicitSeed: true,
-            expansion: 'graph',
-          });
-        }
-        pending.push(
-          ...directTargets.map((childId) => ({
-            ids: [childId],
-            requireAll: false,
-            explicitSeed: true,
-            expansion: 'subagent' as const,
-          })),
-          ...graphGroups,
+      }
+      subagentGraphIds.add(id);
+    };
+    const includeGraph = async (ids: string[]): Promise<void> => {
+      await loadNodes(ids);
+      if (ids.some((id) => !accessibleById.has(id))) return;
+      for (const id of ids) {
+        explicitSeeds.add(id);
+        expanded.add(id);
+      }
+    };
+    const processDirectGraphs = async (agent: AgentGraphNode): Promise<void> => {
+      if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
+      const definitions = agent.subagents.graphs ?? [];
+      const memberIds = [...new Set(definitions.flatMap((graph) => graph.agent_ids ?? []))].filter(
+        (id) => id !== agent.id && id !== agentId && !rootConfigIds.has(id),
+      );
+      const staged = memberIds.filter((id) => !subagentGraphIds.has(id));
+      if (subagentGraphIds.size + staged.length > MAX_SUBAGENT_GRAPH_NODES) {
+        throw new Error(
+          `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents.`,
         );
+      }
+      staged.forEach((id) => subagentGraphIds.add(id));
+      await loadNodes(memberIds);
+      for (const definition of definitions) {
+        const ids = [...new Set(definition.agent_ids ?? [])];
+        await includeGraph(ids);
+      }
+    };
+    const visitDirectTree = async (
+      agent: AgentGraphNode,
+      depth: number,
+      ancestors: Set<string>,
+    ): Promise<void> => {
+      if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
+      const directIds = [...new Set(agent.subagents.agent_ids ?? [])].filter(
+        (id) => id.length > 0 && id !== agent.id,
+      );
+      if (directIds.length > 0 && depth >= MAX_SUBAGENT_DEPTH) {
+        throw new Error(
+          `Subagent graph exceeds the maximum depth of ${MAX_SUBAGENT_DEPTH} at agent ${agent.id}.`,
+        );
+      }
+      await loadNodes(directIds);
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(agent.id);
+      for (const childId of directIds) {
+        if (nextAncestors.has(childId)) continue;
+        const child = accessibleById.get(childId);
+        if (!child) continue;
+        addGraphBudgetMember(childId);
+        explicitSeeds.add(childId);
+        expanded.add(childId);
+        await visitDirectTree(child, depth + 1, nextAncestors);
+        // initializeClient preloads a direct child's graph members only after its
+        // complete nested direct tree, before root-level graphs are resolved.
+        await processDirectGraphs(child);
+      }
+    };
+
+    for (const root of rootConfigs) {
+      await visitDirectTree(root, 0, new Set());
+    }
+    // Root and handoff graph definitions run after every direct tree. Each definition
+    // is skipped atomically when its new members would exceed the shared runtime budget.
+    for (const root of rootConfigs) {
+      if (!root.subagents?.enabled || !(await canUseSubagents())) continue;
+      for (const definition of root.subagents.graphs ?? []) {
+        const ids = [...new Set(definition.agent_ids ?? [])];
+        const staged = ids.filter(
+          (id) => id !== agentId && !rootConfigIds.has(id) && !subagentGraphIds.has(id),
+        );
+        if (subagentGraphIds.size + staged.length > MAX_SUBAGENT_GRAPH_NODES) continue;
+        staged.forEach((id) => subagentGraphIds.add(id));
+        await includeGraph(ids);
       }
     }
     const skippedAgentIds = new Set(
@@ -354,7 +393,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       findPluginAuthsByKeys: deps.findPluginAuthsByKeys,
     });
     const context = createMCPRequestContext();
-    const limit = createConcurrencyLimiter(options.concurrency);
+    const requestProbeLimit = createConcurrencyLimiter(options.concurrency);
     const requestBody = {
       messageId: randomUUID(),
       conversationId: randomUUID(),
@@ -364,64 +403,68 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     try {
       outcomes = await Promise.all(
         [...selected].map(([server, required]) =>
-          limit(async (): Promise<ScheduleMCPOutcome> => {
-            throwIfAborted();
-            const serverConfig = servers[server];
-            const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
-            if (
-              !serverConfig ||
-              shadowed.has(server) ||
-              getMissingCustomUserVars(serverConfig, customUserVars).length > 0
-            ) {
-              return { server, status: 'mcp_configuration_missing' };
-            }
-            let reauth = false;
-            try {
-              const connection = await deps.connect({
-                user,
-                serverName: server,
-                serverConfig,
-                customUserVars,
-                requestBody,
-                requestScopedConnections: context,
-                ephemeralConnection: true,
-                returnOnOAuth: true,
-                oauthStart: async () => {
-                  reauth = true;
-                },
-                signal,
-              });
-              const snapshot = await connection.fetchToolsSnapshot(options.deadlineMs, signal);
-              if (snapshot.authenticationError) throw snapshot.authenticationError;
-              const available = new Set(Object.keys(formatMCPServerTools(server, snapshot.tools)));
-              for (const tool of snapshot.tools) {
-                available.add(
-                  `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(server)}`,
+          requestProbeLimit(() =>
+            sharedProbeLimit(async (): Promise<ScheduleMCPOutcome> => {
+              throwIfAborted();
+              const serverConfig = servers[server];
+              const customUserVars = auth[`${Constants.mcp_prefix}${server}`];
+              if (
+                !serverConfig ||
+                shadowed.has(server) ||
+                getMissingCustomUserVars(serverConfig, customUserVars).length > 0
+              ) {
+                return { server, status: 'mcp_configuration_missing' };
+              }
+              let reauth = false;
+              try {
+                const connection = await deps.connect({
+                  user,
+                  serverName: server,
+                  serverConfig,
+                  customUserVars,
+                  requestBody,
+                  requestScopedConnections: context,
+                  ephemeralConnection: true,
+                  returnOnOAuth: true,
+                  oauthStart: async () => {
+                    reauth = true;
+                  },
+                  signal,
+                });
+                const snapshot = await connection.fetchToolsSnapshot(options.deadlineMs, signal);
+                if (snapshot.authenticationError) throw snapshot.authenticationError;
+                const available = new Set(
+                  Object.keys(formatMCPServerTools(server, snapshot.tools)),
                 );
+                for (const tool of snapshot.tools) {
+                  available.add(
+                    `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(server)}`,
+                  );
+                }
+                let status: ScheduleMCPStatus = 'ready';
+                if (reauth) {
+                  status = 'mcp_reauth_required';
+                } else if (!snapshot.complete) {
+                  status = 'mcp_unavailable';
+                } else if (available.size === 0 || !required.every((tool) => available.has(tool))) {
+                  status = 'mcp_configuration_missing';
+                }
+                return { server, status };
+              } catch (error) {
+                return {
+                  server,
+                  status:
+                    reauth ||
+                    error instanceof MCPAuthenticationRejectedError ||
+                    error instanceof OpenIDReauthRequiredError ||
+                    error instanceof MCPOAuthSecretReentryRequiredError ||
+                    isOAuthAuthenticationError(error)
+                      ? 'mcp_reauth_required'
+                      : 'mcp_unavailable',
+                };
               }
-              let status: ScheduleMCPStatus = 'ready';
-              if (reauth) {
-                status = 'mcp_reauth_required';
-              } else if (!snapshot.complete) {
-                status = 'mcp_unavailable';
-              } else if (available.size === 0 || !required.every((tool) => available.has(tool))) {
-                status = 'mcp_configuration_missing';
-              }
-              return { server, status };
-            } catch (error) {
-              return {
-                server,
-                status:
-                  reauth ||
-                  error instanceof MCPAuthenticationRejectedError ||
-                  error instanceof OpenIDReauthRequiredError ||
-                  error instanceof MCPOAuthSecretReentryRequiredError ||
-                  isOAuthAuthenticationError(error)
-                    ? 'mcp_reauth_required'
-                    : 'mcp_unavailable',
-              };
-            }
-          }),
+            }),
+          ),
         ),
       );
     } finally {

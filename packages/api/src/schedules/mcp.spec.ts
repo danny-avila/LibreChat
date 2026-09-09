@@ -253,11 +253,110 @@ it('charges direct subagents before admitting graph definitions', async () => {
   );
 
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
-  expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(['direct', 'accepted'], expect.any(Object));
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(['direct'], expect.any(Object));
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(['accepted'], expect.any(Object));
   expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
     expect.arrayContaining([graphIds[0]]),
     expect.anything(),
   );
+});
+
+it('counts the complete nested direct tree before root graph admission', async () => {
+  const graphIds = Array.from({ length: 49 }, (_, index) => `graph-${index}`);
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          subagents: {
+            enabled: true,
+            agent_ids: ['direct-a'],
+            graphs: [{ agent_ids: graphIds }],
+          } as never,
+        });
+      }
+      if (id === 'direct-a') {
+        return graphNode(id, {
+          subagents: { enabled: true, agent_ids: ['direct-b'] } as never,
+        });
+      }
+      return graphNode(id, { tools: id === 'direct-b' ? ['search_mcp_docs'] : [] });
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(
+    expect.arrayContaining([graphIds[0]]),
+    expect.anything(),
+  );
+});
+
+it('does not charge inaccessible direct targets to the graph budget', async () => {
+  const graphIds = Array.from({ length: 50 }, (_, index) => `graph-${index}`);
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.flatMap((id) => {
+      if (id === 'root') {
+        return [
+          graphNode(id, {
+            tools: [],
+            subagents: {
+              enabled: true,
+              agent_ids: ['private'],
+              graphs: [{ agent_ids: graphIds }],
+            } as never,
+          }),
+        ];
+      }
+      if (id === 'private') return [];
+      return [graphNode(id, { tools: id === graphIds[0] ? ['search_mcp_docs'] : [] })];
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+  expect(deps.getAgentGraphNodes).toHaveBeenCalledWith(graphIds, expect.any(Object));
+});
+
+it('rejects direct subagent trees beyond the runtime depth limit', async () => {
+  const { check, deps } = setup([]);
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      const depth = id === 'root' ? 0 : Number(id.slice('depth-'.length));
+      return graphNode(id, {
+        subagents: {
+          enabled: true,
+          agent_ids: [depth === 5 ? 'depth-6' : `depth-${depth + 1}`],
+        } as never,
+      });
+    }),
+  );
+
+  await expect(check('root', principal)).rejects.toThrow('maximum depth of 5');
+  expect(deps.getAgentGraphNodes).not.toHaveBeenCalledWith(['depth-6'], expect.anything());
 });
 
 it('does not expand persisted handoffs from graph-only members', async () => {
@@ -661,6 +760,51 @@ it('bounds simultaneous MCP connection probes', async () => {
   }
   await expect(result).resolves.toHaveLength(5);
   expect(deps.connect).toHaveBeenCalledTimes(5);
+});
+
+it('bounds MCP connection probes across concurrent schedule preflights', async () => {
+  const serverNames = Array.from({ length: 12 }, (_, index) => `server-${index}`);
+  const { check, deps } = setup(serverNames.map((name) => `search_mcp_${name}`));
+  const serverConfigs = Object.fromEntries(serverNames.map((name) => [name, server]));
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        mcpConfig: serverConfigs,
+      }) as unknown as AppConfig,
+  );
+  deps.getServerConfigs = async () => serverConfigs;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markTenStarted: () => void = () => undefined;
+  const tenStarted = new Promise<void>((resolve) => {
+    markTenStarted = resolve;
+  });
+  const connect = deps.connect;
+  let active = 0;
+  let maxActive = 0;
+  deps.connect = jest.fn(async (options) => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    if (active === 10) markTenStarted();
+    await gate;
+    active -= 1;
+    return connect(options);
+  });
+
+  const first = check('agent', principal, { concurrency: 10 });
+  const second = check('agent', principal, { concurrency: 10 });
+  await tenStarted;
+  expect(deps.connect).toHaveBeenCalledTimes(10);
+  release();
+  await expect(Promise.all([first, second])).resolves.toEqual([
+    expect.arrayContaining([{ server: serverNames[0], status: 'ready' }]),
+    expect.arrayContaining([{ server: serverNames[0], status: 'ready' }]),
+  ]);
+  expect(maxActive).toBe(10);
+  expect(deps.connect).toHaveBeenCalledTimes(24);
 });
 
 it('honors the configured MCP probe concurrency', async () => {
