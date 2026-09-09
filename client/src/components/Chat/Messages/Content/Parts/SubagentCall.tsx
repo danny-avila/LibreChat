@@ -15,6 +15,7 @@ import {
   useSubagentProgress,
 } from '~/components/Chat/Subagents/state';
 import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
+import { resolveSubagentAgentId } from '~/components/Chat/Subagents/identity';
 import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
 import { MessageContext } from '~/Providers/MessageContext';
 import { useShareContext } from '~/Providers/ShareContext';
@@ -46,6 +47,7 @@ interface SubagentCallProps {
    *  runs recorded before the persistence path landed will not have this
    *  field; those fall back to the atom (or the raw `output` string). */
   persistedContent?: TMessageContentParts[];
+  subagentIdentity?: PartMetadata['subagentIdentity'];
   hideAttachments?: boolean;
 }
 
@@ -166,6 +168,7 @@ export default function SubagentCall({
   output,
   attachments,
   persistedContent,
+  subagentIdentity,
   hideAttachments = false,
 }: SubagentCallProps) {
   const localize = useLocalize();
@@ -187,8 +190,7 @@ export default function SubagentCall({
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
-  /** Explicit subagent types are agent IDs and remain in the saved tool arguments. */
-  const subagentAgentId = progress?.subagentAgentId ?? (isSelfSpawn ? undefined : subagentType);
+  const subagentAgentId = resolveSubagentAgentId(progress, subagentIdentity);
   const subagentAgent = subagentAgentId ? agentsMap?.[subagentAgentId] : undefined;
   /**
    * Tri-state status resolution, aligned with `ToolCall.tsx`:
@@ -322,6 +324,7 @@ export default function SubagentCall({
       toolCallId,
       partIndex,
       subagentType,
+      subagentIdentity,
       ...(prompt == null ? {} : { prompt }),
       ...(backgroundHandle == null ? { legacyOutput: output } : {}),
       ...(persistedContent == null ? {} : { persistedContent }),
@@ -352,6 +355,7 @@ export default function SubagentCall({
       runStepStatus,
       shareId,
       subagentType,
+      subagentIdentity,
       toolCallId,
     ],
   );

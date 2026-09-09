@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider, MemoryScope, SkillsScope } from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
+import type { ContentTypes, SubagentIdentity } from './runs';
 import type { Agents, GraphEdge } from './agents';
-import type { ContentTypes } from './runs';
 import type { TFile } from './files';
 import { ArtifactModes } from 'src/artifacts';
 export {
@@ -642,6 +642,8 @@ export enum RunStatus {
 }
 
 export type PartMetadata = {
+  /** Host-resolved execution identity for a saved subagent invocation. */
+  subagentIdentity?: SubagentIdentity;
   progress?: number;
   asset_pointer?: string;
   status?: string;

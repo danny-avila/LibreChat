@@ -28,6 +28,7 @@ const {
   isCodeSessionToolName,
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
+  captureSubagentIdentity,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -762,6 +763,7 @@ function getDefaultHandlers({
           subagentAggregatorsByToolCallId.set(key, aggregator);
         }
         try {
+          captureSubagentIdentity(aggregator, data);
           feedSubagentAggregator(aggregator, data);
         } catch (err) {
           logger.warn(

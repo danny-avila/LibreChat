@@ -52,6 +52,7 @@ export * from './stepBudget';
 export * from './startup';
 export * from './subagentThreads';
 export * from './subagentActivity';
+export * from './subagentIdentity';
 export * from './subagentCompletionWakeup';
 export * from './subagentTaskRouting';
 export * from './skillConfigurable';

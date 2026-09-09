@@ -51,6 +51,7 @@ import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
+import { resolveSubagentAgentId } from './identity';
 import { useAgentsMapContext } from '~/Providers';
 import { isLiveSubagentStatus } from './status';
 import { renderAgentAvatar } from '~/utils';
@@ -144,9 +145,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       selection.partIndex,
     ),
   );
-  const foregroundAgentId =
-    progress?.subagentAgentId ??
-    (selection.subagentType === 'self' ? undefined : selection.subagentType);
+  const foregroundAgentId = resolveSubagentAgentId(progress, selection.subagentIdentity);
   const foregroundAgent = foregroundAgentId == null ? undefined : agentsMap?.[foregroundAgentId];
   const foregroundTitle =
     selection.subagentType === 'self'

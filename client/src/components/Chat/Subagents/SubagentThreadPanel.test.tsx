@@ -473,7 +473,12 @@ describe('SubagentThreadPanel', () => {
     'resolves the saved foreground identity %s in the panel',
     (subagentType) => {
       mockUseSubagentThreadQuery.mockReturnValue({ isLoading: false, isError: false });
-      const foregroundSelection = { ...selection, durable: undefined, subagentType };
+      const foregroundSelection = {
+        ...selection,
+        durable: undefined,
+        subagentType,
+        subagentIdentity: { subagentKind: 'agent' as const, subagentAgentId: subagentType },
+      };
       render(
         <Root>
           <SubagentThreadPanel selection={foregroundSelection} />
@@ -487,6 +492,29 @@ describe('SubagentThreadPanel', () => {
       if (subagentType === 'agent-1') {
         expect(screen.getByAltText('Analyst One avatar')).toHaveAttribute('src', '/analyst.png');
       }
+    },
+  );
+
+  it.each([undefined, { subagentKind: 'graph' as const, subagentAgentId: 'graph:agent-1' }])(
+    'does not resolve graph or legacy panel types as saved agents',
+    (subagentIdentity) => {
+      mockUseSubagentThreadQuery.mockReturnValue({ isLoading: false, isError: false });
+      render(
+        <Root>
+          <SubagentThreadPanel
+            selection={{
+              ...selection,
+              durable: undefined,
+              subagentType: 'agent-1',
+              subagentIdentity,
+            }}
+          />
+        </Root>,
+      );
+      expect(
+        screen.getByRole('heading', { name: 'com_ui_subagent_dialog_title: agent-1' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByAltText('Analyst One avatar')).not.toBeInTheDocument();
     },
   );
 
