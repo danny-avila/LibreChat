@@ -145,13 +145,19 @@ describe('useCodeWorkspace', () => {
     expect(mockStatus).toHaveBeenCalledWith([], false);
   });
 
-  it('collects one workspace for every reachable attached environment', () => {
+  it.each(['subagent', 'handoff'])('collects every attached environment through %s', (kind) => {
     const primary = {
       id: 'agent-1',
       stateful_code_sessions: true,
       code_environment_id: 'personal-vm',
       tools: [Tools.execute_code],
       subagents: { enabled: true, agent_ids: ['child'] },
+      ...(kind === 'handoff'
+        ? {
+            subagents: { enabled: false, agent_ids: [] },
+            edges: [{ from: 'agent-1', to: 'child', edgeType: 'handoff' }],
+          }
+        : {}),
     };
     mockAgentPermissions.mockImplementation((id?: string) => ({
       agent: id === 'agent-1' ? primary : undefined,

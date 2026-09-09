@@ -120,17 +120,21 @@ export function collectReachableAgents(
     if (agent == null || visited.has(agent.id)) continue;
     visited.add(agent.id);
     agents.push(agent);
-    if (agent.subagents?.enabled !== true) continue;
-    const edgeIds = agent.edges?.flatMap((edge) => (Array.isArray(edge.to) ? edge.to : [edge.to]));
-    const graphIds = agent.subagents.graphs?.flatMap((graph) => graph.agent_ids);
+    const edgeIds = agent.edges?.flatMap((edge) => [
+      ...(Array.isArray(edge.from) ? edge.from : [edge.from]),
+      ...(Array.isArray(edge.to) ? edge.to : [edge.to]),
+    ]);
+    const subagents = agent.subagents?.enabled === true ? agent.subagents : undefined;
+    const graphIds = subagents?.graphs?.flatMap((graph) => graph.agent_ids);
     const ids = [
       ...(agent.agent_ids ?? []),
-      ...(agent.subagents?.agent_ids ?? []),
+      ...(subagents?.agent_ids ?? []),
       ...(edgeIds ?? []),
       ...(graphIds ?? []),
     ];
     for (const id of ids) {
-      const candidate = agentsMap?.[id];
+      if (visited.has(id)) continue;
+      const candidate = roots.find((root) => root?.id === id) ?? agentsMap?.[id];
       if (candidate != null) pending.push(candidate);
       else complete = false;
     }
