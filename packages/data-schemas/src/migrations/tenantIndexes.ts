@@ -3,6 +3,7 @@ import type { Connection } from 'mongoose';
 import conversationTagSchema from '~/schema/conversationTag';
 import skillSyncStatusSchema from '~/schema/skillSyncStatus';
 import agentCategorySchema from '~/schema/agentCategory';
+import { buildIndexWithRetry } from '~/utils/retry';
 import accessRoleSchema from '~/schema/accessRole';
 import mcpServerSchema from '~/schema/mcpServer';
 import messageSchema from '~/schema/message';
@@ -173,7 +174,10 @@ export async function migrateTenantIndexes(
   logger.info('[TenantMigration] Building tenant-scoped unique indexes before cleanup.');
   for (const { collection, keys, options, tenantScoped } of indexes) {
     if (options.unique && tenantScoped) {
-      await collection.createIndex(keys, options);
+      await buildIndexWithRetry(
+        () => collection.createIndex(keys, options),
+        `createIndex(${collection.collectionName}.${JSON.stringify(keys)})`,
+      );
     }
   }
 
@@ -183,7 +187,10 @@ export async function migrateTenantIndexes(
   }
   logger.info('[TenantMigration] Creating current schema indexes.');
   for (const { collection, keys, options } of indexes) {
-    await collection.createIndex(keys, options);
+    await buildIndexWithRetry(
+      () => collection.createIndex(keys, options),
+      `createIndex(${collection.collectionName}.${JSON.stringify(keys)})`,
+    );
   }
   logger.info('[TenantMigration] Migration complete.');
   return result;
