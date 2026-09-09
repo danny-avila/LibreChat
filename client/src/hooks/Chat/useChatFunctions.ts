@@ -646,7 +646,7 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
-      clientQueueParentMessageId: regenerateShaped ? messageId : intermediateId,
+      clientQueueParentMessageId: regenerateShaped ? (messageId ?? undefined) : intermediateId,
       /**
        * Seed the assistant placeholder with the turn's manually-invoked
        * skill names so `ContentParts` can render interim `SkillCall` cards
