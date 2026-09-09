@@ -1129,13 +1129,20 @@ export async function initializeAgent(
       (db.getRoleByName != null &&
         !(
           await resolveToolRoleGrants({
+            /** Only the memoization handle; `user` below is what is authorized,
+             *  because `runtime` is the user source and two routes pass no `req`. */
             req: params.req as Request | undefined,
+            user,
             getRoleByName: db.getRoleByName,
             context: 'initializeAgent',
           })
         ).webSearch);
     if (denied) {
-      delete modelOptions.web_search;
+      /** Explicit `false`, not `delete`: every provider builder applies its
+       *  `defaultParams.web_search` only when the field is `undefined`, so
+       *  removing the key is the one state that lets an endpoint default switch
+       *  search back on after the denial. */
+      modelOptions.web_search = false;
       logger.warn(
         `[initializeAgent][User: ${requestFileOwnerId}][Agent: ${agent.id}] Forbidden: role denies WEB_SEARCH; removed model_parameters.web_search`,
       );

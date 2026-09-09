@@ -1258,7 +1258,9 @@ describe('initializeAgent — model_parameters.web_search role gate', () => {
       db,
     );
 
-    expect(lastModelParametersSentToProvider()).not.toHaveProperty('web_search');
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: false }),
+    );
   });
 
   it('keeps model_parameters.web_search when the role grants WEB_SEARCH', async () => {
@@ -1288,6 +1290,75 @@ describe('initializeAgent — model_parameters.web_search role gate', () => {
     );
   });
 
+  /** `/v1/chat/completions` and `/v1/responses` pass `runtime` and no `req`, so a
+   *  gate that read the user out of `req` would deny every user on those routes. */
+  it('keeps model_parameters.web_search for a permitted user when the caller passes runtime and no req', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: true },
+    });
+    db.getRoleByName = jest.fn().mockResolvedValue(buildRole());
+
+    await initializeAgent(
+      {
+        runtime: {
+          user: { id: 'user-1', role: 'USER' } as never,
+          appConfig: {} as never,
+          requestBody: {},
+          turnStartedAt: 1000,
+        },
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(db.getRoleByName).toHaveBeenCalledWith('USER');
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: true }),
+    );
+  });
+
+  it('strips model_parameters.web_search for a denied user when the caller passes runtime and no req', async () => {
+    const { agent, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: false,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model, web_search: true },
+    });
+    db.getRoleByName = jest
+      .fn()
+      .mockResolvedValue(buildRole({ [PermissionTypes.WEB_SEARCH]: { [Permissions.USE]: false } }));
+
+    await initializeAgent(
+      {
+        runtime: {
+          user: { id: 'user-1', role: 'USER' } as never,
+          appConfig: {} as never,
+          requestBody: {},
+          turnStartedAt: 1000,
+        },
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: false }),
+    );
+  });
+
   /** The embedder surface in `agents/openai/service.ts` reaches `initializeAgent`
    *  through a closure that hides `db`, so `webSearchAvailable` is the only gate
    *  available to it. */
@@ -1314,7 +1385,9 @@ describe('initializeAgent — model_parameters.web_search role gate', () => {
       db,
     );
 
-    expect(lastModelParametersSentToProvider()).not.toHaveProperty('web_search');
+    expect(lastModelParametersSentToProvider()).toEqual(
+      expect.objectContaining({ web_search: false }),
+    );
   });
 
   it('keeps model_parameters.web_search when webSearchAvailable is true', async () => {

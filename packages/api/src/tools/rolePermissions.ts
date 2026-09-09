@@ -259,6 +259,14 @@ export interface ToolRoleGrants {
 
 export interface ResolveToolRoleGrantsParams {
   req?: ServerRequest;
+  /**
+   * Whose grants to resolve. Defaults to `req.user`, which is all a route-backed
+   * caller needs. Callers that carry the user outside the request — the agent
+   * execution context, whose `runtime` is the canonical source and whose `req` is
+   * a compatibility adapter some routes no longer pass — supply it here, or the
+   * absent `req.user` would read as a denial.
+   */
+  user?: CheckAccessParams['user'] | null;
   getRoleByName: CheckAccessParams['getRoleByName'];
   context?: string;
 }
@@ -280,9 +288,11 @@ export interface ResolveToolRoleGrantsParams {
  */
 export function resolveToolRoleGrants({
   req,
+  user,
   getRoleByName,
   context = 'toolRoleGrants',
 }: ResolveToolRoleGrantsParams): Promise<ToolRoleGrants> {
+  const subject = (user ?? req?.user) as CheckAccessParams['user'];
   const cache = req as
     | (ServerRequest & { [toolRoleGrantsKey]?: Promise<ToolRoleGrants> })
     | undefined;
@@ -294,21 +304,21 @@ export function resolveToolRoleGrants({
   const pending = Promise.all([
     checkToolRolePermission({
       req,
-      user: req?.user as CheckAccessParams['user'],
+      user: subject,
       permissionType: PermissionTypes.RUN_CODE,
       getRoleByName,
       context,
     }),
     checkToolRolePermission({
       req,
-      user: req?.user as CheckAccessParams['user'],
+      user: subject,
       permissionType: PermissionTypes.FILE_SEARCH,
       getRoleByName,
       context,
     }),
     checkToolRolePermission({
       req,
-      user: req?.user as CheckAccessParams['user'],
+      user: subject,
       permissionType: PermissionTypes.WEB_SEARCH,
       getRoleByName,
       context,
