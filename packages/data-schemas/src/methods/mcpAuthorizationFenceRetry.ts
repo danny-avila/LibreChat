@@ -80,7 +80,7 @@ export function createMCPAuthorizationFenceRetryStorage(mongoose: typeof import(
     async deferVersion({ scope, tenantId, version, updatedAt }: RetryDeferInput): Promise<void> {
       await collection().updateOne(
         { _id: retryId(scope, tenantId, version), version },
-        { $set: { updatedAt } },
+        { $max: { updatedAt } },
       );
     },
     async list(limit: number): Promise<MCPAuthorizationFenceRetryRecord[]> {
