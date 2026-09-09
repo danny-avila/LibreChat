@@ -395,23 +395,25 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
    * Slot 8 arrived after the seven-slot scale shipped, so a stored or
    * environment theme that paints its own scale cannot name it. Filling the
    * omission from the bundled base would drop LibreChat's indigo onto that
-   * theme's own surfaces — the one pairing it never checked, and the stop's 3:1
-   * mark contrast is a claim about the bundled surfaces only. Its neutral text
-   * is the single colour the theme guarantees against every surface it renders
-   * on, and being hue-neutral it cannot collide with a custom slot 1–7 under
-   * protanopia/deuteranopia either. A theme that wants a hue for slot 8 names
-   * it, the way `rgb-surface-composer-hover` opts out of its own fallback.
+   * theme's own surfaces — the one pairing it never checked, since the stop's
+   * 3:1 mark contrast is a claim about the bundled surfaces only. The RESOLVED
+   * secondary text is the one colour that tracks whatever the theme reads its
+   * body copy against, whether it names its own or inherits ours, so slot 8
+   * stays exactly as visible as that text; hue-neutral, it cannot collide with
+   * a custom slot 1–7 under protanopia/deuteranopia either. A theme that wants
+   * a hue for slot 8 names it, the way `rgb-surface-composer-hover` opts out of
+   * its own fallback.
    */
   const ownsSeriesScale =
     customColors != null &&
     ([1, 2, 3, 4, 5, 6, 7] as const).some(
       (slot) => customColors[`rgb-series-${slot}`] !== undefined,
     );
-  const neutralSeriesStop =
-    customColors?.['rgb-text-secondary'] ?? customColors?.['rgb-text-primary'];
   const seriesEightFallback =
-    customColors?.['rgb-series-8'] === undefined && ownsSeriesScale && neutralSeriesStop != null
-      ? { 'rgb-series-8': neutralSeriesStop }
+    customColors?.['rgb-series-8'] === undefined && ownsSeriesScale
+      ? {
+          'rgb-series-8': customColors?.['rgb-text-secondary'] ?? baseColors['rgb-text-secondary'],
+        }
       : {};
 
   return {

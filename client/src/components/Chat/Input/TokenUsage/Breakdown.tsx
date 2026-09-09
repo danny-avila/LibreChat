@@ -493,19 +493,27 @@ export default function Breakdown({
                       </Fragment>
                     );
                   })}
-                  {normalizeTokenCount(view.cacheRead) > 0 && (
-                    <Row
-                      label={localize('com_ui_context_cached')}
-                      value={view.cacheRead!}
-                      max={maxTokens}
-                    />
-                  )}
-                  {normalizeTokenCount(view.cacheWrite) > 0 && (
-                    <Row
-                      label={localize('com_ui_context_cache_write')}
-                      value={view.cacheWrite!}
-                      max={maxTokens}
-                    />
+                  {/** The reconciling call's cached prompt share is already inside
+                   *  the segments above (reconciliation counted it in `usedTokens`),
+                   *  so it renders indented, like the estimate path's tool-call
+                   *  share — as peer rows a fully cached prompt would show its
+                   *  tokens twice and the visible rows would sum past the meter. */}
+                  {(normalizeTokenCount(view.cacheRead) > 0 ||
+                    normalizeTokenCount(view.cacheWrite) > 0) && (
+                    <div className="space-y-1.5 pl-6">
+                      {normalizeTokenCount(view.cacheRead) > 0 && (
+                        <Row
+                          label={localize('com_ui_context_cached')}
+                          value={normalizeTokenCount(view.cacheRead)}
+                        />
+                      )}
+                      {normalizeTokenCount(view.cacheWrite) > 0 && (
+                        <Row
+                          label={localize('com_ui_context_cache_write')}
+                          value={normalizeTokenCount(view.cacheWrite)}
+                        />
+                      )}
+                    </div>
                   )}
                   {freeTokens != null && (
                     <Row

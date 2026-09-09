@@ -404,7 +404,7 @@ describe('TokenUsage Breakdown', () => {
       ).toContain('550');
     });
 
-    it('shows cached prompt shares without adding them to the meter total', async () => {
+    it('shows cached prompt shares as a subtotal, not beside the context rows', async () => {
       const cached = {
         ...snapshotView,
         cacheRead: 30,
@@ -414,8 +414,21 @@ describe('TokenUsage Breakdown', () => {
       await userEvent.click(toggle());
 
       const breakdown = screen.getByTestId('context-breakdown');
-      expect(within(breakdown).getByText('com_ui_context_cached')).toBeInTheDocument();
-      expect(within(breakdown).getByText('com_ui_context_cache_write')).toBeInTheDocument();
+      const cachedRow = within(breakdown).getByText('com_ui_context_cached').parentElement
+        ?.parentElement as HTMLElement;
+
+      /** Reconciliation already counted the cached prompt inside the segments
+       *  above, so these may only appear indented — as peer rows a fully cached
+       *  prompt would show its tokens twice and the visible rows would sum past
+       *  the meter. */
+      expect(cachedRow.parentElement?.className).toContain('pl-6');
+      expect(cachedRow.textContent).toContain('30');
+      const peers = Array.from(breakdown.children).filter(
+        (child) => !child.className.includes('pl-6'),
+      );
+      expect(peers.some((peer) => peer.textContent?.includes('com_ui_context_cache_write'))).toBe(
+        false,
+      );
       expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
     });
 

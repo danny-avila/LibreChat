@@ -244,6 +244,31 @@ describe('theme registry', () => {
     expect(owned.colors['rgb-series-7']).toBe('130 220 120');
   });
 
+  it('derives it from the inherited text of an owned scale that names no text', () => {
+    /** The same reference theme minus its text overrides: it repaints the scale
+     *  and its surfaces but reads body copy in LibreChat's own colours, so the
+     *  stop tracks the text it will actually sit beside instead of reverting to
+     *  the bundled indigo. */
+    const inheritedText = resolveTheme(
+      {
+        ...ownedScaleTheme,
+        modes: {
+          light: {
+            colors: {
+              'rgb-surface-secondary': '18 18 24',
+              'rgb-surface-tertiary': '30 30 38',
+              'rgb-series-1': '120 200 255',
+              'rgb-series-7': '130 220 120',
+            },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(inheritedText.colors['rgb-series-8']).toBe(defaultTheme['rgb-text-secondary']);
+  });
+
   it('lets an owned scale name the eighth slot itself', () => {
     const named = resolveTheme(
       {
