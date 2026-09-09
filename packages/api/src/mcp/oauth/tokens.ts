@@ -1169,7 +1169,10 @@ export class MCPTokenStorage {
       if (refreshError instanceof ReauthenticationRequiredError) {
         throw refreshError;
       }
-      if (signal.aborted) {
+      if (
+        signal.aborted &&
+        this.refreshTeardownCounts.has(this.getRefreshOwnerKey(userId, serverName))
+      ) {
         return null;
       }
       // Check if it's an unauthorized_client error (refresh not supported)

@@ -2496,7 +2496,7 @@ describe('MCPTokenStorage', () => {
 
         jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
         /** The stale abort settles the stalled execution, which frees the slot. */
-        await expect(stalled).resolves.toBeNull();
+        await expect(stalled).rejects.toThrow(MCPTokenRefreshUnavailableError);
 
         const fresh = await MCPTokenStorage.forceRefreshTokens(params);
         expect(fresh!.access_token).toBe('at-2');
@@ -2534,7 +2534,7 @@ describe('MCPTokenStorage', () => {
         jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
         releaseRead();
 
-        await expect(stalled).resolves.toBeNull();
+        await expect(stalled).rejects.toThrow(MCPTokenRefreshUnavailableError);
         expect(refreshTokens).not.toHaveBeenCalled();
       } finally {
         jest.useRealTimers();
