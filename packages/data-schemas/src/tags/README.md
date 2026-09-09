@@ -36,6 +36,8 @@ The migration preserves existing catalog IDs, descriptions and ordering. It crea
 
 The existing Meilisearch service indexes catalog labels separately, with `_id` as its primary key. Conversation search combines title/message results with MongoDB membership matching the returned tag IDs. MongoDB revalidates catalog ownership and existence, so a stale search hit cannot revive a deleted tag or join a newly created tag with the same name. Indexing remains asynchronous; allow index sync to finish after cutover or search-service downtime.
 
+When startup index sync is enabled, it audits the complete tag index in paced batches to recover deletions interrupted by a process crash or search outage. This background work does not gate server readiness, but its total cost grows with the catalog size on every rollout. Progress flags on surviving MongoDB rows cannot detect deleted rows left in the search index. The audit uses the existing `MEILI_SYNC_BATCH_SIZE` and `MEILI_SYNC_DELAY_MS` settings; defaults are 100 documents and 100 milliseconds between batches.
+
 ## Rollback
 
 Stop all writers and restore the complete pre-upgrade MongoDB backup before starting the previous application version. This restores the original memberships and removes the migration-completion marker. Changes made after the backup will be lost. There is no reverse-migration script; legacy `tags` arrays become stale once upgraded writers change memberships or labels, so deploying an old binary against the upgraded database is not supported. Rebuild the old version's search indexes as part of rollback.

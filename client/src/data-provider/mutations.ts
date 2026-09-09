@@ -40,6 +40,18 @@ export const useUpdateConversationMutation = (
   );
 };
 
+function invalidateConversationMembershipQueries(queryClient: QueryClient) {
+  for (const key of [
+    QueryKeys.allConversations,
+    QueryKeys.archivedConversations,
+    QueryKeys.projectConversations,
+    QueryKeys.pinnedConversations,
+    QueryKeys.sharedLinks,
+  ]) {
+    queryClient.invalidateQueries([key]);
+  }
+}
+
 export const useTagConversationMutation = (
   conversationId: string,
   options?: t.updateTagsInConvoOptions,
@@ -52,9 +64,7 @@ export const useTagConversationMutation = (
       dataService.addTagToConversation(conversationId, payload),
     {
       onSuccess: (updatedTags, variables, ...rest) => {
-        /** The pinned query is keyed by the active bookmark filter, so changing a
-         * chat's tags can move it in or out of that filtered set. */
-        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+        invalidateConversationMembershipQueries(queryClient);
         query.refetch();
         const labels =
           variables.tagIds === undefined
@@ -556,7 +566,9 @@ export const useConversationTagMutation = ({
       onSuccess: (...args) => {
         const [, vars] = args;
         const renamed = tag != null && vars.tag !== undefined && vars.tag !== tag;
-        if (renamed || vars.addToConversation === true) {
+        if (vars.addToConversation === true) {
+          invalidateConversationMembershipQueries(queryClient);
+        } else if (renamed) {
           queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         }
         onMutationSuccess(...args);
