@@ -328,6 +328,45 @@ describe('persistFileWithQuota', () => {
     });
   });
 
+  it('skips replacement refresh work when quotas are disabled', async () => {
+    const getUserStorageUsage = usageOf(0);
+    getUserStorageUsage.getReplacementBytes = jest.fn(async () => 2);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq()),
+        row: { bytes: 8, file_id: 'file-1' },
+        replacing: { file_id: 'file-1', user: userId },
+        replacedBytes: 2,
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(getUserStorageUsage.getReplacementBytes).not.toHaveBeenCalled();
+  });
+
+  it('fences both sides of the metadata write', async () => {
+    const getUserStorageUsage = usageOf(0);
+    const assertHeld = jest.fn(async () => undefined);
+    getUserStorageUsage.withLock = async (_params, operation) => operation(assertHeld);
+
+    await persistFileWithQuota(
+      {
+        scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
+        row: { bytes: 8, file_id: 'file-1' },
+        write: async (row) => row,
+        rollback: null,
+        getUserStorageUsage,
+      },
+      noRollbackErrors,
+    );
+
+    expect(assertHeld).toHaveBeenCalledTimes(2);
+  });
+
   it('does not credit a replaced file outside the charged ledger', async () => {
     const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
 

@@ -8,6 +8,16 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { runAsSystem } from '~/config/tenantContext';
 import logger from '../config/winston';
 
+const quotaLockWaitMs = Math.max(Number(process.env.STORAGE_QUOTA_LOCK_WAIT_MS) || 300_000, 1_000);
+const quotaLockLeaseMs = Math.max(
+  Number(process.env.STORAGE_QUOTA_LOCK_LEASE_MS) || 120_000,
+  10_000,
+);
+const quotaLockHeartbeatMs = Math.min(
+  Math.max(Number(process.env.STORAGE_QUOTA_LOCK_HEARTBEAT_MS) || 30_000, 1_000),
+  Math.floor(quotaLockLeaseMs / 2),
+);
+
 export type FileOwnerScope = {
   userId: string;
   tenantId?: string | null;
@@ -210,14 +220,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       token: string;
       expiresAt: Date;
     }>('storage_quota_locks');
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + quotaLockWaitMs;
     let acquired = false;
     while (!acquired && Date.now() < deadline) {
       const now = new Date();
       try {
         const lock = await collection.findOneAndUpdate(
           { _id: key, $or: [{ expiresAt: { $lte: now } }, { token }] },
-          { $set: { token, expiresAt: new Date(now.getTime() + 120_000) } },
+          { $set: { token, expiresAt: new Date(now.getTime() + quotaLockLeaseMs) } },
           { upsert: true, returnDocument: 'after', readPreference: 'primary' },
         );
         acquired = lock?.token === token;
@@ -241,7 +251,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       }
       const renewed = await collection.updateOne(
         { _id: key, token },
-        { $set: { expiresAt: new Date(Date.now() + 120_000) } },
+        { $set: { expiresAt: new Date(Date.now() + quotaLockLeaseMs) } },
       );
       if (renewed.matchedCount !== 1) {
         leaseError = new Error('Storage quota ledger lock was lost');
@@ -252,7 +262,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       void renew().catch((error) => {
         leaseError = error;
       });
-    }, 30_000);
+    }, quotaLockHeartbeatMs);
     heartbeat.unref();
     try {
       return await operation(renew);

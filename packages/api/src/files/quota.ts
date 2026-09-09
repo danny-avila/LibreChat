@@ -336,7 +336,11 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
     return await withStorageQuotaLock(scope, getUserStorageUsage, async (assertHeld) => {
       enteredQuotaLock = true;
       try {
-        if (replacementIdentity && getUserStorageUsage.getReplacementBytes) {
+        if (
+          scope.storageLimit !== undefined &&
+          replacementIdentity &&
+          getUserStorageUsage.getReplacementBytes
+        ) {
           const currentReplacedBytes = await getUserStorageUsage.getReplacementBytes({
             userId: scope.userId,
             tenantId: scope.tenantId,
@@ -355,6 +359,7 @@ async function persistWithQuota<TRow extends LedgerRow, TResult>(
         if (result == null) {
           throw new Error('Quota-bearing persistence callback completed without committing a row');
         }
+        await assertHeld();
         if (scope.storageLimit !== undefined && charge < 0) {
           scope.currentUsage = Math.max(0, (scope.currentUsage as number) + charge);
         }
