@@ -1,9 +1,10 @@
 import { memo, useMemo } from 'react';
 import { useAtomValue } from 'jotai';
+import { Folder } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
@@ -17,10 +18,10 @@ import {
   useLocalize,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
+import { useGetMessagesByConvoId, useProjectQuery } from '~/data-provider';
 import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
 import { pendingApprovalActionFamily } from './approval/state';
-import { useGetMessagesByConvoId } from '~/data-provider';
 import Footer, { useConfiguredFooter } from './Footer';
 import { AskAnswerHostProvider } from './ask/state';
 import MessagesView from './Messages/MessagesView';
@@ -95,6 +96,13 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       ? chatHelpers.conversation
       : undefined;
   const activeSubagentThread = activeConversation?.subagentThread;
+  const persistedProjectId =
+    conversationId && conversationId !== Constants.NEW_CONVO
+      ? (activeConversation?.chatProjectId ?? undefined)
+      : undefined;
+  const { data: persistedProject } = useProjectQuery(persistedProjectId, {
+    enabled: Boolean(persistedProjectId),
+  });
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
@@ -162,6 +170,22 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                     parentConversationId={parentConversationId}
                     readOnly={isSubagentThreadReadOnly}
                   />
+                  {!isLandingPage && activeConversation?.chatProjectId && (
+                    <div className="pointer-events-none absolute inset-x-0 top-12 z-[5] flex justify-center px-3 md:top-14">
+                      <Link
+                        to={`/projects/${encodeURIComponent(activeConversation.chatProjectId)}`}
+                        className="pointer-events-auto inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-light bg-surface-secondary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                        aria-label={localize('com_ui_project_open_workspace', {
+                          name: persistedProject?.name ?? localize('com_ui_project'),
+                        })}
+                      >
+                        <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">
+                          {persistedProject?.name ?? localize('com_ui_project')}
+                        </span>
+                      </Link>
+                    </div>
+                  )}
                   <>
                     <div
                       className={cn(
@@ -177,6 +201,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                                puts it and slides sideways on the way in. */
                             'scrollbar-gutter-spacer flex-1 items-center justify-end sm:justify-center'
                           : 'h-full overflow-y-auto',
+                        !isLandingPage && activeConversation?.chatProjectId && 'pt-9',
                       )}
                     >
                       {content}

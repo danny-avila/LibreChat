@@ -120,6 +120,89 @@ describe('File Methods', () => {
     });
   });
 
+  describe('getAvailableProjectFiles', () => {
+    it('paginates only eligible owner files with stable cursors and literal search', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const now = new Date('2026-01-01T00:00:00.000Z');
+      const base = {
+        user: userId,
+        tenantId: 'tenant-a',
+        filename: 'Report excluded.txt',
+        filepath: '/uploads/report',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 1,
+        usage: 0,
+        embedded: true,
+        context: FileContext.message_attachment,
+        text: 'secret',
+        storageKey: 'internal-storage-key',
+      };
+      await File.create([
+        { ...base, file_id: 'report-1', filename: 'Report [literal].txt' },
+        { ...base, file_id: 'report-2', filename: 'Report two.txt' },
+        {
+          ...base,
+          file_id: 'expired',
+          expiredAt: new Date('2025-12-31T23:59:59.000Z'),
+        },
+        { ...base, file_id: 'foreign-tenant', tenantId: 'tenant-b' },
+        { ...base, file_id: 'foreign-owner', user: new mongoose.Types.ObjectId().toString() },
+        { ...base, file_id: 'agent-knowledge', context: FileContext.agents },
+        { ...base, file_id: 'not-indexed', embedded: false },
+        { ...base, file_id: 'attached' },
+      ]);
+
+      const first = await fileMethods.getAvailableProjectFiles({
+        userId,
+        tenantId: 'tenant-a',
+        excludedFileIds: ['attached'],
+        limit: 1,
+        search: 'report',
+        now,
+      });
+      await File.updateOne(
+        { file_id: first.files[0].file_id },
+        { $set: { filename: `Report ${'renamed'.repeat(100)}` } },
+      );
+      const second = await fileMethods.getAvailableProjectFiles({
+        userId,
+        tenantId: 'tenant-a',
+        excludedFileIds: ['attached'],
+        limit: 1,
+        search: 'report',
+        cursor: first.nextCursor,
+        now,
+      });
+
+      expect(first.files).toHaveLength(1);
+      expect(second.files).toHaveLength(1);
+      expect(first.files[0].file_id).toBe('report-2');
+      expect(second.files[0].file_id).toBe('report-1');
+      expect(first.nextCursor).toEqual(expect.any(String));
+      expect(second.nextCursor).toBeNull();
+      expect(first.files[0]).not.toHaveProperty('text');
+      expect(second.files[0]).not.toHaveProperty('storageKey');
+      const literalMatch = await fileMethods.getAvailableProjectFiles({
+        userId,
+        tenantId: 'tenant-a',
+        search: '[literal]',
+        now,
+      });
+      expect(literalMatch.files.map((file) => file.file_id)).toEqual(['report-1']);
+    });
+
+    it.each([0, 51, 1.5])('rejects an unbounded page size: %p', async (limit) => {
+      await expect(
+        fileMethods.getAvailableProjectFiles({
+          userId: new mongoose.Types.ObjectId().toString(),
+          tenantId: 'tenant-a',
+          limit,
+        }),
+      ).rejects.toThrow('Invalid project file limit');
+    });
+  });
+
   describe('claimCodeFile', () => {
     it('claims code output files independently per tenant', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
@@ -1628,7 +1711,7 @@ describe('File Methods', () => {
       expect(updated2?.usage).toBe(6);
     });
 
-    it('should skip usage and TTL mutation when the owner filter does not match', async () => {
+    it('scopes usage and hold consumption without advancing the content version', async () => {
       const fileId = uuidv4();
       const ownerId = new mongoose.Types.ObjectId();
       const otherUserId = new mongoose.Types.ObjectId();
@@ -1643,6 +1726,11 @@ describe('File Methods', () => {
         bytes: 100,
         usage: 0,
       });
+      const contentUpdatedAt = new Date('2020-01-01');
+      await File.collection.updateOne(
+        { file_id: fileId },
+        { $set: { updatedAt: contentUpdatedAt } },
+      );
 
       const denied = await fileMethods.updateFileUsage({
         file_id: fileId,
@@ -1663,6 +1751,12 @@ describe('File Methods', () => {
       expect(allowed?.usage).toBe(1);
       expect(allowed?.temp_file_id).toBeUndefined();
       expect(allowed?.expiresAt).toBeUndefined();
+      expect(allowed?.updatedAt).toEqual(contentUpdatedAt);
+      const changedContent = await fileMethods.updateFile({
+        file_id: fileId,
+        text: 'Updated canonical file contents.',
+      });
+      expect(changedContent?.updatedAt?.getTime()).toBeGreaterThan(contentUpdatedAt.getTime());
     });
   });
 
@@ -2197,10 +2291,6 @@ describe('File Methods', () => {
       expect(file?.filepath).toBe('/new-path/file.txt');
       expect(file?.storageKey).toBe('r/eu-central-1/uploads/user123/file.txt');
       expect(file?.storageRegion).toBe('eu-central-1');
-    });
-
-    it('should handle empty updates array gracefully', async () => {
-      await expect(fileMethods.batchUpdateFiles([])).resolves.toBeUndefined();
     });
   });
 

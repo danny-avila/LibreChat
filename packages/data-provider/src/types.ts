@@ -396,6 +396,11 @@ export type TChatProject = {
   _id: string;
   name: string;
   description?: string;
+  instructions?: string;
+  contextRevision?: number;
+  file_ids?: string[];
+  hasInstructions?: boolean;
+  fileCount?: number;
   user?: string;
   conversationCount: number;
   lastConversationAt?: string | null;
@@ -407,10 +412,19 @@ export type TChatProject = {
 export type TCreateChatProjectRequest = {
   name: string;
   description?: string;
+  instructions?: string;
 };
 
 export type TUpdateChatProjectRequest = Partial<TCreateChatProjectRequest> & {
   projectId: string;
+};
+
+export type TChatProjectFile = {
+  file_id: string;
+  filename?: string;
+  type?: string;
+  bytes?: number;
+  availability: 'ready' | 'unavailable';
 };
 
 export type TDeleteChatProjectResponse = {

@@ -49,6 +49,8 @@ const {
   findAgentEventAppliedAction,
   assertCodeExecutionApprovalBinding,
   collectReachableAgents,
+  resolveChatProjectContext,
+  getChatProjectContextKey,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -60,6 +62,7 @@ const {
 const {
   saveMessage,
   getConvo,
+  getChatProject,
   getMessages,
   getFiles,
   getAgent,
@@ -196,6 +199,107 @@ async function deleteFailedResumeCheckpoint(args, context) {
 }
 
 const GENERIC_RESUME_ERROR = 'Resume failed';
+async function resolveResumeProjectContext(req, conversationId, { fresh = false } = {}) {
+  if (
+    !fresh &&
+    Object.prototype.hasOwnProperty.call(req, 'chatProjectContext') &&
+    req.chatProjectContext !== undefined
+  ) {
+    return req.chatProjectContext;
+  }
+  let context;
+  let refreshedConversation;
+  try {
+    const input = {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+      conversationId,
+      ...(fresh ? {} : { resolvedConversation: req.resolvedConversation }),
+    };
+    context = await resolveChatProjectContext(input, {
+      getConvo: async (userId, id) => {
+        refreshedConversation = await getConvo(userId, id);
+        return refreshedConversation;
+      },
+      getChatProject,
+      getFiles,
+    });
+    if (fresh) {
+      req.chatProjectFiles = undefined;
+      req.chatProjectFilesPromise = undefined;
+      req.resolvedConversation = refreshedConversation ?? null;
+    }
+  } catch (error) {
+    if (error?.message !== 'Project context unavailable') {
+      throw error;
+    }
+    context = null;
+  }
+  req.chatProjectContext = context;
+  return context;
+}
+
+async function rejectChangedProjectContext({
+  req,
+  res,
+  conversationId,
+  streamId,
+  job,
+  pendingAction,
+  generationProtocolVersion,
+  checkpointerCfg,
+  checkpointGeneration,
+  fresh = false,
+}) {
+  const currentContext = await resolveResumeProjectContext(req, conversationId, { fresh });
+  const currentKey = getChatProjectContextKey(currentContext);
+  const hasModelFacingProjectContext =
+    currentContext != null &&
+    (currentContext.instructions.trim() !== '' || currentContext.file_ids.length > 0);
+  if (typeof pendingAction?.projectContextKey !== 'string' && !hasModelFacingProjectContext) {
+    return false;
+  }
+  if (
+    typeof pendingAction?.projectContextKey === 'string' &&
+    pendingAction.projectContextKey === currentKey
+  ) {
+    return false;
+  }
+  let finalized = false;
+  try {
+    finalized =
+      (await GenerationJobManager.completeJob(
+        streamId,
+        'Project context changed before approval could be resumed',
+        job.createdAt,
+      )) === true;
+  } catch (error) {
+    logger.warn('[ResumeAgentController] Failed to finalize stale project-context resume', error);
+  }
+  if (finalized) {
+    await deleteResumedGenerationCheckpoint({
+      conversationId,
+      checkpointerCfg,
+      job,
+      checkpointGeneration,
+    }).catch((error) => {
+      logger.warn(
+        '[ResumeAgentController] Failed to prune stale project-context checkpoint',
+        getSafeErrorMetadata(error),
+      );
+    });
+  }
+  sendGenerationJson(
+    res,
+    409,
+    {
+      code: 'PROJECT_CONTEXT_CHANGED',
+      error: 'Project context changed; start a new turn.',
+    },
+    generationProtocolVersion,
+  );
+  return true;
+}
 
 const resumeContentProtectionDependencies = {
   onTraversalFailure: reportLocatorTraversalFailure,
@@ -1266,6 +1370,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let eventActorActionRecorder;
   let appliedEventActor;
   const providerExecutionId = randomUUID();
+  let resumeAcknowledged = false;
+  let resumeSlotReleased = false;
+  const rejectPendingEventActorResume = async (error) => {
+    if (
+      eventActorResumePromise != null &&
+      eventActorStartGate != null &&
+      !eventActorContinuationStarted
+    ) {
+      eventActorStartGate.reject(error);
+      await eventActorResumePromise.catch(() => {});
+    }
+  };
   try {
     if (req._agentEventBindingParentConversationId != null) {
       req._agentEventTaskId = job.metadata.idempotencyClientRequestId;
@@ -1649,505 +1765,541 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         generationProtocolVersion,
       );
     }
-
-    // Linearize the consumed approval against the schedule's live config. The schedule
-    // document fence was acquired only after all async policy reads, and this atomic
-    // consume checks its token/revision/enabled state immediately after the approval CAS.
-    // An edit/disable that won first makes this fail; one that lands afterward is ordered
-    // after the continuation has started. Never begin provider execution on a stale claim.
-    if (scheduleId) {
-      let scheduleClaimCurrent = false;
-      try {
-        scheduleClaimCurrent = await finalizeScheduleResumeClaim(
-          scheduleId,
-          scheduleResumeClaimToken,
-          scheduleResumeLeaseBy,
-          scheduleResumeOptions,
-        );
-      } catch (error) {
-        logger.error('[ResumeAgentController] Failed to finalize scheduled resume fence', error);
-        await releaseScheduleFence();
-      }
-      if (!scheduleClaimCurrent) {
-        await decrementPendingRequest(userId);
-        let stopped = false;
+    let client = null;
+    /** Re-pause progress failures use the action/epoch-scoped terminal CAS. The
+     * generic resume catch must not subsequently call completeJob, because the
+     * failed pause may have lost ownership to a newer action or generation. */
+    let pausePersistenceFailed = false;
+    let pausePersistenceFailureFinalized = false;
+    try {
+      // Linearize the consumed approval against the schedule's live config. The schedule
+      // document fence was acquired only after all async policy reads, and this atomic
+      // consume checks its token/revision/enabled state immediately after the approval CAS.
+      // An edit/disable that won first makes this fail; one that lands afterward is ordered
+      // after the continuation has started. Never begin provider execution on a stale claim.
+      if (scheduleId) {
+        let scheduleClaimCurrent = false;
         try {
-          const abortResult = await GenerationJobManager.abortJob(streamId, {
-            expectedCreatedAt: job.createdAt,
-            awaitProviderDrain: true,
-          });
-          // Same authoritative gate as the inactive-schedule path above: only a landed
-          // abort (or an already-terminal, drained generation) may settle this occurrence.
-          stopped = isStopConfirmed(abortResult);
+          scheduleClaimCurrent = await finalizeScheduleResumeClaim(
+            scheduleId,
+            scheduleResumeClaimToken,
+            scheduleResumeLeaseBy,
+            scheduleResumeOptions,
+          );
         } catch (error) {
-          logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
+          logger.error('[ResumeAgentController] Failed to finalize scheduled resume fence', error);
+          await releaseScheduleFence();
         }
-        if (!stopped) {
-          res.set('Retry-After', '1');
+        if (!scheduleClaimCurrent) {
+          resumeSlotReleased = true;
+          await decrementPendingRequest(userId);
+          let stopped = false;
+          try {
+            const abortResult = await GenerationJobManager.abortJob(streamId, {
+              expectedCreatedAt: job.createdAt,
+              awaitProviderDrain: true,
+            });
+            // Same authoritative gate as the inactive-schedule path above: only a landed
+            // abort (or an already-terminal, drained generation) may settle this occurrence.
+            stopped = isStopConfirmed(abortResult);
+          } catch (error) {
+            logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
+          }
+          if (!stopped) {
+            res.set('Retry-After', '1');
+            return sendGenerationJson(
+              res,
+              503,
+              {
+                code: 'SCHEDULE_STOP_UNCONFIRMED',
+                error: 'The stale scheduled resume could not be confirmed stopped.',
+              },
+              generationProtocolVersion,
+            );
+          }
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: 'interrupted',
+            conversationId,
+            error: 'Schedule was disabled, changed, or deleted before approval',
+          });
+          if (checkpointNamespace !== '') {
+            await deleteAgentCheckpoint(conversationId, checkpointerCfg, undefined, {
+              checkpointNamespace,
+            }).catch((error) => {
+              logger.warn(
+                '[ResumeAgentController] Failed to prune stale schedule checkpoint',
+                error,
+              );
+            });
+          }
           return sendGenerationJson(
             res,
-            503,
-            {
-              code: 'SCHEDULE_STOP_UNCONFIRMED',
-              error: 'The stale scheduled resume could not be confirmed stopped.',
-            },
+            409,
+            { code: 'SCHEDULE_NO_LONGER_ACTIVE', error: 'This schedule can no longer be resumed' },
             generationProtocolVersion,
           );
         }
-        await recordScheduleOutcome({
-          scheduleId,
-          scheduledFor,
-          streamId,
-          jobCreatedAt: job.createdAt,
-          status: 'interrupted',
-          conversationId,
-          error: 'Schedule was disabled, changed, or deleted before approval',
-        });
-        if (checkpointNamespace !== '') {
-          await deleteAgentCheckpoint(conversationId, checkpointerCfg, undefined, {
-            checkpointNamespace,
-          }).catch((error) => {
-            logger.warn('[ResumeAgentController] Failed to prune stale schedule checkpoint', error);
-          });
-        }
-        return sendGenerationJson(
-          res,
-          409,
-          { code: 'SCHEDULE_NO_LONGER_ACTIVE', error: 'This schedule can no longer be resumed' },
-          generationProtocolVersion,
-        );
       }
-    }
-
-    eventLeaseTransferredToRun = true;
-  } finally {
-    if (!eventLeaseTransferredToRun) {
-      await releaseEventChildLease?.();
-      releaseEventChildLease = undefined;
-    }
-  }
-
-  /**
-   * An interrupt steer enqueued just before the pause survives durably with
-   * its `preempt` flag, but the ARM lived only in the previous owner's
-   * runtime. Rebuild it from the queue so the resumed segment honours an
-   * interrupt the user already had acknowledged.
-   */
-  const preemptRearm = GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch(
-    (error) => {
-      logger.error(
-        '[ResumeAgentController] Failed to re-arm queued preempts',
-        getSafeErrorMetadata(error),
-      );
-    },
-  );
-
-  /**
-   * BOUNDED, and the bound is the point. `.catch` only fires on rejection,
-   * but ioredis queues commands while a connection is down instead of
-   * rejecting, so either of these can simply never settle. That would block
-   * here — after `approvals.resolve` has already consumed the action and
-   * flipped the job to `running`, and before both `res.json` and the resume
-   * lifecycle's own try/finally. The client times out, its retry gets a 409
-   * because the action is spent, and neither the continuation nor the
-   * failed-resume cleanup ever runs.
-   *
-   * Re-arming is steering bookkeeping that the next tool boundary would
-   * honour anyway, so it finishes in the background rather than holding a
-   * resume the user is waiting on. Capability is not in this best-effort path:
-   * it was committed atomically by the resume claim above.
-   */
-  let steeringSetupTimer;
-  await Promise.race([
-    preemptRearm,
-    new Promise((resolve) => {
-      steeringSetupTimer = setTimeout(() => {
-        logger.warn(
-          `[ResumeAgentController] Steering setup for ${streamId} still pending after ` +
-            `${STEER_RESUME_SETUP_TIMEOUT_MS}ms; continuing the resume without it`,
+      // Re-read the authoritative conversation/project only after approvals.resolve
+      // wins its CAS. The approval CAS/epoch is the owner fence: a mismatch
+      // terminalizes only this claimed job before initializeClient can start provider
+      // or tool work.
+      const claimedProjectContextConflict = await rejectChangedProjectContext({
+        req,
+        res,
+        conversationId,
+        streamId,
+        job,
+        pendingAction,
+        generationProtocolVersion,
+        checkpointerCfg,
+        checkpointGeneration,
+        fresh: true,
+      });
+      if (claimedProjectContextConflict) {
+        await rejectPendingEventActorResume(
+          new Error('Project context changed before approval could be resumed'),
         );
-        resolve();
-      }, STEER_RESUME_SETUP_TIMEOUT_MS);
-    }),
-  ]);
-  clearTimeout(steeringSetupTimer);
-
-  // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
-  // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)
-  // sees `res` as ended and returns undefined, leaving the resumed run without its MCP
-  // connection store — approved MCP / OAuth-overlay tools would then run without their
-  // request-scoped connections. Pre-seeding with a null `res` + `cleanupOnResponse:false`
-  // mirrors the normal stream path (request.js); torn down in the `finally` below.
-  req._resumableStreamId = streamId;
-  getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
-
-  // ACK immediately; the continuation streams over the client's existing SSE.
-  sendGenerationJson(
-    res,
-    200,
-    { streamId, conversationId, status: 'resuming' },
-    generationProtocolVersion,
-  );
-
-  req.turnStartedAt = job.createdAt;
-
-  let client = null;
-  /** Re-pause progress failures use the action/epoch-scoped terminal CAS. The
-   * generic resume catch must not subsequently call completeJob, because the
-   * failed pause may have lost ownership to a newer action or generation. */
-  let pausePersistenceFailed = false;
-  let pausePersistenceFailureFinalized = false;
-  try {
-    if (userSubmittedPaths.length > 0) {
-      job.metadata.userSubmittedPaths = userSubmittedPaths;
-    }
-    if (userSubmittedMessageFieldPaths.length > 0) {
-      job.metadata.userSubmittedMessageFieldPaths = userSubmittedMessageFieldPaths;
-    }
-    if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
-      await GenerationJobManager.getJobStore().updateJob(
-        streamId,
-        {
-          ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
-          ...(userSubmittedMessageFieldPaths.length > 0 && {
-            userSubmittedMessageFieldPaths,
-          }),
-        },
-        job.createdAt,
-      );
-    }
-
-    const mcpRequestBody =
-      job.metadata.mcpRequestBody ??
-      createMCPRuntimeRequestBody({
-        messageId: job.metadata.responseMessageId,
-        conversationId: streamId,
-        codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
-        parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
-      });
-    const result = await initializeClient({
-      req,
-      res,
-      endpointOption: req.body.endpointOption,
-      signal: job.abortController.signal,
-      jobCreatedAt: job.createdAt,
-      checkpointNamespace,
-      foregroundRunId: mcpRequestBody.messageId,
-      requestBody: mcpRequestBody,
-    });
-    client = result.client;
-
-    // The user approved the code action against the route/session selected at
-    // pause time. Re-resolve it on this replica and fail before provider/tool
-    // execution if the environment, worker, or workspace scope moved.
-    assertCodeExecutionApprovalBinding(
-      pendingAction.codeExecutionBinding,
-      collectReachableAgents([client.options?.agent, ...(client.agentConfigs?.values() ?? [])]),
-    );
-
-    // Bind the rebuilt client to the in-flight turn's identity (no new user message).
-    client.conversationId = streamId;
-    // The resume operates on the SAME job (it moved it running again), so its identity is
-    // the paused job's createdAt — used by the re-pause CAS pre-check + checkpoint prune to
-    // avoid acting on a job a newer request has since replaced.
-    client.jobCreatedAt = job.createdAt;
-    client.checkpointNamespace = checkpointNamespace;
-    client.responseMessageId = job.metadata.responseMessageId;
-    client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
-    // Seed the rebuilt pruner from the tier and calibration captured at the pause, so the
-    // resumed segment keeps historical tool results byte-identical to the paused one.
-    client.seedContextMeta?.(job.metadata?.contextMeta);
-    if (client.contentParts) {
-      GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
-    }
-
-    const resumeClient = () =>
-      client.resumeCompletion({
-        resumeValue: mapped.resumeValue,
-        seedContent,
-        runSteps: resumeState?.runSteps ?? [],
-        storedMessages,
-        abortController: job.abortController,
-        // Carry the user's MCP auth so approved MCP tools run with their credentials.
-        userMCPAuthMap: result.userMCPAuthMap,
-        // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
-        // graph passes `messages: []`, so without these the model would lose their schemas.
-        discoveredToolNames: job.metadata?.discoveredTools,
-        activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
-        compactionSemanticIndex: job.metadata?.compactionSemanticIndex,
-      });
-    if (
-      !(await GenerationJobManager.beginProviderExecution(
-        streamId,
-        job.createdAt,
-        providerExecutionId,
-      ))
-    ) {
-      throw Object.assign(new Error('Generation stopped before provider resume'), {
-        code: 'RUN_REPLACED',
-      });
-    }
-    if (eventActorResumePromise == null) {
-      await resumeClient();
-    } else {
-      eventActorContinuationStarted = true;
-      eventActorStartGate.resolve(async (actorContext) => {
-        client.checkpointNamespace = actorContext.checkpointNamespace;
-        client.eventActorCheckpointId = actorContext.checkpointId;
-        client.eventActorInvocationId = actorContext.invocationId;
-        client.eventActorContinuation = actorContext.continuation;
-        return resumeClient();
-      });
-      const actorResult = await eventActorResumePromise;
-      if (actorResult.execution.status === 'suspended') {
-        const suspensionKind = req._agentEventDetachedActionLifecycle?.readSuspension()?.kind;
-        if (suspensionKind === 'internal_completion') {
-          await GenerationJobManager.updateMetadata(
-            streamId,
-            {
-              agentEventSuspension: {
-                version: actorResult.execution.suspension.version,
-                suspensionId: actorResult.execution.suspension.suspensionId,
-                attempt: actorResult.execution.suspension.attempt,
-              },
-            },
-            job.createdAt,
-          );
-        } else if (!(await client.publishStagedApproval(actorResult.execution.suspension))) {
-          throw new Error('Re-paused event actor suspension could not be projected to its job');
-        }
-      } else if (actorResult.execution.status === 'applied') {
-        appliedEventActor = {
-          invocationId: durableEventActorSuspension.invocation.invocationId,
-          checkpoint: actorResult.execution.head.checkpoint,
-          action: actorResult.execution.result.action,
-        };
-      }
-    }
-
-    // The model may pause AGAIN (another tool, or a follow-up question). The pending
-    // action is durably projected; persist progress before exposing it to clients.
-    if (client.pendingApproval) {
-      logger.debug(`[ResumeAgentController] Re-paused for approval: ${streamId}`);
-      const pauseActionId = client.pendingApproval.actionId;
-      const pauseCreatedAt = client.jobCreatedAt ?? job.createdAt;
-      const ownsPausePersistence = await GenerationJobManager.approvals.ownsPausePersistence(
-        streamId,
-        pauseActionId,
-        pauseCreatedAt,
-      );
-      if (ownsPausePersistence) {
-        try {
-          // Persist this segment's content + artifacts before the fresh client (next
-          // resume) drops them, so an expiring re-pause doesn't lose them; finalize later
-          // overwrites content and merges attachments onto the saved message. A failed
-          // required write must reject into the error-finalization path rather than expose
-          // the next action while its preceding segment is absent from durable history.
-          await persistRePauseProgress({ req, client, job, streamId, conversationId });
-        } catch (pausePersistenceError) {
-          pausePersistenceFailed = true;
-          try {
-            pausePersistenceFailureFinalized =
-              (await GenerationJobManager.failPausePersistence(
-                streamId,
-                pauseActionId,
-                getUserFacingResumeError(pausePersistenceError, req.config),
-                pauseCreatedAt,
-              )) === true;
-            if (!pausePersistenceFailureFinalized) {
-              logger.warn(
-                `[ResumeAgentController] Skipping stale re-pause persistence failure — ${streamId} no longer owns its barrier`,
-              );
-            }
-          } catch (failError) {
-            logger.error(
-              `[ResumeAgentController] Failed to terminalize re-pause persistence error for ${streamId}`,
-              getSafeErrorMetadata(failError),
-            );
-          }
-          throw pausePersistenceError;
-        }
-        await client.exposePendingApproval?.();
-        const released = await GenerationJobManager.approvals.finishPausePersistence(
-          streamId,
-          pauseActionId,
-          pauseCreatedAt,
-        );
-        if (!released) {
-          logger.warn(
-            `[ResumeAgentController] Re-pause persistence barrier changed before release: ${streamId}`,
-          );
-        }
+        resumeSlotReleased = true;
+        await decrementPendingRequest(userId);
+        await releaseScheduleFence();
         if (scheduleId) {
           await recordScheduleOutcome({
             scheduleId,
             scheduledFor,
             streamId,
             jobCreatedAt: job.createdAt,
-            status: 'requires_action',
+            status: 'interrupted',
             conversationId,
-            checkpointNamespace: client.checkpointNamespace,
+            error: 'Project context changed before approval could be resumed',
+          }).catch((error) => {
+            logger.warn(
+              '[ResumeAgentController] Failed to record stale project-context schedule outcome',
+              getSafeErrorMetadata(error),
+            );
           });
         }
+        return;
+      }
+      eventLeaseTransferredToRun = true;
+
+      /**
+       * An interrupt steer enqueued just before the pause survives durably with
+       * its `preempt` flag, but the ARM lived only in the previous owner's
+       * runtime. Rebuild it from the queue so the resumed segment honours an
+       * interrupt the user already had acknowledged.
+       */
+      const preemptRearm = GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch(
+        (error) => {
+          logger.error(
+            '[ResumeAgentController] Failed to re-arm queued preempts',
+            getSafeErrorMetadata(error),
+          );
+        },
+      );
+
+      /**
+       * BOUNDED, and the bound is the point. `.catch` only fires on rejection,
+       * but ioredis queues commands while a connection is down instead of
+       * rejecting, so either of these can simply never settle. Keep steering setup
+       * bounded so it cannot hold the resume before the ACK or its lifecycle cleanup.
+       *
+       * Re-arming is steering bookkeeping that the next tool boundary would
+       * honour anyway, so it finishes in the background rather than holding the
+       * resume the user is waiting on. Capability is not in this best-effort path:
+       * it was committed atomically by the resume claim above.
+       */
+      let steeringSetupTimer;
+      await Promise.race([
+        preemptRearm,
+        new Promise((resolve) => {
+          steeringSetupTimer = setTimeout(() => {
+            logger.warn(
+              `[ResumeAgentController] Steering setup for ${streamId} still pending after ` +
+                `${STEER_RESUME_SETUP_TIMEOUT_MS}ms; continuing the resume without it`,
+            );
+            resolve();
+          }, STEER_RESUME_SETUP_TIMEOUT_MS);
+        }),
+      ]);
+      clearTimeout(steeringSetupTimer);
+
+      // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
+      // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)
+      // sees `res` as ended and returns undefined, leaving the resumed run without its MCP
+      // connection store — approved MCP / OAuth-overlay tools would then run without their
+      // request-scoped connections. Pre-seeding with a null `res` + `cleanupOnResponse:false`
+      // mirrors the normal stream path (request.js); torn down in the `finally` below.
+      req._resumableStreamId = streamId;
+      getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
+
+      sendGenerationJson(
+        res,
+        200,
+        { streamId, conversationId, status: 'resuming' },
+        generationProtocolVersion,
+      );
+      resumeAcknowledged = true;
+
+      req.turnStartedAt = job.createdAt;
+
+      if (userSubmittedPaths.length > 0) {
+        job.metadata.userSubmittedPaths = userSubmittedPaths;
+      }
+      if (userSubmittedMessageFieldPaths.length > 0) {
+        job.metadata.userSubmittedMessageFieldPaths = userSubmittedMessageFieldPaths;
+      }
+      if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
+        await GenerationJobManager.getJobStore().updateJob(
+          streamId,
+          {
+            ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
+            ...(userSubmittedMessageFieldPaths.length > 0 && {
+              userSubmittedMessageFieldPaths,
+            }),
+          },
+          job.createdAt,
+        );
+      }
+
+      const mcpRequestBody =
+        job.metadata.mcpRequestBody ??
+        createMCPRuntimeRequestBody({
+          messageId: job.metadata.responseMessageId,
+          conversationId: streamId,
+          codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
+          parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
+        });
+      const result = await initializeClient({
+        req,
+        res,
+        endpointOption: req.body.endpointOption,
+        signal: job.abortController.signal,
+        jobCreatedAt: job.createdAt,
+        checkpointNamespace,
+        foregroundRunId: mcpRequestBody.messageId,
+        requestBody: mcpRequestBody,
+      });
+      client = result.client;
+
+      // Re-resolve the approved code target before provider/tool execution on this replica.
+      assertCodeExecutionApprovalBinding(
+        pendingAction.codeExecutionBinding,
+        collectReachableAgents([client.options?.agent, ...(client.agentConfigs?.values() ?? [])]),
+      );
+
+      // Bind the rebuilt client to the in-flight turn's identity (no new user message).
+      client.conversationId = streamId;
+      // The resume operates on the SAME job (it moved it running again), so its identity is
+      // the paused job's createdAt — used by the re-pause CAS pre-check + checkpoint prune to
+      // avoid acting on a job a newer request has since replaced.
+      client.jobCreatedAt = job.createdAt;
+      client.checkpointNamespace = checkpointNamespace;
+      client.responseMessageId = job.metadata.responseMessageId;
+      client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
+      // Seed the rebuilt pruner from the tier and calibration captured at the pause, so the
+      // resumed segment keeps historical tool results byte-identical to the paused one.
+      client.seedContextMeta?.(job.metadata?.contextMeta);
+      if (client.contentParts) {
+        GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
+      }
+
+      const resumeClient = () =>
+        client.resumeCompletion({
+          resumeValue: mapped.resumeValue,
+          seedContent,
+          runSteps: resumeState?.runSteps ?? [],
+          storedMessages,
+          abortController: job.abortController,
+          // Carry the user's MCP auth so approved MCP tools run with their credentials.
+          userMCPAuthMap: result.userMCPAuthMap,
+          // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
+          // graph passes `messages: []`, so without these the model would lose their schemas.
+          discoveredToolNames: job.metadata?.discoveredTools,
+          activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
+          compactionSemanticIndex: job.metadata?.compactionSemanticIndex,
+        });
+      if (
+        !(await GenerationJobManager.beginProviderExecution(
+          streamId,
+          job.createdAt,
+          providerExecutionId,
+        ))
+      ) {
+        throw Object.assign(new Error('Generation stopped before provider resume'), {
+          code: 'RUN_REPLACED',
+        });
+      }
+      if (eventActorResumePromise == null) {
+        await resumeClient();
       } else {
+        eventActorContinuationStarted = true;
+        eventActorStartGate.resolve(async (actorContext) => {
+          client.checkpointNamespace = actorContext.checkpointNamespace;
+          client.eventActorCheckpointId = actorContext.checkpointId;
+          client.eventActorInvocationId = actorContext.invocationId;
+          client.eventActorContinuation = actorContext.continuation;
+          return resumeClient();
+        });
+        const actorResult = await eventActorResumePromise;
+        if (actorResult.execution.status === 'suspended') {
+          const suspensionKind = req._agentEventDetachedActionLifecycle?.readSuspension()?.kind;
+          if (suspensionKind === 'internal_completion') {
+            await GenerationJobManager.updateMetadata(
+              streamId,
+              {
+                agentEventSuspension: {
+                  version: actorResult.execution.suspension.version,
+                  suspensionId: actorResult.execution.suspension.suspensionId,
+                  attempt: actorResult.execution.suspension.attempt,
+                },
+              },
+              job.createdAt,
+            );
+          } else if (!(await client.publishStagedApproval(actorResult.execution.suspension))) {
+            throw new Error('Re-paused event actor suspension could not be projected to its job');
+          }
+        } else if (actorResult.execution.status === 'applied') {
+          appliedEventActor = {
+            invocationId: durableEventActorSuspension.invocation.invocationId,
+            checkpoint: actorResult.execution.head.checkpoint,
+            action: actorResult.execution.result.action,
+          };
+        }
+      }
+
+      // The model may pause AGAIN (another tool, or a follow-up question). The pending
+      // action is durably projected; persist progress before exposing it to clients.
+      if (client.pendingApproval) {
+        logger.debug(`[ResumeAgentController] Re-paused for approval: ${streamId}`);
+        const pauseActionId = client.pendingApproval.actionId;
+        const pauseCreatedAt = client.jobCreatedAt ?? job.createdAt;
+        const ownsPausePersistence = await GenerationJobManager.approvals.ownsPausePersistence(
+          streamId,
+          pauseActionId,
+          pauseCreatedAt,
+        );
+        if (ownsPausePersistence) {
+          try {
+            // Persist this segment's content + artifacts before the fresh client (next
+            // resume) drops them, so an expiring re-pause doesn't lose them; finalize later
+            // overwrites content and merges attachments onto the saved message. A failed
+            // required write must reject into the error-finalization path rather than expose
+            // the next action while its preceding segment is absent from durable history.
+            await persistRePauseProgress({ req, client, job, streamId, conversationId });
+          } catch (pausePersistenceError) {
+            pausePersistenceFailed = true;
+            try {
+              pausePersistenceFailureFinalized =
+                (await GenerationJobManager.failPausePersistence(
+                  streamId,
+                  pauseActionId,
+                  getUserFacingResumeError(pausePersistenceError, req.config),
+                  pauseCreatedAt,
+                )) === true;
+              if (!pausePersistenceFailureFinalized) {
+                logger.warn(
+                  `[ResumeAgentController] Skipping stale re-pause persistence failure — ${streamId} no longer owns its barrier`,
+                );
+              }
+            } catch (failError) {
+              logger.error(
+                `[ResumeAgentController] Failed to terminalize re-pause persistence error for ${streamId}`,
+                getSafeErrorMetadata(failError),
+              );
+            }
+            throw pausePersistenceError;
+          }
+          await client.exposePendingApproval?.();
+          const released = await GenerationJobManager.approvals.finishPausePersistence(
+            streamId,
+            pauseActionId,
+            pauseCreatedAt,
+          );
+          if (!released) {
+            logger.warn(
+              `[ResumeAgentController] Re-pause persistence barrier changed before release: ${streamId}`,
+            );
+          }
+          if (scheduleId) {
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              streamId,
+              jobCreatedAt: job.createdAt,
+              status: 'requires_action',
+              conversationId,
+              checkpointNamespace: client.checkpointNamespace,
+            });
+          }
+        } else {
+          logger.debug(
+            `[ResumeAgentController] Skipping stale re-pause persistence — ${streamId} no longer owns its barrier`,
+          );
+        }
+        return;
+      }
+
+      // If the user aborted mid-resume, the abort route already emitted the terminal
+      // event and finalized the job — don't double-save / double-finalize here. This
+      // continuation is nevertheless the scheduled-run owner, so it must settle the
+      // run row after observing its own abort; the generic Stop route deliberately
+      // delegates a running generation's settlement to that generation owner.
+      if (job.abortController.signal.aborted) {
         logger.debug(
-          `[ResumeAgentController] Skipping stale re-pause persistence — ${streamId} no longer owns its barrier`,
+          `[ResumeAgentController] Aborted during resume; abort route finalizes: ${streamId}`,
         );
-      }
-      return;
-    }
-
-    // If the user aborted mid-resume, the abort route already emitted the terminal
-    // event and finalized the job — don't double-save / double-finalize here. This
-    // continuation is nevertheless the scheduled-run owner, so it must settle the
-    // run row after observing its own abort; the generic Stop route deliberately
-    // delegates a running generation's settlement to that generation owner.
-    if (job.abortController.signal.aborted) {
-      logger.debug(
-        `[ResumeAgentController] Aborted during resume; abort route finalizes: ${streamId}`,
-      );
-      if (scheduleId) {
-        await recordScheduleOutcome({
-          scheduleId,
-          scheduledFor,
-          streamId,
-          jobCreatedAt: job.createdAt,
-          status: 'interrupted',
-          conversationId,
-          error: 'Scheduled run was stopped',
-        });
-      }
-      return;
-    }
-
-    await finalizeResumedTurn({
-      req,
-      client,
-      job,
-      streamId,
-      conversationId,
-      addTitle,
-      checkpointGeneration,
-      appliedEventActor,
-    });
-  } catch (err) {
-    if (
-      eventActorResumePromise != null &&
-      eventActorStartGate != null &&
-      !eventActorContinuationStarted
-    ) {
-      eventActorStartGate.reject(err);
-      await eventActorResumePromise.catch(() => {});
-    }
-    logger.error('[ResumeAgentController] Resume failed', getSafeErrorMetadata(err));
-    if (pausePersistenceFailed) {
-      // failPausePersistence already performed the exact requires_action ->
-      // error transition. Only its CAS winner owns this generation's checkpoint
-      // cleanup; a stale/mismatched failure must leave the live scope intact.
-      if (pausePersistenceFailureFinalized) {
-        await deleteFailedResumeCheckpoint(
-          {
+        if (scheduleId) {
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: 'interrupted',
             conversationId,
-            checkpointerCfg,
-            job,
-            checkpointGeneration,
-          },
-          're-pause persistence failure',
-        );
+            error: 'Scheduled run was stopped',
+          });
+        }
+        return;
       }
-      if (scheduleId && pausePersistenceFailureFinalized) {
-        await recordScheduleOutcome({
-          scheduleId,
-          scheduledFor,
-          streamId,
-          jobCreatedAt: job.createdAt,
-          status: 'error',
-          conversationId,
-          error: err?.message ?? 'Re-pause persistence failed',
-        });
+
+      await finalizeResumedTurn({
+        req,
+        client,
+        job,
+        streamId,
+        conversationId,
+        addTitle,
+        checkpointGeneration,
+        appliedEventActor,
+      });
+    } catch (err) {
+      await rejectPendingEventActorResume(err);
+      logger.error('[ResumeAgentController] Resume failed', getSafeErrorMetadata(err));
+      await releaseScheduleFence();
+      if (pausePersistenceFailed) {
+        // failPausePersistence already performed the exact requires_action ->
+        // error transition. Only its CAS winner owns this generation's checkpoint
+        // cleanup; a stale/mismatched failure must leave the live scope intact.
+        if (pausePersistenceFailureFinalized) {
+          await deleteFailedResumeCheckpoint(
+            {
+              conversationId,
+              checkpointerCfg,
+              job,
+              checkpointGeneration,
+            },
+            're-pause persistence failure',
+          );
+        }
+        if (scheduleId && pausePersistenceFailureFinalized) {
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: 'error',
+            conversationId,
+            error: err?.message ?? 'Re-pause persistence failed',
+          });
+        }
+        return;
       }
-      return;
-    }
-    const errorMessage = getUserFacingResumeError(err, req.config);
-    // Job-replacement guard (mirrors finalizeResumedTurn's success-path guard): if a
-    // newer request reused this conversationId while the resume was failing, do NOT emit
-    // the error to / complete / prune the NEWER turn's job. The finally still releases
-    // the slot + disposes. Proceed with finalization if the replacement check itself fails.
-    let stillLive = true;
-    try {
-      const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
-      stillLive = !!liveJob && liveJob.createdAt === job.createdAt;
-    } catch (readErr) {
-      logger.warn(
-        '[ResumeAgentController] Replacement check failed; finalizing anyway',
-        getSafeErrorMetadata(readErr),
-      );
-    }
-    if (!stillLive) {
-      logger.warn(
-        `[ResumeAgentController] Skipping failed-resume finalization — job ${streamId} was replaced`,
-      );
-    } else {
-      // completeJob atomically claims running -> error and parks steers before
-      // publishing. If abort or a re-pause won, it returns false; only the
-      // terminal-CAS winner may delete this generation's checkpoint scope.
-      let errorFinalized = false;
+      const errorMessage = getUserFacingResumeError(err, req.config);
+      // Job-replacement guard (mirrors finalizeResumedTurn's success-path guard): if a
+      // newer request reused this conversationId while the resume was failing, do NOT emit
+      // the error to / complete / prune the NEWER turn's job. The finally still releases
+      // the slot + disposes. Proceed with finalization if the replacement check itself fails.
+      let stillLive = true;
       try {
-        errorFinalized =
-          (await GenerationJobManager.completeJob(streamId, errorMessage, job.createdAt)) === true;
-      } catch (completeErr) {
-        logger.error(
-          '[ResumeAgentController] Failed to finalize failed resume',
-          getSafeErrorMetadata(completeErr),
+        const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+        stillLive = !!liveJob && liveJob.createdAt === job.createdAt;
+      } catch (readErr) {
+        logger.warn(
+          '[ResumeAgentController] Replacement check failed; finalizing anyway',
+          getSafeErrorMetadata(readErr),
         );
       }
-      if (errorFinalized) {
-        await deleteFailedResumeCheckpoint(
-          {
+      if (!stillLive) {
+        logger.warn(
+          `[ResumeAgentController] Skipping failed-resume finalization — job ${streamId} was replaced`,
+        );
+      } else {
+        // completeJob atomically claims running -> error and parks steers before
+        // publishing. If abort or a re-pause won, it returns false; only the
+        // terminal-CAS winner may delete this generation's checkpoint scope.
+        let errorFinalized = false;
+        try {
+          errorFinalized =
+            (await GenerationJobManager.completeJob(streamId, errorMessage, job.createdAt)) ===
+            true;
+        } catch (completeErr) {
+          logger.error(
+            '[ResumeAgentController] Failed to finalize failed resume',
+            getSafeErrorMetadata(completeErr),
+          );
+        }
+        if (errorFinalized) {
+          await deleteFailedResumeCheckpoint(
+            {
+              conversationId,
+              checkpointerCfg,
+              job,
+              checkpointGeneration,
+            },
+            'failed resume finalization',
+          );
+        }
+        if (scheduleId && errorFinalized) {
+          const balanceRefusal = err?.message?.includes(ViolationTypes.TOKEN_BALANCE);
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: balanceRefusal ? 'skipped_balance' : 'error',
             conversationId,
-            checkpointerCfg,
-            job,
-            checkpointGeneration,
-          },
-          'failed resume finalization',
-        );
+            ...(!balanceRefusal && { error: err?.message ?? 'Resume failed' }),
+          });
+        }
       }
-      if (scheduleId && errorFinalized) {
-        const balanceRefusal = err?.message?.includes(ViolationTypes.TOKEN_BALANCE);
-        await recordScheduleOutcome({
-          scheduleId,
-          scheduledFor,
+      if (!resumeAcknowledged && !res.headersSent) {
+        sendGenerationJson(res, 500, { error: GENERIC_RESUME_ERROR }, generationProtocolVersion);
+      }
+    } finally {
+      try {
+        // Tear down the MCP request-context store seeded before the ACK (parity with
+        // request.js's finishResumableRequest). No-op if it was never seeded.
+        await cleanupMCPRequestContextForReq(req);
+        // Release the concurrency slot taken above — UNLESS handleRunInterrupt already
+        // released it on a re-pause (so a fast /resume isn't 429'd). On a normal finish or
+        // error it didn't, so release here. A re-pause re-acquires its own slot next resume.
+        if (!resumeSlotReleased && !client?.pendingRequestReleased) {
+          await decrementPendingRequest(userId);
+        }
+        if (client) {
+          disposeClient(client);
+        }
+      } finally {
+        await GenerationJobManager.markProviderExecutionDrained?.(
           streamId,
-          jobCreatedAt: job.createdAt,
-          status: balanceRefusal ? 'skipped_balance' : 'error',
-          conversationId,
-          ...(!balanceRefusal && { error: err?.message ?? 'Resume failed' }),
+          job.createdAt,
+          providerExecutionId,
+        ).catch((drainError) => {
+          logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
         });
+        await releaseEventChildLease?.();
+        releaseEventChildLease = undefined;
       }
     }
   } finally {
-    try {
-      // Tear down the MCP request-context store seeded before the ACK (parity with
-      // request.js's finishResumableRequest). No-op if it was never seeded.
-      await cleanupMCPRequestContextForReq(req);
-      // Release the concurrency slot taken above — UNLESS handleRunInterrupt already
-      // released it on a re-pause (so a fast /resume isn't 429'd). On a normal finish or
-      // error it didn't, so release here. A re-pause re-acquires its own slot next resume.
-      if (!client?.pendingRequestReleased) {
-        await decrementPendingRequest(userId);
-      }
-      if (client) {
-        disposeClient(client);
-      }
-    } finally {
-      await GenerationJobManager.markProviderExecutionDrained?.(
-        streamId,
-        job.createdAt,
-        providerExecutionId,
-      ).catch((drainError) => {
-        logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
-      });
+    if (!eventLeaseTransferredToRun) {
       await releaseEventChildLease?.();
+      releaseEventChildLease = undefined;
     }
   }
 };

@@ -1369,6 +1369,9 @@ class BaseClient {
     // Keep the authenticated conversation available for response, abort, and retry saves.
     // fetchedConvo already prevents repeating the conversation initialization work.
     const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
+    if (!shouldSetCreatedAtOnInsert) {
+      delete fieldsToKeep.chatProjectId;
+    }
 
     const unsetFields = {};
     const exceptions = new Set(['spec', 'iconURL']);

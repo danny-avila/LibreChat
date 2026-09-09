@@ -1,0 +1,600 @@
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { v4 } from 'uuid';
+import * as Ariakit from '@ariakit/react';
+import {
+  ChevronDown,
+  FilePlus2,
+  Files,
+  Info,
+  Link2,
+  Loader2,
+  Paperclip,
+  Plus,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
+  defaultAgentCapabilities,
+  EToolResources,
+  FileContext,
+  MAX_CHAT_PROJECT_FILES,
+  PermissionTypes,
+  Permissions,
+} from 'librechat-data-provider';
+import {
+  Alert,
+  Button,
+  DropdownPopup,
+  EmptyState,
+  FileUpload,
+  Input,
+  OGDialog,
+  OGDialogContent,
+  OGDialogHeader,
+  OGDialogTitle,
+  Spinner,
+  TooltipAnchor,
+  useToastContext,
+} from '@librechat/client';
+import type { TChatProjectFile, TError, TFile, TFileUpload } from 'librechat-data-provider';
+import type { LocalizeFunction } from '~/common';
+import {
+  useAddProjectFileMutation,
+  useProjectAvailableFilesInfiniteQuery,
+  useProjectFilesQuery,
+  useRemoveProjectFileMutation,
+  useUploadFileMutation,
+} from '~/data-provider';
+import { useAgentCapabilities, useGetAgentsConfig, useHasAccess, useLocalize } from '~/hooks';
+import { NotificationSeverity } from '~/common';
+import { formatFileSize } from '~/utils';
+type ProjectResourcesProps = {
+  project: { _id: string; fileCount?: number };
+};
+
+type UploadState = {
+  id: string;
+  filename: string;
+  file: File;
+  fileId?: string;
+  errorMessage?: string;
+  status: 'processing' | 'failed';
+};
+
+const getUploadErrorMessage = (error: unknown, localize: LocalizeFunction): string => {
+  const uploadError = error as TError | undefined;
+  if (uploadError?.code === 'ERR_CANCELED') {
+    return localize('com_error_files_upload_canceled');
+  }
+  const responseData = uploadError?.response?.data;
+  if (typeof responseData?.message === 'string' && responseData.message.trim().length > 0) {
+    return responseData.message;
+  }
+  const associationError = responseData && 'error' in responseData ? responseData.error : undefined;
+  return typeof associationError === 'string' && associationError.trim().length > 0
+    ? associationError
+    : localize('com_error_files_upload');
+};
+function statusLabel(localize: LocalizeFunction, availability: TChatProjectFile['availability']) {
+  return availability === 'ready'
+    ? localize('com_ui_project_file_ready')
+    : localize('com_ui_project_file_unavailable');
+}
+
+const isEligibleFile = (file: TFile) =>
+  file.embedded === true &&
+  file.context === FileContext.message_attachment &&
+  (!file.expiredAt || new Date(file.expiredAt).getTime() > Date.now());
+export default function ProjectResources({ project }: ProjectResourcesProps) {
+  const localize = useLocalize();
+  const { agentsConfig } = useGetAgentsConfig();
+  const { fileSearchEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities ?? defaultAgentCapabilities,
+  );
+  const canUseFileSearch = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
+    permission: Permissions.USE,
+  });
+  const canUploadFromDevice = fileSearchEnabled && canUseFileSearch;
+  const { showToast } = useToastContext();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pickerMenuRef = useRef<HTMLButtonElement>(null);
+  const fileMenuId = useId();
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const deferredPickerSearch = useDeferredValue(pickerSearch);
+  const [uploading, setUploading] = useState<UploadState[]>([]);
+  const pendingUploadIdsRef = useRef(new Set<string>());
+  const optimisticAttachedIdsRef = useRef(new Set<string>());
+  const [optimisticAttachedIds, setOptimisticAttachedIds] = useState<string[]>([]);
+  const { data: projectFiles, isLoading, isError, refetch } = useProjectFilesQuery(project._id);
+  const availableFilesQuery = useProjectAvailableFilesInfiniteQuery(
+    project._id,
+    { search: deferredPickerSearch || undefined, limit: 20 },
+    { enabled: isPickerOpen },
+  );
+  const {
+    data: availableFilesData,
+    isLoading: isFilesLoading,
+    isFetchingNextPage,
+    isError: isFilesError,
+    hasNextPage,
+    fetchNextPage,
+    refetch: refetchFiles,
+  } = availableFilesQuery;
+  const uploadFile = useUploadFileMutation();
+  const addFile = useAddProjectFileMutation();
+  const removeFile = useRemoveProjectFileMutation();
+  const attachedIds = useMemo(
+    () => new Set((projectFiles ?? []).map((file) => file.file_id)),
+    [projectFiles],
+  );
+  const availableFiles = useMemo(
+    () => availableFilesData?.pages.flatMap((page) => page.files) ?? [],
+    [availableFilesData?.pages],
+  );
+  const fileCount = projectFiles?.length ?? project.fileCount ?? 0;
+  const getEffectiveFileCount = () => {
+    let count = fileCount + pendingUploadIdsRef.current.size;
+    for (const fileId of optimisticAttachedIdsRef.current) {
+      if (!attachedIds.has(fileId)) {
+        count++;
+      }
+    }
+    return count;
+  };
+  const hasFileCapacity = getEffectiveFileCount() < MAX_CHAT_PROJECT_FILES;
+
+  useEffect(() => {
+    const remaining = optimisticAttachedIds.filter((fileId) => !attachedIds.has(fileId));
+    if (remaining.length !== optimisticAttachedIds.length) {
+      const remainingSet = new Set(remaining);
+      optimisticAttachedIdsRef.current = remainingSet;
+      setOptimisticAttachedIds(remaining);
+    }
+  }, [attachedIds, optimisticAttachedIds]);
+
+  useEffect(() => {
+    if (
+      isPickerOpen &&
+      !isFilesLoading &&
+      !isFilesError &&
+      availableFiles.length === 0 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      void fetchNextPage();
+    }
+  }, [
+    availableFiles.length,
+    fetchNextPage,
+    hasNextPage,
+    isFilesError,
+    isFilesLoading,
+    isFetchingNextPage,
+    isPickerOpen,
+  ]);
+  useEffect(() => {
+    setPickerSearch('');
+  }, [project._id]);
+
+  const addExistingFile = async (fileId: string) => {
+    try {
+      await addFile.mutateAsync({ projectId: project._id, file_id: fileId });
+      setIsPickerOpen(false);
+    } catch {
+      showToast({
+        message: localize('com_ui_project_file_attach_error'),
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+    }
+  };
+
+  const runUpload = async (item: UploadState) => {
+    try {
+      let fileId = item.fileId;
+      if (!fileId) {
+        const formData = new FormData();
+        formData.append('file', item.file);
+        formData.append('file_id', item.id);
+        formData.append('endpoint', 'agents');
+        formData.append('message_file', 'true');
+        formData.append('tool_resource', EToolResources.file_search);
+        const uploaded = (await uploadFile.mutateAsync(formData)) as TFileUpload;
+        if (!uploaded.file_id || !isEligibleFile(uploaded)) {
+          throw new Error('Uploaded file is not eligible for project search');
+        }
+        fileId = uploaded.file_id;
+        setUploading((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id ? { ...candidate, fileId } : candidate,
+          ),
+        );
+      }
+      await addFile.mutateAsync({ projectId: project._id, file_id: fileId });
+      pendingUploadIdsRef.current.delete(item.id);
+      optimisticAttachedIdsRef.current.add(fileId);
+      setOptimisticAttachedIds(Array.from(optimisticAttachedIdsRef.current));
+      setUploading((current) => current.filter((candidate) => candidate.id !== item.id));
+    } catch (error: unknown) {
+      pendingUploadIdsRef.current.delete(item.id);
+      const errorMessage = getUploadErrorMessage(error, localize);
+      setUploading((current) =>
+        current.map((candidate) =>
+          candidate.id === item.id ? { ...candidate, errorMessage, status: 'failed' } : candidate,
+        ),
+      );
+    }
+  };
+
+  const processUploads = async (items: UploadState[]) => {
+    for (const item of items) {
+      await runUpload(item);
+    }
+  };
+
+  const handleUploadChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!selected.length || !canUploadFromDevice) {
+      return;
+    }
+    const availableCapacity = Math.max(0, MAX_CHAT_PROJECT_FILES - getEffectiveFileCount());
+    const accepted = selected.slice(0, availableCapacity).map((file) => ({
+      id: v4(),
+      filename: file.name,
+      file,
+      status: 'processing' as const,
+    }));
+    accepted.forEach((item) => pendingUploadIdsRef.current.add(item.id));
+    if (accepted.length) {
+      setUploading((current) => [...current, ...accepted]);
+      void processUploads(accepted);
+    }
+    if (selected.length > accepted.length) {
+      showToast({
+        message: localize('com_ui_project_file_excess', {
+          count: selected.length - accepted.length,
+        }),
+        severity: NotificationSeverity.WARNING,
+        showIcon: true,
+      });
+    }
+  };
+
+  const remove = async (fileId: string) => {
+    try {
+      await removeFile.mutateAsync({ projectId: project._id, file_id: fileId });
+    } catch {
+      showToast({
+        message: localize('com_ui_project_file_remove_error'),
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+    }
+  };
+
+  const retryUpload = (item: UploadState) => {
+    if (pendingUploadIdsRef.current.has(item.id) || (!item.fileId && !canUploadFromDevice)) {
+      return;
+    }
+    if (getEffectiveFileCount() >= MAX_CHAT_PROJECT_FILES) {
+      showToast({
+        message: localize('com_ui_project_file_excess', { count: 1 }),
+        severity: NotificationSeverity.WARNING,
+        showIcon: true,
+      });
+      return;
+    }
+    pendingUploadIdsRef.current.add(item.id);
+    setUploading((current) =>
+      current.map((candidate) =>
+        candidate.id === item.id
+          ? { ...candidate, errorMessage: undefined, status: 'processing' }
+          : candidate,
+      ),
+    );
+    void runUpload({ ...item, errorMessage: undefined, status: 'processing' });
+  };
+
+  const dismissUpload = (id: string) => {
+    pendingUploadIdsRef.current.delete(id);
+    setUploading((current) => current.filter((item) => item.id !== id));
+  };
+
+  return (
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col rounded-2xl border border-border-light bg-surface-secondary p-4 sm:p-5"
+      aria-labelledby="project-resources-heading"
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 id="project-resources-heading" className="text-sm font-semibold text-text-primary">
+            {localize('com_ui_project_files')}
+          </h2>
+          <TooltipAnchor
+            description={`${localize('com_ui_project_files_help')} ${localize('com_ui_project_files_retrieval_only')}`}
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="relative size-7 shrink-0 text-text-secondary after:absolute after:-inset-1.5"
+                aria-label={localize('com_ui_project_files_info')}
+              >
+                <Info className="size-3.5" aria-hidden="true" />
+              </Button>
+            }
+          />
+        </div>
+        <FileUpload ref={inputRef} handleFileChange={handleUploadChange}>
+          <DropdownPopup
+            portal={true}
+            focusLoop={true}
+            unmountOnHide={true}
+            menuId={fileMenuId}
+            isOpen={isFileMenuOpen}
+            setIsOpen={setIsFileMenuOpen}
+            trigger={
+              <Ariakit.MenuButton
+                disabled={!hasFileCapacity || uploadFile.isLoading || addFile.isLoading}
+                className="aria-expanded:bg-surface-hover"
+                render={<Button type="button" variant="outline" size="sm" />}
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                {localize('com_ui_project_add_files')}
+                <ChevronDown className="size-3.5" aria-hidden="true" />
+              </Ariakit.MenuButton>
+            }
+            items={[
+              ...(canUploadFromDevice
+                ? [
+                    {
+                      label: localize('com_ui_project_upload_file'),
+                      icon: <Upload className="size-4 text-text-secondary" aria-hidden="true" />,
+                      onClick: () => inputRef.current?.click(),
+                    },
+                  ]
+                : []),
+              {
+                label: localize('com_ui_project_choose_file'),
+                icon: <Link2 className="size-4 text-text-secondary" aria-hidden="true" />,
+                onClick: () => setIsPickerOpen(true),
+                hideOnClick: false,
+                ref: pickerMenuRef,
+                render: (props) => <button {...props} />,
+              },
+            ]}
+          />
+        </FileUpload>
+      </div>
+
+      {!hasFileCapacity && (
+        <p className="mb-3 text-xs text-text-secondary" role="note">
+          {localize('com_ui_project_file_limit', { count: MAX_CHAT_PROJECT_FILES })}
+        </p>
+      )}
+      {isError && (
+        <Alert
+          variant="error"
+          icon={false}
+          role="alert"
+          className="flex items-center justify-between gap-3"
+        >
+          <span>{localize('com_ui_project_files_error')}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+            {localize('com_ui_retry')}
+          </Button>
+        </Alert>
+      )}
+      {!isError && isLoading && (
+        <div
+          className="flex min-h-16 items-center justify-center rounded-xl border border-border-light bg-surface-secondary"
+          role="status"
+        >
+          <Spinner className="size-4 text-text-secondary" />
+          <span className="sr-only">{localize('com_ui_loading')}</span>
+        </div>
+      )}
+      {!isError && !isLoading && (
+        <div
+          className="min-h-0 flex-1 space-y-2 overflow-y-auto"
+          role={uploading.length || projectFiles?.length ? 'list' : 'status'}
+          aria-live="polite"
+          aria-label={localize('com_ui_project_files')}
+        >
+          {uploading.map((item) => (
+            <div
+              key={item.id}
+              role="listitem"
+              aria-describedby={item.errorMessage ? `${item.id}-error` : undefined}
+              className="flex flex-wrap items-center gap-3 rounded-xl border border-border-light bg-surface-secondary px-3.5 py-3"
+            >
+              {item.status === 'processing' ? (
+                <Loader2
+                  className="size-4 shrink-0 animate-spin text-text-secondary"
+                  aria-hidden="true"
+                />
+              ) : (
+                <FilePlus2 className="size-4 shrink-0 text-text-destructive" aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                {item.filename}
+              </span>
+              <span className="text-xs text-text-secondary">
+                {item.status === 'processing'
+                  ? localize('com_ui_project_file_processing')
+                  : localize('com_ui_project_file_failed')}
+              </span>
+              {item.errorMessage && (
+                <p
+                  id={`${item.id}-error`}
+                  role="alert"
+                  className="basis-full text-xs text-text-destructive"
+                >
+                  {item.errorMessage}
+                </p>
+              )}
+              {item.status === 'failed' && (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!item.fileId && !canUploadFromDevice}
+                    onClick={() => retryUpload(item)}
+                  >
+                    {localize('com_ui_retry')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0"
+                    aria-label={localize('com_ui_project_dismiss_upload', { name: item.filename })}
+                    onClick={() => dismissUpload(item.id)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </Button>
+                </>
+              )}
+            </div>
+          ))}
+          {projectFiles?.map((file) => (
+            <div
+              key={file.file_id}
+              role="listitem"
+              className="flex items-center gap-3 rounded-xl border border-border-light bg-surface-secondary px-3.5 py-3"
+            >
+              <Paperclip className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+              <TooltipAnchor
+                description={file.filename ?? file.file_id}
+                render={
+                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                    {file.filename ?? file.file_id}
+                  </span>
+                }
+              />
+              <span
+                className={
+                  file.availability === 'ready'
+                    ? 'text-xs text-text-secondary'
+                    : 'text-xs text-text-destructive'
+                }
+              >
+                {statusLabel(localize, file.availability)}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0"
+                aria-label={localize('com_ui_project_remove_file', {
+                  name: file.filename ?? file.file_id,
+                })}
+                onClick={() => void remove(file.file_id)}
+                disabled={removeFile.isLoading}
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
+          {!uploading.length && !projectFiles?.length && (
+            <EmptyState
+              icon={Files}
+              description={localize('com_ui_project_no_files')}
+              className="h-full border-0"
+            />
+          )}
+        </div>
+      )}
+
+      <OGDialog open={isPickerOpen} onOpenChange={setIsPickerOpen} triggerRef={pickerMenuRef}>
+        <OGDialogContent className="w-11/12 max-w-lg" showCloseButton={true}>
+          <OGDialogHeader>
+            <OGDialogTitle>{localize('com_ui_project_choose_file')}</OGDialogTitle>
+          </OGDialogHeader>
+          <label className="sr-only" htmlFor="project-file-search">
+            {localize('com_ui_search_files')}
+          </label>
+          <Input
+            id="project-file-search"
+            value={pickerSearch}
+            onChange={(event) => setPickerSearch(event.target.value)}
+            placeholder={localize('com_ui_search_files')}
+            aria-label={localize('com_ui_search_files')}
+          />
+          <div
+            className="mt-3 max-h-80 space-y-2 overflow-y-auto"
+            role="region"
+            aria-live="polite"
+            aria-label={localize('com_ui_project_choose_file')}
+          >
+            {(isFilesLoading || isFetchingNextPage) && (
+              <div role="status" className="flex justify-center py-6">
+                <Spinner className="size-4 text-text-secondary" />
+                <span className="sr-only">{localize('com_ui_loading')}</span>
+              </div>
+            )}
+            {isFilesError && (
+              <Alert variant="error" role="alert">
+                {localize('com_ui_project_files_error')}
+                <Button type="button" variant="outline" size="sm" onClick={() => refetchFiles()}>
+                  {localize('com_ui_retry')}
+                </Button>
+              </Alert>
+            )}
+            {!isFilesLoading &&
+              !isFilesError &&
+              !isFetchingNextPage &&
+              !availableFiles.length &&
+              !hasNextPage && (
+                <p className="py-6 text-center text-sm text-text-secondary">
+                  {localize('com_ui_project_no_eligible_files')}
+                </p>
+              )}
+            {!isFilesLoading && !isFilesError && availableFiles.length > 0 && (
+              <ul className="space-y-2">
+                {availableFiles.map((file) => (
+                  <li key={file.file_id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-xl border border-border-light bg-surface-secondary px-3.5 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                      onClick={() => void addExistingFile(file.file_id)}
+                      disabled={addFile.isLoading || !hasFileCapacity}
+                    >
+                      <Paperclip
+                        className="size-4 shrink-0 text-text-secondary"
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                        {file.filename}
+                      </span>
+                      <span className="shrink-0 text-xs text-text-secondary">
+                        {formatFileSize(file.bytes)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!isFilesLoading && !isFilesError && hasNextPage && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage ? localize('com_ui_loading') : localize('com_ui_load_more')}
+              </Button>
+            )}
+          </div>
+        </OGDialogContent>
+      </OGDialog>
+    </section>
+  );
+}
