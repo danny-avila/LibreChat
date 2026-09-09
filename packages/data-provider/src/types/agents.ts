@@ -92,7 +92,9 @@ export namespace Agents {
       version: 1;
       taskId: string;
       toolName: string;
-      status: 'completed' | 'error' | 'cancelled';
+      status: 'completed' | 'error';
+      /** Additive rolling-deploy-compatible cancellation discriminator. */
+      cancelled?: true;
       settledAt: Date;
       resultClaim?: {
         kind: 'manual' | 'wakeup';

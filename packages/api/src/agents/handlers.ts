@@ -5615,7 +5615,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     return {
                       taskId: task.id,
                       toolName: tc.name,
-                      status: params.status,
+                      status: params.status === 'cancelled' ? 'error' : params.status,
+                      ...(params.status === 'cancelled' ? { cancelled: true } : {}),
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
                       ...(completionPreregistered ? { completionWakeup: true } : {}),
                       ...(current?.resultClaim != null

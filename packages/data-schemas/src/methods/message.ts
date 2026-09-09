@@ -646,7 +646,8 @@ export interface MessageMethods {
     backgroundTask?: {
       taskId: string;
       toolName: string;
-      status: 'completed' | 'error' | 'cancelled';
+      status: 'completed' | 'error';
+      cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
@@ -1143,7 +1144,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     backgroundTask?: {
       taskId: string;
       toolName: string;
-      status: 'completed' | 'error' | 'cancelled';
+      status: 'completed' | 'error';
+      cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
       resultClaim?: {
@@ -1193,6 +1195,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         partPatch['content.$[part].tool_call.backgroundTask.taskId'] = backgroundTask.taskId;
         partPatch['content.$[part].tool_call.backgroundTask.toolName'] = backgroundTask.toolName;
         partPatch['content.$[part].tool_call.backgroundTask.status'] = backgroundTask.status;
+        partPatch['content.$[part].tool_call.backgroundTask.cancelled'] =
+          backgroundTask.cancelled === true;
         partPatch['content.$[part].tool_call.backgroundTask.settledAt'] = backgroundTask.settledAt;
         if (backgroundTask.completionWakeup === true) {
           partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
@@ -1401,6 +1405,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             taskId?: unknown;
             toolName?: unknown;
             status?: unknown;
+            cancelled?: unknown;
             resultClaim?: { kind?: unknown; claimId?: unknown };
           };
         };
@@ -1411,7 +1416,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         typeof toolCall?.id !== 'string' ||
         typeof task?.taskId !== 'string' ||
         typeof task.toolName !== 'string' ||
-        (task.status !== 'completed' && task.status !== 'error' && task.status !== 'cancelled') ||
+        (task.status !== 'completed' && task.status !== 'error') ||
         task.resultClaim?.kind !== claim.kind ||
         task.resultClaim.claimId !== claim.claimId
       ) {
@@ -1427,7 +1432,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         taskId: task.taskId,
         toolCallId: toolCall.id,
         toolName: task.toolName,
-        status: task.status,
+        status: task.cancelled === true ? 'cancelled' : task.status,
         output: typeof toolCall.output === 'string' ? toolCall.output : '',
         ...(resultAgentId == null ? {} : { agentId: resultAgentId }),
       });
@@ -1653,7 +1658,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           $elemMatch: {
             type: 'tool_call',
             'tool_call.backgroundTask.taskId': taskId,
-            'tool_call.backgroundTask.status': { $in: ['completed', 'error', 'cancelled'] },
+            'tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
             ...(kind === 'wakeup' ? { 'tool_call.backgroundTask.completionWakeup': true } : {}),
             ...(replaying
               ? {
@@ -1713,7 +1718,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           {
             'part.type': 'tool_call',
             'part.tool_call.backgroundTask.taskId': { $in: candidates },
-            'part.tool_call.backgroundTask.status': { $in: ['completed', 'error', 'cancelled'] },
+            'part.tool_call.backgroundTask.status': { $in: ['completed', 'error'] },
             ...(kind === 'wakeup'
               ? { 'part.tool_call.backgroundTask.completionWakeup': true }
               : {}),

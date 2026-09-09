@@ -1178,7 +1178,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
     expect(persistBackgroundCodeResult).toHaveBeenCalledWith(
       expect.objectContaining({
-        backgroundTask: expect.objectContaining({ taskId, status: 'cancelled' }),
+        backgroundTask: expect.objectContaining({ taskId, status: 'error', cancelled: true }),
       }),
     );
     expect(delayedWrites).toBe(0);
