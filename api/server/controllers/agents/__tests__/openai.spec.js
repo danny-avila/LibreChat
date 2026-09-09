@@ -214,9 +214,15 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+  createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
+    parentMessageId,
+    codeWorkspaces,
+  }) => ({
+    messageId,
+    conversationId,
+    ...(codeWorkspaces !== undefined && { codeWorkspaces }),
     ...(parentMessageId !== undefined && {
       parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
     }),
@@ -1170,6 +1176,35 @@ describe('OpenAIChatCompletionController', () => {
   });
 
   describe('conversation ownership validation', () => {
+    it.each([false, true])(
+      'propagates explicit or owned persisted workspaces: continuation=%s',
+      async (continuation) => {
+        const api = require('@librechat/api');
+        const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+        api.validateRequest.mockReturnValueOnce({
+          request: {
+            model: 'agent-123',
+            messages: [],
+            stream: false,
+            ...(continuation ? { conversation_id: 'convo-abc' } : { code_workspaces: selections }),
+          },
+        });
+        if (continuation)
+          require('~/models').getConvo.mockResolvedValueOnce({
+            conversationId: 'convo-abc',
+            codeWorkspaces: selections,
+          });
+        await OpenAIChatCompletionController(req, res);
+        expect(api.initializeAgent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestBody: expect.objectContaining({ codeWorkspaces: selections }),
+          }),
+          expect.anything(),
+        );
+        if (continuation)
+          expect(require('~/models').getConvo).toHaveBeenCalledWith('user-123', 'convo-abc');
+      },
+    );
     it('should skip ownership check when conversation_id is not provided', async () => {
       const { getConvo } = require('~/models');
       await OpenAIChatCompletionController(req, res);

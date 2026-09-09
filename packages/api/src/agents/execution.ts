@@ -103,7 +103,13 @@ export function captureCodeExecutionApprovalBinding(
           context.environmentId ?? null,
           context.environmentType ?? null,
           context.bridgeWorkerId ?? null,
-          context.codeWorkspace ?? null,
+          context.codeWorkspace == null
+            ? null
+            : {
+                environmentId: context.codeWorkspace.environmentId,
+                workspaceId: context.codeWorkspace.workspaceId,
+                operations: [...new Set(context.codeWorkspace.operations)].sort(),
+              },
         ]),
       )
       .digest('hex');

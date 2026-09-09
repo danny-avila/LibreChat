@@ -109,6 +109,7 @@ import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createRequestAgentExecutionContext } from './runtime';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
+import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -1669,6 +1670,13 @@ export async function initializeAgent(
     trustedCodeExecutionContext.environmentType === 'attached'
       ? new Set(trustedCodeExecutionContext.codeWorkspace?.operations ?? [])
       : undefined;
+  if (
+    attachedWorkspaceOperations &&
+    !attachedWorkspaceOperations.has('preview_edit') &&
+    hasActiveFileFieldPolicy(appConfig?.filters, ['content', 'extracted_text'])
+  ) {
+    attachedWorkspaceOperations.delete('edit_file');
+  }
 
   let toolDefinitions = loadedToolDefinitions;
 

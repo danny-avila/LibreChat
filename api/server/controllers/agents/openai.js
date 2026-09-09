@@ -440,9 +440,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             'invalid_request_error',
           );
         }
-        if (!(await db.getConvo(principal.userId, request.conversation_id))) {
+        const conversation = await db.getConvo(principal.userId, request.conversation_id);
+        if (!conversation) {
           return sendErrorResponse(res, 404, 'Conversation not found', 'invalid_request_error');
         }
+        req.resolvedConversation = conversation;
       }
 
       const parentMessageId = request.parent_message_id ?? null;
@@ -458,6 +460,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
+        codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
         parentMessageId: mcpParentMessageId,
       });
 

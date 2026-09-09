@@ -370,6 +370,27 @@ describe('stateful code approval target binding', () => {
     ...overrides,
   });
 
+  it('ignores operation ordering but binds actual permission changes', () => {
+    const original = context();
+    const binding = (ctx: CodeExecutionContext) =>
+      captureCodeExecutionApprovalBinding([{ id: 'a', codeExecutionContext: ctx }]);
+    expect(
+      binding(
+        context({
+          codeWorkspace: {
+            ...original.codeWorkspace!,
+            operations: ['execute_command', 'read_file'],
+          },
+        }),
+      ),
+    ).toEqual(binding(original));
+    expect(
+      binding(
+        context({ codeWorkspace: { ...original.codeWorkspace!, operations: ['read_file'] } }),
+      ),
+    ).not.toEqual(binding(original));
+  });
+
   it('captures only opaque, canonical identities for stateful targets', () => {
     const binding = captureCodeExecutionApprovalBinding([
       {

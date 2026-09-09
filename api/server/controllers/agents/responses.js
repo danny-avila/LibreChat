@@ -18,6 +18,8 @@ const {
   createAgentRunEnvelope,
   createAgentExecutionContext,
   createMCPRuntimeRequestBody,
+  getCodeWorkspaceSelections,
+  collectReachableAgents,
   buildAgentScopedContext,
   buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
@@ -446,7 +448,7 @@ async function saveResponseOutput(
  * @param {object} agent
  * @returns {Promise<void>}
  */
-async function saveConversation(req, conversationId, agentId, agent) {
+async function saveConversation(req, conversationId, agentId, agent, codeWorkspaces) {
   const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
   await db.saveConvo(
     {
@@ -459,6 +461,7 @@ async function saveConversation(req, conversationId, agentId, agent) {
       conversationId,
       endpoint: EModelEndpoint.agents,
       agent_id: agentId,
+      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
       ...(title != null && { title }),
       model: agent?.model,
     },
@@ -681,6 +684,7 @@ const executeResponse = async (envelope, { req, res }) => {
         if (!previousConversation) {
           return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
         }
+        req.resolvedConversation = previousConversation;
         if (previousConversation.subagentThread != null) {
           return sendResponsesErrorResponse(
             res,
@@ -696,6 +700,7 @@ const executeResponse = async (envelope, { req, res }) => {
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
         conversationId,
+        codeWorkspaces: request.code_workspaces ?? req.resolvedConversation?.codeWorkspaces,
       });
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       const previousMessages = request.previous_response_id
@@ -1308,7 +1313,15 @@ const executeResponse = async (envelope, { req, res }) => {
         if (request.store === true) {
           try {
             // Save conversation
-            await saveConversation(req, conversationId, agentId, agent);
+            await saveConversation(
+              req,
+              conversationId,
+              agentId,
+              agent,
+              getCodeWorkspaceSelections(
+                collectReachableAgents(runAgents).map((config) => config.codeExecutionContext),
+              ),
+            );
 
             // Save input messages
             await saveInputMessages(req, conversationId, inputMessages, agentId);
@@ -1530,7 +1543,15 @@ const executeResponse = async (envelope, { req, res }) => {
 
         if (request.store === true) {
           try {
-            await saveConversation(req, conversationId, agentId, agent);
+            await saveConversation(
+              req,
+              conversationId,
+              agentId,
+              agent,
+              getCodeWorkspaceSelections(
+                collectReachableAgents(runAgents).map((config) => config.codeExecutionContext),
+              ),
+            );
 
             await saveInputMessages(req, conversationId, inputMessages, agentId);
 

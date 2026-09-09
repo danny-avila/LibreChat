@@ -2173,7 +2173,6 @@ async function loadToolsForExecution({
   const canLoadPTC =
     isPTC &&
     toolRegistry != null &&
-    codeExecutionContext.environmentType !== 'attached' &&
     (await supportsProgrammaticCodeExecution(
       codeExecutionContext,
       req.config?.endpoints?.agents?.statefulCodeSessions?.environments,

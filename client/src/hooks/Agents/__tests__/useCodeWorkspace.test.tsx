@@ -7,6 +7,8 @@ const mockAgentPermissions = jest.fn();
 const mockAgentsConfig = jest.fn();
 const mockStatus = jest.fn();
 const mockAgentsMap = jest.fn();
+const mockAccess = jest.fn();
+jest.mock('~/hooks/Roles/useHasAccess', () => () => mockAccess());
 
 jest.mock(
   '../useAgentToolPermissions',
@@ -30,6 +32,7 @@ const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConver
 
 describe('useCodeWorkspace', () => {
   beforeEach(() => {
+    mockAccess.mockReturnValue(true);
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
       agent: {
@@ -42,6 +45,7 @@ describe('useCodeWorkspace', () => {
     mockAgentsMap.mockReturnValue({});
     mockAgentsConfig.mockReturnValue({
       agentsConfig: {
+        capabilities: ['execute_code', 'stateful_code_sessions'],
         statefulCodeSessions: {
           environments: [
             {
@@ -66,6 +70,23 @@ describe('useCodeWorkspace', () => {
       },
     ]);
   });
+
+  it.each(['role', 'execute_code', 'stateful_code_sessions'])(
+    'does not require a workspace when %s permission is disabled',
+    (gate) => {
+      if (gate === 'role') mockAccess.mockReturnValue(false);
+      else {
+        const config = mockAgentsConfig();
+        config.agentsConfig.capabilities = config.agentsConfig.capabilities.filter(
+          (value: string) => value !== gate,
+        );
+      }
+      const { result } = renderHook(() => useCodeWorkspace(conversation()));
+      expect(result.current.required).toBe(false);
+      expect(result.current.state).toBe('not_required');
+      expect(mockStatus).toHaveBeenLastCalledWith(['personal-vm'], false);
+    },
+  );
 
   it('selects one unambiguous initial workspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
@@ -134,7 +155,10 @@ describe('useCodeWorkspace', () => {
 
   it('blocks sending when the agent-selected environment is not accessible', () => {
     mockAgentsConfig.mockReturnValue({
-      agentsConfig: { statefulCodeSessions: { environments: [] } },
+      agentsConfig: {
+        capabilities: ['execute_code', 'stateful_code_sessions'],
+        statefulCodeSessions: { environments: [] },
+      },
     });
 
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
@@ -173,6 +197,7 @@ describe('useCodeWorkspace', () => {
     });
     mockAgentsConfig.mockReturnValue({
       agentsConfig: {
+        capabilities: ['execute_code', 'stateful_code_sessions'],
         statefulCodeSessions: {
           environments: [
             { id: 'personal-vm', type: 'attached', baseURL: 'https://one.example.com' },

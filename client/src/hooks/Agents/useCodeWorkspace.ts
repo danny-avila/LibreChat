@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { EModelEndpoint, Tools, isCodeWorkspaceSelections } from 'librechat-data-provider';
 import type {
   CodeWorkspaceDescriptor,
@@ -11,6 +12,7 @@ import type {
 import { collectReachableAgents, findExecutionEnvironment } from './useCodeApprovalMode';
 import { useCodeEnvironmentStatusQueries } from '~/data-provider';
 import useAgentToolPermissions from './useAgentToolPermissions';
+import useHasAccess from '~/hooks/Roles/useHasAccess';
 import useGetAgentsConfig from './useGetAgentsConfig';
 import { useAgentsMapContext } from '~/Providers';
 
@@ -83,6 +85,14 @@ export default function useCodeWorkspace(
   addedConversation?: TConversation | null,
 ): CodeWorkspaceResult {
   const { agentsConfig } = useGetAgentsConfig();
+  const canRunCode = useHasAccess({
+    permissionType: PermissionTypes.RUN_CODE,
+    permission: Permissions.USE,
+  });
+  const codeEnabled =
+    canRunCode &&
+    agentsConfig?.capabilities?.includes(AgentCapabilities.execute_code) === true &&
+    agentsConfig.capabilities.includes(AgentCapabilities.stateful_code_sessions);
   const agentsMap = useAgentsMapContext();
   const { agent: primaryAgent } = useAgentToolPermissions(conversation?.agent_id);
   const { agent: addedAgent } = useAgentToolPermissions(addedConversation?.agent_id);
@@ -119,7 +129,8 @@ export default function useCodeWorkspace(
   const attachedEnvironments = workspaceMetadata.environments;
   const metadataComplete =
     !isAgentsConversation || !expectedRoot || (reachable.complete && workspaceMetadata.complete);
-  const required = isAgentsConversation && (!metadataComplete || attachedEnvironments.length > 0);
+  const required =
+    codeEnabled && isAgentsConversation && (!metadataComplete || attachedEnvironments.length > 0);
   const statuses = useCodeEnvironmentStatusQueries(
     attachedEnvironments.map(({ id }) => id),
     required && metadataComplete,
