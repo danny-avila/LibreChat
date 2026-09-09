@@ -114,14 +114,11 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
 
   /** Classify the failure and pick the copy that goes with it. */
   const getErrorInfo = (): ErrorInfo => {
-    let shape: ErrorShape;
-    if (typeof error === 'string') {
-      shape = { message: error };
-    } else if (error instanceof Error) {
-      shape = { message: error.message };
-    } else {
-      shape = error;
-    }
+    /* An `AxiosError` is an `Error`, so narrowing on `Error` and keeping only
+       its message would throw away `response.status`, `response.data` and
+       `code` — the fields this classification runs on. Only a bare string has
+       to be wrapped. */
+    const shape: ErrorShape = typeof error === 'string' ? { message: error } : error;
 
     const payload: ErrorPayload = shape.response?.data ?? shape.data ?? shape;
     const errorMessage = shape.message ?? '';
