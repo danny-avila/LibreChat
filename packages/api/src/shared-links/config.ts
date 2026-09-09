@@ -103,8 +103,13 @@ export function buildSharedLinkStartupPayload(
     payload.customFooter = env.CUSTOM_FOOTER;
   }
 
-  const { privacyPolicy, termsOfService, codeHighlightThrottleMs, artifactUndocking } =
-    appConfig?.interfaceConfig ?? {};
+  const {
+    privacyPolicy,
+    termsOfService,
+    codeHighlightThrottleMs,
+    artifactUndocking,
+    defaultLanguage,
+  } = appConfig?.interfaceConfig ?? {};
   const parsedTheme = deploymentThemeSchema.safeParse(appConfig?.interfaceConfig?.theme);
   const theme = parsedTheme.success ? parsedTheme.data : undefined;
   /* A shared conversation shows the same artifacts pane, so it needs the same
@@ -114,7 +119,8 @@ export function buildSharedLinkStartupPayload(
     termsOfService ||
     codeHighlightThrottleMs != null ||
     theme ||
-    artifactUndocking === false
+    artifactUndocking === false ||
+    defaultLanguage
   ) {
     payload.interface = {
       ...(codeHighlightThrottleMs != null ? { codeHighlightThrottleMs } : {}),
@@ -122,6 +128,7 @@ export function buildSharedLinkStartupPayload(
       ...(termsOfService ? { termsOfService } : {}),
       ...(theme ? { theme } : {}),
       ...(artifactUndocking === false ? { artifactUndocking } : {}),
+      ...(defaultLanguage ? { defaultLanguage } : {}),
     };
   }
 
