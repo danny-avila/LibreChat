@@ -1117,12 +1117,15 @@ export const tConversationSchema = z.object({
   /** Server-derived: an active shared link exists for this conversation. Not persisted. */
   isShared: z.boolean().optional(),
   codeApprovalMode: z.enum(CODE_APPROVAL_MODES).optional(),
-  codeWorkspace: z
-    .object({
-      environmentId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
-      workspaceId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
-    })
-    .strict()
+  codeWorkspaces: z
+    .array(
+      z
+        .object({
+          environmentId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+          workspaceId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+        })
+        .strict(),
+    )
     .optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),

@@ -43,7 +43,7 @@ const {
   buildPendingAction,
   toClientPendingAction,
   captureCodeExecutionApprovalBinding,
-  getCodeWorkspaceSelection,
+  getCodeWorkspaceSelections,
   computeAgentRequestFingerprint,
   getRunDiscoveredTools,
   captureResumeModelParameters,
@@ -2006,7 +2006,9 @@ class AgentClient extends BaseClient {
           imageDetail: this.options.imageDetail,
           maxContextTokens: this.maxContextTokens,
           codeApprovalMode,
-          codeWorkspace: getCodeWorkspaceSelection(this.options.agent.codeExecutionContext),
+          codeWorkspaces: getCodeWorkspaceSelections(
+            collectReachableAgents(topLevelAgents).map((agent) => agent?.codeExecutionContext),
+          ),
         },
         // TODO: PARSE OPTIONS BY PROVIDER, MAY CONTAIN SENSITIVE DATA
         runOptions,

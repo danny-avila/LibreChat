@@ -23,7 +23,7 @@ export type RequestBody = {
   /** Browser IANA timezone used to resolve local-time prompt variables (e.g. `{{current_datetime}}`). */
   timezone?: string;
   codeApprovalMode?: CodeApprovalMode;
-  codeWorkspace?: CodeWorkspaceSelection;
+  codeWorkspaces?: CodeWorkspaceSelection[];
 };
 
 export type ServerRequest = Request<unknown, unknown, RequestBody> & {

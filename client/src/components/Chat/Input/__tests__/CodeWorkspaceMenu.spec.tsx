@@ -40,10 +40,16 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
   return {
     required: true,
     state: 'ready',
-    environment,
-    workspaces: [{ id: 'project-a', name: 'Project A' }],
-    selected,
-    resolveSelection: () => selected,
+    environments: [
+      {
+        environment,
+        state: 'ready',
+        workspaces: [{ id: 'project-a', name: 'Project A' }],
+        selected,
+      },
+    ],
+    selections: [selected],
+    resolveSelections: () => [selected],
     ...overrides,
   };
 }
@@ -63,7 +69,7 @@ describe('CodeWorkspaceMenu', () => {
     const update = setConversation.mock.calls[0][0];
     expect(update(conversation)).toEqual({
       ...conversation,
-      codeWorkspace: { environmentId: 'personal-vm', workspaceId: 'project-a' },
+      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
     });
     expect(screen.getByTestId('code-workspace')).toHaveTextContent('Project A');
   });
@@ -71,14 +77,25 @@ describe('CodeWorkspaceMenu', () => {
   test('keeps a missing binding until the user explicitly selects a replacement', async () => {
     const savedConversation = {
       ...conversation,
-      codeWorkspace: { environmentId: 'personal-vm', workspaceId: 'removed-project' },
+      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'removed-project' }],
     };
     const setConversation = jest.fn();
     render(
       <CodeWorkspaceMenu
         conversation={savedConversation}
         setConversation={setConversation}
-        workspace={workspace({ state: 'missing', selected: undefined })}
+        workspace={workspace({
+          state: 'missing',
+          selections: undefined,
+          environments: [
+            {
+              environment,
+              state: 'missing',
+              workspaces: [{ id: 'project-a', name: 'Project A' }],
+              selected: undefined,
+            },
+          ],
+        })}
         disabled={false}
       />,
     );
@@ -91,7 +108,7 @@ describe('CodeWorkspaceMenu', () => {
     const update = setConversation.mock.calls[0][0];
     expect(update(savedConversation)).toEqual({
       ...savedConversation,
-      codeWorkspace: { environmentId: 'personal-vm', workspaceId: 'project-a' },
+      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
     });
   });
 });

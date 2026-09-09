@@ -665,18 +665,18 @@ describe('computeAgentRequestFingerprint', () => {
     expect(computeAgentRequestFingerprint(base)).not.toBe(
       computeAgentRequestFingerprint({
         ...base,
-        codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-a' },
+        codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
       }),
     );
     expect(
       computeAgentRequestFingerprint({
         ...base,
-        codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-a' },
+        codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
       }),
     ).not.toBe(
       computeAgentRequestFingerprint({
         ...base,
-        codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-b' },
+        codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-b' }],
       }),
     );
   });
@@ -733,7 +733,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       // Graph-determining: feeds the ephemeral agent id / checkpoint namespace (#14253).
       modelLabel: 'My Opus',
       codeApprovalMode: 'acceptEdits',
-      codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-a' },
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
       conversationId: 'c',
       decisions: [],
       actionId: 'x',
@@ -749,7 +749,7 @@ describe('pickResumeContext / applyResumeContext', () => {
       manualSkills: ['code-reviewer'],
       modelLabel: 'My Opus',
       codeApprovalMode: 'acceptEdits',
-      codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-a' },
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
     });
   });
 
@@ -772,23 +772,20 @@ describe('pickResumeContext / applyResumeContext', () => {
   it('pins the attached workspace across resume and removes a forged selection', () => {
     const restored: Record<string, unknown> = {
       conversationId: 'c',
-      codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-b' },
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-b' }],
     };
     applyResumeContext(restored, {
       endpoint: 'agents',
-      codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-a' },
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-a' }],
     });
-    expect(restored.codeWorkspace).toEqual({
-      environmentId: 'env-a',
-      workspaceId: 'project-a',
-    });
+    expect(restored.codeWorkspaces).toEqual([{ environmentId: 'env-a', workspaceId: 'project-a' }]);
 
     const injected: Record<string, unknown> = {
       conversationId: 'c',
-      codeWorkspace: { environmentId: 'env-a', workspaceId: 'project-b' },
+      codeWorkspaces: [{ environmentId: 'env-a', workspaceId: 'project-b' }],
     };
     applyResumeContext(injected, { endpoint: 'agents' });
-    expect('codeWorkspace' in injected).toBe(false);
+    expect('codeWorkspaces' in injected).toBe(false);
   });
 
   it('replays a dropped modelLabel so the ephemeral agent id stays stable (#14253)', () => {

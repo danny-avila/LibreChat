@@ -150,6 +150,28 @@ describe('supportsProgrammaticCodeExecution', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('suppresses generic programmatic Bash after an attached workspace is selected', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    expect(
+      await supportsProgrammaticCodeExecution(
+        {
+          ...context,
+          codeWorkspace: {
+            environmentId: 'personal',
+            workspaceId: 'project-a',
+            operations: ['read_file', 'execute_command'],
+          },
+        },
+        environments,
+        getAppConfig,
+      ),
+    ).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('does not send credentials to a different execution route', async () => {
     process.env.TEST_CODE_CAPABILITY_TOKEN = 'route-token';
     const fetchSpy = jest
@@ -294,7 +316,10 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     await expect(
       resolveCodeExecutionWorkspaceContext({
         context,
-        requestedSelection: { environmentId: 'personal', workspaceId: 'docs' },
+        requestedSelections: [
+          { environmentId: 'another-machine', workspaceId: 'other-project' },
+          { environmentId: 'personal', workspaceId: 'docs' },
+        ],
         environments,
         getAppConfig,
       }),
@@ -314,7 +339,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     await expect(
       resolveCodeExecutionWorkspaceContext({
         context,
-        persistedSelection: { environmentId: 'personal', workspaceId: 'project-a' },
+        persistedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
         environments,
         getAppConfig,
       }),
@@ -329,7 +354,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     await expect(
       resolveCodeExecutionWorkspaceContext({
         context,
-        requestedSelection: { environmentId: 'personal', workspaceId: 'project-a' },
+        requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
         environments,
         getAppConfig,
       }),
@@ -343,7 +368,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     );
   });
 
-  it('rejects a binding from another environment before contacting Code API', async () => {
+  it('requires a binding for the executing environment before contacting Code API', async () => {
     const fetchSpy = jest
       .spyOn(globalThis, 'fetch')
       .mockRejectedValue(new Error('Unexpected status request'));
@@ -351,13 +376,13 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     await expect(
       resolveCodeExecutionWorkspaceContext({
         context,
-        requestedSelection: { environmentId: 'another-machine', workspaceId: 'project-a' },
+        requestedSelections: [{ environmentId: 'another-machine', workspaceId: 'project-a' }],
         environments,
         getAppConfig,
       }),
     ).rejects.toEqual(
       expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({
-        reason: 'environment_changed',
+        reason: 'required',
       }),
     );
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -371,11 +396,34 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     await expect(
       resolveCodeExecutionWorkspaceContext({
         context,
-        requestedSelection: {
-          environmentId: 'personal',
-          workspaceId: 'project-a',
-          operations: ['execute_command'],
-        },
+        requestedSelections: [
+          {
+            environmentId: 'personal',
+            workspaceId: 'project-a',
+            operations: ['execute_command'],
+          },
+        ],
+        environments,
+        getAppConfig,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<CodeWorkspaceSelectionError>>({ reason: 'invalid' }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate environment bindings before contacting Code API', async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected status request'));
+
+    await expect(
+      resolveCodeExecutionWorkspaceContext({
+        context,
+        requestedSelections: [
+          { environmentId: 'personal', workspaceId: 'project-a' },
+          { environmentId: 'personal', workspaceId: 'project-b' },
+        ],
         environments,
         getAppConfig,
       }),
@@ -389,7 +437,7 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     await expect(
       resolveCodeExecutionWorkspaceContext({
         context,
-        requestedSelection: { environmentId: 'personal', workspaceId: 'project-a' },
+        requestedSelections: [{ environmentId: 'personal', workspaceId: 'project-a' }],
         environments,
         getAppConfig: async () => {
           throw new Error('configuration unavailable');

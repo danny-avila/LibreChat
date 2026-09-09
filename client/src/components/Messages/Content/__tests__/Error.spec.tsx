@@ -52,6 +52,7 @@ describe('Error — typed provider errors', () => {
   it.each([
     [ErrorTypes.MODEL_NOT_FOUND, 'com_error_model_not_found'],
     [ErrorTypes.MODEL_RATE_LIMIT, 'com_error_model_rate_limit'],
+    [ErrorTypes.CODE_WORKSPACE_UNAVAILABLE, 'com_error_code_workspace_unavailable'],
   ])('localizes the typed %s payload the server now emits', (type, key) => {
     render(<Error text={JSON.stringify({ type })} />);
 

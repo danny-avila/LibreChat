@@ -837,8 +837,8 @@ async function loadToolDefinitionsWrapper({
     });
   const resolvedCodeExecutionContext = await resolveCodeExecutionWorkspaceContext({
     context: baseCodeExecutionContext,
-    requestedSelection: runtimeRequestBody?.codeWorkspace,
-    persistedSelection: req.resolvedConversation?.codeWorkspace,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    persistedSelections: req.resolvedConversation?.codeWorkspaces,
     environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     getAppConfig,
   });
@@ -1715,8 +1715,8 @@ async function loadAgentTools({
     });
   const codeExecutionContext = await resolveCodeExecutionWorkspaceContext({
     context: baseCodeExecutionContext,
-    requestedSelection: runtimeRequestBody?.codeWorkspace,
-    persistedSelection: req.resolvedConversation?.codeWorkspace,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    persistedSelections: req.resolvedConversation?.codeWorkspaces,
     environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     getAppConfig,
   });
@@ -2128,8 +2128,8 @@ async function loadToolsForExecution({
   });
   const codeExecutionContext = await resolveCodeExecutionWorkspaceContext({
     context: baseCodeExecutionContext,
-    requestedSelection: runtimeRequestBody?.codeWorkspace,
-    persistedSelection: req.resolvedConversation?.codeWorkspace,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    persistedSelections: req.resolvedConversation?.codeWorkspaces,
     environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
     getAppConfig,
   });
@@ -2173,6 +2173,7 @@ async function loadToolsForExecution({
   const canLoadPTC =
     isPTC &&
     toolRegistry != null &&
+    codeExecutionContext.environmentType !== 'attached' &&
     (await supportsProgrammaticCodeExecution(
       codeExecutionContext,
       req.config?.endpoints?.agents?.statefulCodeSessions?.environments,

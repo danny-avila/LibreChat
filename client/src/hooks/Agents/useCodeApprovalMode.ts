@@ -95,7 +95,7 @@ export default function useCodeApprovalMode(
   return { available, modes, selected };
 }
 
-function findExecutionEnvironment(
+export function findExecutionEnvironment(
   agent: Agent,
   environments?: TPublicCodeEnvironment[],
 ): TPublicCodeEnvironment | undefined {
@@ -104,7 +104,7 @@ function findExecutionEnvironment(
     : environments?.find((candidate) => candidate.default === true);
 }
 
-function collectReachableAgents(
+export function collectReachableAgents(
   roots: Array<Agent | undefined>,
   agentsMap: TAgentsMap | undefined,
   expectedRootIds: Array<string | undefined | null>,

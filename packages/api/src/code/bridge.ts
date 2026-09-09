@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { CODE_WORKSPACE_ID_PATTERN, CODE_WORKSPACE_OPERATIONS } from 'librechat-data-provider';
+import {
+  CODE_WORKSPACE_ID_PATTERN,
+  CODE_WORKSPACE_MAX_COUNT,
+  CODE_WORKSPACE_OPERATIONS,
+} from 'librechat-data-provider';
 import type { CodeWorkspaceDescriptor, CodeWorkspaceOperation } from 'librechat-data-provider';
 
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
@@ -168,7 +172,7 @@ function validWorkspaceCapabilities(value: unknown): value is {
     !validWorkspaceOperations(capabilities.operations) ||
     !Array.isArray(capabilities.workspaces) ||
     capabilities.workspaces.length < 1 ||
-    capabilities.workspaces.length > 32
+    capabilities.workspaces.length > CODE_WORKSPACE_MAX_COUNT
   ) {
     return false;
   }
@@ -198,6 +202,21 @@ function validWorkspaceCapabilities(value: unknown): value is {
     ids.add(workspace.id);
     return true;
   });
+}
+
+/** Keep the status endpoint readable during worker-first rolling upgrades.
+ * Legacy capabilities remain non-selectable and are surfaced as an explicit
+ * update-required state; they never regain an implicit `primary` binding. */
+function validLegacyWorkspaceCapabilities(value: unknown): value is {
+  operations: CodeWorkspaceOperation[];
+} {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const capabilities = value as Record<string, unknown>;
+  return (
+    capabilities.protocolVersion === undefined &&
+    capabilities.workspaces === undefined &&
+    validWorkspaceOperations(capabilities.operations)
+  );
 }
 
 async function readBoundedStatusJson(response: Response): Promise<unknown> {
@@ -277,7 +296,8 @@ export async function getCodeBridgeWorkerStatus({
     const validRuntimes = capabilities == null || validStatusStringArray(capabilities.runtimes);
     const validWorkspaceTools =
       capabilities?.workspaceTools == null ||
-      validWorkspaceCapabilities(capabilities.workspaceTools);
+      validWorkspaceCapabilities(capabilities.workspaceTools) ||
+      validLegacyWorkspaceCapabilities(capabilities.workspaceTools);
     if (
       status.protocolVersion !== 1 ||
       status.workerId !== workerId ||
@@ -299,6 +319,18 @@ export async function getCodeBridgeWorkerStatus({
     if (status.online) {
       workerStatus = status.ready ? 'ready' : 'starting';
     }
+    let workspaceStatus: Pick<CodeBridgeWorkerStatus, 'operations' | 'workspaces'> = {};
+    if (validWorkspaceCapabilities(capabilities?.workspaceTools)) {
+      workspaceStatus = {
+        operations: [...capabilities.workspaceTools.operations],
+        workspaces: capabilities.workspaceTools.workspaces.map((workspace) => ({
+          ...workspace,
+          ...(workspace.operations ? { operations: [...workspace.operations] } : {}),
+        })),
+      };
+    } else if (validLegacyWorkspaceCapabilities(capabilities?.workspaceTools)) {
+      workspaceStatus = { operations: [...capabilities.workspaceTools.operations] };
+    }
     return {
       status: workerStatus,
       ...(typeof capabilities?.statefulWorkspace === 'boolean'
@@ -313,15 +345,7 @@ export async function getCodeBridgeWorkerStatus({
       ...(validStatusStringArray(capabilities?.runtimes)
         ? { runtimes: capabilities.runtimes }
         : {}),
-      ...(validWorkspaceCapabilities(capabilities?.workspaceTools)
-        ? {
-            operations: [...capabilities.workspaceTools.operations],
-            workspaces: capabilities.workspaceTools.workspaces.map((workspace) => ({
-              ...workspace,
-              ...(workspace.operations ? { operations: [...workspace.operations] } : {}),
-            })),
-          }
-        : {}),
+      ...workspaceStatus,
     };
   } catch (error) {
     if (error instanceof CodeBridgeStatusError) throw error;

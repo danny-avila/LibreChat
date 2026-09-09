@@ -284,7 +284,7 @@ const ChatForm = memo(function ChatForm({
   );
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
-  const codeWorkspace = useCodeWorkspace(conversation);
+  const codeWorkspace = useCodeWorkspace(conversation, addedConvo);
 
   /** Queued/steered sends carry their FULL submission context: explicit
    *  (possibly empty) overrides stop `ask` from vacuuming quotes or skill
@@ -907,8 +907,7 @@ function ChatFormWrapper({
       conversation?.model,
       conversation?.maxContextTokens,
       conversation?.codeApprovalMode,
-      conversation?.codeWorkspace?.environmentId,
-      conversation?.codeWorkspace?.workspaceId,
+      conversation?.codeWorkspaces,
       hasMessages,
     ],
   );

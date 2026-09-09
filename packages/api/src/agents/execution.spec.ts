@@ -7,7 +7,7 @@ import {
   captureCodeExecutionApprovalBinding,
   codeExecutionAuthHeaders,
   codeExecutionHeaders,
-  getCodeWorkspaceSelection,
+  getCodeWorkspaceSelections,
   resolveCodeExecutionContext,
 } from './execution';
 
@@ -482,10 +482,9 @@ describe('stateful code approval target binding', () => {
   });
 
   it('persists only the environment/workspace pair, not live capabilities', () => {
-    expect(getCodeWorkspaceSelection(context())).toEqual({
-      environmentId: 'environment-a',
-      workspaceId: 'project-a',
-    });
+    expect(getCodeWorkspaceSelections([context()])).toEqual([
+      { environmentId: 'environment-a', workspaceId: 'project-a' },
+    ]);
   });
 });
 

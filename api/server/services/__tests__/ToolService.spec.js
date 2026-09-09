@@ -2739,7 +2739,7 @@ describe('ToolService - Action Capability Gating', () => {
       ];
       const req = createMockReq(capabilities);
       req.body = {
-        codeWorkspace: { environmentId: 'personal-machine', workspaceId: 'project-a' },
+        codeWorkspaces: [{ environmentId: 'personal-machine', workspaceId: 'project-a' }],
       };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockResolveCodeExecutionContext.mockReturnValueOnce({
@@ -2777,7 +2777,7 @@ describe('ToolService - Action Capability Gating', () => {
         gitIdentity: { name: 'LibreChat Agent', email: 'agent@example.com' },
       });
       expect(mockResolveCodeExecutionWorkspaceContext).toHaveBeenCalledWith(
-        expect.objectContaining({ requestedSelection: req.body.codeWorkspace }),
+        expect.objectContaining({ requestedSelections: req.body.codeWorkspaces }),
       );
       expect(result.loadedTools).toContainEqual({ name: AgentConstants.BASH_TOOL });
     });
@@ -3094,9 +3094,9 @@ describe('ToolService - Action Capability Gating', () => {
     it.each([
       { statefulWorkspace: false, runtimes: ['bash'], supported: false },
       { statefulWorkspace: true, runtimes: ['py'], supported: false },
-      { statefulWorkspace: true, runtimes: ['bash'], supported: true },
+      { statefulWorkspace: true, runtimes: ['bash'], supported: false },
     ])(
-      'loads attached PTC using deployment credentials: stateful=$statefulWorkspace runtimes=$runtimes',
+      'suppresses workspace-unaware attached PTC: stateful=$statefulWorkspace runtimes=$runtimes',
       async ({ statefulWorkspace, runtimes, supported }) => {
         const capabilities = [
           AgentCapabilities.tools,
@@ -3157,13 +3157,8 @@ describe('ToolService - Action Capability Gating', () => {
               (tool) => tool.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
             ),
           ).toBe(supported);
-          expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
-          expect(fetchSpy).toHaveBeenCalledWith(
-            `https://attached.example/bridge/workers/${environment.workerId}/status`,
-            expect.objectContaining({
-              headers: { Authorization: `Bearer deployment-token-${statefulWorkspace}` },
-            }),
-          );
+          expect(mockGetAppConfig).not.toHaveBeenCalled();
+          expect(fetchSpy).not.toHaveBeenCalled();
         } finally {
           fetchSpy.mockRestore();
           delete process.env.TEST_PTC_DEPLOYMENT_TOKEN;

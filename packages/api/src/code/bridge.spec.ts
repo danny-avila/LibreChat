@@ -61,6 +61,42 @@ describe('getCodeBridgeWorkerStatus', () => {
     );
   });
 
+  test('keeps legacy worker status readable without inventing a primary workspace', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          workerId: 'personal-vm',
+          online: true,
+          ready: true,
+          leaseExpiresInMs: 45_000,
+          capabilities: {
+            statefulWorkspace: true,
+            sandboxProfile: 'native-srt',
+            runtimes: ['bash'],
+            workspaceTools: { operations: ['read_file', 'execute_command'] },
+          },
+        }),
+      ),
+    );
+
+    await expect(
+      getCodeBridgeWorkerStatus({
+        baseURL: 'https://code.example.com/v1',
+        token: 'administrator-token',
+        workerId: 'personal-vm',
+        fetchImpl,
+      }),
+    ).resolves.toEqual({
+      status: 'ready',
+      statefulWorkspace: true,
+      leaseExpiresInMs: 45_000,
+      sandboxProfile: 'native-srt',
+      runtimes: ['bash'],
+      operations: ['read_file', 'execute_command'],
+    });
+  });
+
   test.each([
     { online: false, ready: true },
     { online: true, ready: false },

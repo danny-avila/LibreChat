@@ -361,7 +361,7 @@ export interface AgentRequestFingerprintFields {
   promptPrefix?: string | null;
   ephemeralAgent?: Record<string, unknown> | null;
   codeApprovalMode?: string | null;
-  codeWorkspace?: unknown;
+  codeWorkspaces?: unknown;
 }
 
 /** Stable, order-independent serialization of the ephemeral capability config. */
@@ -403,7 +403,7 @@ export const RESUME_CONTEXT_KEYS = [
   // The selected attached workspace determines the code tools' execution root and
   // operation ceiling. Pin it across every pause type so a reload or crafted resume
   // cannot rebuild the graph against a different directory.
-  'codeWorkspace',
+  'codeWorkspaces',
   // The agents build reads addedConvo into endpointOption to add parallel/secondary
   // agents; the resume POST can't reconstruct it, so replay it from the paused request.
   'addedConvo',
@@ -741,8 +741,8 @@ export function computeAgentRequestFingerprint(fields: AgentRequestFingerprintFi
     ...(Object.prototype.hasOwnProperty.call(fields, 'codeApprovalMode')
       ? { codeApprovalMode: fields.codeApprovalMode ?? null }
       : {}),
-    ...(Object.prototype.hasOwnProperty.call(fields, 'codeWorkspace')
-      ? { codeWorkspace: fields.codeWorkspace ?? null }
+    ...(Object.prototype.hasOwnProperty.call(fields, 'codeWorkspaces')
+      ? { codeWorkspaces: fields.codeWorkspaces ?? null }
       : {}),
   });
   return createHash('sha256').update(canonical).digest('hex');

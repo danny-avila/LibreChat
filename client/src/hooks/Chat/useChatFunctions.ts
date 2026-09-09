@@ -233,7 +233,7 @@ export default function useChatFunctions({
     immutableConversation,
     addedConversation,
   );
-  const codeWorkspaceState = useCodeWorkspace(immutableConversation);
+  const codeWorkspaceState = useCodeWorkspace(immutableConversation, addedConversation);
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -331,9 +331,9 @@ export default function useChatFunctions({
       latestCodeApprovalMode != null && codeApprovalModes.includes(latestCodeApprovalMode)
         ? latestCodeApprovalMode
         : fallbackCodeApprovalMode;
-    const latestCodeWorkspace = getConversation()?.codeWorkspace ?? conversation?.codeWorkspace;
-    const codeWorkspace = codeWorkspaceState.resolveSelection(latestCodeWorkspace);
-    if (codeWorkspaceState.required && codeWorkspace == null) {
+    const latestCodeWorkspaces = getConversation()?.codeWorkspaces ?? conversation?.codeWorkspaces;
+    const codeWorkspaces = codeWorkspaceState.resolveSelections(latestCodeWorkspaces);
+    if (codeWorkspaceState.required && codeWorkspaces == null) {
       logger.warn('[useChatFunctions] Refusing to send without an available code workspace');
       return false;
     }
@@ -751,7 +751,7 @@ export default function useChatFunctions({
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       codeApprovalMode,
-      codeWorkspace,
+      codeWorkspaces,
       clientRequestId,
       recoverySteerId: overrideRecoverySteerId,
       expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,

@@ -20,12 +20,12 @@ const mockGetQueryData = jest.fn(() => ({}));
 const mockLoggerWarn = jest.fn();
 const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
 const mockResolveCodeWorkspace = jest.fn<
-  CodeWorkspaceSelection | undefined,
-  [CodeWorkspaceSelection?]
+  CodeWorkspaceSelection[] | undefined,
+  [CodeWorkspaceSelection[]?]
 >(() => undefined);
 const mockCodeWorkspace = {
   required: false,
-  resolveSelection: mockResolveCodeWorkspace,
+  resolveSelections: mockResolveCodeWorkspace,
 };
 
 jest.mock('react-router-dom', () => ({
@@ -172,10 +172,10 @@ describe('useChatFunctions ask', () => {
   it('submits the latest validated workspace selection', () => {
     const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
     mockCodeWorkspace.required = true;
-    mockResolveCodeWorkspace.mockReturnValue(selection);
+    mockResolveCodeWorkspace.mockReturnValue([selection]);
     mockGetLatestConversation.mockReturnValue({
       ...conversation('conversation-1'),
-      codeWorkspace: selection,
+      codeWorkspaces: [selection],
     });
     const { result, setSubmission } = renderAsk([]);
 
@@ -184,8 +184,8 @@ describe('useChatFunctions ask', () => {
     });
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
-    expect(mockResolveCodeWorkspace).toHaveBeenCalledWith(selection);
-    expect(submission.codeWorkspace).toEqual(selection);
+    expect(mockResolveCodeWorkspace).toHaveBeenCalledWith([selection]);
+    expect(submission.codeWorkspaces).toEqual([selection]);
   });
 
   it('refuses to send while the required workspace is unavailable', () => {

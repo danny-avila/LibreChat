@@ -121,12 +121,12 @@ export const conversationPreset: {
     type: StringConstructor;
     enum: string[];
   };
-  codeWorkspace: {
+  codeWorkspaces: {
     type: {
       environmentId: { type: StringConstructor; required: boolean };
       workspaceId: { type: StringConstructor; required: boolean };
-    };
-    _id: boolean;
+      _id: boolean;
+    }[];
     default: undefined;
   };
   /* assistants */
@@ -316,12 +316,14 @@ export const conversationPreset: {
     type: String,
     enum: [...CODE_APPROVAL_MODES],
   },
-  codeWorkspace: {
-    type: {
-      environmentId: { type: String, required: true },
-      workspaceId: { type: String, required: true },
-    },
-    _id: false,
+  codeWorkspaces: {
+    type: [
+      {
+        environmentId: { type: String, required: true },
+        workspaceId: { type: String, required: true },
+        _id: false,
+      },
+    ],
     default: undefined,
   },
   /* assistants */

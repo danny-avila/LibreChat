@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { ErrorTypes, isCodeWorkspaceSelection } from 'librechat-data-provider';
+import { ErrorTypes, isCodeWorkspaceSelections } from 'librechat-data-provider';
 import type { CodeWorkspaceSelection } from 'librechat-data-provider';
 import type { CodeEnvironmentConfig, CodeExecutionContext } from '~/agents/execution';
 import type { createAppConfigService } from '~/app/service';
@@ -17,7 +17,6 @@ const pollWorkerStatus = createCodeBridgeStatusPoller();
 export type CodeWorkspaceSelectionErrorReason =
   | 'required'
   | 'invalid'
-  | 'environment_changed'
   | 'worker_unavailable'
   | 'unsupported'
   | 'missing';
@@ -28,8 +27,6 @@ function codeWorkspaceSelectionErrorMessage(reason: CodeWorkspaceSelectionErrorR
       return 'Choose an attached workspace before using this agent.';
     case 'invalid':
       return 'The selected attached workspace is invalid.';
-    case 'environment_changed':
-      return 'The selected workspace belongs to a different code environment. Choose a workspace for the current environment.';
     case 'worker_unavailable':
       return 'The attached code environment is unavailable. Reconnect the machine and try again.';
     case 'unsupported':
@@ -102,29 +99,30 @@ async function readAuthorizedAttachedWorkerStatus(
  */
 export async function resolveCodeExecutionWorkspaceContext({
   context,
-  requestedSelection,
-  persistedSelection,
+  requestedSelections,
+  persistedSelections,
   environments,
   getAppConfig,
 }: {
   context: CodeExecutionContext;
-  requestedSelection?: unknown;
-  persistedSelection?: unknown;
+  requestedSelections?: unknown;
+  persistedSelections?: unknown;
   environments?: readonly CodeEnvironmentConfig[];
   getAppConfig?: CodeCapabilityConfigLoader;
 }): Promise<CodeExecutionContext> {
   if (context.environmentType !== 'attached') return context;
-  const rawSelection = requestedSelection === undefined ? persistedSelection : requestedSelection;
-  if (rawSelection == null) {
+  const rawSelections =
+    requestedSelections === undefined ? persistedSelections : requestedSelections;
+  if (rawSelections == null) {
     throw new CodeWorkspaceSelectionError('required');
   }
-  if (!isCodeWorkspaceSelection(rawSelection)) {
+  if (!isCodeWorkspaceSelections(rawSelections)) {
     throw new CodeWorkspaceSelectionError('invalid');
   }
-  const selection: CodeWorkspaceSelection = rawSelection;
-  if (selection.environmentId !== context.environmentId) {
-    throw new CodeWorkspaceSelectionError('environment_changed');
-  }
+  const selection: CodeWorkspaceSelection | undefined = rawSelections.find(
+    ({ environmentId }) => environmentId === context.environmentId,
+  );
+  if (selection == null) throw new CodeWorkspaceSelectionError('required');
 
   let status: CodeBridgeWorkerStatus;
   try {
@@ -163,6 +161,10 @@ export async function supportsProgrammaticCodeExecution(
   getAppConfig?: CodeCapabilityConfigLoader,
 ): Promise<boolean> {
   if (context?.environmentType !== 'attached') return true;
+  /** Programmatic Bash uses Code API's generic exec endpoint, which has no
+   * workspace identifier. A fully resolved attached context therefore cannot
+   * use it until that protocol can preserve the selected-root boundary. */
+  if (context.codeWorkspace != null) return false;
   try {
     const status = await readAuthorizedAttachedWorkerStatus(context, environments, getAppConfig);
     return (
