@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
+import { findMessageById } from 'librechat-data-provider';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
@@ -32,6 +33,12 @@ const EditMessage = ({
   /** Only a user turn's draft becomes the submission; an assistant turn's is discarded
    *  by the rerun (see `resubmitMessage`), so it must not be labelled as an update. */
   const isUserTurn = message.isCreatedByUser === true;
+  /** A rerun replays the parent as the turn's user message, so a model turn chained
+   *  onto another model turn — an imported or restored thread — has none. The action
+   *  is withheld rather than offered and silently refused; Save still applies. An
+   *  unresolvable parent keeps it, matching the hover row. */
+  const canRerun =
+    isUserTurn || findMessageById(getMessages(), parentMessageId)?.isCreatedByUser !== false;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -229,7 +236,11 @@ const EditMessage = ({
             'disabled:opacity-50 md:max-h-[75vh]',
           )}
           aria-label={localize('com_ui_message_input')}
-          aria-keyshortcuts="Control+Enter Meta+Enter Control+S Meta+S Escape"
+          aria-keyshortcuts={
+            canRerun
+              ? 'Control+Enter Meta+Enter Control+S Meta+S Escape'
+              : 'Control+S Meta+S Escape'
+          }
           disabled={isSubmitting || updateMessageMutation.isLoading}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
@@ -272,19 +283,21 @@ const EditMessage = ({
                 persisted message, already submittable by construction, `isValid` is
                 false for a tick after mount while the form's first validation pass
                 settles, and an answer's draft is never sent at all. */}
-            <Button
-              ref={submitButtonRef}
-              size="sm"
-              variant="submit"
-              disabled={
-                isSubmitting ||
-                updateMessageMutation.isLoading ||
-                (isUserTurn && isDirty && !isValid)
-              }
-              onClick={isUserTurn ? handleSubmit(resubmitMessage) : rerunResponse}
-            >
-              {isDirty && isUserTurn ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
-            </Button>
+            {canRerun && (
+              <Button
+                ref={submitButtonRef}
+                size="sm"
+                variant="submit"
+                disabled={
+                  isSubmitting ||
+                  updateMessageMutation.isLoading ||
+                  (isUserTurn && isDirty && !isValid)
+                }
+                onClick={isUserTurn ? handleSubmit(resubmitMessage) : rerunResponse}
+              >
+                {isDirty && isUserTurn ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
+              </Button>
+            )}
           </div>
         </footer>
       </section>

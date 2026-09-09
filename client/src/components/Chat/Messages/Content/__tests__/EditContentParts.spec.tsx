@@ -32,6 +32,9 @@ const parentMessage = {
   text: 'Check the service',
 } as TMessage;
 
+/** The rows the editor resolves this message and its parent from. */
+let mockThread: TMessage[] = [parentMessage, message];
+
 jest.mock('librechat-data-provider/react-query', () => ({
   useUpdateMessageContentMutation: () => ({
     mutateAsync: mockMutateAsync,
@@ -45,7 +48,7 @@ jest.mock('~/Providers', () => ({
   }),
   useMessagesOperations: () => ({
     ask: mockAsk,
-    getMessages: () => [parentMessage, message],
+    getMessages: () => mockThread,
     setMessages: mockSetMessages,
   }),
 }));
@@ -75,6 +78,7 @@ describe('EditContentParts', () => {
     mockMutateAsync.mockResolvedValue({});
     mockChatDirection = 'LTR';
     message.content = undefined;
+    mockThread = [parentMessage, message];
   });
 
   it('uses one editor footer and keeps non-editable parts visible', () => {
@@ -94,6 +98,38 @@ describe('EditContentParts', () => {
     expect(screen.getByTestId(`read-only-${ContentTypes.TOOL_CALL}`)).toBeInTheDocument();
     expect(screen.getByTestId(`read-only-${ContentTypes.ERROR}`)).toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(3);
+  });
+
+  /** A rerun replays the parent as the turn's user message. A model turn chained
+   *  onto another model turn has none, so the action is withheld instead of offered
+   *  and silently refused; Save still applies. */
+  it('offers no rerun when the parent to replay is not a user turn', () => {
+    const chainedAnswer = {
+      messageId: 'assistant-2',
+      parentMessageId: message.messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+    } as TMessage;
+    mockThread = [parentMessage, message, chainedAnswer];
+
+    render(
+      <EditContentParts
+        content={content}
+        messageId={chainedAnswer.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ctrlKey: true });
+    expect(mockAsk).not.toHaveBeenCalled();
   });
 
   it('saves changed text parts before closing the editor', async () => {

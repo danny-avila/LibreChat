@@ -305,11 +305,12 @@ describe('EditMessage', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
-  /** A rerun replays the parent as the turn's user message. A chained model turn —
-   *  a manual compaction, or an imported thread with no user message between two
+  /** A rerun replays the parent as the turn's user message. A model turn chained
+   *  onto another model turn — an imported thread with no user message between two
    *  replies — has no such parent, and submitting one would mint a user message
-   *  under an existing response's id and run the turn on empty text. */
-  it('submits nothing when the parent to replay is not a user turn', async () => {
+   *  under an existing response's id. The editor withholds the action instead of
+   *  offering one that silently refuses, and Save still applies. */
+  it('offers no rerun when the parent to replay is not a user turn', async () => {
     const user = userEvent.setup();
     const chainedAnswer = {
       messageId: 'assistant-2',
@@ -320,14 +321,19 @@ describe('EditMessage', () => {
     } as TMessage;
     mockGetMessages.mockReturnValue([message, assistantMessage, chainedAnswer]);
     const ask = jest.fn();
-    const { enterEdit, setSiblingIdx } = renderEditor({ ask, editedMessage: chainedAnswer });
+    renderEditor({ ask, editedMessage: chainedAnswer });
 
-    await user.click(screen.getByRole('button', { name: 'com_ui_rerun' }));
+    expect(screen.queryByRole('button', { name: 'com_ui_rerun' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'com_ui_update_rerun' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeInTheDocument();
+
+    /** The shortcut cannot reach it either. */
+    const editor = screen.getByTestId('message-text-editor');
+    await user.click(editor);
+    await user.keyboard('{Control>}{Enter}{/Control}');
 
     expect(ask).not.toHaveBeenCalled();
-    expect(setSiblingIdx).not.toHaveBeenCalled();
-    expect(enterEdit).not.toHaveBeenCalled();
-    expect(screen.getByTestId('message-text-editor')).toHaveValue(chainedAnswer.text);
+    expect(editor).toHaveAttribute('aria-keyshortcuts', 'Control+S Meta+S Escape');
   });
 
   /** A response cancelled before its first token is exactly what needs rerunning, and

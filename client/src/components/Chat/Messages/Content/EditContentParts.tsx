@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
-import { ContentTypes, stripReasoningLabelMetadata } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  findMessageById,
+  stripReasoningLabelMetadata,
+} from 'librechat-data-provider';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
@@ -94,9 +98,16 @@ export default function EditContentParts({
     () => changedParts.some((part) => (drafts[part.index] ?? '').trim() === ''),
     [changedParts, drafts],
   );
-  const editedMessage = getMessages()?.find((item) => item.messageId === messageId);
+  const editedMessage = findMessageById(getMessages(), messageId);
   const rerunRequiresSave = editedMessage?.isCreatedByUser !== true && changedParts.length > 1;
   const isBusy = isSubmitting || isSaving;
+  /** A rerun replays the parent as the turn's user message, so a model turn chained
+   *  onto another model turn — an imported or restored thread — has none. The action
+   *  is withheld rather than offered and silently refused; Save still applies. An
+   *  unresolvable parent keeps it, matching the hover row. */
+  const canRerun =
+    editedMessage?.isCreatedByUser === true ||
+    findMessageById(getMessages(), editedMessage?.parentMessageId)?.isCreatedByUser !== false;
 
   useEffect(() => {
     const editor = firstEditorRef.current;
@@ -321,7 +332,7 @@ export default function EditContentParts({
         enterEdit(true);
         return;
       }
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      if (canRerun && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         updateAndRerun();
         return;
@@ -331,7 +342,7 @@ export default function EditContentParts({
         void saveChanges();
       }
     },
-    [enterEdit, saveChanges, updateAndRerun],
+    [canRerun, enterEdit, saveChanges, updateAndRerun],
   );
 
   /** Both states share the footer's status slot so neither can add a row and
@@ -392,7 +403,11 @@ export default function EditContentParts({
                 }
                 onKeyDown={handleKeyDown}
                 aria-label={`${localize('com_ui_editable_message')}: ${label}`}
-                aria-keyshortcuts="Control+Enter Meta+Enter Control+S Meta+S Escape"
+                aria-keyshortcuts={
+                  canRerun
+                    ? 'Control+Enter Meta+Enter Control+S Meta+S Escape'
+                    : 'Control+S Meta+S Escape'
+                }
                 disabled={isBusy}
                 minRows={3}
                 dir={isRTL ? 'rtl' : 'ltr'}
@@ -432,14 +447,16 @@ export default function EditContentParts({
           >
             {isSaving ? localize('com_ui_saving') : localize('com_ui_save')}
           </Button>
-          <Button
-            size="sm"
-            variant="submit"
-            onClick={updateAndRerun}
-            disabled={rerunRequiresSave || hasBlankEdit || isBusy}
-          >
-            {changedParts.length > 0 ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
-          </Button>
+          {canRerun && (
+            <Button
+              size="sm"
+              variant="submit"
+              onClick={updateAndRerun}
+              disabled={rerunRequiresSave || hasBlankEdit || isBusy}
+            >
+              {changedParts.length > 0 ? localize('com_ui_update_rerun') : localize('com_ui_rerun')}
+            </Button>
+          )}
         </div>
       </footer>
     </section>
