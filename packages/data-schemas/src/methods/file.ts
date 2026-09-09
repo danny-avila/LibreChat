@@ -212,7 +212,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   };
   const storageUsage = getUserStorageUsage as typeof getUserStorageUsage & StorageUsageExtensions;
 
-  storageUsage.withLock = async <T>(params, operation): Promise<T> => {
+  storageUsage.withLock = async <T>(
+    params: UserStorageUsageParams,
+    operation: (assertHeld: () => Promise<void>) => Promise<T>,
+  ): Promise<T> => {
     const key = JSON.stringify([params.userId.toString(), params.tenantId || null]);
     const token = randomUUID();
     const collection = mongoose.connection.collection<{
