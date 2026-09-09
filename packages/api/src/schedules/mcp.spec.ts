@@ -252,6 +252,42 @@ it('counts accepted graph descriptors against the runtime run-config limit', asy
   await expect(check('root', principal)).rejects.toThrow('maximum of 100 expanded entries');
 });
 
+it('tracks accepted lazy graphs per descriptor path', async () => {
+  const { check, deps } = setup([]);
+  const graphs = Array.from({ length: 50 }, (_, index) => ({
+    name: `graph-${index}`,
+    agent_ids: ['member'],
+  }));
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => {
+      if (id === 'root') {
+        return graphNode(id, {
+          subagents: { enabled: true, agent_ids: ['a', 'b'] } as never,
+        });
+      }
+      if (id === 'a' || id === 'b') {
+        return graphNode(id, {
+          subagents: { enabled: true, agent_ids: ['shared'] } as never,
+        });
+      }
+      if (id === 'shared') {
+        return graphNode(id, { subagents: { enabled: true, graphs } as never });
+      }
+      return graphNode(id);
+    }),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([]);
+});
+
 it('keeps lazy descriptor ancestors when validating cyclic run-config limits', async () => {
   const { check, deps } = setup([]);
   const graphs = Array.from({ length: 49 }, (_, index) => ({
@@ -864,6 +900,30 @@ it('lets authoritative config names claim normalized aliases before stored hints
     },
     expect.any(Function),
   );
+});
+
+it('prefers an exact accessible registry name over a colliding config alias', async () => {
+  const { check, deps } = setup(['search_mcp_sales-force']);
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      graphNode(id, { tools: ['search_mcp_sales-force'], mcpServerNames: ['sales-force'] }),
+    ),
+  );
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: { agents: { capabilities: [AgentCapabilities.tools] } },
+        mcpConfig: {
+          'sales-force!': { type: 'streamable-http', url: 'https://alias.example.test/mcp' },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getServerConfigs = jest.fn(async () => ({ 'sales-force': server }));
+
+  await expect(check('agent', principal)).resolves.toEqual([
+    { server: 'sales-force', status: 'ready' },
+  ]);
+  expect(deps.ensureConfigServers).toHaveBeenCalledWith({}, expect.any(Function));
 });
 
 it('rejects a selected server shadowed by an unselected config server', async () => {

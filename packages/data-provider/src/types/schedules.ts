@@ -198,9 +198,9 @@ export function getScheduleMCPDisabledReason(
   outcomes?: ScheduleMCPOutcome[],
 ): 'mcp_reauth_required' | 'mcp_configuration_missing' | 'mcp_permission_denied' | undefined {
   const statuses = new Set(outcomes?.map((outcome) => outcome.status));
-  if (statuses.has('mcp_reauth_required')) return 'mcp_reauth_required';
-  if (statuses.has('mcp_configuration_missing')) return 'mcp_configuration_missing';
   if (statuses.has('mcp_permission_denied')) return 'mcp_permission_denied';
+  if (statuses.has('mcp_configuration_missing')) return 'mcp_configuration_missing';
+  if (statuses.has('mcp_reauth_required')) return 'mcp_reauth_required';
   return undefined;
 }
 

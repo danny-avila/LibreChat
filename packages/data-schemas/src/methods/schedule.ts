@@ -930,12 +930,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     }
   }
 
-  /** Capacity-slot occupancy for the allocator: which slots are held by `started`
+  /** Capacity-slot occupancy for the allocator: which slots are held by generation
    *  runs, plus how many legacy rows hold no slot (they shrink the effective cap so
-   *  the bound stays conservative during rollout rather than transiently overshooting). */
+   *  the bound stays conservative during rollout rather than transiently overshooting).
+   *  Admission-only rows never dispatched and are excluded even if settlement crashed. */
   async function getCapacityOccupancy(): Promise<{ takenSlots: number[]; unslotted: number }> {
     const rows = await ScheduleRun()
-      .find({ status: 'started' })
+      .find({ status: 'started', admissionOnly: { $ne: true } })
       .select('capacitySlot')
       .lean<Array<{ capacitySlot?: number }>>();
     const takenSlots: number[] = [];
@@ -1484,7 +1485,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           // SETTLEMENT: a terminal outcome is the generation owner confirming the run
           // actually stopped, so this is the ONLY place the global capacity slot is
           // released. An abort request alone does not free it (see requestRunAbort).
-          $unset: { capacitySlot: 1, ...(params.clearConversationId ? { conversationId: 1 } : {}) },
+          $unset: {
+            capacitySlot: 1,
+            admissionOnly: 1,
+            ...(params.clearConversationId ? { conversationId: 1 } : {}),
+          },
         },
         { new: false },
       )

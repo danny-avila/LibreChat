@@ -22,6 +22,10 @@ import { withTimeout } from '~/utils';
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
 
+/** A request stopped while its config initialization was still queued. Healthy
+ * joiners retry ownership instead of inheriting that request-local cancellation. */
+export class MCPConfigInitializationCanceledError extends Error {}
+
 /** Cached configs carry decrypted oauth/apiKey credentials, so the shared
  *  stores only ever see ciphertext; plaintext stays in process memory,
  *  exactly where it lived before these caches became shared. */
@@ -872,7 +876,14 @@ export class MCPServersRegistry {
 
     const pending = this.pendingConfigInits.get(cacheKey);
     if (pending) {
-      return pending;
+      try {
+        return await pending;
+      } catch (error) {
+        if (error instanceof MCPConfigInitializationCanceledError) {
+          return this.ensureSingleConfigServer(serverName, rawConfig, allowlists, limit);
+        }
+        throw error;
+      }
     }
 
     // Only the caller that owns the cold initialization consumes shared capacity.

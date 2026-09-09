@@ -19,19 +19,20 @@ export default function ScheduleMCPRecovery({
     <div className="space-y-1" role="alert">
       {failures.map((item, index) => {
         const ownerId = item.agentId ?? fallbackAgentId;
+        const ownerLabel = ownerId;
         return (
           <div
             key={`${item.server}:${ownerId}:${item.status}:${index}`}
             className="flex flex-wrap items-baseline gap-x-2 text-xs text-text-secondary"
           >
             <p>
-              {item.server}: {localize(MCP_STATUS_LABELS[item.status])}
+              {item.server} ({ownerLabel}): {localize(MCP_STATUS_LABELS[item.status])}
             </p>
             {scheduleMCPNeedsAgentRecovery([item]) && (
               <button
                 type="button"
                 className="text-text-primary underline"
-                aria-label={`${item.server}: ${localize('com_ui_schedule_mcp_open_agent')}`}
+                aria-label={`${item.server}, ${ownerLabel}: ${localize('com_ui_schedule_mcp_open_agent')}`}
                 onClick={() => onOpenAgent(ownerId)}
               >
                 {localize('com_ui_schedule_mcp_open_agent')}

@@ -38,6 +38,7 @@ import {
   findShadowedServerNames,
   createDeadlineAbortSignal,
 } from '../mcp/utils';
+import { MCPConfigInitializationCanceledError } from '../mcp/registry/MCPServersRegistry';
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
@@ -240,7 +241,11 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       .map((id) => accessibleById.get(id))
       .filter((agent): agent is AgentGraphNode => agent != null);
     const rootConfigIds = new Set(rootConfigs.map((agent) => agent.id));
-    const directValidationContexts: Array<{ id: string; ancestors: Set<string> }> = [];
+    const directValidationContexts: Array<{
+      id: string;
+      ancestors: Set<string>;
+      acceptedGraphCount: number;
+    }> = [];
     const acceptedGraphCounts = new Map<string, number>();
     let expandedSubagentConfigs = 0;
     let subagentsAvailable: boolean | undefined;
@@ -281,9 +286,10 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const processDirectGraphs = async (
       agent: AgentGraphNode,
       parentRunnable: boolean,
-    ): Promise<void> => {
-      if (!agent.subagents?.enabled || !(await canUseSubagents())) return;
+    ): Promise<number> => {
+      if (!agent.subagents?.enabled || !(await canUseSubagents())) return 0;
       const definitions = agent.subagents.graphs ?? [];
+      let acceptedGraphCount = 0;
       const memberIds = [...new Set(definitions.flatMap((graph) => graph.agent_ids ?? []))].filter(
         (id) => id !== agent.id && id !== agentId && !rootConfigIds.has(id),
       );
@@ -298,9 +304,10 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       for (const definition of definitions) {
         const ids = [...new Set(definition.agent_ids ?? [])];
         if (await includeGraph(ids, parentRunnable)) {
-          acceptedGraphCounts.set(agent.id, (acceptedGraphCounts.get(agent.id) ?? 0) + 1);
+          acceptedGraphCount += 1;
         }
       }
+      return acceptedGraphCount;
     };
     const visitDirectTree = async (
       agent: AgentGraphNode,
@@ -331,15 +338,19 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         addGraphBudgetMember(childId);
         countExpandedSubagentConfig();
         const childRunnable = parentRunnable && accessibleById.has(childId);
-        if (childRunnable) {
-          directValidationContexts.push({ id: childId, ancestors: nextAncestors });
+        const validationContext = childRunnable
+          ? { id: childId, ancestors: nextAncestors, acceptedGraphCount: 0 }
+          : undefined;
+        if (validationContext) {
+          directValidationContexts.push(validationContext);
           explicitSeeds.add(childId);
           expanded.add(childId);
         }
         await visitDirectTree(child, depth + 1, nextAncestors, childRunnable);
         // initializeClient preloads a direct child's graph members only after its
         // complete nested direct tree, before root-level graphs are resolved.
-        await processDirectGraphs(child, childRunnable);
+        const acceptedGraphCount = await processDirectGraphs(child, childRunnable);
+        if (validationContext) validationContext.acceptedGraphCount = acceptedGraphCount;
       }
     };
 
@@ -366,6 +377,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       agent: AgentGraphNode,
       state: { count: number },
       ancestors: Set<string>,
+      acceptedGraphCount = acceptedGraphCounts.get(agent.id) ?? 0,
     ): void => {
       if (!agent.subagents?.enabled || subagentsAvailable !== true) return;
       const count = (): void => {
@@ -390,18 +402,18 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
           validateRunConfigTree(child, state, nextAncestors);
         }
       }
-      for (let index = 0; index < (acceptedGraphCounts.get(agent.id) ?? 0); index++) count();
+      for (let index = 0; index < acceptedGraphCount; index++) count();
     };
     const initialRunState = { count: 0 };
     for (const root of rootConfigs) {
       validateRunConfigTree(root, initialRunState, new Set());
     }
-    for (const { id: directId, ancestors } of directValidationContexts) {
+    for (const { id: directId, ancestors, acceptedGraphCount } of directValidationContexts) {
       if (rootConfigIds.has(directId)) continue;
       const direct = accessibleById.get(directId);
       if (!direct) continue;
       // createLazySubagentConfig seeds the selected child's resolution at one.
-      validateRunConfigTree(direct, { count: 1 }, ancestors);
+      validateRunConfigTree(direct, { count: 1 }, ancestors, acceptedGraphCount);
     }
     const skippedAgentIds = new Set(
       [...attempted].filter((id) => id !== agentId && !accessibleById.has(id)),
@@ -442,29 +454,41 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       const normalized = normalizeServerName(hint);
       if (!aliases.has(normalized)) aliases.set(normalized, hint);
     }
-    const candidates = [...candidateNames, ...aliases.keys()];
-    const selected = new Map<string, string[]>();
-    const serverAgentIds = new Map<string, Set<string>>();
-    const toolAgentIds = new Map<string, Map<string, Set<string>>>();
-    for (const { name: tool, agentId: toolAgentId } of selectedTools) {
-      const [, name] = splitMCPToolKey(tool, candidates);
-      if (!name) continue;
-      const server = configNames.includes(name) ? name : (aliases.get(name) ?? name);
-      const owners = serverAgentIds.get(server) ?? new Set<string>();
-      owners.add(toolAgentId);
-      serverAgentIds.set(server, owners);
-      const required = selected.get(server) ?? [];
-      if (!tool.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`)) {
-        const normalizedTool = normalizeMCPToolKey(tool, candidateNames);
-        required.push(normalizedTool);
-        const serverTools = toolAgentIds.get(server) ?? new Map<string, Set<string>>();
-        const toolOwners = serverTools.get(normalizedTool) ?? new Set<string>();
-        toolOwners.add(toolAgentId);
-        serverTools.set(normalizedTool, toolOwners);
-        toolAgentIds.set(server, serverTools);
+    const collectSelected = (
+      rawNames: string[],
+      nameAliases: Map<string, string>,
+      exactNames: Set<string>,
+    ) => {
+      const candidates = [...rawNames, ...nameAliases.keys()];
+      const selected = new Map<string, string[]>();
+      const serverAgentIds = new Map<string, Set<string>>();
+      const toolAgentIds = new Map<string, Map<string, Set<string>>>();
+      for (const { name: tool, agentId: toolAgentId } of selectedTools) {
+        const [, name] = splitMCPToolKey(tool, candidates);
+        if (!name) continue;
+        const server = exactNames.has(name) ? name : (nameAliases.get(name) ?? name);
+        const owners = serverAgentIds.get(server) ?? new Set<string>();
+        owners.add(toolAgentId);
+        serverAgentIds.set(server, owners);
+        const required = selected.get(server) ?? [];
+        if (!tool.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`)) {
+          const normalizedTool = normalizeMCPToolKey(tool, rawNames);
+          required.push(normalizedTool);
+          const serverTools = toolAgentIds.get(server) ?? new Map<string, Set<string>>();
+          const toolOwners = serverTools.get(normalizedTool) ?? new Set<string>();
+          toolOwners.add(toolAgentId);
+          serverTools.set(normalizedTool, toolOwners);
+          toolAgentIds.set(server, serverTools);
+        }
+        selected.set(server, required);
       }
-      selected.set(server, required);
-    }
+      return { selected, serverAgentIds, toolAgentIds };
+    };
+    let { selected, serverAgentIds, toolAgentIds } = collectSelected(
+      candidateNames,
+      aliases,
+      new Set(configNames),
+    );
     const outcomesForOwners = (
       server: string,
       status: ScheduleMCPStatus,
@@ -504,15 +528,28 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         ),
       );
     }
+    // Resolve once more against the ACL-filtered registry before initializing config.
+    // Exact accessible identities must beat normalized aliases from another tier, just
+    // as they do in the interactive runtime.
+    const accessibleServers = await deps.getServerConfigs(user.id, {}, user.role);
+    const authoritativeNames = Array.from(
+      new Set([...Object.keys(accessibleServers), ...configNames]),
+    );
+    const authoritativeAliases = buildServerNameAliases(authoritativeNames);
+    ({ selected, serverAgentIds, toolAgentIds } = collectSelected(
+      authoritativeNames,
+      authoritativeAliases,
+      new Set([...Object.keys(accessibleServers), ...configNames]),
+    ));
     const selectedRawConfig = Object.fromEntries(
       Object.entries(rawConfig).filter(([serverName]) => selected.has(serverName)),
     );
     const requestProbeLimit = createConcurrencyLimiter(options.concurrency);
     const config = await deps.ensureConfigServers(selectedRawConfig, (task) =>
       requestProbeLimit(() => {
-        throwIfAborted();
+        if (signal?.aborted) throw new MCPConfigInitializationCanceledError();
         return sharedProbeLimit(async () => {
-          throwIfAborted();
+          if (signal?.aborted) throw new MCPConfigInitializationCanceledError();
           return task();
         });
       }),

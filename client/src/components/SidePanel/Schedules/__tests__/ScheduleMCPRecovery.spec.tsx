@@ -21,7 +21,9 @@ it('opens the exact descendant that owns an immediate MCP failure', async () => 
   );
 
   await userEvent.click(
-    screen.getByRole('button', { name: 'Notion: com_ui_schedule_mcp_open_agent' }),
+    screen.getByRole('button', {
+      name: 'Notion, research-agent: com_ui_schedule_mcp_open_agent',
+    }),
   );
   expect(onOpenAgent).toHaveBeenCalledWith('research-agent');
 });

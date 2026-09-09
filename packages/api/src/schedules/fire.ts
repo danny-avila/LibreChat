@@ -251,7 +251,15 @@ export async function fireSchedule(
     // a tenant- or role-specific config (disabled schedules, different
     // auto-disable threshold) must win over the base config the engine read.
     const ownerLimits = await deps.getLimits(user);
+    const deploymentLimits = await deps.getLimits();
     if (!ownerLimits.enabled) {
+      // A deployment-wide stop freezes due occurrences. The engine may have claimed
+      // this one just before the switch changed, so hand its lease back without
+      // advancing. A principal-scoped disable still consumes the occurrence because
+      // that owner is not allowed to dispatch it under the current policy.
+      if (!deploymentLimits.enabled) {
+        return stepAsideSuperseded();
+      }
       await advance();
       return { fired: false, skipped: 'disabled' as const };
     }
@@ -429,9 +437,6 @@ export async function fireSchedule(
       return stepAsideSuperseded();
     }
 
-    // Role/user limits may only narrow the deployment-wide capacity and timeout.
-    const deploymentLimits = await deps.getLimits();
-
     // Readiness is admission work, not generation work. Probe before reserving a
     // durable started row or a global generation slot so a slow MCP endpoint cannot
     // consume the capacity healthy ready schedules need to dispatch.
@@ -506,12 +511,13 @@ export async function fireSchedule(
       };
     }
     const deliveryKey = getAgentTriggerIdempotencyKey(triggerEnvelope);
-    const reserveRun = (capacitySlot?: number) =>
+    const reserveRun = (capacitySlot?: number, admissionOnly = false) =>
       methods.reserveStartedRun({
         ...baseRun,
         conversationId,
         firedAt: new Date(),
         ...(capacitySlot != null ? { capacitySlot } : {}),
+        ...(admissionOnly ? { admissionOnly: true } : {}),
         deliveryKey,
         // The destination THIS occurrence used. The schedule-level value can move on
         // (a pin redirects later fires, and a paused run does not block them), so a
@@ -530,7 +536,7 @@ export async function fireSchedule(
       // A terminal admission failure needs durable evidence and schedule bookkeeping,
       // but it never starts a generation. Reserve the occurrence idempotently without
       // a generation slot, then settle it immediately below.
-      reservation = await reserveRun();
+      reservation = await reserveRun(undefined, true);
     } else {
       // The GLOBAL fireConcurrency cap is enforced by claiming a unique capacity slot
       // in the SAME insert that reserves a generation, so it is decided by the DB rather
@@ -562,6 +568,11 @@ export async function fireSchedule(
         // in progress" 409 for the full manual-lease TTL even after capacity frees.
         if (options?.manual) {
           await releaseManualLease();
+        } else {
+          const released = await methods.releaseLease(schedule.id, claimToken);
+          if (!released) {
+            await releaseSupersededLease();
+          }
         }
         return { fired: false, skipped: 'capacity' as const };
       }

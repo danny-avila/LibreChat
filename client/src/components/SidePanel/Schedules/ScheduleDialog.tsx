@@ -588,7 +588,10 @@ export default function ScheduleDialog({
             <ScheduleMCPRecovery
               outcomes={mcpRecoveryOutcomes}
               fallbackAgentId={schedule?.agent_id ?? selectedAgentId}
-              onOpenAgent={(ownerId) => navigate(`/c/new?agent_id=${encodeURIComponent(ownerId)}`)}
+              onOpenAgent={(ownerId) => {
+                onOpenChange(false);
+                navigate(`/c/new?agent_id=${encodeURIComponent(ownerId)}`);
+              }}
             />
             {/* Identity row: what the schedule is, who runs it, where its chats land.
                 Its caption is grouped with it rather than left to the form's own 4-unit

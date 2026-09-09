@@ -45,7 +45,7 @@ function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedu
 function makeMethods() {
   const runs = new Map<
     string,
-    { status: string; conversationId?: string; capacitySlot?: number }
+    { status: string; conversationId?: string; capacitySlot?: number; admissionOnly?: boolean }
   >();
   const calls = {
     advance: 0,
@@ -92,6 +92,7 @@ function makeMethods() {
         scheduledFor: Date;
         conversationId?: string;
         capacitySlot?: number;
+        admissionOnly?: boolean;
         deliveryKey?: string;
       }) => {
         const k = key(data.scheduleId, data.scheduledFor);
@@ -119,6 +120,7 @@ function makeMethods() {
           status: 'started',
           conversationId: data.conversationId,
           capacitySlot: data.capacitySlot,
+          admissionOnly: data.admissionOnly,
         });
         return { run: { scheduleId: data.scheduleId, scheduledFor: data.scheduledFor } };
       },
@@ -128,6 +130,9 @@ function makeMethods() {
       let unslotted = 0;
       for (const r of runs.values()) {
         if (r.status !== 'started') {
+          continue;
+        }
+        if (r.admissionOnly) {
           continue;
         }
         if (typeof r.capacitySlot === 'number') {
@@ -261,6 +266,21 @@ describe('buildFireClientRequestId', () => {
 });
 
 describe('fireSchedule', () => {
+  it('preserves a claimed occurrence when the deployment switch turns off', async () => {
+    const { methods } = makeMethods();
+    const getLimits = jest.fn(async () => ({ ...LIMITS, enabled: false }));
+    const deps = makeDeps(methods, {
+      getLimits,
+    });
+
+    const result = await fireSchedule(deps, makeSchedule(), LIMITS, dueAt());
+
+    expect(result).toMatchObject({ fired: false, skipped: 'superseded' });
+    expect(methods.advanceSchedule).not.toHaveBeenCalled();
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
+    expect(getLimits).toHaveBeenCalledWith();
+  });
+
   it('fires the happy path and records fire details', async () => {
     const { methods, runs } = makeMethods();
     mockFetch(async () => okResponse());
@@ -539,6 +559,7 @@ describe('fireSchedule', () => {
     expect(result.skipped).toBe('capacity');
     expect(global.fetch).not.toHaveBeenCalled();
     expect(methods.reserveStartedRun).not.toHaveBeenCalled();
+    expect(methods.releaseLease).toHaveBeenCalledWith('sched-1', 'ct-1');
   });
 
   it('still honors an owner override that is STRICTER than the deployment cap', async () => {
@@ -857,6 +878,9 @@ it('settles an unavailable MCP occurrence without dispatching a generation', asy
   const result = await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'));
   expect(result).toMatchObject({ fired: false, mcp: failure.outcomes });
   expect(capacitySpy).not.toHaveBeenCalled();
+  expect(methods.reserveStartedRun).toHaveBeenCalledWith(
+    expect.objectContaining({ admissionOnly: true }),
+  );
   expect(deps.enqueueTrigger).not.toHaveBeenCalled();
   expect(methods.recordRunOutcome).toHaveBeenCalledWith(
     expect.objectContaining({

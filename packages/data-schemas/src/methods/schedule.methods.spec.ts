@@ -875,6 +875,31 @@ describe('countActiveRuns', () => {
   });
 });
 
+describe('getCapacityOccupancy', () => {
+  it('excludes admission-only failures that never dispatched a generation', async () => {
+    const admission = await methods.createSchedule(scheduleData());
+    const legacy = await methods.createSchedule(scheduleData());
+    const slotted = await methods.createSchedule(scheduleData());
+    await methods.reserveStartedRun(
+      runData(admission, {
+        scheduledFor: new Date('2026-07-20T12:00:00Z'),
+        admissionOnly: true,
+      }),
+    );
+    await methods.reserveStartedRun(
+      runData(legacy, { scheduledFor: new Date('2026-07-20T13:00:00Z') }),
+    );
+    await methods.reserveStartedRun(
+      runData(slotted, { scheduledFor: new Date('2026-07-20T14:00:00Z'), capacitySlot: 2 }),
+    );
+
+    await expect(methods.getCapacityOccupancy()).resolves.toEqual({
+      takenSlots: [2],
+      unslotted: 1,
+    });
+  });
+});
+
 describe('recordRunOutcome — reconciled completions and no-match guard', () => {
   const scheduledFor = new Date('2026-07-20T12:00:00Z');
 
@@ -3063,6 +3088,28 @@ describe('scheduled MCP failure policy', () => {
     expect(updated.failureCount).toBe(1);
     expect(updated.enabled).toBe(true);
     expect(updated.disabledReason).toBeUndefined();
+  });
+
+  it('uses admission response precedence for mixed MCP failures', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-09-09T12:45:00Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: 'mixed MCP failure',
+      mcp: [
+        { server: 'OAuth', status: 'mcp_reauth_required' },
+        { server: 'Private', status: 'mcp_permission_denied' },
+      ],
+      autoDisableAfterFailures: 5,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.enabled).toBe(false);
+    expect(updated.disabledReason).toBe('mcp_permission_denied');
   });
 });
 

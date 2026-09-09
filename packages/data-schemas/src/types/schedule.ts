@@ -111,6 +111,9 @@ export interface IScheduleRun {
   settledAt?: Date;
   /** Global concurrency slot held while `started`. */
   capacitySlot?: number;
+  /** A started row used only to durably settle admission failure bookkeeping. It
+   * never dispatched generation work and therefore does not consume capacity. */
+  admissionOnly?: boolean;
   /** When an abort was requested; capacity is held until settlement is confirmed. */
   abortRequestedAt?: Date;
   /** Who requested the abort: the interactive Stop route ('stop', which persists a

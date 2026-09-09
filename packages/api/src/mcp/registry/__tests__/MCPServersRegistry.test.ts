@@ -1,7 +1,10 @@
 import './helpers/setupCredsEnv';
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import {
+  MCPServersRegistry,
+  MCPConfigInitializationCanceledError,
+} from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { processMCPEnv } from '~/utils/env';
 
@@ -979,6 +982,39 @@ describe('MCPServersRegistry', () => {
       await expect(Promise.all([first, second])).resolves.toHaveLength(2);
       expect(inspectSpy).toHaveBeenCalledTimes(1);
       expect(limitCalls).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a healthy joiner replace a canceled pending initialization', async () => {
+      let rejectOwner!: (error: Error) => void;
+      const ownerGate = new Promise<never>((_resolve, reject) => {
+        rejectOwner = reject;
+      });
+      const config = {
+        shared: {
+          type: 'streamable-http' as const,
+          url: 'https://shared.example.com/mcp',
+        },
+      };
+      const canceledLimitCalls = jest.fn();
+      const canceledLimit = <T>(_task: () => Promise<T>): Promise<T> => {
+        canceledLimitCalls();
+        return ownerGate;
+      };
+      const healthyLimitCalls = jest.fn();
+      const healthyLimit = <T>(task: () => Promise<T>): Promise<T> => {
+        healthyLimitCalls();
+        return task();
+      };
+
+      const canceled = registry.ensureConfigServers(config, canceledLimit);
+      const healthy = registry.ensureConfigServers(config, healthyLimit);
+      await Promise.resolve();
+      rejectOwner(new MCPConfigInitializationCanceledError());
+
+      await expect(canceled).resolves.toEqual({});
+      await expect(healthy).resolves.toHaveProperty('shared');
+      expect(canceledLimitCalls).toHaveBeenCalledTimes(1);
+      expect(healthyLimitCalls).toHaveBeenCalledTimes(1);
     });
 
     it('preserves YAML base entry when config-tier override reports inspectionFailed', async () => {

@@ -109,6 +109,11 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
       type: Number,
       min: 0,
     },
+    /** Marks a transient started row that exists only to settle an admission failure.
+     * It never owns generation capacity, including if settlement must be reconciled. */
+    admissionOnly: {
+      type: Boolean,
+    },
     /** When an abort was requested. The run keeps holding its capacity slot until the
      *  generation owner confirms settlement, so capacity is never freed early. */
     abortRequestedAt: {
