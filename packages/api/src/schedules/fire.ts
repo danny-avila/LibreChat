@@ -12,6 +12,7 @@ import { AgentTriggerServiceUnavailableError } from '../agents/triggers/service'
 import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { computeNextRunAt, cadenceIntervalMinutes } from './cadence';
 import { resolveScheduleProjectId } from './types';
+import { ScheduleMCPError } from './mcp';
 
 /** Consecutive balance skips (pre-fire or mid-generation) before auto-disable. */
 export const BALANCE_SKIP_DISABLE_THRESHOLD: number = 5;
@@ -569,6 +570,26 @@ export async function fireSchedule(
       return { fired: false, skipped: 'duplicate' as const };
     }
 
+    let mcp: Awaited<ReturnType<ScheduleEngineDeps['preflightMCP']>>;
+    try {
+      mcp = await deps.preflightMCP(schedule.agent_id, user);
+    } catch (error) {
+      const failure =
+        error instanceof ScheduleMCPError
+          ? error
+          : new ScheduleMCPError([{ server: schedule.agent_id, status: 'mcp_unavailable' }]);
+      await methods.recordRunOutcome({
+        scheduleId: schedule.id,
+        scheduledFor,
+        status: 'error',
+        error: failure.message,
+        autoDisableAfterFailures: ownerLimits.autoDisableAfterFailures,
+        clearConversationId: true,
+      });
+      await advance();
+      return { fired: false, error: failure.message, mcp: failure.outcomes };
+    }
+
     // Last check before the point of no return: re-verify this fire still holds an
     // authoritative claim (same claim token, lease unexpired, not deleting; and for
     // an automatic fire, still enabled). An owner delete/edit or a lease-expiry
@@ -638,6 +659,7 @@ export async function fireSchedule(
       await advance();
       await methods.setRunFireDetails(schedule.id, scheduledFor, {
         conversationId,
+        ...(mcp.length > 0 ? { mcp } : {}),
         ...(droppedFileIds.length > 0 ? { droppedFileIds } : {}),
       });
       if (droppedFileIds.length > 0) {

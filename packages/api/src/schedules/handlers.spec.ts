@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import type { SchedulesHandlersDeps } from './handlers';
 import type { ServerRequest } from '~/types';
 import { createSchedulesHandlers, toWireSchedule, computeCreateDigest } from './handlers';
+import { ScheduleMCPError } from './mcp';
 
 /** A lean schedule doc carrying both public fields and internal bookkeeping. */
 function fullScheduleDoc(): ISchedule {
@@ -167,6 +168,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
       fireConcurrency: 5,
       requireProject: false,
     }),
+    preflightMCP: jest.fn().mockResolvedValue([]),
     canViewAgent: async () => true,
     filterOwnedFileIds: async (ids: string[]) => ids,
     markFilesUsed: async () => undefined,
@@ -1184,4 +1186,57 @@ describe('late-create compensation with a live manual run', () => {
     expect(deps.methods.markScheduleDeleting).not.toHaveBeenCalled();
     expect(captured.status).toBe(410);
   });
+});
+
+describe('unattended MCP admission', () => {
+  it.each(['mcp_reauth_required', 'mcp_configuration_missing', 'mcp_unavailable'] as const)(
+    'refuses create before persisting when preflight reports %s',
+    async (status) => {
+      const deps = makeCreateDeps({
+        preflightMCP: async () => {
+          throw new ScheduleMCPError([{ server: 'Notion', status }]);
+        },
+      });
+      const { res, captured } = makeRes();
+      await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+      expect(captured.status).toBe(status === 'mcp_unavailable' ? 503 : 400);
+      expect(captured.body).toMatchObject({ code: status, mcp: [{ server: 'Notion', status }] });
+      expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it.each([{ enabled: true }, { prompt: 'Updated prompt' }, { agent_id: 'replacement' }])(
+  'rechecks effective MCP configuration for edits and enable: %j',
+  async (body) => {
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => false,
+      preflightMCP: async () => {
+        throw new ScheduleMCPError([{ server: 'Notion', status: 'mcp_reauth_required' }]);
+      },
+    });
+    jest.mocked(deps.methods.getScheduleById).mockResolvedValue(fullScheduleDoc());
+    const req = makeCreateReq();
+    req.params = { id: 'sched-1' };
+    Object.assign(req, { body });
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).updateSchedule(req, res);
+    expect(captured.status).toBe(400);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  },
+);
+
+it('allows pausing even when MCP preflight would fail', async () => {
+  const preflightMCP = jest.fn(async () => {
+    throw new Error('unavailable');
+  });
+  const deps = makeCreateDeps({ isUserDeleting: async () => false, preflightMCP });
+  jest.mocked(deps.methods.getScheduleById).mockResolvedValue(fullScheduleDoc());
+  const req = makeCreateReq();
+  req.params = { id: 'sched-1' };
+  Object.assign(req, { body: { enabled: false } });
+  const { res } = makeRes();
+  await createSchedulesHandlers(deps).updateSchedule(req, res);
+  expect(preflightMCP).not.toHaveBeenCalled();
+  expect(deps.methods.updateScheduleById).toHaveBeenCalled();
 });

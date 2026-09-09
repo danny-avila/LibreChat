@@ -76,6 +76,7 @@ function makeEngineDeps(
     getLimits: async () => BASE_LIMITS,
     getUserContext: async () => OWNER,
     isOutOfBalance: async () => false,
+    preflightMCP: jest.fn().mockResolvedValue([]),
     agentAccess: async () => 'ok',
     projectAccess: async () => 'ok',
     hasScheduleAccess: async () => true,
@@ -351,6 +352,7 @@ function makeHandlerDeps(
   const deps = {
     methods: methods as unknown as SchedulesHandlersDeps['methods'],
     getLimits: async () => ({ ...BASE_LIMITS, ...limits }),
+    preflightMCP: jest.fn().mockResolvedValue([]),
     canViewAgent: async () => true,
     canUseProject: async () => true,
     filterOwnedFileIds: async (ids: string[]) => ids,

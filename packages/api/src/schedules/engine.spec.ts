@@ -78,6 +78,7 @@ function makeDeps(
     getLimits: async () => LIMITS,
     getUserContext: async () => OWNER,
     isOutOfBalance: async () => false,
+    preflightMCP: jest.fn().mockResolvedValue([]),
     agentAccess: async () => 'ok',
     hasScheduleAccess: async () => true,
     resolveFiles: async () => [],

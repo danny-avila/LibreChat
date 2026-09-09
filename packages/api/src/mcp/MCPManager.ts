@@ -119,7 +119,7 @@ export class MCPManager extends UserConnectionManager {
     opts: t.UserMCPConnectionOptions,
   ): Promise<MCPConnection> {
     const userId = opts.user?.id;
-    if (opts.forceNew || !userId) {
+    if (opts.forceNew || opts.ephemeralConnection || !userId) {
       return super.getUserConnection(opts);
     }
 
@@ -288,6 +288,7 @@ export class MCPManager extends UserConnectionManager {
       serverName: string;
       user?: IUser;
       forceNew?: boolean;
+      ephemeralConnection?: boolean;
       flowManager?: FlowStateManager<MCPOAuthTokens | null>;
       /** Pre-resolved config for config-source servers not in YAML/DB */
       serverConfig?: t.ParsedServerConfig;

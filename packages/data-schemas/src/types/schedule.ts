@@ -3,6 +3,7 @@ import type {
   ScheduleDisabledReason,
   TScheduleCadence,
 } from 'librechat-data-provider';
+import type { ScheduleMCPOutcome } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
 export interface ISchedule {
@@ -77,6 +78,7 @@ export interface IScheduleDocument extends Omit<ISchedule, 'id' | '_id'>, Docume
 }
 
 export interface IScheduleRun {
+  mcp?: ScheduleMCPOutcome[];
   _id?: Types.ObjectId;
   scheduleId: string;
   user: Types.ObjectId;

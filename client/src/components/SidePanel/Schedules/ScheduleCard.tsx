@@ -2,6 +2,7 @@ import { useId, useRef, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
+import { readScheduleMCPOutcomes } from 'librechat-data-provider';
 import { Play, Trash, Folder, Pencil, Ellipsis } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
@@ -23,6 +24,7 @@ import {
   useRunScheduleNowMutation,
 } from '~/data-provider';
 import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
+import { MCP_STATUS_LABELS, scheduleMCPErrorMessage } from './errors';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
 import ScheduleDialog from './ScheduleDialog';
@@ -48,6 +50,8 @@ const STATUS_CHIPS: Record<ScheduleRunStatus, { label: TranslationKeys; tone: St
 };
 
 const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = {
+  mcp_reauth_required: 'com_ui_schedule_mcp_reauth',
+  mcp_configuration_missing: 'com_ui_schedule_mcp_configuration',
   too_many_failures: 'com_ui_schedule_disabled_too_many_failures',
   agent_deleted: 'com_ui_schedule_disabled_agent_deleted',
   invalid_schedule: 'com_ui_schedule_disabled_invalid',
@@ -60,6 +64,7 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
 export default function ScheduleCard({ schedule, projectName }: ScheduleCardProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const mcpOutcomes = readScheduleMCPOutcomes(schedule.lastRun?.error);
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
@@ -93,7 +98,9 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
       const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
       const blockedEnable = status === 400 && variables.payload.enabled === true;
       showToast({
-        message: localize(blockedEnable ? 'com_ui_schedule_enable_blocked' : 'com_ui_error'),
+        message:
+          scheduleMCPErrorMessage(error, localize) ??
+          localize(blockedEnable ? 'com_ui_schedule_enable_blocked' : 'com_ui_error'),
         status: 'error',
       });
     },
@@ -114,8 +121,11 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
         showToast({ message: localize('com_ui_schedule_run_now_started'), status: 'success' });
         setMenuOpen(false);
       },
-      onError: () => {
-        showToast({ message: localize('com_ui_error'), status: 'error' });
+      onError: (error) => {
+        showToast({
+          message: scheduleMCPErrorMessage(error, localize) ?? localize('com_ui_error'),
+          status: 'error',
+        });
       },
     });
   }, [schedule.id, runSchedule, showToast, localize]);
@@ -263,6 +273,22 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
             <Chip tone="error">{localize(DISABLED_REASON_LABELS[schedule.disabledReason])}</Chip>
           )}
         </div>
+      )}
+      {mcpOutcomes
+        .filter((item) => item.status !== 'ready')
+        .map((item) => (
+          <p key={item.server} className="mt-1 text-xs text-text-secondary">
+            {item.server}: {localize(MCP_STATUS_LABELS[item.status])}
+          </p>
+        ))}
+      {mcpOutcomes.length > 0 && (
+        <button
+          type="button"
+          className="mt-2 text-sm text-text-primary underline"
+          onClick={() => navigate(`/c/new?agent_id=${encodeURIComponent(schedule.agent_id)}`)}
+        >
+          {localize('com_ui_schedule_mcp_open_agent')}
+        </button>
       )}
       {editOpen && (
         <ScheduleDialog

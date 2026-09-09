@@ -115,6 +115,8 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
     disabledReason: {
       type: String,
       enum: [
+        'mcp_reauth_required',
+        'mcp_configuration_missing',
         'too_many_failures',
         'agent_deleted',
         'invalid_schedule',

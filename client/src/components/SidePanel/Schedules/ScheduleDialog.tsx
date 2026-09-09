@@ -52,6 +52,7 @@ import {
 import { useLocalize, useClockFormat, useWeekStart } from '~/hooks';
 import { useChatProjectPicker } from './useScheduleProjects';
 import { VariableEditor } from '~/components/Variables';
+import { scheduleMCPErrorMessage } from './errors';
 import { rotateWeekFrom } from '~/utils/clock';
 import { cn } from '~/utils';
 
@@ -322,8 +323,11 @@ export default function ScheduleDialog({
       showToast({ message: localize('com_ui_schedule_created'), status: 'success' });
       onOpenChange(false);
     },
-    onError: () => {
-      showToast({ message: localize('com_ui_error'), status: 'error' });
+    onError: (error) => {
+      showToast({
+        message: scheduleMCPErrorMessage(error, localize) ?? localize('com_ui_error'),
+        status: 'error',
+      });
     },
   });
 
@@ -335,7 +339,9 @@ export default function ScheduleDialog({
     onError: (error) => {
       const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
       showToast({
-        message: localize(status === 409 ? 'com_ui_schedule_conflict' : 'com_ui_error'),
+        message:
+          scheduleMCPErrorMessage(error, localize) ??
+          localize(status === 409 ? 'com_ui_schedule_conflict' : 'com_ui_error'),
         status: 'error',
       });
     },

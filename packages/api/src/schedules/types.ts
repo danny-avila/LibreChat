@@ -4,6 +4,7 @@ import type {
   AgentTriggerDeliveryStatus,
   AgentTriggerDeliveryFailure,
 } from '@librechat/data-schemas';
+import type { ScheduleMCPOutcome } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { AgentTriggerEnqueueOptions, AgentTriggerEnvelope } from '../agents/triggers';
 import type { SlotClaimResult } from './capacity';
@@ -170,6 +171,7 @@ export interface ScheduleFileRef {
 }
 
 export interface ScheduleEngineDeps {
+  preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods;
   /** Resolves interface.schedules limits, per-principal when a user is given. */
   getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
@@ -292,6 +294,7 @@ export interface JobState {
 }
 
 export interface FireResult {
+  mcp?: ScheduleMCPOutcome[];
   fired: boolean;
   conversationId?: string;
   skipped?:
@@ -312,3 +315,8 @@ export interface FireResult {
 }
 
 export type FireableSchedule = ISchedule;
+
+export type ScheduleMCPPreflight = (
+  agentId: string,
+  user: ScheduleUserContext,
+) => Promise<ScheduleMCPOutcome[]>;

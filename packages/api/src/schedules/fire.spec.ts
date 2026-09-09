@@ -5,6 +5,7 @@ import { getAgentTriggerIdempotencyKey } from '../agents/triggers/envelope';
 import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { buildFireClientRequestId, fireSchedule } from './fire';
 import { withCapacitySlot } from './capacity';
+import { ScheduleMCPError } from './mcp';
 
 const OWNER: ScheduleUserContext = { id: 'user-1', tenantId: 't1', role: 'USER' };
 const LIMITS: ScheduleLimits = {
@@ -175,6 +176,7 @@ function makeDeps(
     getLimits: async () => LIMITS,
     getUserContext: async () => OWNER,
     isOutOfBalance: async () => false,
+    preflightMCP: jest.fn().mockResolvedValue([]),
     agentAccess: async () => 'ok',
     hasScheduleAccess: async () => true,
     resolveFiles: async () => [],
@@ -817,4 +819,20 @@ describe('fireSchedule', () => {
     expect(calls.releaseLease).toBe(1);
     expect(calls.advance).toBe(0);
   });
+});
+
+it('settles an unavailable MCP occurrence without dispatching a generation', async () => {
+  const { methods } = makeMethods();
+  const failure = new ScheduleMCPError([{ server: 'Notion', status: 'mcp_reauth_required' }]);
+  const deps = makeDeps(methods, {
+    preflightMCP: async () => {
+      throw failure;
+    },
+  });
+  const result = await fireSchedule(deps, makeSchedule(), LIMITS, new Date('2026-09-09T12:00:00Z'));
+  expect(result).toMatchObject({ fired: false, mcp: failure.outcomes });
+  expect(deps.enqueueTrigger).not.toHaveBeenCalled();
+  expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+    expect.objectContaining({ error: failure.message, status: 'error', clearConversationId: true }),
+  );
 });

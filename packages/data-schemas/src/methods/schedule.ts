@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getScheduleMCPDisabledReason } from 'librechat-data-provider';
 import type { ScheduleRunStatus, ScheduleDisabledReason } from 'librechat-data-provider';
 import type { Model, Types, AnyBulkWriteOperation } from 'mongoose';
 import type {
@@ -279,7 +280,7 @@ export type ScheduleMethods = {
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
-    details: { conversationId: string; droppedFileIds?: string[] },
+    details: { conversationId: string; droppedFileIds?: string[]; mcp?: IScheduleRun['mcp'] },
   ) => Promise<void>;
   countActiveRuns: () => Promise<number>;
   deleteScheduleRun: (
@@ -1254,17 +1255,22 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // reconciler's replay still disables. Reads current state after the count.
     if (isFailure) {
       const schedule = await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>();
-      if (schedule?.enabled && schedule.failureCount >= params.autoDisableAfterFailures) {
+      const mcpReason = getScheduleMCPDisabledReason(params.error);
+      const threshold = mcpReason ? 1 : params.autoDisableAfterFailures;
+      if (schedule?.enabled && schedule.failureCount >= threshold) {
         // Carry the COUNT this decision was made on, not just the revision. The read
         // above and this write are separate statements, and a concurrent success resets
         // the failure streak to zero — a revision-only fence would still let this stale
         // decision disable a schedule whose streak had just been cleared.
         await disableSchedule(
           params.scheduleId,
-          'too_many_failures',
+          mcpReason ?? 'too_many_failures',
           undefined,
           params.expectConfigRevision,
-          { failureCount: { $gte: params.autoDisableAfterFailures } },
+          {
+            failureCount: { $gte: threshold },
+            ...(mcpReason ? { countersAsOf: params.scheduledFor } : {}),
+          },
         );
       }
     }
@@ -1579,13 +1585,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function setRunFireDetails(
     scheduleId: string,
     scheduledFor: Date,
-    details: { conversationId: string; droppedFileIds?: string[] },
+    details: { conversationId: string; droppedFileIds?: string[]; mcp?: IScheduleRun['mcp'] },
   ): Promise<void> {
     await ScheduleRun().updateOne(
       { scheduleId, scheduledFor },
       {
         $set: {
           conversationId: details.conversationId,
+          ...(details.mcp ? { mcp: details.mcp } : {}),
           ...(details.droppedFileIds?.length ? { droppedFileIds: details.droppedFileIds } : {}),
         },
       },

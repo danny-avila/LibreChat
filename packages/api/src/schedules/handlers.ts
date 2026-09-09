@@ -15,6 +15,7 @@ import type {
   ScheduleLimits,
   FireResult,
 } from './types';
+import type { ScheduleMCPPreflight } from './types';
 import type { ServerRequest } from '~/types';
 import {
   isValidCronExpression,
@@ -23,8 +24,10 @@ import {
   isValidTimezone,
 } from './cadence';
 import { resolveScheduleProjectId } from './types';
+import { ScheduleMCPError } from './mcp';
 
 export interface SchedulesHandlersDeps {
+  preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods;
   getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
   /** Agent existence + VIEW access for the requesting user. */
@@ -360,6 +363,24 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     return false;
   }
 
+  async function validateMCP(agentId: string, req: ServerRequest, res: Response): Promise<boolean> {
+    try {
+      await deps.preflightMCP(agentId, requestUser(req));
+      return true;
+    } catch (error) {
+      if (error instanceof ScheduleMCPError) {
+        res.status(error.code === 'mcp_unavailable' ? 503 : 400).json({
+          code: error.code,
+          error: error.message,
+          mcp: error.outcomes,
+        });
+      } else {
+        res.status(503).json({ code: 'mcp_unavailable', error: 'MCP preflight unavailable' });
+      }
+      return false;
+    }
+  }
+
   async function validatePayload(
     req: ServerRequest,
     res: Response,
@@ -582,6 +603,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
+    if (!(await validateMCP(parsed.data.agent_id, req, res))) return;
     // Digested from the CLIENT's payload, never from the policy-resolved destination:
     // the digest records one create INTENT, and today's policy is not part of that
     // intent. Resolving first made an operator's pin change (or a deleted project)
@@ -908,6 +930,11 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Agent not found or not accessible' });
       return;
     }
+    if (
+      (enabled || parsed.data.agent_id != null) &&
+      !(await validateMCP(parsed.data.agent_id ?? existing.agent_id, req, res))
+    )
+      return;
     // The destination is re-resolved on every edit that leaves the schedule ENABLED,
     // against the stored id when this PATCH does not touch the field — the same shape
     // as the stored-agent and effective-cadence rechecks above, and for the same
@@ -1095,6 +1122,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
             ? 'Too many messages. Try running this schedule again shortly.'
             : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`),
         skipped: result.skipped,
+        mcp: result.mcp,
       });
       return;
     }

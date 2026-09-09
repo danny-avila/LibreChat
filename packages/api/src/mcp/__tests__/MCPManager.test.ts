@@ -5693,6 +5693,48 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
     });
 
+    it('isolates an unattended probe from a live user connection', async () => {
+      const config: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'user',
+        requiresOAuth: false,
+      };
+      const live = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        refreshToolList: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+        on: jest.fn(),
+        disconnect: jest.fn(),
+        dispose: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MCPConnection;
+      const probe = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        on: jest.fn(),
+      } as unknown as MCPConnection;
+      mockAppConnections({ has: jest.fn().mockResolvedValue(false) });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(config);
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(live)
+        .mockResolvedValueOnce(probe);
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      expect(await manager.getUserConnection({ serverName, user: mockUser })).toBe(live);
+      const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
+        connections: new Map(),
+        pending: new Map(),
+      };
+      expect(
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          ephemeralConnection: true,
+          requestScopedConnections,
+        }),
+      ).toBe(probe);
+      expect(await manager.getUserConnection({ serverName, user: mockUser })).toBe(live);
+      expect(live.disconnect).not.toHaveBeenCalled();
+      expect(requestScopedConnections.connections.get(`${mockUser.id}:${serverName}`)).toBe(probe);
+    });
+
     it('should reuse BODY-scoped connections within a request-scoped connection store', async () => {
       const bodyUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',

@@ -3013,3 +3013,49 @@ describe('erasure sweep rotation and idempotency-key lookup', () => {
     ).rejects.toThrow(/hour/);
   });
 });
+
+describe('scheduled MCP failure policy', () => {
+  it.each(['mcp_reauth_required', 'mcp_configuration_missing', 'mcp_unavailable'])(
+    'records %s and disables immediately only for user action',
+    async (reason) => {
+      const schedule = await methods.createSchedule(scheduleData());
+      const scheduledFor = new Date('2026-09-09T12:00:00Z');
+      await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+      await methods.recordRunOutcome({
+        scheduleId: schedule.id,
+        scheduledFor,
+        status: 'error',
+        error: `${reason}: [{"server":"Notion","status":"${reason}"}]`,
+        autoDisableAfterFailures: 5,
+      });
+      const updated = await getSchedule(schedule.id);
+      expect(updated.failureCount).toBe(1);
+      expect(updated.enabled).toBe(reason === 'mcp_unavailable');
+      expect(updated.disabledReason).toBe(reason === 'mcp_unavailable' ? undefined : reason);
+    },
+  );
+});
+
+it('does not apply a late MCP disable after a newer successful occurrence', async () => {
+  const schedule = await methods.createSchedule(scheduleData());
+  const older = new Date('2026-09-09T12:00:00Z');
+  const newer = new Date('2026-09-09T13:00:00Z');
+  await methods.insertScheduleRun(
+    runData(schedule, { scheduledFor: older, status: 'requires_action' }),
+  );
+  await methods.insertScheduleRun(runData(schedule, { scheduledFor: newer }));
+  await methods.recordRunOutcome({
+    scheduleId: schedule.id,
+    scheduledFor: newer,
+    status: 'success',
+    autoDisableAfterFailures: 5,
+  });
+  await methods.recordRunOutcome({
+    scheduleId: schedule.id,
+    scheduledFor: older,
+    status: 'error',
+    error: 'mcp_reauth_required: [{"server":"Notion","status":"mcp_reauth_required"}]',
+    autoDisableAfterFailures: 5,
+  });
+  expect((await getSchedule(schedule.id)).enabled).toBe(true);
+});

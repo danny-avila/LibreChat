@@ -65,6 +65,20 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
       type: String,
       maxlength: 2048,
     },
+    mcp: {
+      type: [
+        {
+          _id: false,
+          server: { type: String, required: true },
+          status: {
+            type: String,
+            required: true,
+            enum: ['ready', 'mcp_reauth_required', 'mcp_configuration_missing', 'mcp_unavailable'],
+          },
+        },
+      ],
+      default: undefined,
+    },
     droppedFileIds: {
       type: [String],
       default: undefined,

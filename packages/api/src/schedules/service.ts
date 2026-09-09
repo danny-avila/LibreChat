@@ -16,6 +16,7 @@ import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { AgentCheckpointGeneration } from '../agents/checkpointer';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
+import type { ScheduleMCPPreflight } from './types';
 import {
   resolveScheduleProjectId,
   DEFAULT_SCHEDULE_LIMITS,
@@ -114,6 +115,7 @@ export type ScheduleResumeClaimResult =
  * directly.
  */
 export interface SchedulesServiceDeps {
+  preflightMCP: ScheduleMCPPreflight;
   methods: ScheduleMethods & {
     getRoleByName: (
       role?: string,
@@ -427,6 +429,7 @@ export function createSchedulesService(
   }
 
   const engineDeps: ScheduleEngineDeps = {
+    preflightMCP: deps.preflightMCP,
     methods,
     getLimits,
     // On the BASE deps, not only the engine's per-pass wrapper: fireScheduleNow
