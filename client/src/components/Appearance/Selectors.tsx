@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Dropdown, Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -63,7 +63,7 @@ export const LangSelector = ({
   popoverClassName?: string;
 }) => {
   const localize = useLocalize();
-  const isLanguageLoading = useRecoilValue(store.languageLoading);
+  const isLanguageLoading = useAtomValue(store.languageLoading);
 
   const languageOptions = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
