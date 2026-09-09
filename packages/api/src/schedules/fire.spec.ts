@@ -835,7 +835,12 @@ it('settles an unavailable MCP occurrence without dispatching a generation', asy
   expect(result).toMatchObject({ fired: false, mcp: failure.outcomes });
   expect(deps.enqueueTrigger).not.toHaveBeenCalled();
   expect(methods.recordRunOutcome).toHaveBeenCalledWith(
-    expect.objectContaining({ error: failure.message, status: 'error', clearConversationId: true }),
+    expect.objectContaining({
+      error: failure.message,
+      status: 'error',
+      clearConversationId: true,
+      mcp: failure.outcomes,
+    }),
   );
 });
 

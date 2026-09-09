@@ -603,6 +603,7 @@ export async function fireSchedule(
         scheduledFor,
         status: 'error',
         error: message,
+        ...(failure ? { mcp: failure.outcomes } : {}),
         autoDisableAfterFailures: ownerLimits.autoDisableAfterFailures,
         clearConversationId: true,
       });

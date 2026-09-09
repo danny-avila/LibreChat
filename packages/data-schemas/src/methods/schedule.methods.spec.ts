@@ -523,16 +523,19 @@ describe('recordRunOutcome', () => {
   it('error increments failureCount without disabling below the threshold', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    const mcp = [{ server: 'Notion', status: 'mcp_unavailable' as const }];
     await methods.recordRunOutcome({
       scheduleId: schedule.id,
       scheduledFor,
       status: 'error',
       error: 'provider exploded',
+      mcp,
       autoDisableAfterFailures: 3,
     });
     const run = await getRun(schedule.id, scheduledFor);
     expect(run.status).toBe('error');
     expect(run.error).toBe('provider exploded');
+    expect(run.mcp).toEqual(mcp);
     const updated = await getSchedule(schedule.id);
     expect(updated.failureCount).toBe(1);
     expect(updated.runCount).toBe(0);

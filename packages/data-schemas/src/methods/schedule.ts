@@ -127,6 +127,8 @@ export interface RecordRunOutcomeParams {
    *  recovery replay that reads the row would otherwise project a dead link. */
   clearConversationId?: boolean;
   error?: string;
+  /** Sanitized per-server MCP readiness outcomes for this occurrence. */
+  mcp?: IScheduleRun['mcp'];
   durationMs?: number;
   autoDisableAfterFailures: number;
   /** Consecutive-balance-skip auto-disable threshold; required to settle a run as
@@ -1475,6 +1477,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
               ? { conversationId: params.conversationId }
               : {}),
             ...(params.error ? { error: params.error } : {}),
+            ...(params.mcp ? { mcp: params.mcp } : {}),
             ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
           },
           // SETTLEMENT: a terminal outcome is the generation owner confirming the run
