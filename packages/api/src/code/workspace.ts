@@ -11,8 +11,8 @@ const MAX_LIST_RESULTS = 500;
 export const WORKSPACE_WRITE_MAX_BYTES: number = 1024 * 1024;
 export const WORKSPACE_EDIT_MAX_COUNT: number = 100;
 const MAX_COMMAND_BYTES = 32 * 1024;
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-const MAX_COMMAND_TIMEOUT_MS = 5 * 60_000;
+export const WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS = 30_000;
+export const WORKSPACE_COMMAND_MAX_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_COMMAND_SIGNAL_LENGTH = 32;
@@ -467,7 +467,8 @@ function isValidRequest(request: WorkspaceToolRequest): boolean {
       request.command.trim().length > 0 &&
       !request.command.includes('\0') &&
       (request.cwd == null || isSafePath(request.cwd)) &&
-      (request.timeoutMs == null || isPositiveInteger(request.timeoutMs, MAX_COMMAND_TIMEOUT_MS)) &&
+      (request.timeoutMs == null ||
+        isPositiveInteger(request.timeoutMs, WORKSPACE_COMMAND_MAX_TIMEOUT_MS)) &&
       (request.maxOutputBytes == null ||
         isPositiveInteger(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES))
     );
@@ -658,7 +659,8 @@ function isValidResult(
 function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
   const executionBudgetMs =
     request.operation === 'execute_command'
-      ? (request.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS
+      ? (request.timeoutMs ?? WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS) +
+        WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS
       : WORKSPACE_TOOL_TIMEOUT_MS;
   return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }

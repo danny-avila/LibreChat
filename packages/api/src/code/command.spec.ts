@@ -102,6 +102,34 @@ describe('createAttachedWorkspaceBashTool', () => {
     });
   });
 
+  test('forwards a bounded per-call execution timeout', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+
+    await bashTool.invoke({ command: 'npm test', timeoutMs: 300_000 });
+
+    const request = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    expect(request).toMatchObject({ command: 'npm test', timeoutMs: 300_000 });
+  });
+
+  test.each([0, 300_001, 1.5])('rejects an invalid execution timeout of %p', async (timeoutMs) => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      fetchImpl,
+    });
+
+    await expect(bashTool.invoke({ command: 'npm test', timeoutMs })).rejects.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test('validates and invokes commands through the LangChain tool runtime', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({

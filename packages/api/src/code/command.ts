@@ -9,7 +9,11 @@ import type { AgentGitIdentity } from 'librechat-data-provider';
 import type { LCTool } from '@librechat/agents';
 import type { WorkspaceExecuteCommandResult } from './workspace';
 import type { CodeBridgeFetch } from './bridge';
-import { executeWorkspaceTool } from './workspace';
+import {
+  executeWorkspaceTool,
+  WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS,
+  WORKSPACE_COMMAND_MAX_TIMEOUT_MS,
+} from './workspace';
 
 const DEFAULT_OUTPUT_BYTES = 256 * 1024;
 
@@ -48,6 +52,21 @@ const attachedWorkingDirectorySchema: BoundedWorkingDirectorySchema = {
     'Optional working directory relative to the selected workspace root, such as "packages/api". Absolute paths and parent traversal are rejected.',
 };
 
+/** Numeric bounds are valid JSON Schema, but the SDK's schema type omits them. */
+interface BoundedTimeoutSchema {
+  type: 'integer';
+  minimum: number;
+  maximum: number;
+  description: string;
+}
+
+const attachedTimeoutSchema: BoundedTimeoutSchema = {
+  type: 'integer',
+  minimum: 1,
+  maximum: WORKSPACE_COMMAND_MAX_TIMEOUT_MS,
+  description: `Optional execution timeout in milliseconds, from 1 through ${WORKSPACE_COMMAND_MAX_TIMEOUT_MS} (5 minutes). Defaults to ${WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS} (30 seconds). Waiting for an available worker does not consume this execution budget.`,
+};
+
 /**
  * This definition is shared with agent metadata. LangChain's JSON Schema
  * dereferencer annotates schemas during validation, so each tool receives an
@@ -59,6 +78,7 @@ export const ATTACHED_WORKSPACE_BASH_SCHEMA: NonNullable<LCTool['parameters']> =
     ...bashSchema.properties,
     command: attachedCommandSchema,
     cwd: attachedWorkingDirectorySchema,
+    timeoutMs: attachedTimeoutSchema,
   },
   required: ['command'],
 });
@@ -140,7 +160,13 @@ export function createAttachedWorkspaceBashTool({
 }): DynamicStructuredTool {
   return tool(
     async (
-      rawInput: { command: string; args?: string[]; cwd?: string; intent?: string },
+      rawInput: {
+        command: string;
+        args?: string[];
+        cwd?: string;
+        timeoutMs?: number;
+        intent?: string;
+      },
       config,
     ): Promise<[string, Record<string, never>]> => {
       const command = commandWithGitIdentity(
@@ -156,6 +182,7 @@ export function createAttachedWorkspaceBashTool({
           workspaceId,
           command,
           ...(rawInput.cwd ? { cwd: rawInput.cwd } : {}),
+          ...(rawInput.timeoutMs != null ? { timeoutMs: rawInput.timeoutMs } : {}),
           maxOutputBytes: DEFAULT_OUTPUT_BYTES,
         },
         signal: config?.signal,

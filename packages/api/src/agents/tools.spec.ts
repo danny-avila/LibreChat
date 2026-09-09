@@ -520,6 +520,7 @@ describe('registerCodeExecutionTools', () => {
           command: { type: 'string' },
           args: { type: 'array' },
           cwd: { type: 'string', maxLength: 4096 },
+          timeoutMs: { type: 'integer', minimum: 1, maximum: 300000 },
         },
         required: ['command'],
       });
