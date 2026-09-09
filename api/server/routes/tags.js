@@ -4,6 +4,7 @@ const {
   isValidObjectIdString,
   ConversationTagUpdateError,
   ConversationTagNotFoundError,
+  ConversationNotFoundError,
 } = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -69,6 +70,9 @@ router.post('/', async (req, res) => {
     }
     res.status(200).json(tag);
   } catch (error) {
+    if (error instanceof ConversationNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
     logger.error('Error creating conversation tag:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -159,7 +163,10 @@ router.put('/convo/:conversationId', async (req, res) => {
     );
     res.status(200).json(conversationTags);
   } catch (error) {
-    if (error instanceof ConversationTagNotFoundError) {
+    if (
+      error instanceof ConversationTagNotFoundError ||
+      error instanceof ConversationNotFoundError
+    ) {
       return res.status(404).json({ error: error.message });
     }
     logger.error('Error updating conversation tags', error);

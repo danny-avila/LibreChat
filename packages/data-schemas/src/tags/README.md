@@ -8,6 +8,8 @@ Imports carry portable names and resolve them within the importing user's tenant
 
 If an import fails after creating catalog entries, those entries remain as empty bookmarks. Import compensation removes its conversations and messages but does not delete shared catalog identities: another request may already be using them. Retrying the import reuses the entries. Unneeded bookmarks can be deleted explicitly.
 
+Create-and-attach requests return 404 when the target conversation is missing or no longer accessible. The catalog entry may remain even though attachment failed; retrying reuses its identity. Failed membership updates do not roll back shared catalog entries.
+
 ## Controlled cutover
 
 Do not run old and new application writers concurrently. This is a coordinated upgrade, not a rolling migration with mixed-version writes.
@@ -20,7 +22,7 @@ Do not run old and new application writers concurrently. This is a coordinated u
    npm run migrate:conversation-tags -- --dry-run
    ```
 
-4. Resolve any reported malformed owner/tenant/name, duplicate catalog identity, incomplete legacy rename, or invalid existing ID references before proceeding. Validation runs before any writes; the migration does not guess how to repair ambiguous data.
+4. Resolve any reported malformed owner/tenant/name, missing or invalid catalog position, duplicate catalog identity, incomplete legacy rename, or invalid existing ID references before proceeding. Every catalog entry needs a persisted non-negative integer position. Validation runs before any writes; the migration does not guess how to repair ambiguous data or assign missing ordering metadata.
 5. Apply the migration while writers remain stopped:
 
    ```sh

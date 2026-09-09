@@ -75,8 +75,8 @@ export async function migrateConversationTags(
     ) {
       throw new Error('Tag migration requires valid catalog names and completed legacy renames');
     }
-    const position = tag.position === undefined ? 0 : tag.position;
-    if (!Number.isSafeInteger(position) || position < 0) {
+    const position = tag.position;
+    if (position === undefined || !Number.isSafeInteger(position) || position < 0) {
       throw new Error('Tag migration found an invalid catalog position');
     }
     const owner = scopeKey(tag, '');

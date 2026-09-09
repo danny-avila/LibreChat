@@ -168,3 +168,108 @@ it.each(['missing', 'deleted', 'foreign'])(
     ).toMatchObject({ tagIds: [String(retained._id)] });
   },
 );
+
+it.each(['missing', 'deleted', 'foreign'])(
+  'returns404 for a %s create-and-attach target and retains its catalog identity for retry',
+  async (kind) => {
+    const Conversation = mongoose.models.Conversation;
+    if (kind !== 'missing') {
+      await Conversation.create({
+        user: kind === 'foreign' ? 'other-owner' : 'owner',
+        conversationId: 'target',
+        endpoint: 'openAI',
+        tagIds: [],
+      });
+    }
+    if (kind === 'deleted') {
+      const original = Conversation.collection.findOneAndUpdate.bind(Conversation.collection);
+      jest
+        .spyOn(Conversation.collection, 'findOneAndUpdate')
+        .mockImplementationOnce(async (...args) => {
+          await Conversation.deleteOne({ user: 'owner', conversationId: 'target' });
+          return original(...args);
+        });
+    }
+    const response = await request(app)
+      .post('/tags')
+      .send({ tag: 'retained', addToConversation: true, conversationId: 'target' })
+      .expect(404);
+    expect(response.body).toEqual({ error: 'Conversation not found' });
+    const retained = await mongoose.models.ConversationTag.findOne({ user: 'owner' }).lean();
+    expect(retained).toMatchObject({ tag: 'retained' });
+    expect(await methods.getConversationTags('owner')).toEqual([
+      expect.objectContaining({ _id: retained._id, count: 0 }),
+    ]);
+    if (kind === 'foreign') {
+      expect(await Conversation.findOne({ conversationId: 'target' }).lean()).toMatchObject({
+        user: 'other-owner',
+        tagIds: [],
+      });
+    }
+    await Conversation.create({
+      user: 'owner',
+      conversationId: 'retry-target',
+      endpoint: 'openAI',
+      tagIds: [],
+    });
+    const retry = await request(app)
+      .post('/tags')
+      .send({ tag: 'retained', addToConversation: true, conversationId: 'retry-target' })
+      .expect(200);
+    expect(retry.body).toMatchObject({ _id: String(retained._id), count: 1 });
+    expect(await mongoose.models.ConversationTag.countDocuments({ user: 'owner' })).toBe(1);
+  },
+);
+
+it.each(['missing', 'deleted', 'foreign'])(
+  'returns404 when a %s conversation cannot receive a membership update',
+  async (kind) => {
+    const Conversation = mongoose.models.Conversation;
+    const retained = await methods.createConversationTag('owner', { tag: 'retained' });
+    if (kind !== 'missing') {
+      await Conversation.create({
+        user: kind === 'foreign' ? 'other-owner' : 'owner',
+        conversationId: 'target',
+        endpoint: 'openAI',
+        tagIds: [],
+      });
+    }
+    if (kind === 'deleted') {
+      const original = Conversation.collection.findOneAndUpdate.bind(Conversation.collection);
+      jest
+        .spyOn(Conversation.collection, 'findOneAndUpdate')
+        .mockImplementationOnce(async (...args) => {
+          await Conversation.deleteOne({ user: 'owner', conversationId: 'target' });
+          return original(...args);
+        });
+    }
+    const response = await request(app)
+      .put('/tags/convo/target')
+      .send({ tagIds: [String(retained._id)] })
+      .expect(404);
+    expect(response.body).toEqual({ error: 'Conversation not found' });
+    expect(await mongoose.models.ConversationTag.findById(retained._id).lean()).not.toBeNull();
+    if (kind === 'foreign') {
+      expect(await Conversation.findOne({ conversationId: 'target' }).lean()).toMatchObject({
+        user: 'other-owner',
+        tagIds: [],
+      });
+    }
+  },
+);
+
+it('preserves server errors when the attachment database write fails', async () => {
+  await mongoose.models.Conversation.create({
+    user: 'owner',
+    conversationId: 'target',
+    endpoint: 'openAI',
+  });
+  jest
+    .spyOn(mongoose.models.Conversation.collection, 'findOneAndUpdate')
+    .mockRejectedValueOnce(new Error('DB unavailable'));
+  const response = await request(app)
+    .post('/tags')
+    .send({ tag: 'retained', addToConversation: true, conversationId: 'target' })
+    .expect(500);
+  expect(response.body).toEqual({ error: 'Internal server error' });
+});

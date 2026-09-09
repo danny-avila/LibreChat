@@ -11,3 +11,10 @@ export class ConversationTagNotFoundError extends Error {
     this.name = 'ConversationTagNotFoundError';
   }
 }
+
+export class ConversationNotFoundError extends Error {
+  constructor() {
+    super('Conversation not found');
+    this.name = 'ConversationNotFoundError';
+  }
+}

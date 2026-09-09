@@ -9,7 +9,7 @@ import {
   resolveTagNames,
   tagScope,
 } from '~/tags/membership';
-import { ConversationTagUpdateError } from '~/tags/errors';
+import { ConversationTagUpdateError, ConversationNotFoundError } from '~/tags/errors';
 import { getTenantId } from '~/config/tenantContext';
 
 interface TagInput {
@@ -120,7 +120,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
         { $addToSet: { tagIds: id } },
         { new: true, lean: true },
       );
-      if (!conversation) throw new Error('Conversation not found');
+      if (!conversation) throw new ConversationNotFoundError();
       const [projected] = await cleanConversationTagMembership(mongoose, [conversation]);
       if (!projected.tagIds?.includes(id)) return null;
     }
@@ -222,7 +222,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
     byId = false,
   ): Promise<string[]> {
     const scope = { ...tagScope(user, tenantId), conversationId };
-    if (!(await Conversation().exists(scope))) throw new Error('Conversation not found');
+    if (!(await Conversation().exists(scope))) throw new ConversationNotFoundError();
     const tagIds = byId
       ? await ownedTagIds(mongoose, user, values, tenantId)
       : await resolveTagNames(mongoose, user, values, tenantId);
@@ -231,7 +231,7 @@ export function createConversationTagMethods(mongoose: typeof import('mongoose')
       { $set: { tagIds } },
       { new: true, lean: true },
     );
-    if (!conversation) throw new Error('Conversation not found');
+    if (!conversation) throw new ConversationNotFoundError();
     const [projected] = await cleanConversationTagMembership(mongoose, [conversation]);
     return (byId ? projected.tagIds : projected.tags) ?? [];
   }

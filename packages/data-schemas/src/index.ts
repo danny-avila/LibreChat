@@ -5,7 +5,11 @@ export * from './crypto';
 export * from './schema';
 export * from './utils';
 export { createModels } from './models';
-export { ConversationTagUpdateError, ConversationTagNotFoundError } from './tags/errors';
+export {
+  ConversationTagUpdateError,
+  ConversationTagNotFoundError,
+  ConversationNotFoundError,
+} from './tags/errors';
 export {
   createMethods,
   CLIENT_MESSAGE_SELECT,

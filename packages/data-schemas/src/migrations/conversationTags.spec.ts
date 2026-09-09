@@ -270,15 +270,8 @@ it.each([-1, 0.5, null, '1'])(
   },
 );
 
-it('uses the schema default for absent legacy positions and refuses exhausted position ranges', async () => {
+it('refuses exhausted position ranges before creating catalog entries', async () => {
   const catalog = db().collection('conversationtags');
-  await catalog.insertOne({ user: 'owner', tag: 'existing' });
-  await db()
-    .collection('conversations')
-    .insertOne({ user: 'owner', tags: ['new'] });
-  await migrateConversationTags(mongoose.connection, { dryRun: false });
-  expect((await catalog.findOne({ user: 'owner', tag: 'new' }))?.position).toBe(1);
-  expect(await catalog.findOne({ user: 'owner', tag: 'existing' })).not.toHaveProperty('position');
   await catalog.insertOne({ user: 'other', tag: 'existing', position: Number.MAX_SAFE_INTEGER });
   await db()
     .collection('conversations')
@@ -387,4 +380,34 @@ it('retries a partly committed second catalog batch before writing any membershi
     rows.map((row) => String(row._id)),
   );
   expect(await marker()).not.toBeNull();
+});
+
+it.each([true, false])(
+  'rejects missing positions before any writes (dry run: %s)',
+  async (dryRun) => {
+    const catalog = db().collection('conversationtags');
+    const conversations = db().collection('conversations');
+    await catalog.insertOne({ user: 'owner', tag: 'missing' });
+    await conversations.insertOne({ user: 'owner', tags: ['missing', 'new'] });
+    const originalCatalog = await catalog.find({}).toArray();
+    const originalConversations = await conversations.find({}).toArray();
+    await expect(migrateConversationTags(mongoose.connection, { dryRun })).rejects.toThrow(
+      'invalid catalog position',
+    );
+    expect(await catalog.find({}).toArray()).toEqual(originalCatalog);
+    expect(await conversations.find({}).toArray()).toEqual(originalConversations);
+    expect(await marker()).toBeNull();
+  },
+);
+
+it('preserves a valid zero position and assigns the next missing name position one', async () => {
+  const catalog = db().collection('conversationtags');
+  await catalog.insertOne({ user: 'owner', tag: 'existing', position: 0 });
+  const existing = await catalog.findOne({ user: 'owner', tag: 'existing' });
+  await db()
+    .collection('conversations')
+    .insertOne({ user: 'owner', tags: ['existing', 'new'] });
+  await migrateConversationTags(mongoose.connection, { dryRun: false });
+  expect(await catalog.findOne({ _id: existing!._id })).toEqual(existing);
+  expect((await catalog.findOne({ user: 'owner', tag: 'new' }))?.position).toBe(1);
 });
