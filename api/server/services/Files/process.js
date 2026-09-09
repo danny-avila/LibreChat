@@ -671,7 +671,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
   const {
     id,
-    bytes,
+    bytes: providerBytes,
     filename,
     filepath: _filepath,
     storageKey: _storageKey,
@@ -685,6 +685,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     file_id,
     openai,
   });
+  let bytes = providerBytes;
 
   if (isAssistantUpload && !metadata.message_file && !metadata.tool_resource) {
     /** Authorized at the route before any bytes are sent — see
@@ -703,6 +704,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   }
 
   let filepath = isAssistantUpload ? `${openai.baseURL}/files/${id}` : _filepath;
+  let secondaryStoredFile;
   let storageMetadata = getStorageMetadata({
     filepath,
     source,
@@ -716,6 +718,8 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       metadata: { file_id: v4() },
       returnFile: true,
     });
+    secondaryStoredFile = result;
+    bytes = providerBytes + (result.bytes ?? 0);
     filepath = result.filepath;
     storageMetadata = getStorageMetadata({
       filepath,
@@ -725,6 +729,12 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     });
   }
 
+  let rollbackStoredFile = null;
+  if (secondaryStoredFile) {
+    rollbackStoredFile = () => deleteStoredBlob(req, secondaryStoredFile);
+  } else if (!isAssistantUpload) {
+    rollbackStoredFile = () => deleteStoredBlob(req, { source, filepath, ...storageMetadata });
+  }
   const result = await persistFile(
     req,
     {
@@ -745,13 +755,10 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       width,
       tenantId: req.user.tenantId,
     },
-    /* An assistant upload's row points at the provider copy, or — for images — at a
-     * blob `processImageFile` already persisted under its own quota-checked row.
-     * Neither is exclusively owned by this write, so there is nothing here to undo;
-     * detaching the provider-side file is tracked separately. */
-    isAssistantUpload
-      ? null
-      : () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
+    /* The converted image is a distinct app-storage object. The provider-side
+     * cleanup is completed by the final enforcement PR, while this scoped write
+     * owns and removes the converted copy when admission rejects it. */
+    rollbackStoredFile,
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -819,6 +826,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
+  const storageScope = resolveStorageScope(req);
 
   let messageAttachment = isMessageFileUpload(metadata.message_file);
 
@@ -1019,6 +1027,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         file_id,
         basePath,
         entity_id,
+        tenantId: storageScope.tenantId,
       });
       const { bytes, filename, filepath, embedded, height, width } = storageResult;
 
@@ -1046,7 +1055,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         ...retentionExpiry,
       };
 
-      if (!messageAttachment && effectiveToolResource) {
+      const addedAgentResource = !messageAttachment && effectiveToolResource;
+      if (addedAgentResource) {
         await db.addAgentResourceFile({
           file_id,
           agent_id,
@@ -1054,9 +1064,14 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           updatingUserId: req?.user?.id,
         });
       }
-      /* `FileSources.text` rows carry the extracted text inline; the temporary upload
-       * is cleaned up by the caller's `finally`, so there is nothing here to undo. */
-      const result = await persistFile(req, fileInfo, null);
+      const result = await persistFile(req, fileInfo, async () => {
+        await Promise.all([
+          deleteStoredBlob(req, { source, filepath }),
+          addedAgentResource
+            ? db.removeAgentResourceFiles({ agent_id, files: [{ file_id }] })
+            : Promise.resolve(),
+        ]);
+      });
       sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
@@ -1210,6 +1225,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       file_id,
       basePath,
       entity_id,
+      tenantId: storageScope.tenantId,
     });
 
     // SECOND: Upload to Vector DB
@@ -1245,6 +1261,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       storageRegion: converted.storageRegion,
       height: converted.height,
       width: converted.width,
+      source: converted.source,
     };
   } else {
     // Standard single storage for non-RAG files
@@ -1256,6 +1273,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       file_id,
       basePath,
       entity_id,
+      tenantId: storageScope.tenantId,
     });
   }
 
@@ -1344,9 +1362,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   }
 
   let filepath = _filepath;
+  const storedSource = storageResult.source ?? source;
   let storageMetadata = getStorageMetadata({
     filepath,
-    source,
+    source: storedSource,
     storageKey: _storageKey,
     storageRegion: _storageRegion,
   });
@@ -1382,7 +1401,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       },
       type: storedType,
       embedded,
-      source,
+      source: storedSource,
       height,
       width,
       tenantId: req.user.tenantId,
@@ -1391,12 +1410,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  /* An image row points at a blob `processImageFile` already persisted under its own
-   * quota-checked row, so only the non-image storage write is ours to undo. */
-  const result = await persistFile(
-    req,
-    fileInfo,
-    isImage ? null : () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
+  const result = await persistFile(req, fileInfo, () =>
+    deleteStoredBlob(req, { source: storedSource, filepath, ...storageMetadata }),
   );
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
