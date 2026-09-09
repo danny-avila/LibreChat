@@ -214,6 +214,42 @@ describe('HoverButtons edit affordance', () => {
     expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
+
+  /** A compaction turn parents onto the leaf it summarized, so both rerun shapes
+   *  would replay an assistant message in the user slot and the request fails. */
+  it.each([
+    ['a finished compaction', { summarizing: false }],
+    ['a failed compaction', { failed: true }],
+  ])('withholds rerun controls on %s', (_label, state) => {
+    const compactionMessage = {
+      ...userMessage,
+      messageId: 'compaction-1',
+      parentMessageId: 'assistant-1',
+      isCreatedByUser: false,
+      text: '',
+      finish_reason: 'length',
+      content: [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'Earlier turns, compacted.' }],
+          ...state,
+        },
+      ],
+    } as TMessage;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: compactionMessage,
+      isLast: true,
+      latestMessageId: compactionMessage.messageId,
+    });
+
+    /** The row itself is intact — only the rerun shapes are withheld. */
+    expect(screen.getByTestId('copy-response-button')).not.toBeNull();
+    expect(container.querySelector(`#edit-${compactionMessage.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
 });
 
 describe('HoverButtons feedback affordance', () => {

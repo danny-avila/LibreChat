@@ -10,6 +10,10 @@ type TUseGenerations = {
   finish_reason?: string;
   latestMessageId?: string;
   isCreatedByUser?: boolean;
+  /** The message is a compaction turn (summary-only content). It hangs off the
+   *  leaf it summarized, not off a user message, so there is no user turn for a
+   *  regenerate or an edit-and-rerun to replay. */
+  isCompactionTurn?: boolean;
 };
 
 export default function useGenerationsByLatest({
@@ -22,6 +26,7 @@ export default function useGenerationsByLatest({
   finish_reason = '',
   latestMessageId,
   isCreatedByUser = false,
+  isCompactionTurn = false,
 }: TUseGenerations) {
   const isEditableEndpoint = Boolean(
     [
@@ -46,6 +51,7 @@ export default function useGenerationsByLatest({
     !isEditing &&
     !isSubmitting &&
     !searchResult &&
+    !isCompactionTurn &&
     isEditableEndpoint;
 
   const branchingSupported = Boolean(
@@ -60,8 +66,17 @@ export default function useGenerationsByLatest({
     ].find((e) => e === endpoint),
   );
 
+  /** A compaction turn is excluded from all three: its parent is the summarized
+   *  leaf rather than a user message, so a regenerate, a continue or an
+   *  edit-and-rerun would replay an assistant message in the user slot. The
+   *  context indicator's Compact action is the only way to redo one. */
   const regenerateEnabled =
-    !isCreatedByUser && !searchResult && !isEditing && !isSubmitting && branchingSupported;
+    !isCreatedByUser &&
+    !searchResult &&
+    !isEditing &&
+    !isSubmitting &&
+    !isCompactionTurn &&
+    branchingSupported;
 
   const isActiveStreamingMessage =
     isSubmitting && (latestMessageId == null || messageId === latestMessageId);
@@ -70,6 +85,7 @@ export default function useGenerationsByLatest({
     isActiveStreamingMessage ||
     error ||
     searchResult ||
+    isCompactionTurn ||
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 

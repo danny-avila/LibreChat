@@ -102,7 +102,11 @@ const EditMessage = ({
   const rerunResponse = () => {
     const parentMessage = getMessages()?.find((msg) => msg.messageId === parentMessageId);
 
-    if (!parentMessage) {
+    /** A rerun replays the parent user turn. A compaction turn hangs off the leaf
+     *  it summarized instead, so there is no user turn to replay and the hover
+     *  Edit is hidden on it; refuse here too rather than submit an assistant
+     *  message in the user slot. */
+    if (!parentMessage || parentMessage.isCreatedByUser !== true) {
       return;
     }
     const submitted = ask(

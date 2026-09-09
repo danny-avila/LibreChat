@@ -1,7 +1,7 @@
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
-import { buildTree, isCompactedLeaf } from './messages';
+import { buildTree, isCompactedLeaf, isCompactionTurn } from './messages';
 import { ContentTypes } from './types/runs';
 
 const msg = (messageId: string, parentMessageId: string, over: Partial<TMessage> = {}): TMessage =>
@@ -218,5 +218,32 @@ describe('isCompactedLeaf', () => {
     ['an empty summary', [summary({ content: [] })]],
   ])('is false for %s', (_label, content) => {
     expect(isCompactedLeaf({ content } as TMessage)).toBe(false);
+  });
+});
+
+describe('isCompactionTurn', () => {
+  const summary = (overrides: Record<string, unknown> = {}) => ({
+    type: ContentTypes.SUMMARY,
+    content: [{ type: ContentTypes.TEXT, text: 'checkpoint' }],
+    ...overrides,
+  });
+
+  /** The states `isCompactedLeaf` rejects are still compaction turns: they parent
+   *  onto the summarized leaf, so no rerun shape may be offered on them. */
+  it.each([
+    ['a finished summary', [summary()]],
+    ['a summary still streaming', [summary({ summarizing: true })]],
+    ['a failed summary', [summary({ failed: true })]],
+    ['an empty summary', [summary({ content: [] })]],
+  ])('is true for %s', (_label, content) => {
+    expect(isCompactionTurn({ content } as TMessage)).toBe(true);
+  });
+
+  it.each([
+    ['no content', undefined],
+    ['empty content', []],
+    ['a summary next to text', [summary(), { type: ContentTypes.TEXT, text: 'reply' }]],
+  ])('is false for %s', (_label, content) => {
+    expect(isCompactionTurn({ content } as TMessage)).toBe(false);
   });
 });

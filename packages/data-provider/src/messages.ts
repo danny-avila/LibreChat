@@ -157,21 +157,34 @@ export function buildTree({
 }
 
 /**
+ * True when a message IS a compaction turn: every content part is a summary,
+ * whatever state each one is in. Such a turn has no user message of its own —
+ * its parent is the leaf it summarized up to — so the rerun shapes that replay
+ * a user turn (edit-and-rerun, regenerate) have nothing to replay and must not
+ * be offered on it. Whether that turn finished is the narrower
+ * {@link isCompactedLeaf}.
+ */
+export function isCompactionTurn(message?: Pick<TMessage, 'content'> | null): boolean {
+  const content = message?.content;
+  if (!Array.isArray(content) || content.length === 0) {
+    return false;
+  }
+  return content.every((part) => part?.type === ContentTypes.SUMMARY);
+}
+
+/**
  * True when a message is a finished manual compaction: every content part is a
  * summary and at least one of them carries text. A summary still streaming or
  * one that failed does not count, so an interrupted compaction can be retried.
  */
 export function isCompactedLeaf(message?: Pick<TMessage, 'content'> | null): boolean {
   const content = message?.content;
-  if (!Array.isArray(content) || content.length === 0) {
+  if (content == null || !isCompactionTurn(message)) {
     return false;
   }
   let usable = false;
   for (const part of content) {
-    if (part?.type !== ContentTypes.SUMMARY) {
-      return false;
-    }
-    if (part.summarizing === true || part.failed === true) {
+    if (part?.type !== ContentTypes.SUMMARY || part.summarizing === true || part.failed === true) {
       continue;
     }
     const hasText = (part.content ?? []).some(
