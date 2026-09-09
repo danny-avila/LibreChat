@@ -16,13 +16,14 @@ it('opens the exact descendant that owns an immediate MCP failure', async () => 
         },
       ]}
       fallbackAgentId="root-agent"
+      agentNames={{ 'research-agent': 'Research Agent' }}
       onOpenAgent={onOpenAgent}
     />,
   );
 
   await userEvent.click(
     screen.getByRole('button', {
-      name: 'Notion, research-agent: com_ui_schedule_mcp_open_agent',
+      name: 'Notion, Research Agent: com_ui_schedule_mcp_open_agent',
     }),
   );
   expect(onOpenAgent).toHaveBeenCalledWith('research-agent');

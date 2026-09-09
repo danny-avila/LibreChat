@@ -535,9 +535,10 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const authoritativeNames = Array.from(
       new Set([...Object.keys(accessibleServers), ...configNames]),
     );
+    const authoritativeCandidates = Array.from(new Set([...authoritativeNames, ...serverHints]));
     const authoritativeAliases = buildServerNameAliases(authoritativeNames);
     ({ selected, serverAgentIds, toolAgentIds } = collectSelected(
-      authoritativeNames,
+      authoritativeCandidates,
       authoritativeAliases,
       new Set([...Object.keys(accessibleServers), ...configNames]),
     ));

@@ -77,6 +77,13 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
+  const agentNames = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(agentsMap ?? {}).map(([id, agent]) => [id, agent?.name || id]),
+      ),
+    [agentsMap],
+  );
   // Enable/disable, run-now, edit and delete all hit CREATE-gated routes, so a
   // USE-only viewer sees a read-only card instead of controls that 403.
   const canWrite = useHasAccess({
@@ -291,6 +298,7 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
         <ScheduleMCPRecovery
           outcomes={mcpOutcomes}
           fallbackAgentId={schedule.agent_id}
+          agentNames={agentNames}
           onOpenAgent={(ownerId) => navigate(`/c/new?agent_id=${encodeURIComponent(ownerId)}`)}
         />
       </div>

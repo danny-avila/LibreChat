@@ -236,6 +236,10 @@ export default function ScheduleDialog({
     () => (agents ?? []).map((agent) => ({ label: agent.name || agent.id, value: agent.id })),
     [agents],
   );
+  const agentNames = useMemo(
+    () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name || agent.id])),
+    [agents],
+  );
 
   /** Reads the SAME cached list query the panel already holds, so the dialog needs no
    *  request of its own — and so the form mirrors exactly the policy the write handler
@@ -588,6 +592,7 @@ export default function ScheduleDialog({
             <ScheduleMCPRecovery
               outcomes={mcpRecoveryOutcomes}
               fallbackAgentId={schedule?.agent_id ?? selectedAgentId}
+              agentNames={agentNames}
               onOpenAgent={(ownerId) => {
                 onOpenChange(false);
                 navigate(`/c/new?agent_id=${encodeURIComponent(ownerId)}`);

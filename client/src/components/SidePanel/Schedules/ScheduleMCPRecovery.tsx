@@ -5,10 +5,12 @@ import { useLocalize } from '~/hooks';
 export default function ScheduleMCPRecovery({
   outcomes,
   fallbackAgentId,
+  agentNames,
   onOpenAgent,
 }: {
   outcomes: ScheduleMCPOutcome[];
   fallbackAgentId: string;
+  agentNames?: Record<string, string>;
   onOpenAgent: (agentId: string) => void;
 }) {
   const localize = useLocalize();
@@ -19,7 +21,7 @@ export default function ScheduleMCPRecovery({
     <div className="space-y-1" role="alert">
       {failures.map((item, index) => {
         const ownerId = item.agentId ?? fallbackAgentId;
-        const ownerLabel = ownerId;
+        const ownerLabel = agentNames?.[ownerId] ?? ownerId;
         return (
           <div
             key={`${item.server}:${ownerId}:${item.status}:${index}`}

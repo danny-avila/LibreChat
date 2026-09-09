@@ -926,6 +926,20 @@ it('prefers an exact accessible registry name over a colliding config alias', as
   expect(deps.ensureConfigServers).toHaveBeenCalledWith({}, expect.any(Function));
 });
 
+it('retains a stored server hint when the registry cannot return that identity', async () => {
+  const { check, deps } = setup(['search_mcp_private']);
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) => graphNode(id, { tools: ['search_mcp_private'], mcpServerNames: ['private'] })),
+  );
+  deps.getServerConfigs = jest.fn(async () => ({}));
+
+  await expect(check('agent', principal)).rejects.toMatchObject({
+    code: 'mcp_configuration_missing',
+    outcomes: [{ server: 'private', status: 'mcp_configuration_missing' }],
+  });
+  expect(deps.connect).not.toHaveBeenCalled();
+});
+
 it('rejects a selected server shadowed by an unselected config server', async () => {
   const { check, deps } = setup(['search_mcp_Sales Force']);
   deps.getAppConfig = jest.fn(
