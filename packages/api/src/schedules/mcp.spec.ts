@@ -10,7 +10,7 @@ function setup(tools = ['search_mcp_docs']) {
   const disconnect = jest.fn();
   const deps: Parameters<typeof createScheduleMCPPreflight>[0] = {
     getAgents: jest.fn(async (ids) => ids.map((id) => ({ _id: id as never, id, tools }))),
-    canViewAgent: jest.fn(async () => true),
+    getViewableAgentIds: jest.fn(async () => new Set(['root', 'agent', 'child', 'spawned'])),
     getRoleByName: jest.fn(
       async () =>
         ({ permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } } }) as IRole,
@@ -125,6 +125,7 @@ it('checks graph agents once even when edges cycle', async () => {
 it('loads each graph frontier in one batch', async () => {
   const childIds = Array.from({ length: 20 }, (_, index) => `child-${index}`);
   const { check, deps } = setup();
+  deps.getViewableAgentIds = jest.fn(async () => new Set(childIds));
   deps.getAgents = jest.fn(async (ids) =>
     ids.map((id) => ({
       _id: id as never,
@@ -137,6 +138,37 @@ it('loads each graph frontier in one batch', async () => {
   expect(deps.getAgents).toHaveBeenNthCalledWith(1, ['root']);
   expect(deps.getAgents).toHaveBeenNthCalledWith(2, childIds);
   expect(deps.getAgents).toHaveBeenCalledTimes(2);
+  expect(deps.getViewableAgentIds).toHaveBeenCalledTimes(1);
+});
+
+it('does not count the root or legacy handoff nodes against the spawn graph budget', async () => {
+  const spawnIds = Array.from({ length: 50 }, (_, index) => `spawn-${index}`);
+  const legacyIds = Array.from({ length: 55 }, (_, index) => `handoff-${index}`);
+  const allIds = [...spawnIds, ...legacyIds];
+  const { check, deps } = setup();
+  deps.getViewableAgentIds = jest.fn(async () => new Set(allIds));
+  deps.getAppConfig = jest.fn(
+    async () => ({ endpoints: { agents: { capabilities: ['subagents'] } } }) as AppConfig,
+  );
+  deps.getAgents = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? {
+            _id: id as never,
+            id,
+            tools: [],
+            agent_ids: legacyIds,
+            subagents: { enabled: true, agent_ids: spawnIds } as never,
+          }
+        : {
+            _id: id as never,
+            id,
+            tools: id === spawnIds[0] ? ['search_mcp_docs'] : [],
+          },
+    ),
+  );
+
+  await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
 });
 
 it('skips MCP tools on graph agents the owner cannot view', async () => {
@@ -148,7 +180,7 @@ it('skips MCP tools on graph agents the owner cannot view', async () => {
         : { _id: id as never, id, tools: ['search_mcp_docs'] },
     ),
   );
-  deps.canViewAgent = async () => false;
+  deps.getViewableAgentIds = async () => new Set();
   await expect(check('root', principal)).resolves.toEqual([]);
   expect(deps.connect).not.toHaveBeenCalled();
 });
@@ -177,6 +209,13 @@ it('includes enabled spawn-graph members when the capability is available', asyn
     ),
   );
   await expect(check('root', principal)).resolves.toEqual([{ server: 'docs', status: 'ready' }]);
+});
+
+it('ignores a server pin when the agent selected no tools from that server', async () => {
+  const { check, deps } = setup(['sys__server__sys_mcp_docs']);
+  await expect(check('agent', principal)).resolves.toEqual([]);
+  expect(deps.getServerConfigs).not.toHaveBeenCalled();
+  expect(deps.connect).not.toHaveBeenCalled();
 });
 
 it('propagates principal-config outages instead of reporting missing configuration', async () => {

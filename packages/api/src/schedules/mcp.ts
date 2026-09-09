@@ -49,7 +49,7 @@ interface ScheduleMCPDeps {
   getAgents: (
     ids: string[],
   ) => Promise<Array<Pick<IAgent, '_id' | 'id' | 'tools' | 'agent_ids' | 'edges' | 'subagents'>>>;
-  canViewAgent: (agent: Pick<IAgent, '_id'>, user: IUser) => Promise<boolean>;
+  getViewableAgentIds: (user: IUser) => Promise<Set<string>>;
   getRoleByName: CheckAccessParams['getRoleByName'];
   getUser: (id: string) => Promise<IUser | null>;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
@@ -83,6 +83,8 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     };
     const tools: string[] = [];
     const visited = new Set<string>();
+    const spawned = new Set<string>();
+    let viewableAgentIds: Set<string> | undefined;
     let pending = [agentId];
     while (pending.length > 0) {
       const frontier = Array.from(
@@ -90,19 +92,17 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       );
       pending = [];
       if (frontier.length === 0) break;
-      if (visited.size + frontier.length > MAX_SUBAGENT_GRAPH_NODES) {
-        throw new ScheduleMCPError([]);
-      }
       frontier.forEach((id) => visited.add(id));
       const loaded = await deps.getAgents(frontier);
       const byId = new Map(loaded.map((agent) => [agent.id, agent]));
-      const accessible = await Promise.all(
-        frontier.map(async (id) => {
-          const agent = byId.get(id);
-          if (!agent || (id !== agentId && !(await deps.canViewAgent(agent, user)))) return null;
-          return agent;
-        }),
-      );
+      if (frontier.some((id) => id !== agentId) && viewableAgentIds == null) {
+        viewableAgentIds = await deps.getViewableAgentIds(user);
+      }
+      const accessible = frontier.map((id) => {
+        const agent = byId.get(id);
+        if (!agent || (id !== agentId && !viewableAgentIds?.has(String(agent._id)))) return null;
+        return agent;
+      });
       for (const agent of accessible) {
         if (!agent) continue;
         tools.push(...(agent.tools ?? []).filter((tool) => !isActionTool(tool)));
@@ -112,11 +112,21 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
         const config = await loadAppConfig();
         const capabilities = config?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? [];
         if (!capabilities.includes(AgentCapabilities.subagents)) continue;
-        pending.push(...(agent.subagents.agent_ids ?? []));
-        pending.push(...(agent.subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? []));
+        const spawnTargets = [
+          ...(agent.subagents.agent_ids ?? []),
+          ...(agent.subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? []),
+        ].filter((id) => id !== agentId);
+        for (const id of spawnTargets) spawned.add(id);
+        if (spawned.size > MAX_SUBAGENT_GRAPH_NODES) throw new ScheduleMCPError([]);
+        pending.push(...spawnTargets);
       }
     }
-    if (!tools.some((tool) => tool.includes(Constants.mcp_delimiter))) return [];
+    const selectedTools = tools.filter(
+      (tool) =>
+        tool.includes(Constants.mcp_delimiter) &&
+        !tool.startsWith(`${Constants.mcp_server}${Constants.mcp_delimiter}`),
+    );
+    if (selectedTools.length === 0) return [];
 
     const config = await deps.ensureConfigServers((await loadAppConfig())?.mcpConfig ?? {});
     const servers = await deps.getServerConfigs(principal.id, config, principal.role);
@@ -124,15 +134,12 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const shadowed = findShadowedServerNames(Object.keys(servers));
     const candidates = [...Object.keys(servers), ...aliases.keys()];
     const selected = new Map<string, string[]>();
-    for (const tool of tools) {
+    for (const tool of selectedTools) {
       const [, name] = splitMCPToolKey(tool, candidates);
       if (!name) continue;
       const server = servers[name] ? name : (aliases.get(name) ?? name);
       const required = selected.get(server) ?? [];
-      if (
-        !tool.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`) &&
-        !tool.startsWith(`${Constants.mcp_server}${Constants.mcp_delimiter}`)
-      ) {
+      if (!tool.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`)) {
         required.push(normalizeMCPToolKey(tool, Object.keys(servers)));
       }
       selected.set(server, required);

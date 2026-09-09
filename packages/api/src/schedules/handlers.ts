@@ -4,6 +4,7 @@ import {
   createSchedulePayloadSchema,
   updateSchedulePayloadSchema,
   isCronCadence,
+  readScheduleMCPOutcomes,
 } from 'librechat-data-provider';
 import type { TScheduleCadence, TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
 import type { ScheduleMethods, ISchedule, IScheduleRun } from '@librechat/data-schemas';
@@ -1005,11 +1006,14 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       update.failureCount = 0;
       update.balanceSkipCount = 0;
     }
+    const clearsMCPFailure =
+      reEnabled && readScheduleMCPOutcomes(existing.lastRun?.error).length > 0;
     const unset =
-      reEnabled || clearsProject
+      reEnabled || clearsProject || clearsMCPFailure
         ? {
             ...(reEnabled && { disabledReason: 1 as const }),
             ...(clearsProject && { chatProjectId: 1 as const }),
+            ...(clearsMCPFailure && { lastRun: 1 as const }),
           }
         : undefined;
     // Retain the new attachments BEFORE committing the edit, so a retention failure
@@ -1116,13 +1120,35 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!result.fired) {
       // A limiter refusal is the caller's own quota, not a conflicting schedule state,
       // so answer 429 rather than burying it in the generic 409.
-      res.status(result.skipped === 'rate_limited' ? 429 : 409).json({
-        error:
-          result.skipped === 'rate_limited'
-            ? 'Too many messages. Try running this schedule again shortly.'
-            : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`),
+      const failedMCP = result.mcp?.filter((outcome) => outcome.status !== 'ready') ?? [];
+      let mcpStatus:
+        | 'mcp_reauth_required'
+        | 'mcp_configuration_missing'
+        | 'mcp_unavailable'
+        | undefined;
+      if (failedMCP.some((outcome) => outcome.status === 'mcp_reauth_required')) {
+        mcpStatus = 'mcp_reauth_required';
+      } else if (failedMCP.some((outcome) => outcome.status === 'mcp_configuration_missing')) {
+        mcpStatus = 'mcp_configuration_missing';
+      } else if (
+        failedMCP.length > 0 &&
+        failedMCP.every((outcome) => outcome.status === 'mcp_unavailable')
+      ) {
+        mcpStatus = 'mcp_unavailable';
+      }
+      let status = 409;
+      if (result.skipped === 'rate_limited') status = 429;
+      else if (mcpStatus === 'mcp_unavailable') status = 503;
+      else if (mcpStatus != null) status = 400;
+      const error =
+        result.skipped === 'rate_limited'
+          ? 'Too many messages. Try running this schedule again shortly.'
+          : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`);
+      res.status(status).json({
+        error,
         skipped: result.skipped,
         mcp: result.mcp,
+        ...(mcpStatus != null ? { code: mcpStatus } : {}),
       });
       return;
     }

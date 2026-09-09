@@ -1153,6 +1153,30 @@ describe('updateSchedule re-enable attachment revalidation', () => {
     expect(deps.methods.updateScheduleById).toHaveBeenCalled();
   });
 
+  it('clears a stale MCP failure after re-enable preflight succeeds', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: async () => false });
+    jest.mocked(deps.methods.getScheduleById).mockResolvedValue({
+      ...disabledWithFiles(),
+      file_ids: [],
+      lastRun: {
+        status: 'error',
+        firedAt: new Date(),
+        error: 'mcp_reauth_required: [{"server":"Notion","status":"mcp_reauth_required"}]',
+      },
+    } as ISchedule);
+    const { res } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(makeReEnableReq(), res);
+
+    expect(deps.methods.updateScheduleById).toHaveBeenCalledWith(
+      'sched-1',
+      'user-1',
+      expect.objectContaining({ enabled: true }),
+      expect.objectContaining({ disabledReason: 1, lastRun: 1 }),
+      expect.any(Object),
+    );
+  });
+
   it('skips the stored-attachment recheck when the edit replaces file_ids', async () => {
     const filterOwnedFileIds = jest.fn(async (ids: string[]) => ids);
     const deps = makeCreateDeps({
@@ -1208,6 +1232,35 @@ describe('unattended MCP admission', () => {
       expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('Run Now MCP failures', () => {
+  it.each([
+    ['mcp_unavailable', 503],
+    ['mcp_reauth_required', 400],
+    ['mcp_configuration_missing', 400],
+  ] as const)('returns the correct status for %s', async (mcpStatus, expectedStatus) => {
+    const deps = makeCreateDeps({
+      isUserDeleting: async () => false,
+      fireNow: async () => ({
+        fired: false,
+        error: 'MCP preflight failed',
+        mcp: [
+          { server: 'Ready', status: 'ready' },
+          { server: 'Blocked', status: mcpStatus },
+        ],
+      }),
+    });
+    jest.mocked(deps.methods.getScheduleById).mockResolvedValue(fullScheduleDoc());
+    const req = makeCreateReq();
+    req.params = { id: 'sched-1' };
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).runScheduleNow(req, res);
+
+    expect(captured.status).toBe(expectedStatus);
+    expect(captured.body).toMatchObject({ code: mcpStatus });
+  });
 });
 
 it.each([{ enabled: true }, { prompt: 'Updated prompt' }, { agent_id: 'replacement' }])(
