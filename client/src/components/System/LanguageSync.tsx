@@ -12,6 +12,11 @@ import store from '~/store';
  * choice always wins; the server default only replaces the browser fallback,
  * and it is stored on first apply so a later change to the server default does
  * not override a user who kept it.
+ *
+ * `'auto'` is skipped: it means "follow the browser", which is already the
+ * default behavior. Applying it would run the browser language through
+ * `normalizeLocale` and persist that concrete value, freezing it into
+ * localStorage and stopping the app from tracking later browser changes.
  */
 function useDefaultLanguage() {
   const { data: startupConfig } = useGetStartupConfig();
@@ -19,7 +24,7 @@ function useDefaultLanguage() {
 
   useEffect(() => {
     const serverDefault = startupConfig?.interface?.defaultLanguage;
-    if (!serverDefault) {
+    if (!serverDefault || serverDefault === 'auto') {
       return;
     }
     const userChoseLanguage = !!Cookies.get('lang') || localStorage.getItem('lang') !== null;

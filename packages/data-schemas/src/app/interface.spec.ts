@@ -254,4 +254,28 @@ describe('loadDefaultInterface', () => {
 
     expect(interfaceConfig?.traceViewer).toBeUndefined();
   });
+
+  it('passes through a configured default language', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        defaultLanguage: 'de',
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.defaultLanguage).toBe('de');
+  });
+
+  it('omits the default language when not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('defaultLanguage');
+  });
 });
