@@ -158,20 +158,30 @@ jest.mock('@librechat/api', () => {
       userId: req.user?.id,
       tenantId: req.tenantId ?? req.user?.tenantId,
     }),
-    persistFileWithQuota: async ({ scope, row, write, rollback }, onRollbackError) => {
-      const scopedRow = { ...row, tenantId: scope.tenantId };
-      if (!global.__mockQuotaRejection) {
-        return write(scopedRow);
-      }
-      if (rollback) {
-        try {
-          await rollback();
-        } catch (error) {
-          onRollbackError(error);
+    createFileQuotaPersistence: ({ resolveScope, createFile, getDeleteFile, onCleanupError }) => ({
+      deleteStoredFile: async (req, row) => {
+        const scope = resolveScope(req);
+        return getDeleteFile(row.source)?.(req, {
+          ...row,
+          user: scope.userId,
+          tenantId: row.tenantId ?? scope.tenantId,
+        });
+      },
+      persistFile: async (req, row, rollback, options = {}) => {
+        const scopedRow = { ...row, tenantId: resolveScope(req).tenantId };
+        if (!global.__mockQuotaRejection) {
+          return createFile(scopedRow, options.disableTTL ?? true);
         }
-      }
-      throw global.__mockQuotaRejection;
-    },
+        if (rollback) {
+          try {
+            await rollback();
+          } catch (error) {
+            onCleanupError(error);
+          }
+        }
+        throw global.__mockQuotaRejection;
+      },
+    }),
     getRetentionExpiry,
     createCodeApiRateLimitBudget,
     getCodeApiUploadOptions,
@@ -214,6 +224,7 @@ jest.mock('~/server/services/Tools/credentials', () => ({
 
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
+  getFiles: jest.fn().mockResolvedValue([]),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
   findFileById: jest.fn(),

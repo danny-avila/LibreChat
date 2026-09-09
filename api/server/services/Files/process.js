@@ -42,7 +42,7 @@ const {
   sendUploadSuccess,
   getStorageMetadata,
   resolveStorageScope,
-  persistFileWithQuota,
+  createFileQuotaPersistence,
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
@@ -65,44 +65,18 @@ const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
 
-/** Removes a blob written before the row was offered to the ledger. */
-const deleteStoredBlob = async (req, { source, filepath, storageKey, storageRegion, tenantId }) => {
-  const { deleteFile } = getStrategyFunctions(source ?? FileSources.local);
-  if (!deleteFile) {
-    return;
-  }
-  await deleteFile(req, {
-    filepath,
-    storageKey,
-    storageRegion,
-    user: req.user.id,
-    tenantId: tenantId ?? req.user.tenantId,
-  });
-};
-
-/**
- * The one quota-checked path to the `File` ledger in this service.
- *
- * `rollback` is positional and required — `null` is how a caller states that nothing
- * was written before this point. Defaulting it would let a path that *does* leave a
- * blob behind reach the write by omission, which is the leak class this seam exists
- * to close.
- */
-const persistFile = (req, row, rollback, { disableTTL = true } = {}) =>
-  persistFileWithQuota(
-    {
-      scope: resolveStorageScope(req),
-      row,
-      write: (scopedRow) => db.createFile(scopedRow, disableTTL),
-      rollback,
-      getUserStorageUsage: db.getUserStorageUsage,
-    },
-    (error) => logger.error('[persistFile] Cleanup after a quota rejection failed:', error),
-  );
-
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
+
+const { deleteStoredFile: deleteStoredBlob, persistFile } = createFileQuotaPersistence({
+  resolveScope: resolveStorageScope,
+  createFile: db.createFile,
+  getUserStorageUsage: db.getUserStorageUsage,
+  getDeleteFile: (source) => getStrategyFunctions(source ?? FileSources.local).deleteFile,
+  onCleanupError: (error) =>
+    logger.error('[persistFile] Cleanup after a quota rejection failed:', error),
+});
 
 /**
  * Creates a modular file upload wrapper that ensures filename sanitization
@@ -613,6 +587,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: string}>}
  */
 const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
+  const storageScope = resolveStorageScope(req);
   const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
@@ -634,7 +609,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     userId: req.user.id,
     fileName,
     buffer,
-    tenantId: req.user.tenantId,
+    tenantId: storageScope.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
   return await persistFile(
@@ -652,7 +627,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
       width,
       ...(await retentionExpiryPromise),
       height,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     },
     () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
@@ -1473,7 +1448,13 @@ const processOpenAIFile = async ({
   if (saveFile) {
     /* The bytes live on the provider and were not written by this request, so a
      * rejection just declines to record them — there is nothing local to undo. */
-    await persistFile(openai.req, file, null);
+    const [existing] =
+      (await db.getFiles({
+        file_id,
+        user: userId,
+        tenantId: resolveStorageScope(openai.req).tenantId ?? null,
+      })) ?? [];
+    await persistFile(openai.req, file, null, { replacedBytes: existing?.bytes });
   } else if (updateUsage) {
     try {
       await db.updateFileUsage({
@@ -1651,6 +1632,7 @@ async function saveBase64Image(
   url,
   { req, file_id: _file_id, filename: _filename, endpoint, context, resolution },
 ) {
+  const storageScope = resolveStorageScope(req);
   const retentionExpiryPromise = getRetentionExpiry(req);
   const appConfig = req.config;
   const effectiveResolution = resolution ?? appConfig.fileConfig?.imageGeneration ?? 'high';
@@ -1678,7 +1660,7 @@ async function saveBase64Image(
     userId: req.user.id,
     fileName: filename,
     buffer: image.buffer,
-    tenantId: req.user.tenantId,
+    tenantId: storageScope.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
   return await persistFile(
@@ -1696,7 +1678,7 @@ async function saveBase64Image(
       width: image.width,
       ...(await retentionExpiryPromise),
       height: image.height,
-      tenantId: req.user.tenantId,
+      tenantId: storageScope.tenantId,
     },
     () => deleteStoredBlob(req, { source, filepath, ...storageMetadata }),
   );
