@@ -4,6 +4,7 @@ import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
 
 const USER_FACING_UPLOAD_ERRORS = [
+  ['storage limit exceeded', 'Storage limit exceeded'],
   ['Invalid file format', 'Invalid file format'],
   ['exceeds token limit', 'File content exceeds token limit'],
   ['Unable to extract text from', 'Unable to extract text from file'],

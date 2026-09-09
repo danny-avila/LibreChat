@@ -163,7 +163,8 @@ function idsMatch(
 }
 
 function tenantsMatch(left?: string | null, right?: string | null): boolean {
-  return (left ?? null) === (right ?? null);
+  const normalizeTenant = (tenant?: string | null) => (tenant ? tenant : null);
+  return normalizeTenant(left) === normalizeTenant(right);
 }
 
 /**
@@ -364,13 +365,27 @@ export type SkillFileRow = LedgerRow & {
  * by adding the new size to the unexcluded ledger total.
  */
 export function persistFileWithQuota<TRow extends FileRow, TResult>(
-  params: PersistParams<TRow, TResult>,
+  params: PersistParams<TRow, TResult> & {
+    replacing?: { user?: unknown; tenantId?: string | null } | null;
+  },
   onRollbackError: (error: unknown) => void,
 ): Promise<TResult> {
+  const { replacing, ...rest } = params;
+  const replacedByRequester =
+    replacing != null &&
+    idsMatch(replacing.user as string, params.scope.userId) &&
+    tenantsMatch(replacing.tenantId, params.scope.tenantId);
   const replacementKey =
-    params.replacedBytes != null && params.row.file_id ? `file:${params.row.file_id}` : undefined;
+    replacedByRequester && rest.replacedBytes != null && rest.row.file_id
+      ? `file:${rest.row.file_id}`
+      : undefined;
   return serializeReplacement(params.scope, replacementKey, () =>
-    persistWithQuota(params, 'user', replacementKey, onRollbackError),
+    persistWithQuota(
+      { ...rest, replacedBytes: replacedByRequester ? rest.replacedBytes : 0 },
+      'user',
+      replacementKey,
+      onRollbackError,
+    ),
   );
 }
 

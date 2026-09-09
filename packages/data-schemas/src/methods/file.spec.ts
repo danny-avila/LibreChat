@@ -357,6 +357,12 @@ describe('File Methods', () => {
       const skillId = new mongoose.Types.ObjectId();
 
       await createStoredFile({ user: userId, file_id: 'legacy-file', bytes: 100 });
+      await createStoredFile({
+        user: userId,
+        file_id: 'legacy-empty-file',
+        bytes: 30,
+        tenantId: '',
+      });
       await createStoredFile({ user: userId, file_id: 'tenant-file', bytes: 200, tenantId: 't1' });
       await createSkillFile({
         author: userId,
@@ -364,8 +370,15 @@ describe('File Methods', () => {
         relativePath: 'legacy.txt',
         bytes: 25,
       });
+      await createSkillFile({
+        author: userId,
+        skillId,
+        relativePath: 'legacy-empty.txt',
+        bytes: 5,
+        tenantId: '',
+      });
 
-      await expect(fileMethods.getUserStorageUsage({ userId })).resolves.toBe(125);
+      await expect(fileMethods.getUserStorageUsage({ userId })).resolves.toBe(160);
     });
 
     it('ignores non-positive bytes', async () => {

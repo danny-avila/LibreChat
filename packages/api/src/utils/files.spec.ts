@@ -503,6 +503,12 @@ describe('flattenArtifactPath', () => {
 });
 
 describe('resolveUploadErrorMessage', () => {
+  it('preserves actionable storage quota details', () => {
+    const message = 'storage limit exceeded. You are using 11MB of your 10MB storage limit.';
+    expect(resolveUploadErrorMessage({ message })).toBe(message);
+    expect(resolveUploadErrorMessage({ message }, undefined, true)).toBe('Storage limit exceeded');
+  });
+
   test('returns default message for null error', () => {
     expect(resolveUploadErrorMessage(null)).toBe('Error processing file');
   });

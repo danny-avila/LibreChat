@@ -168,15 +168,15 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     tenantId,
   }: UserStorageUsageParams): Promise<number> {
     const userObjectId = toObjectId(userId, 'userId');
-    const scopedTenantId = tenantId ?? null;
+    const tenantMatch = tenantId ? tenantId : { $in: [null, ''] };
     const fileMatch: FilterQuery<IMongoFile> = {
       user: userObjectId,
-      tenantId: scopedTenantId,
+      tenantId: tenantMatch,
       bytes: { $gt: 0 },
     };
     const skillFileMatch: FilterQuery<ISkillFileDocument> = {
       author: userObjectId,
-      tenantId: scopedTenantId,
+      tenantId: tenantMatch,
       bytes: { $gt: 0 },
     };
 

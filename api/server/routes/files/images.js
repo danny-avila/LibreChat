@@ -196,16 +196,23 @@ router.post('/', async (req, res) => {
       'Error processing file',
       contentProtectionActive,
     );
+    const userErrorStatusCode = error?.userErrorStatusCode;
+    const errorStatusCode =
+      Number.isInteger(userErrorStatusCode) &&
+      userErrorStatusCode >= 400 &&
+      userErrorStatusCode <= 599
+        ? userErrorStatusCode
+        : 500;
     if (sseStream) {
       sseStream.sendError({
         message,
-        code: 500,
+        code: errorStatusCode,
         temp_file_id: metadata.temp_file_id,
         tool_resource: metadata.tool_resource,
         display_to_user: true,
       });
     } else {
-      res.status(500).json({ message });
+      res.status(errorStatusCode).json({ message });
     }
   } finally {
     try {

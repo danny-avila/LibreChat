@@ -242,7 +242,10 @@ describe('persistFileWithQuota', () => {
 
     await persistFileWithQuota({ ...params, write: async (row) => row }, noRollbackErrors);
     const write = jest.fn(async (row: { bytes: number }) => row);
-    await persistFileWithQuota({ ...params, replacedBytes: 6, write }, noRollbackErrors);
+    await persistFileWithQuota(
+      { ...params, replacing: { user: userId }, replacedBytes: 6, write },
+      noRollbackErrors,
+    );
 
     expect(write).toHaveBeenCalled();
     expect(getUserStorageUsage).toHaveBeenCalledTimes(1);
@@ -278,6 +281,7 @@ describe('persistFileWithQuota', () => {
       {
         scope,
         row: { bytes: 8, file_id: 'file-1' },
+        replacing: { user: userId },
         replacedBytes: 6,
         write: async (row) => row,
         rollback: null,
@@ -294,6 +298,25 @@ describe('persistFileWithQuota', () => {
     );
 
     expect(write).toHaveBeenCalled();
+  });
+
+  it('does not credit a replaced file outside the charged ledger', async () => {
+    const scope = resolveStorageScope(makeReq({ storageLimitMb: 1 }));
+
+    await expect(
+      persistFileWithQuota(
+        {
+          scope,
+          row: { bytes: 11, file_id: 'foreign-file' },
+          replacing: { user: '64f0000000000000000000ff' },
+          replacedBytes: 20,
+          write: async (row) => row,
+          rollback: null,
+          getUserStorageUsage: usageOf(megabyte - 10),
+        },
+        noRollbackErrors,
+      ),
+    ).rejects.toMatchObject({ code: FILE_STORAGE_LIMIT_ERROR_CODE });
   });
 
   /* Charging one ledger while writing to another leaves the written owner unenforced. */
@@ -362,6 +385,7 @@ describe('persistFileWithQuota', () => {
       {
         scope,
         row: { bytes: 4, file_id: 'file-a' },
+        replacing: { user: userId },
         replacedBytes: 8,
         write: async (row) => {
           await replacementWrite;
@@ -399,6 +423,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'same-file' },
+          replacing: { user: userId },
           replacedBytes: 100,
           write: async (row) => row,
           rollback: null,
@@ -410,6 +435,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'same-file' },
+          replacing: { user: userId },
           replacedBytes: 100,
           write: async (row) => row,
           rollback: null,
@@ -443,6 +469,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'empty-file' },
+          replacing: { user: userId },
           replacedBytes: 0,
           write: async (row) => row,
           rollback: null,
@@ -454,6 +481,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 60, file_id: 'empty-file' },
+          replacing: { user: userId },
           replacedBytes: 0,
           write: async (row) => row,
           rollback: null,
@@ -504,6 +532,7 @@ describe('persistFileWithQuota', () => {
         {
           scope,
           row: { bytes: 5, file_id: 'replacement' },
+          replacing: { user: userId },
           replacedBytes: 20,
           write: async () => null,
           rollback: null,
@@ -620,6 +649,7 @@ describe('persistFileWithQuota', () => {
         {
           scope: resolveStorageScope(makeReq({ storageLimitMb: 1 })),
           row: { bytes: 4 * megabyte, file_id: 'file-1' },
+          replacing: { user: userId },
           replacedBytes: 2 * megabyte,
           write: jest.fn(),
           rollback: null,
