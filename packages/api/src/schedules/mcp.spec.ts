@@ -870,6 +870,33 @@ it('rejects an explicitly selected tool removed from an otherwise healthy server
   });
 });
 
+it('attributes a missing shared-server tool to the agent that selected it', async () => {
+  const { check, deps } = setup();
+  deps.getAppConfig = jest.fn(
+    async () =>
+      ({
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.tools, AgentCapabilities.subagents] },
+        },
+      }) as unknown as AppConfig,
+  );
+  deps.getAgentGraphNodes = jest.fn(async (ids) =>
+    ids.map((id) =>
+      id === 'root'
+        ? graphNode(id, {
+            tools: ['search_mcp_docs'],
+            subagents: { enabled: true, agent_ids: ['child'] } as never,
+          })
+        : graphNode(id, { tools: ['deleted_mcp_docs'] }),
+    ),
+  );
+
+  await expect(check('root', principal)).rejects.toMatchObject({
+    code: 'mcp_configuration_missing',
+    outcomes: [{ server: 'docs', status: 'mcp_configuration_missing', agentId: 'child' }],
+  });
+});
+
 it('distinguishes an incomplete catalog from missing tools', async () => {
   const { check, deps } = setup(['deleted_mcp_docs']);
   deps.connect = async () => ({ fetchToolsSnapshot: async () => ({ tools: [], complete: false }) });

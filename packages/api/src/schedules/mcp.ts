@@ -436,6 +436,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     const candidates = [...candidateNames, ...aliases.keys()];
     const selected = new Map<string, string[]>();
     const serverAgentIds = new Map<string, Set<string>>();
+    const toolAgentIds = new Map<string, Map<string, Set<string>>>();
     for (const { name: tool, agentId: toolAgentId } of selectedTools) {
       const [, name] = splitMCPToolKey(tool, candidates);
       if (!name) continue;
@@ -445,12 +446,22 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       serverAgentIds.set(server, owners);
       const required = selected.get(server) ?? [];
       if (!tool.startsWith(`${Constants.mcp_all}${Constants.mcp_delimiter}`)) {
-        required.push(normalizeMCPToolKey(tool, candidateNames));
+        const normalizedTool = normalizeMCPToolKey(tool, candidateNames);
+        required.push(normalizedTool);
+        const serverTools = toolAgentIds.get(server) ?? new Map<string, Set<string>>();
+        const toolOwners = serverTools.get(normalizedTool) ?? new Set<string>();
+        toolOwners.add(toolAgentId);
+        serverTools.set(normalizedTool, toolOwners);
+        toolAgentIds.set(server, serverTools);
       }
       selected.set(server, required);
     }
-    const outcome = (server: string, status: ScheduleMCPStatus): ScheduleMCPOutcome => {
-      const owners = serverAgentIds.get(server);
+    const outcome = (
+      server: string,
+      status: ScheduleMCPStatus,
+      preferredOwners?: Set<string>,
+    ): ScheduleMCPOutcome => {
+      const owners = preferredOwners ?? serverAgentIds.get(server);
       const outcomeAgentId = owners?.has(agentId) ? undefined : owners?.values().next().value;
       return { server, status, ...(outcomeAgentId ? { agentId: outcomeAgentId } : {}) };
     };
@@ -554,7 +565,15 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
                 } else if (available.size === 0 || !required.every((tool) => available.has(tool))) {
                   status = 'mcp_configuration_missing';
                 }
-                return outcome(server, status);
+                const missingTool =
+                  status === 'mcp_configuration_missing'
+                    ? required.find((tool) => !available.has(tool))
+                    : undefined;
+                return outcome(
+                  server,
+                  status,
+                  missingTool ? toolAgentIds.get(server)?.get(missingTool) : undefined,
+                );
               } catch (error) {
                 return outcome(
                   server,
