@@ -33,6 +33,15 @@ jest.mock('@librechat/api', () => ({
   sanitizeFilename: jest.fn((n) => n),
   parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
   processAudioFile: jest.fn(),
+  resolveStorageScope: (req) => ({
+    userId: req.user?.id,
+    tenantId: req.tenantId ?? req.user?.tenantId,
+  }),
+  createFileQuotaPersistence: ({ createFile, getDeleteFile }) => ({
+    persistFile: (_req, row, _rollback, options = {}) =>
+      createFile(row, options.disableTTL ?? true),
+    deleteStoredFile: (req, row) => getDeleteFile(row.source)?.(req, row),
+  }),
 }));
 
 jest.mock('~/server/controllers/assistants/v2', () => ({
