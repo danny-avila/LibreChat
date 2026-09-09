@@ -7,6 +7,7 @@ const { Tool } = require('@librechat/agents/langchain/tools');
 const { Tools, ImageVisionTool } = require('librechat-data-provider');
 const {
   getToolkitKey,
+  isToolModuleFile,
   oaiToolkit,
   geminiToolkit,
   createAskUserQuestionTool,
@@ -42,11 +43,7 @@ function loadAndFormatTools({ directory, adminFilter = [], adminIncluded = [] })
 
   for (const file of files) {
     const filePath = path.join(directory, file);
-    if (
-      !file.endsWith('.js') ||
-      /\.(spec|test)\.js$/.test(file) ||
-      (filter.has(file) && included.size === 0)
-    ) {
+    if (!isToolModuleFile(file) || (filter.has(file) && included.size === 0)) {
       continue;
     }
 
