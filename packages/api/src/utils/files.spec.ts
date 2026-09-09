@@ -618,8 +618,6 @@ describe('resolveUploadErrorMessage', () => {
 describe('resolveUploadErrorStatusCode', () => {
   it('accepts safe user-facing HTTP status codes', () => {
     expect(resolveUploadErrorStatusCode({ userErrorStatusCode: 413 })).toBe(413);
-    expect(resolveUploadErrorStatusCode({ status: 429 })).toBe(429);
-    expect(resolveUploadErrorStatusCode({ statusCode: 400 })).toBe(400);
   });
 
   it('falls back to 500 for absent or invalid status codes', () => {
