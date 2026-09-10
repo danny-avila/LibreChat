@@ -1327,6 +1327,17 @@ describe('OpenAIChatCompletionController', () => {
           signal: effectiveSignal,
         }),
       );
+      mockExecution.abort();
+      await toolExecuteOptions.loadTools(
+        ['file_search'],
+        'agent-123',
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({ signal: undefined }),
+      );
     });
 
     it('returns 503 when an agent expects MCP tools but resolves none', async () => {

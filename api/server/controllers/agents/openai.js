@@ -828,7 +828,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             requestBody: mcpRequestBody,
             toolNames,
             agent: ctx.agent ?? agent,
-            signal: runSignal ?? execution.signal,
+            signal: runSignal,
             toolRegistry: ctx.toolRegistry,
             callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,

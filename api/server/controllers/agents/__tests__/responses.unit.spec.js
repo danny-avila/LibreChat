@@ -1921,6 +1921,17 @@ describe('createResponse controller', () => {
             signal: effectiveSignal,
           }),
         );
+        mockExecution.abort();
+        await toolExecuteOptions.loadTools(
+          ['file_search'],
+          'agent-123',
+          undefined,
+          undefined,
+          undefined,
+        );
+        expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+          expect.objectContaining({ signal: undefined }),
+        );
       },
     );
   });
