@@ -1,6 +1,10 @@
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import { EToolResources, resolveSandboxFilename } from 'librechat-data-provider';
+import {
+  EToolResources,
+  getCodeEnvRefForProfile,
+  resolveSandboxFilename,
+} from 'librechat-data-provider';
 import type { AgentToolResources, TFile } from 'librechat-data-provider';
 import type { CodeEnvFile } from '@librechat/agents';
 import type { CodeEnvRefUpdate, CodeExecutionRoute, ProvisionService } from './service';
@@ -266,7 +270,8 @@ export function createProvisionFilesCallback({
         }
         claimCodeDestination(
           destinations,
-          resolveSandboxFilename(existing.filename, existing.type),
+          getCodeEnvRefForProfile(existing.metadata, codeRouteKey)?.sandboxFilename ??
+            resolveSandboxFilename(existing.filename, existing.type),
           existing.file_id,
         );
       }
@@ -277,7 +282,8 @@ export function createProvisionFilesCallback({
         queuedCodeFiles.map(async (file) => {
           const sandboxFilename = claimCodeDestination(
             destinations,
-            resolveSandboxFilename(file.filename, file.type),
+            getCodeEnvRefForProfile(file.metadata, codeRouteKey)?.sandboxFilename ??
+              resolveSandboxFilename(file.filename, file.type),
             file.file_id,
           );
           const provisioned = await shareProvisioning(

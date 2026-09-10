@@ -237,6 +237,38 @@ describe('createProvisionFilesCallback', () => {
     );
   });
 
+  it('reserves a stored alias when adding a file on a later turn', async () => {
+    const existing = makeFile({
+      file_id: 'existing',
+      filename: 'data.csv',
+      metadata: {
+        codeEnvRef: {
+          kind: 'user',
+          id: 'u1',
+          storage_session_id: 's1',
+          file_id: 'r1',
+          sandboxFilename: 'data-alias.csv',
+        },
+      },
+    });
+    const queued = makeFile({ file_id: 'queued', filename: 'data-alias.csv' });
+    const { provisionFiles, provisionToCodeEnv } = buildHarness({
+      contexts: [
+        [
+          'agent-a',
+          {
+            provisionState: state([queued], []),
+            tool_resources: { execute_code: { files: [existing] } },
+          },
+        ],
+      ],
+    });
+    await provisionFiles([Constants.EXECUTE_CODE], 'agent-a');
+    expect(provisionToCodeEnv).toHaveBeenCalledWith(
+      expect.objectContaining({ sandboxFilename: expect.not.stringMatching(/^data-alias\.csv$/) }),
+    );
+  });
+
   it('returns the refs to every agent sharing one upload', async () => {
     const shared = makeFile();
     const { provisionFiles } = buildHarness({

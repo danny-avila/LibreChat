@@ -182,48 +182,10 @@ jest.mock('@librechat/api', () => {
       if (version != null) params.set('version', String(version));
       return `?${params.toString()}`;
     }),
-    codeServerHttpAgent: new http.Agent({ keepAlive: false }),
-    codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
-    /* Sandbox destination assignment, mirrored the same way the identity
-     * helpers above are. The real policy — directory-prefix conflicts and the
-     * byte cap — lives in `packages/api/src/files/code/destinations.ts` under
-     * its own `destinations.spec.ts`; these stubs carry just enough of its
-     * shape (one file per name, shared-then-newest ordering) for the
-     * `primeFiles` tests to assert that it decides which file reaches the
-     * sandbox and the tool context at all. `reserveCodeDestination` mirrors
-     * the real `isTaken` rule — an exact match, or either destination being a
-     * directory prefix of the other — because codeapi rejects both shapes. */
-    createCodeDestinationSet: () => ({ names: new Set(), ancestors: new Set() }),
-    reserveCodeDestination: (set, name) => {
-      const segments = name.split('/');
-      const ancestors = segments.slice(1).map((_, i) => segments.slice(0, i + 1).join('/'));
-      const taken =
-        set.names.has(name) ||
-        set.ancestors.has(name) ||
-        ancestors.some((ancestor) => set.names.has(ancestor));
-      if (taken) {
-        return false;
-      }
-      set.names.add(name);
-      for (const ancestor of ancestors) {
-        set.ancestors.add(ancestor);
-      }
-      return true;
-    },
-    sortCodeFilesByDestinationPriority: (files, privateFileIds) => {
-      const isPrivate = (file) => (privateFileIds?.has(file?.file_id) ? 1 : 0);
-      const contentTime = (file) =>
-        Math.max(
-          file?.metadata?.sourceDispatchedAt ?? 0,
-          new Date(file?.createdAt ?? 0).getTime() || 0,
-        );
-      return [...files].sort((a, b) => {
-        const scope = isPrivate(a) - isPrivate(b);
-        if (scope !== 0) return scope;
-        const delta = contentTime(b) - contentTime(a);
-        return delta !== 0 ? delta : (a?.file_id ?? '').localeCompare(b?.file_id ?? '');
-      });
-    },
+    codeServerHttpAgent: jest.requireActual('@librechat/api').codeServerHttpAgent,
+    codeServerHttpsAgent: jest.requireActual('@librechat/api').codeServerHttpsAgent,
+    selectCodeFiles: jest.requireActual('@librechat/api').selectCodeFiles,
+    getCodeFileInfo: jest.requireActual('@librechat/api').getCodeFileInfo,
   };
 });
 
@@ -236,6 +198,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
   getCodeBaseURL: jest.fn(() => 'https://code-api.example.com'),
 }));
 
@@ -3124,6 +3087,7 @@ describe('Code Process', () => {
             storage_session_id: 'NEW_SESSION',
             file_id: 'NEW_ID',
             executionProfile: 'default',
+            sandboxFilename: 'sentinel.txt',
           },
           'metadata.codeEnvRefs.default': {
             kind: 'user',
@@ -3131,6 +3095,7 @@ describe('Code Process', () => {
             storage_session_id: 'NEW_SESSION',
             file_id: 'NEW_ID',
             executionProfile: 'default',
+            sandboxFilename: 'sentinel.txt',
           },
         }),
       );
@@ -3803,9 +3768,8 @@ describe('Code Process', () => {
      * for a same-name duplicate therefore lands on the bare name anyway, and
      * the sandbox rejects the whole request as conflicting destinations; the
      * rejection recurs on every later turn because nothing comes back to
-     * collapse the pair. The only assignment codeapi can honour is one file
-     * per filename, so `primeFiles` keeps the file holding the newest content
-     * and drops the rest — the same collapse `ToolNode.updateCodeSession`
+     * collapse the pair. `primeFiles` keeps the newest content at each stored
+     * destination, preserving aliases assigned during upload, and drops collisions — the same collapse `ToolNode.updateCodeSession`
      * applies once results come back.
      *
      * Only code-generated outputs are covered by the `(filename,
@@ -3823,6 +3787,7 @@ describe('Code Process', () => {
       createdAt,
       context,
       sourceDispatchedAt,
+      sandboxFilename,
     }) => ({
       file_id,
       filename,
@@ -3834,6 +3799,7 @@ describe('Code Process', () => {
         ...(sourceDispatchedAt != null ? { sourceDispatchedAt } : {}),
         codeEnvRef: {
           kind: 'user',
+          ...(sandboxFilename ? { sandboxFilename } : {}),
           id: 'user-123',
           storage_session_id,
           file_id: `${file_id}-sandbox`,
@@ -3860,6 +3826,43 @@ describe('Code Process', () => {
 
     const bySession = (result) =>
       Object.fromEntries(result.files.map((f) => [f.storage_session_id, f.name]));
+
+    it.each([false, true])('keeps a provisioned alias when expired=%s', async (expired) => {
+      setupActiveSessions();
+      const upload = jest.fn().mockImplementation(async ({ filename }) => ({
+        storage_session_id: `fresh-${filename}`,
+        file_id: `fresh-${filename}`,
+      }));
+      getStrategyFunctions.mockImplementation(() => ({
+        getDownloadStream: jest.fn().mockResolvedValue('stream'),
+        handleFileUpload: upload,
+      }));
+      if (expired) mockAxios.mockResolvedValue({ data: null });
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'older',
+          filename: 'rows.csv',
+          sandboxFilename: 'rows-alias.csv',
+          storage_session_id: 'old',
+        }),
+        codeFile({
+          file_id: 'newer',
+          filename: 'rows.csv',
+          sandboxFilename: 'rows.csv',
+          storage_session_id: 'new',
+        }),
+      ]);
+      const result = await prime();
+      expect(result.files.map((file) => file.name).sort()).toEqual(['rows-alias.csv', 'rows.csv']);
+      if (expired) {
+        expect(upload.mock.calls.map(([args]) => args.filename).sort()).toEqual([
+          'rows-alias.csv',
+          'rows.csv',
+        ]);
+      } else {
+        expect(upload).not.toHaveBeenCalled();
+      }
+    });
 
     it('keeps only the newest of two uploads sharing a filename', async () => {
       setupActiveSessions();
@@ -4026,8 +4029,8 @@ describe('Code Process', () => {
 
     it('does not re-upload a file it drops', async () => {
       /**
-       * The destination decision has to come before the freshness probe: a
-       * dropped file never reaches the sandbox, so re-uploading it would only
+       * The destination decision has to come before recovery: a dropped file
+       * never reaches the sandbox, so re-uploading it would only
        * spend a round trip and, on failure, count against the run.
        */
       const handleFileUpload = jest.fn();

@@ -317,6 +317,7 @@ export function createProvisionService({
       executionProfile,
       ...(route?.executionRouteKey ? { executionRouteKey: route.executionRouteKey } : {}),
       provisionedAt: Date.now(),
+      sandboxFilename,
     };
     const referenceSet = mergeCodeEnvRef(file.metadata, ref);
     const routeKey = route?.executionRouteKey ?? executionProfile;

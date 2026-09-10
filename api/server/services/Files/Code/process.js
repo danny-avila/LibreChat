@@ -11,7 +11,6 @@ const {
   flattenArtifactPath,
   createAxiosInstance,
   getCodeApiAuthHeaders,
-  isAbortError,
   getCodeApiUploadOptions,
   withCodeApiRateLimit,
   withCodeApiUploadRecovery,
@@ -32,11 +31,10 @@ const {
   buildCodeEnvDownloadQuery,
   codeExecutionHeaders,
   executeWorkspaceTool,
-  createCodeDestinationSet,
+  selectCodeFiles,
+  getCodeFileInfo,
   CODE_OUTPUT_PREFLIGHT_MAX_BYTES,
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
-  reserveCodeDestination,
-  sortCodeFilesByDestinationPriority,
   normalizeArtifactDeliveryFailure,
   resolveDownloadPath,
 } = require('@librechat/api');
@@ -52,11 +50,8 @@ const {
   EModelEndpoint,
   ErrorTypes,
   mergeFileConfig,
-  getCodeEnvRefs,
   mergeCodeEnvRef,
-  getCodeEnvRefForProfile,
   getEndpointFileConfig,
-  resolveSandboxFilename,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
@@ -1132,66 +1127,20 @@ function checkIfActive(dateString) {
   return hoursPassed < 23;
 }
 
-/**
- * Retrieves the `lastModified` time string for a specified file from Code Execution Server.
- *
- * @param {import('librechat-data-provider').CodeEnvRef} ref - Typed pointer
- *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
- *   codeapi resolves the sessionKey from the request's auth context.
- * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
- * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful', bridgeWorkerId?: string}} [route]
- *   Trusted host-selected Code API route.
- * @param {AbortSignal} [signal] - Effective run cancellation signal.
- *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
- *          error in initialization or fetching the info.
- */
-async function getSessionInfo(ref, req, route = {}, signal) {
-  try {
-    signal?.throwIfAborted();
-    const baseURL = route.baseUrl ?? getCodeBaseURL();
-    const authHeaders = await getCodeApiAuthHeaders(req, route.bridgeWorkerId);
-    signal?.throwIfAborted();
-    /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
-     * middleware (post-Phase C). The middleware reconstructs the
-     * sessionKey from the URL query (`kind`/`id`/`version?`) plus the
-     * requester's auth context, then matches it against the cached
-     * sessionKey on the storage bucket. We have the full `codeEnvRef`
-     * here, so pass kind+id (+version when skill) directly. */
-    const query = buildCodeEnvDownloadQuery({
-      kind: ref.kind,
-      id: ref.id,
-      ...(ref.kind === 'skill' ? { version: ref.version } : {}),
-    });
-    const response = await axios({
-      method: 'get',
-      url: `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
-      headers: {
-        'User-Agent': 'LibreChat/1.0',
-        ...authHeaders,
-        ...(route.executionProfile
-          ? codeExecutionHeaders({
-              executionProfile: route.executionProfile,
-              bridgeWorkerId: route.bridgeWorkerId,
-            })
-          : {}),
-      },
-      httpAgent: codeServerHttpAgent,
-      httpsAgent: codeServerHttpsAgent,
-      timeout: 5000,
-      signal,
-    });
-    signal?.throwIfAborted();
+function getSessionFileInfo(ref, req, route = {}, signal) {
+  return getCodeFileInfo({
+    ref,
+    req,
+    route,
+    signal,
+    request: axios,
+    getBaseURL: getCodeBaseURL,
+    getAuthHeaders: getCodeApiAuthHeaders,
+  });
+}
 
-    return response.data?.lastModified;
-  } catch (error) {
-    if (signal?.aborted && isAbortError(error)) {
-      throw error;
-    }
-    logger.debug('[getSessionInfo] session lookup failed (treating as cache miss)');
-    return null;
-  }
+async function getSessionInfo(ref, req, route = {}, signal) {
+  return (await getSessionFileInfo(ref, req, route, signal))?.lastModified ?? null;
 }
 
 const getPreviewContextSuffix = (file) => {
@@ -1363,61 +1312,19 @@ const primeFiles = async (options) => {
   const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
 
-  /* Claim order decides which record keeps the bare `/mnt/data/<name>` path
-   * when several share a filename, so it is fixed here rather than inherited
-   * from `getFiles`'s `updatedAt` sort — usage accounting and re-upload both
-   * bump `updatedAt`, which would repoint paths between turns. `file_ids` are
-   * this agent's own resources; every other candidate came from the
-   * conversation and is therefore seen by every agent in the run, so shared
-   * files rank first and land on the same destination whichever agent primes
-   * them. */
-  const orderedFiles = sortCodeFilesByDestinationPriority(dbFiles, agentResourceIds);
-  const destinations = createCodeDestinationSet();
-
-  /* Per-file path counters — emitted at the bottom so a single
-   * grep on `[primeCodeFiles]` shows the input volume, the per-file
-   * paths taken, and the final dispatch summary in one trace. */
-  let skippedNoRef = 0;
-  let skippedSuperseded = 0;
+  const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
+    files: dbFiles,
+    privateFileIds: agentResourceIds,
+    routeKey: executionRouteKey,
+    getFileInfo: (ref) => getSessionFileInfo(ref, req, codeApiRoute, signal),
+    concurrency: uploadOptions.concurrency,
+    signal,
+  });
   let reuploadFailures = 0;
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (let i = 0; i < orderedFiles.length; i++) {
-    const file = orderedFiles[i];
-    if (!file) {
-      continue;
-    }
-
-    const ref = getCodeEnvRefForProfile(file.metadata, executionRouteKey);
-    const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
-    if (!sourceRef) {
-      skippedNoRef += 1;
-      logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
-      continue;
-    }
-    const sandboxName = resolveSandboxFilename(file.filename, file.type);
-    /**
-     * Codeapi mounts a by-ref input at the filename recorded on the stored
-     * object (the file server's Content-Disposition) and only falls back to
-     * the `name` sent here when that header is absent, so two files sharing a
-     * filename can never coexist in one sandbox: a suffixed alias lands on the
-     * bare name anyway and the whole `/exec` is rejected as conflicting
-     * destinations. Keep the file holding the newest content — `orderedFiles`
-     * puts it first — and drop the rest, the same collapse
-     * `ToolNode.updateCodeSession` applies once results come back. Reserved
-     * before the freshness probe so a dropped file is never re-uploaded; a
-     * winner whose re-upload fails therefore keeps the name and surfaces as a
-     * recovery failure rather than handing the path to a superseded copy.
-     */
-    if (!reserveCodeDestination(destinations, sandboxName)) {
-      skippedSuperseded += 1;
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=skip reason=destination-taken ` +
-          `filename=${file.filename}`,
-      );
-      continue;
-    }
+  for (const { file, ref, sourceRef, sandboxName, getUploadTime } of selected) {
     requiredCodeFiles += 1;
     const session_id = sourceRef.storage_session_id;
     const id = sourceRef.file_id;
@@ -1521,6 +1428,7 @@ const primeFiles = async (options) => {
           id: sourceRef.id,
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
+          sandboxFilename: sandboxName,
           executionProfile,
           ...(executionRouteKey !== executionProfile ? { executionRouteKey } : {}),
           ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
@@ -1569,7 +1477,7 @@ const primeFiles = async (options) => {
       pushFile();
       continue;
     }
-    const uploadTime = await getSessionInfo(ref, req, codeApiRoute, signal);
+    const uploadTime = await getUploadTime();
     signal?.throwIfAborted();
     if (!uploadTime) {
       logger.debug(
