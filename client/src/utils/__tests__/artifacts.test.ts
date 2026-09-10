@@ -1,9 +1,13 @@
 import { FileSources } from 'librechat-data-provider';
 import type { ToolArtifactType } from '../artifacts';
+import type { Artifact } from '~/common';
 import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
   fileToArtifact,
+  firstMarkdownHeading,
+  getArtifactDownloadFilename,
+  GENERATED_ARTIFACT_TITLE,
   isCodeOnlyArtifact,
   isPreviewOnlyArtifact,
   languageForFilename,
@@ -973,4 +977,142 @@ describe('isCodeOnlyArtifact', () => {
       expect(isCodeOnlyArtifact(type)).toBe(false);
     },
   );
+});
+
+describe('firstMarkdownHeading', () => {
+  it('returns the first ATX heading', () => {
+    expect(firstMarkdownHeading('# Quarterly Report\n\nBody text.')).toBe('Quarterly Report');
+  });
+
+  it('accepts a deeper heading when no h1 comes first', () => {
+    expect(firstMarkdownHeading('Intro line\n\n## Section One\n')).toBe('Section One');
+  });
+
+  it('tolerates up to three leading spaces, CRLF line endings and closing hashes', () => {
+    expect(firstMarkdownHeading('   ## Budget 2026 ##\r\nbody')).toBe('Budget 2026');
+  });
+
+  it('strips emphasis and unwraps links', () => {
+    expect(firstMarkdownHeading('# The **Q3** [report](https://x.test)')).toBe('The Q3 report');
+  });
+
+  it('ignores a hash comment inside a fenced code block', () => {
+    const content = ['```bash', '# not a heading', '```', '', '# Real Heading'].join('\n');
+    expect(firstMarkdownHeading(content)).toBe('Real Heading');
+  });
+
+  it('ignores a tilde-fenced block and does not let a backtick run close it', () => {
+    const content = ['~~~', '# fenced', '```', '# still fenced', '~~~', '# Actual Title'].join(
+      '\n',
+    );
+    expect(firstMarkdownHeading(content)).toBe('Actual Title');
+  });
+
+  it('does not treat a setext underline as a heading', () => {
+    expect(firstMarkdownHeading('Some paragraph\n---\nmore text')).toBe('');
+  });
+
+  it('requires a space after the hashes', () => {
+    expect(firstMarkdownHeading('#hashtag not a heading')).toBe('');
+  });
+
+  it.each([[''], [undefined], ['no headings at all']])('returns empty for %s', (content) => {
+    expect(firstMarkdownHeading(content)).toBe('');
+  });
+});
+
+describe('getArtifactDownloadFilename', () => {
+  const artifact = (overrides: Partial<Artifact>): Artifact => ({
+    id: 'a1',
+    lastUpdateTime: 0,
+    type: TOOL_ARTIFACT_TYPES.MARKDOWN,
+    ...overrides,
+  });
+
+  it('uses the artifact title and appends the bucket extension', () => {
+    expect(getArtifactDownloadFilename(artifact({ title: 'Quarterly Report' }), 'content.md')).toBe(
+      'Quarterly Report.md',
+    );
+  });
+
+  it('falls back to the document heading when the title is the generic placeholder', () => {
+    const result = getArtifactDownloadFilename(
+      artifact({ title: GENERATED_ARTIFACT_TITLE, content: '# Migration Plan\n\ntext' }),
+      'content.md',
+    );
+    expect(result).toBe('Migration Plan.md');
+  });
+
+  it('falls back to the document heading when there is no title', () => {
+    expect(getArtifactDownloadFilename(artifact({ content: '# Design Notes' }), 'content.md')).toBe(
+      'Design Notes.md',
+    );
+  });
+
+  it('falls back to the sandpack file key when nothing names the document', () => {
+    expect(getArtifactDownloadFilename(artifact({ content: 'no heading' }), 'content.md')).toBe(
+      'content.md',
+    );
+  });
+
+  it('keeps an extension the title already carries', () => {
+    const result = getArtifactDownloadFilename(
+      artifact({ type: TOOL_ARTIFACT_TYPES.CODE, title: 'migrate_users.py' }),
+      'content.md',
+    );
+    expect(result).toBe('migrate_users.py');
+  });
+
+  it('does not mistake a version suffix for an extension', () => {
+    expect(getArtifactDownloadFilename(artifact({ title: 'Q4 Report v1.2' }), 'content.md')).toBe(
+      'Q4 Report v1.2.md',
+    );
+  });
+
+  it('does not read a heading out of source code', () => {
+    /* `#` opens a comment in shell and Python — the first one is a
+     * licence header far more often than a document title. */
+    const result = getArtifactDownloadFilename(
+      artifact({ type: TOOL_ARTIFACT_TYPES.CODE, content: '# Copyright 2026 Example Corp\n' }),
+      'content.md',
+    );
+    expect(result).toBe('content.md');
+  });
+
+  it('replaces path separators and characters Windows rejects', () => {
+    expect(getArtifactDownloadFilename(artifact({ title: 'Q3: profit/loss' }), 'content.md')).toBe(
+      'Q3- profit-loss.md',
+    );
+  });
+
+  it('does not produce a hidden file or a trailing dot', () => {
+    expect(getArtifactDownloadFilename(artifact({ title: '...draft...' }), 'content.md')).toBe(
+      'draft.md',
+    );
+  });
+
+  it('falls back when the title sanitizes away to nothing', () => {
+    expect(getArtifactDownloadFilename(artifact({ title: '///' }), 'content.md')).toBe(
+      'content.md',
+    );
+  });
+
+  it('caps a runaway heading', () => {
+    const long = 'A'.repeat(400);
+    const result = getArtifactDownloadFilename(artifact({ title: long }), 'content.md');
+    expect(result).toBe(`${'A'.repeat(100)}.md`);
+  });
+
+  it('appends no extension when the fallback has none', () => {
+    expect(getArtifactDownloadFilename(artifact({ title: 'Readme' }), 'Dockerfile')).toBe('Readme');
+  });
+
+  it('keeps the html bucket default for an untitled html artifact', () => {
+    expect(
+      getArtifactDownloadFilename(
+        artifact({ type: TOOL_ARTIFACT_TYPES.HTML, content: '<h1>hi</h1>' }),
+        'index.html',
+      ),
+    ).toBe('index.html');
+  });
 });

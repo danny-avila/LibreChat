@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Download, CircleCheckBig } from 'lucide';
 import { Button, MorphIcon } from '@librechat/client';
 import type { Artifact } from '~/common';
@@ -6,8 +6,8 @@ import {
   useAttachmentLink,
   isLocallyStoredSource,
 } from '~/components/Chat/Messages/Content/Parts/LogLink';
+import { isPreviewOnlyArtifact, getArtifactDownloadFilename } from '~/utils/artifacts';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
-import { isPreviewOnlyArtifact } from '~/utils/artifacts';
 import { useCodeState } from '~/Providers/EditorContext';
 import { useLocalize } from '~/hooks';
 
@@ -15,7 +15,17 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const localize = useLocalize();
   const { currentCode } = useCodeState();
   const [isDownloaded, setIsDownloaded] = useState(false);
-  const { fileKey: fileName } = useArtifactProps({ artifact });
+  const { fileKey } = useArtifactProps({ artifact });
+  /* `fileKey` names the file INSIDE the Sandpack preview and is a
+   * constant per bucket ('content.md', 'index.html'). Handing it to
+   * `link.download` made every markdown document in every conversation
+   * save as `content.md`. Derive the saved name from the artifact title
+   * or the document's own heading instead, and keep `fileKey` as the
+   * last-resort fallback. */
+  const fileName = useMemo(
+    () => getArtifactDownloadFilename(artifact, fileKey),
+    [artifact, fileKey],
+  );
 
   /* Office artifacts (pptx/xlsx/docx) render a server-generated HTML
    * preview in `content`, not the binary file — serializing that blob
@@ -40,7 +50,7 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
   const downloadOriginalFile = isPreviewOnlyArtifact(artifact.type) && hasUsableRoute;
   const { handleDownload: downloadAttachment } = useAttachmentLink({
     href: download?.filepath ?? '',
-    filename: artifact.title ?? fileName,
+    filename: fileName,
     file_id: download?.file_id,
     user: download?.user,
     source: download?.source,

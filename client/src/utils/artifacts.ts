@@ -312,6 +312,161 @@ const lookupOwn = <T>(record: Record<string, T>, key: string): T | undefined =>
   Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
 
 /**
+ * Placeholder title `fileToArtifact` assigns when an attachment carries
+ * no filename. It names no document, so it must never become a download
+ * filename — the document's own heading (or the bucket default) is the
+ * better answer.
+ */
+export const GENERATED_ARTIFACT_TITLE = 'Generated artifact';
+
+/**
+ * Characters that are illegal in a filename on Windows, plus the path
+ * separators. `link.download` is advisory — each browser does its own
+ * stripping — so a title like `Q3: profit/loss` would otherwise land
+ * under a different name in every browser.
+ */
+const UNSAFE_FILENAME_CHARS = /[<>:"/\\|?*]/g;
+
+/** Control characters, matched through the Unicode `Cc` category so the
+ * pattern carries no literal control bytes of its own. */
+const CONTROL_CHARS = /\p{Cc}/gu;
+
+/**
+ * Cap the derived base name. Most filesystems reject a name over 255
+ * bytes, and a heading has no length limit of its own.
+ */
+const MAX_DOWNLOAD_BASENAME = 100;
+
+/**
+ * A trailing dotted segment counts as an extension only when it looks
+ * like one: short, alphanumeric, and carrying at least one letter. The
+ * letter rule is what keeps a version suffix out — `Q4 Report v1.2`
+ * must not be read as base `Q4 Report v1` plus extension `2`, or the
+ * markdown saves with no `.md` at all.
+ */
+const looksLikeExtension = (ext: string): boolean =>
+  /^[a-z0-9]{1,8}$/.test(ext) && /[a-z]/.test(ext);
+
+/**
+ * Unwrap links and drop emphasis markers so `# The **Q3** [report](x)`
+ * yields `The Q3 report` instead of carrying markdown syntax into the
+ * filename.
+ */
+const stripInlineMarkdown = (heading: string): string =>
+  heading
+    .replace(/\s+#+\s*$/, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~]/g, '')
+    .trim();
+
+/**
+ * First ATX heading (`# …`) of a markdown document, or `''`.
+ *
+ * Fenced blocks are skipped so a `# comment` on the first line of a
+ * shell snippet can't be mistaken for the document title. Setext
+ * headings (a line underlined with `===`) are deliberately not matched:
+ * `---` doubles as a thematic break AND as the YAML frontmatter fence,
+ * so matching that form would name documents after arbitrary body text.
+ */
+export function firstMarkdownHeading(content: string | undefined): string {
+  if (!content) {
+    return '';
+  }
+  let fence = '';
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.replace(/\r$/, '');
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      if (!fence) {
+        fence = marker;
+      } else if (marker === fence) {
+        fence = '';
+      }
+      continue;
+    }
+    if (fence) {
+      continue;
+    }
+    const heading = /^ {0,3}#{1,6}\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      const stripped = stripInlineMarkdown(heading[1]);
+      if (stripped) {
+        return stripped;
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Strip the characters a filename can't hold, collapse the whitespace a
+ * heading tends to carry, and cap the length. Returns `''` when nothing
+ * usable survives, so the caller falls back.
+ */
+const sanitizeDownloadBasename = (value: string): string =>
+  value
+    .replace(CONTROL_CHARS, '')
+    .replace(UNSAFE_FILENAME_CHARS, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/-{2,}/g, '-')
+    .slice(0, MAX_DOWNLOAD_BASENAME)
+    /* No leading dot (that makes a hidden file) and no trailing dot or
+     * space (Windows silently drops both). */
+    .replace(/^[.\-\s]+/, '')
+    .replace(/[.\-\s]+$/, '');
+
+/**
+ * Markdown buckets whose CONTENT is prose, so its first heading names
+ * the document. Source code is excluded on purpose: `#` opens a comment
+ * in shell, Python, Ruby and YAML, and the first such comment is a
+ * licence header far more often than a title.
+ */
+const HEADING_NAMED_TYPES: ReadonlySet<string> = new Set([TOOL_ARTIFACT_TYPES.MARKDOWN, 'text/md']);
+
+/**
+ * The best name the artifact carries for itself, before sanitizing:
+ * its title, else the document's own first heading. `''` when it
+ * carries neither.
+ */
+const artifactNameCandidate = (artifact: Artifact): string => {
+  const title = artifact.title?.trim() ?? '';
+  if (title !== '' && title !== GENERATED_ARTIFACT_TITLE) {
+    return title;
+  }
+  if (HEADING_NAMED_TYPES.has(artifact.type ?? '')) {
+    return firstMarkdownHeading(artifact.content);
+  }
+  return '';
+};
+
+/**
+ * Filename for the artifacts panel download button.
+ *
+ * The blob path used to hand `link.download` the Sandpack file key
+ * verbatim, so every markdown, plain-text and source artifact in every
+ * conversation saved as `content.md`, and each new download landed as
+ * `content (1).md`. Prefer a name the user recognizes: the artifact
+ * title (which is the panel heading, and the original filename for a
+ * file-backed artifact), then the document's own first heading, and
+ * only then the bucket default.
+ */
+export function getArtifactDownloadFilename(artifact: Artifact, fallback: string): string {
+  const safe = sanitizeDownloadBasename(artifactNameCandidate(artifact));
+  if (!safe) {
+    return fallback;
+  }
+  /* Keep an extension the candidate already carries (`script.py` from a
+   * file-backed CODE artifact). Otherwise borrow the bucket default's
+   * (`content.md` → `.md`) so the file opens in the right application. */
+  if (looksLikeExtension(extensionFromBasename(safe))) {
+    return safe;
+  }
+  const fallbackExtension = extensionFromBasename(basenameOf(fallback));
+  return fallbackExtension ? `${safe}.${fallbackExtension}` : safe;
+}
+
+/**
  * Artifact types whose preview is server-rendered HTML — there's no
  * source for a "code" view because the underlying file is binary, and
  * showing the generated HTML blob in a code editor would just be
@@ -890,7 +1045,7 @@ export function fileToArtifact(
   return {
     id: toolArtifactKey(attachment),
     type,
-    title: attachment.filename ?? 'Generated artifact',
+    title: attachment.filename ?? GENERATED_ARTIFACT_TITLE,
     // Nullish coalesce — an empty string is a legitimate file (e.g. a
     // user wrote an empty `.md`) and should render as empty in the
     // panel rather than be replaced by the deferred-extraction

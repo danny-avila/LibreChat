@@ -13,9 +13,14 @@ jest.mock('~/hooks', () => ({
       key,
 }));
 
+/* The real hook returns a per-bucket constant ('index.html' for the
+ * sandpack-static buckets, 'content.md' for markdown/text/code). Keep it
+ * settable so the filename tests can exercise both. */
+const mockFileKey = { current: 'index.html' };
+
 jest.mock('~/hooks/Artifacts/useArtifactProps', () => ({
   __esModule: true,
-  default: () => ({ fileKey: 'index.html', files: {}, template: 'static', sharedProps: {} }),
+  default: () => ({ fileKey: mockFileKey.current, files: {}, template: 'static', sharedProps: {} }),
 }));
 
 jest.mock('~/Providers/EditorContext', () => ({
@@ -99,8 +104,11 @@ describe('DownloadArtifact', () => {
   let createObjectURL: jest.Mock;
   let revokeObjectURL: jest.Mock;
   let anchorClick: jest.SpyInstance;
+  let savedAs: string[];
 
   beforeEach(() => {
+    mockFileKey.current = 'index.html';
+    savedAs = [];
     mockFileDownload.mockReset();
     // The attachment helper resolves to `true` when a file was delivered.
     mockFileDownload.mockResolvedValue(true);
@@ -114,9 +122,11 @@ describe('DownloadArtifact', () => {
       configurable: true,
       value: revokeObjectURL,
     });
-    anchorClick = jest
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(() => undefined);
+    anchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      savedAs.push(this.download);
+    });
   });
 
   afterEach(() => {
@@ -175,5 +185,40 @@ describe('DownloadArtifact', () => {
     });
     expect(mockFileDownload).toHaveBeenCalledTimes(1);
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  /* Regression: the blob path handed `link.download` the sandpack file
+   * key, so every markdown artifact in every conversation saved as
+   * `content.md` and stacked up as `content (1).md`, `content (2).md`. */
+  describe('saved filename', () => {
+    const markdownArtifact = (overrides: Partial<Artifact>): Artifact => ({
+      id: 'md-1',
+      lastUpdateTime: 0,
+      type: TOOL_ARTIFACT_TYPES.MARKDOWN,
+      ...overrides,
+    });
+
+    const clickDownload = async (artifact: Artifact) => {
+      mockFileKey.current = 'content.md';
+      render(<DownloadArtifact artifact={artifact} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button'));
+      });
+    };
+
+    it('saves a markdown artifact under its title, not the file key', async () => {
+      await clickDownload(markdownArtifact({ title: 'Quarterly Report', content: '# Q report' }));
+      expect(savedAs).toEqual(['Quarterly Report.md']);
+    });
+
+    it("saves under the document's heading when the artifact has no title", async () => {
+      await clickDownload(markdownArtifact({ content: '# Migration Plan\n\nSteps follow.' }));
+      expect(savedAs).toEqual(['Migration Plan.md']);
+    });
+
+    it('keeps the file key when nothing names the document', async () => {
+      await clickDownload(markdownArtifact({ content: 'no heading here' }));
+      expect(savedAs).toEqual(['content.md']);
+    });
   });
 });
