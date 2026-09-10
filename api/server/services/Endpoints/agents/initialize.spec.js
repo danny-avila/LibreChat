@@ -1572,6 +1572,27 @@ describe('initializeClient — subagent loading', () => {
           return;
         }
         await initialization;
+        if (source === 'fallback') {
+          mockInitializeAgent.mockImplementationOnce(async (params) => {
+            expect(params.req.resolvedConversation.codeWorkspaces).toEqual([
+              { environmentId: 'attached-vm', workspaceId: 'project-b' },
+            ]);
+            await params.loadTools({ ...subAgent, agentId: SUBAGENT_ID });
+            return makeSubagentConfig(SUBAGENT_ID);
+          });
+          await agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+            signal: new AbortController().signal,
+          });
+          expect(loadAgentTools).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              req: expect.objectContaining({
+                resolvedConversation: expect.objectContaining({
+                  codeWorkspaces: [{ environmentId: 'attached-vm', workspaceId: 'project-b' }],
+                }),
+              }),
+            }),
+          );
+        }
       } finally {
         fetchSpy.mockRestore();
         delete process.env.TEST_LAZY_WORKSPACE_TOKEN;

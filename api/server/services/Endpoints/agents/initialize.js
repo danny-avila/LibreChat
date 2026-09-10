@@ -556,6 +556,10 @@ const initializeClient = async ({
     requestConversationPromise,
     toolRoleGrantsPromise,
   ]);
+  /** Preserve the owner-scoped fallback for loaders that share this request. */
+  if (!Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
+    req.resolvedConversation = requestConversation;
+  }
   delete endpointOption.agent;
 
   /** The deployment switch AND the role grant. `initializeAgent` rebuilds
