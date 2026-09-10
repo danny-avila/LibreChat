@@ -90,6 +90,7 @@ interface PrimedCodeFile {
   ref: CodeEnvRef | undefined;
   sourceRef: CodeEnvRef;
   sandboxName: string;
+  isActive: boolean;
   getUploadTime: () => Promise<string | undefined>;
 }
 
@@ -147,6 +148,7 @@ export async function selectCodeFiles({
         file,
         ref,
         sourceRef,
+        isActive: !recovering,
         sandboxName: recovering ? resolveSandboxFilename(sandboxName, file.type) : sandboxName,
         assignRecoveryName,
         selectionPriority: (privateFileIds?.has(file.file_id) ? 2 : 0) + Number(assignRecoveryName),

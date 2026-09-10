@@ -176,6 +176,22 @@ describe('selectCodeFiles', () => {
     );
   });
 
+  it('keeps the freshness decision paired with the selected image destination', async () => {
+    const now = Date.parse('2026-09-10T12:00:00Z');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    const result = await selectCodeFiles({
+      files: [{ ...file('image', 'plot.png'), type: 'image/webp' }],
+      routeKey: 'default',
+      getFileInfo: async () => ({
+        originalFilename: 'plot.png',
+        lastModified: new Date(now - 23 * 3_600_000 + 1_000).toISOString(),
+      }),
+    });
+    clock.mockReturnValue(now + 2_000);
+    expect(result.selected[0]).toMatchObject({ isActive: true, sandboxName: 'plot.png' });
+    clock.mockRestore();
+  });
+
   it('propagates cancellation during legacy recovery', async () => {
     const controller = new AbortController();
     const reason = new Error('cancelled');

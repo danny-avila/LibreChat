@@ -1316,7 +1316,7 @@ const primeFiles = async (options) => {
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (const { file, ref, sourceRef, sandboxName, getUploadTime } of selected) {
+  for (const { file, ref, sourceRef, sandboxName, isActive, getUploadTime } of selected) {
     requiredCodeFiles += 1;
     const session_id = sourceRef.storage_session_id;
     const id = sourceRef.file_id;
@@ -1471,7 +1471,7 @@ const primeFiles = async (options) => {
       await reuploadFile();
       continue;
     }
-    if (!checkIfActive(uploadTime)) {
+    if (!isActive) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=stale ` +
           `uploadTime=${uploadTime} storage_session_id=${session_id}`,

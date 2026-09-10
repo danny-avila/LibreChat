@@ -3906,6 +3906,53 @@ describe('Code Process', () => {
       );
     });
 
+    it('keeps the selected live image when earlier recovery crosses the freshness cutoff', async () => {
+      const now = Date.parse('2026-09-10T12:00:00Z');
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+      const upload = jest.fn().mockImplementation(async () => {
+        clock.mockReturnValue(now + 2_000);
+        return { storage_session_id: 'recovered', file_id: 'recovered-text' };
+      });
+      getStrategyFunctions.mockImplementation(() => ({
+        getDownloadStream: jest.fn().mockResolvedValue('stream'),
+        handleFileUpload: upload,
+      }));
+      mockAxios.mockImplementation(async ({ url }) => ({
+        data: url.includes('newer-sandbox')
+          ? { lastModified: '2020-01-01', originalFilename: 'ready.txt' }
+          : {
+              lastModified: new Date(now - 23 * 3_600_000 + 1_000).toISOString(),
+              originalFilename: 'plot-alias.png',
+            },
+      }));
+      getFiles.mockResolvedValue([
+        codeFile({
+          file_id: 'newer',
+          filename: 'ready.txt',
+          storage_session_id: 'text-session',
+          createdAt: new Date('2026-01-02'),
+        }),
+        {
+          ...codeFile({
+            file_id: 'older',
+            filename: 'plot.png',
+            storage_session_id: 'image-session',
+            createdAt: new Date('2026-01-01'),
+          }),
+          type: 'image/webp',
+        },
+      ]);
+      try {
+        const result = await prime();
+        expect(upload).toHaveBeenCalledTimes(1);
+        expect(result.files).toContainEqual(
+          expect.objectContaining({ name: 'plot-alias.png', id: 'older-sandbox' }),
+        );
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
     it('keeps only the newest of two uploads sharing a filename', async () => {
       setupActiveSessions();
       getFiles.mockResolvedValue([
