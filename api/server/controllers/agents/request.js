@@ -29,6 +29,7 @@ const {
   deleteAgentCheckpoint,
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
+  resolveRunCodeWorkspaces,
   isAgentEventRetentionActive,
   createAgentEventActorTurn,
   createAgentEventActorDetachedActionLifecycle,
@@ -1485,7 +1486,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId: effectiveConversationId,
-    codeWorkspaces: req.body.codeWorkspaces ?? req.resolvedConversation?.codeWorkspaces,
+    codeWorkspaces: resolveRunCodeWorkspaces({
+      conversationId: effectiveConversationId,
+      requestedSelections: req.body.codeWorkspaces,
+      conversation: req.resolvedConversation,
+    }),
     parentMessageId:
       editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
   });
