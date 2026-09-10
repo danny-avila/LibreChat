@@ -1480,6 +1480,8 @@ describe('initializeClient — subagent loading', () => {
     [true, 'request'],
     [false, 'request'],
     [true, 'fallback'],
+    [true, 'override'],
+    [true, 'override-resolved'],
     [true, 'resolved'],
     [false, 'resolved-null'],
     [false, 'other-owner'],
@@ -1523,6 +1525,7 @@ describe('initializeClient — subagent loading', () => {
       if (source === 'request' && !registered) {
         req.body.codeWorkspaces[0].workspaceId = 'removed-project';
       }
+      let requestBody;
       if (source !== 'request') {
         const conversation = await mongoose.model('Conversation').create({
           conversationId: req.body.conversationId,
@@ -1533,6 +1536,20 @@ describe('initializeClient — subagent loading', () => {
         delete req.body.codeWorkspaces;
         if (source === 'resolved') req.resolvedConversation = conversation.toObject();
         else if (source !== 'resolved-null') delete req.resolvedConversation;
+        if (source.startsWith('override')) {
+          conversation.codeWorkspaces = [
+            { environmentId: 'attached-vm', workspaceId: 'wrong-source' },
+          ];
+          await conversation.save();
+          if (source === 'override-resolved') req.resolvedConversation = conversation.toObject();
+          requestBody = { ...req.body, conversationId: 'effective-target' };
+          await mongoose.model('Conversation').create({
+            conversationId: requestBody.conversationId,
+            endpoint: 'agents',
+            user: req.user.id,
+            codeWorkspaces: [{ environmentId: 'attached-vm', workspaceId: 'project-b' }],
+          });
+        }
       }
       mockGetAppConfig.mockResolvedValue(req.config);
       process.env.TEST_LAZY_WORKSPACE_TOKEN = 'test-token';
@@ -1560,6 +1577,7 @@ describe('initializeClient — subagent loading', () => {
       try {
         const initialization = initializeClient({
           req,
+          requestBody,
           res: {},
           signal: new AbortController().signal,
           endpointOption: makeEndpointOption(),
@@ -1572,7 +1590,7 @@ describe('initializeClient — subagent loading', () => {
           return;
         }
         await initialization;
-        if (source === 'fallback') {
+        if (source === 'fallback' || source.startsWith('override')) {
           mockInitializeAgent.mockImplementationOnce(async (params) => {
             expect(params.req.resolvedConversation.codeWorkspaces).toEqual([
               { environmentId: 'attached-vm', workspaceId: 'project-b' },
