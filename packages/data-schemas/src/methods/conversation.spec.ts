@@ -16,8 +16,11 @@ import type {
   IConversation,
   AppConfig,
 } from '../types';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { createConversationTagMethods } from './conversationTag';
+import { resolveTagNames } from '~/tags/membership';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -51,6 +54,10 @@ beforeAll(async () => {
   const mongoUri = mongoServer.getUri();
 
   const models = createModels(mongoose);
+  (
+    mongoose.models.ConversationTag as mongoose.Model<unknown> &
+      Pick<SchemaWithMeiliMethods, 'meiliSearch'>
+  ).meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
   modelsToCleanup = Object.keys(models);
   Object.assign(mongoose.models, models);
   Conversation = mongoose.models.Conversation as mongoose.Model<IConversation>;
@@ -2103,7 +2110,7 @@ describe('Conversation Operations', () => {
           user: 'user123',
           endpoint: EModelEndpoint.agents,
           chatProjectId: project._id!.toString(),
-          tags: ['work'],
+          tagIds: await resolveTagNames(mongoose, 'user123', ['work']),
         },
         {
           conversationId: childId,
@@ -2140,9 +2147,9 @@ describe('Conversation Operations', () => {
       expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
       expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
       expect(deleteMessages).not.toHaveBeenCalled();
-      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
-        0,
-      );
+      expect(
+        (await createConversationTagMethods(mongoose).getConversationTags('user123'))[0].count,
+      ).toBe(0);
       expect(
         (await ChatProject.findById(project._id).lean<IChatProject>())?.conversationCount,
       ).toBe(0);
@@ -2157,9 +2164,9 @@ describe('Conversation Operations', () => {
         conversationId: { $in: [parentId, childId] },
         user: 'user123',
       });
-      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
-        0,
-      );
+      expect(
+        (await createConversationTagMethods(mongoose).getConversationTags('user123'))[0].count,
+      ).toBe(0);
       findSpy.mockRestore();
     });
 
@@ -2229,156 +2236,58 @@ describe('Conversation Operations', () => {
       find.mockRestore();
     });
 
-    it('should decrement tag counts for a deleted bookmarked conversation', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-
-      await deleteConvos('user123', { conversationId: convoId });
-
-      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(1);
-    });
-
-    it('should decrement counts for every tag on the deleted conversation', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 3, position: 1 });
-      await ConversationTag.create({ user: 'user123', tag: 'personal', count: 1, position: 2 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work', 'personal'],
-      });
-
-      await deleteConvos('user123', { conversationId: convoId });
-
-      const work = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      const personal = await ConversationTag.findOne({ user: 'user123', tag: 'personal' }).lean();
-      expect(work?.count).toBe(2);
-      expect(personal?.count).toBe(0);
-    });
-
-    it('should decrement a shared tag once per deleted conversation when clearing all', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
-      await Conversation.create({
-        conversationId: uuidv4(),
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-      await Conversation.create({
-        conversationId: uuidv4(),
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-
-      await deleteConvos('user123', {});
-
-      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(0);
-    });
-
-    it('should not double-decrement duplicate tag entries within one conversation', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work', 'work'],
-      });
-
-      await deleteConvos('user123', { conversationId: convoId });
-
-      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(1);
-    });
-
-    it('should clamp tag counts at zero and never go negative', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 0, position: 1 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-
-      await deleteConvos('user123', { conversationId: convoId });
-
-      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(0);
-    });
-
-    it('should not touch tags belonging to another user', async () => {
-      await ConversationTag.create({ user: 'other', tag: 'work', count: 5, position: 1 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-
-      await deleteConvos('user123', { conversationId: convoId });
-
-      const tag = await ConversationTag.findOne({ user: 'other', tag: 'work' }).lean();
-      expect(tag?.count).toBe(5);
-    });
-
-    it('should not decrement tag counts when the delete removed nothing (lost race)', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-
-      const deleteSpy = jest
-        .spyOn(Conversation, 'deleteMany')
-        .mockResolvedValueOnce({ acknowledged: true, deletedCount: 0 } as never);
-
-      await deleteConvos('user123', { conversationId: convoId });
-
-      deleteSpy.mockRestore();
-      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(2);
-    });
-
-    it('still decrements tag counts AND returns the deleted ids when message deletion fails', async () => {
-      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
-      const convoId = uuidv4();
-      await Conversation.create({
-        conversationId: convoId,
-        user: 'user123',
-        endpoint: EModelEndpoint.openAI,
-        tags: ['work'],
-      });
-
-      deleteMessages.mockRejectedValueOnce(new Error('message cleanup failed'));
-
-      // Post-delete cleanup is best-effort: the conversations are already gone, so the
-      // caller must still receive the deleted ids (downstream cleanup — e.g. agent
-      // checkpoint pruning — depends on them, and a retry would find nothing).
-      const result = await deleteConvos('user123', { conversationId: convoId });
-      expect(result.deletedCount).toBe(1);
-      expect(result.conversationIds).toEqual([convoId]);
-      expect(result.messages.deletedCount).toBe(0);
-
-      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
-      expect(tag?.count).toBe(1);
-      const convo = await Conversation.findOne({ conversationId: convoId });
-      expect(convo).toBeNull();
-    });
+    it.each(['one', 'all', 'lost-race', 'message-failure'])(
+      'derives distinct owned tag counts after conversation deletion (%s)',
+      async (mode) => {
+        const tagMethods = createConversationTagMethods(mongoose);
+        const [id] = await resolveTagNames(mongoose, 'user123', ['work']);
+        const [foreignId] = await resolveTagNames(mongoose, 'other', ['work']);
+        const first = uuidv4();
+        const second = uuidv4();
+        await Conversation.create([
+          {
+            user: 'user123',
+            conversationId: first,
+            endpoint: EModelEndpoint.openAI,
+            tagIds: [id, id],
+          },
+          {
+            user: 'user123',
+            conversationId: second,
+            endpoint: EModelEndpoint.openAI,
+            tagIds: [id],
+          },
+          {
+            user: 'other',
+            conversationId: uuidv4(),
+            endpoint: EModelEndpoint.openAI,
+            tagIds: [foreignId],
+          },
+        ]);
+        expect((await tagMethods.getConversationTags('user123'))[0].count).toBe(2);
+        const lost =
+          mode === 'lost-race'
+            ? jest
+                .spyOn(Conversation, 'deleteMany')
+                .mockResolvedValueOnce({ acknowledged: true, deletedCount: 0 })
+            : undefined;
+        if (mode === 'message-failure')
+          deleteMessages.mockRejectedValueOnce(new Error('message cleanup failed'));
+        const result = await deleteConvos(
+          'user123',
+          mode === 'all' ? {} : { conversationId: first },
+        );
+        lost?.mockRestore();
+        expect((await tagMethods.getConversationTags('user123'))[0].count).toBe(
+          { all: 0, 'lost-race': 2, one: 1, 'message-failure': 1 }[mode],
+        );
+        expect((await tagMethods.getConversationTags('other'))[0].count).toBe(1);
+        if (mode === 'message-failure') {
+          expect(result.conversationIds).toEqual([first]);
+          expect(result.messages.deletedCount).toBe(0);
+        }
+      },
+    );
   });
 
   describe('archiveAllConvos', () => {
@@ -7042,5 +6951,248 @@ describe('Conversation Operations', () => {
         titleMatch.conversationId,
       ]);
     });
+  });
+});
+
+describe('tag enrichment and optional search', () => {
+  const deferred = () => {
+    let resolve = () => {};
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  };
+
+  it.each(['tags', 'shares'])(
+    'joins independent enrichment when %s finish first',
+    async (first) => {
+      const user = uuidv4();
+      const tag = await ConversationTag.create({ user, tag: 'Parallel', position: 0 });
+      const conversation = await Conversation.create({
+        user,
+        conversationId: uuidv4(),
+        title: 'Parallel',
+        endpoint: EModelEndpoint.openAI,
+        tagIds: [String(tag._id)],
+      });
+      const SharedLink = mongoose.models.SharedLink;
+      await SharedLink.create({
+        user,
+        conversationId: conversation.conversationId,
+        shareId: uuidv4(),
+      });
+      const tagStarted = deferred();
+      const shareStarted = deferred();
+      const tagFinished = deferred();
+      const shareFinished = deferred();
+      const releaseTags = deferred();
+      const releaseShares = deferred();
+      const originalTagFind = ConversationTag.collection.find.bind(ConversationTag.collection);
+      const originalShareFind = SharedLink.collection.find.bind(SharedLink.collection);
+      jest.spyOn(ConversationTag.collection, 'find').mockImplementation((...args) => {
+        const cursor = originalTagFind(...args);
+        const toArray = cursor.toArray.bind(cursor);
+        jest.spyOn(cursor, 'toArray').mockImplementation(async () => {
+          tagStarted.resolve();
+          await releaseTags.promise;
+          const rows = await toArray();
+          tagFinished.resolve();
+          return rows;
+        });
+        return cursor;
+      });
+      jest.spyOn(SharedLink.collection, 'find').mockImplementation((...args) => {
+        const cursor = originalShareFind(...args);
+        const toArray = cursor.toArray.bind(cursor);
+        jest.spyOn(cursor, 'toArray').mockImplementation(async () => {
+          shareStarted.resolve();
+          await releaseShares.promise;
+          const rows = await toArray();
+          shareFinished.resolve();
+          return rows;
+        });
+        return cursor;
+      });
+      const previous = process.env.ALLOW_SHARED_LINKS;
+      process.env.ALLOW_SHARED_LINKS = 'true';
+      try {
+        const pending = getConvosQueried(user, [{ conversationId: conversation.conversationId }]);
+        await Promise.all([tagStarted.promise, shareStarted.promise]);
+        (first === 'tags' ? releaseTags : releaseShares).resolve();
+        await (first === 'tags' ? tagFinished : shareFinished).promise;
+        await new Promise((resolve) => setImmediate(resolve));
+        (first === 'tags' ? releaseShares : releaseTags).resolve();
+        const result = await pending;
+        expect(result.conversations).toHaveLength(1);
+        expect(result.conversations[0]).toMatchObject({
+          isShared: true,
+          tags: ['Parallel'],
+          tagIds: [String(tag._id)],
+        });
+        expect(result.convoMap[conversation.conversationId]).toBe(result.conversations[0]);
+      } finally {
+        releaseTags.resolve();
+        releaseShares.resolve();
+        if (previous === undefined) delete process.env.ALLOW_SHARED_LINKS;
+        else process.env.ALLOW_SHARED_LINKS = previous;
+      }
+    },
+  );
+
+  it('preserves title and message hits during a catalog index outage', async () => {
+    const user = uuidv4();
+    const [title, message] = await Conversation.create(
+      ['title', 'message'].map((label) => ({
+        user,
+        conversationId: uuidv4(),
+        title: label,
+        endpoint: EModelEndpoint.openAI,
+      })),
+    );
+    Object.assign(Conversation, {
+      meiliSearch: jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: title.conversationId }] }),
+    });
+    searchMessages.mockResolvedValueOnce({ hits: [{ conversationId: message.conversationId }] });
+    const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+    jest.spyOn(Tag, 'meiliSearch').mockRejectedValueOnce(new Error('index_not_found'));
+    const result = await getConvosByCursor(user, { search: 'query' });
+    expect(new Set(result.conversations.map((convo) => convo.conversationId))).toEqual(
+      new Set([title.conversationId, message.conversationId]),
+    );
+  });
+
+  it('does not swallow Mongo failures validating tag search hits', async () => {
+    const user = uuidv4();
+    const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+    jest.spyOn(Tag, 'meiliSearch').mockResolvedValueOnce({
+      hits: [{ _id: new mongoose.Types.ObjectId().toString() }],
+      processingTimeMs: 0,
+      query: 'query',
+      limit: 1000,
+      offset: 0,
+      estimatedTotalHits: 1,
+    });
+    Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+    jest.spyOn(ConversationTag.collection, 'find').mockImplementationOnce(() => {
+      throw new Error('Mongo validation unavailable');
+    });
+    await expect(getConvosByCursor(user, { search: 'query' })).rejects.toThrow(
+      'Error during meiliSearch',
+    );
+  });
+  it('starts name and ID filter validation alongside every independent search', async () => {
+    const user = uuidv4();
+    const [nameTag, idTag] = await ConversationTag.create([
+      { user, tag: 'Name filter', position: 0 },
+      { user, tag: 'ID filter', position: 1 },
+    ]);
+    const conversations = await Conversation.create(
+      [[String(nameTag._id)], [String(idTag._id)], [String(nameTag._id), String(idTag._id)]].map(
+        (tagIds) => ({
+          user,
+          conversationId: uuidv4(),
+          title: 'Match',
+          endpoint: EModelEndpoint.openAI,
+          tagIds,
+        }),
+      ),
+    );
+    const hits = conversations.map(({ conversationId }) => ({ conversationId }));
+    const titleSearch = jest.fn().mockResolvedValue({ hits });
+    Object.assign(Conversation, { meiliSearch: titleSearch });
+    searchMessages.mockResolvedValueOnce({ hits: [] });
+    const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+    const tagSearch = jest.spyOn(Tag, 'meiliSearch').mockResolvedValueOnce({
+      hits: [],
+      processingTimeMs: 0,
+      query: 'Match',
+      offset: 0,
+      limit: 1000,
+      estimatedTotalHits: 0,
+    });
+    const bothStarted = deferred();
+    const release = deferred();
+    let started = 0;
+    const originalFind = ConversationTag.collection.find.bind(ConversationTag.collection);
+    jest.spyOn(ConversationTag.collection, 'find').mockImplementation((...args) => {
+      const cursor = originalFind(...args);
+      const toArray = cursor.toArray.bind(cursor);
+      jest.spyOn(cursor, 'toArray').mockImplementation(async () => {
+        if (++started === 2) bothStarted.resolve();
+        await release.promise;
+        return toArray();
+      });
+      return cursor;
+    });
+    const conversationRead = jest.spyOn(Conversation.collection, 'find');
+    const pending = getConvosByCursor(user, {
+      tags: ['Name filter'],
+      tagIds: [String(idTag._id)],
+      search: 'Match',
+    });
+    try {
+      await bothStarted.promise;
+      expect(titleSearch).toHaveBeenCalled();
+      expect(searchMessages).toHaveBeenCalledWith('Match', expect.any(Object));
+      expect(tagSearch).toHaveBeenCalled();
+      expect(conversationRead).not.toHaveBeenCalled();
+    } finally {
+      release.resolve();
+    }
+    const result = await pending;
+    expect(result.conversations.map(({ conversationId }) => conversationId)).toEqual([
+      conversations[2].conversationId,
+    ]);
+  });
+
+  it.each(['missing-name', 'missing-id', 'foreign-id', 'empty'])(
+    'preserves %s filter semantics during search',
+    async (kind) => {
+      const user = uuidv4();
+      const foreign = await ConversationTag.create({ user: uuidv4(), tag: 'Foreign', position: 0 });
+      const conversation = await Conversation.create({
+        user,
+        conversationId: uuidv4(),
+        title: 'Match',
+        endpoint: EModelEndpoint.openAI,
+        tagIds: [String(foreign._id)],
+      });
+      Object.assign(Conversation, {
+        meiliSearch: jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: conversation.conversationId }] }),
+      });
+      searchMessages.mockResolvedValueOnce({ hits: [] });
+      const filter: NonNullable<Parameters<typeof getConvosByCursor>[1]> = { tags: [], tagIds: [] };
+      if (kind === 'missing-name') filter.tags = ['Not created'];
+      if (kind === 'missing-id') filter.tagIds = [new mongoose.Types.ObjectId().toString()];
+      if (kind === 'foreign-id') filter.tagIds = [String(foreign._id)];
+      const result = await getConvosByCursor(user, { ...filter, search: 'Match' });
+      expect(result.conversations.map(({ conversationId }) => conversationId)).toEqual(
+        kind === 'empty' ? [conversation.conversationId] : [],
+      );
+      expect(await ConversationTag.countDocuments({ user })).toBe(0);
+    },
+  );
+
+  it('still validates malformed filters when every search has no hits', async () => {
+    Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+    searchMessages.mockResolvedValueOnce({ hits: [] });
+    await expect(
+      getConvosByCursor(uuidv4(), { tagIds: ['invalid'], search: 'No hits' }),
+    ).rejects.toThrow('Invalid tag ID');
+  });
+
+  it('does not hide required catalog read failures behind empty search results', async () => {
+    Object.assign(Conversation, { meiliSearch: jest.fn().mockResolvedValue({ hits: [] }) });
+    searchMessages.mockResolvedValueOnce({ hits: [] });
+    jest.spyOn(ConversationTag.collection, 'find').mockImplementationOnce(() => {
+      throw new Error('Catalog unavailable');
+    });
+    await expect(
+      getConvosByCursor(uuidv4(), { tags: ['Required'], search: 'No hits' }),
+    ).rejects.toThrow('Catalog unavailable');
   });
 });

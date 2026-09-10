@@ -21,6 +21,7 @@ export type ConversationListParams = {
   sortBy?: 'title' | 'createdAt' | 'updatedAt' | 'archivedAt';
   sortDirection?: 'asc' | 'desc';
   tags?: string[];
+  tagIds?: string[];
   search?: string;
   projectId?: string;
 };
@@ -36,6 +37,8 @@ export type MinimalConversation = Pick<
   | 'user'
   | 'chatProjectId'
   | 'pinned'
+  | 'tags'
+  | 'tagIds'
 >;
 
 export type ConversationListResponse = {

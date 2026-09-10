@@ -48,7 +48,7 @@ const ConversationsSection = memo(() => {
   const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
     useConversationsInfiniteQuery(
       {
-        tags: tags.length === 0 ? undefined : tags,
+        tagIds: tags.length === 0 ? undefined : tags,
         search: search.debouncedQuery || undefined,
       },
       {
@@ -86,7 +86,7 @@ const ConversationsSection = memo(() => {
    * still shows on first paint, instead of appearing only once that list scrolls to it.
    * The bookmark filter still applies, matching the chats list beside it. */
   const { data: pinnedData } = usePinnedConversationsQuery(
-    { tags: tags.length === 0 ? undefined : tags },
+    { tagIds: tags.length === 0 ? undefined : tags },
     { enabled: isAuthenticated },
   );
 

@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { isEnabled, instrumentMongooseQueryMetrics } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger, assertConversationTagMigration } = require('@librechat/data-schemas');
 
 const mongoose = require('mongoose');
 const MONGO_URI = process.env.MONGO_URI;
@@ -71,7 +71,8 @@ async function connectDb() {
     logger.info('Mongo Connection options');
     logger.info(JSON.stringify(opts, null, 2));
     mongoose.set('strictQuery', true);
-    cached.promise = mongoose.connect(MONGO_URI, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(MONGO_URI, opts).then(async (mongoose) => {
+      await assertConversationTagMigration(mongoose.connection);
       return mongoose;
     });
   }

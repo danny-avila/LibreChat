@@ -16,6 +16,7 @@ export function createConversationModel(
       /** Note: Will get created automatically if it doesn't exist already */
       indexName: 'convos',
       primaryKey: 'conversationId',
+      searchableAttributes: ['conversationId', 'title', 'user'],
       excludeFromIndexPath: 'subagentThread',
     });
   }

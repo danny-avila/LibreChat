@@ -6,6 +6,11 @@ export * from './schema';
 export * from './utils';
 export { createModels } from './models';
 export {
+  ConversationTagUpdateError,
+  ConversationTagNotFoundError,
+  ConversationNotFoundError,
+} from './tags/errors';
+export {
   createMethods,
   CLIENT_MESSAGE_SELECT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
@@ -104,3 +109,8 @@ export {
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,
 } from './migrations';
+
+export {
+  migrateConversationTags,
+  assertConversationTagMigration,
+} from './migrations/conversationTags';

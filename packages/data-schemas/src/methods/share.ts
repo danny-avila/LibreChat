@@ -8,7 +8,8 @@ import {
   sanitizeUIResourceContent,
   stripMessageUIResourceMarkers,
 } from '~/utils/stripUIResourceMarkers';
-import { activeExpirationFilter } from '~/utils/retention';
+import { activeExpirationFilter, buildRetentionVisibilityFilter } from '~/utils/retention';
+import { searchTagIds, tagScope } from '~/tags/membership';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import { CLIENT_MESSAGE_SELECT } from './message';
@@ -967,24 +968,27 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         }
       }
 
+      let titleConversationIds: Set<string> | undefined;
+      let matchingTagIds: string[] = [];
       if (search && search.trim()) {
         try {
-          const searchResults = await Conversation.meiliSearch(search, {
-            filter: `user = "${user}"`,
-            limit: MEILI_SEARCH_LIMIT,
-            attributesToRetrieve: ['conversationId'],
-          });
-
-          if (!searchResults?.hits?.length) {
-            return {
-              links: [],
-              nextCursor: undefined,
-              hasNextPage: false,
-            };
+          const [searchResults, tagIds] = await Promise.all([
+            Conversation.meiliSearch(search, {
+              filter: `user = "${user}"`,
+              limit: MEILI_SEARCH_LIMIT,
+              attributesToRetrieve: ['conversationId'],
+            }),
+            searchTagIds(mongoose, user, search),
+          ]);
+          matchingTagIds = tagIds;
+          titleConversationIds = new Set(
+            searchResults.hits.flatMap((hit) =>
+              typeof hit.conversationId === 'string' ? [hit.conversationId] : [],
+            ),
+          );
+          if (!matchingTagIds.length) {
+            query.conversationId = { $in: [...titleConversationIds] };
           }
-
-          const conversationIds = searchResults.hits.map((hit) => hit.conversationId);
-          query['conversationId'] = { $in: conversationIds };
         } catch (searchError) {
           logger.error('[getSharedLinks] Meilisearch error', {
             error: searchError instanceof Error ? searchError.message : 'Unknown error',
@@ -1002,11 +1006,60 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
       sort._id = sort[sortBy];
 
-      const sharedLinks = await SharedLink.find(query)
-        .sort(sort)
-        .limit(pageSize + 1)
-        .select('-__v -user')
-        .lean();
+      const sharedLinks: t.ISharedLink[] = [];
+      const candidates = SharedLink.find(query).sort(sort).select('-__v -user').lean();
+      if (!matchingTagIds.length) {
+        sharedLinks.push(...(await candidates.limit(pageSize + 1)));
+      } else {
+        const scope = tagScope(user);
+        const [titleLinks, taggedLinks] = await Promise.all([
+          titleConversationIds?.size
+            ? SharedLink.find({ ...query, conversationId: { $in: [...titleConversationIds] } })
+                .sort(sort)
+                .limit(pageSize + 1)
+                .select('_id')
+                .lean()
+            : [],
+          Conversation.aggregate<Pick<t.ISharedLink, '_id'>>([
+            {
+              $match: {
+                $and: [
+                  scope,
+                  { tagIds: { $in: matchingTagIds }, subagentThread: { $exists: false } },
+                  buildRetentionVisibilityFilter(),
+                ],
+              },
+            },
+            { $project: { conversationId: 1 } },
+            {
+              $lookup: {
+                from: 'sharedlinks',
+                localField: 'conversationId',
+                foreignField: 'conversationId',
+                as: 'matchedShare',
+              },
+            },
+            { $unwind: '$matchedShare' },
+            { $match: { 'matchedShare.user': user, 'matchedShare.tenantId': scope.tenantId } },
+            { $replaceRoot: { newRoot: '$matchedShare' } },
+            { $match: query },
+            { $project: { _id: 1, [sortBy]: 1 } },
+            { $sort: sort },
+            { $limit: pageSize + 1 },
+            { $project: { _id: 1 } },
+          ]),
+        ]);
+        const ids = [...new Set([...titleLinks, ...taggedLinks].map((link) => String(link._id)))];
+        if (ids.length) {
+          sharedLinks.push(
+            ...(await SharedLink.find({ ...query, _id: { $in: ids } })
+              .sort(sort)
+              .limit(pageSize + 1)
+              .select('-__v -user')
+              .lean()),
+          );
+        }
+      }
 
       const hasNextPage = sharedLinks.length > pageSize;
       const links = sharedLinks.slice(0, pageSize);

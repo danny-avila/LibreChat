@@ -161,6 +161,9 @@ module.exports = {
   }),
 
   dataSchemas: () => ({
+    isValidObjectIdString: jest.requireActual(
+      '../../../../packages/data-schemas/src/utils/objectId',
+    ).isValidObjectIdString,
     logger: {
       debug: jest.fn(),
       info: jest.fn(),
@@ -187,6 +190,7 @@ module.exports = {
   conversationModel: () => ({
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),
+    getConvoWithTags: jest.fn(),
     deleteConvos: jest.fn(),
     deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     saveConvo: jest.fn(),
@@ -197,6 +201,7 @@ module.exports = {
   sharedModels: () => ({
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),
+    getConvoWithTags: jest.fn(),
     deleteConvos: jest.fn(),
     deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     archiveAllConvos: jest.fn(),

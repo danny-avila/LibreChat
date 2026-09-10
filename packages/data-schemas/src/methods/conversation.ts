@@ -25,6 +25,7 @@ import type {
   ISubagentThreadReservation,
 } from '~/types';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import type { TagRecord } from '~/tags/membership';
 import type { MessageMethods } from './message';
 import {
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
@@ -33,6 +34,15 @@ import {
   MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
   MAX_AGENT_EVENT_ACTOR_TOOL_NAME_LENGTH,
 } from '~/types/convo';
+import {
+  hydrateConversationTags,
+  projectConversationTags,
+  cleanConversationTagMembership,
+  tagScope,
+  ownedTagIds,
+  resolveTagNames,
+  searchTagIds,
+} from '~/tags/membership';
 import {
   activeExpirationFilter,
   buildRetentionVisibilityFilter,
@@ -48,6 +58,7 @@ import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
+import { getTenantId } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 const ACTOR_CHECKPOINT_FIELDS = [
@@ -285,7 +296,10 @@ export interface ConversationMethods {
     conversationId: string,
     pinned: boolean,
   ): Promise<IConversation | null>;
-  bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
+  bulkSaveConvos(
+    conversations: Array<Record<string, unknown>>,
+    options?: { tagSource?: 'portable' | 'owned' },
+  ): Promise<unknown>;
   getConvosByCursor(
     user: string,
     options?: {
@@ -294,6 +308,7 @@ export interface ConversationMethods {
       isArchived?: boolean;
       pinned?: boolean;
       tags?: string[];
+      tagIds?: string[];
       search?: string;
       sortBy?: string;
       sortDirection?: string;
@@ -311,6 +326,7 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoWithTags(user: string, conversationId: string): Promise<IConversation | null>;
   getSubagentThreadForParent(input: {
     user: string;
     parentConversationId: string;
@@ -553,11 +569,29 @@ export function createConversationMethods(
   async function getConvo(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }).lean<IConversation>();
+      const conversation = await Conversation.findOne({
+        user,
+        conversationId,
+      }).lean<IConversation>();
+      if (!conversation) return null;
+      delete conversation.tags;
+      return conversation;
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
     }
+  }
+
+  /** Public labels are projected without adding a serial query to the shared read path. */
+  async function getConvoWithTags(user: string, conversationId: string) {
+    const scope = tagScope(user);
+    const [conversation, catalog] = await Promise.all([
+      (mongoose.models.Conversation as Model<IConversation>)
+        .findOne({ ...scope, conversationId })
+        .lean<IConversation>(),
+      (mongoose.models.ConversationTag as Model<TagRecord>).find(scope).lean(),
+    ]);
+    return conversation ? projectConversationTags([conversation], catalog)[0] : null;
   }
 
   /** Resolves a child only through its owning parent and includes its private live lease. */
@@ -2172,6 +2206,12 @@ export function createConversationMethods(
 
       const appendMessageIds = metadata?.appendMessageIds;
       const update: Record<string, unknown> = { ...convo, user: userId };
+      if (Array.isArray(convo.tagIds)) {
+        update.tagIds = await ownedTagIds(mongoose, userId, convo.tagIds as string[]);
+      } else if (Array.isArray(convo.tags)) {
+        update.tagIds = await resolveTagNames(mongoose, userId, convo.tags as string[]);
+      }
+      delete update.tags;
       delete update.isTemporary;
       delete update.expiredAt;
       delete update.initial_agent_id;
@@ -2496,7 +2536,12 @@ export function createConversationMethods(
         }
       }
 
-      return conversation.toObject();
+      const saved = conversation.toObject();
+      delete saved.tags;
+      if (Array.isArray(update.tagIds) && update.tagIds.length) {
+        return (await cleanConversationTagMembership(mongoose, [saved]))[0];
+      }
+      return saved;
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
       if (metadata?.context) {
@@ -2534,7 +2579,10 @@ export function createConversationMethods(
   /**
    * Saves multiple conversations in bulk.
    */
-  async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
+  async function bulkSaveConvos(
+    conversations: Array<Record<string, unknown>>,
+    { tagSource = 'portable' }: { tagSource?: 'portable' | 'owned' } = {},
+  ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
@@ -2599,9 +2647,55 @@ export function createConversationMethods(
         }
       }
 
+      const namesByUser = new Map<string, Set<string>>();
+      for (const convo of conversations) {
+        if (typeof convo.user !== 'string') throw new Error('Conversation owner is required');
+        if (tagSource === 'owned' && Array.isArray(convo.tagIds)) continue;
+        const names = namesByUser.get(convo.user) ?? new Set<string>();
+        for (const name of Array.isArray(convo.tags) ? convo.tags : []) {
+          if (typeof name !== 'string') throw new Error('Invalid tag name');
+          names.add(name);
+        }
+        namesByUser.set(convo.user, names);
+      }
+      // Catalog identities are shared; failed-import compensation removes content, not bookmarks.
+      const importedIds = new Map<string, Map<string, string>>();
+      for (const [user, names] of namesByUser) {
+        const uniqueNames = [...names];
+        const ids = await resolveTagNames(mongoose, user, uniqueNames);
+        importedIds.set(user, new Map(uniqueNames.map((name, index) => [name, ids[index]])));
+      }
+      const ownedIds = new Map<string, string[]>();
+      if (tagSource === 'owned') {
+        for (const convo of conversations) {
+          if (!Array.isArray(convo.tagIds)) continue;
+          ownedIds.set(
+            JSON.stringify([convo.user, convo.conversationId]),
+            await ownedTagIds(mongoose, String(convo.user), convo.tagIds as string[]),
+          );
+        }
+      }
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
+      const memberships: Array<
+        Pick<IConversation, 'user' | 'conversationId' | 'tenantId' | 'tags' | 'tagIds'>
+      > = [];
       const bulkOps = conversations.map((convo) => {
-        const sanitized = { ...convo };
+        const localIds = importedIds.get(String(convo.user));
+        const tagIds =
+          ownedIds.get(JSON.stringify([convo.user, convo.conversationId])) ??
+          [...new Set(Array.isArray(convo.tags) ? convo.tags : [])].flatMap((name) => {
+            const id = localIds?.get(String(name));
+            return id ? [id] : [];
+          });
+        if (tagIds.length)
+          memberships.push({
+            user: String(convo.user),
+            conversationId: String(convo.conversationId),
+            ...(getTenantId() == null ? {} : { tenantId: getTenantId() }),
+            tagIds,
+          });
+        const sanitized: Record<string, unknown> = { ...convo, tagIds };
+        delete sanitized.tags;
         delete sanitized.initial_agent_id;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
@@ -2644,6 +2738,7 @@ export function createConversationMethods(
       });
 
       const result = await tenantSafeBulkWrite(Conversation, bulkOps);
+      if (memberships.length) await cleanConversationTagMembership(mongoose, memberships);
       await Promise.all(
         [...affectedProjectStats.values()].map(({ user, projectId }) =>
           refreshChatProjectStatsForUser(mongoose, user, projectId),
@@ -2703,6 +2798,7 @@ export function createConversationMethods(
       isArchived = false,
       pinned = false,
       tags,
+      tagIds,
       search,
       sortBy = 'updatedAt',
       sortDirection = 'desc',
@@ -2713,6 +2809,7 @@ export function createConversationMethods(
       isArchived?: boolean;
       pinned?: boolean;
       tags?: string[];
+      tagIds?: string[];
       search?: string;
       sortBy?: string;
       sortDirection?: string;
@@ -2739,10 +2836,6 @@ export function createConversationMethods(
       filters.push({ pinned: true } as FilterQuery<IConversation>);
     }
 
-    if (Array.isArray(tags) && tags.length > 0) {
-      filters.push({ tags: { $in: tags } } as FilterQuery<IConversation>);
-    }
-
     if (projectId === 'unassigned') {
       filters.push({
         $or: [{ chatProjectId: null }, { chatProjectId: { $exists: false } }],
@@ -2754,14 +2847,15 @@ export function createConversationMethods(
     filters.push(getVisibleConversationRetentionFilter());
     filters.push(getHumanConversationFilter());
 
-    if (search) {
+    const resolveSearchMatches = async () => {
+      if (!search) return null;
       try {
         const searchParams: SearchParams = {
           filter: `user = "${escapeMeiliFilterValue(user)}"`,
           limit: MEILI_SEARCH_LIMIT,
           attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
-        const [convoResults, messageHits] = await Promise.all([
+        const [convoResults, messageHits, matchingTagIds] = await Promise.all([
           Conversation.meiliSearch(search, searchParams),
           deps?.searchMessages
             ? deps.searchMessages(search, searchParams).then(
@@ -2775,6 +2869,7 @@ export function createConversationMethods(
                 },
               )
             : [],
+          searchTagIds(mongoose, user, search),
         ]);
         const matchingIds = new Set<string>();
         for (const hit of convoResults.hits ?? []) {
@@ -2787,16 +2882,30 @@ export function createConversationMethods(
             matchingIds.add(hit.conversationId);
           }
         }
-        if (!matchingIds.size) {
-          return { conversations: [], nextCursor: null };
-        }
-        filters.push({
-          conversationId: { $in: [...matchingIds] },
-        } as FilterQuery<IConversation>);
+        return { matchingIds: [...matchingIds], matchingTagIds };
       } catch (error) {
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
         throw new Error('Error during meiliSearch');
       }
+    };
+
+    const [nameFilterIds, idFilterIds, searchMatches] = await Promise.all([
+      Array.isArray(tags) && tags.length > 0
+        ? resolveTagNames(mongoose, user, tags, undefined, false)
+        : null,
+      tagIds?.length ? ownedTagIds(mongoose, user, tagIds, undefined, false) : null,
+      resolveSearchMatches(),
+    ]);
+    if (nameFilterIds) filters.push({ tagIds: { $in: nameFilterIds } });
+    if (idFilterIds) filters.push({ tagIds: { $in: idFilterIds } });
+    if (searchMatches) {
+      const { matchingIds, matchingTagIds } = searchMatches;
+      if (!matchingIds.length && !matchingTagIds.length) {
+        return { conversations: [], nextCursor: null };
+      }
+      filters.push({
+        $or: [{ conversationId: { $in: matchingIds } }, { tagIds: { $in: matchingTagIds } }],
+      });
     }
 
     const validSortFields = ['title', 'createdAt', 'updatedAt', 'archivedAt'];
@@ -2897,7 +3006,7 @@ export function createConversationMethods(
 
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
+          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned tagIds',
         )
         .sort(sortObj)
         .limit(pageSize + 1)
@@ -2986,14 +3095,17 @@ export function createConversationMethods(
         nextCursor = (limited[limited.length - 1].updatedAt as Date).toISOString();
       }
 
-      await attachSharedFlags(user, limited);
-
+      const [, hydrated] = await Promise.all([
+        attachSharedFlags(user, limited),
+        hydrateConversationTags(mongoose, limited),
+      ]);
       const convoMap: Record<string, unknown> = {};
-      limited.forEach((convo) => {
+      hydrated.forEach((convo, index) => {
+        convo.isShared = limited[index].isShared;
         convoMap[convo.conversationId] = convo;
       });
 
-      return { conversations: limited, nextCursor, convoMap };
+      return { conversations: hydrated, nextCursor, convoMap };
     } catch (error) {
       logger.error('[getConvosQueried] Error getting conversations', error);
       throw new Error('Error fetching conversations');
@@ -3349,6 +3461,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getConvoWithTags,
     getSubagentThreadForParent,
     listSubagentThreadsForParent,
     getAgentEventBinding,

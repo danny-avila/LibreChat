@@ -8,12 +8,11 @@ export const updateConversationTag = (
   queryCache: TConversationTagsResponse,
   request: TConversationTagRequest,
   response: TConversationTagResponse,
-  tag?: string,
 ): TConversationTagsResponse => {
   if (queryCache.length === 0) {
     return [response];
   }
-  const oldData = queryCache.find((t) => t.tag === tag);
+  const oldData = queryCache.find((t) => t._id === response._id);
   if (!oldData) {
     // When a new tag is added, it is positioned at the top of the list.
     return [queryCache[0], response, ...queryCache.slice(1)].map((t, index) => ({
@@ -26,11 +25,11 @@ export const updateConversationTag = (
   const newPosition = response.position;
 
   // Remove the updated data from the array
-  const filteredData = queryCache.filter((t) => t.tag !== tag);
+  const filteredData = queryCache.filter((t) => t._id !== response._id);
 
   if (newPosition === undefined || oldPosition === newPosition) {
     // If the position hasn't changed, just replace the updated tag
-    return queryCache.map((t) => (t.tag === tag ? response : t));
+    return queryCache.map((t) => (t._id === response._id ? response : t));
   }
 
   // If the position has changed, update the position of the tag

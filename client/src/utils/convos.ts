@@ -174,13 +174,14 @@ function conversationMatchesProjectQuery(
 
 function getConversationListQueryParams(queryKey: readonly unknown[]): {
   tags?: string[];
+  tagIds?: string[];
   search?: string;
 } {
   const params = queryKey[1];
   if (!params || typeof params !== 'object') {
     return {};
   }
-  return params as { tags?: string[]; search?: string };
+  return params as { tags?: string[]; tagIds?: string[]; search?: string };
 }
 
 /** Inserts must not land in a bookmark or search cache the row would not
@@ -188,13 +189,16 @@ function getConversationListQueryParams(queryKey: readonly unknown[]): {
  * variants are skipped. */
 function conversationMatchesListQuery(
   queryKey: readonly unknown[],
-  conversation: Pick<TConversation, 'chatProjectId' | 'tags'>,
+  conversation: Pick<TConversation, 'chatProjectId' | 'tags' | 'tagIds'>,
 ): boolean {
   if (!conversationMatchesProjectQuery(queryKey, conversation)) {
     return false;
   }
-  const { tags, search } = getConversationListQueryParams(queryKey);
+  const { tags, tagIds, search } = getConversationListQueryParams(queryKey);
   if (typeof search === 'string' && search.trim() !== '') {
+    return false;
+  }
+  if (tagIds?.length && !tagIds.some((id) => conversation.tagIds?.includes(id))) {
     return false;
   }
   if (Array.isArray(tags) && tags.length > 0) {
@@ -318,7 +322,7 @@ export function addConversationToAllConversationsQueries(
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
-    if (!conversationMatchesProjectQuery(query.queryKey, newConversation)) {
+    if (!conversationMatchesListQuery(query.queryKey, newConversation)) {
       continue;
     }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {

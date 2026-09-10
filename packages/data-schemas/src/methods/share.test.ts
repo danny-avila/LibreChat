@@ -10,6 +10,8 @@ import {
   type ShareMethods,
   type SharedLinkContentSnapshot,
 } from './share';
+import { createConversationTagModel } from '~/models/conversationTag';
+import { tenantStorage } from '~/config/tenantContext';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
 import logger from '~/config/winston';
 
@@ -36,6 +38,7 @@ describe('Share Methods', () => {
         shareId: { type: String, index: true },
         targetMessageId: { type: String, required: false, index: true },
         expiredAt: { type: Date },
+        tenantId: String,
         snapshotFiles: { type: Boolean },
         fileSnapshots: { type: [mongoose.Schema.Types.Mixed], default: undefined },
       },
@@ -104,9 +107,17 @@ describe('Share Methods', () => {
         conversationId: { type: String, required: true },
         title: String,
         user: String,
+        tenantId: String,
+        tagIds: [String],
+        subagentThread: mongoose.Schema.Types.Mixed,
+        expiredAt: Date,
+        isTemporary: Boolean,
       },
       { timestamps: true },
     );
+
+    conversationSchema.index({ user: 1, tenantId: 1, tagIds: 1 });
+    sharedLinkSchema.index({ conversationId: 1, user: 1, targetMessageId: 1, tenantId: 1 });
 
     // Register models
     SharedLink =
@@ -118,6 +129,9 @@ describe('Share Methods', () => {
         conversationSchema,
       )) as SchemaWithMeiliMethods;
     File = mongoose.models.File || mongoose.model<t.IMongoFile>('File', fileSchema);
+
+    const Tag = createConversationTagModel(mongoose) as unknown as SchemaWithMeiliMethods;
+    Tag.meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
 
     // Create share methods
     shareMethods = createShareMethods(mongoose);
@@ -133,6 +147,10 @@ describe('Share Methods', () => {
     await Message.deleteMany({});
     await Conversation.deleteMany({});
     await File.deleteMany({});
+    await mongoose.models.ConversationTag.deleteMany({});
+    (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+      .fn()
+      .mockResolvedValue({ hits: [] });
   });
 
   describe('createSharedLink', () => {
@@ -1257,6 +1275,293 @@ describe('Share Methods', () => {
         limit: MEILI_SEARCH_LIMIT,
         attributesToRetrieve: ['conversationId'],
       });
+    });
+
+    test.each(['asc', 'desc'])(
+      'bounds tag joins across sparse search pages (%s)',
+      async (direction) => {
+        const user = new mongoose.Types.ObjectId().toString();
+        const tag = await mongoose.models.ConversationTag.create({ user, tag: 'Matching' });
+        (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+          .fn()
+          .mockResolvedValue({ hits: [{ _id: String(tag._id) }] });
+        Conversation.meiliSearch = jest.fn().mockResolvedValue({
+          hits: [{ conversationId: 'candidate-150' }],
+        });
+        await SharedLink.insertMany(
+          Array.from({ length: 320 }, (_, index) => ({
+            user,
+            shareId: `share-${index}`,
+            conversationId: `candidate-${index}`,
+            title: String(index).padStart(3, '0'),
+          })),
+        );
+        await Conversation.insertMany(
+          [110, 120, 130, 140, 160, 210, 310].map((index) => ({
+            user: index === 140 ? 'another-user' : user,
+            conversationId: `candidate-${index}`,
+            tagIds: [String(tag._id)],
+            ...(index === 120 ? { subagentThread: { parentConversationId: 'parent' } } : {}),
+            ...(index === 130 ? { expiredAt: new Date(0) } : {}),
+            ...(index === 160 ? { tenantId: 'another-tenant' } : {}),
+          })),
+        );
+        const findSpy = jest.spyOn(Conversation.collection, 'find');
+        const aggregateSpy = jest.spyOn(Conversation, 'aggregate');
+        const sharedFindSpy = jest.spyOn(SharedLink.collection, 'find');
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await shareMethods.getSharedLinks(
+            user,
+            cursor,
+            2,
+            'title',
+            direction,
+            'Matching',
+          );
+          seen.push(...page.links.map((link) => link.conversationId));
+          cursor = page.nextCursor as string | undefined;
+          expect(page.links).toHaveLength(2);
+          expect(page.hasNextPage).toBe(seen.length < 4);
+        } while (cursor);
+        const expected = [110, 150, 210, 310].map((index) => `candidate-${index}`);
+        expect(seen).toEqual(direction === 'asc' ? expected : expected.reverse());
+        expect(findSpy).not.toHaveBeenCalled();
+        expect(aggregateSpy).toHaveBeenCalledTimes(2);
+        expect(sharedFindSpy).toHaveBeenCalledTimes(4);
+        for (const [filter] of sharedFindSpy.mock.calls) {
+          if (filter?._id && '$in' in filter._id)
+            expect(filter._id.$in?.length).toBeLessThanOrEqual(6);
+        }
+        const pipeline = aggregateSpy.mock.calls[0][0];
+        expect(pipeline).toContainEqual({ $limit: 3 });
+        const lookup = pipeline?.find((stage) => '$lookup' in stage);
+        expect(lookup).toEqual({
+          $lookup: {
+            from: 'sharedlinks',
+            localField: 'conversationId',
+            foreignField: 'conversationId',
+            as: 'matchedShare',
+          },
+        });
+        aggregateSpy.mockImplementationOnce(() => {
+          throw new Error('Membership lookup unavailable');
+        });
+        await expect(
+          shareMethods.getSharedLinks(user, undefined, 2, 'title', direction, 'Matching'),
+        ).rejects.toMatchObject({ code: 'SHARES_FETCH_ERROR' });
+      },
+    );
+
+    test('uses one indexed tag join for a sparse no-result search', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      const tag = await mongoose.models.ConversationTag.create({ user, tag: 'Unshared' });
+      (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ _id: String(tag._id) }] });
+      Conversation.meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
+      await Conversation.insertMany(
+        Array.from({ length: 400 }, (_, index) => ({
+          user,
+          conversationId: `unrelated-${index}`,
+          tagIds: [],
+        })),
+      );
+      await SharedLink.insertMany(
+        Array.from({ length: 400 }, (_, index) => ({
+          user,
+          conversationId: `unrelated-${index}`,
+          shareId: `unrelated-${index}`,
+        })),
+      );
+      await Conversation.create({
+        user,
+        conversationId: 'tagged-but-unshared',
+        tagIds: [String(tag._id)],
+      });
+      await Promise.all([Conversation.init(), SharedLink.init()]);
+      const aggregateSpy = jest.spyOn(Conversation, 'aggregate');
+      const sharedFindSpy = jest.spyOn(SharedLink.collection, 'find');
+      const result = await shareMethods.getSharedLinks(
+        user,
+        undefined,
+        10,
+        'createdAt',
+        'desc',
+        'Unshared',
+      );
+      expect(result.links).toEqual([]);
+      expect(aggregateSpy).toHaveBeenCalledTimes(1);
+      expect(sharedFindSpy).not.toHaveBeenCalled();
+      const pipeline = aggregateSpy.mock.calls[0][0];
+      const plan = JSON.stringify(await Conversation.aggregate(pipeline).explain('executionStats'));
+      expect(plan).toContain('user_1_tenantId_1_tagIds_1');
+      expect(plan).toContain('conversationId_1_user_1_targetMessageId_1_tenantId_1');
+    });
+
+    test.each(['asc', 'desc'])(
+      'joins only owned tenantless shares and deduplicates tied title hits (%s)',
+      async (direction) => {
+        const user = new mongoose.Types.ObjectId().toString();
+        const tag = await mongoose.models.ConversationTag.create({ user, tag: 'Matching' });
+        (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+          .fn()
+          .mockResolvedValue({ hits: [{ _id: String(tag._id) }] });
+        Conversation.meiliSearch = jest
+          .fn()
+          .mockResolvedValue({ hits: [{ conversationId: 'overlap' }] });
+        await Conversation.insertMany(
+          ['overlap', 'collision', 'expired'].map((conversationId) => ({
+            user,
+            conversationId,
+            tagIds: [String(tag._id)],
+          })),
+        );
+        const shares = await SharedLink.insertMany([
+          { user, conversationId: 'overlap', shareId: 'overlap', title: 'Tie' },
+          { user, conversationId: 'collision', shareId: 'owned-one', title: 'Tie' },
+          { user, conversationId: 'collision', shareId: 'owned-two', title: 'Tie' },
+          {
+            user: 'foreign-user',
+            conversationId: 'collision',
+            shareId: 'foreign-user',
+            title: 'Tie',
+          },
+          {
+            user,
+            tenantId: 'foreign-tenant',
+            conversationId: 'collision',
+            shareId: 'foreign-tenant',
+            title: 'Tie',
+          },
+          {
+            user,
+            conversationId: 'expired',
+            shareId: 'expired',
+            title: 'Tie',
+            expiredAt: new Date(0),
+          },
+        ]);
+        const expected = shares
+          .slice(0, 3)
+          .sort((a, b) => String(a._id).localeCompare(String(b._id)))
+          .map((share) => share.shareId);
+        if (direction === 'desc') expected.reverse();
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await shareMethods.getSharedLinks(
+            user,
+            cursor,
+            1,
+            'title',
+            direction,
+            'Matching',
+          );
+          seen.push(...page.links.map((share) => share.shareId));
+          cursor = page.nextCursor as string | undefined;
+        } while (cursor);
+        expect(seen).toEqual(expected);
+      },
+    );
+
+    test('pins both sides of the tag join to the active tenant', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      const tag = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        mongoose.models.ConversationTag.create({ user, tag: 'Scoped' }),
+      );
+      (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ _id: String(tag._id) }] });
+      Conversation.meiliSearch = jest.fn().mockResolvedValue({ hits: [] });
+      await Conversation.insertMany([
+        {
+          user,
+          tenantId: 'tenant-a',
+          conversationId: 'same-conversation',
+          tagIds: [String(tag._id)],
+        },
+        {
+          user,
+          tenantId: 'tenant-b',
+          conversationId: 'same-conversation',
+          tagIds: [String(tag._id)],
+        },
+      ]);
+      await SharedLink.insertMany([
+        {
+          user,
+          tenantId: 'tenant-a',
+          conversationId: 'same-conversation',
+          shareId: 'tenant-a-share',
+        },
+        {
+          user,
+          tenantId: 'tenant-b',
+          conversationId: 'same-conversation',
+          shareId: 'tenant-b-share',
+        },
+        { user, conversationId: 'same-conversation', shareId: 'tenantless-share' },
+      ]);
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        shareMethods.getSharedLinks(user, undefined, 10, 'createdAt', 'desc', 'Scoped'),
+      );
+      expect(result.links.map((link) => link.shareId)).toEqual(['tenant-a-share']);
+    });
+
+    test('retains title search matches when the optional tag index is unavailable', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      await SharedLink.create({
+        user,
+        shareId: 'outage-share',
+        conversationId: 'outage-convo',
+        title: 'Title',
+      });
+      Conversation.meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: 'outage-convo' }] });
+      (mongoose.models.ConversationTag as SchemaWithMeiliMethods).meiliSearch = jest
+        .fn()
+        .mockRejectedValue(new Error('index_not_found'));
+      const result = await shareMethods.getSharedLinks(
+        user,
+        undefined,
+        10,
+        'createdAt',
+        'desc',
+        'Title',
+      );
+      expect(result.links.map((link) => link.shareId)).toEqual(['outage-share']);
+    });
+
+    test('fails closed when Mongo cannot validate catalog search hits', async () => {
+      const user = new mongoose.Types.ObjectId().toString();
+      await SharedLink.create({
+        user,
+        shareId: 'db-outage-share',
+        conversationId: 'db-outage-convo',
+        title: 'Title',
+      });
+      Conversation.meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ conversationId: 'db-outage-convo' }] });
+      const Tag = mongoose.models.ConversationTag as SchemaWithMeiliMethods;
+      Tag.meiliSearch = jest
+        .fn()
+        .mockResolvedValue({ hits: [{ _id: new mongoose.Types.ObjectId().toString() }] });
+      jest.spyOn(Tag.collection, 'find').mockImplementationOnce(() => {
+        throw new Error('Mongo validation unavailable');
+      });
+      const result = await shareMethods.getSharedLinks(
+        user,
+        undefined,
+        10,
+        'createdAt',
+        'desc',
+        'Title',
+      );
+      expect(result.links).toEqual([]);
     });
 
     test('should handle empty results', async () => {

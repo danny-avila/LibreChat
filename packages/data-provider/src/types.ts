@@ -497,10 +497,10 @@ export type TConversationTagRequest = Partial<
 
 export type TConversationTagResponse = TConversationTag;
 
-export type TTagConversationRequest = {
-  tags: string[];
-  tag: string;
-};
+export type TTagConversationRequest = (
+  | { tags: string[]; tagIds?: never }
+  | { tagIds: string[]; tags?: never }
+) & { tag: string };
 
 export type TTagConversationResponse = string[];
 

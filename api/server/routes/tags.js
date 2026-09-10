@@ -1,5 +1,11 @@
 const express = require('express');
-const { logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  isValidObjectIdString,
+  ConversationTagUpdateError,
+  ConversationTagNotFoundError,
+  ConversationNotFoundError,
+} = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
@@ -23,6 +29,13 @@ const checkBookmarkAccess = generateCheckAccess({
 router.use(requireJwtAuth);
 router.use(checkBookmarkAccess);
 
+router.param('tagId', (req, res, next, tagId) => {
+  if (!isValidObjectIdString(tagId)) {
+    return res.status(400).json({ error: 'Invalid bookmark ID' });
+  }
+  next();
+});
+
 /**
  * GET /
  * Retrieves all conversation tags for the authenticated user.
@@ -31,7 +44,7 @@ router.use(checkBookmarkAccess);
  */
 router.get('/', async (req, res) => {
   try {
-    const tags = await getConversationTags(req.user.id);
+    const tags = await getConversationTags(req.user.id, req.user.tenantId ?? null);
     if (tags) {
       res.status(200).json(tags);
     } else {
@@ -51,9 +64,15 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const tag = await createConversationTag(req.user.id, req.body);
+    const tag = await createConversationTag(req.user.id, req.body, req.user.tenantId ?? null);
+    if (!tag) {
+      return res.status(404).json({ error: 'Tag not found' });
+    }
     res.status(200).json(tag);
   } catch (error) {
+    if (error instanceof ConversationNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
     logger.error('Error creating conversation tag:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -65,16 +84,25 @@ router.post('/', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.put('/:tag', async (req, res) => {
+router.put(['/id/:tagId', '/:tag'], async (req, res) => {
   try {
-    const decodedTag = decodeURIComponent(req.params.tag);
-    const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
+    const decodedTag = req.params.tagId ?? req.params.tag;
+    const tag = await updateConversationTag(
+      req.user.id,
+      decodedTag,
+      req.body,
+      req.user.tenantId ?? null,
+      req.params.tagId != null,
+    );
     if (tag) {
       res.status(200).json(tag);
     } else {
       res.status(404).json({ error: 'Tag not found' });
     }
   } catch (error) {
+    if (error instanceof ConversationTagUpdateError) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('Error updating conversation tag:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -86,10 +114,15 @@ router.put('/:tag', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.delete('/:tag', async (req, res) => {
+router.delete(['/id/:tagId', '/:tag'], async (req, res) => {
   try {
-    const decodedTag = decodeURIComponent(req.params.tag);
-    const tag = await deleteConversationTag(req.user.id, decodedTag);
+    const decodedTag = req.params.tagId ?? req.params.tag;
+    const tag = await deleteConversationTag(
+      req.user.id,
+      decodedTag,
+      req.user.tenantId ?? null,
+      req.params.tagId != null,
+    );
     if (tag) {
       res.status(200).json(tag);
     } else {
@@ -109,13 +142,33 @@ router.delete('/:tag', async (req, res) => {
  */
 router.put('/convo/:conversationId', async (req, res) => {
   try {
+    const byId = req.body.tagIds !== undefined;
+    const values = byId ? req.body.tagIds : req.body.tags;
+    if (
+      !Array.isArray(values) ||
+      values.some((value) => typeof value !== 'string') ||
+      (byId && req.body.tags !== undefined)
+    ) {
+      return res.status(400).json({ error: 'Provide either tags or tagIds as a string array' });
+    }
+    if (byId && values.some((id) => !isValidObjectIdString(id))) {
+      return res.status(400).json({ error: 'tagIds must contain valid bookmark IDs' });
+    }
     const conversationTags = await updateTagsForConversation(
       req.user.id,
       req.params.conversationId,
-      req.body.tags,
+      values,
+      req.user.tenantId ?? null,
+      byId,
     );
     res.status(200).json(conversationTags);
   } catch (error) {
+    if (
+      error instanceof ConversationTagNotFoundError ||
+      error instanceof ConversationNotFoundError
+    ) {
+      return res.status(404).json({ error: error.message });
+    }
     logger.error('Error updating conversation tags', error);
     res.status(500).send('Error updating conversation tags');
   }

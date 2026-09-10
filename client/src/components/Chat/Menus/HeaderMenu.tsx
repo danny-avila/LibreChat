@@ -5,6 +5,7 @@ import { DropdownPopup, TooltipAnchor, Button } from '@librechat/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { Ellipsis, PlusCircle, MessageCircleDashed, Check } from 'lucide-react';
 import type { TStartupConfig } from 'librechat-data-provider';
+import type { BookmarkMenuProps } from '~/hooks/Chat/useBookmarkItems';
 import type * as t from '~/common';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import useBookmarkItems from '~/hooks/Chat/useBookmarkItems';
@@ -23,7 +24,9 @@ import { cn } from '~/utils';
 export default function HeaderMenu({
   startupConfig,
   className,
-}: {
+  conversation,
+  onTagsUpdated,
+}: BookmarkMenuProps & {
   startupConfig?: TStartupConfig;
   className?: string;
 }) {
@@ -46,7 +49,11 @@ export default function HeaderMenu({
 
   const multiConvo = useMultiConvo();
   const temporary = useTemporaryChat();
-  const bookmarks = useBookmarkItems({ enabled: hasAccessToBookmarks === true });
+  const bookmarks = useBookmarkItems({
+    enabled: hasAccessToBookmarks === true,
+    conversation,
+    onTagsUpdated,
+  });
   const exportShare = useExportShare({
     isSharedButtonEnabled: startupConfig?.sharedLinksEnabled ?? false,
   });

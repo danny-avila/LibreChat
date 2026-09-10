@@ -1,10 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { defaultAssistantsVersion, ConversationListResponse } from 'librechat-data-provider';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import {
-  Constants,
-  defaultAssistantsVersion,
-  ConversationListResponse,
-} from 'librechat-data-provider';
 import type { InfiniteData, QueryClient, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -44,6 +40,18 @@ export const useUpdateConversationMutation = (
   );
 };
 
+function invalidateConversationMembershipQueries(queryClient: QueryClient) {
+  for (const key of [
+    QueryKeys.allConversations,
+    QueryKeys.archivedConversations,
+    QueryKeys.projectConversations,
+    QueryKeys.pinnedConversations,
+    QueryKeys.sharedLinks,
+  ]) {
+    queryClient.invalidateQueries([key]);
+  }
+}
+
 export const useTagConversationMutation = (
   conversationId: string,
   options?: t.updateTagsInConvoOptions,
@@ -55,13 +63,22 @@ export const useTagConversationMutation = (
     (payload: t.TTagConversationRequest) =>
       dataService.addTagToConversation(conversationId, payload),
     {
-      onSuccess: (updatedTags, ...rest) => {
-        /** The pinned query is keyed by the active bookmark filter, so changing a
-         * chat's tags can move it in or out of that filtered set. */
-        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+      onSuccess: (updatedTags, variables, ...rest) => {
+        invalidateConversationMembershipQueries(queryClient);
         query.refetch();
-        updateTagsInConversation(conversationId, updatedTags);
-        options?.onSuccess?.(updatedTags, ...rest);
+        const labels =
+          variables.tagIds === undefined
+            ? updatedTags
+            : updatedTags.flatMap((id) => {
+                const tag = query.data?.find((item) => item._id === id);
+                return tag ? [tag.tag] : [];
+              });
+        updateTagsInConversation(
+          conversationId,
+          labels,
+          variables.tagIds === undefined ? undefined : updatedTags,
+        );
+        options?.onSuccess?.(updatedTags, variables, ...rest);
       },
       onError: options?.onError,
       onMutate: options?.onMutate,
@@ -472,27 +489,19 @@ export const useDeleteSharedLinkMutation = (
 export const useConversationTagMutation = ({
   context,
   tag,
+  tagId,
   options,
 }: {
   context: string;
   tag?: string;
+  tagId?: string;
   options?: t.UpdateConversationTagOptions;
 }): UseMutationResult<t.TConversationTagResponse, unknown, t.TConversationTagRequest, unknown> => {
   const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options || {};
   const onMutationSuccess: typeof onSuccess = (_data, vars) => {
     queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (queryData) => {
-      if (!queryData) {
-        return [
-          {
-            count: 1,
-            position: 0,
-            tag: Constants.SAVED_TAG,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ] as t.TConversationTag[];
-      }
+      if (!queryData) return [_data];
       if (tag === undefined || !tag.length) {
         // Check if the tag already exists
         const existingTagIndex = queryData.findIndex((item) => item.tag === _data.tag);
@@ -519,7 +528,7 @@ export const useConversationTagMutation = ({
         }
       }
       logger.log('tag_mutation', `Updating tag from ${context}`, queryData, _data);
-      return updateConversationTag(queryData, vars, _data, tag);
+      return updateConversationTag(queryData, vars, _data);
     });
     if (vars.addToConversation === true && vars.conversationId != null && _data.tag) {
       const currentConvo = queryClient.getQueryData<t.TConversation>([
@@ -534,25 +543,34 @@ export const useConversationTagMutation = ({
         `\`updateTagsInConversation\` Update from ${context}`,
         currentConvo,
       );
-      updateTagsInConversation(vars.conversationId, [...(currentConvo.tags || []), _data.tag]);
+      updateTagsInConversation(
+        vars.conversationId,
+        [...(currentConvo.tags || []), _data.tag],
+        [...(currentConvo.tagIds || []), _data._id],
+      );
     }
     // Change the tag title to the new title
-    if (tag != null) {
-      replaceTagsInAllConversations(tag, _data.tag);
+    if (tag != null && vars.tag !== undefined && vars.tag !== tag) {
+      replaceTagsInAllConversations(tag, _data.tag, _data._id);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+      queryClient.invalidateQueries([QueryKeys.conversation]);
     }
   };
   const { updateTagsInConversation, replaceTagsInAllConversations } = useUpdateTagsInConvo();
   return useMutation(
     (payload: t.TConversationTagRequest) =>
-      tag != null
-        ? dataService.updateConversationTag(tag, payload)
+      tagId != null
+        ? dataService.updateConversationTagById(tagId, payload)
         : dataService.createConversationTag(payload),
     {
       onSuccess: (...args) => {
-        /** Renaming a selected bookmark rewrites that tag on every matching
-         * conversation. The pinned query is keyed by the old filter until it
-         * is invalidated. */
-        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+        const [, vars] = args;
+        const renamed = tag != null && vars.tag !== undefined && vars.tag !== tag;
+        if (vars.addToConversation === true) {
+          invalidateConversationMembershipQueries(queryClient);
+        } else if (renamed) {
+          queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+        }
         onMutationSuccess(...args);
         onSuccess?.(...args);
       },
@@ -564,7 +582,7 @@ export const useConversationTagMutation = ({
 // When a bookmark is deleted, remove that bookmark(tag) from all conversations associated with it
 export const useDeleteTagInConversations = () => {
   const queryClient = useQueryClient();
-  const deleteTagInAllConversation = (deletedTag: string) => {
+  const deleteTagInAllConversation = (deletedTag: string, deletedId?: string) => {
     const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
       QueryKeys.allConversations,
     ]);
@@ -586,11 +604,14 @@ export const useDeleteTagInConversations = () => {
             conversation.conversationId &&
             'tags' in conversation &&
             Array.isArray((conversation as unknown as { tags?: string[] }).tags) &&
-            (conversation as unknown as { tags: string[] }).tags.includes(deletedTag)
+            (deletedId
+              ? conversation.tagIds?.includes(deletedId)
+              : conversation.tags?.includes(deletedTag))
           ) {
             conversationIdsWithTag.push(conversation.conversationId);
             return {
               ...conversation,
+              tagIds: conversation.tagIds?.filter((id) => id !== deletedId),
               tags: (conversation as unknown as { tags: string[] }).tags.filter(
                 (tag: string) => tag !== deletedTag,
               ),
@@ -616,6 +637,7 @@ export const useDeleteTagInConversations = () => {
       if (conversationData && Array.isArray((conversationData as { tags?: string[] }).tags)) {
         queryClient.setQueryData<t.TConversation>([QueryKeys.conversation, conversationId], {
           ...conversationData,
+          tagIds: conversationData.tagIds?.filter((id) => id !== deletedId),
           tags: (conversationData as { tags: string[] }).tags.filter(
             (tag: string) => tag !== deletedTag,
           ),
@@ -634,16 +656,18 @@ export const useDeleteConversationTagMutation = (
 
   const { onSuccess, ..._options } = options || {};
 
-  return useMutation((tag: string) => dataService.deleteConversationTag(tag), {
+  return useMutation((id: string) => dataService.deleteConversationTagById(id), {
     onSuccess: (_data, tagToDelete, context) => {
       queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (data) => {
         if (!data) {
           return data;
         }
-        return data.filter((t) => t.tag !== tagToDelete);
+        return data.filter((t) => t._id !== tagToDelete);
       });
 
-      deleteTagInAllConversations(tagToDelete);
+      deleteTagInAllConversations(_data.tag, tagToDelete);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+      queryClient.invalidateQueries([QueryKeys.conversation]);
       /** Deleting a selected bookmark empties that tag-keyed pinned set. */
       queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       onSuccess?.(_data, tagToDelete, context);
@@ -815,17 +839,7 @@ export const useDuplicateConversationMutation = (
         queryClient.invalidateQueries([QueryKeys.project, duplicatedConversation.chatProjectId]);
       }
 
-      if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
-        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
-          if (!oldTags) return oldTags;
-          return oldTags.map((tag) => {
-            if (duplicatedConversation.tags?.includes(tag.tag)) {
-              return { ...tag, count: tag.count + 1 };
-            }
-            return tag;
-          });
-        });
-      }
+      queryClient.invalidateQueries([QueryKeys.conversationTags]);
 
       onSuccess?.(data, vars, context);
     },
@@ -865,17 +879,7 @@ export const useForkConvoMutation = (
         queryClient.invalidateQueries([QueryKeys.project, forkedConversation.chatProjectId]);
       }
 
-      if (forkedConversation.tags && forkedConversation.tags.length > 0) {
-        queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
-          if (!oldTags) return oldTags;
-          return oldTags.map((tag) => {
-            if (forkedConversation.tags?.includes(tag.tag)) {
-              return { ...tag, count: tag.count + 1 };
-            }
-            return tag;
-          });
-        });
-      }
+      queryClient.invalidateQueries([QueryKeys.conversationTags]);
 
       onSuccess?.(data, vars, context);
     },
@@ -931,6 +935,7 @@ export const useUploadConversationsMutation = (
   return useMutation<t.TImportResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries([QueryKeys.conversationTags]);
       /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
       /** An imported chat can carry `pinned: true`. */

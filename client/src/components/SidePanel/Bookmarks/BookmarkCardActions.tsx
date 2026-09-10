@@ -43,8 +43,8 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
   });
 
   const confirmDelete = useCallback(async () => {
-    await deleteBookmarkMutation.mutateAsync(bookmark.tag);
-  }, [bookmark.tag, deleteBookmarkMutation]);
+    await deleteBookmarkMutation.mutateAsync(bookmark._id);
+  }, [bookmark._id, deleteBookmarkMutation]);
 
   return (
     <div className="flex items-center gap-1">

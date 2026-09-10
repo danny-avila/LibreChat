@@ -1809,6 +1809,7 @@ describe('BaseClient', () => {
         temperature: 0.7,
         modelLabel: 'GPT-3.5',
         pinned: true,
+        tagIds: ['507f1f77bcf86cd799439011'],
         subagentThread: {
           rootConversationId: 'root-conversation',
           parentConversationId: 'parent-conversation',
@@ -1856,6 +1857,10 @@ describe('BaseClient', () => {
       // Sidebar metadata is never part of endpointOptions, so sweeping it would
       // unpin a chat every time it received a message.
       expect(saveOptions.unsetFields).not.toHaveProperty('pinned');
+      for (const [, fields, options] of saveConvo.mock.calls) {
+        expect(fields).not.toHaveProperty('tagIds');
+        expect(options.unsetFields).not.toHaveProperty('tagIds');
+      }
 
       // Mock saveConvo to return the expected fields
       saveConvo.mockImplementation((req, fields) => {

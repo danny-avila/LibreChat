@@ -9,18 +9,21 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  useConversationTagMutation,
+  useDeleteConversationMutation,
+  useDeleteConversationTagMutation,
+  usePinConversationMutation,
+  useUploadConversationsMutation,
+  useDuplicateConversationMutation,
+  useForkConvoMutation,
+} from '../mutations';
+import {
   removeConvoFromAllQueries,
   updateConvoInAllQueries,
   upsertConvoInAllQueries,
   collectPinnedConversations,
   withoutListFlags,
 } from '~/utils/convos';
-import {
-  useConversationTagMutation,
-  useDeleteConversationMutation,
-  useDeleteConversationTagMutation,
-  usePinConversationMutation,
-} from '../mutations';
 import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
@@ -31,9 +34,13 @@ jest.mock('librechat-data-provider', () => {
       ...actual.dataService,
       listConversations: jest.fn(),
       pinConversation: jest.fn(),
+      importConversationsFile: jest.fn(),
+      duplicateConversation: jest.fn(),
+      forkConversation: jest.fn(),
       deleteConversation: jest.fn(),
-      updateConversationTag: jest.fn(),
-      deleteConversationTag: jest.fn(),
+      updateConversationTagById: jest.fn(),
+      createConversationTag: jest.fn(),
+      deleteConversationTagById: jest.fn(),
     },
   };
 });
@@ -47,11 +54,11 @@ const pinConversation = dataService.pinConversation as jest.MockedFunction<
 const deleteConversation = dataService.deleteConversation as jest.MockedFunction<
   typeof dataService.deleteConversation
 >;
-const updateConversationTag = dataService.updateConversationTag as jest.MockedFunction<
-  typeof dataService.updateConversationTag
+const updateConversationTagById = dataService.updateConversationTagById as jest.MockedFunction<
+  typeof dataService.updateConversationTagById
 >;
-const deleteConversationTag = dataService.deleteConversationTag as jest.MockedFunction<
-  typeof dataService.deleteConversationTag
+const deleteConversationTagById = dataService.deleteConversationTagById as jest.MockedFunction<
+  typeof dataService.deleteConversationTagById
 >;
 
 const pinnedConversationId = 'convo-pinned';
@@ -556,12 +563,12 @@ const tagResponse: TConversationTag = {
 
 describe('bookmark mutations invalidate the pinned cache', () => {
   it('invalidates pins when a bookmark is renamed', async () => {
-    updateConversationTag.mockResolvedValue(tagResponse);
+    updateConversationTagById.mockResolvedValue(tagResponse);
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
     const { result } = renderHook(
-      () => useConversationTagMutation({ context: 'test', tag: 'work' }),
+      () => useConversationTagMutation({ context: 'test', tag: 'work', tagId: tagResponse._id }),
       { wrapper: createWrapper(queryClient) },
     );
 
@@ -571,10 +578,55 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.conversation]);
+  });
+
+  it.each([{ position: 2 }, { tag: 'office', description: 'Updated' }])(
+    'keeps conversation caches fresh for metadata-only updates %o',
+    async (payload) => {
+      updateConversationTagById.mockResolvedValue({ ...tagResponse, ...payload });
+      const queryClient = createQueryClient();
+      const keys = [
+        [QueryKeys.allConversations],
+        [QueryKeys.conversation, 'chat'],
+        [QueryKeys.pinnedConversations],
+      ];
+      for (const key of keys) queryClient.setQueryData(key, { marker: true });
+      const { result } = renderHook(
+        () =>
+          useConversationTagMutation({ context: 'test', tag: 'office', tagId: tagResponse._id }),
+        { wrapper: createWrapper(queryClient) },
+      );
+      await act(async () => {
+        await result.current.mutateAsync(payload);
+      });
+      for (const key of keys) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false);
+      expect(queryClient.getQueryData([QueryKeys.conversationTags])).toEqual([
+        { ...tagResponse, ...payload },
+      ]);
+    },
+  );
+
+  it('invalidates pinned membership when creating and attaching a bookmark', async () => {
+    jest.mocked(dataService.createConversationTag).mockResolvedValue(tagResponse);
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([]));
+    const { result } = renderHook(() => useConversationTagMutation({ context: 'test' }), {
+      wrapper: createWrapper(queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({
+        tag: 'office',
+        addToConversation: true,
+        conversationId: 'chat',
+      });
+    });
+    expect(queryClient.getQueryState([QueryKeys.pinnedConversations])?.isInvalidated).toBe(true);
   });
 
   it('invalidates pins when a bookmark is deleted', async () => {
-    deleteConversationTag.mockResolvedValue({ ...tagResponse, tag: 'work' });
+    deleteConversationTagById.mockResolvedValue({ ...tagResponse, tag: 'work' });
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
@@ -583,7 +635,7 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     });
 
     await act(async () => {
-      result.current.mutate('work');
+      result.current.mutate(tagResponse._id);
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -718,48 +770,100 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
     ).toEqual(['convo-pinned']);
   });
 
-  it('does not insert the unpinned chat into an unrelated bookmark cache', async () => {
-    const unpinned = { ...pinnedConvo, pinned: false, tags: [] } as TConversation;
-    pinConversation.mockResolvedValue(unpinned);
-    const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
-    queryClient.setQueryData([QueryKeys.allConversations, { tags: ['work'] }], {
-      pages: [
-        {
-          conversations: [
-            {
-              conversationId: 'work-chat',
-              title: 'Work',
-              endpoint: 'openAI',
-              tags: ['work'],
-            } as TConversation,
-          ],
-          nextCursor: null,
-        },
-      ],
-      pageParams: [undefined],
-    });
+  it.each(['tags', 'tagIds'] as const)(
+    'does not insert the unpinned chat into an unrelated %s bookmark cache',
+    async (field) => {
+      const unpinned = { ...pinnedConvo, pinned: false, [field]: [] } as TConversation;
+      pinConversation.mockResolvedValue(unpinned);
+      const queryClient = createQueryClient();
+      queryClient.setQueryData(
+        [QueryKeys.pinnedConversations, { tags: undefined }],
+        listResponse([pinnedConvo]),
+      );
+      queryClient.setQueryData([QueryKeys.allConversations, { [field]: ['work'] }], {
+        pages: [
+          {
+            conversations: [
+              {
+                ...pinnedConvo,
+                conversationId: 'work-chat',
+                title: 'Work',
+                endpoint: 'openAI',
+                [field]: ['work'],
+              } as TConversation,
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [undefined],
+      });
 
-    const { result } = renderHook(() => usePinConversationMutation(), {
+      const { result } = renderHook(() => usePinConversationMutation(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await act(async () => {
+        result.current.mutate({
+          conversationId: pinnedConvo.conversationId as string,
+          pinned: false,
+        });
+      });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      const filtered = queryClient.getQueryData<{
+        pages: { conversations: TConversation[] }[];
+      }>([QueryKeys.allConversations, { [field]: ['work'] }]);
+      expect(
+        filtered?.pages[0].conversations.map((conversation) => conversation.conversationId),
+      ).toEqual(['work-chat']);
+    },
+  );
+});
+
+describe('conversation import catalog refresh', () => {
+  it('invalidates a previously loaded bookmark catalog after importing new labels', async () => {
+    jest.mocked(dataService.importConversationsFile).mockResolvedValue({ message: 'Imported' });
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.conversationTags], []);
+    const onSuccess = jest.fn();
+    const { result } = renderHook(() => useUploadConversationsMutation({ onSuccess }), {
       wrapper: createWrapper(queryClient),
     });
-
     await act(async () => {
-      result.current.mutate({
-        conversationId: pinnedConvo.conversationId as string,
-        pinned: false,
-      });
+      await result.current.mutateAsync(new FormData());
     });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-    const filtered = queryClient.getQueryData<{
-      pages: { conversations: TConversation[] }[];
-    }>([QueryKeys.allConversations, { tags: ['work'] }]);
-    expect(
-      filtered?.pages[0].conversations.map((conversation) => conversation.conversationId),
-    ).toEqual(['work-chat']);
+    expect(queryClient.getQueryState([QueryKeys.conversationTags])?.isInvalidated).toBe(true);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 });
+
+it.each(['duplicate', 'fork'] as const)(
+  'refreshes catalog counts after an ID-only %s response',
+  async (operation) => {
+    const copied = { ...pinnedConvo, conversationId: 'copied', tagIds: ['work-id'] };
+    jest
+      .mocked(dataService.duplicateConversation)
+      .mockResolvedValue({ conversation: copied, messages: [] });
+    jest
+      .mocked(dataService.forkConversation)
+      .mockResolvedValue({ conversation: copied, messages: [] });
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.conversationTags],
+      [{ _id: 'work-id', tag: 'Renamed', count: 1 }],
+    );
+    const { result } = renderHook(
+      () => {
+        const duplicate = useDuplicateConversationMutation();
+        const fork = useForkConvoMutation();
+        return operation === 'duplicate' ? duplicate : fork;
+      },
+      { wrapper: createWrapper(queryClient) },
+    );
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 'source', messageId: 'message' });
+    });
+    expect(queryClient.getQueryState([QueryKeys.conversationTags])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryData([QueryKeys.conversation, 'copied'])).toEqual(copied);
+  },
+);

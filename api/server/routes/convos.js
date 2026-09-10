@@ -27,7 +27,7 @@ const {
   GenerationJobManager,
   isStopConfirmed,
 } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger, isValidObjectIdString } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const {
   createImportLimiters,
@@ -165,6 +165,11 @@ router.get('/', async (req, res) => {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
+  const tagIds = req.query.tagIds == null ? undefined : [].concat(req.query.tagIds);
+  if (tagIds?.some((id) => typeof id !== 'string' || !isValidObjectIdString(id))) {
+    return res.status(400).json({ error: 'tagIds must contain valid bookmark IDs' });
+  }
+
   try {
     const result = await db.getConvosByCursor(req.user.id, {
       cursor,
@@ -172,6 +177,7 @@ router.get('/', async (req, res) => {
       isArchived,
       pinned,
       tags,
+      tagIds,
       search,
       sortBy,
       sortDirection,
@@ -202,7 +208,7 @@ router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandl
 
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
-  const convo = await db.getConvo(req.user.id, conversationId);
+  const convo = await db.getConvoWithTags(req.user.id, conversationId);
 
   if (convo && convo.subagentThread == null) {
     res.status(200).json(convo);

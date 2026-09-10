@@ -13,10 +13,12 @@ const conversationTag: Schema<IConversationTag> = new Schema<IConversationTag>(
   {
     tag: {
       type: String,
+      meiliIndex: true,
       index: true,
     },
     user: {
       type: String,
+      meiliIndex: true,
       index: true,
     },
     description: {

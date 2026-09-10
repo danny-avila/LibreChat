@@ -22,6 +22,7 @@ interface MongoMeiliOptions {
   primaryKey: string;
   mongoose: typeof import('mongoose');
   syncBatchSize?: number;
+  searchableAttributes?: string[];
   syncDelayMs?: number;
   /** Documents carrying this path remain in MongoDB but are excluded from search. */
   excludeFromIndexPath?: string;
@@ -64,7 +65,18 @@ interface _DocumentWithMeiliIndex extends Document {
 
 export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
 
-export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
+export interface MeiliBulkInsertMethods {
+  prepareMeiliInsert(): {
+    _meiliIndex?: boolean;
+    _meiliIndexAttempted?: boolean;
+    _meiliIndexVersion?: string;
+  };
+  queueMeiliDocuments(documents: Array<{ _id: Types.ObjectId }>): Promise<void>;
+}
+
+export interface SchemaWithMeiliMethods
+  extends Model<DocumentWithMeiliIndex>,
+    MeiliBulkInsertMethods {
   syncWithMeili(): Promise<void>;
   getSyncProgress(): Promise<SyncProgress>;
   processSyncBatch(
@@ -146,7 +158,7 @@ const retryDetachedMeiliWrite = async (
 const createDetachedMeiliRunner = () => {
   const pendingOperations = new Map<string, Promise<void>>();
 
-  return (key: string, operation: () => Promise<void> | void, context: string): void => {
+  return (key: string, operation: () => Promise<void> | void, context: string): Promise<void> => {
     const previousOperation = pendingOperations.get(key) ?? Promise.resolve();
     const operationPromise = previousOperation.then(operation).catch((error) => {
       logger.error(context, error);
@@ -158,6 +170,7 @@ const createDetachedMeiliRunner = () => {
     });
 
     pendingOperations.set(key, trackedOperation);
+    return trackedOperation;
   };
 };
 
@@ -286,6 +299,7 @@ const createMeiliMongooseModel = ({
   getExcludedIndexedQuery,
   excludeFromIndexPath,
   attributesToIndex,
+  searchableAttributes,
   primaryKey,
   syncOptions,
 }: {
@@ -295,6 +309,7 @@ const createMeiliMongooseModel = ({
   getExcludedIndexedQuery: () => FilterQuery<unknown> | null;
   excludeFromIndexPath?: string;
   attributesToIndex: string[];
+  searchableAttributes?: string[];
   primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
 }) => {
@@ -472,7 +487,7 @@ const createMeiliMongooseModel = ({
       const startTime = Date.now();
       const { batchSize, delayMs } = syncConfig;
 
-      const collectionName = primaryKey === 'messageId' ? 'messages' : 'conversations';
+      const collectionName = this.modelName;
       logger.info(
         `[syncWithMeili] Starting sync for ${collectionName} with batch size ${batchSize}`,
       );
@@ -683,11 +698,11 @@ const createMeiliMongooseModel = ({
             .lean();
 
           const existingIds = new Set(
-            existingDocs.map((doc: Record<string, unknown>) => doc[primaryKey]),
+            existingDocs.map((doc: Record<string, unknown>) => String(doc[primaryKey])),
           );
 
           // Delete documents that don't exist in MongoDB
-          const toDelete = meiliIds.filter((id) => !existingIds.has(id));
+          const toDelete = meiliIds.filter((id) => !existingIds.has(String(id)));
           if (toDelete.length > 0) {
             const deletion = await index.deleteDocuments(toDelete.map(String));
             const deletionTask = await client.waitForTask(deletion.taskUid, {
@@ -742,7 +757,10 @@ const createMeiliMongooseModel = ({
       params: SearchParams,
       populate: boolean,
     ): Promise<SearchResponse<MeiliIndexable, Record<string, unknown>>> {
-      const data = await index.search(q, params);
+      const data = await index.search(q, {
+        ...params,
+        ...(searchableAttributes ? { attributesToSearchOn: searchableAttributes } : {}),
+      });
 
       if (populate) {
         const query: Record<string, unknown> = {};
@@ -1016,6 +1034,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   const client = new MeiliSearch({ host, apiKey, timeout: meiliRequestTimeoutMs });
   const runDetachedMeiliOperation = createDetachedMeiliRunner();
+  const runDetachedBulkOperation = createDetachedMeiliRunner();
   const getOperationKey = (doc: DocumentWithMeiliIndex): string =>
     `${indexName}:${String(doc[primaryKey as keyof DocumentWithMeiliIndex] ?? doc._id)}`;
 
@@ -1077,6 +1096,8 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     }, []),
   ];
 
+  if (!attributesToIndex.includes(primaryKey)) attributesToIndex.push(primaryKey);
+
   // CRITICAL: Always include 'user' field for proper filtering
   // This ensures existing deployments can filter by user after migration
   if (schema.obj.user && !attributesToIndex.includes('user')) {
@@ -1092,9 +1113,48 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       getExcludedIndexedQuery: () => buildExcludedIndexedQuery(options.excludeFromIndexPath),
       excludeFromIndexPath: options.excludeFromIndexPath,
       attributesToIndex,
+      searchableAttributes: options.searchableAttributes,
       primaryKey,
       syncOptions,
     }),
+  );
+
+  schema.static('prepareMeiliInsert', function () {
+    if (!meiliEnabled) return {};
+    return {
+      _meiliIndex: false,
+      _meiliIndexAttempted: true,
+      _meiliIndexVersion: new mongoose.Types.ObjectId().toString(),
+    };
+  });
+  schema.static(
+    'queueMeiliDocuments',
+    function (this: Model<DocumentWithMeiliIndex>, documents: Array<{ _id: Types.ObjectId }>) {
+      if (!meiliEnabled) return Promise.resolve();
+      return runDetachedBulkOperation(
+        indexName,
+        () =>
+          processBatch(
+            documents,
+            Math.min(syncOptions.batchSize, 100),
+            syncOptions.delayMs,
+            async (batch) => {
+              await Promise.all(
+                batch.map((row) => {
+                  const doc = this.hydrate(row);
+                  if (!doc._meiliIndexVersion) return;
+                  return runDetachedMeiliOperation(
+                    getOperationKey(doc),
+                    () => doc.addObjectToMeili!(completeDetachedOperation),
+                    '[mongoMeili] Detached bulk-insert indexing failed:',
+                  );
+                }),
+              );
+            },
+          ),
+        '[mongoMeili] Detached bulk-insert batch failed:',
+      );
+    },
   );
 
   // Register Mongoose hooks
@@ -1178,6 +1238,70 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       );
     }
   });
+
+  schema.post('findOneAndDelete', function (doc: DocumentWithMeiliIndex | null, next) {
+    next();
+    if (!meiliEnabled || !doc) return;
+    const key = doc[primaryKey as keyof DocumentWithMeiliIndex];
+    if (key == null) return;
+    const id = String(key);
+    runDetachedMeiliOperation(
+      getOperationKey(doc),
+      () =>
+        retryDetachedMeiliWrite(async () => {
+          const deletion = await index.deleteDocument(id);
+          const task = await client.waitForTask(deletion.taskUid, {
+            timeOutMs: meiliRequestTimeoutMs,
+            intervalMs: 100,
+          });
+          if (task.status !== 'succeeded')
+            throw new Error(`Meili deletion ended with ${task.status}`);
+        }, '[mongoMeili] Failed to remove a deleted document.'),
+      '[mongoMeili] Detached findOneAndDelete cleanup failed:',
+    );
+  });
+
+  const deletedPrimaryKeys = new WeakMap<object, string[]>();
+  if (!hasSchemaPath(schema, 'messages') && !hasSchemaPath(schema, 'messageId')) {
+    schema.pre('deleteMany', async function () {
+      if (!meiliEnabled) return;
+      const rows = await this.model.find(this.getFilter()).select(primaryKey).lean();
+      deletedPrimaryKeys.set(
+        this,
+        rows.map((row) => String(row[primaryKey])),
+      );
+    });
+    schema.post('deleteMany', function (_result, next) {
+      const ids = deletedPrimaryKeys.get(this);
+      const model = this.model;
+      deletedPrimaryKeys.delete(this);
+      next();
+      if (!ids?.length) return;
+      runDetachedMeiliOperation(
+        `${indexName}:deleteMany`,
+        () =>
+          processBatch(ids, syncOptions.batchSize, syncOptions.delayMs, (batch) =>
+            retryDetachedMeiliWrite(async () => {
+              const remaining = await model
+                .find({ [primaryKey]: { $in: batch } })
+                .select(primaryKey)
+                .lean();
+              const retained = new Set(remaining.map((row) => String(row[primaryKey])));
+              const deleted = batch.filter((id) => !retained.has(id));
+              if (!deleted.length) return;
+              const deletion = await index.deleteDocuments(deleted);
+              const task = await client.waitForTask(deletion.taskUid, {
+                timeOutMs: meiliRequestTimeoutMs,
+                intervalMs: 100,
+              });
+              if (task.status !== 'succeeded')
+                throw new Error(`Meili deletion ended with ${task.status}`);
+            }, '[mongoMeili] Failed to remove deleted documents.'),
+          ),
+        '[mongoMeili] Detached deleteMany cleanup failed:',
+      );
+    });
+  }
 
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
   schema.pre('deleteMany', async function (next) {

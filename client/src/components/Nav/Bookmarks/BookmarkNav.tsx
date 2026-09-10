@@ -1,4 +1,4 @@
-import { useState, useId, useMemo, useCallback, memo } from 'react';
+import { useState, useId, useMemo, useCallback, useEffect, memo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CrossCircledIcon } from '@radix-ui/react-icons';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
@@ -18,11 +18,22 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
   const localize = useLocalize();
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { data } = useGetConversationTags();
+  const { data, isSuccess, isFetching } = useGetConversationTags();
+
+  useEffect(() => {
+    if (!isSuccess || isFetching || data === undefined || tags.length === 0) return;
+    const catalogIds = new Set(data.map((tag) => tag._id));
+    const remaining = tags.filter((id) => catalogIds.has(id));
+    if (remaining.length !== tags.length) setTags(remaining);
+  }, [data, isSuccess, isFetching, tags, setTags]);
 
   const label = useMemo(
-    () => (tags.length > 0 ? tags.join(', ') : localize('com_ui_bookmarks')),
-    [tags, localize],
+    () =>
+      tags
+        .map((id) => data?.find((tag) => tag._id === id)?.tag)
+        .filter(Boolean)
+        .join(', ') || localize('com_ui_bookmarks'),
+    [tags, data, localize],
   );
 
   const buttonAriaLabel = useMemo(() => {
@@ -69,9 +80,9 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
       });
     } else {
       for (const bookmark of bookmarks) {
-        const isSelected = tags.includes(bookmark.tag);
+        const isSelected = tags.includes(bookmark._id);
         items.push({
-          id: bookmark.tag,
+          id: bookmark._id,
           label: bookmark.tag,
           hideOnClick: false,
           icon: isSelected ? (
@@ -79,7 +90,7 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
           ) : (
             <BookmarkIcon className="size-4" />
           ),
-          onClick: () => handleTagClick(bookmark.tag),
+          onClick: () => handleTagClick(bookmark._id),
           ariaChecked: isSelected,
         });
       }

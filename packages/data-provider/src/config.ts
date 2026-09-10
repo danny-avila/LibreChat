@@ -91,6 +91,7 @@ export const excludedKeys = new Set([
   'pinned',
   'archivedAt',
   'tags',
+  'tagIds',
   'user',
   '__v',
   '_id',

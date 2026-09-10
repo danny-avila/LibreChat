@@ -1,22 +1,21 @@
 import { useState, useId } from 'react';
-import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import { DropdownPopup, TooltipAnchor, Spinner } from '@librechat/client';
 import type { FC } from 'react';
+import type { BookmarkMenuProps } from '~/hooks/Chat/useBookmarkItems';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
 import useBookmarkItems from '~/hooks/Chat/useBookmarkItems';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import store from '~/store';
 
-const BookmarkMenu: FC = () => {
+const BookmarkMenu: FC<BookmarkMenuProps> = ({ conversation, onTagsUpdated }) => {
   const localize = useLocalize();
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const conversationId = useRecoilValue(store.conversationByIndex(0))?.conversationId ?? '';
+  const conversationId = conversation?.conversationId ?? '';
   const { show, items, bookmarks, hasBookmarks, isLoading, triggerAriaLabel, dialog } =
-    useBookmarkItems();
+    useBookmarkItems({ conversation, onTagsUpdated });
 
   if (!show) {
     return null;

@@ -675,6 +675,24 @@ describe('Conversation Utilities', () => {
         ).toEqual(['a']);
       });
 
+      it.each([
+        addConvoToAllQueries,
+        addConversationToAllConversationsQueries,
+        upsertConvoInAllQueries,
+      ])('inserts only conversations matching stable bookmark IDs', (insert) => {
+        const key = ['allConversations', { tagIds: ['work-id'] }];
+        queryClient.setQueryData(key, {
+          pages: [{ conversations: [], nextCursor: null }],
+          pageParams: [],
+        });
+        insert(queryClient, { ...convoA, tags: ['work'], tagIds: ['other-id'] });
+        insert(queryClient, { ...convoB, tags: ['renamed'], tagIds: ['work-id'] });
+        const filtered =
+          queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>(key);
+        expect(filtered?.pages[0].conversations.map((row) => row.conversationId)).toEqual(['b']);
+        expect(filtered?.pages[0].conversations[0].tagIds).toEqual(['work-id']);
+      });
+
       it('addConvoToAllQueries does not insert into a cached search result', () => {
         queryClient.setQueryData(['allConversations', { search: 'unrelated' }], {
           pages: [{ conversations: [convoA], nextCursor: null }],

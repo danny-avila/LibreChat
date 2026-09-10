@@ -1,5 +1,5 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
@@ -8,7 +8,7 @@ const useUpdateTagsInConvo = () => {
   const queryClient = useQueryClient();
 
   // Update the queryClient cache with the new tag when a new tag is added/removed to a conversation
-  const updateTagsInConversation = (conversationId: string, tags: string[]) => {
+  const updateTagsInConversation = (conversationId: string, tags: string[], tagIds?: string[]) => {
     // Update the tags for the current conversation
     const currentConvo = queryClient.getQueryData<t.TConversation>([
       QueryKeys.conversation,
@@ -21,6 +21,7 @@ const useUpdateTagsInConvo = () => {
     const updatedConvo = {
       ...currentConvo,
       tags,
+      ...(tagIds === undefined ? {} : { tagIds }),
     } as t.TConversation;
     queryClient.setQueryData([QueryKeys.conversation, conversationId], updatedConvo);
     queryClient.setQueryData<InfiniteData<ConversationListResponse>>(
@@ -35,7 +36,7 @@ const useUpdateTagsInConvo = () => {
             ...page,
             conversations: page.conversations.map((conversation) =>
               conversation.conversationId === (currentConvo.conversationId ?? '')
-                ? { ...conversation, tags: updatedConvo.tags }
+                ? { ...conversation, tags: updatedConvo.tags, tagIds: updatedConvo.tagIds }
                 : conversation,
             ),
           })),
@@ -47,7 +48,7 @@ const useUpdateTagsInConvo = () => {
   // update the tag to newTag in all conversations when a tag is updated to a newTag
   // The difference with updateTagsInConversation is that it adds or removes tags for a specific conversation,
   // whereas this function is for changing the title of a specific tag.
-  const replaceTagsInAllConversations = (tag: string, newTag: string) => {
+  const replaceTagsInAllConversations = (tag: string, newTag: string, tagId?: string) => {
     const data = queryClient.getQueryData<InfiniteData<ConversationListResponse>>([
       QueryKeys.allConversations,
     ]);
@@ -61,7 +62,7 @@ const useUpdateTagsInConvo = () => {
             conversation.conversationId &&
             'tags' in conversation &&
             Array.isArray((conversation as { tags?: string[] }).tags) &&
-            (conversation as { tags?: string[] }).tags?.includes(tag)
+            (tagId ? conversation.tagIds?.includes(tagId) : conversation.tags?.includes(tag))
           ) {
             (conversation as { tags: string[] }).tags = (
               conversation as { tags: string[] }

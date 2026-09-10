@@ -86,12 +86,12 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const { isArchived, sortBy, sortDirection, tags, search, projectId } = params;
+  const { isArchived, sortBy, sortDirection, tags, tagIds, search, projectId } = params;
 
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
-      { isArchived, sortBy, sortDirection, tags, search, projectId },
+      { isArchived, sortBy, sortDirection, tags, tagIds, search, projectId },
     ],
     queryFn: ({ pageParam }) =>
       dataService.listConversations({
@@ -99,6 +99,7 @@ export const useConversationsInfiniteQuery = (
         sortBy,
         sortDirection,
         tags,
+        tagIds,
         search,
         projectId,
         cursor: pageParam?.toString(),
@@ -122,12 +123,12 @@ export const useConversationsInfiniteQuery = (
 export const pinnedConversationsPageSize = 100;
 
 export const usePinnedConversationsQuery = (
-  params: Pick<ConversationListParams, 'tags'> = {},
+  params: Pick<ConversationListParams, 'tags' | 'tagIds'> = {},
   config?: UseQueryOptions<ConversationListResponse>,
 ): QueryObserverResult<ConversationListResponse> => {
-  const { tags } = params;
+  const { tags, tagIds } = params;
   const queryClient = useQueryClient();
-  const queryKey = [QueryKeys.pinnedConversations, { tags }];
+  const queryKey = [QueryKeys.pinnedConversations, { tags, tagIds }];
 
   return useQuery<ConversationListResponse>(
     queryKey,
@@ -141,6 +142,7 @@ export const usePinnedConversationsQuery = (
           page = await dataService.listConversations({
             pinned: true,
             tags,
+            tagIds,
             limit: pinnedConversationsPageSize,
             cursor,
           });
