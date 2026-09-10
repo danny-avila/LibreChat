@@ -55,10 +55,10 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       params.category = category;
     }
 
-    // Leave defaults implicit so equivalent requests share a cache entry.
-    if (sort && sort !== 'newest') {
-      params.sort = sort;
-    }
+    /* Sent even when it is the picker's default: `GET /api/agents` answers a request that
+       names no mode in most-recently-edited order, which is what the agent selector and
+       the mention menu rely on, so the marketplace has to ask for creation order. */
+    params.sort = sort ?? 'newest';
     if (mine === 1) {
       params.mine = mine;
     }
@@ -69,6 +69,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   // Use infinite query for marketplace agents
   const {
     data,
+    dataUpdatedAt,
     isLoading,
     error,
     isFetching,
@@ -100,19 +101,50 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   const hasData = currentAgents.length > 0;
   const scopeKey = useMemo(() => JSON.stringify(queryParams), [queryParams]);
   /**
-   * react-query drops `error` for the duration of a retry, so rendering
-   * straight off it would swap the error state for a skeleton on every
-   * attempt — remounting the card and resetting its backoff, which turned the
-   * automatic recovery into an endless two-second poll. Hold the failure until
-   * a page actually arrives, and forget it when the query scope changes.
+   * react-query drops `error` for the duration of a retry, so rendering straight off it
+   * would swap the error state for a skeleton on every attempt — remounting the card and
+   * resetting its backoff, which turned the automatic recovery into an endless
+   * two-second poll. Hold the failure until the request it describes has actually
+   * succeeded, and forget it when the query scope changes.
+   *
+   * Which event counts as "succeeded" depends on what failed, so the kind of the fetch
+   * in flight is recorded with the failure. A cursor page is not in the cache, so
+   * refreshing the loaded prefix can succeed without ever fetching it: only a longer
+   * list means that page arrived, and only `fetchNextPage` asks for it again. A first
+   * load or a refresh of the pages already held is the opposite case: the page count
+   * does not change, so `dataUpdatedAt` is the signal and `refetch` is the retry.
    */
-  const failureRef = useRef<{ scope: string; error: unknown } | null>(null);
-  if (error) {
-    failureRef.current = { scope: scopeKey, error };
-  } else if (data) {
-    failureRef.current = null;
+  const inFlightKindRef = useRef<'next-page' | 'refresh'>('refresh');
+  if (isFetching) {
+    inFlightKindRef.current = isFetchingNextPage ? 'next-page' : 'refresh';
   }
-  const failure = failureRef.current?.scope === scopeKey ? failureRef.current.error : null;
+  const failureRef = useRef<{
+    scope: string;
+    error: unknown;
+    at: number;
+    pages: number;
+    kind: 'next-page' | 'refresh';
+  } | null>(null);
+  if (error) {
+    failureRef.current = {
+      scope: scopeKey,
+      error,
+      at: dataUpdatedAt,
+      pages: data?.pages.length ?? 0,
+      kind: inFlightKindRef.current,
+    };
+  } else if (data && failureRef.current != null) {
+    const held = failureRef.current;
+    const recovered =
+      held.kind === 'next-page' && held.pages > 0
+        ? data.pages.length > held.pages
+        : dataUpdatedAt !== held.at;
+    if (recovered) {
+      failureRef.current = null;
+    }
+  }
+  const heldFailure = failureRef.current?.scope === scopeKey ? failureRef.current : null;
+  const failure = heldFailure?.error ?? null;
   const isPendingResults = isPreviousData || (!hasData && (isLoading || isFetching || hasNextPage));
   useLayoutEffect(() => {
     if (isPendingResults && scrollElementRef.current) {
@@ -178,21 +210,44 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     <GridSkeleton scrollElementRef={scrollElementRef} label={localize('com_agents_loading')} />
   ) : null;
 
-  // Handle error state with enhanced error display
+  /**
+   * What the grid shows instead of the list. Rendered inside the grid rather than in
+   * place of it: the grid owns the detail dialog and the element focus returns to, so
+   * swapping it out for a failure or an empty result would tear an open dialog down
+   * mid-flight and leave keyboard focus on a detached card.
+   */
+  let listPlaceholder: React.ReactNode = null;
   if (failure) {
-    return (
+    listPlaceholder = (
       <ErrorDisplay
         error={(failure as ApiError) || 'Unknown error occurred'}
-        // `cancelRefetch: false` so a click, the card's backoff and the query's
-        // own reconnect refetch coalesce into one request instead of each
-        // restarting the previous one.
-        onRetry={() => void refetch({ cancelRefetch: false })}
+        /* A cursor page that failed is not in the cache, so `refetch` would refresh the
+           prefix that already succeeded and leave it missing. Retry the page the failure
+           was waiting for. `cancelRefetch: false` so a click, the card's backoff and the
+           query's own reconnect refetch coalesce into one request instead of each
+           restarting the previous one. */
+        onRetry={() =>
+          void (heldFailure?.kind === 'next-page' && heldFailure.pages > 0
+            ? fetchNextPage({ cancelRefetch: false })
+            : refetch({ cancelRefetch: false }))
+        }
         isRetrying={isFetching}
         context={{
           searchQuery,
           category,
         }}
       />
+    );
+  } else if (!hasData) {
+    listPlaceholder = (
+      <div
+        className="py-12 text-center text-text-secondary"
+        role="status"
+        aria-live="polite"
+        aria-label={localize(emptyState.key, emptyState.values)}
+      >
+        <h3 className="mb-2 text-lg font-medium">{localize(emptyState.key, emptyState.values)}</h3>
+      </div>
     );
   }
 
@@ -207,42 +262,36 @@ const AgentGrid: React.FC<AgentGridProps> = ({
       tabIndex={isPendingResults ? 0 : undefined}
     >
       {loadingSkeleton}
-      {!isPendingResults && !hasData && (
-        <div
-          className="py-12 text-center text-text-secondary"
-          role="status"
-          aria-live="polite"
-          aria-label={localize(emptyState.key, emptyState.values)}
-        >
-          <h3 className="mb-2 text-lg font-medium">
-            {localize(emptyState.key, emptyState.values)}
-          </h3>
-        </div>
-      )}
-      {!isPendingResults && hasData && (
+      {(!isPendingResults || failure) && (
         <>
-          <div id="search-results-count" className="sr-only" aria-live="polite" aria-atomic="true">
-            {localize('com_agents_grid_announcement', {
-              count: currentAgents?.length || 0,
-              category: getCategoryDisplayName(category),
-            })}
-          </div>
-
-          {hasData && (
-            <VirtualizedAgentGrid
-              key={scopeKey}
-              agents={currentAgents}
-              scrollElementRef={scrollElementRef}
-              label={localize('com_agents_grid_announcement', {
-                count: currentAgents.length,
+          {hasData && !failure && (
+            <div
+              id="search-results-count"
+              className="sr-only"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {localize('com_agents_grid_announcement', {
+                count: currentAgents?.length || 0,
                 category: getCategoryDisplayName(category),
               })}
-              hasNextPage={hasNextPage ?? false}
-              isFetching={isFetching}
-              onLoadMore={loadMore}
-              onSelectAgent={onSelectAgent}
-            />
+            </div>
           )}
+
+          <VirtualizedAgentGrid
+            key={scopeKey}
+            agents={currentAgents}
+            scrollElementRef={scrollElementRef}
+            label={localize('com_agents_grid_announcement', {
+              count: currentAgents.length,
+              category: getCategoryDisplayName(category),
+            })}
+            hasNextPage={hasNextPage ?? false}
+            isFetching={isFetching}
+            onLoadMore={loadMore}
+            onSelectAgent={onSelectAgent}
+            placeholder={listPlaceholder}
+          />
 
           {isFetchingNextPage && (
             <div
@@ -256,7 +305,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             </div>
           )}
 
-          {!hasNextPage && currentAgents && currentAgents.length > 0 && (
+          {!failure && hasData && !hasNextPage && (
             <div className="mt-6 text-center">
               <p className="text-sm text-text-secondary">
                 {localize('com_agents_no_more_results')}

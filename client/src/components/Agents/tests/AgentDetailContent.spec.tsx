@@ -1,4 +1,5 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -107,15 +108,19 @@ const renderDetail = (agent = baseAgent, basename = '/app') => {
   const toastContext = { showToast: jest.fn() };
   jest.mocked(useToastContext).mockReturnValue(toastContext);
   const view = render(
-    <MemoryRouter
-      basename={basename}
-      initialEntries={[`${basename}/agents/all?q=invoice&sort=popular&mine=1`]}
-    >
-      <QueryClientProvider client={queryClient}>
-        <DetailDialog agent={agent} />
-        <LocationProbe />
-      </QueryClientProvider>
-    </MemoryRouter>,
+    /* The start-chat path drops the parallel conversations a multi-conversation session
+       left open, which is Recoil state. */
+    <RecoilRoot>
+      <MemoryRouter
+        basename={basename}
+        initialEntries={[`${basename}/agents/all?q=invoice&sort=popular&mine=1`]}
+      >
+        <QueryClientProvider client={queryClient}>
+          <DetailDialog agent={agent} />
+          <LocationProbe />
+        </QueryClientProvider>
+      </MemoryRouter>
+    </RecoilRoot>,
   );
   return { ...view, showToast: toastContext.showToast };
 };

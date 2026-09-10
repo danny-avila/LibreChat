@@ -53,7 +53,12 @@ export const useUpdateFavoritesMutation = () => {
       onSuccess: (_data, newFavorites, context) => {
         const previousAgentIds = agentIdSet(context?.previousFavorites);
         const nextAgentIds = agentIdSet(newFavorites);
+        /* An absent prior snapshot is an unknown change, not an empty one: the favorites
+           query may still be pending or failed while a restored pin is being removed, and
+           reading that as "nothing changed" would leave a stale popular page ranked by the
+           pin the user just dropped. */
         const agentFavoritesChanged =
+          context?.previousFavorites === undefined ||
           previousAgentIds.size !== nextAgentIds.size ||
           [...previousAgentIds].some((id) => !nextAgentIds.has(id));
 

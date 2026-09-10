@@ -6067,6 +6067,62 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         expect(result.data.map((row) => row.id)).toEqual([anchor.id, agentTransferred.id]);
       });
 
+      test('reads an owner whose entry also carries the insights bit', async () => {
+        // Granting Agent Insights ORs VIEW_INSIGHTS into the owner's role bits, so an
+        // owner entry is not always exactly the owner mask. Missing it would fall back to
+        // `author`, which on a transferred agent still names the original creator.
+        const currentOwner = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Aaa Insights Owner',
+          email: `insights-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const originalCreator = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Zzz Original Creator',
+          email: `creator-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const agentTransferred = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Insights Transferred Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: originalCreator._id,
+        });
+        await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: currentOwner._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agentTransferred._id,
+          permBits: OWNER_ACL_BITS | PermissionBits.VIEW_INSIGHTS,
+          grantedBy: currentOwner._id,
+        });
+        const anchor = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Insights Anchor Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+          support_contact: { name: 'Mmm Middle Anchor', email: '' },
+        });
+
+        const result = await getListAgentsByAccess({
+          accessibleIds: [agentTransferred._id, anchor._id] as mongoose.Types.ObjectId[],
+          otherParams: {},
+          sort: 'author',
+        });
+
+        const rowsById = new Map(result.data.map((row) => [row.id as string, row]));
+        expect(rowsById.get(agentTransferred.id)?.owner_contact).toEqual({
+          name: 'Aaa Insights Owner',
+        });
+        // 'Aaa Insights Owner' < 'Mmm Middle Anchor' < 'Zzz Original Creator': falling back
+        // to `author` would put the transferred agent last instead of first.
+        expect(result.data.map((row) => row.id)).toEqual([agentTransferred.id, anchor.id]);
+      });
+
       test('reports no owner contact when the owner account is gone, even with a denormalized authorName', async () => {
         const missingOwner = new mongoose.Types.ObjectId();
         const agentOrphaned = await createAgent({
@@ -6163,34 +6219,77 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
     });
   });
 
-  describe('invalid sort value (defense in depth; the allowlist itself lives in the controller)', () => {
-    test('an unrecognized sort string falls back to the same behavior as newest', async () => {
+  /**
+   * `GET /api/agents` is not only the marketplace: the agent selector, the mention menu
+   * and the schedule pickers ask for no mode and have always been answered most recently
+   * edited first. A request that names no mode must not drift into creation order.
+   */
+  describe('no requested sort mode', () => {
+    /** Creation order and edit order are deliberately opposed, so the two cannot pass for each other. */
+    async function seedOpposedOrders() {
       const author = new mongoose.Types.ObjectId();
-      const older = await createAgent({
+      const createdFirst = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
-        name: 'Older',
+        name: 'Created first, edited last',
         provider: 'openai',
         model: 'gpt-4',
         author,
       });
-      const newer = await createAgent({
+      const createdLast = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
-        name: 'Newer',
+        name: 'Created last, edited first',
         provider: 'openai',
         model: 'gpt-4',
         author,
       });
-      await setCreatedAt(older._id, new Date('2024-01-01T00:00:00Z'));
-      await setCreatedAt(newer._id, new Date('2024-06-01T00:00:00Z'));
+      await setCreatedAt(createdFirst._id, new Date('2024-01-01T00:00:00Z'));
+      await setCreatedAt(createdLast._id, new Date('2024-06-01T00:00:00Z'));
+      await setUpdatedAt(createdFirst._id, new Date('2025-06-01T00:00:00Z'));
+      await setUpdatedAt(createdLast._id, new Date('2025-01-01T00:00:00Z'));
+      return { createdFirst, createdLast };
+    }
+
+    test('answers a sortless request most recently edited first', async () => {
+      const { createdFirst, createdLast } = await seedOpposedOrders();
 
       const result = await getListAgentsByAccess({
-        accessibleIds: [older._id, newer._id] as mongoose.Types.ObjectId[],
+        accessibleIds: [createdFirst._id, createdLast._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+      });
+
+      expect(result.data.map((a) => a.id)).toEqual([createdFirst.id, createdLast.id]);
+    });
+
+    test('an unrecognized sort string falls back to that same order, not to newest', async () => {
+      const { createdFirst, createdLast } = await seedOpposedOrders();
+
+      const result = await getListAgentsByAccess({
+        accessibleIds: [createdFirst._id, createdLast._id] as mongoose.Types.ObjectId[],
         otherParams: {},
         // @ts-expect-error intentionally invalid at the type level to exercise the runtime fallback
         sort: 'not-a-real-sort-mode',
       });
 
-      expect(result.data.map((a) => a.id)).toEqual([newer.id, older.id]);
+      expect(result.data.map((a) => a.id)).toEqual([createdFirst.id, createdLast.id]);
+    });
+
+    test('pages a sortless request without duplicating or skipping a row', async () => {
+      const { createdFirst, createdLast } = await seedOpposedOrders();
+      const accessibleIds = [createdFirst._id, createdLast._id] as mongoose.Types.ObjectId[];
+
+      const page1 = await getListAgentsByAccess({ accessibleIds, otherParams: {}, limit: 1 });
+      const page2 = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: 1,
+        after: page1.after,
+      });
+
+      expect([...page1.data, ...page2.data].map((a) => a.id)).toEqual([
+        createdFirst.id,
+        createdLast.id,
+      ]);
+      expect(page2.has_more).toBe(false);
     });
   });
 

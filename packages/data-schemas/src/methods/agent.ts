@@ -13,6 +13,7 @@ import type { FilterQuery, Model, PipelineStage, ProjectionType, Types } from 'm
 import type { AgentSortOption, AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry, IUser, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
+import { OWNER_ACL_PERMISSION_BIT_SUPERSETS } from './aclEntry';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
@@ -27,15 +28,6 @@ const { mcp_delimiter } = Constants;
  * otherwise higher than any ASCII sentinel like `'zzz_unknown'`.
  */
 const AUTHOR_SORT_SENTINEL = String.fromCodePoint(0x10ffff);
-
-/**
- * The `author` sort's owner-fallback tier (see the `else` branch below) needs the exact
- * same ACL entry the card's own `attachOwnerContacts` resolves against
- * (`api/server/services/Agents/ownerContact.js`'s `OWNER_PERMISSION_BITS`): an entry
- * granting every bit an owner holds, not merely VIEW.
- */
-const OWNER_ACL_PERMISSION_BITS =
-  PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 
 /**
  * The aggregation-expression shapes the predicate helpers below build: a field path
@@ -53,7 +45,8 @@ type AggregationExpression =
   | { $ne: [AggregationOperand, AggregationOperand] }
   | { $lt: [AggregationOperand, AggregationOperand] }
   | { $cond: [AggregationExpression, AggregationOperand, AggregationOperand] }
-  | { $indexOfCP: [AggregationOperand, AggregationOperand] };
+  | { $indexOfCP: [AggregationOperand, AggregationOperand] }
+  | { $in: [AggregationOperand, number[]] };
 
 /**
  * Picks the earlier of two ACL entry sub-documents by (`grantedAt`, `createdAt`, `_id`) —
@@ -122,15 +115,24 @@ function isValidDisplayName(varRef: string): AggregationExpression {
  * reverses both keys so MongoDB can scan the existing `{ createdAt: -1, _id: 1 }`
  * index backwards without requiring a second ascending index.
  */
+/**
+ * `'recent'` is not a marketplace mode: it is the order this endpoint has always served
+ * when nothing asks for one — most recently edited first — and the agent selector, the
+ * mention menu and the schedule pickers still rely on it. The marketplace's own default,
+ * `'newest'`, orders by creation instead, so it has to be requested explicitly.
+ */
+export type AgentListSortOption = AgentSortOption | 'recent';
+
 const AGENT_SORT_CONFIG: Record<
-  AgentSortOption,
+  AgentListSortOption,
   {
-    field: 'createdAt' | 'favoriteCount' | 'authorDisplayName';
+    field: 'createdAt' | 'updatedAt' | 'favoriteCount' | 'authorDisplayName';
     direction: 1 | -1;
     tieBreakDirection: 1 | -1;
     valueType: 'date' | 'number' | 'string';
   }
 > = {
+  recent: { field: 'updatedAt', direction: -1, tieBreakDirection: 1, valueType: 'date' },
   newest: { field: 'createdAt', direction: -1, tieBreakDirection: 1, valueType: 'date' },
   oldest: { field: 'createdAt', direction: 1, tieBreakDirection: -1, valueType: 'date' },
   popular: { field: 'favoriteCount', direction: -1, tieBreakDirection: 1, valueType: 'number' },
@@ -199,7 +201,7 @@ function castCursorPrimary(
  * Validating `primary` matters because it flows straight into a Mongo query: without
  * this, a hand-edited `{"primary": null, ...}` reaches the driver as an `Invalid Date`.
  */
-function decodeAgentSortCursor(after: string, sort: AgentSortOption): AgentSortCursor | null {
+function decodeAgentSortCursor(after: string, sort: AgentListSortOption): AgentSortCursor | null {
   try {
     const decoded = JSON.parse(Buffer.from(after, 'base64').toString('utf8'));
     if (typeof decoded?.primary === 'undefined' || typeof decoded?.secondary !== 'string') {
@@ -238,7 +240,7 @@ function decodeAgentSortCursor(after: string, sort: AgentSortOption): AgentSortC
  * between pages.
  */
 function buildAgentSortCursorCondition(
-  sort: AgentSortOption,
+  sort: AgentListSortOption,
   decoded: AgentSortCursor,
   /**
    * `decoded.secondary` already cast to an ObjectId. Passed in rather than constructed
@@ -282,7 +284,10 @@ function buildAgentSortCursorCondition(
  * epoch: an epoch cursor would be a date the row never had, and the resulting condition
  * could never re-select it. It would also throw on `.toISOString()`, surfacing as a 500.
  */
-function encodeAgentSortCursor(sort: AgentSortOption, lastAgent: Record<string, unknown>): string {
+function encodeAgentSortCursor(
+  sort: AgentListSortOption,
+  lastAgent: Record<string, unknown>,
+): string {
   const { field, valueType } = AGENT_SORT_CONFIG[sort];
   const rawValue = lastAgent[field];
 
@@ -905,7 +910,7 @@ export function createAgentMethods(
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
-    sort?: AgentSortOption;
+    sort?: AgentListSortOption;
   }) => Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -1639,8 +1644,9 @@ export function createAgentMethods(
   }
 
   /**
-   * Get accessible agents with cursor pagination. Pages default to 100 items and
-   * the default sort is newest; pass `limit: null` to opt out of pagination.
+   * Get accessible agents with cursor pagination. Pages default to 100 items, and a
+   * caller that asks for no mode gets `'recent'` — the most-recently-edited order this
+   * endpoint has always served. Pass `limit: null` to opt out of pagination.
    *
    * All modes preserve the same projected response shape. Popularity counts are
    * computed from compact candidate rows and unique tenant-scoped users before
@@ -1652,14 +1658,14 @@ export function createAgentMethods(
     limit = 100,
     after = null,
     includeSkillConfig = false,
-    sort: sortInput = 'newest',
+    sort: sortInput = 'recent',
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
-    sort?: AgentSortOption;
+    sort?: AgentListSortOption;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -1675,7 +1681,7 @@ export function createAgentMethods(
       : null;
     // The HTTP layer allowlists `sort`, but this method is also called directly by
     // internal callers, and everything below indexes `AGENT_SORT_CONFIG` by it.
-    const sort: AgentSortOption = AGENT_SORT_CONFIG[sortInput] != null ? sortInput : 'newest';
+    const sort: AgentListSortOption = AGENT_SORT_CONFIG[sortInput] != null ? sortInput : 'recent';
 
     const baseQuery: Record<string, unknown> = {
       ...otherParams,
@@ -1936,7 +1942,9 @@ export function createAgentMethods(
                           $and: [
                             { $eq: ['$$e.resourceType', ResourceType.AGENT] },
                             { $eq: ['$$e.principalType', PrincipalType.USER] },
-                            { $eq: ['$$e.permBits', OWNER_ACL_PERMISSION_BITS] },
+                            {
+                              $in: ['$$e.permBits', [...OWNER_ACL_PERMISSION_BIT_SUPERSETS]],
+                            },
                           ],
                         },
                       },
@@ -2093,9 +2101,10 @@ export function createAgentMethods(
       return buildEnvelope(data, hasMore, nextCursor);
     }
 
-    // These modes sort by immutable `createdAt`; the descending compound index
-    // supports both directions by reversing the scan for 'oldest'.
-    const dir = AGENT_SORT_CONFIG[sort].direction;
+    /* The remaining modes sort by a stored date: `createdAt` for the marketplace's newest
+       and oldest, whose descending compound index supports both directions by reversing
+       the scan, and `updatedAt` for the order this endpoint serves when nothing asks. */
+    const { field: dateField, direction: dir, tieBreakDirection } = AGENT_SORT_CONFIG[sort];
 
     let finalQuery: Record<string, unknown> = baseQuery;
     const decodedCursor = readCursor();
@@ -2112,8 +2121,8 @@ export function createAgentMethods(
     }
 
     let query = Agent.find(finalQuery, projection).sort({
-      createdAt: dir,
-      _id: AGENT_SORT_CONFIG[sort].tieBreakDirection,
+      [dateField]: dir,
+      _id: tieBreakDirection,
     });
 
     if (isPaginated && normalizedLimit) {
